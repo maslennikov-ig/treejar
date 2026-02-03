@@ -1,0 +1,127 @@
+{
+  "models": [
+    {
+      "name": "DeepSeek V3.2",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 0.25,
+        "output": 0.38,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "Лучшее соотношение цена/качество (~90% уровня топовых моделей)",
+        "en": "Best price/quality ratio (~90% of top models)"
+      },
+      "recommended": true
+    },
+    {
+      "name": "Gemini 2.5 Flash",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 0.15,
+        "output": 0.60,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "Быстрая модель Google с thinking mode",
+        "en": "Fast Google model with thinking mode"
+      },
+      "recommended": false
+    },
+    {
+      "name": "Kimi K2",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 0.15,
+        "output": 2.50,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "1T параметров, отлично для длинного контекста (256K)",
+        "en": "1T parameters, excellent for long context (256K)"
+      },
+      "recommended": false
+    },
+    {
+      "name": "GPT-4.1-mini",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 0.40,
+        "output": 1.60,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "Компактная версия GPT-4.1 для базовых задач",
+        "en": "Compact version of GPT-4.1 for basic tasks"
+      },
+      "recommended": false
+    },
+    {
+      "name": "GPT-4.1",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 2.00,
+        "output": 8.00,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "Топовая модель OpenAI для сложных задач",
+        "en": "Top OpenAI model for complex tasks"
+      },
+      "recommended": false
+    },
+    {
+      "name": "Claude 4 Sonnet",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 3.00,
+        "output": 15.00,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "Сбалансированная модель Anthropic с отличным пониманием контекста",
+        "en": "Balanced Anthropic model with excellent context understanding"
+      },
+      "recommended": false
+    },
+    {
+      "name": "Xiaomi MiMo-V2-Flash",
+      "provider": "OpenRouter",
+      "pricing": {
+        "input": 0.09,
+        "output": 0.29,
+        "currency": "USD",
+        "per": "1M tokens"
+      },
+      "description": {
+        "ru": "309B MoE от Xiaomi, #1 на SWE-bench, 150 tok/s",
+        "en": "309B MoE from Xiaomi, #1 on SWE-bench, 150 tok/s"
+      },
+      "recommended": false
+    }
+  ],
+  "speechRecognition": {
+    "whisper": {
+      "name": "OpenAI Whisper",
+      "pricing": {
+        "value": 0.006,
+        "currency": "USD",
+        "per": "minute"
+      },
+      "description": {
+        "ru": "Распознавание речи, 50+ языков",
+        "en": "Speech recognition, 50+ languages"
+      }
+    }
+  },
+  "notes": {
+    "ru": "Цены актуальны на февраль 2026. Проверяйте openrouter.ai для актуальных цен.",
+    "en": "Prices as of February 2026. Check openrouter.ai for current pricing."
+  }
+}
