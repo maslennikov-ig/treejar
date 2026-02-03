@@ -1,12 +1,12 @@
 ---
-name: generate-estimate
-description: Generate commercial proposals (estimates) with pricing packages, benefits, risks, and timeline. Flexible skill that adapts to any IT project type.
+name: offer
+description: Generate commercial proposals with pricing packages, benefits, risks, and timeline. Use /offer to create sales proposals for IT projects.
 allowed-tools: Read, WebSearch
 ---
 
-# Generate Estimate
+# Offer
 
-Generate structured commercial proposals for IT projects. The skill provides a framework — the model thinks about specifics (team, benefits, risks) for each unique project.
+Generate commercial proposals for IT projects. The skill provides a framework — the model thinks about specifics (team, benefits, risks) for each unique project.
 
 ## When to Use
 
