@@ -1,12 +1,18 @@
 ---
 name: offer
 description: Generate commercial proposals with pricing packages, benefits, risks, and timeline. Use /offer to create sales proposals for IT projects.
-allowed-tools: Read, WebSearch
+allowed-tools: Read, Write, WebSearch
 ---
 
 # Offer
 
 Generate commercial proposals for IT projects. The skill provides a framework — the model thinks about specifics (team, benefits, risks) for each unique project.
+
+## Output
+
+**File**: `docs/offers/{project-slug}.md`
+
+Example: `docs/offers/treejar-ai-sales-bot.md`
 
 ## When to Use
 
@@ -83,20 +89,130 @@ For projects with ongoing costs (LLM APIs, hosting, SaaS):
 - Calculate monthly costs for different usage scenarios
 - Provide recommendations
 
-### Step 8: Assemble Document
+### Step 8: Create Mermaid Diagrams
 
-Generate markdown with sections:
-1. Project overview
-2. Packages with modules, hours, costs
-3. Business benefits (per package)
-4. Team composition
-5. Comparison table
-6. Operating costs (if applicable)
-7. Risks and mitigation
-8. Timeline
-9. What's not included
-10. Guarantees
-11. Next steps
+Include visual diagrams to make the offer more compelling:
+
+#### Timeline (Gantt)
+```mermaid
+gantt
+    title Project Timeline
+    dateFormat YYYY-MM-DD
+    section Phase 1
+    Architecture     :a1, 2026-02-10, 1w
+    section Phase 2
+    Development      :a2, after a1, 3w
+    section Phase 3
+    Testing & Deploy :a3, after a2, 1w
+```
+
+#### System Architecture (for complex projects)
+```mermaid
+flowchart LR
+    Client[📱 WhatsApp] --> Bot[🤖 AI Bot]
+    Bot --> LLM[🧠 LLM API]
+    Bot --> CRM[📊 Zoho CRM]
+    Bot --> KB[(📚 Knowledge Base)]
+```
+
+#### Package Comparison (optional)
+```mermaid
+graph TD
+    A[Старт] --> B[Бизнес]
+    B --> C[Премиум]
+
+    A --- A1[Базовые консультации]
+    B --- B1[+ Голосовые + КП]
+    C --- C1[+ Аналитика + Контроль]
+```
+
+### Step 9: Assemble & Save Document
+
+Generate beautiful markdown with sections:
+
+```markdown
+# Коммерческое предложение: {Project Name}
+
+**Дата:** {date}
+**Версия:** 1.0
+
+---
+
+## О проекте
+{description}
+
+---
+
+## Архитектура решения
+{mermaid architecture diagram}
+
+---
+
+## Пакеты услуг
+
+### Пакет "Старт" — {subtitle}
+{table with modules and hours}
+
+**Результат:** {what client gets}
+
+**Выгода для бизнеса:**
+- **{benefit 1}** — {description}
+- **{benefit 2}** — {description}
+...
+
+**Стоимость:** {price} ₽
+**Срок:** {weeks} недель
+
+---
+
+## Сравнение пакетов
+{comparison table with ✓/—}
+
+---
+
+## Команда проекта
+{table: Role | Responsibilities | Hours | Rate | Sum}
+
+---
+
+## Timeline
+{mermaid gantt diagram}
+
+---
+
+## Ежемесячные расходы (if applicable)
+{infrastructure + LLM costs table}
+
+---
+
+## Риски и митигация
+{table: Risk | Probability | Impact | Mitigation}
+
+---
+
+## Что не входит
+- {exclusion 1}
+- {exclusion 2}
+
+---
+
+## Гарантии
+- {guarantee 1}
+- {guarantee 2}
+
+---
+
+## Следующие шаги
+1. {step 1}
+2. {step 2}
+3. {step 3}
+
+---
+
+*Предложение действительно 14 дней.*
+```
+
+**Save to**: `docs/offers/{project-slug}.md`
 
 ## Reference Data
 
@@ -104,31 +220,11 @@ Generate markdown with sections:
 
 Load from `data/llm-models.json` — contains current OpenRouter pricing for:
 - DeepSeek V3.2 (recommended for cost efficiency)
-- Gemini 3 Flash
+- Gemini 2.5 Flash
 - Kimi K2
-- GPT-5.2 / GPT-5.2 mini
+- GPT-4.1 / GPT-4.1-mini
 - Claude 4 Sonnet
-- Xiaomi MiMo-V2-Flash (free tier available)
-
-### Template
-
-Use `templates/estimate.md` as a structural guide, but adapt freely.
-
-## Output Format
-
-Markdown document ready to send to client.
-
-```json
-{
-  "success": true,
-  "markdown": "# Commercial Proposal: ...",
-  "metadata": {
-    "packages": 3,
-    "priceRange": {"min": 200000, "max": 600000, "currency": "₽"},
-    "timeline": "6-12 weeks"
-  }
-}
-```
+- Xiaomi MiMo-V2-Flash
 
 ## Examples
 
@@ -141,6 +237,9 @@ Markdown document ready to send to client.
 - Benefits: 24/7 availability, instant responses, multilingual support, CRM integration
 - Risks: WhatsApp API changes, LLM quality for Arabic, voice message handling
 - Packages: Basic (text only) → Business (voice + proposals) → Premium (analytics)
+- Diagrams: Architecture (WhatsApp → Bot → LLM → CRM), Gantt timeline
+
+**Saves to**: `docs/offers/treejar-ai-sales-bot.md`
 
 ### Example 2: E-commerce Platform
 
@@ -151,6 +250,9 @@ Markdown document ready to send to client.
 - Benefits: Increased average order, personalization, inventory optimization
 - Risks: Data migration, recommendation quality, performance at scale
 - Packages: MVP (catalog + cart) → Growth (recommendations) → Enterprise (full analytics)
+- Diagrams: Architecture (Frontend → API → DB → ML), Package flow
+
+**Saves to**: `docs/offers/ecommerce-ai-recommendations.md`
 
 ### Example 3: Simple API Integration
 
@@ -161,6 +263,9 @@ Markdown document ready to send to client.
 - Benefits: No manual data entry, real-time sync, error reduction
 - Risks: API limitations, data format mismatches
 - Packages: Maybe just one package — it's a simple project
+- Diagrams: Simple flowchart (CRM ↔ Integration ↔ Accounting)
+
+**Saves to**: `docs/offers/crm-accounting-integration.md`
 
 ## Validation
 
@@ -170,6 +275,8 @@ Markdown document ready to send to client.
 - [ ] Team composition fits the project scope
 - [ ] Risks are relevant to the tech stack
 - [ ] Calculations are correct
+- [ ] Mermaid diagrams render correctly
+- [ ] Document saved to `docs/offers/`
 - [ ] Document is complete and professional
 
 ## Anti-Patterns
@@ -180,9 +287,12 @@ Markdown document ready to send to client.
 - List generic risks that don't apply
 - Over-engineer simple projects
 - Under-scope complex projects
+- Skip diagrams — they add huge value
 
 **DO:**
 - Think fresh about each project
 - Adapt structure to project complexity
 - Write benefits in client's business language
 - Be honest about risks and uncertainties
+- Include relevant Mermaid diagrams
+- Save the file automatically
