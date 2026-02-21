@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "treejar-ai-bot"
+version = "0.1.0"
+description = "AI-powered sales assistant for Treejar office furniture (WhatsApp)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.34,<1.0",
+    # Database
+    "sqlalchemy[asyncio]>=2.0.46,<3.0",
+    "asyncpg>=0.31,<1.0",
+    "alembic>=1.14,<2.0",
+    "pgvector>=0.3,<1.0",
+    # Redis + async queue
+    "redis>=5.2,<6.0",
+    "arq>=0.26,<1.0",
+    # HTTP client
+    "httpx>=0.28,<1.0",
+    # Settings & validation
+    "pydantic>=2.10,<3.0",
+    "pydantic-settings>=2.7,<3.0",
+    # AI orchestration
+    "pydantic-ai>=0.1,<1.0",
+    # LLM client (OpenRouter via base_url)
+    "openai>=1.60,<2.0",
+    # Embeddings (local, multilingual)
+    "fastembed>=0.5,<1.0",
+    # Utilities
+    "python-multipart>=0.0.18",
+    "python-dotenv>=1.0,<2.0",
+    # Admin panel
+    "sqladmin>=0.20,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "pytest-cov>=6.0,<7.0",
+    "httpx",  # TestClient
+    "ruff>=0.9,<1.0",
+    "mypy>=1.14,<2.0",
+    "pre-commit>=4.0,<5.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function call in defaults (FastAPI Depends/Query pattern)
+    "TC001",  # move into TYPE_CHECKING (breaks Pydantic/SQLAlchemy runtime)
+    "TC002",  # move into TYPE_CHECKING (breaks Pydantic/SQLAlchemy runtime)
+    "TC003",  # move into TYPE_CHECKING (breaks Pydantic/SQLAlchemy runtime)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["migrations/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+addopts = "-v --strict-markers --strict-config"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests (require DB/Redis)",
+    "e2e: End-to-end tests (full stack)",
+]
