@@ -49,3 +49,25 @@ admin/.next/
 .tmp/
 *.tmp
 *.bak
+
+# Generated artifacts (PDFs regenerated from .md sources)
+docs/*.pdf
+docs/**/*.pdf
+*.csv
+
+# Claude Code local config
+.claude/local.md
+.claude/project-index.md
+.claude/agents/
+.claude/commands/
+.claude/docs/
+.claude/schemas/
+.claude/scripts/
+.claude/skills/*
+!.claude/skills/offer/
+
+# MCP server config (local paths)
+.mcp.json
+
+# Beads issue tracker (synced separately via bd sync)
+.beads/
