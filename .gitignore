@@ -50,6 +50,9 @@ admin/.next/
 *.tmp
 *.bak
 
+# Internal docs (not for client repo)
+docs/task-plan.md
+
 # Generated artifacts (PDFs regenerated from .md sources)
 docs/*.pdf
 docs/**/*.pdf
