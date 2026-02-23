@@ -1,292 +1,125 @@
-# Анализ архитектуры: Топ-3 варианта реализации
+# Синхронизация данных из клиентского репозитория
 
 ## Контекст
 
-Проведён Deep Research (поиск библиотек, фреймворков, готовых решений) и DeepThink (архитектурный анализ рисков и паттернов) двумя независимыми моделями. Документы содержат как совпадающие, так и противоречащие рекомендации. Ниже — критический синтез с тремя вариантами реализации от лучшего к худшему.
-
-### Источники
-- `docs/Research/Deep technology research for Treejar's AI sales assistant.md`
-- `docs/DeepThink/Architecture Analysis for AI Sales Bot.md`
+Клиент предоставил публичный репозиторий `Starec-net/noor-ai-seller` с документацией проекта. Нужно выяснить, есть ли там полезная информация, которой нет в нашем репозитории, и синхронизировать её.
 
 ---
 
-## Ключевые точки согласия (оба документа единогласны)
+## Результаты исследования
 
-Эти решения не обсуждаются — они войдут в ЛЮБОЙ вариант:
+### Сравнение файлов: клиентский vs наш репозиторий
 
-| Решение | Обоснование |
-|---------|-------------|
-| **Async queue (Redis + ARQ)** | Webhook Wazzup → 200 OK за <100ms → фоновый воркер. Синхронная обработка = таймауты + дубликаты |
-| **Отказ от zohocrmsdk8-0** | Синхронный SDK блокирует event loop. Заменяем на custom httpx.AsyncClient |
-| **Локальное зеркало каталога** | Продукты Zoho Inventory → PostgreSQL (sync раз в час). Бот читает из PG, не из Zoho API |
-| **Redis distributed lock для OAuth** | `SETNX` на refresh токена Zoho. Без этого — race condition, блокировка аккаунта |
-| **PydanticAI для оркестрации** | Нативная поддержка OpenRouter, tool calling, structured outputs, async |
-| **FSM в PostgreSQL** | Столбец `sales_stage` в БД. LLM получает правила текущего этапа в system prompt |
-| **Multi-model routing** | Дешёвая модель для intent/extraction, мощная для генерации ответа |
-| **English system prompts** | LLM рассуждает на EN, отвечает на языке клиента (EN/AR). Так лучше следует инструкциям |
-| **Debouncing сообщений** | 3-5 сек ожидание в Redis перед обработкой серии сообщений |
-| **Redis idempotency** | `SET NX EX 86400` по message_id. Защита от дублей webhook |
-| **Маскировка PII** | UUID вместо реальных телефонов/emails в контексте LLM |
-| **24h WhatsApp правило** | Follow-up >24ч — ТОЛЬКО pre-approved template messages через Wazzup |
+| Файл в клиентском репо | Наш эквивалент | Статус |
+|---|---|---|
+| `docs/sales-dialogue-rules.md` | `docs/04-sales-dialogue-guidelines.md` | ДУБЛИКАТ (тот же контент, наш подробнее) |
+| `docs/treejar-values.md` | `docs/05-company-values.md` | ДУБЛИКАТ (тот же контент) |
+| `docs/evaluation-checklist.md` | `docs/06-dialogue-evaluation-checklist.md` | ДУБЛИКАТ (тот же контент) |
+| `docs/faq.md` | **Нет** | ОТСУТСТВУЕТ — 20 FAQ на EN |
+| `docs/metrics.md` | **Нет** | ОТСУТСТВУЕТ — 17 метрик + follow-up периоды |
+| `docs/checklist-answers.md` | Частично в `response-to-client-2026-02-17.md` | УНИКАЛЬНАЯ ИНФОРМАЦИЯ — подробнее (см. ниже) |
+| `docs/dialogue-stats.csv` | **Нет** | ОТСУТСТВУЕТ — помесячная статистика |
+| `docs/dialogue-examples/README.md` | **Нет** | УНИКАЛЬНО — 13 классифицированных диалогов + анализ |
+| `docs/sample-quotations/README.md` | **Нет** | УНИКАЛЬНО — 4 образца КП + разбор структуры |
+| `CLAUDE.md` | Другой (наш CLAUDE.md — инструкции для агента) | УНИКАЛЬНО — полный бизнес-контекст проекта |
+| `docs/tz.md` | `docs/01-tz-basic.md` + `docs/02-tz-extended.md` | Есть |
+| `docs/architecture.md` | `docs/architecture.md` | Есть |
+| `docs/roadmap.md` | `docs/roadmap.md` | Есть |
 
----
+### Ключевые находки (новая информация)
 
-## Ключевые противоречия между документами
+**1. `docs/checklist-answers.md` — САМЫЙ ЦЕННЫЙ файл**
+- Точные Zoho API scopes (CRM + Inventory)
+- 97 полей контакта, 72 поля сделки в Zoho CRM (включая кастомные: `Segment`, `Department_Treejar`, `Interest`, `WhatsApp_chat`, `Sales_Person`, UTM-поля)
+- **18 триггеров эскалации** (не 8, как мы считали ранее!)
+- 9 сегментов клиентов с количеством (End-client B2C: 363, Wholesale: 169, Retail chain B2B: 175, etc.)
+- 12 этапов воронки сделки (полный список)
+- Кастомное поле `cf_end_product` для фильтрации товаров
+- Wazzup: тариф Max, 2 номера, HSM-шаблоны НЕ используются
+- Домен `starec.ai` доступен для бота (например, `noor.starec.ai`)
+- Bazara.ae (Shopify) — API получен
 
-| Вопрос | Deep Research | DeepThink | Мой вердикт |
-|--------|--------------|-----------|-------------|
-| **Векторный поиск** | Qdrant + BGE-M3 hybrid (dense+sparse) | Убрать Qdrant, pgvector + SQL tool calling | **pgvector для MVP** (см. ниже) |
-| **WhatsApp gateway** | Заменить Wazzup на Meta Cloud API | Не рассматривает | **Оставить Wazzup** (контракт подписан) |
-| **Admin panel** | SQLAdmin | Использовать Zoho CRM как UI | **SQLAdmin** (контрактное требование) |
-| **Количество сервисов** | 8 Docker-контейнеров | Резать всё, минимум инфры | **5 сервисов** (app, pg, redis, nginx, qdrant опционально) |
-| **Scope** | Полный стек + Whisper + Langfuse | Убрать QC-бот, Qdrant, голосовые, админку | **Полный scope** (контрактное обязательство) |
-| **Embeddings** | BGE-M3 via FastEmbed (local) | Не нужны, SQL достаточно | **BGE-M3 но через pgvector** |
+**2. `docs/faq.md` — 20 FAQ на английском**
+- Готовые ответы для базы знаний бота
+- Темы: производитель vs трейдер, наличие, кастом, доставка, гарантия, оптовые заказы, оплата
 
-### Вердикт по pgvector vs Qdrant
+**3. `docs/metrics.md` — 17 метрик для админ-панели**
+- 6 категорий: Объём, Классификация, Эскалация, Продажи, Качество, Follow-up
+- Точные follow-up периоды: 24ч → 3д → 7д → 30д → 90д (для B2B)
 
-DeepThink прав: для 1,500 SKU с чёткими атрибутами (цена, цвет, категория) **основной поиск = SQL WHERE**. LLM извлекает структурированные фильтры через tool calling → `WHERE price < 500 AND color = 'black'`. Векторный поиск нужен только как fallback для нечётких запросов ("что-то современное для офиса").
+**4. `docs/sample-quotations/README.md` — 4 образца КП**
+- AA 291225 (63K AED, bulk adjustable desks)
+- CH 090226 (161K AED, 11 стр, полная меблировка по отделам — ИДЕАЛЬНЫЙ образец)
+- MS 220525 (12K AED, малый офис)
+- PY 291225 (15K AED, стартап)
+- Полная структура КП: шапка, данные клиента, таблица товаров (фото, SKU, описание, QTY, цена), delivery, TOTAL → VAT 5% → GRAND TOTAL, Terms
 
-**pgvector покрывает оба сценария** без отдельного сервиса. Qdrant имеет смысл при >50K документов или когда нужен полноценный hybrid search с BM25. Для 1,500 SKU это оверинжиниринг.
+**5. `docs/dialogue-examples/README.md` — 13 классифицированных диалогов**
+- 7 успешных, 2 средних, 4 неудачных (с детальным разбором ошибок)
+- 59 скриншотов реальных WhatsApp-диалогов
+- Контакты 7 менеджеров (телефоны + email)
+- 8 типичных ошибок менеджеров и как их избежать
+- Идеальный цикл продажи из 9 шагов
 
-### Вердикт по Wazzup
+**6. `CLAUDE.md` клиентского репо — полный бизнес-контекст**
+- 18 триггеров эскалации (полный список)
+- Структура КП с правилами
+- Типичные ошибки менеджеров
+- Идеальный цикл продажи
 
-Deep Research убедительно показал преимущества Meta Cloud API (каталоги, кнопки, WhatsApp Flows). Но:
-- Wazzup указан в подписанном контракте (`docs/tz.md`)
-- Миграция на Meta Cloud API — отдельный проект, не укладывается в 13 недель
-- **Решение**: абстрагировать messaging layer (interface), чтобы потом можно было переключить
+### Что нужно обновить в наших существующих файлах
 
----
+**`docs/client-action-items.md`:**
+- Убрать "Пример идеального КП" из раздела "Нужно позже" — 4 КП уже получены
 
-## Вариант A: Прагматичный оптимум (РЕКОМЕНДУЕТСЯ)
-
-> Минимум инфраструктуры, максимум надёжности. Фокус на delivery за 13 недель.
-
-### Стек
-
-| Компонент | Технология | Почему |
-|-----------|-----------|--------|
-| Runtime | Python 3.13, FastAPI 0.129 | LTS, async, проверенный стек |
-| DB | Supabase Cloud (PostgreSQL 17 + pgvector) | Managed DB, auto backups, dashboard, zero ops |
-| Queue | Redis 8.0 + ARQ | Async queue, cache, debounce, idempotency, OAuth lock — всё в одном |
-| Embeddings | BGE-M3 via FastEmbed (local) | Бесплатно, EN/AR, dense + sparse в одном проходе |
-| AI orchestration | PydanticAI + pydantic-graph | FSM, tool calling, OpenRouter native |
-| LLM | OpenRouter (Haiku → extraction, Sonnet/GPT-4o → generation) | Multi-model routing с fallback |
-| WhatsApp | Wazzup (custom httpx) | Контрактное обязательство |
-| Zoho CRM + Inventory | Custom httpx.AsyncClient | Async, без bloat SDK |
-| Admin | SQLAdmin (mounted в FastAPI) | Zero-frontend, контрактное требование |
-| Proxy | Nginx | SSL termination, rate limiting |
-
-### Docker: 3 сервиса (+ Supabase Cloud)
-
-```
-app (FastAPI + ARQ worker) :8000
-redis (8.0)                :6379
-nginx                      :80/443
-```
-
-PostgreSQL — Supabase Cloud (managed, auto backups, pgvector из коробки, dashboard).
-ARQ worker запускается в том же контейнере `app` как отдельный процесс (supervisor или entrypoint script).
-
-### Архитектура поиска товаров
-
-```
-Запрос пользователя
-  → LLM (Haiku) извлекает: {category, max_price, colors, semantic_query}
-  → Python: SQL WHERE по структурированным фильтрам
-  → Если есть semantic_query: + pgvector cosine similarity на оставшемся подмножестве
-  → Результат: точные данные из БД (цена, остатки, фото)
-```
-
-### Плюсы
-- **Минимум инфраструктуры** — 3 контейнера (app, redis, nginx) + Supabase Cloud
-- **Один источник правды** — PostgreSQL для data + vectors
-- **Простой деплой** — docker-compose up и работает
-- **Нет hallucination цен** — LLM физически не видит цены, только tool results
-- **Укладывается в 13 недель** — проверенные библиотеки, минимум интеграций
-- **Стоимость** — $0 за embeddings (локально), ~$50-100/мес за LLM при 200 диалогов/день
-
-### Минусы
-- **pgvector уступает Qdrant** в скорости при >10K документов (не наш случай)
-- **Нет hybrid search с BM25** из коробки (для точных SKU/брендов нужен WHERE ILIKE)
-- **ARQ проще Celery** но менее гибок (нет приоритетов очередей, chain of tasks)
-- **SQLAdmin минималистичен** — нет кастомных dashboard, только CRUD
-
-### Риск: LOW-MEDIUM
+**`docs/task-plan.md`:**
+- Отразить 18 триггеров эскалации (не 8)
+- Добавить: `cf_end_product` фильтрацию в sync job
+- Учесть follow-up расписание (24ч, 3д, 7д, 30д, 90д)
 
 ---
 
-## Вариант B: Агрессивный (расширенный стек)
+## План действий
 
-> Больше возможностей, но больше инфраструктуры и точек отказа.
+### 1. Скопировать уникальные файлы из клиентского репозитория
 
-### Отличия от Варианта A
+Файлы, которых нет у нас и которые содержат уникальную информацию:
 
-| Компонент | Вместо | Что | Зачем |
-|-----------|--------|-----|-------|
-| Vector DB | pgvector | Qdrant 1.16 (отдельный контейнер) | Hybrid search: dense + sparse + payload filtering |
-| Observability | — | Langfuse (self-hosted) | LLM трейсинг, стоимость, prompt versioning |
-| Voice | — | Google Cloud STT | Транскрипция голосовых (Gulf Arabic) |
-| Gateway | Wazzup | Wazzup → Meta Cloud API (неделя 5+) | Interactive buttons, каталоги, WhatsApp Flows |
+| Файл | Куда в нашем репо | Зачем |
+|---|---|---|
+| `docs/checklist-answers.md` | `docs/checklist-answers.md` | Главный справочник: API scopes, CRM-поля, эскалация, сегменты |
+| `docs/faq.md` | `docs/faq.md` | Готовая база знаний (20 Q&A) для RAG pipeline |
+| `docs/metrics.md` | `docs/metrics.md` | Спецификация метрик админ-панели + follow-up |
+| `docs/dialogue-examples/README.md` | `docs/dialogue-examples/README.md` | Анализ 13 диалогов + ошибки + идеальный цикл |
+| `docs/sample-quotations/README.md` | `docs/sample-quotations/README.md` | Структура КП + анализ 4 образцов |
+| `docs/dialogue-stats.csv` | `docs/dialogue-stats.csv` (gitignored) | Статистика обращений за 20 месяцев |
 
-### Docker: 7 сервисов
+**НЕ копируем** (дубликаты наших файлов):
+- `docs/sales-dialogue-rules.md` (= наш `04-sales-dialogue-guidelines.md`)
+- `docs/treejar-values.md` (= наш `05-company-values.md`)
+- `docs/evaluation-checklist.md` (= наш `06-dialogue-evaluation-checklist.md`)
+- `docs/tz.md` (= наш `01-tz-basic.md` + `02-tz-extended.md`)
+- `docs/architecture.md` (уже есть)
+- `docs/roadmap.md` (уже есть)
 
-```
-app (FastAPI + ARQ worker) :8000
-postgres (17)              :5432
-qdrant (1.16)              :6333
-redis (8.0)                :6379
-langfuse                   :3000
-nginx                      :80/443
-```
+### 2. Обновить `docs/client-action-items.md`
 
-### Плюсы
-- **Мощный поиск** — Qdrant hybrid (dense + sparse + payload filtering) лучше для сложных запросов
-- **Полная наблюдаемость** — Langfuse: каждый LLM-вызов с метриками, стоимостью, latency
-- **Голосовые** — не теряем 30-40% MENA-лидов, которые отправляют voice notes
-- **Rich UI в WhatsApp** — кнопки, списки товаров, карусели (если перейдём на Meta Cloud API)
+- Удалить "Пример идеального КП (PDF)" из раздела "Материалы по ходу разработки" и чек-листа — 4 КП уже получены
 
-### Минусы
-- **+3 Docker сервиса** — Qdrant, Langfuse, потенциально whisper
-- **Миграция на Meta Cloud API** — 2-3 недели дополнительной работы, выходит за рамки контракта
-- **Langfuse self-hosted** — нужен мониторинг + бекапы ещё одного сервиса
-- **Google Cloud STT** — платный ($0.006/15 сек), нужен GCP аккаунт
-- **Сложнее деплой** — 7 контейнеров на одном VPS (RAM? CPU?)
-- **Больше точек отказа** — Qdrant down = поиск не работает
+### 3. Обновить `.gitignore`
 
-### Риск: MEDIUM-HIGH
+- Добавить `docs/dialogue-stats.csv` (если не покрывается `*.csv`)
 
-Главный вопрос: уложимся ли в 13 недель как соло-разработчик с расширенным стеком? Вероятно нет — Langfuse и Meta Cloud API вынесены в post-MVP.
+### 4. Уведомить клиента о безопасности
+
+В клиентском репо файл `.env.keys` содержит реальные API-ключи. Хотя репо приватное, это рискованная практика. Стоит порекомендовать клиенту перенести ключи в Vault/1Password и удалить `.env.keys` из репозитория.
 
 ---
 
-## Вариант C: Контрарный (минималистичный прототип)
+## Верификация
 
-> Максимально быстрая поставка демо, с техдолгом для переработки.
-
-### Отличия от Варианта A
-
-| Компонент | Вместо | Что | Зачем |
-|-----------|--------|-----|-------|
-| DB mirror | Local PostgreSQL | Zoho Inventory live API | Нет синхронизации, меньше кода |
-| Vector search | pgvector | Нет. Только SQL + ILIKE | 1,500 SKU помещаются в prompt |
-| Queue | ARQ | FastAPI BackgroundTasks | Меньше зависимостей |
-| Admin | SQLAdmin | Zoho CRM как UI | Нет отдельной панели |
-
-### Docker: 3 сервиса
-
-```
-app (FastAPI)  :8000
-postgres       :5432
-redis          :6379
-```
-
-### Плюсы
-- **Минимум кода** — нет синхронизации Zoho, нет embeddings, нет отдельного queue
-- **Быстрый старт** — можно показать демо за 2 недели
-- **Простой деплой** — 3 контейнера
-
-### Минусы
-- **Zoho live API** — 100 req/min лимит, при 200 диалогах/день = гарантированный rate limiting
-- **BackgroundTasks** — не durабельный, задачи теряются при рестарте
-- **Нет vector search** — невозможно обрабатывать нечёткие запросы ("что-то стильное для кабинета")
-- **Нет admin panel** — нарушение контракта (прописано в tz.md, раздел 2.2.4)
-- **Потребует полной переработки** при масштабировании >50 диалогов/день
-- **Zoho live = медленные ответы** — 2-5 сек на каждый API-call вместо <10ms из PostgreSQL
-
-### Риск: MEDIUM (для прототипа LOW, для production HIGH)
-
-Этот вариант **не рекомендуется** для контрактного проекта. Подходит только как proof-of-concept на 1-2 недели.
-
----
-
-## Сводная таблица
-
-| Критерий | A (Прагматичный) | B (Агрессивный) | C (Минималист) |
-|----------|:-----------------:|:----------------:|:--------------:|
-| Docker-сервисов | 3 + Supabase Cloud | 7 | 3 |
-| Укладывается в 13 недель | Да | Сомнительно | Как прототип |
-| Соответствует контракту | Полностью | Полностью+ | Частично |
-| Поиск товаров | SQL + pgvector | Qdrant hybrid | SQL + ILIKE |
-| Масштабируемость | До 500 диалогов/день | До 2000+ | До 50 |
-| Стоимость инфры/мес | ~$20 VPS + $0-25 Supabase | ~$40 VPS | ~$15 VPS |
-| Наблюдаемость LLM | Логи + метрики | Langfuse | Логи |
-| Голосовые сообщения | Post-MVP | С недели 4 | Нет |
-| Техдолг | Низкий | Средний | Критический |
-| **Общий риск** | **LOW-MEDIUM** | **MEDIUM-HIGH** | **MEDIUM** |
-
----
-
-## Рекомендация
-
-**Вариант A** — единственный, который реалистично укладывается в 13 недель для соло-разработчика и полностью соответствует контракту.
-
-Элементы из Варианта B добавляются итеративно после MVP:
-- Langfuse — неделя 9-10 (этап 2, контроль качества)
-- Google Cloud STT — неделя 11-12 (если клиент подтвердит потребность)
-- Meta Cloud API — отдельный проект после сдачи
-
----
-
-## Архитектурные абстракции (future-proofing)
-
-Все внешние сервисы изолируются за Protocol-интерфейсами для безболезненной замены:
-
-```
-src/integrations/
-  messaging/
-    base.py              # MessagingProvider(Protocol)
-    wazzup.py            # WazzupProvider → завтра: TelegramProvider, MetaCloudProvider
-  crm/
-    base.py              # CRMProvider(Protocol)
-    zoho_crm.py          # ZohoCRMClient → завтра: SalesforceClient, HubSpotClient
-  inventory/
-    base.py              # InventoryProvider(Protocol)
-    zoho_inventory.py    # ZohoInventoryClient
-  vector/
-    base.py              # VectorStore(Protocol)
-    pgvector.py          # PgVectorStore → завтра: QdrantStore, PineconeStore
-```
-
-Переключение = новый класс + изменение DI-конфига. Бизнес-логика не затрагивается.
-
----
-
-## Критические паттерны (войдут в реализацию)
-
-Из DeepThink — уникальные инсайты, которых не было в исходной архитектуре:
-
-1. **Message debouncing** — Redis key `debounce:{chat_id}` с TTL 3s. При новом сообщении: сбросить таймер, аккумулировать. По истечении — отправить batch в очередь
-2. **Webhook idempotency** — `SET debounce:{message_id} NX EX 86400`. Если ключ уже есть → drop request
-3. **OAuth distributed lock** — `SET zoho_refresh_lock NX EX 30`. Один воркер обновляет токен, остальные ждут 1 сек и берут новый
-4. **Rolling context window** — System prompt + семантическое резюме старых сообщений + последние 5 raw messages
-5. **24h template rule** — cron job проверяет last_message_at, для >24h использует ТОЛЬКО Wazzup template messages
-6. **PII masking** — internal UUID в LLM context, реальные данные подставляются на уровне Python перед отправкой в Zoho
-
----
-
-## План реализации (после утверждения варианта)
-
-После выбора варианта возвращаемся к исходному плану kickoff:
-1. **Project initialization** — code skeleton с учётом выбранной архитектуры
-2. **Sprint plan week 1** — Beads задачи (24 часа)
-3. **Dev guide** — внутренний workflow
-4. **API contracts** — Pydantic schemas + FastAPI stubs
-
-Ключевые файлы-источники:
-- `docs/architecture.md` — схема БД, роуты API, Docker-сервисы
-- `docs/tz.md` — функциональные требования, критерии приёмки
-- `docs/07-knowledge-base-spec.md` — модель данных продуктов
-- `docs/06-dialogue-evaluation-checklist.md` — 15 правил оценки качества
-- `docs/04-sales-dialogue-guidelines.md` — правила продаж (для промптов)
-- `docs/05-company-values.md` — ценности компании (для промптов)
-
-### Верификация
-
-После реализации kickoff:
-1. `docker-compose up -d` — 3 локальных сервиса стартуют (app, redis, nginx)
-2. Supabase Cloud доступен, `DATABASE_URL` указывает на облако
-3. `curl localhost:8000/api/v1/health` → `{"status": "ok"}`
-4. `localhost:8000/docs` — Swagger UI со всеми эндпоинтами
-5. `alembic upgrade head` — создаёт таблицы в Supabase (включая pgvector extension)
-6. `pytest tests/` — проходит
-7. `ruff check src/ tests/` + `mypy src/` — без ошибок
+1. Все 6 файлов скопированы в наш репо
+2. `docs/client-action-items.md` обновлён (КП убрано из "нужно")
+3. `git status` — новые файлы в staging
+4. `ruff check src/` — без ошибок (docs не проверяются)
+5. Коммит и push
