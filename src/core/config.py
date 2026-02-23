@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-m3"
     embedding_dimension: int = 1024
 
+    # Admin Panel
+    admin_username: str = "admin"
+    admin_password: str = "change-me-admin-password"
+
+    # Telegram Notifications (Stage 2)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
+    # Domain (optional, for HTTPS)
+    domain: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
