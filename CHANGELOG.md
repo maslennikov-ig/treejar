@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-02-23
+
+### Added
+- switch LLM to DeepSeek V3.2, add model rationale for client (7361c57)
+
+### Fixed
+- Zoho EU URLs in .env.example, add missing config vars (519cfdc)
+
+### Other
+- sync 5 knowledge docs from client repo, update task plan (3a92127)
+
+
 ## [0.2.6] - 2026-02-23
 
 ### Security
