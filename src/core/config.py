@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     # OpenRouter (LLM)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model_fast: str = "anthropic/claude-3.5-haiku"
-    openrouter_model_main: str = "anthropic/claude-sonnet-4"
+    openrouter_model_fast: str = "deepseek/deepseek-chat"
+    openrouter_model_main: str = "deepseek/deepseek-chat"
 
     # Wazzup (WhatsApp Gateway)
     wazzup_api_key: str = ""
