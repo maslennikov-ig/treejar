@@ -41,14 +41,14 @@ class Settings(BaseSettings):
     zoho_crm_client_id: str = ""
     zoho_crm_client_secret: str = ""
     zoho_crm_refresh_token: str = ""
-    zoho_crm_api_url: str = "https://www.zohoapis.com/crm/v7"
-    zoho_crm_accounts_url: str = "https://accounts.zoho.com"
+    zoho_crm_api_url: str = "https://www.zohoapis.eu/crm/v7"
+    zoho_crm_accounts_url: str = "https://accounts.zoho.eu"
 
     # Zoho Inventory
     zoho_inventory_client_id: str = ""
     zoho_inventory_client_secret: str = ""
     zoho_inventory_refresh_token: str = ""
-    zoho_inventory_api_url: str = "https://www.zohoapis.com/inventory/v1"
+    zoho_inventory_api_url: str = "https://www.zohoapis.eu/inventory/v1"
     zoho_inventory_org_id: str = ""
 
     # Embeddings
