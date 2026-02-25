@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy.sql import func
 
@@ -107,6 +108,8 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
         stock_on_hand = int(item.get("stock_on_hand", 0))
 
         image_doc_id = item.get("image_document_id")
+        # NOTE: This URL requires OAuth authentication and is not publicly accessible.
+        # For WhatsApp/client-facing use, images must be proxied through our API.
         image_url = f"https://inventory.zoho.eu/api/v1/documents/{image_doc_id}" if image_doc_id else None
 
         values.append({
@@ -150,15 +153,23 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
                 set_=set_dict
             )
 
-            # Execute the statement
-            # RETURNING could be used to precisely track created vs updated,
-            # but for simple sync we just execute and add all to synced count.
-            await session.execute(stmt)
+            # Use RETURNING with xmax to distinguish inserts from updates:
+            # xmax == 0 means a new INSERT, xmax > 0 means an UPDATE (conflict)
+            result = await session.execute(
+                stmt.returning(Product.id, text("xmax"))
+            )
+            rows = result.all()
             await session.commit()
 
-            stats.synced += len(values)
+            for row in rows:
+                if row[1] == 0:
+                    stats.created += 1
+                else:
+                    stats.updated += 1
+            stats.synced += len(rows)
 
         except Exception as e:
             await session.rollback()
             logger.error("Database error during upsert batch: %s", e)
             stats.errors += len(values)
+            raise

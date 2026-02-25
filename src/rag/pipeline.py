@@ -35,7 +35,7 @@ class PgVectorStore(VectorStore):
         functions for products and knowledge base below instead of relying heavily
         on this generic interface for complex queries.
         """
-        stmt = select(Product)
+        stmt = select(Product).where(Product.embedding.is_not(None))
 
         # Apply filters
         if filters:
@@ -99,7 +99,7 @@ class PgVectorStore(VectorStore):
             }
         )
         await self.db.execute(stmt)
-        await self.db.commit()
+        # Caller is responsible for committing the transaction (unit-of-work pattern)
 
 
 async def search_products(

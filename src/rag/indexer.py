@@ -12,6 +12,10 @@ from src.rag.embeddings import EmbeddingEngine
 
 logger = logging.getLogger(__name__)
 
+# Resolve docs directory relative to project root, not CWD
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_DOCS_DIR = _PROJECT_ROOT / "docs"
+
 
 async def index_documents(db: AsyncSession) -> int:
     """Parse markdown files from docs/ and index them into knowledge_base.
@@ -21,7 +25,7 @@ async def index_documents(db: AsyncSession) -> int:
     """
     engine = EmbeddingEngine()
 
-    docs_dir = Path("docs")
+    docs_dir = _DOCS_DIR
     if not docs_dir.exists():
         logger.warning("Docs directory %s does not exist.", docs_dir.absolute())
         return 0
@@ -31,17 +35,26 @@ async def index_documents(db: AsyncSession) -> int:
     # 1. Parse FAQ
     faq_path = docs_dir / "faq.md"
     if faq_path.exists():
-        chunks_to_index.extend(_parse_faq(faq_path))
+        faq_chunks = _parse_faq(faq_path)
+        if not faq_chunks:
+            logger.warning("FAQ file exists but yielded 0 chunks: %s", faq_path)
+        chunks_to_index.extend(faq_chunks)
 
     # 2. Parse Sales Rules
     rules_path = docs_dir / "04-sales-dialogue-guidelines.md"
     if rules_path.exists():
-        chunks_to_index.extend(_parse_sales_rules(rules_path))
+        rules_chunks = _parse_sales_rules(rules_path)
+        if not rules_chunks:
+            logger.warning("Sales rules file exists but yielded 0 chunks: %s", rules_path)
+        chunks_to_index.extend(rules_chunks)
 
     # 3. Parse Company Values
     values_path = docs_dir / "05-company-values.md"
     if values_path.exists():
-        chunks_to_index.extend(_parse_company_values(values_path))
+        values_chunks = _parse_company_values(values_path)
+        if not values_chunks:
+            logger.warning("Company values file exists but yielded 0 chunks: %s", values_path)
+        chunks_to_index.extend(values_chunks)
 
     if not chunks_to_index:
         logger.info("No documents found or successfully parsed to index.")
@@ -190,31 +203,35 @@ def _parse_company_values(path: Path) -> list[dict[str, Any]]:
 
         # Matches emoji numbers or standard *11)
         if "️⃣" in line or line.strip().startswith("*1") or line.strip().startswith("*2"):
-            # Save previous chunk
+            # Save previous chunk (only if it has non-empty content)
             if current_title:
-                title_clean = current_title.split("**")[-2] if "**" in current_title else current_title
-                chunks.append({
-                    "source": "values",
-                    "category": "company_values",
-                    "title": title_clean.strip(" *1234567890)"),
-                    "content": "\n".join(current_body).strip(" *"),
-                    "language": language,
-                })
+                body_text = "\n".join(current_body).strip(" *")
+                if body_text:
+                    title_clean = current_title.split("**")[-2] if "**" in current_title else current_title
+                    chunks.append({
+                        "source": "values",
+                        "category": "company_values",
+                        "title": title_clean.strip(" *1234567890)"),
+                        "content": body_text,
+                        "language": language,
+                    })
 
             current_title = line.strip()
             current_body = []
         elif current_title and line.strip() and not line.startswith("---") and "Хочешь, чтобы" not in line:
             current_body.append(line.strip())
 
-    # Save the last one
+    # Save the last one (only if it has non-empty content)
     if current_title:
-        title_clean = current_title.split("**")[-2] if "**" in current_title else current_title
-        chunks.append({
-            "source": "values",
-            "category": "company_values",
-            "title": title_clean.strip(" *1234567890)"),
-            "content": "\n".join(current_body).strip(" *"),
-            "language": language,
-        })
+        body_text = "\n".join(current_body).strip(" *")
+        if body_text:
+            title_clean = current_title.split("**")[-2] if "**" in current_title else current_title
+            chunks.append({
+                "source": "values",
+                "category": "company_values",
+                "title": title_clean.strip(" *1234567890)"),
+                "content": body_text,
+                "language": language,
+            })
 
     return chunks

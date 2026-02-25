@@ -150,6 +150,7 @@ class ZohoInventoryClient(InventoryProvider):
                 "page": page,
                 "per_page": per_page,
                 "status": "active",
+                # Treejar-specific custom field: filters only end products (not raw materials)
                 "cf_end_product": "true",
             }
         )
@@ -177,13 +178,16 @@ class ZohoInventoryClient(InventoryProvider):
         """Get stock levels for multiple SKUs.
 
         Zoho API doesn't support bulk search by SKU efficiently,
-        so we batch individual requests concurrently.
+        so we batch individual requests concurrently with a semaphore
+        to avoid hitting Zoho rate limits.
         """
-        # Run concurrent requests to get stock for each sku
-        tasks = [self.get_stock(sku) for sku in skus]
-        results = await asyncio.gather(*tasks)
+        sem = asyncio.Semaphore(5)  # max 5 concurrent requests to Zoho
 
-        # Filter out None results
+        async def _fetch(sku: str) -> dict[str, Any] | None:
+            async with sem:
+                return await self.get_stock(sku)
+
+        results = await asyncio.gather(*[_fetch(sku) for sku in skus])
         return [res for res in results if res is not None]
 
     async def create_sale_order(self, data: dict[str, Any]) -> dict[str, Any]:
