@@ -105,6 +105,41 @@ When working in multiple terminals simultaneously:
 
 ---
 
+## Infrastructure (Production)
+
+### Server
+
+- **Host:** Hetzner Dedicated (136.243.71.213), Germany
+- **Container:** `treejar-server` (Docker, Ubuntu 24.04)
+- **Access:** VPN (AmneziaWG) required → SSH port 22 → `docker exec -it treejar-server bash`
+- **Resources:** 2 vCPU, 2 GB RAM (container limits), host has 128 GB RAM total
+
+### Database
+
+- **Engine:** PostgreSQL 16 (self-hosted in Docker container)
+- **Port:** 5435 (from host), 5432 (inside container)
+- **Database:** `treejar`, User: `treejar`
+- **Connection:** `postgresql://treejar:<password>@localhost:5435/treejar`
+- **NOT Supabase Cloud** — self-hosted for full data control and zero cost
+
+### Key Decision: Self-hosted PostgreSQL over Supabase Cloud
+
+Client chose self-hosted PostgreSQL on their existing Hetzner dedicated server instead of Supabase Cloud:
+- $0/month instead of $25+/month (Supabase Pro when Free tier runs out)
+- Full data ownership (Germany, client's hardware)
+- No 500 MB limit, no 7-day pause on inactivity
+- Low latency to Zoho EU servers (same region)
+- pgvector available for embeddings
+
+Code remains compatible with both: `DATABASE_URL` in `.env` works with any PostgreSQL.
+
+### VPN Access
+
+Developer VPN config (AmneziaWG) provided via GitHub Issue #2.
+Endpoint: 5.129.216.18, developer IP: 10.8.1.6/32.
+
+---
+
 ## Project Conventions
 
 **File Organization**:
