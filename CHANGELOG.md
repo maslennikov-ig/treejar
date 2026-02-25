@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-02-25
+
+### Added
+- implement Week 2 — Zoho Inventory sync, RAG pipeline, embeddings (170a1a2)
+
+### Fixed
+- complete remaining code review fixes + expand test coverage to 53 tests (820cc96)
+- apply code review fixes — async embeddings, client lifecycle, null filters (d7ecf2a)
+
+### Other
+- **docs**: add 1 file(s),update 1 file(s),remove 1 file(s) (952b79d)
+- add progress report for client (Week 1-2 summary) (7ad16b5)
+- feat/rag: zoho inventory sync and postgres vector search (c94258b)
+
+
 ## [0.2.7] - 2026-02-23
 
 ### Added

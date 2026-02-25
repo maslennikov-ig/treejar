@@ -2,6 +2,23 @@
 
 User-facing release notes.
 
+## v0.2.8
+
+_Released on 2026-02-25_
+
+### ✨ New Features
+
+- Implement Week 2 — Zoho Inventory sync, RAG pipeline, embeddings
+
+### 🐛 Bug Fixes
+
+- Complete remaining code review fixes + expand test coverage to 53 tests
+- Apply code review fixes — async embeddings, client lifecycle, null filters
+
+---
+
+_Generated from 6 commits._
+
 ## v0.2.7
 
 _Released on 2026-02-23_
