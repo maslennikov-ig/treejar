@@ -7,7 +7,7 @@ AI-powered sales assistant for **Treejar** office furniture company. Communicate
 | Component | Technology |
 |-----------|-----------|
 | Runtime | Python 3.13, FastAPI |
-| Database | Supabase Cloud (PostgreSQL 17 + pgvector) |
+| Database | Self-hosted PostgreSQL 16 + pgvector (Hetzner) |
 | Cache/Queue | Redis 8.0 + ARQ |
 | AI Orchestration | PydanticAI, OpenRouter |
 | WhatsApp | Wazzup API |
@@ -24,9 +24,9 @@ cp .env.example .env
 # Edit .env with your credentials
 
 # Start services
-docker compose up -d                    # Production (Supabase Cloud)
+docker compose up -d                    # Production (self-hosted PostgreSQL on Hetzner)
 docker compose -f docker-compose.yml \
-  -f docker-compose.dev.yml up -d       # Local dev (local PostgreSQL)
+  -f docker-compose.dev.yml up -d       # Local dev (local PostgreSQL via Docker)
 
 # Run migrations
 alembic upgrade head

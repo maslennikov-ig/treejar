@@ -70,7 +70,7 @@ arq src.worker.WorkerSettings
 
 | Режим | Сервисы | БД |
 |-------|---------|-----|
-| **Production** | `app`, `worker`, `redis`, `nginx` | Supabase Cloud (PostgreSQL 17 + pgvector) |
+| **Production** | `app`, `worker`, `redis`, `postgres`, `nginx` | Self-hosted PostgreSQL 16 + pgvector |
 | **Dev** | `app`, `worker`, `redis`, `postgres` | Локальный `ankane/pgvector:pg17` |
 
 ---
@@ -329,10 +329,20 @@ pytest tests/ --cov=src --cov-report=html
 
 | Компонент | Где | Как |
 |-----------|-----|-----|
-| Приложение (FastAPI + ARQ worker) | VPS (Docker) | `docker compose up -d` |
-| База данных | Supabase Cloud | Managed PostgreSQL 17 + pgvector |
-| Redis | VPS (Docker) | Контейнер `redis:7-alpine` |
-| Nginx | VPS (Docker) | Reverse proxy, SSL termination |
+| Приложение (FastAPI + ARQ worker) | Hetzner Dedicated (Docker) | `docker compose up -d` |
+| База данных | Self-hosted PostgreSQL 16 + pgvector | Контейнер `treejar-server`, порт 5435 |
+| Redis | Hetzner (Docker) | Контейнер `redis:7-alpine` |
+| Nginx | Hetzner (Docker) | Reverse proxy, SSL termination |
+
+### Подключение к серверу
+
+```bash
+# 1. Включить VPN (AmneziaWG) — обязательно
+# 2. SSH к серверу
+ssh -i ~/.ssh/treejar_ed25519 root@136.243.71.213
+# 3. Войти в контейнер
+docker exec -it treejar-server bash
+```
 
 ### Процесс деплоя
 
@@ -352,7 +362,7 @@ docker compose logs -f app  # Проверить логи
 
 ### Бэкапы
 
-- **PostgreSQL**: Supabase Cloud автоматически (ежедневные бэкапы, point-in-time recovery)
+- **PostgreSQL**: self-hosted — настроить pg_dump по cron (ежедневно, хранение 30 дней)
 - **Redis**: append-only file, volume `redis-data`
 
 ### SSL
@@ -369,7 +379,7 @@ docker compose logs -f app  # Проверить логи
 | **Zoho CRM** | Контакты, сделки, история покупок | `src/integrations/crm/` | `CRMProvider` |
 | **Zoho Inventory** | Товары, остатки, SaleOrder (КП) | `src/integrations/inventory/` | `InventoryProvider` |
 | **OpenRouter** | LLM API (Claude Haiku для extraction, Sonnet для генерации) | `src/llm/engine.py` | Через `openai` SDK с `base_url` |
-| **Supabase** | PostgreSQL 17 + pgvector (managed) | `src/core/database.py` | SQLAlchemy async |
+| **PostgreSQL** | Self-hosted PostgreSQL 16 + pgvector | `src/core/database.py` | SQLAlchemy async |
 | **Redis** | Кеш сессий, очереди ARQ, debounce, idempotency, OAuth lock | `src/core/redis.py` | `redis.asyncio` |
 | **FastEmbed** | Локальные embeddings (BGE-M3, EN/AR) | `src/rag/embeddings.py` | `fastembed` |
 | **PydanticAI** | Оркестрация LLM (tool calling, structured output) | `src/llm/engine.py` | Нативная интеграция |
