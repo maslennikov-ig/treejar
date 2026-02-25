@@ -20,8 +20,11 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     functions: list[Any] = [sync_products_from_zoho]
     cron_jobs = [
-        cron(sync_products_from_zoho, hour={0, 6, 12, 18}),
+        cron(sync_products_from_zoho, hour={0, 6, 12, 18}, run_at_startup=False),
     ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    job_timeout = 600  # 10 min — accommodate large catalogs (856+ SKU)
+    max_jobs = 2
+    keep_result = 3600  # keep results for 1 hour for debugging

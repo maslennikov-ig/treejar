@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 
 from fastembed import TextEmbedding
 from sqlalchemy import select
@@ -18,6 +20,7 @@ class EmbeddingEngine:
 
     _instance: EmbeddingEngine | None = None
     _model: TextEmbedding | None = None
+    _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> EmbeddingEngine:
         """Ensure singleton pattern to avoid loading the model multiple times."""
@@ -27,11 +30,13 @@ class EmbeddingEngine:
         return cls._instance
 
     def _get_model(self) -> TextEmbedding:
-        """Lazy load the embedding model."""
+        """Lazy load the embedding model with double-checked locking."""
         if self._model is None:
-            logger.info(f"Loading embedding model {settings.embedding_model}...")
-            self._model = TextEmbedding(model_name=settings.embedding_model)
-            logger.info("Embedding model loaded successfully.")
+            with self._lock:
+                if self._model is None:
+                    logger.info("Loading embedding model %s...", settings.embedding_model)
+                    self._model = TextEmbedding(model_name=settings.embedding_model)
+                    logger.info("Embedding model loaded successfully.")
         return self._model
 
     def embed(self, text: str) -> list[float]:
@@ -49,6 +54,14 @@ class EmbeddingEngine:
         generator = model.embed(texts)
         # Convert generator of numpy arrays to list of lists of floats
         return [vec.tolist() for vec in generator]
+
+    async def embed_async(self, text: str) -> list[float]:
+        """Generate an embedding for a single text string without blocking the event loop."""
+        return await asyncio.to_thread(self.embed, text)
+
+    async def embed_batch_async(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for a batch of text strings without blocking the event loop."""
+        return await asyncio.to_thread(self.embed_batch, texts)
 
 
 async def generate_product_embeddings(db: AsyncSession) -> int:
@@ -70,7 +83,7 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
     if not products:
         return 0
 
-    logger.info(f"Generating embeddings for {len(products)} products...")
+    logger.info("Generating embeddings for %d products...", len(products))
 
     # Process in batches to avoid high memory spikes
     batch_size = 32
@@ -87,11 +100,7 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
             text = f"{p.name_en} | {cat} | {desc}"
             texts.append(text)
 
-        # Generate embeddings synchronously
-        # For production with many products, this might block the event loop,
-        # so consider asyncio.to_thread if necessary.
-        # But fastembed is generally fast for small batches (32).
-        embeddings = engine.embed_batch(texts)
+        embeddings = await engine.embed_batch_async(texts)
 
         # Update products
         for product, embedding in zip(batch, embeddings, strict=False):
@@ -101,7 +110,7 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
 
         # Commit each batch
         await db.commit()
-        logger.info(f"Processed batch of size {len(batch)}. Total: {processed_count}")
+        logger.info("Processed batch of size %d. Total: %d", len(batch), processed_count)
 
     return processed_count
 
@@ -121,7 +130,7 @@ async def index_knowledge_base(db: AsyncSession) -> int:
     if not records:
         return 0
 
-    logger.info(f"Generating embeddings for {len(records)} knowledge base records...")
+    logger.info("Generating embeddings for %d knowledge base records...", len(records))
 
     batch_size = 32
     processed_count = 0
@@ -130,7 +139,7 @@ async def index_knowledge_base(db: AsyncSession) -> int:
         batch = records[i : i + batch_size]
 
         texts = [r.content for r in batch]
-        embeddings = engine.embed_batch(texts)
+        embeddings = await engine.embed_batch_async(texts)
 
         for record, embedding in zip(batch, embeddings, strict=False):
             record.embedding = embedding

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
@@ -12,6 +14,20 @@ from src.models.product import Product
 from src.schemas.product import ProductSyncResponse
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _zoho_client(redis: Any) -> AsyncIterator[ZohoInventoryClient]:
+    """Create a ZohoInventoryClient that is reliably closed on exit.
+
+    Using an explicit context manager here ensures the underlying httpx
+    connection pool is released even when the ARQ task is cancelled.
+    """
+    client = ZohoInventoryClient(redis_client=redis)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
@@ -26,21 +42,19 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
     logger.info("Starting Zoho Inventory product sync...")
 
     redis = ctx["redis"]
-    client = ZohoInventoryClient(redis_client=redis)
-
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
 
-    try:
+    async with _zoho_client(redis) as client:
         page = 1
         has_more = True
 
         while has_more:
-            logger.info(f"Fetching Zoho products page {page}...")
+            logger.info("Fetching Zoho products page %d...", page)
 
             try:
                 response_data = await client.get_items(page=page, per_page=200)
             except Exception as e:
-                logger.error(f"Error fetching page {page} from Zoho: {e}")
+                logger.error("Error fetching page %d from Zoho: %s", page, e)
                 stats.errors += 1
                 break
 
@@ -56,12 +70,10 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
             page += 1
 
-    finally:
-        await client.close()
-        logger.info(
-            f"Zoho sync completed. "
-            f"Synced: {stats.synced}, Errors: {stats.errors}"
-        )
+    logger.info(
+        "Zoho sync completed. Synced: %d, Errors: %d",
+        stats.synced, stats.errors,
+    )
 
     return stats.model_dump()
 
@@ -131,9 +143,10 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
             }
 
             set_dict["synced_at"] = func.now()  # type: ignore[assignment]
+            set_dict["updated_at"] = func.now()  # type: ignore[assignment]
 
             stmt = stmt.on_conflict_do_update(
-                index_elements=[Product.sku],
+                index_elements=["sku"],
                 set_=set_dict
             )
 
@@ -147,5 +160,5 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
 
         except Exception as e:
             await session.rollback()
-            logger.error(f"Database error during upsert batch: {e}")
+            logger.error("Database error during upsert batch: %s", e)
             stats.errors += len(values)

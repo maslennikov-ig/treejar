@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,6 +75,15 @@ class Settings(BaseSettings):
     def migration_database_url(self) -> str:
         """URL for Alembic migrations (direct connection, no pooler)."""
         return self.database_url_direct or self.database_url
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> Settings:
+        if self.is_production:
+            if self.app_secret_key == "change-me-in-production":
+                raise ValueError("app_secret_key must be changed in production")
+            if self.admin_password == "change-me-admin-password":
+                raise ValueError("admin_password must be changed in production")
+        return self
 
 
 settings = Settings()

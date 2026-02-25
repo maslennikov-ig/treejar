@@ -16,6 +16,7 @@ class Product(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "products"
 
     sku: Mapped[str] = mapped_column(String, unique=True, index=True)
+    # unique=True on nullable is fine in PostgreSQL (NULLs are distinct)
     zoho_item_id: Mapped[str | None] = mapped_column(String, unique=True, default=None)
     name_en: Mapped[str] = mapped_column(String)
     name_ar: Mapped[str | None] = mapped_column(String, default=None)

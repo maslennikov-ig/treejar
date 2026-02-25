@@ -91,7 +91,7 @@ class PgVectorStore(VectorStore):
             category=metadata.get("category"),
         )
         stmt = stmt.on_conflict_do_update(
-            index_elements=[KnowledgeBase.id],
+            index_elements=["id"],
             set_={
                 "embedding": stmt.excluded.embedding,
                 "content": stmt.excluded.content,
@@ -110,10 +110,13 @@ async def search_products(
     """Perform hybrid search (vector + SQL filters) for products."""
 
     # 1. Generate text embedding for the search query
-    query_vector = embedding_engine.embed(query.query)
+    query_vector = await embedding_engine.embed_async(query.query)
 
-    # 2. Start building SQLAlchemy select
-    stmt = select(Product).where(Product.is_active.is_(True))
+    # 2. Start building SQLAlchemy select (filter out products without embeddings)
+    stmt = select(Product).where(
+        Product.is_active.is_(True),
+        Product.embedding.is_not(None),
+    )
 
     # 3. Apply exact match filters
     if query.category:
@@ -160,10 +163,10 @@ async def search_knowledge(
     """Search knowledge base for relevant chunks."""
 
     # 1. Embed user question/query
-    query_vector = embedding_engine.embed(query)
+    query_vector = await embedding_engine.embed_async(query)
 
-    # 2. Build select
-    stmt = select(KnowledgeBase)
+    # 2. Build select (filter out records without embeddings)
+    stmt = select(KnowledgeBase).where(KnowledgeBase.embedding.is_not(None))
 
     # 3. Order by cosine distance
     stmt = stmt.order_by(KnowledgeBase.embedding.cosine_distance(query_vector))

@@ -44,7 +44,7 @@ async def test_search_products_pipeline():
     mock_db.execute.return_value = mock_result
 
     mock_embedding_engine = MagicMock()
-    mock_embedding_engine.embed.return_value = [0.1] * 1024
+    mock_embedding_engine.embed_async = AsyncMock(return_value=[0.1] * 1024)
 
     query = ProductSearchQuery(
         query="wood table",
@@ -59,7 +59,7 @@ async def test_search_products_pipeline():
 
     # Assert query was executed
     assert mock_db.execute.called
-    mock_embedding_engine.embed.assert_called_with("wood table")
+    mock_embedding_engine.embed_async.assert_awaited_with("wood table")
 
     # Assert result structure matches expected ProductSearchResult
     assert result.total_found == 1
@@ -90,7 +90,7 @@ async def test_search_knowledge_pipeline():
     mock_db.execute.return_value = mock_result
 
     mock_embedding_engine = MagicMock()
-    mock_embedding_engine.embed.return_value = [0.1] * 1024
+    mock_embedding_engine.embed_async = AsyncMock(return_value=[0.1] * 1024)
 
     result = await search_knowledge(mock_db, "test question", mock_embedding_engine, limit=3)
 

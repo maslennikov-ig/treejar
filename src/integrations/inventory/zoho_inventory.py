@@ -201,6 +201,17 @@ class ZohoInventoryClient(InventoryProvider):
                 return None
             raise
 
+    async def __aenter__(self) -> ZohoInventoryClient:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        await self.close()
+
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self.client.aclose()

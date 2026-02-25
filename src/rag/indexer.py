@@ -23,7 +23,7 @@ async def index_documents(db: AsyncSession) -> int:
 
     docs_dir = Path("docs")
     if not docs_dir.exists():
-        logger.warning(f"Docs directory {docs_dir.absolute()} does not exist.")
+        logger.warning("Docs directory %s does not exist.", docs_dir.absolute())
         return 0
 
     chunks_to_index = []
@@ -47,7 +47,7 @@ async def index_documents(db: AsyncSession) -> int:
         logger.info("No documents found or successfully parsed to index.")
         return 0
 
-    logger.info(f"Parsed {len(chunks_to_index)} document chunks. Indexing...")
+    logger.info("Parsed %d document chunks. Indexing...", len(chunks_to_index))
 
     # Generate embeddings and prepare inserts
     values = []
@@ -59,7 +59,7 @@ async def index_documents(db: AsyncSession) -> int:
         batch = chunks_to_index[i : i + batch_size]
         texts = [c["content"] for c in batch]
 
-        embeddings = engine.embed_batch(texts)
+        embeddings = await engine.embed_batch_async(texts)
 
         for chunk, embedding in zip(batch, embeddings, strict=False):
             chunk["embedding"] = embedding
@@ -71,7 +71,7 @@ async def index_documents(db: AsyncSession) -> int:
 
         stmt = stmt.on_conflict_do_update(
             # We assume a chunk is unique by its source + title
-            index_elements=[KnowledgeBase.source, KnowledgeBase.title],
+            index_elements=["source", "title"],
             set_={
                 "content": stmt.excluded.content,
                 "embedding": stmt.excluded.embedding,
@@ -87,7 +87,7 @@ async def index_documents(db: AsyncSession) -> int:
 
     except Exception as e:
         await db.rollback()
-        logger.error(f"Error indexing knowledge base: {e}")
+        logger.error("Error indexing knowledge base: %s", e)
         return 0
 
 

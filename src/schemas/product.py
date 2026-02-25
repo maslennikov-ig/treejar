@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import TimestampModel, UUIDModel
 
@@ -31,7 +31,7 @@ class ProductSearchQuery(BaseModel):
     max_price: float | None = None
     colors: list[str] | None = None
     in_stock_only: bool = True
-    limit: int = 5
+    limit: int = Field(default=5, ge=1, le=50)
 
 
 class ProductSearchResult(BaseModel):

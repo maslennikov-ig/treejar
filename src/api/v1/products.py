@@ -3,13 +3,10 @@ from __future__ import annotations
 import logging
 import math
 
-from arq import create_pool
-from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
 from src.core.database import get_db
 from src.models.product import Product
 from src.rag.embeddings import EmbeddingEngine
@@ -80,6 +77,7 @@ async def search_products(
 @router.post("/sync", response_model=ProductSyncResponse)
 async def sync_products(
     body: ProductSyncRequest,
+    request: Request,
 ) -> ProductSyncResponse:
     """Trigger product sync from external source."""
     if body.source != "zoho":
@@ -89,10 +87,8 @@ async def sync_products(
         )
 
     try:
-        redis_settings = RedisSettings.from_dsn(settings.redis_url)
-        pool = await create_pool(redis_settings)
+        pool = request.app.state.arq_pool
         await pool.enqueue_job("sync_products_from_zoho")
-        await pool.aclose()
 
         # We return a 0-filled response to indicate queued
         # (Could also just return a generic queued status, but adhering to the schema)
