@@ -1,6 +1,4 @@
-import json
 import uuid
-from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -13,11 +11,11 @@ async def test_admin_prompts() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response1 = await ac.get("/api/v1/admin/prompts/")
         assert response1.status_code == 501
-        
+
         some_uuid = str(uuid.uuid4())
         response2 = await ac.get(f"/api/v1/admin/prompts/{some_uuid}")
         assert response2.status_code == 501
-        
+
         response3 = await ac.put(f"/api/v1/admin/prompts/{some_uuid}", json={
             "name": "string",
             "content": "string",
@@ -39,7 +37,7 @@ async def test_admin_settings() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response1 = await ac.get("/api/v1/admin/settings/")
         assert response1.status_code == 501
-        
+
         response2 = await ac.patch("/api/v1/admin/settings/", json={
             "operating_mode": "string",
             "auto_reply_enabled": True

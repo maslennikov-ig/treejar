@@ -3,8 +3,9 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from src.integrations.messaging.wazzup import WazzupProvider
 from src.core.config import settings
+from src.integrations.messaging.wazzup import WazzupProvider
+
 
 @pytest.fixture
 def wazzup_provider() -> WazzupProvider:

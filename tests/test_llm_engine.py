@@ -75,7 +75,7 @@ async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conve
 
 @pytest.mark.asyncio
 async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     db, conv, engine, zoho, redis = mock_deps
     deps = SalesDeps(
         db=db,

@@ -1,18 +1,19 @@
 import uuid
-from datetime import datetime, UTC
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.api.v1.products import get_embedding_engine
 from src.core.database import get_db
 from src.main import app
 from src.models.product import Product
-from src.api.v1.products import get_embedding_engine
 
 
 @pytest.fixture
-def mock_db() -> AsyncMock:
+async def mock_db() -> AsyncGenerator[AsyncMock, None]:
     db = AsyncMock()
     app.dependency_overrides[get_db] = lambda: db
     yield db
@@ -20,7 +21,7 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.fixture
-def mock_embedding() -> AsyncMock:
+async def mock_embedding() -> AsyncGenerator[AsyncMock, None]:
     engine = AsyncMock()
     app.dependency_overrides[get_embedding_engine] = lambda: engine
     yield engine
@@ -30,10 +31,10 @@ def mock_embedding() -> AsyncMock:
 @pytest.mark.asyncio
 async def test_list_products(mock_db: AsyncMock) -> None:
     from unittest.mock import MagicMock
-    
+
     mock_result = MagicMock()
     mock_db.scalar.return_value = 1
-    
+
     prod = Product(
         id=uuid.uuid4(),
         sku="TEST-SKU",
@@ -50,7 +51,7 @@ async def test_list_products(mock_db: AsyncMock) -> None:
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/v1/products/?category=Test")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 1
@@ -60,19 +61,20 @@ async def test_list_products(mock_db: AsyncMock) -> None:
 @pytest.mark.asyncio
 async def test_search_products(mock_db: AsyncMock, mock_embedding: AsyncMock) -> None:
     from unittest.mock import patch
+
     from src.schemas import ProductSearchResult
-    
+
     mock_search_result = ProductSearchResult(
         products=[],
         total_found=0
     )
-    
+
     with patch("src.api.v1.products.rag_search_products", new_callable=AsyncMock) as mock_rag:
         mock_rag.return_value = mock_search_result
-        
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.post("/api/v1/products/search", json={"query": "test query"})
-            
+
         assert response.status_code == 200
         data = response.json()
         assert data["total_found"] == 0
@@ -82,13 +84,13 @@ async def test_search_products(mock_db: AsyncMock, mock_embedding: AsyncMock) ->
 @pytest.mark.asyncio
 async def test_search_products_error(mock_db: AsyncMock, mock_embedding: AsyncMock) -> None:
     from unittest.mock import patch
-    
+
     with patch("src.api.v1.products.rag_search_products", new_callable=AsyncMock) as mock_rag:
         mock_rag.side_effect = ValueError("Some internal error")
-        
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.post("/api/v1/products/search", json={"query": "test query"})
-            
+
         assert response.status_code == 500
 
 
@@ -100,11 +102,11 @@ async def test_sync_products_zoho(mock_db: AsyncMock) -> None:
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post("/api/v1/products/sync", json={"source": "zoho"})
-        
+
     assert response.status_code == 200
     assert response.json()["synced"] == 0
     mock_pool.enqueue_job.assert_awaited_with("sync_products_from_zoho")
-    
+
     # Clean up state to not affect other tests
     del app.state.arq_pool
 
@@ -113,6 +115,6 @@ async def test_sync_products_zoho(mock_db: AsyncMock) -> None:
 async def test_sync_products_unsupported(mock_db: AsyncMock) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post("/api/v1/products/sync", json={"source": "unknown"})
-        
+
     assert response.status_code == 400
     assert "zoho" in response.json()["detail"]
