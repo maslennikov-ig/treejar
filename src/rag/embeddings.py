@@ -53,7 +53,7 @@ class EmbeddingEngine:
 
 async def generate_product_embeddings(db: AsyncSession) -> int:
     """Generate embeddings for all active products that lack them.
-    
+
     Returns:
         The number of products processed.
     """
@@ -94,7 +94,7 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
         embeddings = engine.embed_batch(texts)
 
         # Update products
-        for product, embedding in zip(batch, embeddings):
+        for product, embedding in zip(batch, embeddings, strict=False):
             product.embedding = embedding
 
         processed_count += len(batch)
@@ -108,7 +108,7 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
 
 async def index_knowledge_base(db: AsyncSession) -> int:
     """Generate embeddings for all knowledge base records that lack them.
-    
+
     Returns:
         The number of knowledge base records processed.
     """
@@ -132,7 +132,7 @@ async def index_knowledge_base(db: AsyncSession) -> int:
         texts = [r.content for r in batch]
         embeddings = engine.embed_batch(texts)
 
-        for record, embedding in zip(batch, embeddings):
+        for record, embedding in zip(batch, embeddings, strict=False):
             record.embedding = embedding
 
         processed_count += len(batch)

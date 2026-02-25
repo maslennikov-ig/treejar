@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
+from sqlalchemy.sql import func
 
 from src.core.database import async_session_factory
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
@@ -67,7 +68,7 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
 async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncResponse) -> None:
     """Upsert a batch of items into the PostgreSQL database using SQLAlchemy 2.0.
-    
+
     Args:
         items: List of item dictionaries from Zoho API.
         stats: The statistics object to update with results.
@@ -129,9 +130,7 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
                 "is_active": stmt.excluded.is_active,
             }
 
-            # Provide a fallback SQL function if session bind trick doesn't work
-            from sqlalchemy.sql import func
-            set_dict["synced_at"] = func.now()
+            set_dict["synced_at"] = func.now()  # type: ignore[assignment]
 
             stmt = stmt.on_conflict_do_update(
                 index_elements=[Product.sku],

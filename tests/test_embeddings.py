@@ -21,7 +21,7 @@ def mock_embedding_engine():
                     return iter([0.1] * 1024)
                 def tolist(self):
                     return [0.1] * 1024
-            
+
             for _ in texts:
                 yield MockArray()
 

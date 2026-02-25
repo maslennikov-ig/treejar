@@ -14,7 +14,7 @@ class ZohoInventoryClient(InventoryProvider):
 
     def __init__(self, redis_client: Any) -> None:
         """Initialize the Zoho Inventory client.
-        
+
         Args:
             redis_client: Redis connection dependency for caching the OAuth token.
         """
@@ -36,7 +36,7 @@ class ZohoInventoryClient(InventoryProvider):
         # 1. Try to get existing token
         token = await self.redis.get(token_key)
         if token:
-            return token.decode("utf-8")
+            return str(token.decode("utf-8"))
 
         # 2. Acquire lock (race condition protection)
         # Try to set lock with EX=10s, NX=True (only if not exists)
@@ -48,7 +48,7 @@ class ZohoInventoryClient(InventoryProvider):
                 await asyncio.sleep(0.5)
                 token = await self.redis.get(token_key)
                 if token:
-                    return token.decode("utf-8")
+                    return str(token.decode("utf-8"))
 
             raise RuntimeError("Timeout waiting for Zoho token refresh lock")
 
@@ -56,7 +56,7 @@ class ZohoInventoryClient(InventoryProvider):
             # 3. We have the lock, check token again just in case
             token = await self.redis.get(token_key)
             if token:
-                return token.decode("utf-8")
+                return str(token.decode("utf-8"))
 
             # 4. Refresh token
             async with httpx.AsyncClient() as client:
@@ -80,7 +80,7 @@ class ZohoInventoryClient(InventoryProvider):
                 ttl = max(10, expires_in - 60)
                 await self.redis.set(token_key, new_token, ex=ttl)
 
-                return new_token
+                return str(new_token)
 
         finally:
             # 5. Release lock
@@ -140,7 +140,7 @@ class ZohoInventoryClient(InventoryProvider):
 
     async def get_items(self, page: int = 1, per_page: int = 200) -> dict[str, Any]:
         """Fetch a page of active items from Zoho Inventory.
-        
+
         Returns the raw dict containing 'items' and 'page_context'.
         """
         response = await self._request(
@@ -158,7 +158,7 @@ class ZohoInventoryClient(InventoryProvider):
 
     async def get_stock(self, sku: str) -> dict[str, Any] | None:
         """Get stock level for a specific SKU using search_text.
-        
+
         Returns the item dictionary if found, None otherwise.
         """
         response = await self._request("GET", "/items", params={"search_text": sku})
@@ -175,7 +175,7 @@ class ZohoInventoryClient(InventoryProvider):
 
     async def get_stock_bulk(self, skus: list[str]) -> list[dict[str, Any]]:
         """Get stock levels for multiple SKUs.
-        
+
         Zoho API doesn't support bulk search by SKU efficiently,
         so we batch individual requests concurrently.
         """

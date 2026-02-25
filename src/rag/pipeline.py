@@ -29,7 +29,7 @@ class PgVectorStore(VectorStore):
         filters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Search products based on vector similarity and SQL filters.
-        
+
         This implements the protocol but is tailored for products specifically.
         For general generic usage, it would need a table param. We use specific
         functions for products and knowledge base below instead of relying heavily

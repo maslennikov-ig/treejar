@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 async def index_documents(db: AsyncSession) -> int:
     """Parse markdown files from docs/ and index them into knowledge_base.
-    
+
     Returns:
         The number of new/updated chunks indexed.
     """
@@ -61,7 +61,7 @@ async def index_documents(db: AsyncSession) -> int:
 
         embeddings = engine.embed_batch(texts)
 
-        for chunk, embedding in zip(batch, embeddings):
+        for chunk, embedding in zip(batch, embeddings, strict=False):
             chunk["embedding"] = embedding
             values.append(chunk)
 
@@ -180,7 +180,7 @@ def _parse_company_values(path: Path) -> list[dict[str, Any]]:
     # Split by the list item numbers (e.g., 1️⃣, 2️⃣) or standard formatting
     lines = content.split("\n")
     current_title = None
-    current_body = []
+    current_body: list[str] = []
     language = "ru"
 
     for line in lines:

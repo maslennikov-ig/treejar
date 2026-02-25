@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -49,7 +50,6 @@ async def list_products(
     result = await db.execute(stmt)
     products = result.scalars().all()
 
-    import math
     return PaginatedResponse(
         items=[ProductRead.model_validate(p) for p in products],
         total=total,
@@ -74,7 +74,7 @@ async def search_products(
         return await rag_search_products(db, body, embedding_engine)
     except Exception as e:
         logger.error(f"Error during product search: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/sync", response_model=ProductSyncResponse)
@@ -99,4 +99,4 @@ async def sync_products(
         return ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
     except Exception as e:
         logger.error(f"Error triggering sync: {e}")
-        raise HTTPException(status_code=500, detail="Could not enqueue sync job")
+        raise HTTPException(status_code=500, detail="Could not enqueue sync job") from e
