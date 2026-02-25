@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, UUIDMixin
@@ -17,6 +17,16 @@ class Message(UUIDMixin, Base):
     """A single message within a conversation."""
 
     __tablename__ = "messages"
+
+    __table_args__ = (
+        Index(
+            "ix_messages_wazzup_message_id",
+            "wazzup_message_id",
+            unique=True,
+            postgresql_where=text("wazzup_message_id IS NOT NULL"),
+        ),
+    )
+
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"),

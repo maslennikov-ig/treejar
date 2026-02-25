@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,14 +10,14 @@ from src.schemas.product import ProductSearchQuery
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_search_products_pipeline():
+async def test_search_products_pipeline() -> None:
     """Test RAG pipeline for products with filters and vector sorting."""
     mock_db = AsyncMock(spec=AsyncSession)
     mock_result = MagicMock()
 
     # Mocking a SQLAlchemy product object
     class MockProduct:
-        def __init__(self, id, sku, name, category, price, stock):
+        def __init__(self, id: uuid.UUID, sku: str, name: str, category: str, price: float, stock: int) -> None:
             self.id = id
             self.sku = sku
             self.name_en = name
@@ -28,16 +29,15 @@ async def test_search_products_pipeline():
             self.currency = "AED"
             self.stock = stock
             self.image_url = None
-            self.attributes = {}
+            self.attributes: dict[str, str] = {}
             self.is_active = True
             # Needed for Pydantic from_attributes
             from datetime import UTC, datetime
             self.created_at = datetime.now(UTC)
             self.updated_at = datetime.now(UTC)
 
-    import uuid
     mock_products = [
-        MockProduct(str(uuid.uuid4()), "SKU1", "Table", "Furniture", 100.0, 10),
+        MockProduct(uuid.uuid4(), "SKU1", "Table", "Furniture", 100.0, 10),
     ]
 
     mock_result.scalars.return_value.all.return_value = mock_products
@@ -69,13 +69,13 @@ async def test_search_products_pipeline():
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_search_knowledge_pipeline():
+async def test_search_knowledge_pipeline() -> None:
     """Test RAG pipeline for knowledge base retrieval."""
     mock_db = AsyncMock(spec=AsyncSession)
     mock_result = MagicMock()
 
     class MockKB:
-        def __init__(self, id, source, category, title, content):
+        def __init__(self, id: str, source: str, category: str, title: str, content: str) -> None:
             self.id = id
             self.source = source
             self.category = category

@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -7,7 +8,7 @@ from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 
 
 @pytest.fixture
-def mock_redis():
+def mock_redis() -> AsyncMock:
     redis = AsyncMock()
     # Mock token already existing
     redis.get.return_value = b"fake_token"
@@ -15,7 +16,7 @@ def mock_redis():
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_zoho_client_get_items(mock_redis):
+async def test_zoho_client_get_items(mock_redis: AsyncMock) -> None:
     client = ZohoInventoryClient(mock_redis)
     import httpx
     mock_response = httpx.Response(
@@ -36,8 +37,8 @@ async def test_zoho_client_get_items(mock_redis):
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_sync_products_job(mock_redis):
-    ctx = {"redis": mock_redis}
+async def test_sync_products_job(mock_redis: AsyncMock) -> None:
+    ctx: dict[str, Any] = {"redis": mock_redis}
     mock_api_items = [
         {
             "item_id": "zoho_1",

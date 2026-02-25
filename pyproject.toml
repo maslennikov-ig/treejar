@@ -19,7 +19,7 @@ dependencies = [
     "alembic>=1.14,<2.0",
     "pgvector>=0.3,<1.0",
     # Redis + async queue
-    "redis>=5.2,<6.0",
+    "redis>=5.2,<7.0",
     "arq>=0.26,<1.0",
     # HTTP client
     "httpx>=0.28,<1.0",
@@ -27,7 +27,7 @@ dependencies = [
     "pydantic>=2.10,<3.0",
     "pydantic-settings>=2.7,<3.0",
     # AI orchestration
-    "pydantic-ai>=0.1,<1.0",
+    "pydantic-ai>=1.0,<2.0",
     # LLM client (OpenRouter via base_url)
     "openai>=1.60,<2.0",
     # Embeddings (local, multilingual)
@@ -97,4 +97,9 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests (require DB/Redis)",
     "e2e: End-to-end tests (full stack)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:opentelemetry.*",
+    "ignore:You should use `.*` instead.:DeprecationWarning",
+    "ignore:coroutine '.*' was never awaited:RuntimeWarning"
 ]

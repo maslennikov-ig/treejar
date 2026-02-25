@@ -1,3 +1,5 @@
+from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,16 +12,16 @@ from src.rag.embeddings import (
 
 
 @pytest.fixture
-def mock_embedding_engine():
+def mock_embedding_engine() -> Generator[Any, None, None]:
     with patch("src.rag.embeddings.TextEmbedding") as MockTextEmbedding:
         mock_model = MockTextEmbedding.return_value
 
         # Mocks the embed generator
-        def mock_embed(texts):
+        def mock_embed(texts: list[str]) -> Generator[Any, None, None]:
             class MockArray:
-                def __iter__(self):
+                def __iter__(self) -> Any:
                     return iter([0.1] * 1024)
-                def tolist(self):
+                def tolist(self) -> list[float]:
                     return [0.1] * 1024
 
             for _ in texts:
@@ -36,7 +38,7 @@ def mock_embedding_engine():
 
 
 @pytest.mark.unit
-def test_embedding_engine_singleton(mock_embedding_engine):
+def test_embedding_engine_singleton(mock_embedding_engine: Any) -> None:
     """Test that EmbeddingEngine operates as a singleton."""
     engine1 = EmbeddingEngine()
     engine2 = EmbeddingEngine()
@@ -44,7 +46,7 @@ def test_embedding_engine_singleton(mock_embedding_engine):
 
 
 @pytest.mark.unit
-def test_embedding_embed(mock_embedding_engine):
+def test_embedding_embed(mock_embedding_engine: Any) -> None:
     """Test embed single text."""
     result = mock_embedding_engine.embed("Hello world")
     assert isinstance(result, list)
@@ -53,7 +55,7 @@ def test_embedding_embed(mock_embedding_engine):
 
 
 @pytest.mark.unit
-def test_embedding_embed_batch(mock_embedding_engine):
+def test_embedding_embed_batch(mock_embedding_engine: Any) -> None:
     """Test embed multiple texts."""
     result = mock_embedding_engine.embed_batch(["text1", "text2"])
     assert isinstance(result, list)
@@ -63,18 +65,18 @@ def test_embedding_embed_batch(mock_embedding_engine):
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_generate_product_embeddings():
+async def test_generate_product_embeddings() -> None:
     """Test generating embeddings for active products missing them."""
     # We mock DB session and execution
     mock_db = AsyncMock()
     mock_result = MagicMock()
 
     class MockProduct:
-        def __init__(self, name, category, desc):
+        def __init__(self, name: str, category: str, desc: str) -> None:
             self.name_en = name
             self.category = category
             self.description_en = desc
-            self.embedding = None
+            self.embedding: list[float] | None = None
 
     products = [
         MockProduct("Table", "Furniture", "A nice table"),
@@ -98,15 +100,15 @@ async def test_generate_product_embeddings():
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_index_knowledge_base_embeddings():
+async def test_index_knowledge_base_embeddings() -> None:
     """Test generating embeddings for knowledge base records."""
     mock_db = AsyncMock()
     mock_result = MagicMock()
 
     class MockRecord:
-        def __init__(self, content):
+        def __init__(self, content: str) -> None:
             self.content = content
-            self.embedding = None
+            self.embedding: list[float] | None = None
 
     records = [MockRecord("Content 1")]
     mock_result.scalars.return_value.all.return_value = records

@@ -17,6 +17,7 @@ from src.core.redis import redis_client
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    app.state.redis = redis_client
     yield
     # Shutdown
     await app.state.arq_pool.aclose()
