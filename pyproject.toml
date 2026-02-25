@@ -48,6 +48,7 @@ dev = [
     "ruff>=0.9,<1.0",
     "mypy>=1.14,<2.0",
     "pre-commit>=4.0,<5.0",
+    "deptry>=0.23,<1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -103,3 +104,6 @@ filterwarnings = [
     "ignore:You should use `.*` instead.:DeprecationWarning",
     "ignore:coroutine '.*' was never awaited:RuntimeWarning"
 ]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["uvicorn", "asyncpg", "openai", "python-multipart", "python-dotenv", "pytest", "pytest-asyncio", "pytest-cov", "ruff", "mypy", "pre-commit", "deptry"]
