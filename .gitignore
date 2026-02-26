@@ -76,3 +76,5 @@ docs/**/*.pdf
 
 # Beads issue tracker (synced separately via bd sync)
 .beads/
+
+.env*
