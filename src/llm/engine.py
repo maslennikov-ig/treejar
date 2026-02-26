@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from pydantic_ai import Agent, RunContext
@@ -11,6 +11,7 @@ from pydantic_ai.providers.openrouter import OpenRouterProvider
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.llm.context import build_message_history
 from src.llm.pii import mask_pii, unmask_pii
@@ -30,6 +31,7 @@ class SalesDeps:
     conversation: Conversation
     embedding_engine: EmbeddingEngine
     zoho_inventory: ZohoInventoryClient
+    zoho_crm: ZohoCRMClient | None
     pii_map: dict[str, str]
 
 
@@ -142,13 +144,86 @@ async def advance_stage(ctx: RunContext[SalesDeps], next_stage: SalesStage) -> s
     return f"Successfully advanced to stage {next_stage.value}. New system instructions will apply on the next turn."
 
 
+@sales_agent.tool
+async def lookup_customer(ctx: RunContext[SalesDeps], phone: str) -> str:
+    """Check if the customer's phone number already exists in the CRM system.
+    Call this when clarifying customer details or preparing to create a deal.
+
+    Args:
+        phone: The customer's phone number in international format (e.g. +971501234567).
+    """
+    logger.info(f"LLM Tool called: lookup_customer(phone={phone!r})")
+    if not ctx.deps.zoho_crm:
+        return "CRM Client is not available in the current context."
+
+    contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
+    if not contact:
+        return f"Customer with phone {phone} was NOT found in the CRM."
+
+    name = f"{contact.get('First_Name', '')} {contact.get('Last_Name', '')}".strip()
+    return f"Customer FOUND in CRM.\nName: {name}\nEmail: {contact.get('Email', 'N/A')}\nSegment: {contact.get('Segment', 'N/A')}"
+
+
+@sales_agent.tool
+async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | None = None) -> str:
+    """Create a new Deal (Opportunity) in the CRM system for this customer.
+    Call this when the customer has shown clear interest in purchasing and you are entering the Next Steps or Quoting phase.
+    
+    Args:
+        title: A short, descriptive name for the deal (e.g. "Office Chairs for 10 people").
+        amount: Estimated total value of the deal in AED, if known.
+    """
+    logger.info(f"LLM Tool called: create_deal(title={title!r}, amount={amount})")
+    
+    if not ctx.deps.zoho_crm:
+        return "CRM Client is not available in the current context."
+
+    # Look up the contact's CRM ID first, since we need to link it
+    phone = ctx.deps.conversation.phone
+    contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
+    
+    if not contact:
+        # We must create the contact first
+        logger.info("Contact not found, creating before deal formulation.")
+        new_contact_data = {
+            "Phone": phone,
+            "Last_Name": ctx.deps.conversation.customer_name or "Unknown Client",
+            "Lead_Source": "Chatbot"
+        }
+        resp = await ctx.deps.zoho_crm.create_contact(new_contact_data)
+        if "details" not in resp or "id" not in resp["details"]:
+            return "Failed to create customer in CRM. Cannot create deal."
+        contact_id = resp["details"]["id"]
+    else:
+        contact_id = contact["id"]
+
+    # Create the deal
+    deal_data = {
+        "Deal_Name": title,
+        "Contact_Name": contact_id,
+        "Stage": "New Lead",
+        "Pipeline": "Standard (Standard)",
+    }
+    if amount is not None:
+        deal_data["Amount"] = amount
+        
+    deal_resp = await ctx.deps.zoho_crm.create_deal(deal_data)
+    
+    if "details" in deal_resp and "id" in deal_resp["details"]:
+        deal_id = deal_resp['details']['id']
+        return f"Successfully created Deal in CRM. Deal ID: {deal_id}, Stage: 'New Lead'."
+    
+    return f"Failed to create deal. CRM response pattern unexpected."
+
+
 async def process_message(
     conversation_id: UUID,
     combined_text: str,
     db: AsyncSession,
     redis: Any,
     embedding_engine: EmbeddingEngine,
-    zoho_client: ZohoInventoryClient
+    zoho_client: ZohoInventoryClient,
+    crm_client: ZohoCRMClient | None = None,
 ) -> LLMResponse:
     """Process an incoming message through the PydanticAI agent.
 
@@ -178,6 +253,7 @@ async def process_message(
         conversation=conv,
         embedding_engine=embedding_engine,
         zoho_inventory=zoho_client,
+        zoho_crm=crm_client,
         pii_map=pii_map,
     )
 

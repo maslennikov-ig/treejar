@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 
 from src.core.database import async_session_factory
+from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.wazzup import WazzupProvider
 from src.llm.engine import process_message
@@ -75,6 +76,7 @@ async def process_incoming_batch(
         embedding_engine = EmbeddingEngine()
         redis = ctx.get("redis")
         zoho_client = ZohoInventoryClient(redis_client=redis)
+        crm_client = ZohoCRMClient(redis_client=redis)
 
         logger.info(f"Calling LLM for {chat_id}")
         llm_response = await process_message(
@@ -84,6 +86,7 @@ async def process_incoming_batch(
             redis=redis,
             embedding_engine=embedding_engine,
             zoho_client=zoho_client,
+            crm_client=crm_client,
         )
 
         # 4. Save response to DB

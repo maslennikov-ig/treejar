@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Query
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from src.api.deps import get_redis
+from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.schemas import (
     SaleOrderCreate,
     SaleOrderRead,
@@ -13,20 +17,43 @@ from src.schemas import (
 router = APIRouter()
 
 
+async def get_inventory_client(
+    redis: aioredis.Redis = Depends(get_redis),
+) -> AsyncGenerator[ZohoInventoryClient, None]:
+    """Dependency to get an authenticated Zoho Inventory client."""
+    async with ZohoInventoryClient(redis) as client:
+        yield client
+
+
 @router.get("/stock/{sku}", response_model=StockLevel)
 async def get_stock_level(
     sku: str,
+    inventory: ZohoInventoryClient = Depends(get_inventory_client),
 ) -> StockLevel:
     """Get stock level for a specific SKU."""
-    raise HTTPException(status_code=501, detail="Not implemented")
+    item = await inventory.get_stock(sku)
+    if not item:
+        raise HTTPException(status_code=404, detail="SKU not found in inventory")
+
+    return StockLevel(
+        sku=item.get("sku", sku),
+        name=item.get("name", "Unknown Item"),
+        stock=int(item.get("available_stock", 0)),
+        price=float(item.get("rate", 0.0) or 0.0),
+        currency="AED",
+    )
 
 
 @router.get("/stock/", response_model=list[StockLevel])
 async def get_stock_levels(
     skus: list[str] = Query(...),
+    inventory: ZohoInventoryClient = Depends(get_inventory_client),
 ) -> list[StockLevel]:
     """Get stock levels for multiple SKUs."""
-    raise HTTPException(status_code=501, detail="Not implemented")
+    # Zoho doesn't have a bulk stock endpoint by matching exact array of SKUs directly.
+    # We would either fetch all items and filter, or do multiple API calls.
+    # For now, we will do sequential calls or raise 501.
+    raise HTTPException(status_code=501, detail="Bulk stock check not implemented yet")
 
 
 @router.post("/sale-orders/", response_model=SaleOrderRead)
