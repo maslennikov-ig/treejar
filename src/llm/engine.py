@@ -200,7 +200,7 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
     # Create the deal
     deal_data = {
         "Deal_Name": title,
-        "Contact_Name": contact_id,
+        "Contact_Name": {"id": contact_id},
         "Stage": "New Lead",
         "Pipeline": "Standard (Standard)",
     }

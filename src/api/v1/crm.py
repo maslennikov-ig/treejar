@@ -107,7 +107,7 @@ async def create_deal(
     """Create a new CRM deal."""
     payload = {
         "Deal_Name": body.title,
-        "Contact_Name": body.contact_id,
+        "Contact_Name": {"id": body.contact_id},
         "Amount": body.amount,
         "Stage": body.stage,
         "Pipeline": "Standard (Standard)",
