@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: ankane/pgvector:pg17
+    image: pgvector/pgvector:pg16
     ports:
       - "5432:5432"
     environment:
