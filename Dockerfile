@@ -7,8 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        libpq-dev \
+    build-essential \
+    libpq-dev \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    fonts-noto \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
