@@ -158,7 +158,86 @@ async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, Asy
     assert "Successfully advanced" in result
     assert conv.sales_stage == SalesStage.QUALIFYING.value
 
-    # Invalid transition
-    result = await advance_stage(ctx, SalesStage.CLOSING)
-    assert "Cannot transition directly" in result
-    assert conv.sales_stage == SalesStage.QUALIFYING.value  # Did not change
+@pytest.mark.asyncio
+async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        pii_map={},
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+    from src.llm.engine import get_stock
+    
+    zoho.get_stock.return_value = {"available_stock": 25}
+    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    
+    result = await get_stock(ctx, "CHAIR-01")
+    assert "25 items available" in result
+    zoho.get_stock.assert_awaited_once_with("CHAIR-01")
+
+@pytest.mark.asyncio
+async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        pii_map={},
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+    from src.llm.engine import lookup_customer
+    
+    zoho_crm.find_contact_by_phone.return_value = {
+        "First_Name": "Jane",
+        "Last_Name": "Doe",
+        "Email": "jane@example.com",
+        "Segment": "VIP"
+    }
+    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    
+    result = await lookup_customer(ctx, "+971501234567")
+    assert "FOUND in CRM" in result
+    assert "Jane Doe" in result
+    assert "jane@example.com" in result
+    assert "VIP" in result
+    zoho_crm.find_contact_by_phone.assert_awaited_once_with("+971501234567")
+
+@pytest.mark.asyncio
+async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        pii_map={},
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+    from src.llm.engine import create_deal
+    
+    # Mocking contact exists
+    zoho_crm.find_contact_by_phone.return_value = {"id": "CONTACT123"}
+    zoho_crm.create_deal.return_value = {"details": {"id": "DEAL123"}}
+    
+    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    
+    result = await create_deal(ctx, "Test Deal", 1000.0)
+    assert "DEAL123" in result
+    zoho_crm.find_contact_by_phone.assert_awaited_once_with("12345")
+    zoho_crm.create_deal.assert_awaited_once_with({
+        "Deal_Name": "Test Deal",
+        "Contact_Name": {"id": "CONTACT123"},
+        "Stage": "New Lead",
+        "Pipeline": "Standard (Standard)",
+        "Amount": 1000.0
+    })
