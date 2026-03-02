@@ -35,6 +35,7 @@ class SalesDeps:
     zoho_crm: ZohoCRMClient | None
     messaging_client: MessagingProvider
     pii_map: dict[str, str]
+    crm_context: dict[str, Any] | None = None
 
 
 # Allowed transitions for the advance_stage tool
@@ -75,10 +76,16 @@ sales_agent = Agent(
 @sales_agent.system_prompt
 async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
     """Dynamically inject the system prompt based on current stage and language."""
-    return build_system_prompt(
+    base_prompt = build_system_prompt(
         stage=ctx.deps.conversation.sales_stage,
         language=ctx.deps.conversation.language,
     )
+    
+    if ctx.deps.crm_context:
+        profile_str = "\n".join(f"{k}: {v}" for k, v in ctx.deps.crm_context.items())
+        base_prompt += f"\n\n[CRM CUSTOMER CONTEXT]\n{profile_str}\n"
+        
+    return base_prompt
 
 
 @sales_agent.tool
@@ -360,6 +367,21 @@ async def process_message(
     if not conv:
         raise ValueError(f"Conversation {conversation_id} not found")
 
+    from src.core.cache import get_cached_crm_profile, set_cached_crm_profile
+
+    # Fetch CRM Profile for context enrichment
+    crm_context = None
+    if crm_client and conv.phone:
+        crm_context = await get_cached_crm_profile(redis, conv.phone)
+        if not crm_context:
+            contact = await crm_client.find_contact_by_phone(conv.phone)
+            if contact:
+                name = f"{contact.get('First_Name', '')} {contact.get('Last_Name', '')}".strip()
+                crm_context = {"Name": name, "Segment": contact.get("Segment", "Unknown")}
+                await set_cached_crm_profile(redis, conv.phone, crm_context)
+            else:
+                crm_context = {"Segment": "Unknown"}
+
     # Optional shared dict for PII placeholders across history
     pii_map: dict[str, str] = {}
 
@@ -378,6 +400,7 @@ async def process_message(
         zoho_crm=crm_client,
         messaging_client=messaging_client,
         pii_map=pii_map,
+        crm_context=crm_context,
     )
 
     try:

@@ -28,7 +28,13 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
     engine = AsyncMock()
     zoho = AsyncMock()
     zoho_crm = AsyncMock()
+    zoho_crm.find_contact_by_phone.return_value = {
+        "First_Name": "Test",
+        "Last_Name": "User",
+        "Segment": "B2C"
+    }
     redis = AsyncMock()
+    redis.get.return_value = None
     messaging = AsyncMock()
 
     return db, conv, engine, zoho, zoho_crm, redis, messaging
