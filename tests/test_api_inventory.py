@@ -50,10 +50,22 @@ async def test_get_stock_level_not_found(override_get_inventory_client: None, mo
     assert response.json()["detail"] == "SKU not found in inventory"
 
 @pytest.mark.asyncio
-async def test_get_stock_levels_not_implemented(override_get_inventory_client: None, mock_inventory: AsyncMock) -> None:
+async def test_get_stock_levels_success(override_get_inventory_client: None, mock_inventory: AsyncMock) -> None:
+    mock_inventory.get_stock_bulk.return_value = [
+        {"sku": "A", "name": "Item A", "available_stock": 10, "rate": 100.0},
+        {"sku": "B", "name": "Item B", "available_stock": 0, "rate": 50.0},
+    ]
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/v1/inventory/stock/?skus=A&skus=B")
-    assert response.status_code == 501
+        
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert data[0]["sku"] == "A"
+    assert data[0]["stock"] == 10
+    assert data[1]["sku"] == "B"
+    assert data[1]["stock"] == 0
+    mock_inventory.get_stock_bulk.assert_awaited_once_with(["A", "B"])
 
 @pytest.mark.asyncio
 async def test_create_sale_order_not_implemented() -> None:

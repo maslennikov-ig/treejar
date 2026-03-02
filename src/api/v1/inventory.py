@@ -50,10 +50,18 @@ async def get_stock_levels(
     inventory: ZohoInventoryClient = Depends(get_inventory_client),
 ) -> list[StockLevel]:
     """Get stock levels for multiple SKUs."""
-    # Zoho doesn't have a bulk stock endpoint by matching exact array of SKUs directly.
-    # We would either fetch all items and filter, or do multiple API calls.
-    # For now, we will do sequential calls or raise 501.
-    raise HTTPException(status_code=501, detail="Bulk stock check not implemented yet")
+    items = await inventory.get_stock_bulk(skus)
+    
+    return [
+        StockLevel(
+            sku=item.get("sku", "Unknown"),
+            name=item.get("name", "Unknown Item"),
+            stock=int(item.get("available_stock", 0)),
+            price=float(item.get("rate", 0.0) or 0.0),
+            currency="AED",
+        )
+        for item in items
+    ]
 
 
 @router.post("/sale-orders/", response_model=SaleOrderRead)
