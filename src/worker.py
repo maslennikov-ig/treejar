@@ -8,6 +8,7 @@ from arq.cron import cron
 from src.core.config import settings
 from src.integrations.inventory.sync import sync_products_from_zoho
 from src.services.chat import process_incoming_batch
+from src.services.followup import run_automatic_followups
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -19,9 +20,10 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions: list[Any] = [sync_products_from_zoho, process_incoming_batch]
+    functions: list[Any] = [sync_products_from_zoho, process_incoming_batch, run_automatic_followups]
     cron_jobs = [
         cron(sync_products_from_zoho, hour={0, 6, 12, 18}, run_at_startup=False),
+        cron(run_automatic_followups, minute={0}, run_at_startup=False),
     ]
     on_startup = startup
     on_shutdown = shutdown
