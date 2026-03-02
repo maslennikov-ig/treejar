@@ -138,7 +138,7 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
         result_text = await engine_module.perform_search_products(ctx, "chair")
         assert "Office Chair" in result_text
         assert "CHAIR-01" in result_text
-        assert "100.0 USD" in result_text
+        assert "100.00 USD (Your segment price)" in result_text
     finally:
         if orig_search:
             engine_module.search_products = orig_search  # type: ignore

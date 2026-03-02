@@ -108,9 +108,13 @@ async def perform_search_products(ctx: RunContext[SalesDeps], query: str) -> str
     if not results.products:
         return "No products found matching the query."
 
+    from src.core.discounts import apply_discount
+    segment = ctx.deps.crm_context.get("Segment", "Unknown") if ctx.deps.crm_context else "Unknown"
+
     formatted_results = []
     for r in results.products:
-        desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {r.price} {r.currency}\nDescription: {r.description_en}"
+        discounted_price = apply_discount(float(r.price), segment)
+        desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {discounted_price:.2f} {r.currency} (Your segment price)\nDescription: {r.description_en}"
         formatted_results.append(desc)
 
     return "\n---\n".join(formatted_results)
@@ -253,12 +257,16 @@ async def create_quotation(
     template_items = []
     subtotal = 0.0
     
+    from src.core.discounts import apply_discount
+    segment = ctx.deps.crm_context.get("Segment", "Unknown") if ctx.deps.crm_context else "Unknown"
+    
     for item in items:
         if item.sku not in stock_map:
             return f"Failed to create quotation: SKU {item.sku} not found."
             
         zoho_item = stock_map[item.sku]
-        unit_price = float(zoho_item.get("rate", 0.0))
+        base_price = float(zoho_item.get("rate", 0.0))
+        unit_price = apply_discount(base_price, segment)
         total_price = unit_price * item.quantity
         subtotal += total_price
         
