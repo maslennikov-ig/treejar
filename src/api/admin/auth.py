@@ -1,3 +1,5 @@
+import secrets
+
 from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 
@@ -7,9 +9,13 @@ from src.core.config import settings
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         form = await request.form()
-        username, password = form.get("username"), form.get("password")
+        username = form.get("username", "")
+        password = form.get("password", "")
 
-        if username == settings.admin_username and password == settings.admin_password:
+        is_valid_user = secrets.compare_digest(username, settings.admin_username)
+        is_valid_pass = secrets.compare_digest(password, settings.admin_password)
+
+        if is_valid_user and is_valid_pass:
             request.session.update({"token": "admin_session"})
             return True
         return False
