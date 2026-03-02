@@ -1,5 +1,6 @@
 from src.services.pdf.generator import render_quotation_html
 
+
 def test_render_quotation_template():
     context = {
         "quote_number": "SA 270226 - R1",
@@ -30,9 +31,9 @@ def test_render_quotation_template():
             "email": "syed.h@treejartrading.ae"
         }
     }
-    
+
     html = render_quotation_html(context=context)
-    
+
     # Assertions to ensure context is injected properly
     assert "Test Co" in html
     assert "SA 270226 - R1" in html

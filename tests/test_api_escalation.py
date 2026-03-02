@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -10,6 +10,7 @@ from src.core.database import get_db
 from src.main import app
 from src.models.conversation import Conversation
 from src.schemas.common import EscalationStatus
+
 
 @pytest.fixture
 async def mock_db() -> AsyncGenerator[AsyncMock, None]:

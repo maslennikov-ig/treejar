@@ -21,7 +21,7 @@ WORKDIR /app
 # ============================================================
 FROM base AS deps
 
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir .
 
 # ============================================================
@@ -35,6 +35,7 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY src/ ./src/
 COPY migrations/ ./migrations/
+COPY alembic.ini ./
 COPY scripts/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh

@@ -1,5 +1,7 @@
 import pytest
+
 from src.services.pdf.generator import generate_pdf
+
 
 @pytest.mark.asyncio
 async def test_generate_pdf():

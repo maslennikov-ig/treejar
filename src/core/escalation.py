@@ -1,9 +1,11 @@
-from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+
 
 class EscalationEvaluation(BaseModel):
     should_escalate: bool = Field(description="True if any of the escalation triggers apply to this message.")
@@ -36,8 +38,6 @@ Return should_escalate=True if ANY of these strongly match. Provide the reason.
 If none match, return should_escalate=False.
 """
 
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 escalation_model = OpenAIChatModel(
     settings.openrouter_model_fast,

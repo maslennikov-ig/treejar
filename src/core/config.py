@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -88,16 +90,21 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-async def get_system_config(db, key: str, default: str) -> str:
+async def get_system_config(db: Any, key: str, default: str) -> str:
     """Fetch a configuration value from the DB, fallback to default."""
     from sqlalchemy import select
+
     from src.models.system_config import SystemConfig
 
-    stmt = select(SystemConfig).where(SystemConfig.key == key)
-    result = await db.execute(stmt)
-    config = result.scalar_one_or_none()
-    
-    if config:
-        return config.value
-        
+    try:
+        stmt = select(SystemConfig).where(SystemConfig.key == key)
+        result = await db.execute(stmt)
+        config = result.scalar_one_or_none()
+
+        if config:
+            return str(config.value)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("Failed to fetch system config '%s', using default", key)
+
     return default

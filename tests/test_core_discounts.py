@@ -1,5 +1,5 @@
-import pytest
 from src.core.discounts import apply_discount, get_discount_percentage
+
 
 def test_get_discount_percentage():
     assert get_discount_percentage("Wholesale") == 15

@@ -1,8 +1,9 @@
 import logging
-from src.core.config import settings
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.models.conversation import Conversation
 from src.schemas.common import EscalationStatus
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 

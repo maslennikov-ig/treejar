@@ -80,11 +80,11 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         stage=ctx.deps.conversation.sales_stage,
         language=ctx.deps.conversation.language,
     )
-    
+
     if ctx.deps.crm_context:
         profile_str = "\n".join(f"{k}: {v}" for k, v in ctx.deps.crm_context.items())
         base_prompt += f"\n\n[CRM CUSTOMER CONTEXT]\n{profile_str}\n"
-        
+
     return base_prompt
 
 
@@ -181,7 +181,7 @@ async def lookup_customer(ctx: RunContext[SalesDeps], phone: str) -> str:
 async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | None = None) -> str:
     """Create a new Deal (Opportunity) in the CRM system for this customer.
     Call this when the customer has shown clear interest in purchasing and you are entering the Next Steps or Quoting phase.
-    
+
     Args:
         title: A short, descriptive name for the deal (e.g. "Office Chairs for 10 people").
         amount: Estimated total value of the deal in AED, if known.
@@ -242,34 +242,34 @@ async def create_quotation(
     """Generate a formal PDF quotation for the customer, save it to Zoho Inventory as a draft, and send it via WhatsApp.
     Call this when the customer has explicitly asked for a quote and confirmed the items and quantities.
     Make sure you have their name, company name (if applicable), and email addressed.
-    
+
     Args:
         items: List of the SKUs and quantities to include in the quote.
     """
     logger.info(f"LLM Tool called: create_quotation(items={items})")
-    
+
     # Needs to fetch item details from Zoho Inventory
     skus_to_fetch = [item.sku for item in items]
     stock_details = await ctx.deps.zoho_inventory.get_stock_bulk(skus_to_fetch)
     stock_map = {item["sku"]: item for item in stock_details}
-    
+
     zoho_line_items = []
     template_items = []
     subtotal = 0.0
-    
+
     from src.core.discounts import apply_discount
     segment = ctx.deps.crm_context.get("Segment", "Unknown") if ctx.deps.crm_context else "Unknown"
-    
+
     for item in items:
         if item.sku not in stock_map:
             return f"Failed to create quotation: SKU {item.sku} not found."
-            
+
         zoho_item = stock_map[item.sku]
         base_price = float(zoho_item.get("rate", 0.0))
         unit_price = apply_discount(base_price, segment)
         total_price = unit_price * item.quantity
         subtotal += total_price
-        
+
         # Zoho Inventory Draft Order Line Item
         zoho_line_items.append({
             "item_id": zoho_item["item_id"],
@@ -277,7 +277,7 @@ async def create_quotation(
             "rate": unit_price,
             "description": zoho_item.get("description", ""),
         })
-        
+
         # Template Data formatting
         template_items.append({
             "sku": item.sku,
@@ -289,10 +289,10 @@ async def create_quotation(
             # Weasyprint can load URLs directly if they are public.
             "image_url": zoho_item.get("image_document_id")  # Assuming Zoho structure has an image URL or ID
         })
-        
+
     # Fake missing data (In production, load CRM contact link)
     customer_id = "temp_draft_customer_id"  # Usually we'd map this via Zoho CRM contact
-    
+
     # Create Draft Order in Zoho
     try:
         draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
@@ -304,11 +304,11 @@ async def create_quotation(
     except Exception as e:
         logger.error(f"Failed to create draft sale order: {e}")
         return "Failed to create draft sale order in Zoho Inventory."
-        
+
     # Generate PDF context
     vat_amount = subtotal * 0.05
     grand_total = subtotal + vat_amount
-    
+
     pdf_context = {
         "quote_number": quote_number,
         "trn": "100418386400003",
@@ -329,12 +329,12 @@ async def create_quotation(
             "email": "syed.h@treejartrading.ae"
         }
     }
-    
+
     # Import pdf generator (delay import to avoid circular dependency or import overhead if not used)
     from src.services.pdf.generator import generate_pdf, render_quotation_html
     html_content = render_quotation_html(pdf_context)
     pdf_bytes = await generate_pdf(html_content)
-    
+
     # Send via Messaging Provider
     chat_id = ctx.deps.conversation.phone
     try:
@@ -348,7 +348,7 @@ async def create_quotation(
     except Exception as e:
         logger.error(f"Failed to send PDF via Wazzup: {e}")
         return "Generated quotation but failed to send it via WhatsApp."
-        
+
     return f"Successfully generated quotation {quote_number} and sent it to the customer via WhatsApp."
 
 
@@ -408,15 +408,17 @@ async def process_message(
     if conv.escalation_status == EscalationStatus.NONE.value:
         escalation_eval = await evaluate_escalation_triggers(masked_text)
         if escalation_eval.should_escalate and escalation_eval.reason:
-            from src.integrations.notifications.escalation import notify_manager_escalation
-            
+            from src.integrations.notifications.escalation import (
+                notify_manager_escalation,
+            )
+
             # Get last 5 messages for context
             recent_context = "\n".join(
-                [f"{msg.role}: {msg.content}" for msg in history[-5:]] + [f"user: {masked_text}"]
+                [f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}" for msg in history[-5:]] + [f"user: {masked_text}"]
             )
-            
+
             await notify_manager_escalation(conv, escalation_eval.reason, [recent_context], db)
-            
+
             # Instead of returning immediately, we proceed but inject a system note
             # so the LLM responds politely indicating a human will follow up.
             masked_text += "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"

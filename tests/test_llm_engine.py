@@ -22,15 +22,16 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
         escalation_status="none",
     )
     db.get.return_value = conv
-    from src.models.system_config import SystemConfig
     from unittest.mock import MagicMock
+
+    from src.models.system_config import SystemConfig
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
-    
+
     # Mock for get_system_config
     mock_config = SystemConfig(key="openrouter_model_main", value="mock_model")
     mock_result.scalar_one_or_none.return_value = mock_config
-    
+
     db.execute.return_value = mock_result  # Handles both queries
 
     engine = AsyncMock()
@@ -57,18 +58,17 @@ async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conver
     test_model = TestModel()
 
     # We inject the test model via the `override` context manager
-    with sales_agent.override(model=test_model):
-        with escalation_agent.override(model=TestModel(custom_output_args={"should_escalate": False, "reason": None})):
-            response = await process_message(
-                conversation_id=conv.id,
-                combined_text="Hello, what do you sell?",
-                db=db,
-                redis=redis,
-                embedding_engine=engine,
-                zoho_client=zoho,
-                crm_client=zoho_crm,
-                messaging_client=messaging,
-            )
+    with sales_agent.override(model=test_model), escalation_agent.override(model=TestModel(custom_output_args={"should_escalate": False, "reason": None})):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text="Hello, what do you sell?",
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            crm_client=zoho_crm,
+            messaging_client=messaging,
+        )
 
     assert isinstance(response.text, str)
     assert response.tokens_in is not None
@@ -97,35 +97,35 @@ async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conve
 async def test_engine_process_message_with_escalation(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     from src.schemas.common import EscalationStatus
-    
+
     assert conv.escalation_status == EscalationStatus.NONE.value
 
     test_model = TestModel()
-    
+
     # We patch the escalation_agent to force a positive hit
     import src.core.escalation as core_escalation
     import src.integrations.notifications.escalation as notifications
-    
+
     # Save original functions
     orig_eval = core_escalation.evaluate_escalation_triggers
     orig_notify = notifications.notify_manager_escalation
-    
+
     # Mock them
     mock_eval = AsyncMock(return_value=core_escalation.EscalationEvaluation(
-        should_escalate=True, 
+        should_escalate=True,
         reason="Test Escalation"
     ))
     async def side_effect(conv_obj, reason, context, session):
         conv_obj.escalation_status = EscalationStatus.PENDING.value
-        
+
     mock_notify = AsyncMock(side_effect=side_effect)
-    
+
     core_escalation.evaluate_escalation_triggers = mock_eval
     notifications.notify_manager_escalation = mock_notify
-    
+
     try:
         with sales_agent.override(model=test_model):
-            response = await process_message(
+            _response = await process_message(
                 conversation_id=conv.id,
                 combined_text="I want to speak to your manager right now!",
                 db=db,
@@ -135,14 +135,14 @@ async def test_engine_process_message_with_escalation(mock_deps: tuple[AsyncMock
                 crm_client=zoho_crm,
                 messaging_client=messaging,
             )
-            
+
         # Verify internal flow
         mock_eval.assert_awaited_once()
         mock_notify.assert_awaited_once()
-        
+
         # Verify the dependency injection correctly updated DB object
         assert conv.escalation_status == EscalationStatus.PENDING.value
-        
+
     finally:
         # Restore
         core_escalation.evaluate_escalation_triggers = orig_eval
