@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
 from pydantic_ai import Agent, RunContext
@@ -174,14 +174,14 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
         amount: Estimated total value of the deal in AED, if known.
     """
     logger.info(f"LLM Tool called: create_deal(title={title!r}, amount={amount})")
-    
+
     if not ctx.deps.zoho_crm:
         return "CRM Client is not available in the current context."
 
     # Look up the contact's CRM ID first, since we need to link it
     phone = ctx.deps.conversation.phone
     contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
-    
+
     if not contact:
         # We must create the contact first
         logger.info("Contact not found, creating before deal formulation.")
@@ -198,7 +198,7 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
         contact_id = contact["id"]
 
     # Create the deal
-    deal_data = {
+    deal_data: dict[str, Any] = {
         "Deal_Name": title,
         "Contact_Name": {"id": contact_id},
         "Stage": "New Lead",
@@ -206,14 +206,14 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
     }
     if amount is not None:
         deal_data["Amount"] = amount
-        
+
     deal_resp = await ctx.deps.zoho_crm.create_deal(deal_data)
-    
+
     if "details" in deal_resp and "id" in deal_resp["details"]:
         deal_id = deal_resp['details']['id']
         return f"Successfully created Deal in CRM. Deal ID: {deal_id}, Stage: 'New Lead'."
-    
-    return f"Failed to create deal. CRM response pattern unexpected."
+
+    return "Failed to create deal. CRM response pattern unexpected."
 
 
 async def process_message(

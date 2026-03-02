@@ -1,10 +1,12 @@
+from collections.abc import Generator
+from unittest.mock import AsyncMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import AsyncMock
-from collections.abc import Generator
 
-from src.main import app
 from src.api.v1.inventory import get_inventory_client
+from src.main import app
+
 
 @pytest.fixture
 def mock_inventory() -> AsyncMock:
@@ -57,7 +59,7 @@ async def test_get_stock_levels_success(override_get_inventory_client: None, moc
     ]
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/v1/inventory/stock/?skus=A&skus=B")
-        
+
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2

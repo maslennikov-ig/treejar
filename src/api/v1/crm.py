@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException

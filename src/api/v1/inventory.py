@@ -51,7 +51,7 @@ async def get_stock_levels(
 ) -> list[StockLevel]:
     """Get stock levels for multiple SKUs."""
     items = await inventory.get_stock_bulk(skus)
-    
+
     return [
         StockLevel(
             sku=item.get("sku", "Unknown"),
