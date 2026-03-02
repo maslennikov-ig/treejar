@@ -40,7 +40,11 @@ def create_app() -> FastAPI:
     app.include_router(api_v1_router, prefix="/api/v1")
 
     # Mount SQLAdmin
-    Admin(app, engine, title="Treejar Admin")
+    from src.api.admin.auth import authentication_backend
+    admin = Admin(app, engine, title="Treejar Admin", authentication_backend=authentication_backend)
+
+    from src.api.admin.views import setup_admin_views
+    setup_admin_views(admin)
 
     return app
 

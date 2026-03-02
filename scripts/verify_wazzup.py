@@ -16,7 +16,7 @@ async def main():
         test_phone = "1234567890"
 
     print(f"Attempting to send a text message to: {test_phone}")
-    
+
     async with WazzupProvider() as client:
         try:
             message_id = await client.send_text(test_phone, "Hello! This is an integration verification test from Treejar API.")

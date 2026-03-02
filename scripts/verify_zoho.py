@@ -5,14 +5,16 @@ import sys
 # Add project root to path so we can import src
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import redis.asyncio as aioredis
+
+from src.core.config import settings
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
-import redis.asyncio as aioredis
-from src.core.config import settings
+
 
 async def main():
     print("--- Verifying Zoho Integrations ---")
-    
+
     # Initialize redis for token caching
     redis = aioredis.from_url(settings.redis_url)
 
@@ -21,10 +23,10 @@ async def main():
     try:
         print("Fetching items...")
         items_data = await inventory_client.get_items(page=1, per_page=5)
-        
+
         items = items_data.get("items", [])
         print(f"✅ Found {len(items)} items.")
-        
+
         if items:
             sku = items[0].get("sku")
             print(f"\nFetching stock for SKU: {sku}...")
@@ -42,7 +44,7 @@ async def main():
     try:
         print(f"Searching for contact by phone: {test_phone}...")
         contact = await crm_client.find_contact_by_phone(test_phone)
-        
+
         contact_id = None
         if contact:
             contact_id = contact.get("id")
@@ -88,10 +90,10 @@ async def main():
                   print(f"✅ Deal created with ID: {deal_id}")
              else:
                   print(f"❌ Failed to create deal: {deal_resp_json}")
-                  
+
     except Exception as e:
          print(f"❌ Zoho CRM test failed: {e}")
-         
+
     finally:
          await redis.close()
 

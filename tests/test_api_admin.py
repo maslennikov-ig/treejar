@@ -43,3 +43,11 @@ async def test_admin_settings() -> None:
             "auto_reply_enabled": True
         })
         assert response2.status_code == 422 or response2.status_code == 501
+
+
+@pytest.mark.asyncio
+async def test_admin_mount_redirects_to_login() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/admin/")
+        assert response.status_code in (302, 303)
+        assert "/admin/login" in response.headers["location"]

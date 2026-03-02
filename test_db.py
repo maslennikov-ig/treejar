@@ -1,4 +1,3 @@
-import asyncio
 from src.core.config import settings
 
 print("DB URL:", settings.database_url)

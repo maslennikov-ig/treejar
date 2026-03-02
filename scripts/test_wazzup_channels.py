@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.integrations.messaging.wazzup import WazzupProvider
 
+
 async def main():
     print("--- Testing Wazzup API Connectivity (Channels) ---")
     async with WazzupProvider() as client:
