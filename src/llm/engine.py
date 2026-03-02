@@ -400,6 +400,27 @@ async def process_message(
     masked_text, new_piis = mask_pii(combined_text)
     pii_map.update(new_piis)
 
+    # Evaluate escalation triggers (Task 6)
+    from src.core.escalation import evaluate_escalation_triggers
+    from src.schemas.common import EscalationStatus
+
+    # Only evaluate if not already escalated
+    if conv.escalation_status == EscalationStatus.NONE.value:
+        escalation_eval = await evaluate_escalation_triggers(masked_text)
+        if escalation_eval.should_escalate and escalation_eval.reason:
+            from src.integrations.notifications.escalation import notify_manager_escalation
+            
+            # Get last 5 messages for context
+            recent_context = "\n".join(
+                [f"{msg.role}: {msg.content}" for msg in history[-5:]] + [f"user: {masked_text}"]
+            )
+            
+            await notify_manager_escalation(conv, escalation_eval.reason, [recent_context], db)
+            
+            # Instead of returning immediately, we proceed but inject a system note
+            # so the LLM responds politely indicating a human will follow up.
+            masked_text += "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"
+
     deps = SalesDeps(
         db=db,
         conversation=conv,
