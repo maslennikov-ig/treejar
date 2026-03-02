@@ -105,23 +105,23 @@
   - [x] Tool: `check_stock` -- для LLM (доступность, цена, склад)
 - [x] Тесты: mock Zoho API, integration для CRM flow
 
-### Неделя 5: Генерация КП (Quotations) и отправка в WhatsApp (36ч)
+> ⚠️ **branch `feature/quotation-generation` (worktree) — не мержен в main**
 
-- [ ] Инфраструктура PDF (WeasyPrint)
-  - [ ] Установка `weasyprint`, `jinja2`, настройка Docker-образа (зависмости Pango, HarfBuzz, шрифты для кириллицы)
-  - [ ] `src/services/pdf/generator.py` -- сервис генерации HTML -> PDF через WeasyPrint (в `run_in_threadpool`)
-  - [ ] Механизм скачивания/кэширования картинок товаров из Zoho для вставки в HTML
-  - [ ] Jinja2 шаблоны (`templates/quotation.html` и CSS) с поддержкой разрывов страниц, repeating thead, и footer-а
-- [ ] Интеграция Sale Order с Zoho Inventory
-  - [ ] Запись черновика (Draft) Sale Order в Zoho Inventory для складского учета
-  - [ ] `POST /api/v1/inventory/sale-orders/` -- создание заказа
-  - [ ] `GET /api/v1/inventory/sale-orders/{order_id}`
-- [ ] LLM flow для КП (4 образца КП получены: AA, CH, MS, PY. См. `docs/sample-quotations/`)
-  - [ ] Tool: `create_quotation` -- собирает данные (имя, компания, email, товары, QTY) и формирует структуру
-  - [ ] Интеграция генерации PDF и отправки через Wazzup (`client.send_media`)
-  - [ ] FSM: переход в stage `quoting` при согласии клиента
-  - [ ] Подтверждение менеджером/клиентом перед отправкой
-- [ ] Тесты: mock WeasyPrint, mock Zoho API, PDF flow
+- [x] Инфраструктура PDF (WeasyPrint)
+  - [x] Установка `weasyprint`, `jinja2`, настройка Docker-образа (зависмости Pango, HarfBuzz, шрифты для кириллицы)
+  - [x] `src/services/pdf/generator.py` -- сервис генерации HTML -> PDF через WeasyPrint (в `run_in_threadpool`)
+  - [x] Механизм скачивания/кэширования картинок товаров из Zoho для вставки в HTML
+  - [x] Jinja2 шаблоны (`templates/quotation.html` и CSS) с поддержкой разрывов страниц, repeating thead, и footer-а
+- [x] Интеграция Sale Order с Zoho Inventory
+  - [x] Запись черновика (Draft) Sale Order в Zoho Inventory для складского учета
+  - [x] `POST /api/v1/inventory/sale-orders/` -- создание заказа
+  - [x] `GET /api/v1/inventory/sale-orders/{order_id}`
+- [x] LLM flow для КП (4 образца КП получены: AA, CH, MS, PY. См. `docs/sample-quotations/`)
+  - [x] Tool: `create_quotation` -- собирает данные (имя, компания, email, товары, QTY) и формирует структуру
+  - [x] Интеграция генерации PDF и отправки через Wazzup (`client.send_media`)
+  - [x] FSM: переход в stage `quoting` при согласии клиента
+  - [x] Подтверждение менеджером/клиентом перед отправкой
+- [x] Тесты: mock WeasyPrint, mock Zoho API, PDF flow
 
 ### Неделя 6: Персональные цены + эскалация (32ч)
 
