@@ -15,7 +15,8 @@ class MessagingProvider(Protocol):
         ...
 
     async def send_media(
-        self, chat_id: str, url: str, caption: str | None = None
+        self, chat_id: str, url: str | None = None, caption: str | None = None,
+        content: bytes | None = None, content_type: str | None = None,
     ) -> str:
         """Send media (image/document/audio). Returns message ID."""
         ...

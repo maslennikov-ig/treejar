@@ -70,13 +70,13 @@ async def process_incoming_batch(
 
         await db.commit()
 
-        # 3. Process LLM
-        # We need Redis, EmbeddingEngine, ZohoClient
+        # We need Redis, EmbeddingEngine, ZohoClient, WazzupProvider
         # In a real app these typically come from the ARQ context or are instantiated here
         embedding_engine = EmbeddingEngine()
         redis = ctx.get("redis")
         zoho_client = ZohoInventoryClient(redis_client=redis)
         crm_client = ZohoCRMClient(redis_client=redis)
+        wazzup_provider = WazzupProvider()
 
         logger.info(f"Calling LLM for {chat_id}")
         llm_response = await process_message(
@@ -87,6 +87,7 @@ async def process_incoming_batch(
             embedding_engine=embedding_engine,
             zoho_client=zoho_client,
             crm_client=crm_client,
+            messaging_client=wazzup_provider,
         )
 
         # 4. Save response to DB
@@ -104,7 +105,6 @@ async def process_incoming_batch(
 
         # 5. Send via Wazzup
         logger.info(f"Sending reply to {chat_id} via Wazzup")
-        wazzup_provider = WazzupProvider()
         await wazzup_provider.send_text(
             chat_id=chat_id,
             text=llm_response.text,

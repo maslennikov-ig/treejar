@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+from src.integrations.messaging.base import MessagingProvider
 from src.llm.context import build_message_history
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
@@ -32,6 +33,7 @@ class SalesDeps:
     embedding_engine: EmbeddingEngine
     zoho_inventory: ZohoInventoryClient
     zoho_crm: ZohoCRMClient | None
+    messaging_client: MessagingProvider
     pii_map: dict[str, str]
 
 
@@ -216,6 +218,125 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
     return "Failed to create deal. CRM response pattern unexpected."
 
 
+@dataclass
+class QuotationItem:
+    sku: str
+    quantity: int
+
+@sales_agent.tool
+async def create_quotation(
+    ctx: RunContext[SalesDeps],
+    items: list[QuotationItem],
+) -> str:
+    """Generate a formal PDF quotation for the customer, save it to Zoho Inventory as a draft, and send it via WhatsApp.
+    Call this when the customer has explicitly asked for a quote and confirmed the items and quantities.
+    Make sure you have their name, company name (if applicable), and email addressed.
+    
+    Args:
+        items: List of the SKUs and quantities to include in the quote.
+    """
+    logger.info(f"LLM Tool called: create_quotation(items={items})")
+    
+    # Needs to fetch item details from Zoho Inventory
+    skus_to_fetch = [item.sku for item in items]
+    stock_details = await ctx.deps.zoho_inventory.get_stock_bulk(skus_to_fetch)
+    stock_map = {item["sku"]: item for item in stock_details}
+    
+    zoho_line_items = []
+    template_items = []
+    subtotal = 0.0
+    
+    for item in items:
+        if item.sku not in stock_map:
+            return f"Failed to create quotation: SKU {item.sku} not found."
+            
+        zoho_item = stock_map[item.sku]
+        unit_price = float(zoho_item.get("rate", 0.0))
+        total_price = unit_price * item.quantity
+        subtotal += total_price
+        
+        # Zoho Inventory Draft Order Line Item
+        zoho_line_items.append({
+            "item_id": zoho_item["item_id"],
+            "quantity": item.quantity,
+            "rate": unit_price,
+            "description": zoho_item.get("description", ""),
+        })
+        
+        # Template Data formatting
+        template_items.append({
+            "sku": item.sku,
+            "name": zoho_item.get("name", ""),
+            "description": zoho_item.get("description", ""),
+            "quantity": item.quantity,
+            "unit_price": unit_price,
+            "total_price": total_price,
+            # Weasyprint can load URLs directly if they are public.
+            "image_url": zoho_item.get("image_document_id")  # Assuming Zoho structure has an image URL or ID
+        })
+        
+    # Fake missing data (In production, load CRM contact link)
+    customer_id = "temp_draft_customer_id"  # Usually we'd map this via Zoho CRM contact
+    
+    # Create Draft Order in Zoho
+    try:
+        draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
+            customer_id=customer_id,
+            items=zoho_line_items,
+            status="draft"
+        )
+        quote_number = draft_resp.get("saleorder", {}).get("salesorder_number", "DRAFT")
+    except Exception as e:
+        logger.error(f"Failed to create draft sale order: {e}")
+        return "Failed to create draft sale order in Zoho Inventory."
+        
+    # Generate PDF context
+    vat_amount = subtotal * 0.05
+    grand_total = subtotal + vat_amount
+    
+    pdf_context = {
+        "quote_number": quote_number,
+        "trn": "100418386400003",
+        "date": "Today",
+        "customer": {
+            "name": ctx.deps.conversation.customer_name or "Valued Customer",
+            "company": "Company Name",
+            "email": "customer@example.com",
+            "address": "UAE"
+        },
+        "items": template_items,
+        "subtotal": subtotal,
+        "vat_amount": vat_amount,
+        "grand_total": grand_total,
+        "manager": {
+            "name": "Syed Amanullah",
+            "phone": "+971545467851",
+            "email": "syed.h@treejartrading.ae"
+        }
+    }
+    
+    # Import pdf generator (delay import to avoid circular dependency or import overhead if not used)
+    from src.services.pdf.generator import generate_pdf, render_quotation_html
+    html_content = render_quotation_html(pdf_context)
+    pdf_bytes = await generate_pdf(html_content)
+    
+    # Send via Messaging Provider
+    chat_id = ctx.deps.conversation.phone
+    try:
+        await ctx.deps.messaging_client.send_media(
+            chat_id=chat_id,
+            url=None,
+            caption=f"Here is your quotation: {quote_number}",
+            content=pdf_bytes,
+            content_type="application/pdf"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send PDF via Wazzup: {e}")
+        return "Generated quotation but failed to send it via WhatsApp."
+        
+    return f"Successfully generated quotation {quote_number} and sent it to the customer via WhatsApp."
+
+
 async def process_message(
     conversation_id: UUID,
     combined_text: str,
@@ -223,6 +344,7 @@ async def process_message(
     redis: Any,
     embedding_engine: EmbeddingEngine,
     zoho_client: ZohoInventoryClient,
+    messaging_client: MessagingProvider,
     crm_client: ZohoCRMClient | None = None,
 ) -> LLMResponse:
     """Process an incoming message through the PydanticAI agent.
@@ -254,6 +376,7 @@ async def process_message(
         embedding_engine=embedding_engine,
         zoho_inventory=zoho_client,
         zoho_crm=crm_client,
+        messaging_client=messaging_client,
         pii_map=pii_map,
     )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import Any
 
 import httpx
@@ -86,14 +87,21 @@ class WazzupProvider(MessagingProvider):
         return "unknown"
 
     async def send_media(
-        self, chat_id: str, url: str, caption: str | None = None
+        self, chat_id: str, url: str | None = None, caption: str | None = None,
+        content: bytes | None = None, content_type: str | None = None,
     ) -> str:
         """Send media (image/document/audio). Returns message ID."""
         payload: dict[str, Any] = {
             "chatId": chat_id,
             "chatType": "whatsapp",
-            "contentUri": url,  # Wazzup v3 uses contentUri instead of media.url
         }
+        if url:
+            payload["contentUri"] = url
+        if content:
+            payload["content"] = base64.b64encode(content).decode("ascii")
+            if content_type:
+                # Although Wazzup might infer this, sometimes it's needed or omitted
+                pass
         if caption:
             payload["text"] = caption
         if self.channel_id:

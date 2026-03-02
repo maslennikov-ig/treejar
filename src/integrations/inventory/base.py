@@ -18,7 +18,9 @@ class InventoryProvider(Protocol):
         """Get stock levels for multiple SKUs."""
         ...
 
-    async def create_sale_order(self, data: dict[str, Any]) -> dict[str, Any]:
+    async def create_sale_order(
+        self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"
+    ) -> dict[str, Any]:
         """Create a sale order / quotation."""
         ...
 
