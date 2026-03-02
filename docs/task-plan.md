@@ -82,44 +82,46 @@
 
 ### Неделя 4: Zoho CRM + проверка остатков (36ч)
 
-- [ ] Zoho CRM коннектор (EU регион: zohoapis.eu, 97 полей контакта, 72 поля сделки)
-  - [ ] `src/integrations/crm/zoho_crm.py` -- реализация `CRMProvider`
-  - [ ] OAuth2 token management (shared lock с Inventory, единый Zoho One аккаунт)
-  - [ ] `find_contact_by_phone()` -- поиск по телефону (поля: Phone, Mobile, WhatsApp)
-  - [ ] `create_contact()` -- создание с UTM-метками (utm_source/medium/campaign/content/term, GCLID, Ad_ID)
-  - [ ] `create_deal()` -- создание сделки. 12 этапов: Qualification → New Lead → New Lead Saudi Arabia → Negotiations → Offer sent → IN WORK → Order confirmed → Order sent to warehouse → Consignment → Order collected/delivered → ON HOLD → Closed Lost
-  - [ ] `update_deal()` -- обновление стадии
-  - [ ] Кастомные поля: Segment (9 сегментов), Department_Treejar, Interest, Sales_Person
-- [ ] CRM API endpoints
-  - [ ] `GET /api/v1/crm/contacts/{phone}` -- реализация
-  - [ ] `POST /api/v1/crm/contacts/` -- реализация
-  - [ ] `POST /api/v1/crm/deals/` -- реализация
-  - [ ] `PATCH /api/v1/crm/deals/{deal_id}` -- реализация
-- [ ] LLM tools для CRM
-  - [ ] Tool: `lookup_customer` -- поиск клиента в CRM по телефону
-  - [ ] Tool: `create_deal` -- создание сделки из диалога
-  - [ ] Context enrichment: история покупок из CRM -> system prompt
-- [ ] Проверка остатков (Inventory)
-  - [ ] `GET /api/v1/inventory/stock/{sku}` -- реализация
-  - [ ] `GET /api/v1/inventory/stock/` -- bulk query
-  - [ ] Tool: `check_stock` -- для LLM (доступность, цена, склад)
-- [ ] Тесты: mock Zoho API, integration для CRM flow
+- [x] Zoho CRM коннектор (EU регион: zohoapis.eu, 97 полей контакта, 72 поля сделки)
+  - [x] `src/integrations/crm/zoho_crm.py` -- реализация `CRMProvider`
+  - [x] OAuth2 token management (shared lock с Inventory, единый Zoho One аккаунт)
+  - [x] `find_contact_by_phone()` -- поиск по телефону (поля: Phone, Mobile, WhatsApp)
+  - [x] `create_contact()` -- создание с UTM-метками (utm_source/medium/campaign/content/term, GCLID, Ad_ID)
+  - [x] `create_deal()` -- создание сделки. 12 этапов: Qualification → New Lead → New Lead Saudi Arabia → Negotiations → Offer sent → IN WORK → Order confirmed → Order sent to warehouse → Consignment → Order collected/delivered → ON HOLD → Closed Lost
+  - [x] `update_deal()` -- обновление стадии
+  - [x] Кастомные поля: Segment (9 сегментов), Department_Treejar, Interest, Sales_Person
+- [x] CRM API endpoints
+  - [x] `GET /api/v1/crm/contacts/{phone}` -- реализация
+  - [x] `POST /api/v1/crm/contacts/` -- реализация
+  - [x] `POST /api/v1/crm/deals/` -- реализация
+  - [x] `PATCH /api/v1/crm/deals/{deal_id}` -- реализация
+- [x] LLM tools для CRM
+  - [x] Tool: `lookup_customer` -- поиск клиента в CRM по телефону
+  - [x] Tool: `create_deal` -- создание сделки из диалога
+  - [x] Context enrichment: история покупок из CRM -> system prompt
+- [x] Проверка остатков (Inventory)
+  - [x] `GET /api/v1/inventory/stock/{sku}` -- реализация
+  - [x] `GET /api/v1/inventory/stock/` -- bulk query
+  - [x] Tool: `check_stock` -- для LLM (доступность, цена, склад)
+- [x] Тесты: mock Zoho API, integration для CRM flow
 
-### Неделя 5: Генерация КП (SaleOrder) (36ч)
+### Неделя 5: Генерация КП (Quotations) и отправка в WhatsApp (36ч)
 
-- [ ] SaleOrder
-  - [ ] `POST /api/v1/inventory/sale-orders/` -- реализация
-  - [ ] `GET /api/v1/inventory/sale-orders/{order_id}` -- с PDF URL
-  - [ ] Zoho Inventory: создание SaleOrder через API
-  - [ ] Получение PDF из Zoho и отправка клиенту через Wazzup
-- [ ] LLM flow для КП (4 образца КП получены: AA 63K, CH 161K, MS 12K, PY 15K AED. См. `docs/sample-quotations/`)
-  - [ ] Tool: `create_quotation` -- собирает данные и создаёт SaleOrder
-  - [ ] Структура КП: шапка (Skyland+Treejar), данные клиента, таблица товаров (фото, SKU, описание, QTY, цена), delivery, TOTAL → VAT 5% → GRAND TOTAL
-  - [ ] Для крупных проектов -- структурировать по отделам/зонам (как в CH 090226)
-  - [ ] FSM: переход в stage `quoting` при согласии клиента
-  - [ ] Сбор данных: название компании, email, товары, количество
-  - [ ] Подтверждение перед отправкой
-- [ ] Тесты: mock SaleOrder creation, PDF flow
+- [x] Инфраструктура PDF (WeasyPrint)
+  - [x] Установка `weasyprint`, `jinja2`, настройка Docker-образа (зависмости Pango, HarfBuzz, шрифты для кириллицы)
+  - [x] `src/services/pdf/generator.py` -- сервис генерации HTML -> PDF через WeasyPrint (в `run_in_threadpool`)
+  - [x] Механизм скачивания/кэширования картинок товаров из Zoho для вставки в HTML
+  - [x] Jinja2 шаблоны (`templates/quotation.html` и CSS) с поддержкой разрывов страниц, repeating thead, и footer-а
+- [x] Интеграция Sale Order с Zoho Inventory
+  - [x] Запись черновика (Draft) Sale Order в Zoho Inventory для складского учета
+  - [x] `POST /api/v1/inventory/sale-orders/` -- создание заказа
+  - [x] `GET /api/v1/inventory/sale-orders/{order_id}`
+- [x] LLM flow для КП (4 образца КП получены: AA, CH, MS, PY. См. `docs/sample-quotations/`)
+  - [x] Tool: `create_quotation` -- собирает данные (имя, компания, email, товары, QTY) и формирует структуру
+  - [x] Интеграция генерации PDF и отправки через Wazzup (`client.send_media`)
+  - [x] FSM: переход в stage `quoting` при согласии клиента
+  - [x] Подтверждение менеджером/клиентом перед отправкой
+- [x] Тесты: mock WeasyPrint, mock Zoho API, PDF flow
 
 ### Неделя 6: Персональные цены + эскалация (32ч)
 
