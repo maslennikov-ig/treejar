@@ -190,8 +190,15 @@ class ZohoInventoryClient(InventoryProvider):
         results = await asyncio.gather(*[_fetch(sku) for sku in skus])
         return [res for res in results if res is not None]
 
-    async def create_sale_order(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Create a sale order / quotation. (To be implemented fully later)."""
+    async def create_sale_order(
+        self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"
+    ) -> dict[str, Any]:
+        """Create a sale order / quotation in Zoho Inventory."""
+        data = {
+            "customer_id": customer_id,
+            "line_items": items,
+            "status": status,
+        }
         response = await self._request("POST", "/salesorders", json=data)
         return dict(response.json())
 
