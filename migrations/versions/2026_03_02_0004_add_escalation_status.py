@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0004_add_escalation_status"
-down_revision: str | None = "0003_add_wazzup_message_id_index"
+down_revision: str | None = "2026_02_25_0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

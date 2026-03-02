@@ -87,3 +87,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+async def get_system_config(db, key: str, default: str) -> str:
+    """Fetch a configuration value from the DB, fallback to default."""
+    from sqlalchemy import select
+    from src.models.system_config import SystemConfig
+
+    stmt = select(SystemConfig).where(SystemConfig.key == key)
+    result = await db.execute(stmt)
+    config = result.scalar_one_or_none()
+    
+    if config:
+        return config.value
+        
+    return default

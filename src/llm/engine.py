@@ -433,10 +433,14 @@ async def process_message(
     )
 
     try:
+        from src.core.config import get_system_config
+        db_model_main = await get_system_config(db, "openrouter_model_main", settings.openrouter_model_main)
+
         result = await sales_agent.run(
             user_prompt=masked_text,
             deps=deps,
             message_history=history,
+            model=db_model_main,
         )
 
         # Unmask PII before sending back to user
@@ -449,7 +453,7 @@ async def process_message(
             tokens_in=usage.input_tokens if usage else None,
             tokens_out=usage.output_tokens if usage else None,
             cost=None, # Usage cost tracking usually needs custom logic or litellm
-            model=settings.openrouter_model_main,
+            model=db_model_main,
         )
 
     except Exception:
@@ -459,5 +463,5 @@ async def process_message(
             tokens_in=0,
             tokens_out=0,
             cost=0.0,
-            model=settings.openrouter_model_main,
+            model=db_model_main if 'db_model_main' in locals() else settings.openrouter_model_main,
         )

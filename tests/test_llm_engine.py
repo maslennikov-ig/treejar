@@ -22,10 +22,16 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
         escalation_status="none",
     )
     db.get.return_value = conv
+    from src.models.system_config import SystemConfig
     from unittest.mock import MagicMock
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
-    db.execute.return_value = mock_result  # Empty history
+    
+    # Mock for get_system_config
+    mock_config = SystemConfig(key="openrouter_model_main", value="mock_model")
+    mock_result.scalar_one_or_none.return_value = mock_config
+    
+    db.execute.return_value = mock_result  # Handles both queries
 
     engine = AsyncMock()
     zoho = AsyncMock()
@@ -67,8 +73,7 @@ async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conver
     assert isinstance(response.text, str)
     assert response.tokens_in is not None
     assert response.tokens_out is not None
-    from src.core.config import settings
-    assert response.model == settings.openrouter_model_main
+    assert response.model == "mock_model"
 
 
 @pytest.mark.asyncio

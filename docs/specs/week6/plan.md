@@ -226,3 +226,18 @@ git commit -m "feat: apply segment discounts dynamically in LLM tools"
 *(Detailed implementation skipped here for brevity, to be executed by subagent)*
 
 ---
+
+### Task 8: LLM Models Admin DB Config
+
+**Files:**
+- Create: `src/models/system_config.py`
+- Create: `alembic/versions/xxxx_system_config.py`
+- Modify: `src/core/config.py` (or where models are accessed)
+- Modify: `src/llm/engine.py` (Read config from DB instead of settings)
+- Test: `tests/test_models_config.py`
+
+**Step 1:** Write the failing test for `get_llm_config`.
+**Step 2:** Run test to verify it fails.
+**Step 3:** Write minimal implementation (SystemConfig model with key-value or specific columns like `main_model_name` and `fast_model_name`).
+**Step 4:** Run test to verify it passes.
+**Step 5:** Integrate into `engine.py` and run all tests.
