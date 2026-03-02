@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .common import (
     ConversationStatus,
+    EscalationStatus,
     Language,
     SalesStage,
     TimestampModel,
@@ -28,6 +29,7 @@ class ConversationRead(UUIDModel, TimestampModel):
     language: Language
     sales_stage: SalesStage
     status: ConversationStatus
+    escalation_status: EscalationStatus = EscalationStatus.NONE
     zoho_contact_id: str | None = None
     zoho_deal_id: str | None = None
 
@@ -40,6 +42,7 @@ class ConversationDetail(ConversationRead):
 class ConversationUpdate(BaseModel):
     status: ConversationStatus | None = None
     sales_stage: SalesStage | None = None
+    escalation_status: EscalationStatus | None = None
     customer_name: str | None = None
 
 

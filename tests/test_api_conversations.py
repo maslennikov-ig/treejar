@@ -38,6 +38,7 @@ async def test_list_conversations(mock_db: AsyncMock) -> None:
         language="en",
         status="active",
         sales_stage="greeting",
+        escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         metadata_={}
@@ -69,6 +70,7 @@ async def test_get_conversation_success(mock_db: AsyncMock) -> None:
         sales_stage="qualifying",
         language="en",
         status="active",
+        escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         metadata_={}
@@ -125,6 +127,7 @@ async def test_update_conversation_success(mock_db: AsyncMock) -> None:
         language="en",
         sales_stage="greeting",
         status="active",
+        escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         metadata_={}

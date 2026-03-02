@@ -15,6 +15,7 @@ from src.schemas import (
     ConversationRead,
     ConversationStatus,
     ConversationUpdate,
+    EscalationStatus,
     Language,
     PaginatedResponse,
 )
@@ -103,11 +104,32 @@ async def update_conversation(
 
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        if isinstance(value, (ConversationStatus, Language)):
+        if isinstance(value, (ConversationStatus, Language, EscalationStatus)):
             setattr(conversation, field, value.value)
         else:
             setattr(conversation, field, value)
 
+    await db.commit()
+    await db.refresh(conversation)
+
+    return ConversationRead.model_validate(conversation)
+
+
+@router.post("/{conversation_id}/escalate", response_model=ConversationRead)
+async def escalate_conversation(
+    conversation_id: uuid.UUID,
+    db: DbSession,
+) -> ConversationRead:
+    """Manually escalate a conversation to a human manager."""
+    from src.schemas.common import EscalationStatus
+    stmt = select(Conversation).where(Conversation.id == conversation_id)
+    result = await db.execute(stmt)
+    conversation = result.scalar_one_or_none()
+
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversation.escalation_status = EscalationStatus.PENDING.value
     await db.commit()
     await db.refresh(conversation)
 

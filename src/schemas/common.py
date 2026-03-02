@@ -30,6 +30,7 @@ class ConversationStatus(StrEnum):
 
 
 class EscalationStatus(StrEnum):
+    NONE = "none"
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"

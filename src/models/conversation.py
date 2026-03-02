@@ -25,6 +25,7 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
     language: Mapped[str] = mapped_column(String, default="en")
     sales_stage: Mapped[str] = mapped_column(String, default="greeting")
     status: Mapped[str] = mapped_column(String, default="active")
+    escalation_status: Mapped[str] = mapped_column(String, default="none")
     metadata_: Mapped[dict[str, Any] | None] = mapped_column(
         "metadata", JSON, nullable=True, default=None
     )
