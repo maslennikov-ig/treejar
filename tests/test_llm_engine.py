@@ -11,7 +11,7 @@ from src.schemas.product import ProductRead
 
 
 @pytest.fixture
-def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]:
+def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]:
     db = AsyncMock()
     conv = Conversation(
         id=uuid.uuid4(),
@@ -29,13 +29,14 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
     zoho = AsyncMock()
     zoho_crm = AsyncMock()
     redis = AsyncMock()
+    messaging = AsyncMock()
 
-    return db, conv, engine, zoho, zoho_crm, redis
+    return db, conv, engine, zoho, zoho_crm, redis, messaging
 
 
 @pytest.mark.asyncio
-async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
 
     # We use `test_model` from pydantic-ai to mock responses without hitting an API
     test_model = TestModel()
@@ -50,6 +51,7 @@ async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conver
             embedding_engine=engine,
             zoho_client=zoho,
             crm_client=zoho_crm,
+            messaging_client=messaging,
         )
 
     assert isinstance(response.text, str)
@@ -60,8 +62,8 @@ async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conver
 
 
 @pytest.mark.asyncio
-async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     db.get.return_value = None  # Force a not found error
 
     with pytest.raises(ValueError, match="Conversation .* not found"):
@@ -73,19 +75,21 @@ async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conve
             embedding_engine=engine,
             zoho_client=zoho,
             crm_client=zoho_crm,
+            messaging_client=messaging,
         )
 
 
 @pytest.mark.asyncio
-async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
     from datetime import UTC, datetime
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
 
@@ -135,14 +139,15 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
 
 
 @pytest.mark.asyncio
-async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
 
@@ -165,14 +170,15 @@ async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, Asy
 
 
 @pytest.mark.asyncio
-async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
     from pydantic_ai import RunContext
@@ -189,14 +195,15 @@ async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMo
 
 
 @pytest.mark.asyncio
-async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
     from pydantic_ai import RunContext
@@ -211,14 +218,15 @@ async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversatio
     assert "not found" in result
 
 @pytest.mark.asyncio
-async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
     from pydantic_ai import RunContext
@@ -243,14 +251,15 @@ async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, A
 
 
 @pytest.mark.asyncio
-async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
     from pydantic_ai import RunContext
@@ -266,14 +275,15 @@ async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conve
 
 
 @pytest.mark.asyncio
-async def test_tools_create_deal_no_crm(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, _zoho_crm, redis = mock_deps
+async def test_tools_create_deal_no_crm(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=None,
+        messaging_client=messaging,
         pii_map={},
     )
     from pydantic_ai import RunContext
@@ -287,14 +297,15 @@ async def test_tools_create_deal_no_crm(mock_deps: tuple[AsyncMock, Conversation
     assert "not available" in result
 
 @pytest.mark.asyncio
-async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
-    db, conv, engine, zoho, zoho_crm, redis = mock_deps
+async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
+        messaging_client=messaging,
         pii_map={},
     )
     from pydantic_ai import RunContext

@@ -29,13 +29,9 @@ async def test_create_quotation_tool():
     mock_conversation.phone = "+1234567890"
     mock_conversation.customer_name = "Test Customer"
 
-    mock_pdf_generator = AsyncMock()
-    mock_pdf_generator.return_value = b"pdf_data"
-
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = mock_messaging
-    deps.pdf_generator = mock_pdf_generator
     deps.conversation = mock_conversation
 
     ctx = MagicMock(spec=RunContext)
@@ -43,7 +39,12 @@ async def test_create_quotation_tool():
 
     items = [QuotationItem(sku="CHAIR-1", quantity=2)]
 
-    result = await create_quotation(ctx, items)
+    # Patch generate_pdf at the definition module (lazy import inside function)
+    from unittest.mock import patch, AsyncMock as AM
+    with patch("src.services.pdf.generator.generate_pdf", new_callable=AM) as mock_pdf, \
+         patch("src.services.pdf.generator.render_quotation_html", return_value="<html>"):
+        mock_pdf.return_value = b"pdf_data"
+        result = await create_quotation(ctx, items)
 
     assert "Successfully generated quotation" in result
     assert "SA-001" in result
@@ -56,8 +57,8 @@ async def test_create_quotation_tool():
     assert kwargs["items"][0]["item_id"] == "123"
     assert kwargs["items"][0]["quantity"] == 2
 
-    # Verify PDF generation
-    mock_pdf_generator.assert_called_once()
+    # Verify PDF generation was called
+    mock_pdf.assert_called_once()
 
     # Verify Messaging
     mock_messaging.send_media.assert_called_once_with(
@@ -67,6 +68,7 @@ async def test_create_quotation_tool():
         content=b"pdf_data",
         content_type="application/pdf",
     )
+
 
 
 @pytest.mark.asyncio
