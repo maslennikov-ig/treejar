@@ -1,7 +1,7 @@
 # Project Infrastructure & Credentials Memo
 
 ## Server (from developer-status-2026-02-25.md)
-- **Host**: `136.243.71.213` (Germany, Hetzner)
+- **Host**: `(IP to be provided)` (Germany, Hetzner)
 - **Specs**: AMD Ryzen 9 7950X3D, 128 GB DDR5 ECC, 2x1.92 TB NVMe SSD
 - **Docker Container**: TreeJar container already created.
 - **Action Items**: 
