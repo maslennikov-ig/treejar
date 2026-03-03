@@ -23,13 +23,23 @@ async def test_process_incoming_batch_new_conversation(
 
     from typing import Any
     class MockResult:
-        def __init__(self, vals: list[Any]) -> None:
-            self.iter = iter(vals)
+        def __init__(self, val: Any) -> None:
+            self.val = val
 
         def scalar_one_or_none(self) -> Any:
-            return next(self.iter)
+            return self.val
 
-    mock_session.execute.return_value = MockResult([None, None])
+        def scalars(self) -> Any:
+            return self
+            
+        def first(self) -> Any:
+            return self.val
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(None),  # conv
+        MockResult(None),  # msg
+    ]
 
     # Simulate LLM response
     mock_llm_response = AsyncMock()

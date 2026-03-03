@@ -88,6 +88,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
 
     deps = SalesDeps(
         db=db,
+        redis=redis,
         conversation=conv,
         embedding_engine=engine,
         zoho_inventory=zoho,

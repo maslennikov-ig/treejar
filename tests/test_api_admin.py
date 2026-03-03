@@ -1,53 +1,55 @@
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
-from src.main import app
+from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_admin_prompts() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response1 = await ac.get("/api/v1/admin/prompts/")
-        assert response1.status_code == 501
+async def test_admin_endpoints(client: AsyncClient) -> None:
+    # --- test_admin_prompts ---
+    response1 = await client.get("/api/v1/admin/prompts/")
+    assert response1.status_code == 200
+    data = response1.json()
+    assert isinstance(data, list)
 
-        some_uuid = str(uuid.uuid4())
-        response2 = await ac.get(f"/api/v1/admin/prompts/{some_uuid}")
-        assert response2.status_code == 501
+    some_uuid = str(uuid.uuid4())
+    response2 = await client.get(f"/api/v1/admin/prompts/{some_uuid}")
+    assert response2.status_code == 404
 
-        response3 = await ac.put(f"/api/v1/admin/prompts/{some_uuid}", json={
-            "name": "string",
-            "content": "string",
-            "language": "string",
-            "is_active": True
-        })
-        assert response3.status_code == 422 or response3.status_code == 501
+    response3 = await client.put(f"/api/v1/admin/prompts/{some_uuid}", json={
+        "content": "new system prompt content",
+        "description": "updated prompt description"
+    })
+    assert response3.status_code == 404
 
+    # --- test_admin_metrics ---
+    response_m = await client.get("/api/v1/admin/metrics/")
+    assert response_m.status_code == 200
+    data_m = response_m.json()
+    assert "total_conversations" in data_m
+    assert "messages_sent" in data_m
+    assert "llm_cost_usd" in data_m
+    assert "escalations" in data_m
+    assert "deals_created" in data_m
+    assert "quotes_generated" in data_m
 
-@pytest.mark.asyncio
-async def test_admin_metrics() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/api/v1/admin/metrics/")
-        assert response.status_code == 501
+    # --- test_admin_settings ---
+    response_s1 = await client.get("/api/v1/admin/settings/")
+    assert response_s1.status_code == 200
+    data1 = response_s1.json()
+    assert "bot_enabled" in data1
+    assert "default_language" in data1
 
+    response_s2 = await client.patch("/api/v1/admin/settings/", json={
+        "bot_enabled": False,
+        "default_language": "ar"
+    })
+    assert response_s2.status_code == 200
+    data2 = response_s2.json()
+    assert data2["bot_enabled"] is False
+    assert data2["default_language"] == "ar"
 
-@pytest.mark.asyncio
-async def test_admin_settings() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response1 = await ac.get("/api/v1/admin/settings/")
-        assert response1.status_code == 501
-
-        response2 = await ac.patch("/api/v1/admin/settings/", json={
-            "operating_mode": "string",
-            "auto_reply_enabled": True
-        })
-        assert response2.status_code == 422 or response2.status_code == 501
-
-
-@pytest.mark.asyncio
-async def test_admin_mount_redirects_to_login() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/admin/")
-        assert response.status_code in (302, 303)
-        assert "/admin/login" in response.headers["location"]
+    # --- test_admin_mount_redirects_to_login ---
+    response_rm = await client.get("/admin/")
+    assert response_rm.status_code in (302, 303)
+    assert "/admin/login" in response_rm.headers["location"]

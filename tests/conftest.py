@@ -8,6 +8,9 @@ os.environ["WAZZUP_API_URL"] = "http://fake-wazzup-url"
 
 from collections.abc import AsyncGenerator
 
+import os
+os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 

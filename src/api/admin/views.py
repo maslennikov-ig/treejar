@@ -7,6 +7,7 @@ from src.models.message import Message
 from src.models.product import Product
 from src.models.quality_review import QualityReview
 from src.models.system_config import SystemConfig
+from src.models.system_prompt import SystemPrompt
 
 
 class ConversationAdmin(ModelView, model=Conversation):
@@ -58,6 +59,13 @@ class SystemConfigAdmin(ModelView, model=SystemConfig):
     icon = "fa-solid fa-gear"
 
 
+class SystemPromptAdmin(ModelView, model=SystemPrompt):
+    column_list = [SystemPrompt.name, SystemPrompt.version, SystemPrompt.is_active, SystemPrompt.updated_at]
+    name = "System Prompt"
+    name_plural = "System Prompts"
+    icon = "fa-solid fa-scroll"
+
+
 def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(ConversationAdmin)
     admin_app.add_view(MessageAdmin)
@@ -66,3 +74,4 @@ def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(QualityReviewAdmin)
     admin_app.add_view(EscalationAdmin)
     admin_app.add_view(SystemConfigAdmin)
+    admin_app.add_view(SystemPromptAdmin)

@@ -106,7 +106,8 @@ markers = [
 filterwarnings = [
     "ignore::DeprecationWarning:opentelemetry.*",
     "ignore:You should use `.*` instead.:DeprecationWarning",
-    "ignore:coroutine '.*' was never awaited:RuntimeWarning"
+    "ignore:coroutine '.*' was never awaited:RuntimeWarning",
+    "ignore:No logs or spans will be created until.*:UserWarning:logfire",
 ]
 
 [tool.deptry.per_rule_ignores]

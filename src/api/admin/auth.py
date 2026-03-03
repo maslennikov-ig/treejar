@@ -9,8 +9,8 @@ from src.core.config import settings
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         form = await request.form()
-        username = form.get("username", "")
-        password = form.get("password", "")
+        username = str(form.get("username", ""))
+        password = str(form.get("password", ""))
 
         is_valid_user = secrets.compare_digest(username, settings.admin_username)
         is_valid_pass = secrets.compare_digest(password, settings.admin_password)

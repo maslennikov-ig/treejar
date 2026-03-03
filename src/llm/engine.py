@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SalesDeps:
     db: AsyncSession
+    redis: Any
     conversation: Conversation
     embedding_engine: EmbeddingEngine
     zoho_inventory: ZohoInventoryClient
@@ -76,7 +77,9 @@ sales_agent = Agent(
 @sales_agent.system_prompt
 async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
     """Dynamically inject the system prompt based on current stage and language."""
-    base_prompt = build_system_prompt(
+    base_prompt = await build_system_prompt(
+        db=ctx.deps.db,
+        redis=ctx.deps.redis,
         stage=ctx.deps.conversation.sales_stage,
         language=ctx.deps.conversation.language,
     )
@@ -425,6 +428,7 @@ async def process_message(
 
     deps = SalesDeps(
         db=db,
+        redis=redis,
         conversation=conv,
         embedding_engine=embedding_engine,
         zoho_inventory=zoho_client,

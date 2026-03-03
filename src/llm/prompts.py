@@ -1,4 +1,13 @@
+import logging
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models.system_prompt import SystemPrompt
 from src.schemas.common import Language, SalesStage
+
+logger = logging.getLogger(__name__)
 
 BASE_SYSTEM_PROMPT = """You are Noor, an expert B2B office furniture sales consultant at Treejar.
 Your goal is to guide the customer through the sales process professionally and naturally.
@@ -62,20 +71,69 @@ If they are not ready to buy, schedule a follow-up action or ask when it would b
 }
 
 
-def build_system_prompt(stage: str | SalesStage, language: str | Language) -> str:
+async def get_system_prompt_component(
+    db: AsyncSession, redis: Any, name: str, default: str
+) -> str:
+    """Fetch a prompt component from cache, then DB, falling back to default."""
+    cache_key = f"prompt:{name}"
+
+    if redis:
+        try:
+            cached = await redis.get(cache_key)
+            if cached and isinstance(cached, bytes):
+                return str(cached.decode("utf-8"))
+        except Exception as e:
+            logger.warning("Redis cache error in get_system_prompt_component: %s", e)
+
+    try:
+        stmt = select(SystemPrompt).where(
+            SystemPrompt.name == name, SystemPrompt.is_active.is_(True)
+        ).order_by(SystemPrompt.version.desc())
+        result = await db.execute(stmt)
+        prompt = result.scalars().first()
+        val = prompt.content if prompt else default
+    except Exception as e:
+        logger.warning("DB error fetching prompt component '%s': %s", name, e)
+        val = default
+
+    if redis:
+        try:
+            await redis.set(cache_key, val, ex=3600)  # cache for 1 hour
+        except Exception as e:
+            logger.warning("Redis cache set error: %s", e)
+
+    return val
+
+
+async def build_system_prompt(
+    db: AsyncSession,
+    redis: Any,
+    stage: str | SalesStage,
+    language: str | Language,
+) -> str:
     """
     Assembles the complete system prompt for the current conversation stage and language.
+    Fetches base_prompt and stage_rules dynamically from DB.
     """
     stage_val = stage.value if isinstance(stage, SalesStage) else stage
     language_val = language.value if isinstance(language, Language) else language
 
+    # Fetch Base Prompt
+    base_prompt = await get_system_prompt_component(
+        db, redis, "base_prompt", BASE_SYSTEM_PROMPT
+    )
+
     language_name = "English" if language_val == "en" else "Arabic"
     lang_directive = LANGUAGE_DIRECTIVE.format(language=language_name)
 
-    stage_rule = STAGE_RULES.get(stage_val, "")
+    # Fetch Stage Rule
+    default_stage_rule = STAGE_RULES.get(stage_val, "")
+    stage_rule = await get_system_prompt_component(
+        db, redis, f"stage_{stage_val}", default_stage_rule
+    )
 
     parts = [
-        BASE_SYSTEM_PROMPT.strip(),
+        base_prompt.strip(),
         lang_directive.strip(),
         stage_rule.strip(),
     ]

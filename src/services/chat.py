@@ -12,6 +12,7 @@ from src.integrations.messaging.wazzup import WazzupProvider
 from src.llm.engine import process_message
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
 
@@ -42,6 +43,14 @@ async def process_incoming_batch(
         return
 
     async with async_session_factory() as db:
+        # 0. Check if bot is enabled
+        cfg_stmt = select(SystemConfig).where(SystemConfig.key == "bot_enabled")
+        cfg_result = await db.execute(cfg_stmt)
+        bot_enabled_cfg = cfg_result.scalars().first()
+        if bot_enabled_cfg and bot_enabled_cfg.value.lower() == "false":
+            logger.info(f"Bot is globally disabled. Skipping batch for {chat_id}")
+            return
+
         # 1. Get or create conversation
         stmt = select(Conversation).where(Conversation.phone == chat_id)
         result = await db.execute(stmt)

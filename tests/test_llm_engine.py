@@ -158,7 +158,7 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
 
     # We mock search_products manually for the tool context
@@ -216,7 +216,7 @@ async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, Asy
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
 
     from pydantic_ai import RunContext
@@ -247,7 +247,7 @@ async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMo
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -272,7 +272,7 @@ async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversatio
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -295,7 +295,7 @@ async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, A
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -328,7 +328,7 @@ async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conve
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -352,7 +352,7 @@ async def test_tools_create_deal_no_crm(mock_deps: tuple[AsyncMock, Conversation
         zoho_inventory=zoho,
         zoho_crm=None,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -374,7 +374,7 @@ async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, Async
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={},
+        pii_map={}, redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
