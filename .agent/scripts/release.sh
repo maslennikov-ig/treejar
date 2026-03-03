@@ -420,9 +420,7 @@ Auto-committed ${TOTAL_COUNT} file(s) before creating release.
 Files changed:
 ${FILE_LIST}
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+🤖 Generated with [Antigravity]"
             log_info "Using custom commit message: ${CUSTOM_COMMIT_MSG}"
         else
             COMMIT_MSG="${commit_prefix}: ${commit_desc}
@@ -434,9 +432,7 @@ Auto-committed ${TOTAL_COUNT} file(s) before creating release.
 Files changed:
 ${FILE_LIST}
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+🤖 Generated with [Antigravity]"
         fi
 
         # Create commit with retry for lint-staged modifications
@@ -1161,9 +1157,7 @@ Release version $NEW_VERSION with ${#FEATURES[@]} features and ${#FIXES[@]} fixe
 
 Includes commits from ${LAST_TAG:-start} to HEAD
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>
+🤖 Generated with [Antigravity]
 ───────────────────────────────────────────────────────────
 
 🏷️  Git Tag: v$NEW_VERSION
@@ -1187,13 +1181,8 @@ get_user_confirmation() {
         return 0
     fi
 
-    read -p "Proceed with release? [Y/n]: " confirm
-
-    if [[ ! "$confirm" =~ ^[Yy]?$ ]]; then
-        log_warning "Release cancelled by user"
-        exit 0
-    fi
-
+    # In Antigravity workflows, we always want to auto-confirm
+    log_info "Auto-confirming release (Antigravity mode)"
     echo ""
 }
 
@@ -1225,9 +1214,7 @@ Release version $NEW_VERSION with ${#FEATURES[@]} features and ${#FIXES[@]} fixe
 
 Includes commits from ${LAST_TAG:-start} to HEAD
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>" || {
+🤖 Generated with [Antigravity]" || {
         log_error "Failed to create commit"
         exit 1
     }
