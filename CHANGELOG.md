@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.10] - 2026-03-03
 
 ### Other
+- **release**: v0.2.10 (2ff3ef2)
+- update project files (b56742e)
+
+
+## [0.2.10] - 2026-03-03
+
+### Other
 - update project files (b56742e)
 
 
