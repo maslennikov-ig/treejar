@@ -31,7 +31,7 @@ async def test_process_incoming_batch_new_conversation(
 
         def scalars(self) -> Any:
             return self
-            
+
         def first(self) -> Any:
             return self.val
 

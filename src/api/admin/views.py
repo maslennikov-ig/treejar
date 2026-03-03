@@ -4,6 +4,7 @@ from src.models.conversation import Conversation
 from src.models.escalation import Escalation
 from src.models.knowledge_base import KnowledgeBase
 from src.models.message import Message
+from src.models.metrics_snapshot import MetricsSnapshot
 from src.models.product import Product
 from src.models.quality_review import QualityReview
 from src.models.system_config import SystemConfig
@@ -59,6 +60,18 @@ class SystemConfigAdmin(ModelView, model=SystemConfig):
     icon = "fa-solid fa-gear"
 
 
+class MetricsSnapshotAdmin(ModelView, model=MetricsSnapshot):
+    column_list = [
+        MetricsSnapshot.period,
+        MetricsSnapshot.total_conversations,
+        MetricsSnapshot.llm_cost_usd,
+        MetricsSnapshot.updated_at,
+    ]
+    name = "Metrics Snapshot"
+    name_plural = "Metrics Snapshots"
+    icon = "fa-solid fa-chart-line"
+
+
 class SystemPromptAdmin(ModelView, model=SystemPrompt):
     column_list = [SystemPrompt.name, SystemPrompt.version, SystemPrompt.is_active, SystemPrompt.updated_at]
     name = "System Prompt"
@@ -75,3 +88,4 @@ def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(EscalationAdmin)
     admin_app.add_view(SystemConfigAdmin)
     admin_app.add_view(SystemPromptAdmin)
+    admin_app.add_view(MetricsSnapshotAdmin)

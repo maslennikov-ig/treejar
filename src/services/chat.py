@@ -47,7 +47,7 @@ async def process_incoming_batch(
         cfg_stmt = select(SystemConfig).where(SystemConfig.key == "bot_enabled")
         cfg_result = await db.execute(cfg_stmt)
         bot_enabled_cfg = cfg_result.scalars().first()
-        if bot_enabled_cfg and bot_enabled_cfg.value.lower() == "false":
+        if bot_enabled_cfg and (bot_enabled_cfg.value is False or str(bot_enabled_cfg.value).lower() == "false"):
             logger.info(f"Bot is globally disabled. Skipping batch for {chat_id}")
             return
 

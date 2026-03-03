@@ -6,9 +6,9 @@ os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["WAZZUP_API_KEY"] = "fake-wazzup-key"
 os.environ["WAZZUP_API_URL"] = "http://fake-wazzup-url"
 
+import os
 from collections.abc import AsyncGenerator
 
-import os
 os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
 
 import pytest

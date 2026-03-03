@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from redis.asyncio import Redis
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_redis
@@ -82,54 +82,33 @@ async def update_prompt(
 async def get_metrics(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MetricsResponse:
-    """Get dashboard metrics for the current period."""
-    from src.models.conversation import Conversation
-    from src.models.message import Message
+    """Get dashboard metrics from the aggregated snapshot."""
+    from src.models.metrics_snapshot import MetricsSnapshot
 
-    # Total conversations
-    total_convs = await db.scalar(select(func.count(Conversation.id))) or 0
-
-    # Messages sent by assistant
-    msgs_sent = await db.scalar(
-        select(func.count(Message.id)).where(Message.role == "assistant")
-    ) or 0
-
-    # LLM Cost USD
-    cost = await db.scalar(
-        select(func.sum(Message.cost))
-    ) or 0.0
-
-    # Escalations
-    escalations = await db.scalar(
-        select(func.count(Conversation.id)).where(Conversation.escalation_status != "none")
-    ) or 0
-
-    # Deals created
-    deals = await db.scalar(
-        select(func.count(Conversation.id)).where(Conversation.zoho_deal_id.is_not(None))
-    ) or 0
-
-    # Quotes generated (assuming message_type == 'quote' or just 0 for now)
-    quotes = await db.scalar(
-        select(func.count(Message.id)).where(Message.message_type == "quote")
-    ) or 0
+    snapshot = await db.get(MetricsSnapshot, "all_time")
+    if not snapshot:
+        # Return zeros if job hasn't run yet
+        return MetricsResponse(
+            period="all_time",
+            total_conversations=0,
+            messages_sent=0,
+            avg_response_time_ms=0.0,
+            llm_cost_usd=0.0,
+            escalations=0,
+            deals_created=0,
+            quotes_generated=0,
+        )
 
     return MetricsResponse(
-        period="all_time",
-        total_conversations=total_convs,
-        messages_sent=msgs_sent,
-        avg_response_time_ms=0.0,
-        llm_cost_usd=float(cost),
-        escalations=escalations,
-        deals_created=deals,
-        quotes_generated=quotes,
+        period=snapshot.period,
+        total_conversations=snapshot.total_conversations,
+        messages_sent=snapshot.messages_sent,
+        avg_response_time_ms=snapshot.avg_response_time_ms,
+        llm_cost_usd=snapshot.llm_cost_usd,
+        escalations=snapshot.escalations,
+        deals_created=snapshot.deals_created,
+        quotes_generated=snapshot.quotes_generated,
     )
-
-
-def _parse_bool(val: str | None, default: bool) -> bool:
-    if val is None:
-        return default
-    return val.lower() == "true"
 
 
 @router.get("/settings/", response_model=SettingsRead)
@@ -142,11 +121,11 @@ async def get_settings(
     configs = {c.key: c.value for c in result.scalars().all()}
 
     return SettingsRead(
-        bot_enabled=_parse_bool(configs.get("bot_enabled"), True),
-        default_language=configs.get("default_language", "en"),
-        auto_escalation_enabled=_parse_bool(configs.get("auto_escalation_enabled"), True),
-        follow_up_enabled=_parse_bool(configs.get("follow_up_enabled"), True),
-        max_messages_per_conversation=int(configs.get("max_messages_per_conversation", "50")),
+        bot_enabled=bool(configs.get("bot_enabled", True)),
+        default_language=str(configs.get("default_language", "en")),
+        auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
+        follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
+        max_messages_per_conversation=int(configs.get("max_messages_per_conversation", 50)),  # type: ignore
     )
 
 
@@ -163,15 +142,10 @@ async def update_settings(
         result = await db.execute(stmt)
         config = result.scalars().first()
 
-        if isinstance(value, bool):
-            str_val = "true" if value else "false"
-        else:
-            str_val = str(value)
-
         if config:
-            config.value = str_val
+            config.value = value  # SQLAlchemy JSONB handles dict/bool/int types effortlessly
         else:
-            db.add(SystemConfig(key=key, value=str_val))
+            db.add(SystemConfig(key=key, value=value))
 
     await db.commit()
 
@@ -181,9 +155,9 @@ async def update_settings(
     configs = {c.key: c.value for c in result.scalars().all()}
 
     return SettingsRead(
-        bot_enabled=_parse_bool(configs.get("bot_enabled"), True),
-        default_language=configs.get("default_language", "en"),
-        auto_escalation_enabled=_parse_bool(configs.get("auto_escalation_enabled"), True),
-        follow_up_enabled=_parse_bool(configs.get("follow_up_enabled"), True),
-        max_messages_per_conversation=int(configs.get("max_messages_per_conversation", "50")),
+        bot_enabled=bool(configs.get("bot_enabled", True)),
+        default_language=str(configs.get("default_language", "en")),
+        auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
+        follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
+        max_messages_per_conversation=int(configs.get("max_messages_per_conversation", 50)),  # type: ignore
     )
