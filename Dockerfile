@@ -1,4 +1,14 @@
 # ============================================================
+# Stage 0: Build Vite Frontend
+# ============================================================
+FROM node:22-alpine AS frontend-builder
+WORKDIR /app/frontend/landing
+COPY frontend/landing/package*.json ./
+RUN npm install
+COPY frontend/landing/ ./
+RUN npm run build
+
+# ============================================================
 # Stage 1: Base image with system dependencies
 # ============================================================
 FROM python:3.13-slim AS base
@@ -37,6 +47,9 @@ COPY src/ ./src/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 COPY scripts/entrypoint.sh /entrypoint.sh
+
+# Copy built frontend from Node stage
+COPY --from=frontend-builder /app/frontend/landing/dist /app/frontend/landing/dist
 
 RUN chmod +x /entrypoint.sh
 
