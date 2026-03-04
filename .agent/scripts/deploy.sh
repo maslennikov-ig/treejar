@@ -171,21 +171,21 @@ Deploying $commits_ahead commit(s) to production from $source_branch.
         fi
 
         log_info "Running tests (pytest)..."
-        if ! pytest; then
+        if ! uv run pytest; then
             log_error "Tests failed! Fix errors in your main worktree before deploying."
             exit 1
         fi
         log_success "Pytest passed"
 
         log_info "Running ruff check..."
-        if ! ruff check .; then
+        if ! uv run ruff check .; then
             log_error "Ruff check failed! Fix errors in your main worktree before deploying."
             exit 1
         fi
         log_success "Ruff passed"
 
         log_info "Running mypy..."
-        if ! mypy . 2>/dev/null; then
+        if ! uv run mypy . 2>/dev/null; then
             log_warning "Mypy failed, check if this is a blocking issue or fix before deploying."
             # Depending on project strictness, you might want to switch exit 1 here
         fi
