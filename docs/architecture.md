@@ -92,13 +92,16 @@ graph TB
 ```
 VPS (4 CPU, 8 GB RAM, 80 GB SSD)
 ├── Docker Compose
-│   ├── app (FastAPI) — порт 8000
+│   ├── app (FastAPI + SQLAdmin + Vite SPA) — порт 8000
 │   ├── postgres — порт 5432
 │   ├── qdrant — порт 6333
 │   ├── redis — порт 6379
-│   ├── admin (React/Next.js) — порт 3000
 │   └── nginx (reverse proxy) — порт 80/443
 ```
+
+> **Примечание:** Админ-панель реализована как гибрид:
+> - **SQLAdmin** (встроен в FastAPI) — CRUD для всех таблиц, управление промптами и настройками
+> - **React/Vite дашборд** (`frontend/admin/`) — метрики, аналитика, отчёты (тот же стек, что и лендинг)
 
 ---
 
@@ -294,13 +297,16 @@ sequenceDiagram
 treejar-ai-bot/
 ├── src/
 │   ├── api/              # FastAPI endpoints
+│   │   └── admin/        # SQLAdmin views + auth (CRUD)
 │   ├── core/             # Конфигурация, зависимости
 │   ├── llm/              # LLM engine, промпты
 │   ├── rag/              # RAG pipeline, embeddings
 │   ├── integrations/     # Wazzup, Zoho CRM, Zoho Inventory
 │   ├── quality/          # Бот контроля качества
 │   └── models/           # SQLAlchemy модели
-├── admin/                # Админ-панель (React/Next.js)
+├── frontend/
+│   ├── landing/          # Лендинг (React/Vite/Tailwind)
+│   └── admin/            # Дашборд и аналитика (React/Vite/Tailwind)
 ├── migrations/           # Alembic миграции
 ├── tests/                # Тесты
 ├── docker-compose.yml    # Запуск всех сервисов
