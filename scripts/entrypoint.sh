@@ -8,7 +8,7 @@ case "${1:-web}" in
     ;;
   web|"")
     echo "Starting Uvicorn web server on port ${APP_PORT:-8000}..."
-    exec uvicorn src.main:app --host 0.0.0.0 --port "${APP_PORT:-8000}"
+    exec uvicorn src.main:app --host 0.0.0.0 --port "${APP_PORT:-8000}" --proxy-headers --forwarded-allow-ips="*"
     ;;
   *)
     echo "Unknown command: $1"

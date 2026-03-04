@@ -1,19 +1,17 @@
 services:
   db:
-    image: ankane/pgvector:v0.5.1
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: treejar
-      POSTGRES_PASSWORD: treejarpassword
+      POSTGRES_PASSWORD: treejar
       POSTGRES_DB: treejar
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
 
   app:
     build: .
     command: web
-    ports:
-      - "8002:8000"
     env_file:
       - .env
     depends_on:
@@ -41,6 +39,17 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   redis-data:
-  db-data:
+  pgdata:
