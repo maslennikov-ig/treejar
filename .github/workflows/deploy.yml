@@ -24,9 +24,9 @@ jobs:
             # Extract the branch name from the GitHub reference
             BRANCH_NAME=${GITHUB_REF##*/}
             
-            # Map 'main' to 'master' if needed for legacy compatibility
-            if [ "$BRANCH_NAME" = "main" ]; then
-              BRANCH_NAME="master"
+            # Check branch
+            if [ "$BRANCH_NAME" != "main" ] && [ "$BRANCH_NAME" != "develop" ]; then
+              echo "Deployment only supported for main and develop branches."
             fi
             
             # Navigate to the repository directory

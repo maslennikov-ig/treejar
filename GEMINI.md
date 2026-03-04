@@ -7,7 +7,7 @@ The project uses a single TreeJar VPS (`136.243.71.213`) to securely host both D
 
 *   **Production (Stage/Prod)**
     *   **Domain**: `noor.starec.ai` (Listens on port `8002` internally via Nginx)
-    *   **Branch**: `master` (or `main`)
+    *   **Branch**: `main`
     *   **Docker Config**: `docker-compose.yml` (Services: `app`, `db`, `worker`, `redis`, `nginx`)
     *   **Environment File**: `.env`
     *   **Data Volumes**: Standard Docker named volumes (`pgdata`, `redis-data`)
@@ -21,7 +21,7 @@ The project uses a single TreeJar VPS (`136.243.71.213`) to securely host both D
 
 ### Deployment Flow (Automated CI/CD)
 Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.yml`):
-1.  **Trigger**: Pushing code to `develop` or `master`.
+1.  **Trigger**: Pushing code to `develop` or `main`.
 2.  **Action**: GitHub Actions connects to the VPS via SSH (`root` or configured user) using repository secrets (`VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`).
 3.  **Execution**: It executes `scripts/vps-deploy.sh [branch_name]` on the server.
 4.  **Result**: The script updates the git tree, resets to the remote branch, and runs `docker compose up -d --build` targeting the correct `.yml` configuration.
@@ -35,7 +35,7 @@ Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.ym
 
 *   **`/deploy` (Production Pipeline)**
     *   Uses `.agent/workflows/deploy.md` -> `.agent/scripts/deploy.sh`.
-    *   Role: Safely merges the current feature branch into `master` using an **isolated Git worktree**. It runs tests (`pytest`, `ruff`, `mypy`) within the temporary worktree. If tests pass, it pushes to origin `master`, which in turn triggers the aforementioned GitHub Action to deploy to VPS Prod.
+    *   Role: Safely merges the current feature branch into `main` using an **isolated Git worktree**. It runs tests (`pytest`, `ruff`, `mypy`) within the temporary worktree. If tests pass, it pushes to origin `main`, which in turn triggers the aforementioned GitHub Action to deploy to VPS Prod.
 
 ## Core App Architecture Quick Summary
 *   **Backend**: Python, FastAPI, SQLAlchemy (AsyncPG), Alembic (Migrations).

@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 REPO_DIR="/home/starec/treejar-ai-bot" # Change to the path of your cloned repository on the VPS
-BRANCH="${1:-master}"    # Default to master if no argument provided
+BRANCH="${1:-main}"    # Default to main if no argument provided
 
 echo "Starting deployment for branch: $BRANCH"
 
@@ -32,10 +32,10 @@ if [ "$BRANCH" = "develop" ]; then
     docker compose -f docker-compose.dev.yml up -d --build
     echo "Development deployment successful!"
 
-elif [ "$BRANCH" = "master" ]; then
+elif [ "$BRANCH" = "main" ]; then
     echo "Deploying PRODUCTION environment..."
-    git checkout master
-    git reset --hard origin/master
+    git checkout main
+    git reset --hard origin/main
     
     # Ensure .env exists
     if [ ! -f .env ]; then
@@ -48,7 +48,7 @@ elif [ "$BRANCH" = "master" ]; then
     echo "Production deployment successful!"
 
 else
-    echo "Error: Unknown branch '$BRANCH'. Please use 'master' or 'develop'."
+    echo "Error: Unknown branch '$BRANCH'. Please use 'main' or 'develop'."
     exit 1
 fi
 

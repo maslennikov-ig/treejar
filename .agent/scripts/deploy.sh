@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Deploy Script - Merge current branch into master for production deployment
+# Deploy Script - Merge current branch into main for production deployment
 # Uses Git Worktrees to isolate local checks from the active developer workspace.
 #
 # Usage: ./deploy.sh [--force] [--yes] [--sync]
 #        --force: Skip quality checks (type-check, build)
 #        --yes: Skip confirmation prompt
-#        --sync: Auto-sync develop with master after deploy
+#        --sync: Auto-sync develop with main after deploy
 
 set -eo pipefail
 
@@ -53,9 +53,9 @@ main() {
     local source_branch="$current_branch"
     log_info "Current branch: $current_branch"
 
-    # If on master, use develop as source
-    if [ "$current_branch" = "master" ] || [ "$current_branch" = "main" ]; then
-        log_warning "Already on master branch"
+    # If on main, use develop as source
+    if [ "$current_branch" = "main" ] || [ "$current_branch" = "main" ]; then
+        log_warning "Already on main branch"
         if git rev-parse --verify develop >/dev/null 2>&1; then
             source_branch="develop"
             log_info "Will merge from: develop"
@@ -68,29 +68,29 @@ main() {
         fi
     fi
 
-    # Ensure master branch exists
-    if ! git rev-parse --verify master >/dev/null 2>&1; then
-        log_error "Branch 'master' does not exist"
+    # Ensure main branch exists
+    if ! git rev-parse --verify main >/dev/null 2>&1; then
+        log_error "Branch 'main' does not exist"
         exit 1
     fi
 
     # Fetch latest from remote
     log_info "Fetching latest from remote..."
-    git fetch origin master "$source_branch" 2>/dev/null || true
+    git fetch origin main "$source_branch" 2>/dev/null || true
 
-    # Check if source branch has changes not in master
-    local commits_ahead=$(git rev-list master.."$source_branch" --count 2>/dev/null || echo "0")
+    # Check if source branch has changes not in main
+    local commits_ahead=$(git rev-list main.."$source_branch" --count 2>/dev/null || echo "0")
     if [ "$commits_ahead" -eq 0 ]; then
         log_warning "No new commits in $source_branch to deploy"
-        echo "$source_branch is already merged into master"
+        echo "$source_branch is already merged into main"
         exit 0
     fi
     log_success "Found $commits_ahead commit(s) to deploy from $source_branch"
 
     # Show what will be deployed
     echo ""
-    log_info "Commits to deploy ($source_branch → master):"
-    git log master.."$source_branch" --oneline -20
+    log_info "Commits to deploy ($source_branch → main):"
+    git log main.."$source_branch" --oneline -20
     if [ "$commits_ahead" -gt 20 ]; then
         echo "  ... and $((commits_ahead - 20)) more commits"
     fi
@@ -124,26 +124,26 @@ main() {
     }
     trap cleanup EXIT
 
-    log_info "Creating isolated Worktree at $worktree_dir for master..."
+    log_info "Creating isolated Worktree at $worktree_dir for main..."
     
-    # Before we create worktree, let's make sure our local master is relatively up to date 
+    # Before we create worktree, let's make sure our local main is relatively up to date 
     # (even though we'll pull inside the worktree)
     # the simplest way without touching the current working directory's state:
-    if ! git worktree add "$worktree_dir" master 2>/dev/null; then
-        log_error "Failed to create worktree. Is 'master' already checked out somewhere else?"
+    if ! git worktree add "$worktree_dir" main 2>/dev/null; then
+        log_error "Failed to create worktree. Is 'main' already checked out somewhere else?"
         exit 1
     fi
 
     # Switch to the temporary worktree
     pushd "$worktree_dir" > /dev/null
 
-    # Pull latest master
-    log_info "Pulling latest master in isolated worktree..."
-    git pull origin master --quiet 2>/dev/null || true
+    # Pull latest main
+    log_info "Pulling latest main in isolated worktree..."
+    git pull origin main --quiet 2>/dev/null || true
 
-    # Merge source branch into master
-    log_info "Merging $source_branch into master..."
-    local merge_msg="deploy: merge $source_branch into master
+    # Merge source branch into main
+    log_info "Merging $source_branch into main..."
+    local merge_msg="deploy: merge $source_branch into main
 
 Deploying $commits_ahead commit(s) to production from $source_branch.
 
@@ -152,10 +152,10 @@ Deploying $commits_ahead commit(s) to production from $source_branch.
 
     if ! git merge "$source_branch" --no-ff -m "$merge_msg"; then
         log_error "Merge conflict! Resolve manually in your main repo:"
-        echo "  1. git checkout master"
+        echo "  1. git checkout main"
         echo "  2. git merge $source_branch"
         echo "  3. Fix conflicts and commit"
-        echo "  4. git push origin master"
+        echo "  4. git push origin main"
         exit 1
     fi
     log_success "Merge successful in worktree"
@@ -195,14 +195,14 @@ Deploying $commits_ahead commit(s) to production from $source_branch.
         log_warning "Skipping quality checks (--force)"
     fi
 
-    # Push to master (triggers deploy)
-    log_info "Pushing master to origin (triggering deploy)..."
-    if ! git push origin master; then
+    # Push to main (triggers deploy)
+    log_info "Pushing main to origin (triggering deploy)..."
+    if ! git push origin main; then
         log_error "Push failed!"
-        echo "To retry manually: git push origin master"
+        echo "To retry manually: git push origin main"
         exit 1
     fi
-    log_success "Pushed to master"
+    log_success "Pushed to main"
 
     popd > /dev/null
 
@@ -212,18 +212,18 @@ Deploying $commits_ahead commit(s) to production from $source_branch.
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo ""
     log_success "Deployed $commits_ahead commit(s) to production"
-    log_success "Merged: $source_branch → master"
+    log_success "Merged: $source_branch → main"
     echo ""
 
-    # Sync develop with master if deployed from a feature branch
-    if [ "$source_branch" != "develop" ] && [ "$source_branch" != "main" ] && [ "$source_branch" != "master" ]; then
+    # Sync develop with main if deployed from a feature branch
+    if [ "$source_branch" != "develop" ] && [ "$source_branch" != "main" ] && [ "$source_branch" != "main" ]; then
         if [ "$auto_sync" = "true" ]; then
-            log_info "Syncing develop with master (--sync flag)..."
-            git fetch origin master:master --quiet
+            log_info "Syncing develop with main (--sync flag)..."
+            git fetch origin main:main --quiet
             git checkout develop --quiet
-            if git merge master --no-edit; then
+            if git merge main --no-edit; then
                 git push origin develop --quiet 2>/dev/null || true
-                log_success "develop synced with master"
+                log_success "develop synced with main"
                 git checkout "$source_branch" --quiet
             else
                 log_warning "Merge conflict while syncing develop"
@@ -233,13 +233,13 @@ Deploying $commits_ahead commit(s) to production from $source_branch.
             echo ""
         else
             echo "┌─────────────────────────────────────────────────────────────┐"
-            echo "│  ⚠️  IMPORTANT: Sync develop with master                    │"
+            echo "│  ⚠️  IMPORTANT: Sync develop with main                    │"
             echo "│                                                             │"
             echo "│  You deployed from '$source_branch' (not develop)."
             echo "│  To keep develop up-to-date, run:                           │"
             echo "│                                                             │"
             echo "│    git checkout develop                                     │"
-            echo "│    git merge master                                         │"
+            echo "│    git merge main                                         │"
             echo "│    git push origin develop                                  │"
             echo "│                                                             │"
             echo "│  Or use: /deploy --sync  (auto-sync after deploy)           │"
