@@ -23,11 +23,11 @@ fi
 systemctl enable nginx
 
 echo "[2/4] Setting up Nginx Virtual Hosts..."
-REPO_DIR="/root/treejar"
+REPO_DIR="/home/starec/treejar-ai-bot"
 
 if [ ! -d "$REPO_DIR/scripts" ]; then
     echo "Error: Could not find the repository at $REPO_DIR."
-    echo "Please clone the repo first: cd /root && git clone https://github.com/maslennikov-ig/treejar.git"
+    echo "Please clone the repo first: cd /home/starec && git clone https://github.com/maslennikov-ig/treejar.git treejar-ai-bot"
     exit 1
 fi
 
@@ -54,6 +54,6 @@ systemctl reload nginx
 echo "=========================================================="
 echo "                      SETUP COMPLETE                      "
 echo "=========================================================="
-echo "Traffic for chat.megacampus.com -> routes to port 8000"
-echo "Traffic for dev.chat.megacampus.com -> routes to port 8001"
+echo "Traffic for noor.starec.ai -> routes to port 8002"
+echo "Traffic for dev.noor.starec.ai -> routes to port 8003"
 echo "=========================================================="

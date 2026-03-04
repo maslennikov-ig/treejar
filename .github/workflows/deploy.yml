@@ -30,8 +30,8 @@ jobs:
             fi
             
             # Navigate to the repository directory
-            cd /root/treejar || {
-              echo "Repository not found at /root/treejar. Please double check the directory."
+            cd /home/starec/treejar-ai-bot || {
+              echo "Repository not found at /home/starec/treejar-ai-bot. Please double check the directory."
               exit 1
             }
             

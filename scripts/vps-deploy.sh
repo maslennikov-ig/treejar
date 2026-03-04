@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-REPO_DIR="/root/treejar" # Change to the path of your cloned repository on the VPS
+REPO_DIR="/home/starec/treejar-ai-bot" # Change to the path of your cloned repository on the VPS
 BRANCH="${1:-master}"    # Default to master if no argument provided
 
 echo "Starting deployment for branch: $BRANCH"

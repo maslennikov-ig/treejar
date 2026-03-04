@@ -3,17 +3,17 @@
 **Purpose**: This file serves as a memory anchor for project-specific infrastructure, deployment flows, and custom workflows.
 
 ## Environment & Deployment Infrastructure
-The project uses a single MegaCampus VPS (`95.81.98.230`) to securely host both Development and Production environments in parallel, physically isolated via separate Docker Compose configurations and Nginx Host routing.
+The project uses a single TreeJar VPS (`136.243.71.213`) to securely host both Development and Production environments in parallel, physically isolated via separate Docker Compose configurations and Nginx Host routing.
 
 *   **Production (Stage/Prod)**
-    *   **Domain**: `chat.megacampus.com` (Listens on port `8000` internally via Nginx)
+    *   **Domain**: `noor.starec.ai` (Listens on port `8002` internally via Nginx)
     *   **Branch**: `master` (or `main`)
     *   **Docker Config**: `docker-compose.yml` (Services: `app`, `db`, `worker`, `redis`, `nginx`)
     *   **Environment File**: `.env`
     *   **Data Volumes**: Standard Docker named volumes (`pgdata`, `redis-data`)
 
 *   **Development (Dev)**
-    *   **Domain**: `dev.chat.megacampus.com` (Listens on port `8001` internally via Nginx)
+    *   **Domain**: `dev.noor.starec.ai` (Listens on port `8003` internally via Nginx)
     *   **Branch**: `develop`
     *   **Docker Config**: `docker-compose.dev.yml` (Services renamed with `-dev` suffixes)
     *   **Environment File**: `.env.dev`
@@ -22,7 +22,7 @@ The project uses a single MegaCampus VPS (`95.81.98.230`) to securely host both 
 ### Deployment Flow (Automated CI/CD)
 Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.yml`):
 1.  **Trigger**: Pushing code to `develop` or `master`.
-2.  **Action**: GitHub Actions connects to the VPS via SSH (`claude-deploy` user) using repository secrets (`VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`).
+2.  **Action**: GitHub Actions connects to the VPS via SSH (`root` or configured user) using repository secrets (`VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`).
 3.  **Execution**: It executes `scripts/vps-deploy.sh [branch_name]` on the server.
 4.  **Result**: The script updates the git tree, resets to the remote branch, and runs `docker compose up -d --build` targeting the correct `.yml` configuration.
 
