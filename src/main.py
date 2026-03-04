@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
 
     # --- Landing Page SPA Integration ---
     import os
+
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
@@ -61,7 +62,7 @@ def create_app() -> FastAPI:
     app.mount("/assets", StaticFiles(directory="frontend/landing/dist", html=True), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str) -> FileResponse:
         dist_dir = "frontend/landing/dist"
         file_path = os.path.join(dist_dir, full_path)
         if full_path and os.path.isfile(file_path):
