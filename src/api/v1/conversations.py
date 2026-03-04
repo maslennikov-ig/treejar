@@ -24,6 +24,7 @@ router = APIRouter()
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
+
 @router.get("/", response_model=PaginatedResponse[ConversationRead])
 async def list_conversations(
     db: DbSession,
@@ -122,6 +123,7 @@ async def escalate_conversation(
 ) -> ConversationRead:
     """Manually escalate a conversation to a human manager."""
     from src.schemas.common import EscalationStatus
+
     stmt = select(Conversation).where(Conversation.id == conversation_id)
     result = await db.execute(stmt)
     conversation = result.scalar_one_or_none()

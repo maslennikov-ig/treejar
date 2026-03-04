@@ -86,9 +86,11 @@ async def get_system_prompt_component(
             logger.warning("Redis cache error in get_system_prompt_component: %s", e)
 
     try:
-        stmt = select(SystemPrompt).where(
-            SystemPrompt.name == name, SystemPrompt.is_active.is_(True)
-        ).order_by(SystemPrompt.version.desc())
+        stmt = (
+            select(SystemPrompt)
+            .where(SystemPrompt.name == name, SystemPrompt.is_active.is_(True))
+            .order_by(SystemPrompt.version.desc())
+        )
         result = await db.execute(stmt)
         prompt = result.scalars().first()
         val = prompt.content if prompt else default

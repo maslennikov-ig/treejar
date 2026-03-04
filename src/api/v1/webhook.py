@@ -33,4 +33,3 @@ async def handle_wazzup_webhook(
         )
 
     return WazzupWebhookResponse(ok=True)
-

@@ -6,15 +6,18 @@ from weasyprint import HTML  # type: ignore[import-untyped]
 
 TEMPLATE_DIR = Path(__file__).parent.parent.parent / "templates" / "quotation"
 
+
 async def generate_pdf(html_content: str) -> bytes:
     """
     Generates a PDF from an HTML string using WeasyPrint.
     Runs synchronously in a threadpool to avoid blocking the event loop.
     """
+
     def _render() -> bytes:
         return HTML(string=html_content).write_pdf()  # type: ignore[no-any-return]
 
     return await asyncio.to_thread(_render)
+
 
 def render_quotation_html(context: dict[str, object]) -> str:
     """
@@ -34,4 +37,3 @@ def render_quotation_html(context: dict[str, object]) -> str:
     context["custom_css"] = custom_css
 
     return template.render(context)
-

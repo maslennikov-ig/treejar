@@ -18,7 +18,9 @@ class SystemConfig(TimestampMixin, Base):
     key: Mapped[str] = mapped_column(String, primary_key=True)
 
     # The value of the setting (stored as JSONB for native dict/list/bool/int support)
-    value: Mapped[dict[str, Any] | list[Any] | str | int | bool | None] = mapped_column(JSONB)
+    value: Mapped[dict[str, Any] | list[Any] | str | int | bool | None] = mapped_column(
+        JSONB
+    )
 
     # Optional description of what this key does
     description: Mapped[str | None] = mapped_column(Text, default=None)

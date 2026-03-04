@@ -50,12 +50,13 @@ async def test_process_incoming_batch_success(
 
     # 3. Setup LLM response mock
     from src.llm import LLMResponse
+
     mock_llm_resp = LLMResponse(
         text="Hello! How can I help?",
         tokens_in=10,
         tokens_out=20,
         cost=0.001,
-        model="test-model"
+        model="test-model",
     )
     mock_process_message.return_value = mock_llm_resp
 
@@ -73,6 +74,7 @@ async def test_process_incoming_batch_success(
     # Actually, process_incoming_batch gets messages from the 3rd argument!
     # Let me adjust how it's called to match the new signature which was: `async def process_incoming_batch(ctx: dict[str, Any], chat_id: str, messages: list[WazzupIncomingMessage]) -> None:`
     pass
+
 
 @pytest.mark.asyncio
 async def test_process_incoming_batch_empty_redis(chat_context: dict[str, Any]) -> None:

@@ -16,10 +16,13 @@ async def test_admin_endpoints(client: AsyncClient) -> None:
     response2 = await client.get(f"/api/v1/admin/prompts/{some_uuid}")
     assert response2.status_code == 404
 
-    response3 = await client.put(f"/api/v1/admin/prompts/{some_uuid}", json={
-        "content": "new system prompt content",
-        "description": "updated prompt description"
-    })
+    response3 = await client.put(
+        f"/api/v1/admin/prompts/{some_uuid}",
+        json={
+            "content": "new system prompt content",
+            "description": "updated prompt description",
+        },
+    )
     assert response3.status_code == 404
 
     # --- test_admin_metrics ---
@@ -40,10 +43,9 @@ async def test_admin_endpoints(client: AsyncClient) -> None:
     assert "bot_enabled" in data1
     assert "default_language" in data1
 
-    response_s2 = await client.patch("/api/v1/admin/settings/", json={
-        "bot_enabled": False,
-        "default_language": "ar"
-    })
+    response_s2 = await client.patch(
+        "/api/v1/admin/settings/", json={"bot_enabled": False, "default_language": "ar"}
+    )
     assert response_s2.status_code == 200
     data2 = response_s2.json()
     assert data2["bot_enabled"] is False

@@ -55,7 +55,9 @@ async def get_contact(
         phone=contact_data.get("Phone", phone),
         name=name,
         email=contact_data.get("Email"),
-        company=contact_data.get("Account_Name", {}).get("name") if isinstance(contact_data.get("Account_Name"), dict) else None,
+        company=contact_data.get("Account_Name", {}).get("name")
+        if isinstance(contact_data.get("Account_Name"), dict)
+        else None,
         zoho_contact_id=contact_data.get("id"),
         segment=contact_data.get("Segment"),
         created_at=created_time,
@@ -86,7 +88,9 @@ async def create_contact(
         # Even if failure, we just return what we have or raise 400
         # If it's a minor warning, it might still have created it.
         if "details" not in resp or "id" not in resp["details"]:
-            raise HTTPException(status_code=400, detail="Could not create contact in CRM")
+            raise HTTPException(
+                status_code=400, detail="Could not create contact in CRM"
+            )
 
     contact_id = resp["details"]["id"]
     return ContactRead(

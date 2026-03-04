@@ -41,9 +41,16 @@ def create_app() -> FastAPI:
 
     # Mount SQLAdmin
     from src.api.admin.auth import authentication_backend
-    admin = Admin(app, engine, title="Treejar Admin", authentication_backend=authentication_backend)
+
+    admin = Admin(
+        app,
+        engine,
+        title="Treejar Admin",
+        authentication_backend=authentication_backend,
+    )
 
     from src.api.admin.views import setup_admin_views
+
     setup_admin_views(admin)
 
     # --- Landing Page SPA Integration ---
@@ -59,7 +66,11 @@ def create_app() -> FastAPI:
         with open(index_path, "w") as f:
             f.write("<html><body>Mock Index</body></html>")
 
-    app.mount("/assets", StaticFiles(directory="frontend/landing/dist", html=True), name="assets")
+    app.mount(
+        "/assets",
+        StaticFiles(directory="frontend/landing/dist", html=True),
+        name="assets",
+    )
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> FileResponse:

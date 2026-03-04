@@ -4,6 +4,7 @@
 All tests use temporary files created with Python's tempfile module so no real
 docs/ files are needed. The EmbeddingEngine and DB are mocked for the top-level
 index_documents function tests."""
+
 from __future__ import annotations
 
 import tempfile
@@ -82,11 +83,7 @@ class TestParseFaq:
     def test_chunk_structure_is_correct(self) -> None:
         """Each chunk must have source='faq', category='faq', language='en',
         a non-empty title, and content starting with 'Q: '."""
-        content = (
-            "# FAQ\n\n"
-            "## Delivery time\n"
-            "Delivery takes 3-5 business days.\n"
-        )
+        content = "# FAQ\n\n## Delivery time\nDelivery takes 3-5 business days.\n"
         path = _write_tmp(content)
         result = _parse_faq(path)
 
@@ -227,9 +224,7 @@ class TestParseSalesRules:
     @pytest.mark.unit
     def test_chunk_source_and_category(self) -> None:
         """Rule chunks must carry source='rules' and category='sales_rules'."""
-        content = (
-            "| 1 | Правило | Описание | Rule | Description |\n"
-        )
+        content = "| 1 | Правило | Описание | Rule | Description |\n"
         path = _write_tmp(content)
         result = _parse_sales_rules(path)
 
@@ -308,10 +303,7 @@ class TestParseCompanyValues:
     @pytest.mark.unit
     def test_chunk_source_and_category(self) -> None:
         """Every chunk must have source='values' and category='company_values'."""
-        content = (
-            "1️⃣ **Integrity**\n"
-            "We always act with integrity.\n"
-        )
+        content = "1️⃣ **Integrity**\nWe always act with integrity.\n"
         path = _write_tmp(content)
         result = _parse_company_values(path)
 
@@ -338,11 +330,7 @@ class TestParseCompanyValues:
     @pytest.mark.unit
     def test_hachetje_line_excluded(self) -> None:
         """Lines containing 'Хочешь, чтобы' must be excluded from body text."""
-        content = (
-            "1️⃣ **Value**\n"
-            "Some body text.\n"
-            "Хочешь, чтобы мы продолжили?\n"
-        )
+        content = "1️⃣ **Value**\nSome body text.\nХочешь, чтобы мы продолжили?\n"
         path = _write_tmp(content)
         result = _parse_company_values(path)
 
@@ -354,9 +342,7 @@ class TestParseCompanyValues:
         """A value heading with no following body text must not appear as a
         chunk."""
         content = (
-            "1️⃣ **EmptyValue**\n"
-            "2️⃣ **RealValue**\n"
-            "This value has a real description.\n"
+            "1️⃣ **EmptyValue**\n2️⃣ **RealValue**\nThis value has a real description.\n"
         )
         path = _write_tmp(content)
         result = _parse_company_values(path)
@@ -459,9 +445,7 @@ class TestIndexDocuments:
                 patch("src.rag.indexer.EmbeddingEngine") as MockEngine,
             ):
                 mock_instance = MockEngine.return_value
-                mock_instance.embed_batch_async = AsyncMock(
-                    return_value=[[0.1] * 4]
-                )
+                mock_instance.embed_batch_async = AsyncMock(return_value=[[0.1] * 4])
 
                 result = await index_documents(mock_db)
 

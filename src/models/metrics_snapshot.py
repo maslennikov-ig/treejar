@@ -11,7 +11,9 @@ class MetricsSnapshot(TimestampMixin, Base):
 
     __tablename__ = "metrics_snapshots"
 
-    period: Mapped[str] = mapped_column(String, primary_key=True)  # e.g., 'all_time', 'today'
+    period: Mapped[str] = mapped_column(
+        String, primary_key=True
+    )  # e.g., 'all_time', 'today'
     total_conversations: Mapped[int] = mapped_column(Integer, default=0)
     messages_sent: Mapped[int] = mapped_column(Integer, default=0)
     avg_response_time_ms: Mapped[float] = mapped_column(Float, default=0.0)

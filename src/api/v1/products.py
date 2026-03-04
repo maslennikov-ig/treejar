@@ -33,7 +33,9 @@ async def list_products(
 ) -> PaginatedResponse[ProductRead]:
     """List products with optional category filter."""
     stmt = select(Product).where(Product.is_active.is_(True))
-    count_stmt = select(func.count()).select_from(Product).where(Product.is_active.is_(True))
+    count_stmt = (
+        select(func.count()).select_from(Product).where(Product.is_active.is_(True))
+    )
 
     if category:
         stmt = stmt.where(Product.category == category)
@@ -82,8 +84,7 @@ async def sync_products(
     """Trigger product sync from external source."""
     if body.source != "zoho":
         raise HTTPException(
-            status_code=400,
-            detail="Only 'zoho' sync is currently supported."
+            status_code=400, detail="Only 'zoho' sync is currently supported."
         )
 
     try:

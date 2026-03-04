@@ -1,6 +1,7 @@
 """Extended unit tests for EmbeddingEngine and generate_product_embeddings
 covering commit-count assertions (TCG-04) and singleton state isolation
 (TCG-08)."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -62,7 +63,9 @@ async def test_generate_product_embeddings_commits_once_for_single_batch() -> No
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_generate_product_embeddings_commits_once_per_batch_multiple_batches() -> None:
+async def test_generate_product_embeddings_commits_once_per_batch_multiple_batches() -> (
+    None
+):
     """With 65 products and batch_size=32, there are 3 batches (32+32+1),
     so db.commit must be called exactly 3 times."""
     mock_db = AsyncMock()
@@ -124,7 +127,9 @@ async def test_generate_product_embeddings_assigns_embeddings_to_products() -> N
 
     with patch("src.rag.embeddings.EmbeddingEngine") as MockEngine:
         mock_instance = MockEngine.return_value
-        mock_instance.embed_batch_async = AsyncMock(return_value=[embedding_a, embedding_b])
+        mock_instance.embed_batch_async = AsyncMock(
+            return_value=[embedding_a, embedding_b]
+        )
 
         await generate_product_embeddings(mock_db)
 

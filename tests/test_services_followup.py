@@ -24,6 +24,7 @@ def mock_db_session() -> AsyncMock:
     session.execute.return_value = mock_result
     return session
 
+
 @pytest.mark.asyncio
 async def test_run_automatic_followups_queries_db(mock_db_session: AsyncMock) -> None:
     # We patch the database session context manager
@@ -31,14 +32,16 @@ async def test_run_automatic_followups_queries_db(mock_db_session: AsyncMock) ->
         mock_session_maker.return_value.__aenter__.return_value = mock_db_session
 
         # Also mock _process_followup_for_conversation to ensure it's called
-        with patch("src.services.followup._process_followup_for_conversation") as mock_process:
+        with patch(
+            "src.services.followup._process_followup_for_conversation"
+        ) as mock_process:
             # Provide some mock conversations to return
             now = datetime.datetime.now(datetime.UTC)
             conv_24h = Conversation(
                 id=uuid.uuid4(),
                 phone="1",
                 updated_at=now - datetime.timedelta(hours=24, minutes=30),
-                escalation_status=EscalationStatus.NONE.value
+                escalation_status=EscalationStatus.NONE.value,
             )
 
             # Setup db execute to return different conversations for different queries
@@ -48,9 +51,9 @@ async def test_run_automatic_followups_queries_db(mock_db_session: AsyncMock) ->
 
             # The order of execution: 24h, 72h, 168h
             mock_scalars.all.side_effect = [
-                [conv_24h], # 24h
-                [],         # 72h
-                []          # 168h
+                [conv_24h],  # 24h
+                [],  # 72h
+                [],  # 168h
             ]
             mock_result.scalars.return_value = mock_scalars
             mock_db_session.execute.return_value = mock_result

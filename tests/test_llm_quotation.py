@@ -42,8 +42,13 @@ async def test_create_quotation_tool():
     # Patch generate_pdf at the definition module (lazy import inside function)
     from unittest.mock import AsyncMock as AM
     from unittest.mock import patch
-    with patch("src.services.pdf.generator.generate_pdf", new_callable=AM) as mock_pdf, \
-         patch("src.services.pdf.generator.render_quotation_html", return_value="<html>"):
+
+    with (
+        patch("src.services.pdf.generator.generate_pdf", new_callable=AM) as mock_pdf,
+        patch(
+            "src.services.pdf.generator.render_quotation_html", return_value="<html>"
+        ),
+    ):
         mock_pdf.return_value = b"pdf_data"
         result = await create_quotation(ctx, items)
 
@@ -69,7 +74,6 @@ async def test_create_quotation_tool():
         content=b"pdf_data",
         content_type="application/pdf",
     )
-
 
 
 @pytest.mark.asyncio

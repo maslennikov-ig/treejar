@@ -22,6 +22,7 @@ async def test_process_incoming_batch_new_conversation(
     mock_wazzup_cls.return_value = mock_wazzup
 
     from typing import Any
+
     class MockResult:
         def __init__(self, val: Any) -> None:
             self.val = val
@@ -60,7 +61,7 @@ async def test_process_incoming_batch_new_conversation(
             type="text",
             text="Hi there",
             channelId="chan-1",
-            timestamp=1704067200
+            timestamp=1704067200,
         )
     ]
 
@@ -72,6 +73,5 @@ async def test_process_incoming_batch_new_conversation(
     mock_session.commit.assert_awaited()
     mock_process_message.assert_awaited_once()
     mock_wazzup.send_text.assert_awaited_once_with(
-        chat_id=chat_id,
-        text="Hello from AI"
+        chat_id=chat_id, text="Hello from AI"
     )

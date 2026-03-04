@@ -112,7 +112,12 @@ async def perform_search_products(ctx: RunContext[SalesDeps], query: str) -> str
         return "No products found matching the query."
 
     from src.core.discounts import apply_discount
-    segment = ctx.deps.crm_context.get("Segment", "Unknown") if ctx.deps.crm_context else "Unknown"
+
+    segment = (
+        ctx.deps.crm_context.get("Segment", "Unknown")
+        if ctx.deps.crm_context
+        else "Unknown"
+    )
 
     formatted_results = []
     for r in results.products:
@@ -181,7 +186,9 @@ async def lookup_customer(ctx: RunContext[SalesDeps], phone: str) -> str:
 
 
 @sales_agent.tool
-async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | None = None) -> str:
+async def create_deal(
+    ctx: RunContext[SalesDeps], title: str, amount: float | None = None
+) -> str:
     """Create a new Deal (Opportunity) in the CRM system for this customer.
     Call this when the customer has shown clear interest in purchasing and you are entering the Next Steps or Quoting phase.
 
@@ -204,7 +211,7 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
         new_contact_data = {
             "Phone": phone,
             "Last_Name": ctx.deps.conversation.customer_name or "Unknown Client",
-            "Lead_Source": "Chatbot"
+            "Lead_Source": "Chatbot",
         }
         resp = await ctx.deps.zoho_crm.create_contact(new_contact_data)
         if "details" not in resp or "id" not in resp["details"]:
@@ -226,8 +233,10 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
     deal_resp = await ctx.deps.zoho_crm.create_deal(deal_data)
 
     if "details" in deal_resp and "id" in deal_resp["details"]:
-        deal_id = deal_resp['details']['id']
-        return f"Successfully created Deal in CRM. Deal ID: {deal_id}, Stage: 'New Lead'."
+        deal_id = deal_resp["details"]["id"]
+        return (
+            f"Successfully created Deal in CRM. Deal ID: {deal_id}, Stage: 'New Lead'."
+        )
 
     return "Failed to create deal. CRM response pattern unexpected."
 
@@ -236,6 +245,7 @@ async def create_deal(ctx: RunContext[SalesDeps], title: str, amount: float | No
 class QuotationItem:
     sku: str
     quantity: int
+
 
 @sales_agent.tool
 async def create_quotation(
@@ -261,7 +271,12 @@ async def create_quotation(
     subtotal = 0.0
 
     from src.core.discounts import apply_discount
-    segment = ctx.deps.crm_context.get("Segment", "Unknown") if ctx.deps.crm_context else "Unknown"
+
+    segment = (
+        ctx.deps.crm_context.get("Segment", "Unknown")
+        if ctx.deps.crm_context
+        else "Unknown"
+    )
 
     for item in items:
         if item.sku not in stock_map:
@@ -274,24 +289,30 @@ async def create_quotation(
         subtotal += total_price
 
         # Zoho Inventory Draft Order Line Item
-        zoho_line_items.append({
-            "item_id": zoho_item["item_id"],
-            "quantity": item.quantity,
-            "rate": unit_price,
-            "description": zoho_item.get("description", ""),
-        })
+        zoho_line_items.append(
+            {
+                "item_id": zoho_item["item_id"],
+                "quantity": item.quantity,
+                "rate": unit_price,
+                "description": zoho_item.get("description", ""),
+            }
+        )
 
         # Template Data formatting
-        template_items.append({
-            "sku": item.sku,
-            "name": zoho_item.get("name", ""),
-            "description": zoho_item.get("description", ""),
-            "quantity": item.quantity,
-            "unit_price": unit_price,
-            "total_price": total_price,
-            # Weasyprint can load URLs directly if they are public.
-            "image_url": zoho_item.get("image_document_id")  # Assuming Zoho structure has an image URL or ID
-        })
+        template_items.append(
+            {
+                "sku": item.sku,
+                "name": zoho_item.get("name", ""),
+                "description": zoho_item.get("description", ""),
+                "quantity": item.quantity,
+                "unit_price": unit_price,
+                "total_price": total_price,
+                # Weasyprint can load URLs directly if they are public.
+                "image_url": zoho_item.get(
+                    "image_document_id"
+                ),  # Assuming Zoho structure has an image URL or ID
+            }
+        )
 
     # Fake missing data (In production, load CRM contact link)
     customer_id = "temp_draft_customer_id"  # Usually we'd map this via Zoho CRM contact
@@ -299,9 +320,7 @@ async def create_quotation(
     # Create Draft Order in Zoho
     try:
         draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
-            customer_id=customer_id,
-            items=zoho_line_items,
-            status="draft"
+            customer_id=customer_id, items=zoho_line_items, status="draft"
         )
         quote_number = draft_resp.get("saleorder", {}).get("salesorder_number", "DRAFT")
     except Exception as e:
@@ -320,7 +339,7 @@ async def create_quotation(
             "name": ctx.deps.conversation.customer_name or "Valued Customer",
             "company": "Company Name",
             "email": "customer@example.com",
-            "address": "UAE"
+            "address": "UAE",
         },
         "items": template_items,
         "subtotal": subtotal,
@@ -329,12 +348,13 @@ async def create_quotation(
         "manager": {
             "name": "Syed Amanullah",
             "phone": "+971545467851",
-            "email": "syed.h@treejartrading.ae"
-        }
+            "email": "syed.h@treejartrading.ae",
+        },
     }
 
     # Import pdf generator (delay import to avoid circular dependency or import overhead if not used)
     from src.services.pdf.generator import generate_pdf, render_quotation_html
+
     html_content = render_quotation_html(pdf_context)
     pdf_bytes = await generate_pdf(html_content)
 
@@ -346,7 +366,7 @@ async def create_quotation(
             url=None,
             caption=f"Here is your quotation: {quote_number}",
             content=pdf_bytes,
-            content_type="application/pdf"
+            content_type="application/pdf",
         )
     except Exception as e:
         logger.error(f"Failed to send PDF via Wazzup: {e}")
@@ -388,7 +408,10 @@ async def process_message(
             contact = await crm_client.find_contact_by_phone(conv.phone)
             if contact:
                 name = f"{contact.get('First_Name', '')} {contact.get('Last_Name', '')}".strip()
-                crm_context = {"Name": name, "Segment": contact.get("Segment", "Unknown")}
+                crm_context = {
+                    "Name": name,
+                    "Segment": contact.get("Segment", "Unknown"),
+                }
                 await set_cached_crm_profile(redis, conv.phone, crm_context)
             else:
                 crm_context = {"Segment": "Unknown"}
@@ -417,10 +440,16 @@ async def process_message(
 
             # Get last 5 messages for context
             recent_context = "\n".join(
-                [f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}" for msg in history[-5:]] + [f"user: {masked_text}"]
+                [
+                    f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}"
+                    for msg in history[-5:]
+                ]
+                + [f"user: {masked_text}"]
             )
 
-            await notify_manager_escalation(conv, escalation_eval.reason, [recent_context], db)
+            await notify_manager_escalation(
+                conv, escalation_eval.reason, [recent_context], db
+            )
 
             # Instead of returning immediately, we proceed but inject a system note
             # so the LLM responds politely indicating a human will follow up.
@@ -440,7 +469,10 @@ async def process_message(
 
     try:
         from src.core.config import get_system_config
-        db_model_main = await get_system_config(db, "openrouter_model_main", settings.openrouter_model_main)
+
+        db_model_main = await get_system_config(
+            db, "openrouter_model_main", settings.openrouter_model_main
+        )
 
         result = await sales_agent.run(
             user_prompt=masked_text,
@@ -458,7 +490,7 @@ async def process_message(
             text=final_text,
             tokens_in=usage.input_tokens if usage else None,
             tokens_out=usage.output_tokens if usage else None,
-            cost=None, # Usage cost tracking usually needs custom logic or litellm
+            cost=None,  # Usage cost tracking usually needs custom logic or litellm
             model=db_model_main,
         )
 
@@ -469,5 +501,7 @@ async def process_message(
             tokens_in=0,
             tokens_out=0,
             cost=0.0,
-            model=db_model_main if 'db_model_main' in locals() else settings.openrouter_model_main,
+            model=db_model_main
+            if "db_model_main" in locals()
+            else settings.openrouter_model_main,
         )

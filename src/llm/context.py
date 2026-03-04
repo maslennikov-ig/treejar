@@ -3,6 +3,7 @@
 Responsible for building the message history passed to the LLM agent,
 including PII masking and context truncation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -87,14 +88,10 @@ async def build_message_history(
             # Update the global map passed in from the current turn
             pii_map.update(new_pii_map)
 
-            history.append(
-                ModelRequest(parts=[UserPromptPart(content=masked_text)])
-            )
+            history.append(ModelRequest(parts=[UserPromptPart(content=masked_text)]))
         elif msg.role == "assistant":
             # Assistant replies from the DB are safe as they were generated.
-            history.append(
-                ModelResponse(parts=[TextPart(content=msg.content)])
-            )
+            history.append(ModelResponse(parts=[TextPart(content=msg.content)]))
         else:
             logger.warning(f"Unknown message role: {msg.role}")
 

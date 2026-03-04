@@ -11,7 +11,9 @@ async def test_build_system_prompt_default_language() -> None:
     db, redis = AsyncMock(), AsyncMock()
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
-    prompt = await build_system_prompt(db, redis, SalesStage.GREETING.value, language="Russian")
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.GREETING.value, language="Russian"
+    )
 
     assert "You are Noor" in prompt
     assert "You work for Treejar" in prompt
@@ -24,7 +26,9 @@ async def test_build_system_prompt_custom_language() -> None:
     db, redis = AsyncMock(), AsyncMock()
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
-    prompt = await build_system_prompt(db, redis, SalesStage.SOLUTION.value, language="en")
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.SOLUTION.value, language="en"
+    )
 
     assert "The user prefers to communicate in English" in prompt
     assert "STAGE: SOLUTION" in prompt
@@ -36,7 +40,9 @@ async def test_build_system_prompt_unknown_stage() -> None:
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
     # If a database field has an invalid stage string, we default to generic
-    prompt = await build_system_prompt(db, redis, "unknown_stage_123", language="Russian")
+    prompt = await build_system_prompt(
+        db, redis, "unknown_stage_123", language="Russian"
+    )
 
     # Should contain base rules
     assert "You are Noor" in prompt

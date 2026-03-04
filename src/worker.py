@@ -21,11 +21,20 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions: list[Any] = [sync_products_from_zoho, process_incoming_batch, run_automatic_followups, calculate_and_store_metrics]
+    functions: list[Any] = [
+        sync_products_from_zoho,
+        process_incoming_batch,
+        run_automatic_followups,
+        calculate_and_store_metrics,
+    ]
     cron_jobs = [
         cron(sync_products_from_zoho, hour={0, 6, 12, 18}, run_at_startup=False),
         cron(run_automatic_followups, minute={0}, run_at_startup=False),
-        cron(calculate_and_store_metrics, minute={0, 10, 20, 30, 40, 50}, run_at_startup=True),
+        cron(
+            calculate_and_store_metrics,
+            minute={0, 10, 20, 30, 40, 50},
+            run_at_startup=True,
+        ),
     ]
     on_startup = startup
     on_shutdown = shutdown

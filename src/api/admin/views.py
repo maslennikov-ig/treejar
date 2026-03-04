@@ -19,14 +19,25 @@ class ConversationAdmin(ModelView, model=Conversation):
 
 
 class MessageAdmin(ModelView, model=Message):
-    column_list = [Message.id, Message.conversation_id, Message.role, Message.created_at]
+    column_list = [
+        Message.id,
+        Message.conversation_id,
+        Message.role,
+        Message.created_at,
+    ]
     name = "Message"
     name_plural = "Messages"
     icon = "fa-solid fa-message"
 
 
 class ProductAdmin(ModelView, model=Product):
-    column_list = [Product.sku, Product.name_en, Product.is_active, Product.price, Product.stock]
+    column_list = [
+        Product.sku,
+        Product.name_en,
+        Product.is_active,
+        Product.price,
+        Product.stock,
+    ]
     name = "Product"
     name_plural = "Products"
     icon = "fa-solid fa-box"
@@ -40,14 +51,24 @@ class KnowledgeBaseAdmin(ModelView, model=KnowledgeBase):
 
 
 class QualityReviewAdmin(ModelView, model=QualityReview):
-    column_list = [QualityReview.id, QualityReview.conversation_id, QualityReview.total_score, QualityReview.created_at]
+    column_list = [
+        QualityReview.id,
+        QualityReview.conversation_id,
+        QualityReview.total_score,
+        QualityReview.created_at,
+    ]
     name = "Quality Review"
     name_plural = "Quality Reviews"
     icon = "fa-solid fa-star"
 
 
 class EscalationAdmin(ModelView, model=Escalation):
-    column_list = [Escalation.id, Escalation.conversation_id, Escalation.status, Escalation.created_at]
+    column_list = [
+        Escalation.id,
+        Escalation.conversation_id,
+        Escalation.status,
+        Escalation.created_at,
+    ]
     name = "Escalation"
     name_plural = "Escalations"
     icon = "fa-solid fa-triangle-exclamation"
@@ -73,7 +94,12 @@ class MetricsSnapshotAdmin(ModelView, model=MetricsSnapshot):
 
 
 class SystemPromptAdmin(ModelView, model=SystemPrompt):
-    column_list = [SystemPrompt.name, SystemPrompt.version, SystemPrompt.is_active, SystemPrompt.updated_at]
+    column_list = [
+        SystemPrompt.name,
+        SystemPrompt.version,
+        SystemPrompt.is_active,
+        SystemPrompt.updated_at,
+    ]
     name = "System Prompt"
     name_plural = "System Prompts"
     icon = "fa-solid fa-scroll"

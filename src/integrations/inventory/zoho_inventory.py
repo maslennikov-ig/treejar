@@ -125,18 +125,17 @@ class ZohoInventoryClient(InventoryProvider):
             except httpx.HTTPStatusError as e:
                 # Zoho sometimes returns 429 Too Many Requests
                 if e.response.status_code == 429 and attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)  # 2s, 4s...
+                    await asyncio.sleep(2**attempt)  # 2s, 4s...
                     continue
                 raise
 
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
                 raise
 
         raise RuntimeError("Unreachable")
-
 
     async def get_items(self, page: int = 1, per_page: int = 200) -> dict[str, Any]:
         """Fetch a page of active items from Zoho Inventory.
@@ -152,10 +151,9 @@ class ZohoInventoryClient(InventoryProvider):
                 "status": "active",
                 # Treejar-specific custom field: filters only end products (not raw materials)
                 "cf_end_product": "true",
-            }
+            },
         )
         return dict(response.json())
-
 
     async def get_stock(self, sku: str) -> dict[str, Any] | None:
         """Get stock level for a specific SKU using search_text.

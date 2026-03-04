@@ -73,13 +73,16 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
     logger.info(
         "Zoho sync completed. Synced: %d, Errors: %d",
-        stats.synced, stats.errors,
+        stats.synced,
+        stats.errors,
     )
 
     return stats.model_dump()
 
 
-async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncResponse) -> None:
+async def _upsert_items_batch(
+    items: list[dict[str, Any]], stats: ProductSyncResponse
+) -> None:
     """Upsert a batch of items into the PostgreSQL database using SQLAlchemy 2.0.
 
     Args:
@@ -110,19 +113,25 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
         image_doc_id = item.get("image_document_id")
         # NOTE: This URL requires OAuth authentication and is not publicly accessible.
         # For WhatsApp/client-facing use, images must be proxied through our API.
-        image_url = f"https://inventory.zoho.eu/api/v1/documents/{image_doc_id}" if image_doc_id else None
+        image_url = (
+            f"https://inventory.zoho.eu/api/v1/documents/{image_doc_id}"
+            if image_doc_id
+            else None
+        )
 
-        values.append({
-            "sku": sku,
-            "zoho_item_id": item_id,
-            "name_en": name or "Unknown",
-            "description_en": description,
-            "category": category,
-            "price": rate,
-            "stock": stock_on_hand,
-            "image_url": image_url,
-            "is_active": True,
-        })
+        values.append(
+            {
+                "sku": sku,
+                "zoho_item_id": item_id,
+                "name_en": name or "Unknown",
+                "description_en": description,
+                "category": category,
+                "price": rate,
+                "stock": stock_on_hand,
+                "image_url": image_url,
+                "is_active": True,
+            }
+        )
 
     if not values:
         return
@@ -148,16 +157,11 @@ async def _upsert_items_batch(items: list[dict[str, Any]], stats: ProductSyncRes
             set_dict["synced_at"] = func.now()  # type: ignore[assignment]
             set_dict["updated_at"] = func.now()  # type: ignore[assignment]
 
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["sku"],
-                set_=set_dict
-            )
+            stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=set_dict)
 
             # Use RETURNING with xmax to distinguish inserts from updates:
             # xmax == 0 means a new INSERT, xmax > 0 means an UPDATE (conflict)
-            result = await session.execute(
-                stmt.returning(Product.id, text("xmax"))
-            )
+            result = await session.execute(stmt.returning(Product.id, text("xmax")))
             rows = result.all()
             await session.commit()
 

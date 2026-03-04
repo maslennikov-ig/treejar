@@ -7,11 +7,12 @@ from src.schemas.common import EscalationStatus
 
 logger = logging.getLogger(__name__)
 
+
 async def notify_manager_escalation(
     conversation: Conversation,
     reason: str,
     recent_messages: list[str],
-    db: AsyncSession
+    db: AsyncSession,
 ) -> None:
     """
     Notify the manager about a soft escalation.

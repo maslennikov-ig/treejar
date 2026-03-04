@@ -34,7 +34,9 @@ class EmbeddingEngine:
         if self._model is None:
             with self._lock:
                 if self._model is None:
-                    logger.info("Loading embedding model %s...", settings.embedding_model)
+                    logger.info(
+                        "Loading embedding model %s...", settings.embedding_model
+                    )
                     self._model = TextEmbedding(model_name=settings.embedding_model)
                     logger.info("Embedding model loaded successfully.")
         return self._model
@@ -74,8 +76,7 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
 
     # Fetch active products without embeddings
     stmt = select(Product).where(
-        Product.embedding.is_(None),
-        Product.is_active.is_(True)
+        Product.embedding.is_(None), Product.is_active.is_(True)
     )
     result = await db.execute(stmt)
     products = result.scalars().all()
@@ -110,7 +111,9 @@ async def generate_product_embeddings(db: AsyncSession) -> int:
 
         # Commit each batch
         await db.commit()
-        logger.info("Processed batch of size %d. Total: %d", len(batch), processed_count)
+        logger.info(
+            "Processed batch of size %d. Total: %d", len(batch), processed_count
+        )
 
     return processed_count
 

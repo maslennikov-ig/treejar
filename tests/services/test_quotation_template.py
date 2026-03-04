@@ -10,7 +10,7 @@ def test_render_quotation_template():
             "name": "Test User",
             "company": "Test Co",
             "email": "test@testco.com",
-            "address": "Dubai, UAE"
+            "address": "Dubai, UAE",
         },
         "items": [
             {
@@ -19,7 +19,7 @@ def test_render_quotation_template():
                 "description": "A very nice table",
                 "quantity": 2,
                 "unit_price": 500.0,
-                "total_price": 1000.0
+                "total_price": 1000.0,
             }
         ],
         "subtotal": 1000.0,
@@ -28,8 +28,8 @@ def test_render_quotation_template():
         "manager": {
             "name": "Syed Amanullah",
             "phone": "+971545467851",
-            "email": "syed.h@treejartrading.ae"
-        }
+            "email": "syed.h@treejartrading.ae",
+        },
     }
 
     html = render_quotation_html(context=context)

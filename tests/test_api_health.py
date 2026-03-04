@@ -18,7 +18,9 @@ async def mock_redis() -> AsyncGenerator[AsyncMock, None]:
 
 @pytest.mark.asyncio
 async def test_health_check_ok(mock_redis: AsyncMock) -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/api/v1/health")
 
     assert response.status_code == 200
@@ -31,7 +33,9 @@ async def test_health_check_ok(mock_redis: AsyncMock) -> None:
 async def test_health_check_degraded(mock_redis: AsyncMock) -> None:
     mock_redis.ping.side_effect = Exception("Redis connection refused")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/api/v1/health")
 
     assert response.status_code == 200

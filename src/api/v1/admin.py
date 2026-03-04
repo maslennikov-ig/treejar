@@ -125,7 +125,9 @@ async def get_settings(
         default_language=str(configs.get("default_language", "en")),
         auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
         follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
-        max_messages_per_conversation=int(configs.get("max_messages_per_conversation", 50)),  # type: ignore
+        max_messages_per_conversation=int(
+            configs.get("max_messages_per_conversation", 50)
+        ),  # type: ignore
     )
 
 
@@ -143,7 +145,9 @@ async def update_settings(
         config = result.scalars().first()
 
         if config:
-            config.value = value  # SQLAlchemy JSONB handles dict/bool/int types effortlessly
+            config.value = (
+                value  # SQLAlchemy JSONB handles dict/bool/int types effortlessly
+            )
         else:
             db.add(SystemConfig(key=key, value=value))
 
@@ -159,5 +163,7 @@ async def update_settings(
         default_language=str(configs.get("default_language", "en")),
         auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
         follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
-        max_messages_per_conversation=int(configs.get("max_messages_per_conversation", 50)),  # type: ignore
+        max_messages_per_conversation=int(
+            configs.get("max_messages_per_conversation", 50)
+        ),  # type: ignore
     )

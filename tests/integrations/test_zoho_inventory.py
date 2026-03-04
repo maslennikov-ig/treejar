@@ -13,15 +13,18 @@ async def test_create_draft_sale_order():
     zoho_client = ZohoInventoryClient(redis_client=redis_mock)
 
     from unittest.mock import MagicMock
+
     mock_response = AsyncMock()
     mock_response.status_code = 200
-    mock_response.json = MagicMock(return_value={"saleorder": {"salesorder_id": "123", "status": "draft"}})
+    mock_response.json = MagicMock(
+        return_value={"saleorder": {"salesorder_id": "123", "status": "draft"}}
+    )
 
     with patch("httpx.AsyncClient.request", return_value=mock_response) as mock_req:
         result = await zoho_client.create_sale_order(
             customer_id="customer123",
             items=[{"item_id": "item123", "quantity": 2}],
-            status="draft"
+            status="draft",
         )
 
         assert result["saleorder"]["status"] == "draft"

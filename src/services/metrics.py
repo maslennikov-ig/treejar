@@ -19,27 +19,43 @@ async def calculate_and_store_metrics(ctx: dict[str, Any]) -> None:
         total_convs = await db.scalar(select(func.count(Conversation.id))) or 0
 
         # Messages sent by assistant
-        msgs_sent = await db.scalar(
-            select(func.count(Message.id)).where(Message.role == "assistant")
-        ) or 0
+        msgs_sent = (
+            await db.scalar(
+                select(func.count(Message.id)).where(Message.role == "assistant")
+            )
+            or 0
+        )
 
         # LLM Cost USD
         cost = await db.scalar(select(func.sum(Message.cost))) or 0.0
 
         # Escalations
-        escalations = await db.scalar(
-            select(func.count(Conversation.id)).where(Conversation.escalation_status != "none")
-        ) or 0
+        escalations = (
+            await db.scalar(
+                select(func.count(Conversation.id)).where(
+                    Conversation.escalation_status != "none"
+                )
+            )
+            or 0
+        )
 
         # Deals created
-        deals = await db.scalar(
-            select(func.count(Conversation.id)).where(Conversation.zoho_deal_id.is_not(None))
-        ) or 0
+        deals = (
+            await db.scalar(
+                select(func.count(Conversation.id)).where(
+                    Conversation.zoho_deal_id.is_not(None)
+                )
+            )
+            or 0
+        )
 
         # Quotes generated
-        quotes = await db.scalar(
-            select(func.count(Message.id)).where(Message.message_type == "quote")
-        ) or 0
+        quotes = (
+            await db.scalar(
+                select(func.count(Message.id)).where(Message.message_type == "quote")
+            )
+            or 0
+        )
 
         # Prepare the UPSERT statement
         stmt = insert(MetricsSnapshot).values(

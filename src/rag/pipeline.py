@@ -96,7 +96,7 @@ class PgVectorStore(VectorStore):
                 "embedding": stmt.excluded.embedding,
                 "content": stmt.excluded.content,
                 "title": stmt.excluded.title,
-            }
+            },
         )
         await self.db.execute(stmt)
         # Caller is responsible for committing the transaction (unit-of-work pattern)
@@ -140,17 +140,14 @@ async def search_products(
     products = result.scalars().all()
 
     # 6. Map to ProductRead schema models
-    product_responses = [
-        ProductRead.model_validate(p)
-        for p in products
-    ]
+    product_responses = [ProductRead.model_validate(p) for p in products]
 
     # We can interpret the query somehow if we wanted,
     # but for now we just return the raw text
     return ProductSearchResult(
         products=product_responses,
         query_interpreted=query.query,
-        total_found=len(product_responses)
+        total_found=len(product_responses),
     )
 
 

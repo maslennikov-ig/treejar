@@ -1,4 +1,3 @@
-
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -8,8 +7,14 @@ from src.core.config import settings
 
 
 class EscalationEvaluation(BaseModel):
-    should_escalate: bool = Field(description="True if any of the escalation triggers apply to this message.")
-    reason: str | None = Field(default=None, description="The specific trigger reason if should_escalate is True, else None.")
+    should_escalate: bool = Field(
+        description="True if any of the escalation triggers apply to this message."
+    )
+    reason: str | None = Field(
+        default=None,
+        description="The specific trigger reason if should_escalate is True, else None.",
+    )
+
 
 ESCALATION_SYSTEM_PROMPT = """
 You are an escalation detection agent. Your job is to analyze the user's incoming message and determine if it explicitly matches any of the following 18 triggers for handing the chat over to a human manager.
@@ -49,6 +54,7 @@ escalation_agent = Agent(
     system_prompt=ESCALATION_SYSTEM_PROMPT,
     output_type=EscalationEvaluation,
 )
+
 
 async def evaluate_escalation_triggers(message: str) -> EscalationEvaluation:
     """Evaluate if a message triggers an escalation."""

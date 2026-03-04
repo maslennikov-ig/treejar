@@ -6,6 +6,7 @@ from src.main import app
 
 client = TestClient(app)
 
+
 def test_wazzup_webhook_endpoint() -> None:
     # Mock redis and arq_pool
     app.state.redis = AsyncMock()
@@ -20,7 +21,7 @@ def test_wazzup_webhook_endpoint() -> None:
                 "text": "Hello bot!",
                 "type": "text",
                 "channelId": "ch1",
-                "timestamp": 1234567890
+                "timestamp": 1234567890,
             }
         ]
     }

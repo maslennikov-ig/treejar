@@ -1,4 +1,3 @@
-
 import pytest
 
 from src.models.system_prompt import SystemPrompt

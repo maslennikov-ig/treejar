@@ -90,6 +90,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+
 async def get_system_config(db: Any, key: str, default: str) -> str:
     """Fetch a configuration value from the DB, fallback to default."""
     from sqlalchemy import select
@@ -105,6 +106,9 @@ async def get_system_config(db: Any, key: str, default: str) -> str:
             return str(config.value)
     except Exception:
         import logging
-        logging.getLogger(__name__).warning("Failed to fetch system config '%s', using default", key)
+
+        logging.getLogger(__name__).warning(
+            "Failed to fetch system config '%s', using default", key
+        )
 
     return default

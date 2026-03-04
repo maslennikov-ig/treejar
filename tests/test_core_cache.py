@@ -13,9 +13,11 @@ class MockRedis:
     async def set(self, key: str, value: str, ex: int = None):
         self.data[key] = value
 
+
 @pytest.fixture
 def mock_redis():
     return MockRedis()
+
 
 @pytest.mark.asyncio
 async def test_crm_profile_cache(mock_redis):

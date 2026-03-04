@@ -15,9 +15,15 @@ def wazzup_provider() -> WazzupProvider:
 
 
 @pytest.mark.asyncio
-@patch("src.integrations.messaging.wazzup.httpx.AsyncClient.request", new_callable=AsyncMock)
-async def test_send_text_success(mock_request: AsyncMock, wazzup_provider: WazzupProvider) -> None:
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_text_success(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
     from unittest.mock import MagicMock
+
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"messageId": "msg_123"}
@@ -38,9 +44,15 @@ async def test_send_text_success(mock_request: AsyncMock, wazzup_provider: Wazzu
 
 
 @pytest.mark.asyncio
-@patch("src.integrations.messaging.wazzup.httpx.AsyncClient.request", new_callable=AsyncMock)
-async def test_send_text_http_error(mock_request: AsyncMock, wazzup_provider: WazzupProvider) -> None:
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_text_http_error(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
     from unittest.mock import MagicMock
+
     mock_resp = MagicMock()
     mock_resp.status_code = 400
     mock_resp.text = '{"error": "bad request"}'
@@ -56,9 +68,15 @@ async def test_send_text_http_error(mock_request: AsyncMock, wazzup_provider: Wa
 
 
 @pytest.mark.asyncio
-@patch("src.integrations.messaging.wazzup.httpx.AsyncClient.request", new_callable=AsyncMock)
-async def test_send_media_success(mock_request: AsyncMock, wazzup_provider: WazzupProvider) -> None:
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_media_success(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
     from unittest.mock import MagicMock
+
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"messageId": "msg_media"}
@@ -74,9 +92,15 @@ async def test_send_media_success(mock_request: AsyncMock, wazzup_provider: Wazz
 
 
 @pytest.mark.asyncio
-@patch("src.integrations.messaging.wazzup.httpx.AsyncClient.request", new_callable=AsyncMock)
-async def test_send_template_success(mock_request: AsyncMock, wazzup_provider: WazzupProvider) -> None:
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_template_success(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
     from unittest.mock import MagicMock
+
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"messageId": "msg_tmpl"}

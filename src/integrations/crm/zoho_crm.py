@@ -124,13 +124,13 @@ class ZohoCRMClient(CRMProvider):
             except httpx.HTTPStatusError as e:
                 # Zoho sometimes returns 429 Too Many Requests
                 if e.response.status_code == 429 and attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)  # 2s, 4s...
+                    await asyncio.sleep(2**attempt)  # 2s, 4s...
                     continue
                 raise
 
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt < max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
                 raise
 
@@ -139,7 +139,9 @@ class ZohoCRMClient(CRMProvider):
     async def find_contact_by_phone(self, phone: str) -> dict[str, Any] | None:
         """Find a contact by phone number."""
         # Zoho CRM v7 search endpoint
-        response = await self._request("GET", "/Contacts/search", params={"phone": phone})
+        response = await self._request(
+            "GET", "/Contacts/search", params={"phone": phone}
+        )
 
         if response.status_code == 204:
             return None

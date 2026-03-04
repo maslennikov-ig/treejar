@@ -12,7 +12,9 @@ from src.schemas.product import ProductRead
 
 
 @pytest.fixture
-def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]:
+def mock_deps() -> tuple[
+    AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+]:
     db = AsyncMock()
     conv = Conversation(
         id=uuid.uuid4(),
@@ -25,6 +27,7 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
     from unittest.mock import MagicMock
 
     from src.models.system_config import SystemConfig
+
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = []
 
@@ -41,7 +44,7 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
         "id": "DEFAULT_CONTACT_ID",
         "First_Name": "Test",
         "Last_Name": "User",
-        "Segment": "B2C"
+        "Segment": "B2C",
     }
     redis = AsyncMock()
     redis.get.return_value = None
@@ -51,14 +54,25 @@ def mock_deps() -> tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMoc
 
 
 @pytest.mark.asyncio
-async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_engine_process_message_success(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
 
     # We use `test_model` from pydantic-ai to mock responses without hitting an API
     test_model = TestModel()
 
     # We inject the test model via the `override` context manager
-    with sales_agent.override(model=test_model), escalation_agent.override(model=TestModel(custom_output_args={"should_escalate": False, "reason": None})):
+    with (
+        sales_agent.override(model=test_model),
+        escalation_agent.override(
+            model=TestModel(
+                custom_output_args={"should_escalate": False, "reason": None}
+            )
+        ),
+    ):
         response = await process_message(
             conversation_id=conv.id,
             combined_text="Hello, what do you sell?",
@@ -77,7 +91,11 @@ async def test_engine_process_message_success(mock_deps: tuple[AsyncMock, Conver
 
 
 @pytest.mark.asyncio
-async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_engine_process_message_db_error(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     db.get.return_value = None  # Force a not found error
 
@@ -93,8 +111,13 @@ async def test_engine_process_message_db_error(mock_deps: tuple[AsyncMock, Conve
             messaging_client=messaging,
         )
 
+
 @pytest.mark.asyncio
-async def test_engine_process_message_with_escalation(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_engine_process_message_with_escalation(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     from src.schemas.common import EscalationStatus
 
@@ -111,10 +134,12 @@ async def test_engine_process_message_with_escalation(mock_deps: tuple[AsyncMock
     orig_notify = notifications.notify_manager_escalation
 
     # Mock them
-    mock_eval = AsyncMock(return_value=core_escalation.EscalationEvaluation(
-        should_escalate=True,
-        reason="Test Escalation"
-    ))
+    mock_eval = AsyncMock(
+        return_value=core_escalation.EscalationEvaluation(
+            should_escalate=True, reason="Test Escalation"
+        )
+    )
+
     async def side_effect(conv_obj, reason, context, session):
         conv_obj.escalation_status = EscalationStatus.PENDING.value
 
@@ -147,9 +172,16 @@ async def test_engine_process_message_with_escalation(mock_deps: tuple[AsyncMock
         # Restore
         core_escalation.evaluate_escalation_triggers = orig_eval
         notifications.notify_manager_escalation = orig_notify
+
+
 @pytest.mark.asyncio
-async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_search_products(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     from datetime import UTC, datetime
+
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -158,7 +190,8 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
 
     # We mock search_products manually for the tool context
@@ -176,10 +209,10 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
                 stock=5,
                 is_active=True,
                 description_en="A nice chair",
-                created_at=datetime.now(UTC)
+                created_at=datetime.now(UTC),
             )
         ],
-        total_found=1
+        total_found=1,
     )
 
     # Patch the real function used inside the module
@@ -195,7 +228,14 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
         from pydantic_ai.usage import RunUsage
 
         # Passing minimal dummy model and usage just to satisfy MyPy
-        ctx = RunContext(deps=deps, retry=0, messages=[], prompt="chair", model=TestModel(), usage=RunUsage())
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="chair",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
 
         result_text = await engine_module.perform_search_products(ctx, "chair")
         assert "Office Chair" in result_text
@@ -207,7 +247,11 @@ async def test_tools_search_products(mock_deps: tuple[AsyncMock, Conversation, A
 
 
 @pytest.mark.asyncio
-async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_advance_stage(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -216,7 +260,8 @@ async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, Asy
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
 
     from pydantic_ai import RunContext
@@ -225,7 +270,9 @@ async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, Asy
     from src.llm.engine import advance_stage
 
     # Valid transition (GREETING -> QUALIFYING)
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
     result = await advance_stage(ctx, SalesStage.QUALIFYING)
 
     assert "Successfully advanced" in result
@@ -238,7 +285,11 @@ async def test_tools_advance_stage(mock_deps: tuple[AsyncMock, Conversation, Asy
 
 
 @pytest.mark.asyncio
-async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_get_stock(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -247,7 +298,8 @@ async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMo
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -255,7 +307,9 @@ async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMo
     from src.llm.engine import get_stock
 
     zoho.get_stock.return_value = {"available_stock": 25}
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
     result = await get_stock(ctx, "CHAIR-01")
     assert "25 items available" in result
@@ -263,7 +317,11 @@ async def test_tools_get_stock(mock_deps: tuple[AsyncMock, Conversation, AsyncMo
 
 
 @pytest.mark.asyncio
-async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_get_stock_not_found(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -272,7 +330,8 @@ async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversatio
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -280,13 +339,20 @@ async def test_tools_get_stock_not_found(mock_deps: tuple[AsyncMock, Conversatio
     from src.llm.engine import get_stock
 
     zoho.get_stock.return_value = None
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
     result = await get_stock(ctx, "NONEXISTENT")
     assert "not found" in result
 
+
 @pytest.mark.asyncio
-async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_lookup_customer(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -295,7 +361,8 @@ async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, A
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -306,9 +373,11 @@ async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, A
         "First_Name": "Jane",
         "Last_Name": "Doe",
         "Email": "jane@example.com",
-        "Segment": "VIP"
+        "Segment": "VIP",
     }
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
     result = await lookup_customer(ctx, "+971501234567")
     assert "FOUND in CRM" in result
@@ -319,7 +388,11 @@ async def test_tools_lookup_customer(mock_deps: tuple[AsyncMock, Conversation, A
 
 
 @pytest.mark.asyncio
-async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_lookup_customer_not_found(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -328,7 +401,8 @@ async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conve
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -336,14 +410,20 @@ async def test_tools_lookup_customer_not_found(mock_deps: tuple[AsyncMock, Conve
     from src.llm.engine import lookup_customer
 
     zoho_crm.find_contact_by_phone.return_value = None
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
     result = await lookup_customer(ctx, "+971999999999")
     assert "NOT found" in result
 
 
 @pytest.mark.asyncio
-async def test_tools_create_deal_no_crm(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_create_deal_no_crm(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -352,20 +432,28 @@ async def test_tools_create_deal_no_crm(mock_deps: tuple[AsyncMock, Conversation
         zoho_inventory=zoho,
         zoho_crm=None,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
 
     from src.llm.engine import create_deal
 
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
     result = await create_deal(ctx, "Test Deal", 500.0)
     assert "not available" in result
 
+
 @pytest.mark.asyncio
-async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]) -> None:
+async def test_tools_create_deal(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     deps = SalesDeps(
         db=db,
@@ -374,7 +462,8 @@ async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, Async
         zoho_inventory=zoho,
         zoho_crm=zoho_crm,
         messaging_client=messaging,
-        pii_map={}, redis=redis,
+        pii_map={},
+        redis=redis,
     )
     from pydantic_ai import RunContext
     from pydantic_ai.usage import RunUsage
@@ -385,15 +474,19 @@ async def test_tools_create_deal(mock_deps: tuple[AsyncMock, Conversation, Async
     zoho_crm.find_contact_by_phone.return_value = {"id": "CONTACT123"}
     zoho_crm.create_deal.return_value = {"details": {"id": "DEAL123"}}
 
-    ctx = RunContext(deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage())
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
     result = await create_deal(ctx, "Test Deal", 1000.0)
     assert "DEAL123" in result
     zoho_crm.find_contact_by_phone.assert_awaited_once_with("12345")
-    zoho_crm.create_deal.assert_awaited_once_with({
-        "Deal_Name": "Test Deal",
-        "Contact_Name": {"id": "CONTACT123"},
-        "Stage": "New Lead",
-        "Pipeline": "Standard (Standard)",
-        "Amount": 1000.0
-    })
+    zoho_crm.create_deal.assert_awaited_once_with(
+        {
+            "Deal_Name": "Test Deal",
+            "Contact_Name": {"id": "CONTACT123"},
+            "Stage": "New Lead",
+            "Pipeline": "Standard (Standard)",
+            "Amount": 1000.0,
+        }
+    )

@@ -41,14 +41,16 @@ async def test_list_conversations(mock_db: AsyncMock) -> None:
         escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
-        metadata_={}
+        metadata_={},
     )
     mock_result.scalars.return_value.all.return_value = [conv]
 
     # We execute count_stmt and stmt, so side_effect is best
     mock_db.execute.side_effect = [mock_result, mock_result]
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/api/v1/conversations/")
 
     assert response.status_code == 200
@@ -73,7 +75,7 @@ async def test_get_conversation_success(mock_db: AsyncMock) -> None:
         escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
-        metadata_={}
+        metadata_={},
     )
     conv.metadata = {}  # type: ignore[misc, assignment]
     conv.messages = [
@@ -83,7 +85,7 @@ async def test_get_conversation_success(mock_db: AsyncMock) -> None:
             role="user",
             content="Hi",
             message_type="text",
-            created_at=datetime.now(UTC)
+            created_at=datetime.now(UTC),
         )
     ]
 
@@ -91,7 +93,9 @@ async def test_get_conversation_success(mock_db: AsyncMock) -> None:
     mock_result.scalar_one_or_none.return_value = conv
     mock_db.execute.return_value = mock_result
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get(f"/api/v1/conversations/{conv_id}")
 
     assert response.status_code == 200
@@ -109,7 +113,9 @@ async def test_get_conversation_not_found(mock_db: AsyncMock) -> None:
     mock_result.scalar_one_or_none.return_value = None
     mock_db.execute.return_value = mock_result
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get(f"/api/v1/conversations/{uuid.uuid4()}")
 
     assert response.status_code == 404
@@ -130,7 +136,7 @@ async def test_update_conversation_success(mock_db: AsyncMock) -> None:
         escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
-        metadata_={}
+        metadata_={},
     )
 
     mock_result = MagicMock()
@@ -138,8 +144,12 @@ async def test_update_conversation_success(mock_db: AsyncMock) -> None:
     mock_db.execute.return_value = mock_result
 
     update_payload = {"status": "paused"}  # Must match ConversationStatus enum
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.patch(f"/api/v1/conversations/{conv_id}", json=update_payload)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.patch(
+            f"/api/v1/conversations/{conv_id}", json=update_payload
+        )
 
     assert response.status_code == 200
     data = response.json()
@@ -157,7 +167,11 @@ async def test_update_conversation_not_found(mock_db: AsyncMock) -> None:
     mock_result.scalar_one_or_none.return_value = None
     mock_db.execute.return_value = mock_result
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.patch(f"/api/v1/conversations/{uuid.uuid4()}", json={"status": "paused"})
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.patch(
+            f"/api/v1/conversations/{uuid.uuid4()}", json={"status": "paused"}
+        )
 
     assert response.status_code == 404

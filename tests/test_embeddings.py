@@ -21,6 +21,7 @@ def mock_embedding_engine() -> Generator[Any, None, None]:
             class MockArray:
                 def __iter__(self) -> Any:
                     return iter([0.1] * 1024)
+
                 def tolist(self) -> list[float]:
                     return [0.1] * 1024
 
@@ -88,7 +89,9 @@ async def test_generate_product_embeddings() -> None:
 
     with patch("src.rag.embeddings.EmbeddingEngine") as MockEngine:
         mock_engine_instance = MockEngine.return_value
-        mock_engine_instance.embed_batch_async = AsyncMock(return_value=[[0.1]*1024, [0.2]*1024])
+        mock_engine_instance.embed_batch_async = AsyncMock(
+            return_value=[[0.1] * 1024, [0.2] * 1024]
+        )
 
         processed = await generate_product_embeddings(mock_db)
 
@@ -116,7 +119,7 @@ async def test_index_knowledge_base_embeddings() -> None:
 
     with patch("src.rag.embeddings.EmbeddingEngine") as MockEngine:
         mock_engine_instance = MockEngine.return_value
-        mock_engine_instance.embed_batch_async = AsyncMock(return_value=[[0.5]*1024])
+        mock_engine_instance.embed_batch_async = AsyncMock(return_value=[[0.5] * 1024])
 
         processed = await index_knowledge_base(mock_db)
 

@@ -45,7 +45,9 @@ async def index_documents(db: AsyncSession) -> int:
     if rules_path.exists():
         rules_chunks = _parse_sales_rules(rules_path)
         if not rules_chunks:
-            logger.warning("Sales rules file exists but yielded 0 chunks: %s", rules_path)
+            logger.warning(
+                "Sales rules file exists but yielded 0 chunks: %s", rules_path
+            )
         chunks_to_index.extend(rules_chunks)
 
     # 3. Parse Company Values
@@ -53,7 +55,9 @@ async def index_documents(db: AsyncSession) -> int:
     if values_path.exists():
         values_chunks = _parse_company_values(values_path)
         if not values_chunks:
-            logger.warning("Company values file exists but yielded 0 chunks: %s", values_path)
+            logger.warning(
+                "Company values file exists but yielded 0 chunks: %s", values_path
+            )
         chunks_to_index.extend(values_chunks)
 
     if not chunks_to_index:
@@ -90,7 +94,7 @@ async def index_documents(db: AsyncSession) -> int:
                 "embedding": stmt.excluded.embedding,
                 "category": stmt.excluded.category,
                 "language": stmt.excluded.language,
-            }
+            },
         )
 
         await db.execute(stmt)
@@ -124,13 +128,15 @@ def _parse_faq(path: Path) -> list[dict[str, Any]]:
         title = lines[0].strip()
         body = lines[1].strip()
 
-        chunks.append({
-            "source": "faq",
-            "category": "faq",
-            "title": title,
-            "content": f"Q: {title}\nA: {body}",
-            "language": "en", # Mostly English with some context
-        })
+        chunks.append(
+            {
+                "source": "faq",
+                "category": "faq",
+                "title": title,
+                "content": f"Q: {title}\nA: {body}",
+                "language": "en",  # Mostly English with some context
+            }
+        )
 
     return chunks
 
@@ -159,28 +165,36 @@ def _parse_sales_rules(path: Path) -> list[dict[str, Any]]:
                     f"Правило: {rule_ru}\nОбъяснение: {expl_ru}"
                 )
 
-                chunks.append({
-                    "source": "rules",
-                    "category": "sales_rules",
-                    "title": f"Rule {rule_number}: {rule_en}",
-                    "content": combined,
-                    "language": "bilingual",
-                })
+                chunks.append(
+                    {
+                        "source": "rules",
+                        "category": "sales_rules",
+                        "title": f"Rule {rule_number}: {rule_en}",
+                        "content": combined,
+                        "language": "bilingual",
+                    }
+                )
 
     # Also grab bullet points at the bottom
     extra_rules = []
     for line in lines:
-        if line.startswith("Добавить правило") or line.startswith("Делать фоллоу ап") or line.startswith("Наша задача"):
+        if (
+            line.startswith("Добавить правило")
+            or line.startswith("Делать фоллоу ап")
+            or line.startswith("Наша задача")
+        ):
             extra_rules.append(line.strip())
 
     if extra_rules:
-        chunks.append({
-            "source": "rules",
-            "category": "sales_rules",
-            "title": "Additional Rules",
-            "content": "\n".join(extra_rules),
-            "language": "ru",
-        })
+        chunks.append(
+            {
+                "source": "rules",
+                "category": "sales_rules",
+                "title": "Additional Rules",
+                "content": "\n".join(extra_rules),
+                "language": "ru",
+            }
+        )
 
     return chunks
 
@@ -207,31 +221,48 @@ def _parse_company_values(path: Path) -> list[dict[str, Any]]:
             if current_title:
                 body_text = "\n".join(current_body).strip(" *")
                 if body_text:
-                    title_clean = current_title.split("**")[-2] if "**" in current_title else current_title
-                    chunks.append({
-                        "source": "values",
-                        "category": "company_values",
-                        "title": title_clean.strip(" *1234567890)"),
-                        "content": body_text,
-                        "language": language,
-                    })
+                    title_clean = (
+                        current_title.split("**")[-2]
+                        if "**" in current_title
+                        else current_title
+                    )
+                    chunks.append(
+                        {
+                            "source": "values",
+                            "category": "company_values",
+                            "title": title_clean.strip(" *1234567890)"),
+                            "content": body_text,
+                            "language": language,
+                        }
+                    )
 
             current_title = line.strip()
             current_body = []
-        elif current_title and line.strip() and not line.startswith("---") and "Хочешь, чтобы" not in line:
+        elif (
+            current_title
+            and line.strip()
+            and not line.startswith("---")
+            and "Хочешь, чтобы" not in line
+        ):
             current_body.append(line.strip())
 
     # Save the last one (only if it has non-empty content)
     if current_title:
         body_text = "\n".join(current_body).strip(" *")
         if body_text:
-            title_clean = current_title.split("**")[-2] if "**" in current_title else current_title
-            chunks.append({
-                "source": "values",
-                "category": "company_values",
-                "title": title_clean.strip(" *1234567890)"),
-                "content": body_text,
-                "language": language,
-            })
+            title_clean = (
+                current_title.split("**")[-2]
+                if "**" in current_title
+                else current_title
+            )
+            chunks.append(
+                {
+                    "source": "values",
+                    "category": "company_values",
+                    "title": title_clean.strip(" *1234567890)"),
+                    "content": body_text,
+                    "language": language,
+                }
+            )
 
     return chunks

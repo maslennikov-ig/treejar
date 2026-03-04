@@ -14,6 +14,7 @@ from src.schemas.common import EscalationStatus
 
 logfire = Logfire()
 
+
 async def run_automatic_followups(ctx: dict[str, Any]) -> None:
     """Cron job to process and send follow-up messages."""
     logfire.info("Starting automatic follow-ups cron job")
@@ -25,9 +26,9 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
         # and match 24h, 72h (3d), or 168h (7d) inactivity within a 1-hour window.
 
         intervals = [
-            (24, 25),   # 1 day
-            (72, 73),   # 3 days
-            (168, 169), # 7 days
+            (24, 25),  # 1 day
+            (72, 73),  # 3 days
+            (168, 169),  # 7 days
         ]
 
         for min_hrs, max_hrs in intervals:
@@ -43,13 +44,16 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
             result = await db.execute(stmt)
             conversations: list[Conversation] = list(result.scalars().all())
 
-            logfire.info(f"Found {len(conversations)} conversations for {min_hrs}h follow-up")
+            logfire.info(
+                f"Found {len(conversations)} conversations for {min_hrs}h follow-up"
+            )
 
             for conv in conversations:
                 try:
                     await _process_followup_for_conversation(db, conv)
                 except Exception as e:
                     logfire.error(f"Failed to process followup for {conv.id}: {e}")
+
 
 async def _process_followup_for_conversation(db: Any, conv: Conversation) -> None:
     """Generates and sends a follow-up for a specific conversation."""
@@ -65,6 +69,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     zoho = None
 
     from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+
     zoho = ZohoInventoryClient(redis)
 
     # Normally, process_message saves user message, calls LLM, saves AIMessage, sends message.
@@ -84,6 +89,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     crm_context = None
     if conv.phone:
         from src.core.cache import get_cached_crm_profile
+
         crm_context = await get_cached_crm_profile(redis, conv.phone)
 
     deps = SalesDeps(

@@ -14,17 +14,20 @@ async def test_sync_products_from_zoho_success() -> None:
     mock_client_instance.get_items.side_effect = [
         {
             "items": [{"sku": "ITEM_1", "status": "active", "name": "Item 1"}],
-            "page_context": {"has_more_page": True}
+            "page_context": {"has_more_page": True},
         },
         {
             "items": [{"sku": "ITEM_2", "status": "active", "name": "Item 2"}],
-            "page_context": {"has_more_page": False}
-        }
+            "page_context": {"has_more_page": False},
+        },
     ]
 
     with (
-        patch("src.integrations.inventory.sync._upsert_items_batch", new_callable=AsyncMock) as mock_upsert,
-        patch("src.integrations.inventory.sync._zoho_client") as mock_cm
+        patch(
+            "src.integrations.inventory.sync._upsert_items_batch",
+            new_callable=AsyncMock,
+        ) as mock_upsert,
+        patch("src.integrations.inventory.sync._zoho_client") as mock_cm,
     ):
         mock_cm.return_value.__aenter__.return_value = mock_client_instance
 
@@ -46,8 +49,11 @@ async def test_sync_products_from_zoho_api_error() -> None:
     mock_client_instance.get_items.side_effect = Exception("API Down")
 
     with (
-        patch("src.integrations.inventory.sync._upsert_items_batch", new_callable=AsyncMock) as mock_upsert,
-        patch("src.integrations.inventory.sync._zoho_client") as mock_cm
+        patch(
+            "src.integrations.inventory.sync._upsert_items_batch",
+            new_callable=AsyncMock,
+        ) as mock_upsert,
+        patch("src.integrations.inventory.sync._zoho_client") as mock_cm,
     ):
         mock_cm.return_value.__aenter__.return_value = mock_client_instance
 
@@ -55,6 +61,7 @@ async def test_sync_products_from_zoho_api_error() -> None:
 
         assert mock_upsert.call_count == 0
         assert result["errors"] == 1
+
 
 @pytest.mark.asyncio
 @patch("src.integrations.inventory.sync.async_session_factory")

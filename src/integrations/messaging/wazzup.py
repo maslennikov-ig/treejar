@@ -83,12 +83,16 @@ class WazzupProvider(MessagingProvider):
         if isinstance(data, dict):
             return str(data.get("messageId", "unknown"))
         elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-             return str(data[0].get("messageId", "unknown"))
+            return str(data[0].get("messageId", "unknown"))
         return "unknown"
 
     async def send_media(
-        self, chat_id: str, url: str | None = None, caption: str | None = None,
-        content: bytes | None = None, content_type: str | None = None,
+        self,
+        chat_id: str,
+        url: str | None = None,
+        caption: str | None = None,
+        content: bytes | None = None,
+        content_type: str | None = None,
     ) -> str:
         """Send media (image/document/audio). Returns message ID."""
         payload: dict[str, Any] = {
@@ -113,7 +117,7 @@ class WazzupProvider(MessagingProvider):
         if isinstance(data, dict):
             return str(data.get("messageId", "unknown"))
         elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-             return str(data[0].get("messageId", "unknown"))
+            return str(data[0].get("messageId", "unknown"))
         return "unknown"
 
     async def send_template(
@@ -121,9 +125,9 @@ class WazzupProvider(MessagingProvider):
     ) -> str:
         """Send a pre-approved template message (for >24h follow-ups). Returns message ID."""
         if params is not None:
-             # Just an example mapping, exact schema depends on Wazzup
-             # For simpler templates, content could be just a string
-             pass
+            # Just an example mapping, exact schema depends on Wazzup
+            # For simpler templates, content could be just a string
+            pass
 
         payload: dict[str, Any] = {
             "chatId": chat_id,
@@ -142,7 +146,7 @@ class WazzupProvider(MessagingProvider):
         if isinstance(data, dict):
             return str(data.get("messageId", "unknown"))
         elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-             return str(data[0].get("messageId", "unknown"))
+            return str(data[0].get("messageId", "unknown"))
         return "unknown"
 
     async def __aenter__(self) -> WazzupProvider:

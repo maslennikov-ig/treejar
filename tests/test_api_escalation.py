@@ -19,6 +19,7 @@ async def mock_db() -> AsyncGenerator[AsyncMock, None]:
     yield db
     app.dependency_overrides.clear()
 
+
 @pytest.mark.asyncio
 async def test_escalate_conversation(mock_db: AsyncMock):
     conv_id = uuid.uuid4()
@@ -31,14 +32,16 @@ async def test_escalate_conversation(mock_db: AsyncMock):
         escalation_status="none",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
-        metadata_={}
+        metadata_={},
     )
 
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = conv
     mock_db.execute.return_value = mock_result
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post(f"/api/v1/conversations/{conv_id}/escalate")
 
     assert resp.status_code == 200, resp.text
@@ -47,6 +50,7 @@ async def test_escalate_conversation(mock_db: AsyncMock):
     assert conv.escalation_status == EscalationStatus.PENDING.value
     mock_db.commit.assert_awaited_once()
 
+
 @pytest.mark.asyncio
 async def test_escalate_conversation_not_found(mock_db: AsyncMock):
     mock_result = MagicMock()
@@ -54,7 +58,9 @@ async def test_escalate_conversation_not_found(mock_db: AsyncMock):
     mock_db.execute.return_value = mock_result
 
     random_id = uuid.uuid4()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.post(f"/api/v1/conversations/{random_id}/escalate")
 
     assert resp.status_code == 404

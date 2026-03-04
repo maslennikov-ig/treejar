@@ -17,7 +17,15 @@ async def test_search_products_pipeline() -> None:
 
     # Mocking a SQLAlchemy product object
     class MockProduct:
-        def __init__(self, id: uuid.UUID, sku: str, name: str, category: str, price: float, stock: int) -> None:
+        def __init__(
+            self,
+            id: uuid.UUID,
+            sku: str,
+            name: str,
+            category: str,
+            price: float,
+            stock: int,
+        ) -> None:
             self.id = id
             self.sku = sku
             self.name_en = name
@@ -33,6 +41,7 @@ async def test_search_products_pipeline() -> None:
             self.is_active = True
             # Needed for Pydantic from_attributes
             from datetime import UTC, datetime
+
             self.created_at = datetime.now(UTC)
             self.updated_at = datetime.now(UTC)
 
@@ -52,7 +61,7 @@ async def test_search_products_pipeline() -> None:
         min_price=50.0,
         max_price=200.0,
         in_stock_only=True,
-        limit=5
+        limit=5,
     )
 
     result = await search_products(mock_db, query, mock_embedding_engine)
@@ -75,16 +84,16 @@ async def test_search_knowledge_pipeline() -> None:
     mock_result = MagicMock()
 
     class MockKB:
-        def __init__(self, id: str, source: str, category: str, title: str, content: str) -> None:
+        def __init__(
+            self, id: str, source: str, category: str, title: str, content: str
+        ) -> None:
             self.id = id
             self.source = source
             self.category = category
             self.title = title
             self.content = content
 
-    mock_records = [
-        MockKB("1", "faq", "faq", "Test Q", "Test A")
-    ]
+    mock_records = [MockKB("1", "faq", "faq", "Test Q", "Test A")]
 
     mock_result.scalars.return_value.all.return_value = mock_records
     mock_db.execute.return_value = mock_result
@@ -92,7 +101,9 @@ async def test_search_knowledge_pipeline() -> None:
     mock_embedding_engine = MagicMock()
     mock_embedding_engine.embed_async = AsyncMock(return_value=[0.1] * 1024)
 
-    result = await search_knowledge(mock_db, "test question", mock_embedding_engine, limit=3)
+    result = await search_knowledge(
+        mock_db, "test question", mock_embedding_engine, limit=3
+    )
 
     assert mock_db.execute.called
     assert len(result) == 1

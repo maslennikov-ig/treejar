@@ -1,4 +1,5 @@
 """Unit tests for ZohoCRMClient."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -9,7 +10,9 @@ import pytest
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 
 
-def _make_response(status_code: int, json_body: dict[str, object] | None = None) -> httpx.Response:
+def _make_response(
+    status_code: int, json_body: dict[str, object] | None = None
+) -> httpx.Response:
     """Build a real httpx.Response so raise_for_status() works correctly."""
     return httpx.Response(
         status_code,
@@ -102,7 +105,9 @@ async def test_create_contact() -> None:
     redis.get.return_value = b"valid_token"
     client = ZohoCRMClient(redis)
 
-    response_200 = _make_response(200, {"data": [{"code": "SUCCESS", "details": {"id": "456"}}]})
+    response_200 = _make_response(
+        200, {"data": [{"code": "SUCCESS", "details": {"id": "456"}}]}
+    )
 
     with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
         mock_request.return_value = response_200
@@ -127,7 +132,9 @@ async def test_create_deal() -> None:
     redis.get.return_value = b"valid_token"
     client = ZohoCRMClient(redis)
 
-    response_200 = _make_response(200, {"data": [{"code": "SUCCESS", "details": {"id": "789"}}]})
+    response_200 = _make_response(
+        200, {"data": [{"code": "SUCCESS", "details": {"id": "789"}}]}
+    )
 
     with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
         mock_request.return_value = response_200

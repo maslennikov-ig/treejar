@@ -12,8 +12,11 @@ from src.main import app
 def mock_inventory() -> AsyncMock:
     return AsyncMock()
 
+
 @pytest.fixture
-def override_get_inventory_client(mock_inventory: AsyncMock) -> Generator[None, None, None]:
+def override_get_inventory_client(
+    mock_inventory: AsyncMock,
+) -> Generator[None, None, None]:
     async def _override() -> AsyncMock:
         return mock_inventory
 
@@ -23,14 +26,18 @@ def override_get_inventory_client(mock_inventory: AsyncMock) -> Generator[None, 
 
 
 @pytest.mark.asyncio
-async def test_get_stock_level_found(override_get_inventory_client: None, mock_inventory: AsyncMock) -> None:
+async def test_get_stock_level_found(
+    override_get_inventory_client: None, mock_inventory: AsyncMock
+) -> None:
     mock_inventory.get_stock.return_value = {
         "sku": "CHAIR-01",
         "name": "Office Chair",
         "available_stock": 15,
         "rate": 150.0,
     }
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/api/v1/inventory/stock/CHAIR-01")
 
     assert response.status_code == 200
@@ -43,21 +50,30 @@ async def test_get_stock_level_found(override_get_inventory_client: None, mock_i
 
 
 @pytest.mark.asyncio
-async def test_get_stock_level_not_found(override_get_inventory_client: None, mock_inventory: AsyncMock) -> None:
+async def test_get_stock_level_not_found(
+    override_get_inventory_client: None, mock_inventory: AsyncMock
+) -> None:
     mock_inventory.get_stock.return_value = None
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/api/v1/inventory/stock/UNKNOWN")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "SKU not found in inventory"
 
+
 @pytest.mark.asyncio
-async def test_get_stock_levels_success(override_get_inventory_client: None, mock_inventory: AsyncMock) -> None:
+async def test_get_stock_levels_success(
+    override_get_inventory_client: None, mock_inventory: AsyncMock
+) -> None:
     mock_inventory.get_stock_bulk.return_value = [
         {"sku": "A", "name": "Item A", "available_stock": 10, "rate": 100.0},
         {"sku": "B", "name": "Item B", "available_stock": 0, "rate": 50.0},
     ]
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/api/v1/inventory/stock/?skus=A&skus=B")
 
     assert response.status_code == 200
@@ -69,14 +85,24 @@ async def test_get_stock_levels_success(override_get_inventory_client: None, moc
     assert data[1]["stock"] == 0
     mock_inventory.get_stock_bulk.assert_awaited_once_with(["A", "B"])
 
+
 @pytest.mark.asyncio
 async def test_create_sale_order_not_implemented() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.post("/api/v1/inventory/sale-orders/", json={"contact_name": "x", "items": []})
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/v1/inventory/sale-orders/", json={"contact_name": "x", "items": []}
+        )
     assert response.status_code == 501
+
 
 @pytest.mark.asyncio
 async def test_get_sale_order_not_implemented() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/api/v1/inventory/sale-orders/00000000-0000-0000-0000-000000000000")
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get(
+            "/api/v1/inventory/sale-orders/00000000-0000-0000-0000-000000000000"
+        )
     assert response.status_code == 501

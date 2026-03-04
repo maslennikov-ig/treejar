@@ -27,7 +27,6 @@ class Message(UUIDMixin, Base):
         ),
     )
 
-
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"),
     )

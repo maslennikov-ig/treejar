@@ -19,6 +19,7 @@ async def test_get_db_success() -> None:
         assert session == mock_session
 
         import contextlib
+
         # Generator closing simulates successful yielded context exit
         with contextlib.suppress(StopAsyncIteration):
             await anext(gen)

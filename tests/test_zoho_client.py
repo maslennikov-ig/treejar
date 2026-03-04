@@ -1,5 +1,6 @@
 """Unit tests for ZohoInventoryClient covering token lock timeout,
 401-triggered refresh, and 429 rate-limit backoff (TCG-01, TCG-02, TCG-03)."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -13,7 +14,10 @@ from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_response(status_code: int, json_body: dict[str, object] | None = None) -> httpx.Response:
+
+def _make_response(
+    status_code: int, json_body: dict[str, object] | None = None
+) -> httpx.Response:
     """Build a real httpx.Response so raise_for_status() works correctly."""
     return httpx.Response(
         status_code,
@@ -43,8 +47,13 @@ async def test_ensure_token_timeout_when_lock_held() -> None:
 
     # Patch asyncio.sleep so the test does not actually wait 10 seconds
     with (
-        patch("src.integrations.inventory.zoho_inventory.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-        pytest.raises(RuntimeError, match="Timeout waiting for Zoho token refresh lock"),
+        patch(
+            "src.integrations.inventory.zoho_inventory.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep,
+        pytest.raises(
+            RuntimeError, match="Timeout waiting for Zoho token refresh lock"
+        ),
     ):
         await client._ensure_token()
 
@@ -66,7 +75,10 @@ async def test_ensure_token_returns_when_token_appears_during_wait() -> None:
 
     client = ZohoInventoryClient(redis)
 
-    with patch("src.integrations.inventory.zoho_inventory.asyncio.sleep", new_callable=AsyncMock):
+    with patch(
+        "src.integrations.inventory.zoho_inventory.asyncio.sleep",
+        new_callable=AsyncMock,
+    ):
         token = await client._ensure_token()
 
     assert token == "refreshed_token"
@@ -141,9 +153,7 @@ async def test_request_retries_after_401() -> None:
     response_401 = _make_response(401)
     response_200 = _make_response(200, {"items": [], "page_context": {}})
 
-    with patch.object(
-        client.client, "request", new_callable=AsyncMock
-    ) as mock_request:
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
         mock_request.side_effect = [response_401, response_200]
 
         response = await client._request("GET", "/items")
@@ -169,9 +179,7 @@ async def test_request_raises_after_three_consecutive_401s() -> None:
 
     response_401 = _make_response(401)
 
-    with patch.object(
-        client.client, "request", new_callable=AsyncMock
-    ) as mock_request:
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
         mock_request.return_value = response_401
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -203,11 +211,11 @@ async def test_request_backs_off_on_429_then_succeeds() -> None:
 
     def _make_429_error() -> httpx.HTTPStatusError:
         resp_429 = _make_response(429)
-        return httpx.HTTPStatusError("Rate limited", request=resp_429.request, response=resp_429)
+        return httpx.HTTPStatusError(
+            "Rate limited", request=resp_429.request, response=resp_429
+        )
 
-    with patch.object(
-        client.client, "request", new_callable=AsyncMock
-    ) as mock_request:
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
         mock_request.side_effect = [_make_429_error(), response_200]
 
         with patch(
@@ -235,17 +243,24 @@ async def test_request_raises_after_repeated_429_exhausts_retries() -> None:
 
     def _make_429_error() -> httpx.HTTPStatusError:
         resp_429 = _make_response(429)
-        return httpx.HTTPStatusError("Rate limited", request=resp_429.request, response=resp_429)
+        return httpx.HTTPStatusError(
+            "Rate limited", request=resp_429.request, response=resp_429
+        )
 
-    with patch.object(
-        client.client, "request", new_callable=AsyncMock
-    ) as mock_request:
-        mock_request.side_effect = [_make_429_error(), _make_429_error(), _make_429_error()]
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.side_effect = [
+            _make_429_error(),
+            _make_429_error(),
+            _make_429_error(),
+        ]
 
-        with patch(
-            "src.integrations.inventory.zoho_inventory.asyncio.sleep",
-            new_callable=AsyncMock,
-        ) as mock_sleep, pytest.raises(httpx.HTTPStatusError) as exc_info:
+        with (
+            patch(
+                "src.integrations.inventory.zoho_inventory.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+            pytest.raises(httpx.HTTPStatusError) as exc_info,
+        ):
             await client._request("GET", "/items")
 
     assert exc_info.value.response.status_code == 429

@@ -11,7 +11,9 @@ async def test_admin_auth_login_success() -> None:
         async def form(self) -> dict[str, str]:
             return self._form_data
 
-    request = MockRequest({"username": settings.admin_username, "password": settings.admin_password})
+    request = MockRequest(
+        {"username": settings.admin_username, "password": settings.admin_password}
+    )
     # Ignore typing here because it's a mock
     success = await authentication_backend.login(request)  # type: ignore
 
