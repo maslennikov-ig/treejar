@@ -56,6 +56,54 @@ async def test_admin_endpoints(client: AsyncClient) -> None:
     assert response_rm.status_code in (302, 303)
     assert "/admin/login" in response_rm.headers["location"]
 
+
+@pytest.mark.asyncio
+async def test_dashboard_metrics(client: AsyncClient) -> None:
+    """Test the expanded dashboard metrics endpoint (17 KPIs, 6 categories)."""
+    # Default period (all_time)
+    response = await client.get("/api/v1/admin/dashboard/metrics/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["period"] == "all_time"
+
+    # Volume
+    assert "total_conversations" in data
+    assert "unique_customers" in data
+    assert "new_vs_returning" in data
+
+    # Classification
+    assert "by_language" in data
+    assert "by_segment" in data
+    assert "target_vs_nontarget" in data
+
+    # Escalation
+    assert "escalation_count" in data
+    assert "escalation_reasons" in data
+
+    # Sales
+    assert "noor_sales" in data
+    assert "conversion_rate" in data
+    assert "average_deal_value" in data
+
+    # Quality
+    assert "avg_conversation_length" in data
+    assert "avg_quality_score" in data
+    assert "avg_response_time_ms" in data
+
+    # Cost
+    assert "llm_cost_usd" in data
+
+    # Test period filtering
+    for p in ("day", "week", "month"):
+        resp = await client.get(f"/api/v1/admin/dashboard/metrics/?period={p}")
+        assert resp.status_code == 200
+        assert resp.json()["period"] == p
+
+    # Test invalid period
+    resp_bad = await client.get("/api/v1/admin/dashboard/metrics/?period=year")
+    assert resp_bad.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_admin_models_list(client: AsyncClient) -> None:
     from src.core.config import settings

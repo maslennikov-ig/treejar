@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from .admin import (
+    DashboardMetricsResponse,
     MetricsResponse,
     PromptRead,
     PromptUpdate,
+    SalesMetrics,
     SettingsRead,
     SettingsUpdate,
 )
@@ -111,9 +113,11 @@ __all__ = [
     "QualityReviewCreate",
     "QualityReviewRead",
     # admin
+    "DashboardMetricsResponse",
     "MetricsResponse",
     "PromptRead",
     "PromptUpdate",
+    "SalesMetrics",
     "SettingsRead",
     "SettingsUpdate",
 ]

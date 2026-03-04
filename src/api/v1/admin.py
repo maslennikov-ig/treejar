@@ -13,6 +13,7 @@ from src.core.database import get_db
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 from src.schemas import (
+    DashboardMetricsResponse,
     MetricsResponse,
     PromptRead,
     PromptUpdate,
@@ -21,6 +22,8 @@ from src.schemas import (
 )
 
 router = APIRouter()
+
+VALID_PERIODS = {"day", "week", "month", "all_time"}
 
 
 @router.get("/prompts/", response_model=list[PromptRead])
@@ -109,6 +112,26 @@ async def get_metrics(
         deals_created=snapshot.deals_created,
         quotes_generated=snapshot.quotes_generated,
     )
+
+
+@router.get("/dashboard/metrics/", response_model=DashboardMetricsResponse)
+async def get_dashboard_metrics(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: str = "all_time",
+) -> DashboardMetricsResponse:
+    """Get comprehensive dashboard metrics (17 KPIs, 6 categories).
+
+    Query params:
+        period: day | week | month | all_time (default: all_time)
+    """
+    if period not in VALID_PERIODS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid period '{period}'. Must be one of: {', '.join(sorted(VALID_PERIODS))}",
+        )
+    from src.services.dashboard_metrics import calculate_dashboard_metrics
+
+    return await calculate_dashboard_metrics(db, period)
 
 
 @router.get("/settings/", response_model=SettingsRead)

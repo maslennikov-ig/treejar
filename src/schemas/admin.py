@@ -34,6 +34,45 @@ class MetricsResponse(BaseModel):
     quotes_generated: int
 
 
+class SalesMetrics(BaseModel):
+    count: int = 0
+    amount: float = 0.0
+
+
+class DashboardMetricsResponse(BaseModel):
+    """Full dashboard metrics — 17 KPIs in 6 categories (docs/metrics.md)."""
+
+    period: str  # "day", "week", "month", "all_time"
+
+    # 1. Volume (3)
+    total_conversations: int = 0
+    unique_customers: int = 0
+    new_vs_returning: dict[str, int] = {"new": 0, "returning": 0}
+
+    # 2. Classification (3)
+    by_segment: dict[str, int] = {}
+    by_language: dict[str, int] = {}
+    target_vs_nontarget: dict[str, int] = {"target": 0, "nontarget": 0}
+
+    # 3. Escalation (2)
+    escalation_count: int = 0
+    escalation_reasons: dict[str, int] = {}
+
+    # 4. Sales (4)
+    noor_sales: SalesMetrics = SalesMetrics()
+    post_escalation_sales: SalesMetrics = SalesMetrics()
+    conversion_rate: float = 0.0
+    average_deal_value: float = 0.0
+
+    # 5. Quality (3)
+    avg_conversation_length: float = 0.0
+    avg_quality_score: float = 0.0
+    avg_response_time_ms: float = 0.0
+
+    # 6. Cost
+    llm_cost_usd: float = 0.0
+
+
 class SettingsRead(BaseModel):
     bot_enabled: bool
     default_language: Language
