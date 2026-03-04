@@ -125,70 +125,70 @@
 
 ### Неделя 6: Персональные цены + эскалация (32ч)
 
-- [ ] Индивидуальные цены и скидки
-  - [ ] Таблица скидок: segment -> discount% (из Google Sheets или Zoho)
-  - [ ] Определение сегмента клиента (VIP, постоянный, новый)
-  - [ ] Персональная цена в ответах бота и КП
-- [ ] Передача диалога менеджеру
-  - [ ] Логика эскалации: 18 триггеров (просит человека, бот не понимает 2 раза, негатив, заказ >10K AED, нестандартные условия, вопросы вне базы, возврат, просит конкретного менеджера, шоурум, B2B, оптовый заказ, полная меблировка, крупный проект, чертежи/планировки, запрос образцов, не убеждён ботом, хочет звонок, просит менеджера определённой национальности)
-  - [ ] Уведомление менеджеру через Wazzup (или Telegram). 7 менеджеров: Israullah, Annabelle, Sreeja, Radhika, Luna, Shariq, Azad
-  - [ ] Передача полной истории диалога
-  - [ ] Escalation API: `POST /api/v1/conversations/{id}/escalate`
-  - [ ] Модель Escalation: запись в БД, статус pending/in_progress/resolved
-- [ ] Follow-up и 24h WhatsApp правило
-  - [ ] Cron job: проверка last_message_at
-  - [ ] Если >24ч -- только template messages через Wazzup (Wazzup Max тариф, HSM-шаблоны НЕ используются)
-  - [ ] Follow-up расписание: 24ч → 3д → 7д → 30д → 90д (для крупных B2B)
+- [x] Индивидуальные цены и скидки
+  - [x] Таблица скидок: segment -> discount% (из Google Sheets или Zoho)
+  - [x] Определение сегмента клиента (VIP, постоянный, новый)
+  - [x] Персональная цена в ответах бота и КП
+- [x] Передача диалога менеджеру
+  - [x] Логика эскалации: 18 триггеров (просит человека, бот не понимает 2 раза, негатив, заказ >10K AED, нестандартные условия, вопросы вне базы, возврат, просит конкретного менеджера, шоурум, B2B, оптовый заказ, полная меблировка, крупный проект, чертежи/планировки, запрос образцов, не убеждён ботом, хочет звонок, просит менеджера определённой национальности)
+  - [x] Уведомление менеджеру через Wazzup (или Telegram). 7 менеджеров: Israullah, Annabelle, Sreeja, Radhika, Luna, Shariq, Azad
+  - [x] Передача полной истории диалога
+  - [x] Escalation API: `POST /api/v1/conversations/{id}/escalate`
+  - [x] Модель Escalation: запись в БД, статус pending/in_progress/resolved
+- [x] Follow-up и 24h WhatsApp правило
+  - [x] Cron job: проверка last_message_at
+  - [x] Если >24ч -- только template messages через Wazzup (Wazzup Max тариф, HSM-шаблоны НЕ используются)
+  - [x] Follow-up расписание: 24ч → 3д → 7д → 30д → 90д (для крупных B2B)
 
 ### Неделя 7: Админ-панель (32ч)
 
 > **Архитектура:** Гибрид — SQLAdmin (CRUD) + React/Vite дашборд (аналитика).
 > SQLAdmin встроен в FastAPI для управления данными. React/Vite (`frontend/admin/`) — тот же стек, что и лендинг — для дашборда, метрик и отчётов.
 
-- [ ] SQLAdmin кастомизация
-  - [ ] ModelView для всех 6 таблиц (conversations, messages, products, knowledge_base, quality_reviews, escalations)
-  - [ ] `column_filters` и `column_searchable_list` для фильтрации по статусу, языку, дате
-  - [ ] `column_formatters` для отображения relationships (диалог → кол-во сообщений)
-  - [ ] Экспорт данных (кастомный action → CSV)
-- [ ] Управление промптами (через SQLAdmin)
-  - [ ] ModelView для `system_prompts` с inline-редактированием
-  - [ ] Версионирование: автоинкремент `version` при сохранении, хранение предыдущих версий
-  - [ ] Хранение в БД (таблица `system_prompts` уже создана)
-- [ ] React/Vite дашборд (`frontend/admin/`)
-  - [ ] Инициализация проекта (React + Vite + Tailwind, аналогично `frontend/landing/`)
-  - [ ] API endpoints для метрик: `GET /api/v1/admin/metrics/`
-  - [ ] Дашборд с KPI-карточками и графиками (Recharts / Tremor)
-  - [ ] Метрики (спецификация: `docs/metrics.md`, 17 метрик в 6 категориях):
-    - [ ] Объём: диалоги/день/неделю/месяц, уникальные клиенты, новые vs повторные
-    - [ ] Классификация: по 9 сегментам, целевой/нецелевой, по языку EN/AR
-    - [ ] Эскалация: количество передач, причины по 18 триггерам
-    - [ ] Продажи: продажи Noor, после передачи, конверсия ~11%, средний чек AED
-    - [ ] Качество: средняя длина диалога, оценка 0-30, время ответа бота
-    - [ ] Follow-up: повторные обращения, эффективность (отправлено → ответ → сделка)
-    - [ ] Стоимость LLM за период
-  - [ ] Интеграция в Docker build (stage в Dockerfile, аналогично лендингу)
-  - [ ] Роутинг через FastAPI: `/dashboard/*` → Vite SPA
-- [ ] Настройки бота (через SQLAdmin)
-  - [ ] ModelView для `system_config` с редактированием JSONB-значений
-  - [ ] Настройки: язык по умолчанию, порог эскалации, follow-up таймаут
+- [x] SQLAdmin кастомизация
+  - [x] ModelView для всех 6 таблиц (conversations, messages, products, knowledge_base, quality_reviews, escalations)
+  - [x] `column_filters` и `column_searchable_list` для фильтрации по статусу, языку, дате
+  - [x] `column_formatters` для отображения relationships (диалог → кол-во сообщений)
+  - [x] Экспорт данных (кастомный action → CSV)
+- [x] Управление промптами (через SQLAdmin)
+  - [x] ModelView для `system_prompts` с inline-редактированием
+  - [x] Версионирование: автоинкремент `version` при сохранении, хранение предыдущих версий
+  - [x] Хранение в БД (таблица `system_prompts` уже создана)
+- [x] React/Vite дашборд (`frontend/admin/`)
+  - [x] Инициализация проекта (React + Vite + Tailwind, аналогично `frontend/landing/`)
+  - [x] API endpoints для метрик: `GET /api/v1/admin/metrics/`
+  - [x] Дашборд с KPI-карточками и графиками (Recharts / Tremor)
+  - [x] Метрики (спецификация: `docs/metrics.md`, 17 метрик в 6 категориях):
+    - [x] Объём: диалоги/день/неделю/месяц, уникальные клиенты, новые vs повторные
+    - [x] Классификация: по 9 сегментам, целевой/нецелевой, по языку EN/AR
+    - [x] Эскалация: количество передач, причины по 18 триггерам
+    - [x] Продажи: продажи Noor, после передачи, конверсия ~11%, средний чек AED
+    - [x] Качество: средняя длина диалога, оценка 0-30, время ответа бота
+    - [x] Follow-up: повторные обращения, эффективность (отправлено → ответ → сделка)
+    - [x] Стоимость LLM за период
+  - [x] Интеграция в Docker build (stage в Dockerfile, аналогично лендингу)
+  - [x] Роутинг через FastAPI: `/dashboard/*` → Vite SPA
+- [x] Настройки бота (через SQLAdmin)
+  - [x] ModelView для `system_config` с редактированием JSONB-значений
+  - [x] Настройки: язык по умолчанию, порог эскалации, follow-up таймаут
 
 ### Неделя 8: Тестирование + Деплой (36ч)
 
-- [ ] Тестирование этапа 1
-  - [ ] Unit-тесты: LLM engine (mock OpenRouter), RAG pipeline, Zoho clients
-  - [ ] Integration-тесты: БД (testcontainers), Redis, API endpoints
-  - [ ] E2E-тест: полный цикл webhook -> обработка -> ответ -> CRM
-  - [ ] Покрытие >= 80%
-  - [ ] Тест арабского языка (RTL, форматирование)
-- [ ] Деплой на VPS клиента
-  - [ ] Настройка VPS: Docker, firewall (ufw), SSH hardening
-  - [ ] SSL сертификат (Let's Encrypt, certbot)
-  - [ ] docker-compose up на production
-  - [ ] alembic upgrade head на Supabase Cloud
-  - [ ] Настройка Wazzup webhook URL
-  - [ ] Smoke-тест: отправить сообщение в WhatsApp -> получить ответ
-  - [ ] Мониторинг: healthcheck, логи
-- [ ] **Контрольная точка (Этап 1b):** полный цикл работает, админка доступна
+- [x] Тестирование этапа 1
+  - [x] Unit-тесты: LLM engine (mock OpenRouter), RAG pipeline, Zoho clients
+  - [x] Integration-тесты: БД (testcontainers), Redis, API endpoints
+  - [x] E2E-тест: полный цикл webhook -> обработка -> ответ -> CRM
+  - [x] Покрытие >= 80%
+  - [x] Тест арабского языка (RTL, форматирование)
+- [x] Деплой на VPS клиента
+  - [x] Настройка VPS: Docker, firewall (ufw), SSH hardening
+  - [x] SSL сертификат (Let's Encrypt, certbot)
+  - [x] docker-compose up на production
+  - [x] alembic upgrade head на Supabase Cloud
+  - [x] Настройка Wazzup webhook URL
+  - [x] Smoke-тест: отправить сообщение в WhatsApp -> получить ответ
+  - [x] Мониторинг: healthcheck, логи
+- [x] **Контрольная точка (Этап 1b):** полный цикл работает, админка доступна
 
 ---
 
