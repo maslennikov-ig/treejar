@@ -18,6 +18,39 @@ from src.api.v1.admin import require_admin_session
 from src.main import app
 
 
+def _is_db_available() -> bool:
+    """Check if PostgreSQL is reachable with valid credentials."""
+    try:
+        import asyncio
+
+        import asyncpg
+
+        from src.core.config import settings
+
+        url = str(settings.database_url).replace("+asyncpg", "")
+
+        async def _probe() -> bool:
+            try:
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(url), timeout=2.0
+                )
+                await conn.close()
+                return True
+            except Exception:
+                return False
+
+        return asyncio.run(_probe())
+    except Exception:
+        return False
+
+
+DB_AVAILABLE = _is_db_available()
+
+requires_db = pytest.mark.skipif(
+    not DB_AVAILABLE, reason="PostgreSQL not available in this environment"
+)
+
+
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)

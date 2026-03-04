@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, String
+from sqlalchemy import JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin, UUIDMixin
@@ -22,6 +22,7 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
     customer_name: Mapped[str | None] = mapped_column(String, default=None)
     zoho_contact_id: Mapped[str | None] = mapped_column(String, default=None)
     zoho_deal_id: Mapped[str | None] = mapped_column(String, default=None)
+    deal_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), default=None)
     language: Mapped[str] = mapped_column(String, default="en")
     sales_stage: Mapped[str] = mapped_column(String, default="greeting")
     status: Mapped[str] = mapped_column(String, default="active")

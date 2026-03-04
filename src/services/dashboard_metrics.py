@@ -87,7 +87,10 @@ async def calculate_dashboard_metrics(
             COUNT(*) FILTER (WHERE c.zoho_deal_id IS NOT NULL
                              AND c.escalation_status = 'none')         AS noor_sales_count,
             COUNT(*) FILTER (WHERE c.zoho_deal_id IS NOT NULL
-                             AND c.escalation_status != 'none')        AS post_esc_sales_count
+                             AND c.escalation_status != 'none')        AS post_esc_sales_count,
+
+            -- Deal value
+            AVG(c.deal_amount) FILTER (WHERE c.deal_amount IS NOT NULL) AS avg_deal_value
         FROM conversations c
         WHERE 1=1 {period_clause}
     """)
@@ -100,6 +103,7 @@ async def calculate_dashboard_metrics(
     escalation_count = conv_row.escalation_count or 0
     noor_sales_count = conv_row.noor_sales_count or 0
     post_esc_sales_count = conv_row.post_esc_sales_count or 0
+    avg_deal_value = float(conv_row.avg_deal_value or 0.0)
 
     total_deals = noor_sales_count + post_esc_sales_count
     conversion_rate = (
@@ -226,7 +230,7 @@ async def calculate_dashboard_metrics(
         noor_sales=SalesMetrics(count=noor_sales_count),
         post_escalation_sales=SalesMetrics(count=post_esc_sales_count),
         conversion_rate=round(conversion_rate, 2),
-        average_deal_value=0.0,
+        average_deal_value=round(avg_deal_value, 2),
         avg_conversation_length=round(float(avg_conv_length), 1),
         avg_quality_score=round(float(avg_quality_score), 1),
         avg_response_time_ms=round(float(avg_response_time_ms), 1),

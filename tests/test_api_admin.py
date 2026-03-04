@@ -3,6 +3,8 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from tests.conftest import requires_db
+
 
 @pytest.mark.asyncio
 async def test_admin_requires_auth(client: AsyncClient) -> None:
@@ -11,6 +13,7 @@ async def test_admin_requires_auth(client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
+@requires_db
 @pytest.mark.asyncio
 async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     # --- test_admin_prompts ---
@@ -64,6 +67,7 @@ async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     assert "/admin/login" in response_rm.headers["location"]
 
 
+@requires_db
 @pytest.mark.asyncio
 async def test_dashboard_metrics(admin_client: AsyncClient) -> None:
     """Test the expanded dashboard metrics endpoint (17 KPIs, 6 categories)."""
@@ -111,22 +115,23 @@ async def test_dashboard_metrics(admin_client: AsyncClient) -> None:
     assert resp_bad.status_code == 422
 
 
+@requires_db
 @pytest.mark.asyncio
 async def test_admin_models_list(client: AsyncClient) -> None:
+    import uuid
+
     from src.core.config import settings
     from src.core.database import async_session_factory
     from src.models.conversation import Conversation
-    from src.models.message import Message
     from src.models.escalation import Escalation
-    from src.models.quality_review import QualityReview
-    from src.models.product import Product
     from src.models.knowledge_base import KnowledgeBase
+    from src.models.message import Message
+    from src.models.metrics_snapshot import MetricsSnapshot
+    from src.models.product import Product
+    from src.models.quality_review import QualityReview
     from src.models.system_config import SystemConfig
     from src.models.system_prompt import SystemPrompt
-    from src.models.metrics_snapshot import MetricsSnapshot
-    import uuid
-    import json
-    
+
     # Create mock data to ensure SQLAdmin renders table rows (where relations might crash)
     async with async_session_factory() as session:
         conv_id = uuid.uuid4()
@@ -173,26 +178,26 @@ async def test_admin_models_list(client: AsyncClient) -> None:
         data={"username": settings.admin_username, "password": settings.admin_password},
     )
     assert resp_login.status_code in (200, 302, 303)
-    
+
     import re
-    
+
     # Get the admin home page to find all list view URLs
     resp_home = await client.get("/admin/")
     assert resp_home.status_code == 200
-    
+
     # Extract all links that look like list views e.g. http://test/admin/knowledge-base/list
     list_links = re.findall(r'href="(http://test/admin/[^"]+/list)"', resp_home.text)
     if not list_links:
         print(resp_home.text)
     assert len(list_links) > 0, "No list links found in admin panel!"
-    
+
     for link in set(list_links):
         resp = await client.get(link)
         if resp.status_code == 500:
             print(f"500 ERROR ON {link}")
             print(resp.text)
         assert resp.status_code == 200, f"Failed on {link} with status {resp.status_code}"
-    
+
     # Also test details and edit pages for the mock items
     for model_name, item_id in [
         ("conversation", conv_id),
@@ -216,13 +221,13 @@ async def test_admin_models_list(client: AsyncClient) -> None:
                 det_url = f"/admin/{model_name}/details/{item_id}"
         else:
             det_url = f"/admin/{model_name}/details/{item_id}"
-        
+
         resp_det = await client.get(det_url)
         if resp_det.status_code == 500:
             print(f"500 ERROR ON {det_url}")
             print(resp_det.text)
         assert resp_det.status_code == 200, f"Failed on {det_url}"
-        
+
         # edit
         edit_url = f"/admin/{model_name}/edit/{item_id}"
         resp_edit = await client.get(edit_url)
@@ -230,7 +235,7 @@ async def test_admin_models_list(client: AsyncClient) -> None:
             print(f"500 ERROR ON {edit_url}")
             print(resp_edit.text)
         assert resp_edit.status_code == 200, f"Failed on {edit_url}"
-        
+
         # create
         create_url = f"/admin/{model_name}/create"
         resp_c = await client.get(create_url)
