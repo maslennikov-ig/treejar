@@ -30,6 +30,7 @@ if [ "$BRANCH" = "develop" ]; then
 
     # Build and restart Development Compose stack
     docker compose -f docker-compose.dev.yml up -d --build
+    docker compose -f docker-compose.dev.yml restart nginx
     echo "Development deployment successful!"
 
 elif [ "$BRANCH" = "main" ]; then
@@ -45,6 +46,7 @@ elif [ "$BRANCH" = "main" ]; then
 
     # Build and restart Production Compose stack
     docker compose -f docker-compose.yml up -d --build
+    docker compose -f docker-compose.yml restart nginx
     echo "Production deployment successful!"
 
 else
