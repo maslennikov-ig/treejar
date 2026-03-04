@@ -321,7 +321,7 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
   const isRtl = lang === 'ar';
 
   return (
-    <section className="relative pt-20 pb-16 md:pt-24 md:pb-20 lg:pt-28 lg:pb-28 overflow-hidden">
+    <section className="relative pt-24 pb-16 md:pt-28 md:pb-20 lg:pt-36 lg:pb-28 overflow-hidden">
       {/* Background gradients */}
       <motion.div
         style={{ y: yBg }}
