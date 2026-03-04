@@ -59,6 +59,28 @@ def create_app() -> FastAPI:
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
+    # --- Admin Dashboard SPA Integration ---
+    os.makedirs("frontend/admin/dist/assets", exist_ok=True)
+    admin_index = "frontend/admin/dist/index.html"
+    if not os.path.exists(admin_index):
+        with open(admin_index, "w") as f:
+            f.write("<html><body>Admin Dashboard (build required)</body></html>")
+
+    app.mount(
+        "/dashboard/assets",
+        StaticFiles(directory="frontend/admin/dist/assets"),
+        name="admin-assets",
+    )
+
+    @app.get("/dashboard/{full_path:path}")
+    async def serve_admin_spa(full_path: str) -> FileResponse:
+        dist_dir = "frontend/admin/dist"
+        file_path = os.path.join(dist_dir, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(dist_dir, "index.html"))
+
+    # --- Landing Page SPA ---
     # Ensure dist and assets directories exist for local development to avoid startup crash
     os.makedirs("frontend/landing/dist/assets", exist_ok=True)
     index_path = "frontend/landing/dist/index.html"

@@ -232,3 +232,9 @@ async def test_admin_models_list(client: AsyncClient) -> None:
             print(resp_c.text)
         assert resp_c.status_code == 200, f"Failed on {create_url}"
 
+
+@pytest.mark.asyncio
+async def test_admin_dashboard_spa_route(client: AsyncClient) -> None:
+    """Test dashboard SPA route serves index.html."""
+    response = await client.get("/dashboard/")
+    assert response.status_code == 200

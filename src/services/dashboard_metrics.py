@@ -6,7 +6,7 @@ with period-based filtering (day/week/month/all_time).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from src.schemas import DashboardMetricsResponse, SalesMetrics
 
 def _get_period_start(period: str) -> datetime | None:
     """Return the start datetime for the given period, or None for all_time."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     match period:
         case "day":
             return now - timedelta(days=1)

@@ -1,11 +1,21 @@
 # ============================================================
-# Stage 0: Build Vite Frontend
+# Stage 0a: Build Landing Page
 # ============================================================
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend/landing
 COPY frontend/landing/package*.json ./
 RUN npm install
 COPY frontend/landing/ ./
+RUN npm run build
+
+# ============================================================
+# Stage 0b: Build Admin Dashboard
+# ============================================================
+FROM node:22-alpine AS admin-builder
+WORKDIR /app/frontend/admin
+COPY frontend/admin/package*.json ./
+RUN npm install
+COPY frontend/admin/ ./
 RUN npm run build
 
 # ============================================================
@@ -50,6 +60,7 @@ COPY scripts/entrypoint.sh /entrypoint.sh
 
 # Copy built frontend from Node stage
 COPY --from=frontend-builder /app/frontend/landing/dist /app/frontend/landing/dist
+COPY --from=admin-builder /app/frontend/admin/dist /app/frontend/admin/dist
 
 RUN chmod +x /entrypoint.sh
 
