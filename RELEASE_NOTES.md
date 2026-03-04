@@ -2,6 +2,38 @@
 
 User-facing release notes.
 
+## v0.3.0
+
+_Released on 2026-03-04_
+
+### ✨ New Features
+
+- **admin**: Implement 3 remaining improvements
+- **admin**: Implement CR-6 timeseries API and CR-9 query optimization
+- **admin**: Add React/Vite admin dashboard with KPI cards and charts
+- **admin**: Expand dashboard metrics API to 17 KPIs in 6 categories
+- **landing**: Implement login modal popup and center hero layout
+- Serve landing page SPA from root route
+
+### 🐛 Bug Fixes
+
+- **admin**: Address code review findings CR-1 through CR-8
+- Run alembic migrations in entrypoint before starting web server
+- **deploy**: Use uv run for quality checks
+- **admin**: Resolve 500 internal server error for models with pgvector embeddings
+- **landing**: Restore 2-col hero layout, enlarge button full-width, reduce top padding
+- **landing**: Correct static files mount path for vite assets
+- **deploy**: Force nginx container to restart on deployment
+- **landing**: Redirect login button to admin panel
+- **CI/CD**: Fix mypy errors caused by ruff format
+- **CI/CD**: Run alembic upgrade head before tests
+- **CI/CD**: Add postgres service to ci and fix type hint in main.py
+- **infra**: Update docker compose ports for dev and stage to 8002 and 8003
+
+---
+
+_This release was automatically generated from 29 commits._
+
 ## v0.2.12
 
 _Released on 2026-03-04_

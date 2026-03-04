@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "treejar-ai-bot"
-version = "0.2.12"
+version = "0.3.0"
 description = "AI-powered sales assistant for Treejar office furniture (WhatsApp)"
 readme = "README.md"
 license = "MIT"

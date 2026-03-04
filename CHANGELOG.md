@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-04
+
+### Added
+- **admin**: implement 3 remaining improvements (c1e3f82)
+- **admin**: implement CR-6 timeseries API and CR-9 query optimization (1f6a57e)
+- **admin**: add React/Vite admin dashboard with KPI cards and charts (3b99eab)
+- **admin**: expand dashboard metrics API to 17 KPIs in 6 categories (ebc6efd)
+- **landing**: implement login modal popup and center hero layout (cd46da3)
+- serve landing page SPA from root route (fa26595)
+
+### Fixed
+- **admin**: address code review findings CR-1 through CR-8 (10e8050)
+- run alembic migrations in entrypoint before starting web server (f2d7451)
+- **deploy**: use uv run for quality checks (8e65480)
+- **admin**: resolve 500 internal server error for models with pgvector embeddings (d972cd5)
+- **landing**: restore 2-col hero layout, enlarge button full-width, reduce top padding (bd31704)
+- **landing**: correct static files mount path for vite assets (c41e322)
+- **deploy**: force nginx container to restart on deployment (788a78a)
+- **landing**: redirect login button to admin panel (8ef90b7)
+- **ci**: fix mypy errors caused by ruff format (7a513fa)
+- **ci**: run alembic upgrade head before tests (1cc7b49)
+- **ci**: add postgres service to ci and fix type hint in main.py (60b7d63)
+- **infra**: update docker compose ports for dev and stage to 8002 and 8003 (5f19104)
+
+### Other
+- update admin panel architecture to SQLAdmin + React/Vite hybrid (95e95dc)
+- add temporary admin error tracing endpoint (867d5ea)
+- **landing**: adjust hero top padding to medium size (cac5b4c)
+- **plans**: add login popup design and implementation plan (10e529a)
+- run ruff format (26d4c9f)
+- Merge branch 'develop' (64732c4)
+- update nginx to proxy root to fastapi app (948e682)
+- add frontend build stage to Dockerfile (013c6fb)
+- merge develop into main (f555d83)
+- rename master branch to main in deployment scripts (6f12d2a)
+- eradicate remaining megacampus references (1a19e91)
+
+
 ## [0.2.12] - 2026-03-04
 
 ### Other
