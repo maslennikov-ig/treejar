@@ -59,8 +59,8 @@ def create_app() -> FastAPI:
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
-    # Ensure dist directory exists for local development to avoid startup crash
-    os.makedirs("frontend/landing/dist", exist_ok=True)
+    # Ensure dist and assets directories exist for local development to avoid startup crash
+    os.makedirs("frontend/landing/dist/assets", exist_ok=True)
     index_path = "frontend/landing/dist/index.html"
     if not os.path.exists(index_path):
         with open(index_path, "w") as f:
@@ -68,7 +68,7 @@ def create_app() -> FastAPI:
 
     app.mount(
         "/assets",
-        StaticFiles(directory="frontend/landing/dist", html=True),
+        StaticFiles(directory="frontend/landing/dist/assets"),
         name="assets",
     )
 
