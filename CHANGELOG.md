@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-03-04
+
+### Other
+- **infra**: add GEMINI.md memory anchor for project infrastructure (59056dd)
+- **infra**: add vps deployment and multi-environment setup (b0bb65e)
+
+
 ## [0.2.10] - 2026-03-03
 
 ### Other

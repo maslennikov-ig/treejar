@@ -2,6 +2,14 @@
 
 User-facing release notes.
 
+## v0.2.11
+
+_Released on 2026-03-04_
+
+---
+
+_This release was automatically generated from 2 commits._
+
 ## v0.2.10
 
 _Released on 2026-03-03_
