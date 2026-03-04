@@ -8,6 +8,7 @@ Performance: Uses 3 consolidated SQL queries instead of 12+ sequential ones.
 
 from __future__ import annotations
 
+from typing import Any
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
@@ -64,7 +65,7 @@ async def calculate_dashboard_metrics(
     """
     period_start = _get_period_start(period)
     period_clause = ""
-    params: dict = {}
+    params: dict[str, Any] = {}
 
     if period_start:
         period_clause = "AND c.created_at >= :period_start"
@@ -121,21 +122,21 @@ async def calculate_dashboard_metrics(
         phone_counts_subq = phone_counts_subq.where(
             Conversation.created_at >= period_start
         )
-    phone_counts_subq = phone_counts_subq.group_by(Conversation.phone).subquery()
+    phone_counts_sq = phone_counts_subq.group_by(Conversation.phone).subquery()
 
     new_count = (
         await db.scalar(
             select(func.count())
-            .select_from(phone_counts_subq)
-            .where(phone_counts_subq.c.conv_count == 1)
+            .select_from(phone_counts_sq)
+            .where(phone_counts_sq.c.conv_count == 1)
         )
         or 0
     )
     returning_count = (
         await db.scalar(
             select(func.count())
-            .select_from(phone_counts_subq)
-            .where(phone_counts_subq.c.conv_count > 1)
+            .select_from(phone_counts_sq)
+            .where(phone_counts_sq.c.conv_count > 1)
         )
         or 0
     )

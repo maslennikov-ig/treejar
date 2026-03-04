@@ -24,11 +24,11 @@ async def test_evaluate_escalation_triggers_true():
         )
 
     assert result.should_escalate is True
-    assert "B2B" in result.reason
+    assert result.reason and "B2B" in result.reason
 
 
 @pytest.mark.asyncio
-async def test_evaluate_escalation_triggers_false():
+async def test_evaluate_escalation_triggers_false() -> None:
     with escalation_agent.override(
         model=TestModel(custom_output_args={"should_escalate": False, "reason": None})
     ):
@@ -38,7 +38,7 @@ async def test_evaluate_escalation_triggers_false():
     assert result.reason is None
 
 
-def test_escalation_evaluation_schema():
+def test_escalation_evaluation_schema() -> None:
     eval = EscalationEvaluation(should_escalate=True, reason="Test")
     assert eval.should_escalate is True
     assert eval.reason == "Test"

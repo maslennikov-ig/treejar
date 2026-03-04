@@ -5,7 +5,7 @@ import aiohttp
 from src.core.config import settings
 
 
-async def main():
+async def main() -> None:
     print(f"Testing OpenRouter API with key: {settings.openrouter_api_key[:10]}...")
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",

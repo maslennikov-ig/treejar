@@ -7,7 +7,7 @@ from src.models.system_config import SystemConfig
 
 
 @pytest.mark.asyncio
-async def test_get_system_config():
+async def test_get_system_config() -> None:
     # Setup mock db
     mock_db = AsyncMock()
     mock_result = MagicMock()

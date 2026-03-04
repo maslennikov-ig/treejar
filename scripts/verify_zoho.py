@@ -12,14 +12,14 @@ from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 
 
-async def main():
+async def main() -> None:
     print("--- Verifying Zoho Integrations ---")
 
     # Initialize redis for token caching
-    redis = aioredis.from_url(settings.redis_url)
+    redis_client = aioredis.from_url(str(settings.redis_url))  # type: ignore
 
     print("\n--- 1. Zoho Inventory ---")
-    inventory_client = ZohoInventoryClient(redis_client=redis)
+    inventory_client = ZohoInventoryClient(redis_client=redis_client)
     try:
         print("Fetching items...")
         items_data = await inventory_client.get_items(page=1, per_page=5)
@@ -40,7 +40,7 @@ async def main():
 
     print("\n--- 2. Zoho CRM ---")
     test_phone = os.getenv("TEST_PHONE", "+971500000000")
-    crm_client = ZohoCRMClient(redis_client=redis)
+    crm_client = ZohoCRMClient(redis_client=redis_client)
     try:
         print(f"Searching for contact by phone: {test_phone}...")
         contact = await crm_client.find_contact_by_phone(test_phone)
@@ -95,7 +95,7 @@ async def main():
          print(f"❌ Zoho CRM test failed: {e}")
 
     finally:
-         await redis.close()
+         await redis_client.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

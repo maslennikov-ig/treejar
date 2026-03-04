@@ -21,7 +21,7 @@ async def mock_db() -> AsyncGenerator[AsyncMock, None]:
 
 
 @pytest.mark.asyncio
-async def test_escalate_conversation(mock_db: AsyncMock):
+async def test_escalate_conversation(mock_db: AsyncMock) -> None:
     conv_id = uuid.uuid4()
     conv = Conversation(
         id=conv_id,
@@ -52,7 +52,7 @@ async def test_escalate_conversation(mock_db: AsyncMock):
 
 
 @pytest.mark.asyncio
-async def test_escalate_conversation_not_found(mock_db: AsyncMock):
+async def test_escalate_conversation_not_found(mock_db: AsyncMock) -> None:
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
     mock_db.execute.return_value = mock_result

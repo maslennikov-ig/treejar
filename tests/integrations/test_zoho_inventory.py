@@ -6,7 +6,7 @@ from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 
 
 @pytest.mark.asyncio
-async def test_create_draft_sale_order():
+async def test_create_draft_sale_order() -> None:
     redis_mock = AsyncMock()
     redis_mock.get.return_value = b"test_token"
 

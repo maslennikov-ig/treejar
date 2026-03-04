@@ -13,7 +13,7 @@ from src.rag.pipeline import search_products
 from src.schemas.product import ProductSearchQuery
 
 
-async def main():
+async def main() -> None:
     print("--- Verifying RAG (Embedding & Qdrant) Integration ---")
 
     # Initialize Embedding Engine

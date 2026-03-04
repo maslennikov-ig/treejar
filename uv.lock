@@ -3667,7 +3667,7 @@ wheels = [
 
 [[package]]
 name = "treejar-ai-bot"
-version = "0.2.12"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

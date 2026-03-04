@@ -34,7 +34,7 @@ async def main():
         settings.embedding_model = "BAAI/bge-large-en-v1.5"
 
     engine = EmbeddingEngine()
-    redis = aioredis.from_url(settings.redis_url)
+    redis = aioredis.from_url(str(settings.redis_url))  # type: ignore
     inventory_client = ZohoInventoryClient(redis_client=redis)
     crm_client = ZohoCRMClient(redis_client=redis)
 
@@ -60,12 +60,14 @@ async def main():
              query = "Какие у вас есть компьютерные столы?"
              print(f"\nSending agent query: '{query}'")
 
+             from unittest.mock import AsyncMock
              # Call engine directly instead of the webhook route
              response = await process_message(
                  conversation_id=conversation_id,
                  combined_text=query,
                  db=db,
                  redis=redis,
+                 messaging_client=AsyncMock(),
                  embedding_engine=engine,
                  zoho_client=inventory_client,
                  crm_client=crm_client,

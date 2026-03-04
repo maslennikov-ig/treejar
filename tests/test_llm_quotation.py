@@ -8,7 +8,7 @@ from src.models.conversation import Conversation
 
 
 @pytest.mark.asyncio
-async def test_create_quotation_tool():
+async def test_create_quotation_tool() -> None:
     # Setup mocks
     mock_inventory = AsyncMock()
     mock_inventory.get_stock_bulk.return_value = [
@@ -77,7 +77,7 @@ async def test_create_quotation_tool():
 
 
 @pytest.mark.asyncio
-async def test_create_quotation_sku_not_found():
+async def test_create_quotation_sku_not_found() -> None:
     mock_inventory = AsyncMock()
     mock_inventory.get_stock_bulk.return_value = []  # SKU not found
 

@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.integrations.messaging.wazzup import WazzupProvider
 
 
-async def main():
+async def main() -> None:
     print("--- Verifying Wazzup Integration ---")
     test_phone = os.getenv("TEST_PHONE", "")
     if not test_phone:

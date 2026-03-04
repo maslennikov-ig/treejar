@@ -7,20 +7,20 @@ class MockRedis:
     def __init__(self):
         self.data = {}
 
-    async def get(self, key: str):
+    async def get(self, key: str) -> str | None:
         return self.data.get(key)
 
-    async def set(self, key: str, value: str, ex: int = None):
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self.data[key] = value
 
 
 @pytest.fixture
-def mock_redis():
+def mock_redis() -> MockRedis:
     return MockRedis()
 
 
 @pytest.mark.asyncio
-async def test_crm_profile_cache(mock_redis):
+async def test_crm_profile_cache(mock_redis: MockRedis) -> None:
     phone = "+971501234567"
     profile = {"Name": "Test", "Segment": "VIP"}
 

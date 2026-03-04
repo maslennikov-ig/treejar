@@ -1,7 +1,7 @@
 from src.services.pdf.generator import render_quotation_html
 
 
-def test_render_quotation_template():
+def test_render_quotation_template() -> None:
     context = {
         "quote_number": "SA 270226 - R1",
         "trn": "100418386400003",

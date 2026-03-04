@@ -4,7 +4,7 @@ from src.models.system_prompt import SystemPrompt
 
 
 @pytest.mark.asyncio
-async def test_create_system_prompt_fields():
+async def test_create_system_prompt_fields() -> None:
     prompt = SystemPrompt(
         name="sales_agent",
         content="You are a helpful sales assistant.",
