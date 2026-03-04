@@ -231,7 +231,7 @@ const useTranslation = () => {
 };
 
 const handleLogin = () => {
-  console.log('Login clicked');
+  window.location.href = '/admin/';
 };
 
 const Header = () => {
