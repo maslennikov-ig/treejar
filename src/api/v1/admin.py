@@ -20,6 +20,7 @@ from src.schemas import (
     PromptUpdate,
     SettingsRead,
     SettingsUpdate,
+    TimeseriesResponse,
 )
 
 
@@ -140,6 +141,21 @@ async def get_dashboard_metrics(
     from src.services.dashboard_metrics import calculate_dashboard_metrics
 
     return await calculate_dashboard_metrics(db, period)
+
+
+@router.get("/dashboard/timeseries/", response_model=TimeseriesResponse)
+async def get_dashboard_timeseries(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: PeriodType = "all_time",
+) -> TimeseriesResponse:
+    """Get daily new vs returning conversation timeseries.
+
+    Query params:
+        period: day | week | month | all_time (default: all_time)
+    """
+    from src.services.dashboard_metrics import calculate_timeseries
+
+    return await calculate_timeseries(db, period)
 
 
 @router.get("/settings/", response_model=SettingsRead)

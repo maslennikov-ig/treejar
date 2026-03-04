@@ -8,6 +8,8 @@ from .admin import (
     SalesMetrics,
     SettingsRead,
     SettingsUpdate,
+    TimeseriesPoint,
+    TimeseriesResponse,
 )
 from .common import (
     ConversationStatus,
@@ -120,4 +122,6 @@ __all__ = [
     "SalesMetrics",
     "SettingsRead",
     "SettingsUpdate",
+    "TimeseriesPoint",
+    "TimeseriesResponse",
 ]

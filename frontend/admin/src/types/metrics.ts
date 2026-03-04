@@ -38,3 +38,14 @@ export interface DashboardMetrics {
 }
 
 export type Period = 'day' | 'week' | 'month' | 'all_time';
+
+export interface TimeseriesPoint {
+    date: string;
+    new: number;
+    returning: number;
+}
+
+export interface TimeseriesResponse {
+    period: string;
+    points: TimeseriesPoint[];
+}

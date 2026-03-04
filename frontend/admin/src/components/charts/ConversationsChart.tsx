@@ -9,24 +9,24 @@ import {
     YAxis,
 } from 'recharts';
 import { CHART_AXIS_FONT_SIZE, CHART_AXIS_STROKE, CHART_GRID_STROKE, CHART_TOOLTIP_STYLE } from './chartTheme';
+import type { TimeseriesPoint } from '@/types/metrics';
 
 interface ConversationsChartProps {
-    newVsReturning: { new: number; returning: number };
+    points: TimeseriesPoint[];
     totalConversations: number;
 }
 
-export default function ConversationsChart({ newVsReturning, totalConversations }: ConversationsChartProps) {
-    // Generate synthetic daily data from the totals for visualization
-    // TODO: Replace with real timeseries data from /dashboard/metrics/timeseries/
-    const data = [
-        { name: 'Mon', new: Math.round(newVsReturning.new * 0.12), returning: Math.round(newVsReturning.returning * 0.10) },
-        { name: 'Tue', new: Math.round(newVsReturning.new * 0.14), returning: Math.round(newVsReturning.returning * 0.13) },
-        { name: 'Wed', new: Math.round(newVsReturning.new * 0.18), returning: Math.round(newVsReturning.returning * 0.16) },
-        { name: 'Thu', new: Math.round(newVsReturning.new * 0.16), returning: Math.round(newVsReturning.returning * 0.18) },
-        { name: 'Fri', new: Math.round(newVsReturning.new * 0.20), returning: Math.round(newVsReturning.returning * 0.22) },
-        { name: 'Sat', new: Math.round(newVsReturning.new * 0.12), returning: Math.round(newVsReturning.returning * 0.12) },
-        { name: 'Sun', new: Math.round(newVsReturning.new * 0.08), returning: Math.round(newVsReturning.returning * 0.09) },
-    ];
+function formatDate(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+}
+
+export default function ConversationsChart({ points, totalConversations }: ConversationsChartProps) {
+    const data = points.map((p) => ({
+        name: formatDate(p.date),
+        new: p.new,
+        returning: p.returning,
+    }));
 
     return (
         <motion.div
@@ -41,32 +41,38 @@ export default function ConversationsChart({ newVsReturning, totalConversations 
                     <p className="text-sm text-slate-500">New vs Returning • Total: {totalConversations}</p>
                 </div>
             </div>
-            <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
-                    <XAxis dataKey="name" stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
-                    <YAxis stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
-                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                    <Line
-                        type="monotone"
-                        dataKey="new"
-                        stroke="#10b981"
-                        strokeWidth={2.5}
-                        dot={{ r: 4, fill: '#10b981' }}
-                        activeDot={{ r: 6 }}
-                        name="New"
-                    />
-                    <Line
-                        type="monotone"
-                        dataKey="returning"
-                        stroke="#3b82f6"
-                        strokeWidth={2.5}
-                        dot={{ r: 4, fill: '#3b82f6' }}
-                        activeDot={{ r: 6 }}
-                        name="Returning"
-                    />
-                </LineChart>
-            </ResponsiveContainer>
+            {data.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
+                        <XAxis dataKey="name" stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
+                        <YAxis stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
+                        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                        <Line
+                            type="monotone"
+                            dataKey="new"
+                            stroke="#10b981"
+                            strokeWidth={2.5}
+                            dot={{ r: 4, fill: '#10b981' }}
+                            activeDot={{ r: 6 }}
+                            name="New"
+                        />
+                        <Line
+                            type="monotone"
+                            dataKey="returning"
+                            stroke="#3b82f6"
+                            strokeWidth={2.5}
+                            dot={{ r: 4, fill: '#3b82f6' }}
+                            activeDot={{ r: 6 }}
+                            name="Returning"
+                        />
+                    </LineChart>
+                </ResponsiveContainer>
+            ) : (
+                <div className="flex items-center justify-center h-[280px] text-slate-600 text-sm">
+                    No conversation data for this period
+                </div>
+            )}
         </motion.div>
     );
 }

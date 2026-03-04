@@ -27,7 +27,7 @@ const PERIODS: { label: string; value: Period }[] = [
 
 export default function App() {
     const [period, setPeriod] = useState<Period>('all_time');
-    const { data, loading, error, refetch } = useMetrics(period);
+    const { data, timeseries, loading, error, refetch } = useMetrics(period);
 
     return (
         <div className="min-h-screen bg-[#0f172a] px-4 py-6 sm:px-6 lg:px-8">
@@ -183,7 +183,7 @@ export default function App() {
                     {/* Charts row */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                         <ConversationsChart
-                            newVsReturning={data.new_vs_returning}
+                            points={timeseries?.points ?? []}
                             totalConversations={data.total_conversations}
                         />
                         <SegmentPieChart

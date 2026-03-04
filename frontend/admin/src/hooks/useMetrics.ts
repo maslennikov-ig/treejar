@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchDashboardMetrics } from '@/api/metrics';
-import type { DashboardMetrics, Period } from '@/types/metrics';
+import { fetchDashboardMetrics, fetchTimeseries } from '@/api/metrics';
+import type { DashboardMetrics, Period, TimeseriesResponse } from '@/types/metrics';
 
 interface UseMetricsResult {
     data: DashboardMetrics | null;
+    timeseries: TimeseriesResponse | null;
     loading: boolean;
     error: string | null;
     refetch: () => void;
@@ -11,6 +12,7 @@ interface UseMetricsResult {
 
 export function useMetrics(period: Period = 'all_time'): UseMetricsResult {
     const [data, setData] = useState<DashboardMetrics | null>(null);
+    const [timeseries, setTimeseries] = useState<TimeseriesResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -18,8 +20,12 @@ export function useMetrics(period: Period = 'all_time'): UseMetricsResult {
         setLoading(true);
         setError(null);
         try {
-            const result = await fetchDashboardMetrics(period);
-            setData(result);
+            const [metricsResult, timeseriesResult] = await Promise.all([
+                fetchDashboardMetrics(period),
+                fetchTimeseries(period),
+            ]);
+            setData(metricsResult);
+            setTimeseries(timeseriesResult);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error');
         } finally {
@@ -31,5 +37,5 @@ export function useMetrics(period: Period = 'all_time'): UseMetricsResult {
         fetchData();
     }, [fetchData]);
 
-    return { data, loading, error, refetch: fetchData };
+    return { data, timeseries, loading, error, refetch: fetchData };
 }

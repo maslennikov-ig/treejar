@@ -73,6 +73,21 @@ class DashboardMetricsResponse(BaseModel):
     llm_cost_usd: float = 0.0
 
 
+class TimeseriesPoint(BaseModel):
+    """A single data point in a timeseries."""
+
+    date: str  # ISO date string (YYYY-MM-DD)
+    new: int = 0
+    returning: int = 0
+
+
+class TimeseriesResponse(BaseModel):
+    """Timeseries data for charts."""
+
+    period: str
+    points: list[TimeseriesPoint] = []
+
+
 class SettingsRead(BaseModel):
     bot_enabled: bool
     default_language: Language
