@@ -38,6 +38,8 @@ class ProductAdmin(ModelView, model=Product):
         Product.price,
         Product.stock,
     ]
+    column_details_exclude_list = [Product.embedding]
+    form_excluded_columns = [Product.embedding]
     name = "Product"
     name_plural = "Products"
     icon = "fa-solid fa-box"
@@ -45,6 +47,8 @@ class ProductAdmin(ModelView, model=Product):
 
 class KnowledgeBaseAdmin(ModelView, model=KnowledgeBase):
     column_list = [KnowledgeBase.id, KnowledgeBase.created_at]
+    column_details_exclude_list = [KnowledgeBase.embedding]
+    form_excluded_columns = [KnowledgeBase.embedding]
     name = "Knowledge Base"
     name_plural = "Knowledge Base"
     icon = "fa-solid fa-book"
