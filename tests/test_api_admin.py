@@ -5,18 +5,25 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_admin_endpoints(client: AsyncClient) -> None:
+async def test_admin_requires_auth(client: AsyncClient) -> None:
+    """All /api/v1/admin/ endpoints should return 401 without auth."""
+    response = await client.get("/api/v1/admin/prompts/")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     # --- test_admin_prompts ---
-    response1 = await client.get("/api/v1/admin/prompts/")
+    response1 = await admin_client.get("/api/v1/admin/prompts/")
     assert response1.status_code == 200
     data = response1.json()
     assert isinstance(data, list)
 
     some_uuid = str(uuid.uuid4())
-    response2 = await client.get(f"/api/v1/admin/prompts/{some_uuid}")
+    response2 = await admin_client.get(f"/api/v1/admin/prompts/{some_uuid}")
     assert response2.status_code == 404
 
-    response3 = await client.put(
+    response3 = await admin_client.put(
         f"/api/v1/admin/prompts/{some_uuid}",
         json={
             "content": "new system prompt content",
@@ -26,7 +33,7 @@ async def test_admin_endpoints(client: AsyncClient) -> None:
     assert response3.status_code == 404
 
     # --- test_admin_metrics ---
-    response_m = await client.get("/api/v1/admin/metrics/")
+    response_m = await admin_client.get("/api/v1/admin/metrics/")
     assert response_m.status_code == 200
     data_m = response_m.json()
     assert "total_conversations" in data_m
@@ -37,13 +44,13 @@ async def test_admin_endpoints(client: AsyncClient) -> None:
     assert "quotes_generated" in data_m
 
     # --- test_admin_settings ---
-    response_s1 = await client.get("/api/v1/admin/settings/")
+    response_s1 = await admin_client.get("/api/v1/admin/settings/")
     assert response_s1.status_code == 200
     data1 = response_s1.json()
     assert "bot_enabled" in data1
     assert "default_language" in data1
 
-    response_s2 = await client.patch(
+    response_s2 = await admin_client.patch(
         "/api/v1/admin/settings/", json={"bot_enabled": False, "default_language": "ar"}
     )
     assert response_s2.status_code == 200
@@ -52,16 +59,16 @@ async def test_admin_endpoints(client: AsyncClient) -> None:
     assert data2["default_language"] == "ar"
 
     # --- test_admin_mount_redirects_to_login ---
-    response_rm = await client.get("/admin/")
+    response_rm = await admin_client.get("/admin/")
     assert response_rm.status_code in (302, 303)
     assert "/admin/login" in response_rm.headers["location"]
 
 
 @pytest.mark.asyncio
-async def test_dashboard_metrics(client: AsyncClient) -> None:
+async def test_dashboard_metrics(admin_client: AsyncClient) -> None:
     """Test the expanded dashboard metrics endpoint (17 KPIs, 6 categories)."""
     # Default period (all_time)
-    response = await client.get("/api/v1/admin/dashboard/metrics/")
+    response = await admin_client.get("/api/v1/admin/dashboard/metrics/")
     assert response.status_code == 200
     data = response.json()
     assert data["period"] == "all_time"
@@ -95,12 +102,12 @@ async def test_dashboard_metrics(client: AsyncClient) -> None:
 
     # Test period filtering
     for p in ("day", "week", "month"):
-        resp = await client.get(f"/api/v1/admin/dashboard/metrics/?period={p}")
+        resp = await admin_client.get(f"/api/v1/admin/dashboard/metrics/?period={p}")
         assert resp.status_code == 200
         assert resp.json()["period"] == p
 
     # Test invalid period
-    resp_bad = await client.get("/api/v1/admin/dashboard/metrics/?period=year")
+    resp_bad = await admin_client.get("/api/v1/admin/dashboard/metrics/?period=year")
     assert resp_bad.status_code == 422
 
 

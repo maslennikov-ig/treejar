@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from src.api.deps import get_redis
 from src.core.database import get_db
@@ -21,9 +22,21 @@ from src.schemas import (
     SettingsUpdate,
 )
 
-router = APIRouter()
 
-VALID_PERIODS = {"day", "week", "month", "all_time"}
+async def require_admin_session(request: Request) -> None:
+    """Verify the admin session token (same as SQLAdmin session auth)."""
+    try:
+        token = request.session.get("token")
+    except AssertionError:
+        # SessionMiddleware not installed — treat as unauthenticated
+        raise HTTPException(status_code=401, detail="Admin authentication required") from None
+    if token != "admin_session":
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+
+
+router = APIRouter(dependencies=[Depends(require_admin_session)])
+
+PeriodType = Literal["day", "week", "month", "all_time"]
 
 
 @router.get("/prompts/", response_model=list[PromptRead])
@@ -117,18 +130,13 @@ async def get_metrics(
 @router.get("/dashboard/metrics/", response_model=DashboardMetricsResponse)
 async def get_dashboard_metrics(
     db: Annotated[AsyncSession, Depends(get_db)],
-    period: str = "all_time",
+    period: PeriodType = "all_time",
 ) -> DashboardMetricsResponse:
     """Get comprehensive dashboard metrics (17 KPIs, 6 categories).
 
     Query params:
         period: day | week | month | all_time (default: all_time)
     """
-    if period not in VALID_PERIODS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid period '{period}'. Must be one of: {', '.join(sorted(VALID_PERIODS))}",
-        )
     from src.services.dashboard_metrics import calculate_dashboard_metrics
 
     return await calculate_dashboard_metrics(db, period)

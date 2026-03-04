@@ -22,3 +22,21 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def admin_client() -> AsyncGenerator[AsyncClient, None]:
+    """Client with admin session auth (logged in via SQLAdmin)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    ) as ac:
+        # Login via SQLAdmin form to get session cookie
+        await ac.post(
+            "/admin/login",
+            data={"username": "admin", "password": "admin"},
+            follow_redirects=False,
+        )
+        # Session cookie is set regardless of redirect status
+        yield ac
+

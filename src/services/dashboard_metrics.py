@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
@@ -98,8 +98,22 @@ async def calculate_dashboard_metrics(
     )
     by_language = {row[0]: row[1] for row in lang_rows.all()}
 
-    # By segment — from metadata.segment if available
-    by_segment: dict[str, int] = {}
+    # By segment — from metadata.segment JSON field
+    seg_rows = await db.execute(
+        conv_filter(
+            select(
+                func.coalesce(
+                    Conversation.metadata_["segment"].as_string(), "unknown"
+                ),
+                func.count(Conversation.id),
+            )
+        ).group_by(
+            func.coalesce(
+                Conversation.metadata_["segment"].as_string(), "unknown"
+            )
+        )
+    )
+    by_segment = {row[0]: row[1] for row in seg_rows.all()}
 
     # Target vs non-target: status = 'active' or 'completed' is target
     target_count = (
@@ -166,21 +180,17 @@ async def calculate_dashboard_metrics(
     )
 
     # --- 5. QUALITY ---
-    avg_conv_length = (
-        await db.scalar(
-            msg_filter(
-                select(
-                    func.avg(
-                        select(func.count(Message.id))
-                        .where(Message.conversation_id == Conversation.id)
-                        .correlate(Conversation)
-                        .scalar_subquery()
-                    )
-                ).select_from(Conversation)
-            )
-        )
-        or 0.0
-    )
+    # Average conversation length: count messages per conversation, then average
+    msg_per_conv = select(
+        Message.conversation_id,
+        func.count(Message.id).label("msg_count"),
+    ).group_by(Message.conversation_id)
+    if period_start:
+        msg_per_conv = msg_per_conv.where(Message.created_at >= period_start)
+    msg_sub = msg_per_conv.subquery()
+    avg_conv_length = await db.scalar(
+        select(func.avg(msg_sub.c.msg_count))
+    ) or 0.0
 
     # Average quality score from quality_reviews
     qr_base = select(func.avg(QualityReview.total_score))
@@ -188,8 +198,26 @@ async def calculate_dashboard_metrics(
         qr_base = qr_base.where(QualityReview.created_at >= period_start)
     avg_quality_score = await db.scalar(qr_base) or 0.0
 
-    # Average response time (from message pairs: user → assistant time diff)
-    avg_response_time_ms = 0.0
+    # Average response time (user → first assistant reply time diff)
+    rt_sql = """
+        SELECT AVG(EXTRACT(EPOCH FROM (bot.created_at - user_msg.created_at)) * 1000)
+        FROM messages user_msg
+        JOIN LATERAL (
+            SELECT created_at FROM messages
+            WHERE conversation_id = user_msg.conversation_id
+              AND role = 'assistant'
+              AND created_at > user_msg.created_at
+            ORDER BY created_at LIMIT 1
+        ) bot ON true
+        WHERE user_msg.role = 'user'
+    """
+    if period_start:
+        rt_sql = rt_sql.rstrip() + " AND user_msg.created_at >= :period_start"
+        avg_response_time_ms = (
+            await db.scalar(text(rt_sql), {"period_start": period_start})
+        ) or 0.0
+    else:
+        avg_response_time_ms = await db.scalar(text(rt_sql)) or 0.0
 
     # --- 6. COST ---
     cost_base = select(func.sum(Message.cost))

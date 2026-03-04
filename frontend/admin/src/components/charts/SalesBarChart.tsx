@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CHART_AXIS_FONT_SIZE, CHART_AXIS_STROKE, CHART_GRID_STROKE, CHART_TOOLTIP_STYLE } from './chartTheme';
 
 interface SalesBarChartProps {
     noorSales: { count: number; amount: number };
@@ -35,19 +36,14 @@ export default function SalesBarChart({
             </div>
             <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="name" stroke="#64748b" fontSize={12} />
-                    <YAxis stroke="#64748b" fontSize={12} />
-                    <Tooltip
-                        contentStyle={{
-                            backgroundColor: '#1e293b',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '12px',
-                            color: '#e2e8f0',
-                            fontSize: '13px',
-                        }}
-                    />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
+                    <XAxis dataKey="name" stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
+                    <YAxis stroke={CHART_AXIS_STROKE} fontSize={CHART_AXIS_FONT_SIZE} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
                     <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={50}>
+                        {data.map((entry, index) => (
+                            <Cell key={index} fill={entry.fill} />
+                        ))}
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>

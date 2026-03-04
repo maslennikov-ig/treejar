@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { CHART_TOOLTIP_STYLE } from './chartTheme';
 
 interface SegmentPieChartProps {
     byLanguage: Record<string, number>;
@@ -59,15 +60,7 @@ export default function SegmentPieChart({ byLanguage, targetVsNontarget }: Segme
                                         <Cell key={idx} fill={entry.fill} />
                                     ))}
                                 </Pie>
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '12px',
-                                        color: '#e2e8f0',
-                                        fontSize: '13px',
-                                    }}
-                                />
+                                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
                             </PieChart>
                         </ResponsiveContainer>
                     ) : (
@@ -95,18 +88,8 @@ export default function SegmentPieChart({ byLanguage, targetVsNontarget }: Segme
                                         <Cell key={idx} fill={TARGET_COLORS[idx]} />
                                     ))}
                                 </Pie>
-                                <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: '#1e293b',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '12px',
-                                        color: '#e2e8f0',
-                                        fontSize: '13px',
-                                    }}
-                                />
-                                <Legend
-                                    wrapperStyle={{ color: '#94a3b8', fontSize: '12px' }}
-                                />
+                                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                                <Legend wrapperStyle={{ color: '#94a3b8', fontSize: '12px' }} />
                             </PieChart>
                         </ResponsiveContainer>
                     ) : (
