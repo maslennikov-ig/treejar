@@ -126,8 +126,8 @@ async def get_settings(
         auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
         follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
         max_messages_per_conversation=int(
-            configs.get("max_messages_per_conversation", 50)
-        ),  # type: ignore
+            str(configs.get("max_messages_per_conversation", 50))
+        ),
     )
 
 
@@ -164,6 +164,6 @@ async def update_settings(
         auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
         follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
         max_messages_per_conversation=int(
-            configs.get("max_messages_per_conversation", 50)
-        ),  # type: ignore
+            str(configs.get("max_messages_per_conversation", 50))
+        ),
     )
