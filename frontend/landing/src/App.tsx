@@ -314,14 +314,14 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
   const { t, lang } = useTranslation();
   const { scrollY } = useScroll();
 
-  // Parallax effects: positive Y values make elements move slower than the scroll speed (creating depth)
-  const yBg = useTransform(scrollY, [0, 1000], [0, 500]); // Deep background moves slowest
-  const yText = useTransform(scrollY, [0, 1000], [0, 50]); // Foreground text moves almost normally
+  const yBg = useTransform(scrollY, [0, 1000], [0, 500]);
+  const yChat = useTransform(scrollY, [0, 1000], [0, 250]);
+  const yText = useTransform(scrollY, [0, 1000], [0, 50]);
 
   const isRtl = lang === 'ar';
 
   return (
-    <section className="relative pt-28 pb-16 md:pt-32 md:pb-20 lg:pt-48 lg:pb-32 overflow-hidden text-center pl-8 pr-8">
+    <section className="relative pt-20 pb-16 md:pt-24 md:pb-20 lg:pt-28 lg:pb-28 overflow-hidden">
       {/* Background gradients */}
       <motion.div
         style={{ y: yBg }}
@@ -332,16 +332,16 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
       </motion.div>
 
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 relative z-10">
-        <div className="flex flex-col items-center justify-center pt-8 sm:pt-16">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           <motion.div
             style={{ y: yText }}
-            className="max-w-4xl flex flex-col items-center mx-auto"
+            className="max-w-2xl"
           >
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-brand-orange/10 text-brand-orange font-medium text-sm mb-6 sm:mb-8 border border-brand-orange/20"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-orange/10 text-brand-orange font-medium text-sm mb-6 sm:mb-8 border border-brand-orange/20"
             >
               <Sparkles className="w-4 h-4" />
               <span>{t.hero.badge}</span>
@@ -351,7 +351,7 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1, ease: "easeOut" }}
-              className="text-4xl sm:text-5xl lg:text-7xl font-extrabold leading-[1.1] tracking-tight mb-4 sm:mb-6"
+              className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.1] tracking-tight mb-4 sm:mb-6"
             >
               {t.hero.title1}<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#25D366] to-[#128C7E]" dir="ltr">WhatsApp</span>{t.hero.title2}
             </motion.h1>
@@ -369,11 +369,10 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3, ease: "easeOut" }}
-              className="flex flex-col sm:flex-row items-center justify-center mt-8 w-full"
             >
               <button
                 onClick={onLoginClick}
-                className="w-full sm:w-auto min-w-[280px] md:min-w-[320px] bg-brand-orange text-white px-10 py-5 sm:px-12 sm:py-6 rounded-full font-bold text-lg sm:text-xl hover:bg-[#e56612] transition-all shadow-[0_0_40px_-10px_rgba(249,115,22,0.6)] hover:shadow-[0_0_60px_-10px_rgba(249,115,22,0.8)] active:scale-95 flex items-center justify-center gap-3"
+                className="w-full bg-brand-orange text-white px-8 py-5 rounded-full font-bold text-lg sm:text-xl hover:bg-[#e56612] transition-all shadow-[0_0_40px_-10px_rgba(249,115,22,0.6)] hover:shadow-[0_0_60px_-10px_rgba(249,115,22,0.8)] active:scale-95 flex items-center justify-center gap-3"
               >
                 {t.hero.startFree}
                 {isRtl ? <ArrowLeft className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
@@ -384,7 +383,7 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
-              className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 text-sm text-slate-500 font-medium"
+              className="mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 text-sm text-slate-500 font-medium"
             >
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-brand-orange" />
@@ -397,7 +396,91 @@ const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
             </motion.div>
           </motion.div>
 
+          {/* Abstract 3D / Chat Visual */}
+          <motion.div
+            style={{ y: yChat }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="relative h-[560px] hidden lg:block"
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-brand-soft to-white rounded-[3rem] border border-slate-200/50 shadow-2xl overflow-hidden" dir="ltr">
+              <div className="absolute top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center px-6 gap-4">
+                <div className="w-3 h-3 rounded-full bg-red-400" />
+                <div className="w-3 h-3 rounded-full bg-amber-400" />
+                <div className="w-3 h-3 rounded-full bg-green-400" />
+              </div>
 
+              <div className="p-8 pt-24 space-y-6">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 max-w-[80%]"
+                >
+                  <p className="text-slate-700">{t.hero.chat1}</p>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 1.5 }}
+                  className="bg-brand-orange text-white p-4 rounded-2xl rounded-tr-none shadow-md shadow-brand-orange/20 max-w-[80%] ml-auto"
+                >
+                  <p>{t.hero.chat2}</p>
+                  <div className="mt-3 bg-white/20 p-3 rounded-xl backdrop-blur-sm border border-white/10">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <PackageSearch className="w-4 h-4" />
+                      <span>{t.hero.synced}</span>
+                    </div>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 2.5 }}
+                  className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 max-w-[80%]"
+                >
+                  <p className="text-slate-700">{t.hero.chat3}</p>
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 3.5 }}
+                  className="bg-brand-orange text-white p-4 rounded-2xl rounded-tr-none shadow-md shadow-brand-orange/20 max-w-[80%] ml-auto"
+                >
+                  <p>{t.hero.chat4}</p>
+                  <div className="mt-3 bg-white p-3 rounded-xl flex items-center gap-3 border border-slate-100 text-brand-black">
+                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center text-red-500">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm">{t.hero.quoteName}</p>
+                      <p className="text-xs text-slate-500">{t.hero.quoteDesc}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+
+            {/* Floating decorative elements */}
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              className={`absolute ${isRtl ? '-left-8' : '-right-8'} top-32 bg-white p-4 rounded-2xl shadow-xl border border-slate-100 flex items-center gap-3`}
+              dir="ltr"
+            >
+              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                <Globe2 className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{t.hero.langTitle}</p>
+                <p className="font-bold text-sm">{t.hero.langDesc}</p>
+              </div>
+            </motion.div>
+          </motion.div>
         </div>
       </div>
     </section>
