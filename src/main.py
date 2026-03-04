@@ -46,6 +46,28 @@ def create_app() -> FastAPI:
     from src.api.admin.views import setup_admin_views
     setup_admin_views(admin)
 
+    # --- Landing Page SPA Integration ---
+    import os
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    # Ensure dist directory exists for local development to avoid startup crash
+    os.makedirs("frontend/landing/dist", exist_ok=True)
+    index_path = "frontend/landing/dist/index.html"
+    if not os.path.exists(index_path):
+        with open(index_path, "w") as f:
+            f.write("<html><body>Mock Index</body></html>")
+
+    app.mount("/assets", StaticFiles(directory="frontend/landing/dist", html=True), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        dist_dir = "frontend/landing/dist"
+        file_path = os.path.join(dist_dir, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(dist_dir, "index.html"))
+
     return app
 
 
