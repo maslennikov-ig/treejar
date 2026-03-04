@@ -14,7 +14,9 @@ import {
   CheckCircle2,
   Languages,
   X,
-  Menu
+  Menu,
+  User,
+  Lock
 } from 'lucide-react';
 
 const translations = {
@@ -230,11 +232,7 @@ const useTranslation = () => {
   return { t: translations[lang], lang };
 };
 
-const handleLogin = () => {
-  window.location.href = '/admin/';
-};
-
-const Header = () => {
+const Header = ({ onLoginClick }: { onLoginClick: () => void }) => {
   const { t, lang } = useTranslation();
   const { setLang } = useContext(LanguageContext);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -269,7 +267,7 @@ const Header = () => {
             <span className="uppercase text-xs sm:text-sm">{lang === 'en' ? 'AR' : 'EN'}</span>
           </button>
           <button
-            onClick={handleLogin}
+            onClick={onLoginClick}
             className="hidden sm:flex bg-brand-black text-white px-5 py-2 sm:px-6 sm:py-2.5 rounded-full font-medium hover:bg-slate-800 transition-all active:scale-95 items-center gap-2 text-sm sm:text-base"
           >
             {t.nav.login}
@@ -298,7 +296,7 @@ const Header = () => {
               <a href="#integrations" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-medium text-slate-600 hover:text-brand-black">{t.nav.integrations}</a>
               <a href="#how-it-works" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-medium text-slate-600 hover:text-brand-black">{t.nav.howItWorks}</a>
               <button
-                onClick={() => { handleLogin(); setIsMobileMenuOpen(false); }}
+                onClick={() => { onLoginClick(); setIsMobileMenuOpen(false); }}
                 className="mt-4 bg-brand-black text-white px-6 py-3 rounded-full font-medium hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
               >
                 {t.nav.login}
@@ -312,19 +310,18 @@ const Header = () => {
   );
 };
 
-const Hero = () => {
+const Hero = ({ onLoginClick }: { onLoginClick: () => void }) => {
   const { t, lang } = useTranslation();
   const { scrollY } = useScroll();
 
   // Parallax effects: positive Y values make elements move slower than the scroll speed (creating depth)
   const yBg = useTransform(scrollY, [0, 1000], [0, 500]); // Deep background moves slowest
-  const yChat = useTransform(scrollY, [0, 1000], [0, 250]); // Midground moves medium speed
   const yText = useTransform(scrollY, [0, 1000], [0, 50]); // Foreground text moves almost normally
 
   const isRtl = lang === 'ar';
 
   return (
-    <section className="relative pt-28 pb-16 md:pt-32 md:pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+    <section className="relative pt-28 pb-16 md:pt-32 md:pb-20 lg:pt-48 lg:pb-32 overflow-hidden text-center pl-8 pr-8">
       {/* Background gradients */}
       <motion.div
         style={{ y: yBg }}
@@ -335,16 +332,16 @@ const Hero = () => {
       </motion.div>
 
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 relative z-10">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+        <div className="flex flex-col items-center justify-center pt-8 sm:pt-16">
           <motion.div
             style={{ y: yText }}
-            className="max-w-2xl"
+            className="max-w-4xl flex flex-col items-center mx-auto"
           >
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-orange/10 text-brand-orange font-medium text-sm mb-6 sm:mb-8 border border-brand-orange/20"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-brand-orange/10 text-brand-orange font-medium text-sm mb-6 sm:mb-8 border border-brand-orange/20"
             >
               <Sparkles className="w-4 h-4" />
               <span>{t.hero.badge}</span>
@@ -372,14 +369,14 @@ const Hero = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3, ease: "easeOut" }}
-              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4"
+              className="flex flex-col sm:flex-row items-center justify-center mt-8 w-full"
             >
               <button
-                onClick={handleLogin}
-                className="w-full sm:w-auto bg-brand-orange text-white px-6 py-3 sm:px-8 sm:py-4 rounded-full font-semibold text-base sm:text-lg hover:bg-[#e56612] transition-all hover:shadow-xl hover:shadow-brand-orange/25 active:scale-95 flex items-center justify-center gap-2"
+                onClick={onLoginClick}
+                className="w-full sm:w-auto min-w-[280px] md:min-w-[320px] bg-brand-orange text-white px-10 py-5 sm:px-12 sm:py-6 rounded-full font-bold text-lg sm:text-xl hover:bg-[#e56612] transition-all shadow-[0_0_40px_-10px_rgba(249,115,22,0.6)] hover:shadow-[0_0_60px_-10px_rgba(249,115,22,0.8)] active:scale-95 flex items-center justify-center gap-3"
               >
                 {t.hero.startFree}
-                {isRtl ? <ArrowLeft className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />}
+                {isRtl ? <ArrowLeft className="w-6 h-6" /> : <ArrowRight className="w-6 h-6" />}
               </button>
             </motion.div>
 
@@ -387,7 +384,7 @@ const Hero = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
-              className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 text-sm text-slate-500 font-medium"
+              className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 text-sm text-slate-500 font-medium"
             >
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-brand-orange" />
@@ -400,91 +397,7 @@ const Hero = () => {
             </motion.div>
           </motion.div>
 
-          {/* Abstract 3D / Chat Visual */}
-          <motion.div
-            style={{ y: yChat }}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="relative h-[600px] hidden lg:block"
-          >
-            <div className="absolute inset-0 bg-gradient-to-tr from-brand-soft to-white rounded-[3rem] border border-slate-200/50 shadow-2xl overflow-hidden" dir="ltr">
-              <div className="absolute top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center px-6 gap-4">
-                <div className="w-3 h-3 rounded-full bg-red-400" />
-                <div className="w-3 h-3 rounded-full bg-amber-400" />
-                <div className="w-3 h-3 rounded-full bg-green-400" />
-              </div>
 
-              <div className="p-8 pt-24 space-y-6">
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 max-w-[80%]"
-                >
-                  <p className="text-slate-700">{t.hero.chat1}</p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 1.5 }}
-                  className="bg-brand-orange text-white p-4 rounded-2xl rounded-tr-none shadow-md shadow-brand-orange/20 max-w-[80%] ml-auto"
-                >
-                  <p>{t.hero.chat2}</p>
-                  <div className="mt-3 bg-white/20 p-3 rounded-xl backdrop-blur-sm border border-white/10">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <PackageSearch className="w-4 h-4" />
-                      <span>{t.hero.synced}</span>
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 2.5 }}
-                  className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 max-w-[80%]"
-                >
-                  <p className="text-slate-700">{t.hero.chat3}</p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 3.5 }}
-                  className="bg-brand-orange text-white p-4 rounded-2xl rounded-tr-none shadow-md shadow-brand-orange/20 max-w-[80%] ml-auto"
-                >
-                  <p>{t.hero.chat4}</p>
-                  <div className="mt-3 bg-white p-3 rounded-xl flex items-center gap-3 border border-slate-100 text-brand-black">
-                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center text-red-500">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm">{t.hero.quoteName}</p>
-                      <p className="text-xs text-slate-500">{t.hero.quoteDesc}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-            </div>
-
-            {/* Floating decorative elements */}
-            <motion.div
-              animate={{ y: [0, -10, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-              className={`absolute ${isRtl ? '-left-8' : '-right-8'} top-32 bg-white p-4 rounded-2xl shadow-xl border border-slate-100 flex items-center gap-3`}
-              dir="ltr"
-            >
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
-                <Globe2 className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{t.hero.langTitle}</p>
-                <p className="font-bold text-sm">{t.hero.langDesc}</p>
-              </div>
-            </motion.div>
-          </motion.div>
         </div>
       </div>
     </section>
@@ -715,9 +628,101 @@ const LegalModal = ({ isOpen, onClose, type }: { isOpen: boolean, onClose: () =>
   );
 };
 
+const LoginModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  const { t, lang } = useTranslation();
+
+  if (!isOpen) return null;
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 text-brand-black">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 bg-black/40 backdrop-blur-md"
+          onClick={onClose}
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          className="relative w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden"
+          dir={lang === 'ar' ? 'rtl' : 'ltr'}
+        >
+          <div className="flex items-center justify-end p-4">
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-brand-black bg-slate-50 hover:bg-slate-100 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="px-8 pb-10">
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-brand-orange/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                <Lock className="w-8 h-8 text-brand-orange" />
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight mb-2">
+                {lang === 'ar' ? 'تسجيل الدخول' : 'Welcome back'}
+              </h2>
+              <p className="text-slate-500 text-sm">
+                {lang === 'ar' ? 'مرحباً بعودتك إلى لوحة التحكم' : 'Sign in to access your dashboard'}
+              </p>
+            </div>
+
+            <form method="POST" action="/admin/login" className="space-y-4">
+              <div>
+                <div className="relative">
+                  <div className={`absolute inset-y-0 flex items-center pointer-events-none text-slate-400 ${lang === 'ar' ? 'right-0 pr-4' : 'left-0 pl-4'}`}>
+                    <User className="w-5 h-5" />
+                  </div>
+                  <input
+                    type="text"
+                    name="username"
+                    required
+                    placeholder={lang === 'ar' ? 'اسم المستخدم' : 'Username'}
+                    className={`w-full bg-slate-50 border border-slate-200 text-brand-black rounded-xl py-3.5 focus:ring-2 focus:ring-brand-orange focus:border-brand-orange transition-all outline-none ${lang === 'ar' ? 'pr-11 pl-4' : 'pl-11 pr-4'}`}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="relative">
+                  <div className={`absolute inset-y-0 flex items-center pointer-events-none text-slate-400 ${lang === 'ar' ? 'right-0 pr-4' : 'left-0 pl-4'}`}>
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <input
+                    type="password"
+                    name="password"
+                    required
+                    placeholder={lang === 'ar' ? 'كلمة المرور' : 'Password'}
+                    className={`w-full bg-slate-50 border border-slate-200 text-brand-black rounded-xl py-3.5 focus:ring-2 focus:ring-brand-orange focus:border-brand-orange transition-all outline-none ${lang === 'ar' ? 'pr-11 pl-4' : 'pl-11 pr-4'}`}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  type="submit"
+                  className="w-full bg-brand-orange text-white py-4 rounded-xl font-bold text-lg hover:bg-[#e56612] transition-colors shadow-lg shadow-brand-orange/20 active:scale-[0.98]"
+                >
+                  {t.nav.login}
+                </button>
+              </div>
+            </form>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+};
+
 export default function App() {
   const [lang, setLang] = useState<Language>('en');
   const [legalModal, setLegalModal] = useState<'privacy' | 'terms' | null>(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   return (
     <LanguageContext.Provider value={{ lang, setLang }}>
@@ -725,13 +730,15 @@ export default function App() {
         className={`min-h-screen selection:bg-brand-orange/20 selection:text-brand-orange ${lang === 'ar' ? 'font-arabic' : ''}`}
         dir={lang === 'ar' ? 'rtl' : 'ltr'}
       >
-        <Header />
+        <Header onLoginClick={() => setIsLoginModalOpen(true)} />
         <main>
-          <Hero />
+          <Hero onLoginClick={() => setIsLoginModalOpen(true)} />
           <Features />
           <Integrations />
         </main>
         <Footer onOpenLegal={setLegalModal} />
+
+        <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
 
         {legalModal && (
           <LegalModal
