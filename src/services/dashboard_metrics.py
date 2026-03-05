@@ -8,8 +8,8 @@ Performance: Uses 3 consolidated SQL queries instead of 12+ sequential ones.
 
 from __future__ import annotations
 
-from typing import Any
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession

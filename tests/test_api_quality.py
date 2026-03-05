@@ -4,7 +4,7 @@ Updated from stubs (501) to verify real implementation.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -39,10 +39,6 @@ async def test_list_reviews_with_filters() -> None:
         ) as ac:
             response = await ac.get("/api/v1/quality/reviews/?min_score=20&page_size=5")
     assert response.status_code == 200
-    # Verify get_reviews was called with correct params
-    call_kwargs = mock_get.call_args[1] if mock_get.call_args else {}
-    called_min = mock_get.call_args.kwargs.get("min_score") if mock_get.call_args else None
-    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -61,7 +57,6 @@ async def test_create_review_success() -> None:
         rating="excellent",
     )
 
-    import uuid
     from datetime import datetime
 
     conv_id = uuid4()

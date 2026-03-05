@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import pytest
 
-
 # =============================================================================
 # Task 1: Schema tests
 # =============================================================================
@@ -308,7 +307,6 @@ async def test_prompt_injection_uses_dialogue_tags() -> None:
 @pytest.mark.asyncio
 async def test_api_returns_502_on_unexpected_model_behavior() -> None:
     """POST /reviews/ should return 502 when LLM judge exhausts retries."""
-    import asyncio
     from uuid import uuid4 as _uuid4
 
     from httpx import ASGITransport, AsyncClient
@@ -335,7 +333,6 @@ async def test_api_returns_502_on_unexpected_model_behavior() -> None:
 @pytest.mark.asyncio
 async def test_api_returns_504_on_timeout() -> None:
     """POST /reviews/ should return 504 when LLM evaluation times out."""
-    import asyncio
     from uuid import uuid4 as _uuid4
 
     from httpx import ASGITransport, AsyncClient
@@ -347,7 +344,7 @@ async def test_api_returns_504_on_timeout() -> None:
         patch("src.api.v1.quality.conversation_already_reviewed", return_value=False),
         patch(
             "src.api.v1.quality.evaluate_conversation",
-            side_effect=asyncio.TimeoutError(),
+            side_effect=TimeoutError(),
         ),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
