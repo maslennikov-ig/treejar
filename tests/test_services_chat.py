@@ -1,18 +1,18 @@
-import uuid
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.models.conversation import Conversation
-from src.schemas.common import SalesStage
 from src.services.chat import process_incoming_batch
 
 
 @pytest.fixture
 def chat_context() -> dict[str, Any]:
+    mock_redis = AsyncMock()
+    # Default: no messages in Redis
+    mock_redis.lpop.return_value = None
     return {
-        "redis": AsyncMock(),
+        "redis": mock_redis,
     }
 
 
@@ -26,27 +26,40 @@ async def test_process_incoming_batch_success(
     mock_db_factory: AsyncMock,
     chat_context: dict[str, Any],
 ) -> None:
-    # 1. Setup Redis mocks for incoming messages
+    # 1. Setup Redis mocks — simulate messages in Redis list
     mock_redis = chat_context["redis"]
-    mock_redis.lrange.return_value = [
-        # JSON dumped from WazzupIncomingMessage
-        '{"messageId": "m1", "chatId": "79991234567", "text": "Hi", "type": "text", "timestamp": 12345}',
-        '{"messageId": "m2", "chatId": "79991234567", "text": "I need help", "type": "text", "timestamp": 12346}',
+    mock_redis.lpop.side_effect = [
+        '{"messageId": "m1", "chatId": "79991234567", "chatType": "whatsapp", "text": "Hi", "type": "text", "channelId": "ch1", "timestamp": 12345}',
+        '{"messageId": "m2", "chatId": "79991234567", "chatType": "whatsapp", "text": "I need help", "type": "text", "channelId": "ch1", "timestamp": 12346}',
+        None,  # sentinel: no more messages
     ]
 
     # 2. Setup DB mocks
     mock_db = AsyncMock()
     mock_db_factory.return_value.__aenter__.return_value = mock_db
 
-    # Existing conversation
-    conv = Conversation(
-        id=uuid.uuid4(),
-        phone="79991234567",
-        sales_stage=SalesStage.GREETING.value,
-    )
-    mock_result = AsyncMock()
-    mock_result.scalar_one_or_none.return_value = conv
-    mock_db.execute.return_value = mock_result
+    from typing import Any as AnyType
+
+    class MockResult:
+        def __init__(self, val: AnyType) -> None:
+            self.val = val
+
+        def scalar_one_or_none(self) -> AnyType:
+            return self.val
+
+        def scalars(self) -> "MockResult":
+            return self
+
+        def first(self) -> AnyType:
+            return self.val
+
+    # Simulate: no bot_enabled config, no existing conversation, no message duplicates
+    mock_db.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(None),  # conversation lookup
+        MockResult(None),  # message m1 dedup check
+        MockResult(None),  # message m2 dedup check
+    ]
 
     # 3. Setup LLM response mock
     from src.llm import LLMResponse
@@ -65,30 +78,28 @@ async def test_process_incoming_batch_success(
     mock_provider_class.return_value = mock_provider
     mock_provider.send_text.return_value = "msg_out_1"
 
-    # Execute
-    # The actual chat logic handles deduplication via the DB and redis isn't strictly required for parsing yet, but keeping the signature
-    await process_incoming_batch(chat_context, "79991234567", [])
+    # Execute (no messages arg — reads from Redis)
+    await process_incoming_batch(chat_context, "79991234567")
 
     # Asserts
-    # Since we didn't pass WazzupIncomingMessage objects directly into messages, let's fix the test logic
-    # Actually, process_incoming_batch gets messages from the 3rd argument!
-    # Let me adjust how it's called to match the new signature which was: `async def process_incoming_batch(ctx: dict[str, Any], chat_id: str, messages: list[WazzupIncomingMessage]) -> None:`
-    pass
+    mock_process_message.assert_awaited_once()
+    mock_provider.send_text.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_process_incoming_batch_empty_redis(chat_context: dict[str, Any]) -> None:
+    """When Redis list is empty, should exit early without crashing."""
     mock_redis = chat_context["redis"]
-    mock_redis.lrange.return_value = []
+    mock_redis.lpop.return_value = None  # no messages
 
-    await process_incoming_batch(chat_context, "79991234567", [])
+    await process_incoming_batch(chat_context, "79991234567")
 
-    # Shouldn't delete keys or do anything else
-    mock_redis.delete.assert_not_called()
+    # Should not call anything else
+    assert mock_redis.lpop.await_count == 1
 
 
 @pytest.mark.asyncio
 async def test_process_incoming_batch_no_redis() -> None:
-    # Context lacking redis completely
-    await process_incoming_batch({}, "79991234567", [])
-    # Should exit safely without crashing
+    """When context lacks redis entirely, should raise KeyError."""
+    with pytest.raises(KeyError, match="redis"):
+        await process_incoming_batch({}, "79991234567")

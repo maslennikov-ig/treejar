@@ -51,21 +51,23 @@ async def test_process_incoming_batch_new_conversation(
     mock_llm_response.model = "test-model"
     mock_process_message.return_value = mock_llm_response
 
-    ctx = {"redis": AsyncMock()}
-    chat_id = "1234567890"
-    messages = [
-        WazzupIncomingMessage(
-            messageId="msg-1",
-            chatId=chat_id,
-            chatType="whatsapp",
-            type="text",
-            text="Hi there",
-            channelId="chan-1",
-            timestamp=1704067200,
-        )
-    ]
+    # Mock Redis lpop to return one message then None
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi there",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
-    await process_incoming_batch(ctx, chat_id, messages)
+    ctx = {"redis": mock_redis}
+    chat_id = "1234567890"
+
+    await process_incoming_batch(ctx, chat_id)
 
     # Assertions
     # Called to add Conversation and 2 Messages (user + ai)

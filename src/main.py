@@ -72,7 +72,7 @@ def create_app() -> FastAPI:
         name="admin-assets",
     )
 
-    @app.get("/dashboard/{full_path:path}")
+    @app.get("/dashboard/{full_path:path}", include_in_schema=False)
     async def serve_admin_spa(full_path: str) -> FileResponse:
         dist_dir = "frontend/admin/dist"
         file_path = os.path.join(dist_dir, full_path)
@@ -94,7 +94,7 @@ def create_app() -> FastAPI:
         name="assets",
     )
 
-    @app.get("/{full_path:path}")
+    @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str) -> FileResponse:
         dist_dir = "frontend/landing/dist"
         file_path = os.path.join(dist_dir, full_path)

@@ -22,16 +22,35 @@ logger = logging.getLogger(__name__)
 async def process_incoming_batch(
     ctx: dict[str, Any],
     chat_id: str,
-    messages: list[WazzupIncomingMessage],
 ) -> None:
     """Process a batch of incoming messages from a single chat.
 
-    1. Get or create conversation based on chat_id (phone number).
-    2. Save incoming messages.
-    3. Generate LLM response from the combined text.
-    4. Save LLM response.
-    5. Send reply via Wazzup.
+    Messages are read from a Redis list (``wazzup_msgs:{chat_id}``) where
+    the webhook handler pushes them via ``rpush``.
+
+    1. Pop all queued messages from Redis.
+    2. Get or create conversation based on chat_id (phone number).
+    3. Save incoming messages.
+    4. Generate LLM response from the combined text.
+    5. Save LLM response.
+    6. Send reply via Wazzup.
     """
+    # ARQ automatically injects its Redis pool as ctx["redis"]
+    redis = ctx["redis"]
+
+    # 1. Pop all messages from Redis list atomically
+    raw_messages: list[str] = []
+    while True:
+        raw = await redis.lpop(f"wazzup_msgs:{chat_id}")
+        if raw is None:
+            break
+        raw_messages.append(raw if isinstance(raw, str) else raw.decode())
+
+    if not raw_messages:
+        logger.warning(f"No messages in Redis for {chat_id}, skipping.")
+        return
+
+    messages = [WazzupIncomingMessage.model_validate_json(raw) for raw in raw_messages]
     logger.info(f"Processing batch for {chat_id} with {len(messages)} messages.")
 
     # Sort messages by timestamp asc
@@ -82,10 +101,8 @@ async def process_incoming_batch(
 
         await db.commit()
 
-        # We need Redis, EmbeddingEngine, ZohoClient, WazzupProvider
-        # In a real app these typically come from the ARQ context or are instantiated here
+        # We need EmbeddingEngine, ZohoClient, WazzupProvider
         embedding_engine = EmbeddingEngine()
-        redis = ctx.get("redis")
         zoho_client = ZohoInventoryClient(redis_client=redis)
         crm_client = ZohoCRMClient(redis_client=redis)
         wazzup_provider = WazzupProvider()
@@ -121,3 +138,4 @@ async def process_incoming_batch(
             chat_id=chat_id,
             text=llm_response.text,
         )
+
