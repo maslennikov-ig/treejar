@@ -10,7 +10,11 @@ from typing import Any
 
 from src.core.database import async_session_factory
 from src.quality.evaluator import evaluate_conversation
-from src.quality.service import get_unreviewed_completed_conversations, save_review
+from src.quality.service import (
+    conversation_already_reviewed,
+    get_unreviewed_completed_conversations,
+    save_review,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +45,17 @@ async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
     for conv_id in pending_ids:
         try:
             async with async_session_factory() as db:
+                # Re-check inside transaction — race condition guard when max_jobs > 1
+                if await conversation_already_reviewed(db, conv_id):
+                    logger.info("Skipping %s — already reviewed (race guard)", conv_id)
+                    continue
                 result = await evaluate_conversation(conv_id, db)
                 await save_review(db, conv_id, result)
                 await db.commit()
             evaluated += 1
             logger.info(
-                "Evaluated conversation %s: score=%.1f", conv_id, result.total_score
+                "Evaluated conversation %s: score=%.1f rating=%s",
+                conv_id, result.total_score, result.rating
             )
         except Exception:
             errors += 1

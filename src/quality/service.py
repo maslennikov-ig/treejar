@@ -6,11 +6,11 @@ in the quality_reviews table.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, not_, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
@@ -47,11 +47,13 @@ async def save_review(
         for c in result.criteria
     ]
 
-    rating_str = compute_rating(result.total_score)
+    # Compute score deterministically — don't trust LLM arithmetic
+    computed_total = float(sum(c.score for c in result.criteria))
+    rating_str = compute_rating(computed_total)
 
     review = QualityReview(
         conversation_id=conversation_id,
-        total_score=result.total_score,
+        total_score=computed_total,
         max_score=30,
         criteria=criteria_data,
         rating=rating_str,
@@ -101,13 +103,11 @@ async def get_unreviewed_completed_conversations(
     Returns:
         List of conversation UUIDs eligible for evaluation.
     """
-    reviewed_subq = select(QualityReview.conversation_id)
-
     stmt = (
         select(Conversation.id)
         .where(
             Conversation.status == "closed",
-            not_(Conversation.id.in_(reviewed_subq)),
+            ~exists().where(QualityReview.conversation_id == Conversation.id),
         )
         .order_by(Conversation.updated_at.desc())
         .limit(limit)
@@ -146,8 +146,13 @@ async def get_reviews(
     if min_score is not None:
         filters.append(QualityReview.total_score >= min_score)
     if date_from is not None:
+        # Normalize to UTC — server_default=func.now() stores UTC
+        if date_from.tzinfo is None:
+            date_from = date_from.replace(tzinfo=UTC)
         filters.append(QualityReview.created_at >= date_from)
     if date_to is not None:
+        if date_to.tzinfo is None:
+            date_to = date_to.replace(tzinfo=UTC)
         filters.append(QualityReview.created_at <= date_to)
     if conversation_id is not None:
         filters.append(QualityReview.conversation_id == conversation_id)

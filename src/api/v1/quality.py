@@ -1,11 +1,14 @@
 """Quality API endpoints — conversation quality reviews and reports."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import math
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic_ai import UnexpectedModelBehavior
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_db
@@ -20,6 +23,7 @@ from src.schemas import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -70,9 +74,19 @@ async def create_review(
         )
 
     try:
-        result = await evaluate_conversation(body.conversation_id, db)
+        result = await asyncio.wait_for(
+            evaluate_conversation(body.conversation_id, db),
+            timeout=60.0,  # CR-06: prevent client hanging indefinitely
+        )
+    except TimeoutError as e:
+        raise HTTPException(status_code=504, detail="LLM evaluation timed out") from e
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except UnexpectedModelBehavior as e:
+        logger.error("LLM judge failed for conversation %s: %s", body.conversation_id, e)
+        raise HTTPException(
+            status_code=502, detail="LLM evaluation failed after retries"
+        ) from e
 
     review = await save_review(db, body.conversation_id, result)
     await db.commit()

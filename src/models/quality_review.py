@@ -20,6 +20,8 @@ class QualityReview(UUIDMixin, Base):
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"),
+        unique=True,  # CR-12: one review per conversation (DB-level guard)
+        index=True,
     )
     total_score: Mapped[float] = mapped_column(Numeric(4, 1))
     max_score: Mapped[int] = mapped_column(Integer, default=30)

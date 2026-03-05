@@ -5,6 +5,8 @@ These are used by the PydanticAI judge agent for structured output.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -26,7 +28,7 @@ class EvaluationResult(BaseModel):
     criteria: list[CriterionScore]
     summary: str
     total_score: float
-    rating: str  # "excellent" | "good" | "satisfactory" | "poor"
+    rating: Literal["excellent", "good", "satisfactory", "poor"]
 
 
 def compute_rating(score: float) -> str:
