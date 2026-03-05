@@ -35,17 +35,17 @@
 
 Мы настроим Webhook через API-запрос (Wazzup v3):
 ```bash
-> curl -X PATCH "https://api.wazzup24.com/v3/webhooks" \
->   -H "Authorization: Bearer ВАШ_API_КЛЮЧ" \
->   -H "Content-Type: application/json" \
->   -d '{
->     "webhooksUri": "https://noor.starec.ai/api/v1/webhook/wazzup",
->     "subscriptions": {
->       "messagesAndStatuses": true,
->       "channelsUpdates": true
->     }
->   }'
-> ```
+curl -X PATCH "https://api.wazzup24.com/v3/webhooks" \
+  -H "Authorization: Bearer ВАШ_API_КЛЮЧ" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webhooksUri": "https://noor.starec.ai/api/v1/webhook/wazzup",
+    "subscriptions": {
+      "messagesAndStatuses": true,
+      "channelsUpdates": true
+    }
+  }'
+```
 При подключении Wazzup отправит тестовый запрос `{test: true}` — наш сервер ответит `200 OK`.
 
 **От вас ничего не нужно для этого шага — мы выполним его сами.**
