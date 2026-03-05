@@ -7,6 +7,7 @@ from arq.cron import cron
 
 from src.core.config import settings
 from src.integrations.inventory.sync import sync_products_from_zoho
+from src.quality.job import evaluate_completed_conversations
 from src.services.chat import process_incoming_batch
 from src.services.followup import run_automatic_followups
 from src.services.metrics import calculate_and_store_metrics
@@ -26,6 +27,7 @@ class WorkerSettings:
         process_incoming_batch,
         run_automatic_followups,
         calculate_and_store_metrics,
+        evaluate_completed_conversations,
     ]
     cron_jobs = [
         cron(sync_products_from_zoho, hour={0, 6, 12, 18}, run_at_startup=False),
@@ -35,6 +37,7 @@ class WorkerSettings:
             minute={0, 10, 20, 30, 40, 50},
             run_at_startup=True,
         ),
+        cron(evaluate_completed_conversations, minute={30}, run_at_startup=False),
     ]
     on_startup = startup
     on_shutdown = shutdown

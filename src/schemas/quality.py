@@ -18,7 +18,7 @@ class QualityCriterion(BaseModel):
 
 class QualityReviewCreate(BaseModel):
     conversation_id: uuid.UUID
-    criteria: list[QualityCriterion]
+    criteria: list[QualityCriterion] | None = None  # ignored if provided; LLM evaluates
     summary: str | None = None
     reviewer: str = "ai"
 
