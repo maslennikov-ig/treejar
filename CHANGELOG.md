@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-05
+
+### Added
+- **quality**: implement full quality evaluator module (service, API, ARQ job) (b3cf4d9)
+- **quality**: add LLM schemas and judge evaluator (TDD, 11 tests green) (f5bb308)
+
+### Fixed
+- **quality**: apply code review findings CR-01 through CR-12 (a40db46)
+- **typing**: resolve 43 mypy warnings across tests and scripts (3f9f5ba)
+- **deploy**: use --all-extras for uv run quality checks (47aee41)
+
+### Other
+- update docs (38c21a1)
+- **migrations**: add unique constraint on quality_reviews.conversation_id (ac57edc)
+- add Quality Evaluator session prompt for parallel work (6257b43)
+- add session 7 context prompt with current project state (a16ceed)
+- **client**: fix markdown syntax in Wazzup API curl example (56478df)
+- **client**: update WhatsApp setup questions per owner feedback (cb6ded3)
+- **client**: update WhatsApp setup instructions with findings from client repo (029cac5)
+- **client**: add WhatsApp testing setup instructions for owner (2febaef)
+- test guide for stage 1 and completing checklist (a4ed1ca)
+
+
 ## [0.3.0] - 2026-03-04
 
 ### Added

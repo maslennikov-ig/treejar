@@ -2,6 +2,25 @@
 
 User-facing release notes.
 
+## v0.4.0
+
+_Released on 2026-03-05_
+
+### ✨ New Features
+
+- **quality**: Implement full quality evaluator module (service, API, ARQ job)
+- **quality**: Add LLM schemas and judge evaluator (TDD, 11 tests green)
+
+### 🐛 Bug Fixes
+
+- **quality**: Apply code review findings CR-01 through CR-12
+- **typing**: Resolve 43 mypy warnings across tests and scripts
+- **deploy**: Use --all-extras for uv run quality checks
+
+---
+
+_This release was automatically generated from 14 commits._
+
 ## v0.3.0
 
 _Released on 2026-03-04_
