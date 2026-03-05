@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import (
     ConversationStatus,
@@ -36,7 +36,9 @@ class ConversationRead(UUIDModel, TimestampModel):
 
 class ConversationDetail(ConversationRead):
     messages: list[MessageRead]
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = Field(
+        default=None, validation_alias="metadata_"
+    )
 
 
 class ConversationUpdate(BaseModel):
