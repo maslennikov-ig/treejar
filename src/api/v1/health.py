@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from redis.asyncio import Redis
 
 from src.api.deps import get_redis
@@ -10,6 +11,16 @@ from src.schemas import DependencyHealth, HealthCheckResponse
 
 router = APIRouter()
 
+
+@router.get("/debug/redis")
+async def debug_redis(request: Request) -> dict[str, Any]:
+    redis = request.app.state.redis
+    queue_len = await redis.llen("wazzup:incoming:+971500000004")
+    raw_msgs = await redis.lrange("wazzup:incoming:+971500000004", 0, -1)
+    return {
+        "len": queue_len,
+        "msgs": [m.decode("utf-8") for m in raw_msgs]
+    }
 
 @router.get("/health", response_model=HealthCheckResponse)
 async def health_check(
