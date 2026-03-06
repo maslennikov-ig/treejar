@@ -53,12 +53,16 @@ async def test_process_incoming_batch_success(
         def first(self) -> AnyType:
             return self.val
 
+        def all(self) -> AnyType:
+            if isinstance(self.val, list):
+                return self.val
+            return [self.val] if self.val is not None else []
+
     # Simulate: no bot_enabled config, no existing conversation, no message duplicates
     mock_db.execute.side_effect = [
         MockResult(None),  # bot_enabled
         MockResult(None),  # conversation lookup
-        MockResult(None),  # message m1 dedup check
-        MockResult(None),  # message m2 dedup check
+        MockResult([]),  # batch messages dedup check
     ]
 
     # 3. Setup LLM response mock
