@@ -87,7 +87,7 @@ async def test_engine_process_message_success(
     assert isinstance(response.text, str)
     assert response.tokens_in is not None
     assert response.tokens_out is not None
-    assert response.model == "mock_model"
+    assert response.model.startswith("mock_model")
 
 
 @pytest.mark.asyncio

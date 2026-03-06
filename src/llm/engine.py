@@ -31,10 +31,10 @@ class SalesDeps:
     db: AsyncSession
     redis: Any
     conversation: Conversation
-    embedding_engine: EmbeddingEngine
-    zoho_inventory: ZohoInventoryClient
-    zoho_crm: ZohoCRMClient | None
-    messaging_client: MessagingProvider
+    embedding_engine: Any
+    zoho_inventory: Any
+    zoho_crm: Any
+    messaging_client: Any
     pii_map: dict[str, str]
     crm_context: dict[str, Any] | None = None
 
@@ -474,11 +474,16 @@ async def process_message(
             db, "openrouter_model_main", settings.openrouter_model_main
         )
 
+        dynamic_model = OpenAIChatModel(
+            db_model_main,
+            provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+        )
+
         result = await sales_agent.run(
             user_prompt=masked_text,
             deps=deps,
             message_history=history,
-            model=db_model_main,
+            model=dynamic_model,
         )
 
         # Unmask PII before sending back to user
@@ -494,14 +499,15 @@ async def process_message(
             model=db_model_main,
         )
 
-    except Exception:
+    except Exception as exc:
         logger.exception("LLM generation failed")
+        error_info = f"{type(exc).__name__}: {exc}"
         return LLMResponse(
             text="I apologize, but I am experiencing a temporary issue. Please try again in a moment.",
             tokens_in=0,
             tokens_out=0,
             cost=0.0,
-            model=db_model_main
-            if "db_model_main" in locals()
-            else settings.openrouter_model_main,
+            model=f"error:{error_info[:200]}"
+            if "db_model_main" not in locals()
+            else f"{db_model_main}|error:{error_info[:200]}",
         )
