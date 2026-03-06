@@ -36,10 +36,15 @@ async def test_process_incoming_batch_new_conversation(
         def first(self) -> Any:
             return self.val
 
+        def all(self) -> Any:
+            if isinstance(self.val, list):
+                return self.val
+            return [self.val] if self.val is not None else []
+
     mock_session.execute.side_effect = [
         MockResult(None),  # bot_enabled
         MockResult(None),  # conv
-        MockResult(None),  # msg
+        MockResult([]),  # msg dedup check
     ]
 
     # Simulate LLM response
