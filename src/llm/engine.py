@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from pydantic import SkipValidation
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -28,13 +30,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SalesDeps:
-    db: AsyncSession
-    redis: Any
-    conversation: Conversation
-    embedding_engine: Any
-    zoho_inventory: Any
-    zoho_crm: Any
-    messaging_client: Any
+    db: SkipValidation[AsyncSession]
+    redis: SkipValidation[Redis]
+    conversation: SkipValidation[Conversation]
+    embedding_engine: SkipValidation[EmbeddingEngine]
+    zoho_inventory: SkipValidation[ZohoInventoryClient]
+    zoho_crm: SkipValidation[ZohoCRMClient | None]
+    messaging_client: SkipValidation[MessagingProvider]
     pii_map: dict[str, str]
     crm_context: dict[str, Any] | None = None
 
