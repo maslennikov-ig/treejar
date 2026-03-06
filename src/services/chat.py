@@ -85,12 +85,13 @@ async def process_incoming_batch(
             await db.flush()
 
         # 2. Save incoming messages
+        message_ids = [m.messageId for m in messages if m.messageId]
+        existing_msgs_stmt = select(Message.wazzup_message_id).where(Message.wazzup_message_id.in_(message_ids))
+        existing_result = await db.execute(existing_msgs_stmt)
+        existing_ids = set(existing_result.scalars().all())
+
         for m in messages:
-            # We skip duplicates based on wazzup_message_id unique index constraint
-            # Check if exists first to avoid exception in flush
-            msg_stmt = select(Message).where(Message.wazzup_message_id == m.messageId)
-            msg_result = await db.execute(msg_stmt)
-            if not msg_result.scalar_one_or_none():
+            if m.messageId and m.messageId not in existing_ids:
                 new_msg = Message(
                     conversation_id=conv.id,
                     role="user",
@@ -98,44 +99,46 @@ async def process_incoming_batch(
                     wazzup_message_id=m.messageId,
                 )
                 db.add(new_msg)
+                existing_ids.add(m.messageId)
 
         await db.commit()
 
         # We need EmbeddingEngine, ZohoClient, WazzupProvider
         embedding_engine = EmbeddingEngine()
-        zoho_client = ZohoInventoryClient(redis_client=redis)
-        crm_client = ZohoCRMClient(redis_client=redis)
-        wazzup_provider = WazzupProvider()
 
-        logger.info(f"Calling LLM for {chat_id}")
-        llm_response = await process_message(
-            conversation_id=conv.id,
-            combined_text=combined_text,
-            db=db,
-            redis=redis,
-            embedding_engine=embedding_engine,
-            zoho_client=zoho_client,
-            crm_client=crm_client,
-            messaging_client=wazzup_provider,
-        )
+        async with ZohoInventoryClient(redis_client=redis) as zoho_client, \
+                   ZohoCRMClient(redis_client=redis) as crm_client, \
+                   WazzupProvider() as wazzup_provider:
 
-        # 4. Save response to DB
-        assistant_msg = Message(
-            conversation_id=conv.id,
-            role="assistant",
-            content=llm_response.text,
-            tokens_in=llm_response.tokens_in,
-            tokens_out=llm_response.tokens_out,
-            cost=llm_response.cost,
-            model=llm_response.model,
-        )
-        db.add(assistant_msg)
-        await db.commit()
+            logger.info(f"Calling LLM for {chat_id}")
+            llm_response = await process_message(
+                conversation_id=conv.id,
+                combined_text=combined_text,
+                db=db,
+                redis=redis,
+                embedding_engine=embedding_engine,
+                zoho_client=zoho_client,
+                crm_client=crm_client,
+                messaging_client=wazzup_provider,
+            )
 
-        # 5. Send via Wazzup
-        logger.info(f"Sending reply to {chat_id} via Wazzup")
-        await wazzup_provider.send_text(
-            chat_id=chat_id,
-            text=llm_response.text,
-        )
+            # 4. Save response to DB
+            assistant_msg = Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content=llm_response.text,
+                tokens_in=llm_response.tokens_in,
+                tokens_out=llm_response.tokens_out,
+                cost=llm_response.cost,
+                model=llm_response.model,
+            )
+            db.add(assistant_msg)
+            await db.commit()
+
+            # 5. Send via Wazzup
+            logger.info(f"Sending reply to {chat_id} via Wazzup")
+            await wazzup_provider.send_text(
+                chat_id=chat_id,
+                text=llm_response.text,
+            )
 
