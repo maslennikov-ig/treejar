@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 # =============================================================================
 # Code generation tests
@@ -90,9 +88,8 @@ async def test_apply_code_invalid() -> None:
 @pytest.mark.asyncio
 async def test_apply_code_self_referral() -> None:
     """apply_code should reject self-referral."""
-    from src.services.referrals import apply_code
-
     from src.models.referral import Referral
+    from src.services.referrals import apply_code
 
     mock_referral = MagicMock(spec=Referral)
     mock_referral.code = "NOOR-ABC12"
@@ -113,9 +110,8 @@ async def test_apply_code_self_referral() -> None:
 @pytest.mark.asyncio
 async def test_apply_code_success() -> None:
     """apply_code should succeed for valid code."""
-    from src.services.referrals import apply_code
-
     from src.models.referral import Referral
+    from src.services.referrals import apply_code
 
     mock_referral = MagicMock(spec=Referral)
     mock_referral.code = "NOOR-ABC12"

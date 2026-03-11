@@ -377,6 +377,95 @@ async def create_quotation(
     return f"Successfully generated quotation {quote_number} and sent it to the customer via WhatsApp."
 
 
+@sales_agent.tool
+async def recommend_products(
+    ctx: RunContext[SalesDeps],
+    product_id: str | None = None,
+    category: str | None = None,
+    recommendation_type: str = "similar",
+) -> str:
+    """Get product recommendations for the customer.
+    Use 'similar' type when a customer is looking at a specific product.
+    Use 'cross_sell' type to suggest complementary items based on category.
+
+    Args:
+        product_id: UUID of the source product (required for 'similar' type).
+        category: Product category (required for 'cross_sell' type).
+        recommendation_type: Either 'similar' or 'cross_sell'.
+    """
+    logger.info(
+        "LLM Tool called: recommend_products(product_id=%s, category=%s, type=%s)",
+        product_id, category, recommendation_type,
+    )
+    from src.services.recommendations import get_cross_sell, get_similar_products
+
+    if recommendation_type == "similar" and product_id:
+        from uuid import UUID as UUIDType
+
+        try:
+            pid = UUIDType(product_id)
+        except ValueError:
+            return f"Invalid product ID format: {product_id}"
+
+        items = await get_similar_products(ctx.deps.db, pid, limit=5)
+        if not items:
+            return "No similar products found."
+
+        lines = ["Also recommended (similar products):"]
+        for item in items:
+            sim = f" ({item.similarity_score:.0%} match)" if item.similarity_score else ""
+            lines.append(f"- {item.name}: {item.price:.2f} AED{sim}")
+        return "\n".join(lines)
+
+    elif recommendation_type == "cross_sell" and category:
+        items = await get_cross_sell(ctx.deps.db, category, limit=3)
+        if not items:
+            return f"No cross-sell items found for category '{category}'."
+
+        lines = ["You might also need:"]
+        for item in items:
+            lines.append(f"- {item.name}: {item.price:.2f} AED (in stock: {item.stock})")
+        return "\n".join(lines)
+
+    return "Please specify either product_id (for similar) or category (for cross_sell)."
+
+
+@sales_agent.tool
+async def generate_referral_code(ctx: RunContext[SalesDeps]) -> str:
+    """Generate a referral code for the current customer.
+    The customer can share this code with friends for a discount.
+    Call this when the customer asks about referral programs or sharing deals.
+    """
+    logger.info("LLM Tool called: generate_referral_code()")
+    from src.services.referrals import generate_code
+
+    phone = ctx.deps.conversation.phone
+    result = await generate_code(ctx.deps.db, phone)
+
+    if result.success:
+        return result.message
+    return f"Could not generate referral code: {result.message}"
+
+
+@sales_agent.tool
+async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
+    """Apply a referral code provided by the customer.
+    This gives them a discount on their purchase.
+
+    Args:
+        code: The referral code to apply (format: NOOR-XXXXX).
+    """
+    logger.info(f"LLM Tool called: apply_referral_code(code={code!r})")
+    from src.services.referrals import apply_code
+
+    phone = ctx.deps.conversation.phone
+    result = await apply_code(ctx.deps.db, code, phone)
+
+    if result.success:
+        return result.message
+    return f"Referral code issue: {result.message}"
+
+
 async def process_message(
     conversation_id: UUID,
     combined_text: str,

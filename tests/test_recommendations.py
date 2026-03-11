@@ -1,9 +1,6 @@
 """Tests for product recommendations service (TDD)."""
 from __future__ import annotations
 
-import pytest
-
-
 # =============================================================================
 # RecommendationItem tests
 # =============================================================================

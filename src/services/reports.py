@@ -119,17 +119,31 @@ async def generate_report(
     esc_rows = await db.execute(esc_reasons_q)
     escalation_reasons = {row[0]: row[1] for row in esc_rows.all()}
 
-    # Top products (from assistant messages mentioning SKUs)
+    # Top products — count SKU mentions in assistant messages.
+    # Use a two-step approach: load active SKUs as an array, then
+    # count matches via = ANY(...) on a pre-filtered message set.
+    # This avoids the O(N×M) LIKE cross-join.
     top_products: list[dict[str, Any]] = []
     try:
         top_prod_sql = text("""
-            SELECT p.name_en, p.sku, COUNT(*) as mention_count
-            FROM messages m
-            JOIN products p ON m.content LIKE '%' || p.sku || '%'
-            WHERE m.role = 'assistant'
-              AND m.created_at >= :start_date
-              AND m.created_at <= :end_date
-            GROUP BY p.name_en, p.sku
+            WITH active_skus AS (
+                SELECT id, name_en, sku
+                FROM products
+                WHERE is_active = true AND sku IS NOT NULL
+            ),
+            filtered_msgs AS (
+                SELECT content
+                FROM messages
+                WHERE role = 'assistant'
+                  AND created_at >= :start_date
+                  AND created_at <= :end_date
+            )
+            SELECT s.name_en, s.sku, COUNT(*) as mention_count
+            FROM active_skus s
+            CROSS JOIN filtered_msgs m
+            WHERE m.content LIKE '%' || s.sku || '%'
+            GROUP BY s.name_en, s.sku
+            HAVING COUNT(*) > 0
             ORDER BY mention_count DESC
             LIMIT 5
         """)
