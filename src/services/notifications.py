@@ -129,7 +129,7 @@ async def notify_quality_alert(
         logger.exception("Failed to send quality alert notification to Telegram")
 
 
-async def notify_daily_summary_telegram(metrics: Any) -> None:
+async def notify_daily_summary_telegram(metrics: HasMetrics) -> None:
     """Send daily summary to Telegram.
 
     Args:

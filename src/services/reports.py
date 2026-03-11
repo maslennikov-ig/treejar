@@ -120,9 +120,8 @@ async def generate_report(
     escalation_reasons = {row[0]: row[1] for row in esc_rows.all()}
 
     # Top products — count SKU mentions in assistant messages.
-    # Use a two-step approach: load active SKUs as an array, then
-    # count matches via = ANY(...) on a pre-filtered message set.
-    # This avoids the O(N×M) LIKE cross-join.
+    # Use CTEs to pre-filter active SKUs and date-range messages,
+    # then LIKE-match only on the smaller filtered sets.
     top_products: list[dict[str, Any]] = []
     try:
         top_prod_sql = text("""

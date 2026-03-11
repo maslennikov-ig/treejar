@@ -455,7 +455,7 @@ async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
     Args:
         code: The referral code to apply (format: NOOR-XXXXX).
     """
-    logger.info(f"LLM Tool called: apply_referral_code(code={code!r})")
+    logger.info("LLM Tool called: apply_referral_code(code=%r)", code)
     from src.services.referrals import apply_code
 
     phone = ctx.deps.conversation.phone
