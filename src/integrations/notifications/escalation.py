@@ -29,4 +29,10 @@ async def notify_manager_escalation(
     await db.commit()
     await db.refresh(conversation)
 
-    # Future: send message to manager via Wazzup or Telegram using settings.manager_phone
+    # Send Telegram notification (non-blocking, never fails the escalation)
+    try:
+        from src.services.notifications import notify_escalation as tg_notify
+
+        await tg_notify(conversation.phone, conversation.id, reason)
+    except Exception:
+        logger.exception("Failed to send Telegram escalation notification")

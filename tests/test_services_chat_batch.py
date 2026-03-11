@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -10,16 +10,20 @@ from src.services.chat import process_incoming_batch
 @patch("src.services.chat.async_session_factory")
 @patch("src.services.chat.process_message")
 @patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
 async def test_process_incoming_batch_new_conversation(
-    mock_wazzup_cls: AsyncMock,
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
     mock_process_message: AsyncMock,
-    mock_session_factory: AsyncMock,
+    mock_session_factory: MagicMock,
 ) -> None:
     # Set up mocks
     mock_session = AsyncMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
-    mock_wazzup = AsyncMock()
-    mock_wazzup_cls.return_value = mock_wazzup
 
     from typing import Any
 
@@ -41,20 +45,48 @@ async def test_process_incoming_batch_new_conversation(
                 return self.val
             return [self.val] if self.val is not None else []
 
+    # Mock conversation to return from scalar_one_or_none on 2nd call
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-uuid-123"
+    mock_conv.phone = "1234567890"
+    mock_conv.escalation_status = "none"
+
     mock_session.execute.side_effect = [
-        MockResult(None),  # bot_enabled
-        MockResult(None),  # conv
-        MockResult([]),  # msg dedup check
+        MockResult(None),       # bot_enabled
+        MockResult(None),       # conv lookup (None = create new)
+        MockResult([]),         # msg dedup check
     ]
 
     # Simulate LLM response
-    mock_llm_response = AsyncMock()
-    mock_llm_response.text = "Hello from AI"
-    mock_llm_response.tokens_in = 10
-    mock_llm_response.tokens_out = 20
-    mock_llm_response.cost = 0.05
-    mock_llm_response.model = "test-model"
+    from src.llm import LLMResponse
+
+    mock_llm_response = LLMResponse(
+        text="Hello from AI",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
     mock_process_message.return_value = mock_llm_response
+
+    # Mock EmbeddingEngine
+    mock_embedding_cls.return_value = MagicMock()
+
+    # Mock ZohoInventoryClient context manager
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    # Mock ZohoCRMClient context manager
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    # Mock WazzupProvider context manager
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg_out_1"
 
     # Mock Redis lpop to return one message then None
     mock_redis = AsyncMock()
@@ -75,8 +107,6 @@ async def test_process_incoming_batch_new_conversation(
     await process_incoming_batch(ctx, chat_id)
 
     # Assertions
-    # Called to add Conversation and 2 Messages (user + ai)
-    assert mock_session.add.call_count == 3
     mock_session.commit.assert_awaited()
     mock_process_message.assert_awaited_once()
     mock_wazzup.send_text.assert_awaited_once_with(

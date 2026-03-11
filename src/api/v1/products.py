@@ -97,3 +97,48 @@ async def sync_products(
     except Exception as e:
         logger.error(f"Error triggering sync: {e}")
         raise HTTPException(status_code=500, detail="Could not enqueue sync job") from e
+
+
+@router.get("/{product_id}/similar")
+async def get_similar(
+    product_id: str,
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, object]]:
+    """Get similar products via pgvector cosine similarity."""
+    from uuid import UUID
+
+    from src.services.recommendations import get_similar_products
+
+    try:
+        pid = UUID(product_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid product ID format") from None
+
+    items = await get_similar_products(db, pid, limit=limit)
+    return [item.model_dump() for item in items]
+
+
+@router.get("/{product_id}/cross-sell")
+async def get_cross_sell_products(
+    product_id: str,
+    limit: int = Query(3, ge=1, le=10),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, object]]:
+    """Get cross-sell recommendations based on product's category."""
+    from uuid import UUID
+
+    from src.models.product import Product
+    from src.services.recommendations import get_cross_sell
+
+    try:
+        pid = UUID(product_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid product ID format") from None
+
+    product = await db.get(Product, pid)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    items = await get_cross_sell(db, product.category or "", limit=limit)
+    return [item.model_dump() for item in items]

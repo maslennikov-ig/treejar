@@ -16,14 +16,18 @@ Run with:
 
 from __future__ import annotations
 
-import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+# ---------------------------------------------------------------------------
+# Read the REAL API key from .env file (conftest.py overrides os.environ with "test-key")
+# ---------------------------------------------------------------------------
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic_ai.messages import ModelMessage
+from dotenv import dotenv_values
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from redis.asyncio import Redis
@@ -38,13 +42,6 @@ from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead, ProductSearchResult
-
-# ---------------------------------------------------------------------------
-# Read the REAL API key from .env file (conftest.py overrides os.environ with "test-key")
-# ---------------------------------------------------------------------------
-from pathlib import Path
-
-from dotenv import dotenv_values
 
 _env_path = Path(__file__).resolve().parents[1] / ".env"
 _env_values = dotenv_values(_env_path) if _env_path.exists() else {}
@@ -129,7 +126,7 @@ def _fake_products(
         image_url=None,
         attributes={"Color": "Black", "Material": "Mesh + Leather"},
         is_active=True,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         updated_at=None,
     )
     return ProductSearchResult(

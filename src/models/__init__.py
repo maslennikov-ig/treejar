@@ -6,6 +6,7 @@ from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
 from src.models.product import Product
 from src.models.quality_review import QualityReview
+from src.models.referral import Referral
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 
@@ -18,6 +19,7 @@ __all__ = [
     "MetricsSnapshot",
     "Product",
     "QualityReview",
+    "Referral",
     "SystemConfig",
     "SystemPrompt",
 ]

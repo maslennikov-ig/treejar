@@ -9,6 +9,7 @@ Covers:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +24,6 @@ from src.llm.engine import SalesDeps, perform_search_products
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -76,7 +76,7 @@ def _fake_product_read(
 ) -> Any:
     """Return a lightweight object that looks like ProductRead."""
     import uuid
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from src.schemas.product import ProductRead
 
@@ -94,7 +94,7 @@ def _fake_product_read(
         image_url=None,
         attributes=None,
         is_active=True,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         updated_at=None,
     )
 
