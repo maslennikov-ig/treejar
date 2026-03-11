@@ -12,6 +12,7 @@ from src.services.chat import process_incoming_batch
 from src.services.followup import run_automatic_followups
 from src.services.metrics import calculate_and_store_metrics
 from src.services.notifications import run_daily_summary
+from src.services.reports import run_weekly_report
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -30,6 +31,7 @@ class WorkerSettings:
         calculate_and_store_metrics,
         evaluate_completed_conversations,
         run_daily_summary,
+        run_weekly_report,
     ]
     cron_jobs = [
         cron(sync_products_from_zoho, hour={0, 6, 12, 18}, run_at_startup=False),
@@ -41,6 +43,13 @@ class WorkerSettings:
         ),
         cron(evaluate_completed_conversations, minute={30}, run_at_startup=False),
         cron(run_daily_summary, hour={6}, minute={0}, run_at_startup=False),
+        cron(
+            run_weekly_report,
+            weekday={0},
+            hour={6},
+            minute={0},
+            run_at_startup=False,
+        ),
     ]
     on_startup = startup
     on_shutdown = shutdown

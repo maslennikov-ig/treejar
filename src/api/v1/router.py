@@ -11,6 +11,8 @@ from src.api.v1 import (
     notifications,
     products,
     quality,
+    referrals,
+    reports,
     webhook,
 )
 
@@ -27,5 +29,9 @@ api_v1_router.include_router(inventory.router, prefix="/inventory", tags=["Inven
 api_v1_router.include_router(quality.router, prefix="/quality", tags=["Quality"])
 api_v1_router.include_router(
     notifications.router, prefix="/notifications", tags=["Notifications"]
+)
+api_v1_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
+api_v1_router.include_router(
+    referrals.router, prefix="/referrals", tags=["Referrals"]
 )
 api_v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
