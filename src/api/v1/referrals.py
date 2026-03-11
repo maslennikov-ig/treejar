@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.core.database import async_session_factory
 from src.services.referrals import (
@@ -19,14 +19,14 @@ router = APIRouter()
 class GenerateRequest(BaseModel):
     """Request body for code generation."""
 
-    phone: str
+    phone: str = Field(pattern=r"^\+\d{10,15}$")
 
 
 class ApplyRequest(BaseModel):
     """Request body for code application."""
 
-    code: str
-    referee_phone: str
+    code: str = Field(min_length=10, max_length=10)
+    referee_phone: str = Field(pattern=r"^\+\d{10,15}$")
 
 
 @router.post("/generate", response_model=ReferralResult)

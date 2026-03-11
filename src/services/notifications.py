@@ -10,13 +10,24 @@ All functions are safe to call even when Telegram is not configured.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
 
 logger = logging.getLogger(__name__)
+
+
+class HasMetrics(Protocol):
+    """Protocol for objects with dashboard metrics fields."""
+
+    total_conversations: int
+    unique_customers: int
+    escalation_count: int
+    avg_quality_score: float
+    conversion_rate: float
+    llm_cost_usd: float
 
 
 def _get_telegram_client() -> TelegramClient:
@@ -27,18 +38,25 @@ def _get_telegram_client() -> TelegramClient:
     )
 
 
+def _mask_phone(phone: str) -> str:
+    """Mask phone number for external channels: +97150***4567."""
+    if len(phone) > 6:
+        return phone[:6] + "***" + phone[-4:]
+    return "***"
+
+
 # =============================================================================
 # Message formatters (pure functions, no side effects)
 # =============================================================================
 
 
-def format_escalation_message(conversation: Any, reason: str) -> str:
+def format_escalation_message(phone: str, conversation_id: UUID, reason: str) -> str:
     """Format an escalation alert as HTML for Telegram."""
     return (
         "🚨 <b>Escalation Alert</b>\n\n"
-        f"<b>Phone:</b> <code>{conversation.phone}</code>\n"
+        f"<b>Phone:</b> <code>{_mask_phone(phone)}</code>\n"
         f"<b>Reason:</b> {reason}\n"
-        f"<b>Conversation:</b> <code>{conversation.id}</code>\n\n"
+        f"<b>Conversation:</b> <code>{conversation_id}</code>\n\n"
         "A human manager has been notified and should review this conversation."
     )
 
@@ -60,7 +78,7 @@ def format_quality_alert_message(
     )
 
 
-def format_daily_summary(metrics: Any) -> str:
+def format_daily_summary(metrics: HasMetrics) -> str:
     """Format daily dashboard metrics as HTML for Telegram."""
     return (
         "📊 <b>Daily Summary</b>\n\n"
@@ -78,14 +96,14 @@ def format_daily_summary(metrics: Any) -> str:
 # =============================================================================
 
 
-async def notify_escalation(conversation: Any, reason: str) -> None:
+async def notify_escalation(phone: str, conversation_id: UUID, reason: str) -> None:
     """Send escalation notification to Telegram.
 
     Safe to call even when Telegram is not configured.
     """
     try:
         client = _get_telegram_client()
-        message = format_escalation_message(conversation, reason)
+        message = format_escalation_message(phone, conversation_id, reason)
         await client.send_message(message)
     except Exception:
         logger.exception("Failed to send escalation notification to Telegram")

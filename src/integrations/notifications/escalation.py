@@ -33,6 +33,6 @@ async def notify_manager_escalation(
     try:
         from src.services.notifications import notify_escalation as tg_notify
 
-        await tg_notify(conversation, reason)
+        await tg_notify(conversation.phone, conversation.id, reason)
     except Exception:
         logger.exception("Failed to send Telegram escalation notification")

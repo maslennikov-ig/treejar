@@ -59,15 +59,12 @@ def test_referral_result_model() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_code_db() -> None:
-    """generate_code should create a Referral record."""
+    """generate_code should create a Referral record via flush."""
     from src.services.referrals import generate_code
 
     mock_db = AsyncMock()
-    mock_execute_result = MagicMock()
-    mock_execute_result.scalar_one_or_none.return_value = None  # no collision
-    mock_db.execute = AsyncMock(return_value=mock_execute_result)
     mock_db.add = MagicMock()
-    mock_db.flush = AsyncMock()
+    mock_db.flush = AsyncMock()  # No IntegrityError = success
 
     result = await generate_code(mock_db, "+971501234567")
     assert result.success is True

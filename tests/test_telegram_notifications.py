@@ -99,16 +99,17 @@ async def test_telegram_send_document_calls_api() -> None:
 
 @pytest.mark.asyncio
 async def test_notify_escalation_formats_html() -> None:
-    """notify_escalation should format HTML with phone, reason, and link."""
+    """notify_escalation should format HTML with masked phone, reason, and link."""
     from src.services.notifications import format_escalation_message
 
-    conv = MagicMock()
-    conv.id = uuid4()
-    conv.phone = "+971501234567"
+    conv_id = uuid4()
+    phone = "+971501234567"
 
-    msg = format_escalation_message(conv, "Customer asked for a manager")
+    msg = format_escalation_message(phone, conv_id, "Customer asked for a manager")
     assert "<b>" in msg
-    assert "+971501234567" in msg
+    # Phone should be masked (PII protection)
+    assert "+971501234567" not in msg
+    assert "+97150***4567" in msg
     assert "Customer asked for a manager" in msg
 
 
@@ -129,16 +130,12 @@ async def test_notify_escalation_calls_telegram() -> None:
     """notify_escalation should send message via TelegramClient."""
     from src.services.notifications import notify_escalation
 
-    conv = MagicMock()
-    conv.id = uuid4()
-    conv.phone = "+971501234567"
-
     with patch("src.services.notifications.TelegramClient") as MockTg:
         mock_instance = AsyncMock()
         MockTg.return_value = mock_instance
         mock_instance.send_message = AsyncMock()
 
-        await notify_escalation(conv, "Customer wants human")
+        await notify_escalation("+971501234567", uuid4(), "Customer wants human")
 
         mock_instance.send_message.assert_called_once()
 

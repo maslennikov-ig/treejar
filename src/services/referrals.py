@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.referral import Referral
@@ -53,6 +54,9 @@ async def generate_code(
 ) -> ReferralResult:
     """Generate a unique referral code for a customer.
 
+    Uses DB UNIQUE constraint as the source of truth for uniqueness.
+    Retries on IntegrityError (collision).
+
     Args:
         db: Database session.
         phone: Referrer's phone number.
@@ -60,33 +64,30 @@ async def generate_code(
     Returns:
         ReferralResult with the generated code.
     """
-    # Generate unique code (retry if collision)
-    for _ in range(10):
+    for attempt in range(10):
         code = _generate_code()
-        existing = await db.execute(
-            select(Referral).where(Referral.code == code)
+        referral = Referral(
+            code=code,
+            referrer_phone=phone,
         )
-        if not existing.scalar_one_or_none():
-            break
-    else:
-        return ReferralResult(
-            success=False,
-            code="",
-            message="Failed to generate unique code after 10 attempts",
-        )
-
-    referral = Referral(
-        code=code,
-        referrer_phone=phone,
-    )
-    db.add(referral)
-    await db.flush()
+        db.add(referral)
+        try:
+            await db.flush()
+            return ReferralResult(
+                success=True,
+                code=code,
+                message=f"Your referral code is {code}. Share it with friends for a 10% discount!",
+                discount_percent=referral.referee_discount_percent,
+            )
+        except IntegrityError:
+            await db.rollback()
+            logger.warning("Referral code collision on attempt %d: %s", attempt + 1, code)
+            continue
 
     return ReferralResult(
-        success=True,
-        code=code,
-        message=f"Your referral code is {code}. Share it with friends for a 10% discount!",
-        discount_percent=referral.referee_discount_percent,
+        success=False,
+        code="",
+        message="Failed to generate unique code after 10 attempts",
     )
 
 

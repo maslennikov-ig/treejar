@@ -65,7 +65,7 @@ async def get_similar_products(
     result = await db.execute(
         sql,
         {
-            "embedding": str(source.embedding),
+            "embedding": "[" + ",".join(str(x) for x in source.embedding) + "]",
             "product_id": str(product_id),
             "limit": limit,
         },

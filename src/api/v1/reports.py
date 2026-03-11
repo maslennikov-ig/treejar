@@ -1,13 +1,16 @@
 """API endpoints for report generation and retrieval."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from src.core.database import async_session_factory
 from src.services.reports import ReportData, format_report_text, generate_report
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -32,12 +35,16 @@ async def generate_report_endpoint(request: ReportRequest) -> ReportResponse:
 
     Defaults to the last 7 days if no dates are provided.
     """
-    async with async_session_factory() as db:
-        report = await generate_report(
-            db,
-            start_date=request.start_date,
-            end_date=request.end_date,
-        )
+    try:
+        async with async_session_factory() as db:
+            report = await generate_report(
+                db,
+                start_date=request.start_date,
+                end_date=request.end_date,
+            )
+    except Exception:
+        logger.exception("Failed to generate report")
+        raise HTTPException(status_code=500, detail="Failed to generate report") from None
 
     return ReportResponse(
         data=report,

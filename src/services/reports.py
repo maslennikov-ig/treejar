@@ -193,6 +193,7 @@ def format_report_text(data: ReportData) -> str:
 async def run_weekly_report(ctx: dict[str, Any]) -> None:
     """ARQ job: Generate and send weekly report via Telegram."""
     from src.core.database import async_session_factory
+    from src.services.notifications import _get_telegram_client
 
     now = datetime.now(tz=UTC)
     start_date = now - timedelta(days=7)
@@ -200,15 +201,8 @@ async def run_weekly_report(ctx: dict[str, Any]) -> None:
     async with async_session_factory() as db:
         report = await generate_report(db, start_date=start_date, end_date=now)
 
-    text = format_report_text(report)
+    report_text = format_report_text(report)
 
-    # Reuse daily summary notification channel (Telegram)
-    from src.core.config import settings
-    from src.integrations.notifications.telegram import TelegramClient
-
-    client = TelegramClient(
-        bot_token=settings.telegram_bot_token,
-        chat_id=settings.telegram_chat_id,
-    )
-    await client.send_message(text)
+    client = _get_telegram_client()
+    await client.send_message(report_text)
     logger.info("Weekly report sent to Telegram")

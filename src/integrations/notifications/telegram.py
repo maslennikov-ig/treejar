@@ -101,9 +101,9 @@ class TelegramClient:
 
         url = f"{self._base_url}/{method}"
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for attempt in range(MAX_RETRIES):
+                try:
                     if json is not None:
                         resp = await client.post(url, json=json)
                     else:
@@ -118,40 +118,40 @@ class TelegramClient:
                         )
                     return result
 
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    # Rate limited — extract retry_after
-                    retry_after = (
-                        e.response.json()
-                        .get("parameters", {})
-                        .get("retry_after", RETRY_DELAYS[attempt])
-                    )
-                    logger.warning(
-                        "Telegram rate limit hit, retrying in %ss", retry_after
-                    )
-                    await asyncio.sleep(float(retry_after))
-                    continue
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        # Rate limited — extract retry_after
+                        retry_after = (
+                            e.response.json()
+                            .get("parameters", {})
+                            .get("retry_after", RETRY_DELAYS[attempt])
+                        )
+                        logger.warning(
+                            "Telegram rate limit hit, retrying in %ss", retry_after
+                        )
+                        await asyncio.sleep(float(retry_after))
+                        continue
 
-                logger.error(
-                    "Telegram API error (attempt %d/%d): %s",
-                    attempt + 1,
-                    MAX_RETRIES,
-                    e,
-                )
-                if attempt < MAX_RETRIES - 1:
-                    await asyncio.sleep(RETRY_DELAYS[attempt])
-                    continue
-                return None
+                    logger.error(
+                        "Telegram API error (attempt %d/%d): %s",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        e,
+                    )
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(RETRY_DELAYS[attempt])
+                        continue
+                    return None
 
-            except Exception:
-                logger.exception(
-                    "Telegram request failed (attempt %d/%d)",
-                    attempt + 1,
-                    MAX_RETRIES,
-                )
-                if attempt < MAX_RETRIES - 1:
-                    await asyncio.sleep(RETRY_DELAYS[attempt])
-                    continue
-                return None
+                except Exception:
+                    logger.exception(
+                        "Telegram request failed (attempt %d/%d)",
+                        attempt + 1,
+                        MAX_RETRIES,
+                    )
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(RETRY_DELAYS[attempt])
+                        continue
+                    return None
 
         return None
