@@ -2,12 +2,7 @@ import asyncio
 import logging
 import sys
 import uuid
-from typing import Any
 
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openrouter import OpenRouterProvider
-
-from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import redis_client
 from src.integrations.crm.zoho_crm import ZohoCRMClient
@@ -42,7 +37,7 @@ class REPLMessagingProvider(MessagingProvider):
         content: bytes | None = None,
         content_type: str | None = None,
     ) -> str:
-        print(f"\n[BOT (Media)]: 📎 Media message sent!")
+        print("\n[BOT (Media)]: 📎 Media message sent!")
         print(f"  Caption: {caption}")
         if url:
             print(f"  URL: {url}")
@@ -69,7 +64,7 @@ async def main() -> None:
     # Generate a deterministic but random-looking phone number for the session
     # or use a fixed one to test CRM loading.
     session_phone = "971500000001"
-    
+
     redis = redis_client
 
     # Init external dependencies
@@ -78,10 +73,9 @@ async def main() -> None:
     zoho_crm = ZohoCRMClient(redis)
     messaging_client = REPLMessagingProvider()
 
-    from src.llm.context import build_message_history # Just to ensure imports are fine
 
     async with async_session_factory() as db:
-            
+
             # Setup or fetch conversation
             from sqlalchemy.future import select
             stmt = select(Conversation).where(Conversation.phone == session_phone)
@@ -123,26 +117,26 @@ async def main() -> None:
                     # Optionally clear redis history if applying
                     await redis.delete(f"msgs:{conv.id}")
                     # Also delete DB messages to truly reset context
-                    from src.models.message import Message
                     from sqlalchemy import delete
+
+                    from src.models.message import Message
                     await db.execute(delete(Message).where(Message.conversation_id == conv.id))
                     await db.commit()
                     print("[SYSTEM] Conversation stage reset to GREETING and history cleared.")
                     continue
 
                 print("[SYSTEM] Thinking...")
-                
+
                 # Mocking incoming WazzupMessage mapping
-                from src.schemas.webhook import WazzupIncomingMessage
                 msg_id = f"cli_{uuid.uuid4().hex[:8]}"
-                
+
                 # We need to save the user message to DB to simulate webhook behavior.
-                # Actually, `process_message` assumes the user message is handled OUTSIDE it 
+                # Actually, `process_message` assumes the user message is handled OUTSIDE it
                 # OR is passed in `combined_text` and the system relies on `build_message_history`.
                 # Let's look at `process_message()`: it gets `combined_text`, builds history, and runs LLM.
                 # Does it save the messages? No, `process_message` just generates the response.
                 # The chat service `process_incoming_batch` usually handles saving.
-                
+
                 from src.models.message import Message
                 new_msg = Message(
                     wazzup_message_id=msg_id,
@@ -157,7 +151,7 @@ async def main() -> None:
                 try:
                     import time
                     start_time = time.time()
-                    
+
                     response = await process_message(
                         conversation_id=conv.id,
                         combined_text=user_input,
@@ -168,9 +162,9 @@ async def main() -> None:
                         messaging_client=messaging_client,
                         crm_client=zoho_crm,
                     )
-                    
+
                     elapsed = time.time() - start_time
-                    
+
                     # Save AI response to DB
                     ai_msg = Message(
                         wazzup_message_id=f"ai_{uuid.uuid4().hex[:8]}",
@@ -188,7 +182,7 @@ async def main() -> None:
                     print(response.text)
                     print("-" * 40)
                     print()
-                    
+
                 except Exception as e:
                     logger.exception("Error processing message")
                     print(f"❌ Error processing message: {e}")
