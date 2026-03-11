@@ -1,6 +1,6 @@
 # План задач: ИИ-продавец Treejar
 
-**Обновлено:** 2026-02-21
+**Обновлено:** 2026-03-11
 **Общий срок:** 13 недель (16 февраля -- 15 мая 2026)
 
 Отмечайте `[x]` по мере выполнения. Вложенные задачи -- подзадачи, которые можно делать параллельно.
@@ -196,15 +196,15 @@
 
 ### Неделя 9-10: Контроль качества (32ч)
 
-- [ ] Quality evaluator
-  - [ ] `src/quality/evaluator.py` -- LLM-as-a-judge
-  - [ ] 15 критериев оценки из `docs/06-dialogue-evaluation-checklist.md`
-  - [ ] Scoring: 0-2 баллов по каждому критерию, total 0-30
-  - [ ] Rating: excellent (26-30), good (20-25), satisfactory (14-19), poor (<14)
-- [ ] Quality API
-  - [ ] `POST /api/v1/quality/reviews/` -- создание оценки (автоматическая)
-  - [ ] `GET /api/v1/quality/reviews/` -- список оценок с фильтрами
-  - [ ] ARQ job: автоматическая оценка завершённых диалогов
+- [x] Quality evaluator
+  - [x] `src/quality/evaluator.py` -- LLM-as-a-judge
+  - [x] 15 критериев оценки из `docs/06-dialogue-evaluation-checklist.md`
+  - [x] Scoring: 0-2 баллов по каждому критерию, total 0-30
+  - [x] Rating: excellent (26-30), good (20-25), satisfactory (14-19), poor (<14)
+- [x] Quality API
+  - [x] `POST /api/v1/quality/reviews/` -- создание оценки (автоматическая)
+  - [x] `GET /api/v1/quality/reviews/` -- список оценок с фильтрами
+  - [x] ARQ job: автоматическая оценка завершённых диалогов
 - [ ] Оценка менеджеров
   - [ ] Анализ диалогов живых продавцов (из Wazzup history)
   - [ ] Еженедельные отчёты по менеджерам
@@ -212,28 +212,31 @@
 
 ### Неделя 11: Уведомления + отчёты (28ч)
 
-- [ ] Telegram-уведомления
-  - [ ] Telegram Bot API: создание бота, получение chat_id
-  - [ ] Триггеры: негативный отзыв, ошибка бота, долгий ответ менеджера, эскалация
-  - [ ] Настройка получателей в админке
-- [ ] Отчёты по отказам и конверсии
-  - [ ] `POST /api/v1/quality/reports/` -- генерация отчёта
-  - [ ] Метрики: диалоги/день, конверсия, причины отказов, средний чек
-  - [ ] Отправка на email / Telegram
-  - [ ] ARQ cron: еженедельный автоотчёт
+- [x] Telegram-уведомления
+  - [x] Telegram Bot API: `TelegramClient` с retries, no-op guard
+  - [x] Триггеры: эскалация, low quality score, daily summary
+  - [x] API: `POST /notifications/test`, `GET /notifications/config`
+  - [x] PII masking: `_mask_phone()` для телефонов в Telegram
+- [x] Отчёты по отказам и конверсии
+  - [x] `POST /api/v1/reports/generate` -- генерация отчёта (ReportData model)
+  - [x] Метрики: диалоги/день, конверсия, причины отказов, средний чек, top products
+  - [x] Отправка через Telegram `send_message` + `send_document`
+  - [x] ARQ cron: еженедельный автоотчёт (Monday 06:00 UTC)
 
 ### Неделя 12: Рекомендательная + реферальная система (48ч)
 
-- [ ] Рекомендации товаров
-  - [ ] Аналоги: pgvector similarity по embedding
-  - [ ] Сопутствующие: правила (стол -> кресло, шкаф -> полка)
-  - [ ] Cross-sell в диалоге: "Также рекомендуем..."
-- [ ] Реферальная система
-  - [ ] Новая таблица `referrals` (code, referrer, referee, discount, status)
-  - [ ] Генерация уникальных реферальных кодов
-  - [ ] Отслеживание использования
-  - [ ] Начисление бонусов/скидок
-  - [ ] LLM tool: `generate_referral_code`, `apply_referral_code`
+- [x] Рекомендации товаров
+  - [x] Аналоги: pgvector similarity по embedding (`get_similar_products`)
+  - [x] Сопутствующие: правила из SystemConfig (`get_cross_sell`)
+  - [x] Cross-sell в диалоге: LLM tool `recommend_products`
+  - [x] API: `GET /products/{id}/similar`, `GET /products/{id}/cross-sell`
+- [x] Реферальная система
+  - [x] Новая таблица `referrals` + Alembic миграция (code, referrer, referee, discount, status)
+  - [x] Генерация уникальных реферальных кодов (NOOR-XXXXX, IntegrityError retry)
+  - [x] Отслеживание использования (`apply_code`, проверки: expired/used/self-referral)
+  - [x] Начисление бонусов/скидок (referrer 5%, referee 10%)
+  - [x] LLM tool: `generate_referral_code`, `apply_referral_code`
+  - [x] API: `POST /referrals/generate`, `POST /referrals/apply`, `GET /referrals/{phone}/stats`
 
 ### Неделя 13: Финальное тестирование (24ч)
 
@@ -274,8 +277,8 @@
 | Метрика | Значение |
 |---------|----------|
 | Всего задач верхнего уровня | ~70 |
-| Выполнено | 50 (недели 1-3) |
-| Оставшиеся часы (по ТЗ) | ~348 из 444 |
+| Выполнено | ~68 (недели 1-12, вкл. уведомления, отчёты, рекомендации, рефералы) |
+| Оставшиеся часы (по ТЗ) | ~24 из 444 (только неделя 13) |
 
 ---
 
