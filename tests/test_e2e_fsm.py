@@ -13,7 +13,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic import SkipValidation
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,12 +23,10 @@ from src.llm.engine import (
     ALLOWED_TRANSITIONS,
     SalesDeps,
     advance_stage,
-    sales_agent,
 )
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
-
 
 # ---------------------------------------------------------------------------
 # Helpers

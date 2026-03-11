@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -19,11 +19,17 @@ def chat_context() -> dict[str, Any]:
 @pytest.mark.asyncio
 @patch("src.services.chat.async_session_factory")
 @patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
 @patch("src.services.chat.process_message")
+@patch("src.services.chat.EmbeddingEngine")
 async def test_process_incoming_batch_success(
+    mock_embedding_cls: MagicMock,
     mock_process_message: AsyncMock,
-    mock_provider_class: AsyncMock,
-    mock_db_factory: AsyncMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_provider_class: MagicMock,
+    mock_db_factory: MagicMock,
     chat_context: dict[str, Any],
 ) -> None:
     # 1. Setup Redis mocks — simulate messages in Redis list
@@ -38,31 +44,35 @@ async def test_process_incoming_batch_success(
     mock_db = AsyncMock()
     mock_db_factory.return_value.__aenter__.return_value = mock_db
 
-    from typing import Any as AnyType
-
     class MockResult:
-        def __init__(self, val: AnyType) -> None:
+        def __init__(self, val: Any) -> None:
             self.val = val
 
-        def scalar_one_or_none(self) -> AnyType:
+        def scalar_one_or_none(self) -> Any:
             return self.val
 
         def scalars(self) -> "MockResult":
             return self
 
-        def first(self) -> AnyType:
+        def first(self) -> Any:
             return self.val
 
-        def all(self) -> AnyType:
+        def all(self) -> Any:
             if isinstance(self.val, list):
                 return self.val
             return [self.val] if self.val is not None else []
 
-    # Simulate: no bot_enabled config, no existing conversation, no message duplicates
+    # Mock conversation to return from scalar_one_or_none
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-uuid-123"
+    mock_conv.phone = "79991234567"
+    mock_conv.escalation_status = "none"
+
+    # Simulate: no bot_enabled config, existing conversation found, empty message dedup
     mock_db.execute.side_effect = [
-        MockResult(None),  # bot_enabled
-        MockResult(None),  # conversation lookup
-        MockResult([]),  # batch messages dedup check
+        MockResult(None),     # bot_enabled config lookup
+        MockResult(mock_conv),  # conversation lookup
+        MockResult([]),       # batch messages dedup check
     ]
 
     # 3. Setup LLM response mock
@@ -77,9 +87,23 @@ async def test_process_incoming_batch_success(
     )
     mock_process_message.return_value = mock_llm_resp
 
-    # 4. Mock Wazzup Provider instance
+    # 4. Mock EmbeddingEngine
+    mock_embedding_cls.return_value = MagicMock()
+
+    # 5. Mock ZohoInventoryClient context manager
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    # 6. Mock ZohoCRMClient context manager
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    # 7. Mock WazzupProvider context manager
     mock_provider = AsyncMock()
-    mock_provider_class.return_value = mock_provider
+    mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=mock_provider)
+    mock_provider_class.return_value.__aexit__ = AsyncMock(return_value=False)
     mock_provider.send_text.return_value = "msg_out_1"
 
     # Execute (no messages arg — reads from Redis)

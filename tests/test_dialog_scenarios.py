@@ -13,8 +13,7 @@ Scenarios:
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +30,6 @@ from src.llm.engine import SalesDeps, sales_agent
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -204,7 +202,7 @@ class TestScenario2WholesaleDiscount:
         mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
 
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from src.schemas.product import ProductRead, ProductSearchResult
 
@@ -222,7 +220,7 @@ class TestScenario2WholesaleDiscount:
             image_url=None,
             attributes=None,
             is_active=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             updated_at=None,
         )
         mock_search.return_value = ProductSearchResult(
@@ -264,7 +262,7 @@ class TestScenario2WholesaleDiscount:
         )
 
         with sales_agent.override(model=FunctionModel(model_fn)):
-            result = await sales_agent.run(
+            _result = await sales_agent.run(
                 "I need 50 reception desks for our hotels",
                 deps=deps,
             )
@@ -459,7 +457,7 @@ class TestScenario5MultiToolChaining:
         mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
 
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from src.schemas.product import ProductRead, ProductSearchResult
 
@@ -477,7 +475,7 @@ class TestScenario5MultiToolChaining:
             image_url=None,
             attributes=None,
             is_active=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             updated_at=None,
         )
         mock_search.return_value = ProductSearchResult(

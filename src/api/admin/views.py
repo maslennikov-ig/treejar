@@ -7,6 +7,7 @@ from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
 from src.models.product import Product
 from src.models.quality_review import QualityReview
+from src.models.referral import Referral
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 
@@ -109,6 +110,19 @@ class SystemPromptAdmin(ModelView, model=SystemPrompt):
     icon = "fa-solid fa-scroll"
 
 
+class ReferralAdmin(ModelView, model=Referral):
+    column_list = [
+        Referral.code,
+        Referral.referrer_phone,
+        Referral.referee_phone,
+        Referral.status,
+        Referral.created_at,
+    ]
+    name = "Referral"
+    name_plural = "Referrals"
+    icon = "fa-solid fa-share-nodes"
+
+
 def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(ConversationAdmin)
     admin_app.add_view(MessageAdmin)
@@ -119,3 +133,5 @@ def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(SystemConfigAdmin)
     admin_app.add_view(SystemPromptAdmin)
     admin_app.add_view(MetricsSnapshotAdmin)
+    admin_app.add_view(ReferralAdmin)
+
