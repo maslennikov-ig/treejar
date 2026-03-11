@@ -57,6 +57,22 @@ async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
                 "Evaluated conversation %s: score=%.1f rating=%s",
                 conv_id, result.total_score, result.rating
             )
+
+            # Send Telegram alert for poor quality dialogues
+            if result.total_score < 14:
+                try:
+                    from src.services.notifications import notify_quality_alert
+
+                    await notify_quality_alert(
+                        conv_id,
+                        score=result.total_score,
+                        rating=result.rating,
+                        summary=result.summary,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to send quality alert for %s", conv_id
+                    )
         except Exception:
             errors += 1
             logger.exception("Failed to evaluate conversation %s", conv_id)

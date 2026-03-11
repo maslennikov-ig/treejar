@@ -8,6 +8,7 @@ from src.api.v1 import (
     crm,
     health,
     inventory,
+    notifications,
     products,
     quality,
     webhook,
@@ -24,4 +25,7 @@ api_v1_router.include_router(products.router, prefix="/products", tags=["Product
 api_v1_router.include_router(crm.router, prefix="/crm", tags=["CRM"])
 api_v1_router.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
 api_v1_router.include_router(quality.router, prefix="/quality", tags=["Quality"])
+api_v1_router.include_router(
+    notifications.router, prefix="/notifications", tags=["Notifications"]
+)
 api_v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
