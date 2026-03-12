@@ -20,8 +20,8 @@ jobs:
             # Append new API_KEY
             echo "API_KEY=${{ secrets.TREEJAR_API_KEY }}" >> .env
             echo "✅ API_KEY added to .env"
-            # Restart app container to pick up new env
-            docker compose restart app
+            # Recreate app container to pick up new env (restart doesn't re-read .env)
+            docker compose up -d app
             sleep 5
             docker compose ps --format "table {{.Names}}\t{{.Status}}"
-            echo "✅ App restarted with new API_KEY"
+            echo "✅ App recreated with new API_KEY"
