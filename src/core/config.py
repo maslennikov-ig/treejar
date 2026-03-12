@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # API key for internal endpoints (referrals, reports, notifications)
+    api_key: str = ""
+
     # Domain (optional, for HTTPS)
     domain: str = ""
 

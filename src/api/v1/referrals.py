@@ -1,10 +1,11 @@
 """API endpoints for the referral system."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import async_session_factory
+from src.api.deps import get_db
 from src.services.referrals import (
     ReferralResult,
     ReferralStats,
@@ -30,25 +31,31 @@ class ApplyRequest(BaseModel):
 
 
 @router.post("/generate", response_model=ReferralResult)
-async def generate_referral_code(request: GenerateRequest) -> ReferralResult:
+async def generate_referral_code(
+    request: GenerateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ReferralResult:
     """Generate a new referral code for a customer."""
-    async with async_session_factory() as db:
-        result = await generate_code(db, request.phone)
-        await db.commit()
+    result = await generate_code(db, request.phone)
+    await db.commit()
     return result
 
 
 @router.post("/apply", response_model=ReferralResult)
-async def apply_referral_code(request: ApplyRequest) -> ReferralResult:
+async def apply_referral_code(
+    request: ApplyRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ReferralResult:
     """Apply a referral code for a new customer."""
-    async with async_session_factory() as db:
-        result = await apply_code(db, request.code, request.referee_phone)
-        await db.commit()
+    result = await apply_code(db, request.code, request.referee_phone)
+    await db.commit()
     return result
 
 
 @router.get("/{phone}/stats", response_model=ReferralStats)
-async def referral_stats(phone: str) -> ReferralStats:
+async def referral_stats(
+    phone: str,
+    db: AsyncSession = Depends(get_db),
+) -> ReferralStats:
     """Get referral statistics for a customer."""
-    async with async_session_factory() as db:
-        return await get_referral_stats(db, phone)
+    return await get_referral_stats(db, phone)
