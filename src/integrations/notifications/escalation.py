@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
 from src.schemas.common import EscalationStatus
+from src.services.notifications import _mask_phone
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,11 @@ async def notify_manager_escalation(
     Currently logs the escalation. Can be extended to send a Telegram or Wazzup message.
     """
     logger.warning(
-        f"ESCALATION TRIGGERED for Conversation {conversation.id} ({conversation.phone}).\n"
-        f"Reason: {reason}\n"
-        f"Recent History: {recent_messages}"
+        "ESCALATION TRIGGERED for Conversation %s (%s). Reason: %s. Messages: %d",
+        conversation.id,
+        _mask_phone(conversation.phone),
+        reason,
+        len(recent_messages),
     )
 
     # Set the escalation state in the database

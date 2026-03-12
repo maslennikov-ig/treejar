@@ -1,0 +1,27 @@
+name: Setup API Key on VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add API_KEY to VPS .env
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/starec/treejar-ai-bot
+            # Remove existing API_KEY line if any
+            sed -i '/^API_KEY=/d' .env
+            # Append new API_KEY
+            echo "API_KEY=${{ secrets.TREEJAR_API_KEY }}" >> .env
+            echo "✅ API_KEY added to .env"
+            # Restart app container to pick up new env
+            docker compose restart app
+            sleep 5
+            docker compose ps --format "table {{.Names}}\t{{.Status}}"
+            echo "✅ App restarted with new API_KEY"
