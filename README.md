@@ -77,3 +77,5 @@ docs/              # Project documentation
 - [Architecture](docs/architecture.md)
 - [Development Guide](docs/dev-guide.md)
 - [Roadmap](docs/roadmap.md)
+- [**Manager Guide**](docs/manager-guide.md) — For sales managers: 18 escalation triggers, handover process
+- [**Admin Guide**](docs/admin-guide.md) — For administrators: prompts, config, monitoring, emergency procedures
