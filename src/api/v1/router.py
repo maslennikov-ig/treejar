@@ -25,9 +25,19 @@ api_v1_router.include_router(
     conversations.router, prefix="/conversations", tags=["Conversations"]
 )
 api_v1_router.include_router(products.router, prefix="/products", tags=["Products"])
-api_v1_router.include_router(crm.router, prefix="/crm", tags=["CRM"])
+api_v1_router.include_router(
+    crm.router,
+    prefix="/crm",
+    tags=["CRM"],
+    dependencies=[Depends(require_api_key)],
+)
 api_v1_router.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
-api_v1_router.include_router(quality.router, prefix="/quality", tags=["Quality"])
+api_v1_router.include_router(
+    quality.router,
+    prefix="/quality",
+    tags=["Quality"],
+    dependencies=[Depends(require_api_key)],
+)
 api_v1_router.include_router(
     notifications.router,
     prefix="/notifications",

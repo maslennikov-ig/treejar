@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader
 
@@ -20,9 +22,10 @@ async def require_api_key(
 
     When settings.api_key is empty (dev mode), all requests pass through.
     In production, the header must match settings.api_key.
+    Uses secrets.compare_digest for timing-attack resistance.
     """
     if not settings.api_key:
         return ""  # No key configured = open (dev mode)
-    if not api_key or api_key != settings.api_key:
+    if not api_key or not secrets.compare_digest(api_key, settings.api_key):
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
     return api_key
