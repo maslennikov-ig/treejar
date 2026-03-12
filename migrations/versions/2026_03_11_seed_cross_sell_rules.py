@@ -25,9 +25,8 @@ CROSS_SELL_RULES = """{
 def upgrade() -> None:
     op.execute(
         f"""
-        INSERT INTO system_configs (id, key, value, created_at, updated_at)
+        INSERT INTO system_configs (key, value, created_at, updated_at)
         VALUES (
-            gen_random_uuid(),
             'cross_sell_rules',
             '{CROSS_SELL_RULES}'::jsonb,
             now(),
