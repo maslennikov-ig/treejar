@@ -1,0 +1,25 @@
+name: Diagnose VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check VPS containers
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            echo "=== Docker containers ==="
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            echo ""
+            echo "=== App container logs (last 80 lines) ==="
+            cd /home/starec/treejar-ai-bot
+            docker compose logs app --tail 80 --no-color 2>&1
+            echo ""
+            echo "=== Worker container logs (last 30 lines) ==="
+            docker compose logs worker --tail 30 --no-color 2>&1
