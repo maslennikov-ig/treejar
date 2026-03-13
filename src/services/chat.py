@@ -53,8 +53,8 @@ async def process_incoming_batch(
     messages = [WazzupIncomingMessage.model_validate_json(raw) for raw in raw_messages]
     logger.info(f"Processing batch for {chat_id} with {len(messages)} messages.")
 
-    # Sort messages by timestamp asc
-    messages.sort(key=lambda m: m.timestamp)
+    # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
+    messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
     combined_text = "\n".join(m.text for m in messages if m.text)
 
     if not combined_text.strip():
