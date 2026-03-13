@@ -5,31 +5,54 @@ on:
     inputs:
       channel_id:
         description: 'Wazzup channelId (UUID)'
-        required: true
-        default: 'b49b1b9d-757f-4104-b56d-8f43d62cc515'
+        required: false
+        default: ''
+      check_logs:
+        description: 'Set to true to only check logs'
+        required: false
+        default: 'false'
 
 jobs:
   set-env:
     runs-on: ubuntu-latest
     steps:
-      - name: Update WAZZUP_CHANNEL_ID in .env on VPS
+      - name: Execute on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            ENV_FILE="/home/starec/treejar-ai-bot/.env"
-            CHANNEL_ID="${{ github.event.inputs.channel_id }}"
-
-            # Remove existing WAZZUP_CHANNEL_ID line (if any) and append new one
-            sed -i '/^WAZZUP_CHANNEL_ID=/d' "$ENV_FILE"
-            echo "WAZZUP_CHANNEL_ID=${CHANNEL_ID}" >> "$ENV_FILE"
-
-            echo "✅ WAZZUP_CHANNEL_ID set to ${CHANNEL_ID}"
-            grep "WAZZUP_CHANNEL_ID" "$ENV_FILE"
-
-            # Restart the app container to pick up the new env var
             cd /home/starec/treejar-ai-bot
+
+            if [ "${{ github.event.inputs.check_logs }}" = "true" ]; then
+              echo "=== LAST 150 LINES: APP ==="
+              docker compose logs --tail=150 --no-color app 2>&1
+
+              echo ""
+              echo "=== LAST 80 LINES: WORKER ==="
+              docker compose logs --tail=80 --no-color worker 2>&1
+
+              echo ""
+              echo "=== CONTAINER STATUS ==="
+              docker compose ps 2>&1
+
+              echo ""
+              echo "=== ENV CHECK ==="
+              grep "WAZZUP" .env 2>&1
+              exit 0
+            fi
+
+            CHANNEL_ID="${{ github.event.inputs.channel_id }}"
+            if [ -z "$CHANNEL_ID" ]; then
+              echo "Error: channel_id is required when not checking logs"
+              exit 1
+            fi
+
+            sed -i '/^WAZZUP_CHANNEL_ID=/d' .env
+            echo "WAZZUP_CHANNEL_ID=${CHANNEL_ID}" >> .env
+            echo "✅ WAZZUP_CHANNEL_ID set to ${CHANNEL_ID}"
+            grep "WAZZUP_CHANNEL_ID" .env
+
             docker compose up -d app worker
             echo "✅ Containers restarted"
