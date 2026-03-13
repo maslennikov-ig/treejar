@@ -70,8 +70,10 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         await redis.rpush(f"wazzup_msgs:{msg.chatId}", msg.model_dump_json())
 
         # Enqueue job with a 5-second defer to allow batching
-        # ARQ unique job ID prevents duplicate schedules
-        job_id = f"wazzup_batch_{msg.chatId}"
+        # Use time-windowed job ID: same window = dedup, new window = new job
+        import time
+        window = int(time.time()) // 10  # 10-second windows
+        job_id = f"wazzup_batch_{msg.chatId}_{window}"
         await arq_pool.enqueue_job(
             "process_incoming_batch",
             chat_id=msg.chatId,
