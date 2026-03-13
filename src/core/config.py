@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     # OpenRouter (LLM)
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model_fast: str = "deepseek/deepseek-chat"
-    openrouter_model_main: str = "deepseek/deepseek-chat"
+    openrouter_model_fast: str = "xiaomi/mimo-v2-flash"
+    openrouter_model_main: str = "z-ai/glm-5"
 
     # Wazzup (WhatsApp Gateway)
     wazzup_api_key: str = ""
