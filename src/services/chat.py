@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 from typing import Any
+
+# Maximum time to wait for LLM response (seconds)
+LLM_TIMEOUT = 120
 
 from sqlalchemy import select
 
@@ -128,17 +132,31 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 channel_id=settings.wazzup_channel_id,
             ) as wazzup_provider,
         ):
-            logger.info("Calling LLM for %s", chat_id)
-            llm_response = await process_message(
-                conversation_id=conv.id,
-                combined_text=combined_text,
-                db=db,
-                redis=redis,
-                embedding_engine=embedding_engine,
-                zoho_client=zoho_client,
-                crm_client=crm_client,
-                messaging_client=wazzup_provider,
-            )
+            logger.info("Calling LLM for %s (timeout=%ds)", chat_id, LLM_TIMEOUT)
+            try:
+                llm_response = await asyncio.wait_for(
+                    process_message(
+                        conversation_id=conv.id,
+                        combined_text=combined_text,
+                        db=db,
+                        redis=redis,
+                        embedding_engine=embedding_engine,
+                        zoho_client=zoho_client,
+                        crm_client=crm_client,
+                        messaging_client=wazzup_provider,
+                    ),
+                    timeout=LLM_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
+                )
+                # Send a fallback message so the user isn't left hanging
+                await wazzup_provider.send_text(
+                    chat_id=chat_id,
+                    text="Извините, я сейчас перегружен. Пожалуйста, попробуйте написать ещё раз через минуту.",
+                )
+                return
 
             # 4. Save response to DB
             assistant_msg = Message(
