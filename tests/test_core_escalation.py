@@ -9,7 +9,7 @@ from src.core.escalation import (
 
 
 @pytest.mark.asyncio
-async def test_evaluate_escalation_triggers_true():
+async def test_evaluate_escalation_triggers_true() -> None:
     # pydantic_ai's TestModel automatically returns mock data that matches the output schema
     with escalation_agent.override(
         model=TestModel(
