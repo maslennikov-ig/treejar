@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, Boolean, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 

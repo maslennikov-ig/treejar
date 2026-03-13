@@ -316,8 +316,32 @@ async def create_quotation(
             }
         )
 
-    # Fake missing data (In production, load CRM contact link)
-    customer_id = "temp_draft_customer_id"  # Usually we'd map this via Zoho CRM contact
+    # Resolve customer data from CRM or conversation context
+    # Priority: CRM contact > crm_context > conversation fields > fallback
+    customer_name = ctx.deps.conversation.customer_name or "Valued Customer"
+    customer_email = ""
+    customer_company = ""
+    zoho_customer_id = ""
+
+    if ctx.deps.zoho_crm:
+        contact = await ctx.deps.zoho_crm.find_contact_by_phone(
+            ctx.deps.conversation.phone
+        )
+        if contact:
+            crm_first = contact.get("First_Name", "")
+            crm_last = contact.get("Last_Name", "")
+            crm_full = f"{crm_first} {crm_last}".strip()
+            if crm_full:
+                customer_name = crm_full
+            customer_email = contact.get("Email", "")
+            customer_company = contact.get("Account_Name", "")
+            zoho_customer_id = contact.get("id", "")
+    elif ctx.deps.crm_context:
+        customer_name = ctx.deps.crm_context.get("Name", customer_name)
+
+    # For Zoho Inventory, use a placeholder if no real customer_id resolved.
+    # The draft will still be created; the customer link can be updated manually.
+    customer_id = zoho_customer_id or "temp_draft_customer_id"
 
     # Create Draft Order in Zoho
     try:
@@ -326,21 +350,23 @@ async def create_quotation(
         )
         quote_number = draft_resp.get("saleorder", {}).get("salesorder_number", "DRAFT")
     except Exception as e:
-        logger.error(f"Failed to create draft sale order: {e}")
+        logger.error("Failed to create draft sale order: %s", e)
         return "Failed to create draft sale order in Zoho Inventory."
 
     # Generate PDF context
+    import datetime as _dt
+
     vat_amount = subtotal * 0.05
     grand_total = subtotal + vat_amount
 
     pdf_context = {
         "quote_number": quote_number,
         "trn": "100418386400003",
-        "date": "Today",
+        "date": _dt.date.today().strftime("%d %B %Y"),
         "customer": {
-            "name": ctx.deps.conversation.customer_name or "Valued Customer",
-            "company": "Company Name",
-            "email": "customer@example.com",
+            "name": customer_name,
+            "company": customer_company,
+            "email": customer_email,
             "address": "UAE",
         },
         "items": template_items,

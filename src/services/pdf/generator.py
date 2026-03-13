@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML  # type: ignore[import-untyped]
+from weasyprint import HTML
 
 TEMPLATE_DIR = Path(__file__).parent.parent.parent / "templates" / "quotation"
 
@@ -14,7 +14,7 @@ async def generate_pdf(html_content: str) -> bytes:
     """
 
     def _render() -> bytes:
-        return HTML(string=html_content).write_pdf()  # type: ignore[no-any-return]
+        return HTML(string=html_content).write_pdf()  # type: ignore[no-untyped-call,no-any-return]
 
     return await asyncio.to_thread(_render)
 

@@ -31,7 +31,7 @@ async def test_process_followup_for_conversation() -> None:
     )
 
     with (
-        patch("src.services.followup.get_redis", return_value=AsyncMock()),
+        patch("src.services.followup.get_redis_client", return_value=AsyncMock()),
         patch("src.services.followup.EmbeddingEngine", return_value=AsyncMock()),
         patch("src.services.followup.ZohoCRMClient", return_value=AsyncMock()),
         patch(

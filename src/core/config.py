@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Wazzup (WhatsApp Gateway)
     wazzup_api_key: str = ""
     wazzup_api_url: str = "https://api.wazzup24.com/v3"
+    wazzup_channel_id: str = ""  # UUID of the WhatsApp channel in Wazzup
     wazzup_webhook_secret: str = ""
 
     # Zoho CRM

@@ -22,7 +22,9 @@ class WazzupIncomingMessage(BaseModel):
 
 
 class WazzupWebhookPayload(BaseModel):
-    messages: list[WazzupIncomingMessage]
+    # `test: true` is sent by Wazzup during webhook registration verification
+    test: bool | None = None
+    messages: list[WazzupIncomingMessage] = []
 
 
 class WazzupWebhookResponse(BaseModel):

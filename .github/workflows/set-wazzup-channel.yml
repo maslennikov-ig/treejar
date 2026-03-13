@@ -1,0 +1,35 @@
+name: Set WAZZUP_CHANNEL_ID on VPS (one-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel_id:
+        description: 'Wazzup channelId (UUID)'
+        required: true
+        default: 'b49b1b9d-757f-4104-b56d-8f43d62cc515'
+
+jobs:
+  set-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update WAZZUP_CHANNEL_ID in .env on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            ENV_FILE="/home/starec/treejar-ai-bot/.env"
+            CHANNEL_ID="${{ github.event.inputs.channel_id }}"
+
+            # Remove existing WAZZUP_CHANNEL_ID line (if any) and append new one
+            sed -i '/^WAZZUP_CHANNEL_ID=/d' "$ENV_FILE"
+            echo "WAZZUP_CHANNEL_ID=${CHANNEL_ID}" >> "$ENV_FILE"
+
+            echo "✅ WAZZUP_CHANNEL_ID set to ${CHANNEL_ID}"
+            grep "WAZZUP_CHANNEL_ID" "$ENV_FILE"
+
+            # Restart the app container to pick up the new env var
+            cd /home/starec/treejar-ai-bot
+            docker compose up -d app worker
+            echo "✅ Containers restarted"
