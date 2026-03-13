@@ -62,7 +62,6 @@ from .webhook import (
     WazzupIncomingMessage,
     WazzupMedia,
     WazzupWebhookPayload,
-    WazzupWebhookResponse,
 )
 
 __all__ = [
@@ -83,7 +82,6 @@ __all__ = [
     "WazzupIncomingMessage",
     "WazzupMedia",
     "WazzupWebhookPayload",
-    "WazzupWebhookResponse",
     # conversation
     "ConversationCreate",
     "ConversationDetail",

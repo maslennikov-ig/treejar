@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 
 class WazzupMedia(BaseModel):
@@ -24,7 +24,7 @@ class WazzupIncomingMessage(BaseModel):
       "type": "text",
       "status": "inbound",
       "dateTime": "2026-03-13T11:07:27.000",
-      "authorType": "client"  # or "operator"
+      "authorType": "client"
     }
     """
 
@@ -47,12 +47,6 @@ class WazzupIncomingMessage(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Accept any extra fields Wazzup sends without breaking."""
-        return data
-
 
 class WazzupWebhookPayload(BaseModel):
     # `test: true` is sent by Wazzup during webhook registration verification
@@ -62,7 +56,3 @@ class WazzupWebhookPayload(BaseModel):
     statuses: list[dict[str, Any]] = []
 
     model_config = {"extra": "allow"}
-
-
-class WazzupWebhookResponse(BaseModel):
-    ok: bool = True

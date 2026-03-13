@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import traceback
 
 from fastapi import APIRouter, Request
@@ -27,27 +28,30 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     try:
         raw_body = await request.json()
     except Exception:
-        print("[WEBHOOK] Failed to parse JSON body")
+        logger.warning("Wazzup webhook: failed to parse JSON body")
         return JSONResponse({"ok": True}, status_code=200)
 
-    # Always log the raw payload to stdout for debugging
-    print(f"[WEBHOOK] Received: {json.dumps(raw_body, ensure_ascii=False, default=str)[:2000]}")
+    # Log raw payload for debugging (truncate to 2000 chars)
+    logger.info(
+        "Wazzup webhook received: %s",
+        json.dumps(raw_body, ensure_ascii=False, default=str)[:2000],
+    )
 
     # Wazzup test ping during webhook registration
     if raw_body.get("test"):
-        print("[WEBHOOK] Test ping — responding OK")
+        logger.info("Wazzup test ping — responding OK")
         return JSONResponse({"ok": True}, status_code=200)
 
     # Parse and process messages
     messages = raw_body.get("messages", [])
     if not messages:
-        print("[WEBHOOK] No messages in payload (status update or empty)")
+        logger.info("Wazzup webhook: no messages (status update or empty payload)")
         return JSONResponse({"ok": True}, status_code=200)
 
     try:
         payload = WazzupWebhookPayload(**raw_body)
     except Exception as e:
-        print(f"[WEBHOOK] Payload validation error: {e}")
+        logger.error("Wazzup payload validation error: %s", e)
         traceback.print_exc()
         # Still return 200 so Wazzup doesn't retry
         return JSONResponse({"ok": True}, status_code=200)
@@ -58,20 +62,23 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     for msg in payload.messages:
         # Filter out echo/operator messages — only process client inbound
         if msg.status and msg.status != "inbound":
-            print(f"[WEBHOOK] Skipping non-inbound message: status={msg.status}")
+            logger.debug("Skipping non-inbound message: status=%s", msg.status)
             continue
         if msg.authorType and msg.authorType != "client":
-            print(f"[WEBHOOK] Skipping non-client message: authorType={msg.authorType}")
+            logger.debug("Skipping non-client message: authorType=%s", msg.authorType)
             continue
 
-        print(f"[WEBHOOK] Processing message from chatId={msg.chatId}: {msg.text[:100] if msg.text else '(no text)'}")
+        logger.info(
+            "Processing message chatId=%s: %s",
+            msg.chatId,
+            (msg.text[:100] if msg.text else "(no text)"),
+        )
 
         # Push to Redis list
         await redis.rpush(f"wazzup_msgs:{msg.chatId}", msg.model_dump_json())
 
         # Enqueue job with a 5-second defer to allow batching
         # Use time-windowed job ID: same window = dedup, new window = new job
-        import time
         window = int(time.time()) // 10  # 10-second windows
         job_id = f"wazzup_batch_{msg.chatId}_{window}"
         await arq_pool.enqueue_job(
