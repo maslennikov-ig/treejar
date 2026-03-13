@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 

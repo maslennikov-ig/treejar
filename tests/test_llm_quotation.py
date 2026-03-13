@@ -33,6 +33,11 @@ async def test_create_quotation_tool() -> None:
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
+    deps.crm_context = None
+    # Provide a zoho_crm mock so CRM lookup works (returns no contact → uses conversation data)
+    mock_crm = AsyncMock()
+    mock_crm.find_contact_by_phone.return_value = None
+    deps.zoho_crm = mock_crm
 
     ctx = MagicMock(spec=RunContext)
     ctx.deps = deps

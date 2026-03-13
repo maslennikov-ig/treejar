@@ -5,7 +5,7 @@ from logfire import Logfire
 from sqlalchemy import select
 
 from src.core.database import async_session_factory
-from src.core.redis import get_redis
+from src.core.redis import get_redis_client
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.messaging.wazzup import WazzupProvider
 from src.models.conversation import Conversation
@@ -45,14 +45,20 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
             conversations: list[Conversation] = list(result.scalars().all())
 
             logfire.info(
-                f"Found {len(conversations)} conversations for {min_hrs}h follow-up"
-            )
+                    "Found {count} conversations for {hours}h follow-up",
+                    count=len(conversations),
+                    hours=min_hrs,
+                )
 
             for conv in conversations:
                 try:
                     await _process_followup_for_conversation(db, conv)
                 except Exception as e:
-                    logfire.error(f"Failed to process followup for {conv.id}: {e}")
+                        logfire.error(
+                            "Failed to process followup for {conv_id}: {error}",
+                            conv_id=conv.id,
+                            error=str(e),
+                        )
 
 
 async def _process_followup_for_conversation(db: Any, conv: Conversation) -> None:
@@ -62,7 +68,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     # We simulate a "system" ping to the agent, asking it to draft a follow-up.
     system_instruction = "SYSTEM: The user has been inactive. Draft a polite, short follow-up acknowledging the previous quotes/discussion. Make it a single short paragraph. Do not push, just offer help."
 
-    redis = get_redis()
+    redis = get_redis_client()
     engine = EmbeddingEngine()
     zoho_crm = ZohoCRMClient(redis)
     messaging = WazzupProvider()

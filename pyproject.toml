@@ -89,7 +89,23 @@ known-first-party = ["src"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-exclude = ["migrations/"]
+exclude = ["migrations/", "scripts/"]
+
+# Third-party packages without py.typed markers or stubs.
+# Per mypy docs: https://mypy.readthedocs.io/en/latest/running_mypy.html#missing-imports
+# Preferred over inline "# type: ignore" in source files.
+[[tool.mypy.overrides]]
+module = [
+    "pgvector.*",
+    "fastembed.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["weasyprint", "weasyprint.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
