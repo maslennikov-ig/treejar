@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from arq.connections import RedisSettings
@@ -14,13 +15,39 @@ from src.services.metrics import calculate_and_store_metrics
 from src.services.notifications import run_daily_summary
 from src.services.reports import run_weekly_report
 
+logger = logging.getLogger(__name__)
+
 
 async def startup(ctx: dict[str, Any]) -> None:
-    """Worker startup — initialize connections."""
+    """Worker startup — initialize shared resources.
+
+    ARQ provides ctx["redis"] automatically. We configure logging
+    and verify critical settings are present.
+    """
+    # Configure root logger for structured output in Docker
+    logging.basicConfig(
+        level=getattr(logging, settings.app_log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        force=True,
+    )
+
+    # Verify critical settings
+    if not settings.wazzup_channel_id:
+        logger.warning("WAZZUP_CHANNEL_ID is not set — bot cannot send replies!")
+    if not settings.openrouter_api_key:
+        logger.warning("OPENROUTER_API_KEY is not set — LLM calls will fail!")
+
+    logger.info(
+        "ARQ worker started. channel_id=%s, model=%s, log_level=%s",
+        settings.wazzup_channel_id[:8] + "..." if settings.wazzup_channel_id else "MISSING",
+        settings.openrouter_model_main,
+        settings.app_log_level,
+    )
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
-    """Worker shutdown — close connections."""
+    """Worker shutdown — log clean exit."""
+    logger.info("ARQ worker shutting down.")
 
 
 class WorkerSettings:

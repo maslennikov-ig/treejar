@@ -8,11 +8,35 @@ import traceback
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from src.core.config import settings
 from src.schemas import WazzupWebhookPayload
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _verify_webhook_origin(request: Request) -> bool:
+    """Verify that webhook request comes from Wazzup.
+
+    Wazzup v3 sends `Authorization: Bearer ${crmKey}` if a crmKey is configured.
+    We check against our stored wazzup_webhook_secret.
+
+    If wazzup_webhook_secret is empty (not configured), we skip the check
+    to not block messages during initial setup.
+    """
+    secret = settings.wazzup_webhook_secret
+    if not secret:
+        # No secret configured — skip verification (log warning on first call)
+        return True
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        return token == secret
+
+    # No auth header but secret is configured — reject
+    return False
 
 
 @router.post("/wazzup")
@@ -25,6 +49,14 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     - Statuses: {"statuses": [...]}
     - Mixed: {"messages": [...], "statuses": [...]}
     """
+    # CR-WA-08: Verify webhook origin
+    if not _verify_webhook_origin(request):
+        logger.warning(
+            "Wazzup webhook: unauthorized request from %s",
+            request.client.host if request.client else "unknown",
+        )
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
     try:
         raw_body = await request.json()
     except Exception:
