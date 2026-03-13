@@ -1,0 +1,32 @@
+name: Check Docker Logs (one-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check app and worker logs on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/starec/treejar-ai-bot
+
+            echo "=== LAST 100 LINES: APP ==="
+            docker compose logs --tail=100 --no-color app 2>&1
+
+            echo ""
+            echo "=== LAST 50 LINES: WORKER ==="
+            docker compose logs --tail=50 --no-color worker 2>&1
+
+            echo ""
+            echo "=== CONTAINER STATUS ==="
+            docker compose ps 2>&1
+
+            echo ""
+            echo "=== ENV CHECK ==="
+            grep "WAZZUP" .env | sed 's/=.*/=***/' 2>&1
