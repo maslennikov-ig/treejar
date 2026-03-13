@@ -44,6 +44,11 @@ from .inventory import (
     SaleOrderRead,
     StockLevel,
 )
+from .manager_review import (
+    ManagerLeaderboardEntry,
+    ManagerReviewDetail,
+    ManagerReviewRead,
+)
 from .product import (
     ProductRead,
     ProductSearchQuery,
@@ -124,4 +129,8 @@ __all__ = [
     "SettingsUpdate",
     "TimeseriesPoint",
     "TimeseriesResponse",
+    # manager reviews
+    "ManagerLeaderboardEntry",
+    "ManagerReviewDetail",
+    "ManagerReviewRead",
 ]

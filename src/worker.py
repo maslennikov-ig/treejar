@@ -8,6 +8,7 @@ from arq.cron import cron
 from src.core.config import settings
 from src.integrations.inventory.sync import sync_products_from_zoho
 from src.quality.job import evaluate_completed_conversations
+from src.quality.manager_job import evaluate_escalated_conversations
 from src.services.chat import process_incoming_batch
 from src.services.followup import run_automatic_followups
 from src.services.metrics import calculate_and_store_metrics
@@ -30,6 +31,7 @@ class WorkerSettings:
         run_automatic_followups,
         calculate_and_store_metrics,
         evaluate_completed_conversations,
+        evaluate_escalated_conversations,
         run_daily_summary,
         run_weekly_report,
     ]
@@ -42,6 +44,11 @@ class WorkerSettings:
             run_at_startup=True,
         ),
         cron(evaluate_completed_conversations, minute={30}, run_at_startup=False),
+        cron(
+            evaluate_escalated_conversations,
+            minute={0, 30},
+            run_at_startup=False,
+        ),
         cron(run_daily_summary, hour={6}, minute={0}, run_at_startup=False),
         cron(
             run_weekly_report,

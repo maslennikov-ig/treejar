@@ -19,6 +19,17 @@ from src.schemas.webhook import WazzupIncomingMessage
 logger = logging.getLogger(__name__)
 
 
+def _determine_role(msg: WazzupIncomingMessage) -> str:
+    """Determine message role based on Wazzup authorType field.
+
+    Returns:
+        'manager' if authorType is 'manager', otherwise 'user'.
+    """
+    if msg.authorType == "manager":
+        return "manager"
+    return "user"
+
+
 async def process_incoming_batch(
     ctx: dict[str, Any],
     chat_id: str,
@@ -30,10 +41,9 @@ async def process_incoming_batch(
 
     1. Pop all queued messages from Redis.
     2. Get or create conversation based on chat_id (phone number).
-    3. Save incoming messages.
-    4. Generate LLM response from the combined text.
-    5. Save LLM response.
-    6. Send reply via Wazzup.
+    3. Save incoming messages (with correct role: user/manager).
+    4. If escalation is active or message is from manager → skip LLM.
+    5. Otherwise generate LLM response, save, and send via Wazzup.
     """
     # ARQ automatically injects its Redis pool as ctx["redis"]
     redis = ctx["redis"]
@@ -54,7 +64,15 @@ async def process_incoming_batch(
     logger.info(f"Processing batch for {chat_id} with {len(messages)} messages.")
 
     # Sort messages by timestamp asc
-    messages.sort(key=lambda m: m.timestamp)
+    messages.sort(key=lambda m: m.timestamp or 0)
+
+    # Determine roles for each message
+    has_manager_message = any(m.authorType == "manager" for m in messages)
+    manager_name = next(
+        (m.authorName for m in messages if m.authorType == "manager" and m.authorName),
+        None,
+    )
+
     combined_text = "\n".join(m.text for m in messages if m.text)
 
     if not combined_text.strip():
@@ -84,7 +102,15 @@ async def process_incoming_batch(
             db.add(conv)
             await db.flush()
 
-        # 2. Save incoming messages
+        # 2. Manual takeover: manager writes when no escalation is active
+        if has_manager_message and conv.escalation_status in ("none", None):
+            conv.escalation_status = "manual_takeover"
+            logger.info(
+                f"Manual takeover for {chat_id} by manager"
+                f" {manager_name or 'unknown'}"
+            )
+
+        # 3. Save incoming messages with correct roles
         message_ids = [m.messageId for m in messages if m.messageId]
         existing_msgs_stmt = select(Message.wazzup_message_id).where(Message.wazzup_message_id.in_(message_ids))
         existing_result = await db.execute(existing_msgs_stmt)
@@ -92,9 +118,10 @@ async def process_incoming_batch(
 
         for m in messages:
             if m.messageId and m.messageId not in existing_ids:
+                role = _determine_role(m)
                 new_msg = Message(
                     conversation_id=conv.id,
-                    role="user",
+                    role=role,
                     content=m.text or "",
                     wazzup_message_id=m.messageId,
                 )
@@ -103,6 +130,17 @@ async def process_incoming_batch(
 
         await db.commit()
 
+        # 4. Bot silencing: if escalation is active, don't call LLM
+        #    Note: escalation_status can be None for newly created conversations
+        #    (SQLAlchemy default= only applies at DB insert, not Python construct)
+        if conv.escalation_status not in ("none", None):
+            logger.info(
+                f"Escalation active ({conv.escalation_status}) for {chat_id}."
+                " Saving messages but NOT calling LLM."
+            )
+            return
+
+        # 5. Normal flow: generate LLM response
         # We need EmbeddingEngine, ZohoClient, WazzupProvider
         embedding_engine = EmbeddingEngine()
 
@@ -141,4 +179,3 @@ async def process_incoming_batch(
                 chat_id=chat_id,
                 text=llm_response.text,
             )
-

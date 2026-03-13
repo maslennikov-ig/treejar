@@ -40,6 +40,12 @@ class ReportData(BaseModel):
     escalation_count: int = 0
     escalation_reasons: dict[str, int] = {}
     top_products: list[dict[str, Any]] = []
+    # Manager performance
+    avg_manager_score: float = 0.0
+    avg_manager_response_time_seconds: float = 0.0
+    manager_deal_conversion_rate: float = 0.0
+    manager_reviews_count: int = 0
+    top_managers: list[dict[str, Any]] = []
 
 
 async def generate_report(
@@ -157,6 +163,58 @@ async def generate_report(
     except Exception:
         logger.exception("Failed to query top products for report")
 
+    # Manager performance metrics
+    avg_manager_score = 0.0
+    avg_manager_response_time_seconds = 0.0
+    manager_deal_conversion_rate = 0.0
+    manager_reviews_count = 0
+    top_managers: list[dict[str, Any]] = []
+    try:
+        from src.models.manager_review import ManagerReview
+
+        mgr_q = select(
+            func.avg(ManagerReview.total_score),
+            func.avg(ManagerReview.first_response_time_seconds),
+            func.count(ManagerReview.id),
+            func.count().filter(ManagerReview.deal_converted.is_(True)),
+        ).where(
+            ManagerReview.created_at >= start_date,
+            ManagerReview.created_at <= end_date,
+        )
+        mgr_result = await db.execute(mgr_q)
+        mgr_row = mgr_result.one()
+        avg_manager_score = round(float(mgr_row[0] or 0.0), 1)
+        avg_manager_response_time_seconds = round(float(mgr_row[1] or 0.0), 0)
+        manager_reviews_count = mgr_row[2] or 0
+        mgr_deals = mgr_row[3] or 0
+        manager_deal_conversion_rate = (
+            round(mgr_deals / manager_reviews_count * 100, 1)
+            if manager_reviews_count > 0 else 0.0
+        )
+
+        # Top managers
+        top_mgr_q = (
+            select(
+                ManagerReview.manager_name,
+                func.avg(ManagerReview.total_score),
+            )
+            .where(
+                ManagerReview.created_at >= start_date,
+                ManagerReview.created_at <= end_date,
+                ManagerReview.manager_name.isnot(None),
+            )
+            .group_by(ManagerReview.manager_name)
+            .order_by(func.avg(ManagerReview.total_score).desc())
+            .limit(5)
+        )
+        top_mgr_result = await db.execute(top_mgr_q)
+        top_managers = [
+            {"name": row[0], "avg_score": round(float(row[1]), 1)}
+            for row in top_mgr_result.all()
+        ]
+    except Exception:
+        logger.exception("Failed to query manager metrics for report")
+
     return ReportData(
         period_start=start_date,
         period_end=end_date,
@@ -170,6 +228,11 @@ async def generate_report(
         escalation_count=escalation_count,
         escalation_reasons=escalation_reasons,
         top_products=top_products,
+        avg_manager_score=avg_manager_score,
+        avg_manager_response_time_seconds=avg_manager_response_time_seconds,
+        manager_deal_conversion_rate=manager_deal_conversion_rate,
+        manager_reviews_count=manager_reviews_count,
+        top_managers=top_managers,
     )
 
 
@@ -199,6 +262,21 @@ def format_report_text(data: ReportData) -> str:
         lines.append("<b>Top Products:</b>")
         for prod in data.top_products[:5]:
             lines.append(f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} mentions")
+
+    if data.manager_reviews_count > 0:
+        lines.append("")
+        lines.append("📊 <b>Manager Performance</b>")
+        # Convert seconds to minutes for display
+        response_time_min = round(data.avg_manager_response_time_seconds / 60, 1)
+        lines.append(f"  Avg Score: {data.avg_manager_score}/20")
+        lines.append(f"  Avg Response Time: {response_time_min} min")
+        lines.append(f"  Deal Conversion: {data.manager_deal_conversion_rate}%")
+        lines.append(f"  Reviews: {data.manager_reviews_count}")
+        if data.top_managers:
+            top_names = ", ".join(
+                f"{m['name']} ({m['avg_score']})" for m in data.top_managers[:3]
+            )
+            lines.append(f"  Top: {top_names}")
 
     return "\n".join(lines)
 

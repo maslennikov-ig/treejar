@@ -218,6 +218,61 @@ async def calculate_dashboard_metrics(
     else:
         avg_response_time_ms = await db.scalar(text(rt_sql)) or 0.0
 
+    # ── QUERY 4: Manager performance metrics ──
+    from src.models.manager_review import ManagerReview
+    from src.schemas.manager_review import ManagerLeaderboardEntry
+
+    mgr_q = select(
+        func.avg(ManagerReview.total_score),
+        func.avg(ManagerReview.first_response_time_seconds),
+    )
+    mgr_conv_q = select(
+        func.count().filter(ManagerReview.deal_converted.is_(True)),
+        func.count(),
+    ).select_from(ManagerReview)
+
+    if period_start:
+        mgr_q = mgr_q.where(ManagerReview.created_at >= period_start)
+        mgr_conv_q = mgr_conv_q.where(ManagerReview.created_at >= period_start)
+
+    mgr_result = await db.execute(mgr_q)
+    mgr_row = mgr_result.one()
+    avg_manager_score = float(mgr_row[0] or 0.0)
+    avg_manager_response_time = float(mgr_row[1] or 0.0)
+
+    mgr_conv_result = await db.execute(mgr_conv_q)
+    mgr_conv_row = mgr_conv_result.one()
+    mgr_deals = mgr_conv_row[0] or 0
+    mgr_total = mgr_conv_row[1] or 0
+    manager_deal_conversion_rate = (
+        round(mgr_deals / mgr_total * 100, 2) if mgr_total > 0 else 0.0
+    )
+
+    # Manager leaderboard (top 10)
+    lb_q = (
+        select(
+            ManagerReview.manager_name,
+            func.avg(ManagerReview.total_score).label("avg_score"),
+            func.count(ManagerReview.id).label("reviews_count"),
+        )
+        .where(ManagerReview.manager_name.isnot(None))
+        .group_by(ManagerReview.manager_name)
+        .order_by(func.avg(ManagerReview.total_score).desc())
+        .limit(10)
+    )
+    if period_start:
+        lb_q = lb_q.where(ManagerReview.created_at >= period_start)
+
+    lb_result = await db.execute(lb_q)
+    manager_leaderboard = [
+        ManagerLeaderboardEntry(
+            name=row[0],
+            avg_score=round(float(row[1]), 1),
+            reviews_count=row[2],
+        )
+        for row in lb_result.all()
+    ]
+
     return DashboardMetricsResponse(
         period=period,
         total_conversations=total_conversations,
@@ -236,6 +291,10 @@ async def calculate_dashboard_metrics(
         avg_quality_score=round(float(avg_quality_score), 1),
         avg_response_time_ms=round(float(avg_response_time_ms), 1),
         llm_cost_usd=round(float(llm_cost), 4),
+        avg_manager_score=round(avg_manager_score, 1),
+        avg_manager_response_time_seconds=round(avg_manager_response_time, 1),
+        manager_deal_conversion_rate=manager_deal_conversion_rate,
+        manager_leaderboard=manager_leaderboard,
     )
 
 

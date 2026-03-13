@@ -10,6 +10,7 @@ from src.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from src.models.conversation import Conversation
+    from src.models.manager_review import ManagerReview
 
 
 class Escalation(UUIDMixin, TimestampMixin, Base):
@@ -28,4 +29,8 @@ class Escalation(UUIDMixin, TimestampMixin, Base):
     # Relationships
     conversation: Mapped[Conversation] = relationship(
         back_populates="escalations",
+    )
+    manager_review: Mapped[ManagerReview | None] = relationship(
+        back_populates="escalation",
+        uselist=False,
     )

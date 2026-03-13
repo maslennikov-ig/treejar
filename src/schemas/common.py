@@ -34,6 +34,7 @@ class EscalationStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
+    MANUAL_TAKEOVER = "manual_takeover"
 
 
 class QualityRating(StrEnum):

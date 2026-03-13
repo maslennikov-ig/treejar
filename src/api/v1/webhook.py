@@ -23,6 +23,11 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     - Messages: {"messages": [...]}
     - Statuses: {"statuses": [...]}
     - Mixed: {"messages": [...], "statuses": [...]}
+
+    Author routing (Wazzup v3):
+    - authorType='client' (or absent) → save as role='user', trigger LLM
+    - authorType='manager' (isEcho=true) → save as role='manager', no LLM
+    - authorType='bot' → skip (echo of our own bot messages)
     """
     try:
         raw_body = await request.json()
@@ -56,15 +61,31 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     arq_pool = request.app.state.arq_pool
 
     for msg in payload.messages:
-        # Filter out echo/operator messages — only process client inbound
+        # Filter out status-only updates
         if msg.status and msg.status != "inbound":
             print(f"[WEBHOOK] Skipping non-inbound message: status={msg.status}")
             continue
-        if msg.authorType and msg.authorType != "client":
-            print(f"[WEBHOOK] Skipping non-client message: authorType={msg.authorType}")
+
+        # Route by authorType
+        author_type = msg.authorType or "client"
+
+        if author_type == "bot":
+            # Echo of our own bot messages — skip entirely
+            print(f"[WEBHOOK] Skipping bot echo message: chatId={msg.chatId}")
             continue
 
-        print(f"[WEBHOOK] Processing message from chatId={msg.chatId}: {msg.text[:100] if msg.text else '(no text)'}")
+        if author_type == "manager":
+            # Manager message — save but don't trigger LLM
+            print(
+                f"[WEBHOOK] Manager message from {msg.authorName or 'unknown'}"
+                f" (chatId={msg.chatId}): {msg.text[:100] if msg.text else '(no text)'}"
+            )
+        else:
+            # Client message — standard flow
+            print(
+                f"[WEBHOOK] Client message from chatId={msg.chatId}:"
+                f" {msg.text[:100] if msg.text else '(no text)'}"
+            )
 
         # Push to Redis list
         await redis.rpush(f"wazzup_msgs:{msg.chatId}", msg.model_dump_json())
