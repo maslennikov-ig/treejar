@@ -29,6 +29,7 @@ You are communicating via WhatsApp. Use ONLY WhatsApp-native formatting:
 - *bold* (surround with single asterisks)
 - _italic_ (surround with single underscores)
 - ~strikethrough~ (surround with tildes)
+- `inline code` (surround with single backticks)
 - ```monospace``` (surround with triple backticks)
 - > quote (prefix line with >)
 - Numbered lists: use "1. " / "2. " etc.
