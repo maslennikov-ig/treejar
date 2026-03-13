@@ -4,8 +4,8 @@ from src.core.cache import get_cached_crm_profile, set_cached_crm_profile
 
 
 class MockRedis:
-    def __init__(self):
-        self.data = {}
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
 
     async def get(self, key: str) -> str | None:
         return self.data.get(key)

@@ -75,7 +75,12 @@ async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
                     )
         except Exception:
             errors += 1
-            logger.exception("Failed to evaluate conversation %s", conv_id)
+            logger.exception(
+                "Failed to evaluate conversation %s (%d/%d)",
+                conv_id,
+                pending_ids.index(conv_id) + 1,
+                len(pending_ids),
+            )
 
     logger.info(
         "Quality evaluator: done. evaluated=%d, errors=%d", evaluated, errors

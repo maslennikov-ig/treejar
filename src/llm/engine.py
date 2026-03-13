@@ -616,15 +616,20 @@ async def process_message(
             model=db_model_main,
         )
 
-    except Exception as exc:
-        logger.exception("LLM generation failed")
-        error_info = f"{type(exc).__name__}: {exc}"
+    except Exception:
+        conv_id_str = str(conv.id) if conv else "unknown"
+        phone_str = str(conv.phone) if conv else "unknown"
+        logger.exception(
+            "LLM generation failed for conv_id=%s phone=%s",
+            conv_id_str,
+            phone_str,
+        )
+        # NOTE: We do not surface exc details in model= to avoid info leakage
+        db_model_label = db_model_main if "db_model_main" in locals() else "unknown"
         return LLMResponse(
             text="I apologize, but I am experiencing a temporary issue. Please try again in a moment.",
             tokens_in=0,
             tokens_out=0,
             cost=0.0,
-            model=f"error:{error_info[:200]}"
-            if "db_model_main" not in locals()
-            else f"{db_model_main}|error:{error_info[:200]}",
+            model=f"{db_model_label}|error",
         )

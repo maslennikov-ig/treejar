@@ -13,6 +13,8 @@ import logging
 from typing import Any, Protocol
 from uuid import UUID
 
+import logfire
+
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
 
@@ -106,6 +108,12 @@ async def notify_escalation(phone: str, conversation_id: UUID, reason: str) -> N
         message = format_escalation_message(phone, conversation_id, reason)
         await client.send_message(message)
     except Exception:
+        logfire.error(
+            "telegram.notify_escalation.failed",
+            notification_type="escalation",
+            phone_masked=_mask_phone(phone),
+            conv_id=str(conversation_id),
+        )
         logger.exception("Failed to send escalation notification to Telegram")
 
 
@@ -126,6 +134,12 @@ async def notify_quality_alert(
         )
         await client.send_message(message)
     except Exception:
+        logfire.error(
+            "telegram.notify_quality_alert.failed",
+            notification_type="quality_alert",
+            conv_id=str(conversation_id),
+            score=score,
+        )
         logger.exception("Failed to send quality alert notification to Telegram")
 
 
@@ -140,6 +154,10 @@ async def notify_daily_summary_telegram(metrics: HasMetrics) -> None:
         message = format_daily_summary(metrics)
         await client.send_message(message)
     except Exception:
+        logfire.error(
+            "telegram.notify_daily_summary.failed",
+            notification_type="daily_summary",
+        )
         logger.exception("Failed to send daily summary to Telegram")
 
 
@@ -153,6 +171,10 @@ async def send_telegram_message(text: str) -> None:
         client = _get_telegram_client()
         await client.send_message(text)
     except Exception:
+        logfire.error(
+            "telegram.send_message.failed",
+            notification_type="generic",
+        )
         logger.exception("Failed to send message to Telegram")
 
 

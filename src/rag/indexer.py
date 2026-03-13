@@ -102,9 +102,11 @@ async def index_documents(db: AsyncSession) -> int:
 
         return len(values)
 
-    except Exception as e:
+    except Exception:
         await db.rollback()
-        logger.error("Error indexing knowledge base: %s", e)
+        logger.exception(
+            "Error indexing knowledge base: attempted %d chunks", len(values)
+        )
         return 0
 
 
