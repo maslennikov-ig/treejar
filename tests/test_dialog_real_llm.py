@@ -45,8 +45,8 @@ from src.schemas.product import ProductRead, ProductSearchResult
 
 _env_path = Path(__file__).resolve().parents[1] / ".env"
 _env_values = dotenv_values(_env_path) if _env_path.exists() else {}
-OPENROUTER_KEY = _env_values.get("OPENROUTER_API_KEY", "")
-MODEL_NAME = _env_values.get("OPENROUTER_MODEL_MAIN", settings.openrouter_model_main)
+OPENROUTER_KEY: str = _env_values.get("OPENROUTER_API_KEY", "") or ""
+MODEL_NAME: str = _env_values.get("OPENROUTER_MODEL_MAIN") or settings.openrouter_model_main or ""
 
 pytestmark = pytest.mark.skipif(
     not OPENROUTER_KEY or OPENROUTER_KEY == "test-key",

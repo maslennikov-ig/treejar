@@ -37,7 +37,7 @@ def _make_deps(
     conv: Conversation,
     *,
     db: AsyncSession | None = None,
-    redis: Redis | None = None,  # type: ignore[type-arg]
+    redis: Redis | None = None,
 ) -> SalesDeps:
     """Build a minimal SalesDeps with the given conversation."""
     return SalesDeps(
