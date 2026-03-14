@@ -96,6 +96,8 @@ exclude = ["migrations/", "scripts/"]
 # Preferred over inline "# type: ignore" in source files.
 [[tool.mypy.overrides]]
 module = [
+    "asyncpg",
+    "asyncpg.*",
     "pgvector.*",
     "fastembed.*",
 ]
