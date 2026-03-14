@@ -5,8 +5,8 @@ Revises: 2026_03_13_add_manager_reviews_table
 Create Date: 2026-03-14 09:40:00.000000
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "2026_03_14_add_audio_fields"
