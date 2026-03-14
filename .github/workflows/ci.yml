@@ -82,3 +82,29 @@ jobs:
         run: alembic upgrade head
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+  deploy:
+    needs: [lint, type-check, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            BRANCH_NAME=${GITHUB_REF##*/}
+
+            if [ "$BRANCH_NAME" != "main" ] && [ "$BRANCH_NAME" != "develop" ]; then
+              echo "Deployment only supported for main and develop branches."
+            fi
+
+            cd /home/starec/treejar-ai-bot || {
+              echo "Repository not found at /home/starec/treejar-ai-bot."
+              exit 1
+            }
+
+            chmod +x scripts/vps-deploy.sh
+            ./scripts/vps-deploy.sh "$BRANCH_NAME"
