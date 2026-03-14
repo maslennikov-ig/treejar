@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.integrations.voice.voxtral import transcribe_audio
+from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
 
 
 def _make_mock_response(json_data: dict) -> MagicMock:
@@ -101,3 +101,33 @@ class TestTranscribeAudio:
         audio_content = payload["messages"][0]["content"][1]
         assert audio_content["input_audio"]["data"] == expected_b64
         assert audio_content["input_audio"]["format"] == "wav"
+
+    async def test_rejects_oversized_audio(self) -> None:
+        """CR-V-02: Test that audio exceeding MAX_AUDIO_SIZE is rejected."""
+        huge_audio = b"x" * (MAX_AUDIO_SIZE + 1)
+        with pytest.raises(ValueError, match="Audio file too large"):
+            await transcribe_audio(huge_audio)
+
+    async def test_accepts_audio_at_limit(self) -> None:
+        """Test that audio exactly at MAX_AUDIO_SIZE is accepted."""
+        limit_audio = b"x" * MAX_AUDIO_SIZE
+        resp = _make_mock_response({
+            "choices": [{"message": {"content": "ok"}}]
+        })
+        with _patch_client(resp):
+            result = await transcribe_audio(limit_audio)
+
+        assert result == "ok"
+
+    async def test_uses_provided_client(self) -> None:
+        """CR-V-03: Test that an externally provided client is used."""
+        resp = _make_mock_response({
+            "choices": [{"message": {"content": "hello"}}]
+        })
+        mock_client = AsyncMock()
+        mock_client.post.return_value = resp
+
+        result = await transcribe_audio(b"audio", client=mock_client)
+
+        assert result == "hello"
+        mock_client.post.assert_called_once()

@@ -63,19 +63,32 @@ class WazzupProvider(MessagingProvider):
 
         raise RuntimeError("Unreachable")
 
-    async def download_media(self, url: str) -> bytes:
+    async def download_media(self, url: str, max_retries: int = 2) -> bytes:
         """Download media content (audio, images, etc.) from a URL.
+
+        Uses a separate httpx.AsyncClient because media URLs are absolute
+        CDN URLs (e.g. https://cdn.wazzup24.com/...), while self.client
+        is configured with base_url=wazzup_api_url for API calls.
 
         Args:
             url: Full URL to the media file (typically from Wazzup CDN).
+            max_retries: Number of retry attempts for transient failures.
 
         Returns:
             Raw bytes of the media file.
         """
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as dl_client:
-            response = await dl_client.get(url)
-            response.raise_for_status()
-            return response.content
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as dl_client:
+                    response = await dl_client.get(url)
+                    response.raise_for_status()
+                    return response.content
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt < max_retries:
+                    await asyncio.sleep(2**attempt)
+                    continue
+                raise
+        raise RuntimeError("Unreachable")
 
     async def send_text(self, chat_id: str, text: str) -> str:
         """Send a text message. Returns message ID.

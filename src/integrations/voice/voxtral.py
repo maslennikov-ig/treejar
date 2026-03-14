@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import time
 
 import httpx
 
@@ -22,24 +23,36 @@ _TRANSCRIPTION_PROMPT = (
     "Do not add any commentary, formatting, or markdown."
 )
 
+# Maximum audio file size (25 MB) to prevent DoS via large files
+MAX_AUDIO_SIZE = 25 * 1024 * 1024
+
 
 async def transcribe_audio(
     audio_bytes: bytes,
     audio_format: str = "mp3",
+    client: httpx.AsyncClient | None = None,
 ) -> str:
     """Transcribe audio bytes using Voxtral via OpenRouter.
 
     Args:
         audio_bytes: Raw audio file content.
         audio_format: Audio format hint (mp3, ogg, wav, etc.).
+        client: Optional reusable httpx.AsyncClient. If not provided,
+                a temporary one is created for this call.
 
     Returns:
         Transcribed text string.
 
     Raises:
         httpx.HTTPStatusError: If the API returns an error status.
-        ValueError: If the response cannot be parsed.
+        ValueError: If the response cannot be parsed or audio is too large.
     """
+    if len(audio_bytes) > MAX_AUDIO_SIZE:
+        raise ValueError(
+            f"Audio file too large: {len(audio_bytes)} bytes "
+            f"(max {MAX_AUDIO_SIZE} bytes / {MAX_AUDIO_SIZE // 1024 // 1024} MB)"
+        )
+
     b64_audio = base64.b64encode(audio_bytes).decode("ascii")
 
     payload = {
@@ -61,7 +74,9 @@ async def transcribe_audio(
         ],
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    start = time.monotonic()
+
+    if client is not None:
         response = await client.post(
             f"{settings.openrouter_base_url}/chat/completions",
             json=payload,
@@ -71,7 +86,19 @@ async def transcribe_audio(
             },
         )
         response.raise_for_status()
+    else:
+        async with httpx.AsyncClient(timeout=60.0) as tmp_client:
+            response = await tmp_client.post(
+                f"{settings.openrouter_base_url}/chat/completions",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
 
+    elapsed = time.monotonic() - start
     data = response.json()
 
     try:
@@ -79,5 +106,15 @@ async def transcribe_audio(
     except (KeyError, IndexError) as exc:
         logger.error("Unexpected Voxtral response structure: %s", data)
         raise ValueError("Failed to parse Voxtral transcription response") from exc
+
+    # CR-V-12: Structured metrics logging
+    logger.info(
+        "Voxtral transcription complete: audio_size=%d bytes, format=%s, "
+        "duration=%.2fs, result_length=%d chars",
+        len(audio_bytes),
+        audio_format,
+        elapsed,
+        len(text),
+    )
 
     return text.strip()

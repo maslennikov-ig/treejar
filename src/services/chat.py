@@ -95,30 +95,78 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     transcription: str | None = None
     audio_messages = [m for m in messages if m.type in ("audio", "voice") and m.media and m.media.url]
     if audio_messages:
-        from src.integrations.voice.voxtral import transcribe_audio
+        from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
 
-        audio_msg = audio_messages[0]  # Process the first audio message
-        assert audio_msg.media is not None  # guaranteed by filter above
-        audio_url = audio_msg.media.url
-        logger.info("Audio message detected for %s, downloading from %s", chat_id, audio_url)
+        transcriptions: list[str] = []
         try:
             async with WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_dl:
-                audio_bytes = await wazzup_dl.download_media(audio_url)
-            # Determine format from mime type
-            mime = audio_msg.media.mimeType or ""
-            audio_format = "ogg" if "ogg" in mime else "mp3" if "mp3" in mime else "wav" if "wav" in mime else "mp3"
-            transcription = await transcribe_audio(audio_bytes, audio_format=audio_format)
-            logger.info("Transcription for %s: %s", chat_id, transcription[:200])
-            # Use transcription as combined_text (overrides empty text from audio msg)
-            if transcription:
-                combined_text = transcription if not combined_text.strip() else f"{combined_text}\n{transcription}"
+                for audio_msg in audio_messages:
+                    if audio_msg.media is None:
+                        continue  # CR-V-01: safe guard instead of assert
+                    audio_url = audio_msg.media.url
+                    logger.info(
+                        "Audio message detected for %s, downloading from %s",
+                        chat_id,
+                        audio_url,
+                    )
+                    audio_bytes = await wazzup_dl.download_media(audio_url)
+
+                    # CR-V-02: size limit check
+                    if len(audio_bytes) > MAX_AUDIO_SIZE:
+                        logger.warning(
+                            "Audio too large for %s: %d bytes (max %d)",
+                            chat_id,
+                            len(audio_bytes),
+                            MAX_AUDIO_SIZE,
+                        )
+                        await wazzup_dl.send_text(
+                            chat_id=chat_id,
+                            text=(
+                                "The voice message is too large to process. "
+                                "Please send a shorter message.\n"
+                                "الرسالة الصوتية كبيرة جداً. يرجى إرسال رسالة أقصر."
+                            ),
+                        )
+                        return
+
+                    # CR-V-11: robust MIME → format mapping
+                    mime = (audio_msg.media.mimeType or "").split(";")[0].strip()
+                    format_map = {
+                        "audio/ogg": "ogg",
+                        "audio/mpeg": "mp3",
+                        "audio/mp3": "mp3",
+                        "audio/wav": "wav",
+                        "audio/x-wav": "wav",
+                        "audio/webm": "webm",
+                    }
+                    audio_format = format_map.get(mime, "mp3")
+
+                    t = await transcribe_audio(audio_bytes, audio_format=audio_format)
+                    if t:
+                        transcriptions.append(t)
+                        logger.info("Transcription for %s: %s", chat_id, t[:200])
+
+            # CR-V-06: combine all transcriptions
+            if transcriptions:
+                transcription = "\n".join(transcriptions)
+                combined_text = (
+                    transcription
+                    if not combined_text.strip()
+                    else f"{combined_text}\n{transcription}"
+                )
+
         except Exception:
             logger.exception("Failed to transcribe audio for %s", chat_id)
-            # Send fallback message and return
+            # CR-V-07: bilingual fallback message
             async with WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_fallback:
                 await wazzup_fallback.send_text(
                     chat_id=chat_id,
-                    text="Sorry, I couldn't process your voice message. Could you please type your message instead?",
+                    text=(
+                        "Sorry, I couldn't process your voice message. "
+                        "Could you please type your message instead?\n"
+                        "عذراً، لم أتمكن من معالجة الرسالة الصوتية. "
+                        "هل يمكنك كتابة رسالتك بدلاً من ذلك؟"
+                    ),
                 )
             return
 
