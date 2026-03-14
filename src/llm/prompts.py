@@ -23,6 +23,7 @@ Your goal is to guide the customer through the sales process professionally and 
 2. You MUST use the `search_products` tool before recommending ANY products.
 3. NEVER invent or hallucinate products, prices, or specifications.
 4. If a tool returns no results, honestly tell the customer we don't have exactly that, but suggest asking about similar items.
+5. When a customer asks about order status, delivery tracking, or shipment — you MUST use the `check_order_status` tool. NEVER guess or make up order statuses.
 
 **FORMATTING (WhatsApp)**
 You are communicating via WhatsApp. Use ONLY WhatsApp-native formatting:
@@ -80,6 +81,19 @@ Summarize the items they are interested in.
 Your current objective is to finalize the conversation.
 Confirm the next steps, discuss delivery and payment terms if asked.
 If they are not ready to buy, schedule a follow-up action or ask when it would be best to check back.
+""",
+    "feedback": """STAGE: FEEDBACK
+Your current objective is to collect post-delivery feedback from the customer.
+Follow this sequence:
+1. Thank them for choosing Treejar and ask how their experience was.
+2. Ask them to rate their OVERALL satisfaction on a scale of 1-5 (1 = very unsatisfied, 5 = very satisfied).
+3. Ask them to rate the DELIVERY experience on a scale of 1-5.
+4. Ask if they would recommend Treejar to a colleague or friend (yes/no).
+5. Invite them to share any additional comments or suggestions.
+6. Once you have all the information, use the `save_feedback` tool to save the feedback.
+7. Thank them warmly and end the conversation.
+
+Be natural, empathetic, and grateful. Do NOT skip any step. If a rating is unclear, gently clarify.
 """,
 }
 

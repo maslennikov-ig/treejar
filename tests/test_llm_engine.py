@@ -494,3 +494,118 @@ async def test_tools_create_deal(
             "Amount": 1000.0,
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_tools_check_order_status_with_deal(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """check_order_status returns human-readable status when deal is linked."""
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = "DEAL_123"
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    # Mock CRM response
+    zoho_crm.get_deal_status.return_value = {
+        "id": "DEAL_123",
+        "Deal_Name": "Office Chairs",
+        "Stage": "Order Confirmed",
+    }
+
+    # Mock Inventory response (no sale order linked)
+    zoho.get_sale_order_status = AsyncMock(return_value=None)
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import check_order_status
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await check_order_status(ctx)
+    assert "Confirmed" in result
+    zoho_crm.get_deal_status.assert_awaited_once_with("DEAL_123")
+
+
+@pytest.mark.asyncio
+async def test_tools_check_order_status_no_deal(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """check_order_status returns error when no deal is linked to conversation."""
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = None  # No deal linked
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import check_order_status
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await check_order_status(ctx)
+    assert "no order" in result.lower() or "not found" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_tools_check_order_status_no_crm(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """check_order_status works even when CRM client is unavailable."""
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = "DEAL_789"
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=None,  # No CRM client
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import check_order_status
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await check_order_status(ctx)
+    # Should still work but without CRM data
+    assert isinstance(result, str)
+    assert len(result) > 0

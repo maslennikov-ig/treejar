@@ -20,6 +20,16 @@ class SalesStage(StrEnum):
     COMPANY_DETAILS = "company_details"
     QUOTING = "quoting"
     CLOSING = "closing"
+    FEEDBACK = "feedback"
+
+
+class DealStatus(StrEnum):
+    """Status of a customer deal, typically synced from Zoho CRM."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
 
 
 class ConversationStatus(StrEnum):

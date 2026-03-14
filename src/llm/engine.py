@@ -49,7 +49,8 @@ ALLOWED_TRANSITIONS = {
     SalesStage.SOLUTION: [SalesStage.COMPANY_DETAILS, SalesStage.NEEDS_ANALYSIS],
     SalesStage.COMPANY_DETAILS: [SalesStage.QUOTING, SalesStage.SOLUTION],
     SalesStage.QUOTING: [SalesStage.CLOSING, SalesStage.SOLUTION],
-    SalesStage.CLOSING: [],
+    SalesStage.CLOSING: [SalesStage.FEEDBACK],
+    SalesStage.FEEDBACK: [],
 }
 
 
@@ -498,6 +499,106 @@ async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
     if result.success:
         return result.message
     return f"Referral code issue: {result.message}"
+
+
+@sales_agent.tool
+async def save_feedback(
+    ctx: RunContext[SalesDeps],
+    rating_overall: int,
+    rating_delivery: int,
+    recommend: bool,
+    comment: str | None = None,
+) -> str:
+    """Save the customer's post-delivery feedback after collecting all ratings.
+    Call this after the customer has provided their overall rating, delivery rating,
+    recommendation, and optional comment.
+
+    Args:
+        rating_overall: Customer's overall satisfaction rating (1-5, where 5 is best).
+        rating_delivery: Customer's delivery experience rating (1-5, where 5 is best).
+        recommend: Whether the customer would recommend Treejar to others.
+        comment: Optional free-form comment or suggestion from the customer.
+    """
+    from pydantic_ai import ModelRetry
+
+    logger.info(
+        "LLM Tool called: save_feedback(overall=%s, delivery=%s, recommend=%s)",
+        rating_overall,
+        rating_delivery,
+        recommend,
+    )
+
+    # Validate ratings
+    if not (1 <= rating_overall <= 5) or not (1 <= rating_delivery <= 5):
+        raise ModelRetry(
+            "Invalid ratings. Both rating_overall and rating_delivery must be between 1 and 5. "
+            "Please ask the customer to clarify their rating."
+        )
+
+    # Check for existing feedback (prevent duplicates)
+    from sqlalchemy import select
+
+    from src.models.feedback import Feedback
+
+    existing = await ctx.deps.db.execute(
+        select(Feedback.id).where(
+            Feedback.conversation_id == ctx.deps.conversation.id
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return "Feedback has already been recorded for this conversation. Thank the customer warmly."
+
+    feedback = Feedback(
+        conversation_id=ctx.deps.conversation.id,
+        deal_id=ctx.deps.conversation.zoho_deal_id,
+        rating_overall=rating_overall,
+        rating_delivery=rating_delivery,
+        recommend=recommend,
+        comment=comment,
+    )
+    ctx.deps.db.add(feedback)
+
+    return "Feedback saved successfully. Thank you for sharing your experience!"
+
+
+@sales_agent.tool
+async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
+    """Check the current status of the customer's order.
+    Call this when the customer asks about their order status, delivery, or shipment.
+    This tool looks up the deal in CRM and the sale order in Inventory.
+    """
+    logger.info("LLM Tool called: check_order_status()")
+
+    deal_id = ctx.deps.conversation.zoho_deal_id
+    if not deal_id:
+        return "No order found linked to this conversation. The customer may not have a confirmed deal yet."
+
+    from src.llm.order_status import format_order_status
+
+    language = ctx.deps.conversation.language or "en"
+
+    # Fetch CRM deal status
+    deal_data = None
+    if ctx.deps.zoho_crm:
+        try:
+            deal_data = await ctx.deps.zoho_crm.get_deal_status(deal_id)
+        except Exception as e:
+            logger.warning("Failed to fetch CRM deal status: %s", e)
+
+    # Fetch Inventory sale order status (use deal_id as reference, or from metadata)
+    order_data = None
+    metadata = ctx.deps.conversation.metadata_ or {}
+    sale_order_id = metadata.get("zoho_sale_order_id")
+
+    if sale_order_id:
+        try:
+            order_data = await ctx.deps.zoho_inventory.get_sale_order_status(
+                sale_order_id
+            )
+        except Exception as e:
+            logger.warning("Failed to fetch Inventory order status: %s", e)
+
+    return format_order_status(deal_data, order_data, language)
 
 
 async def process_message(

@@ -2,6 +2,7 @@ from sqladmin import Admin, ModelView
 
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
+from src.models.feedback import Feedback
 from src.models.knowledge_base import KnowledgeBase
 from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
@@ -123,6 +124,20 @@ class ReferralAdmin(ModelView, model=Referral):
     icon = "fa-solid fa-share-nodes"
 
 
+class FeedbackAdmin(ModelView, model=Feedback):
+    column_list = [
+        Feedback.id,
+        Feedback.conversation_id,
+        Feedback.rating_overall,
+        Feedback.rating_delivery,
+        Feedback.recommend,
+        Feedback.created_at,
+    ]
+    name = "Feedback"
+    name_plural = "Feedbacks"
+    icon = "fa-solid fa-star-half-stroke"
+
+
 def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(ConversationAdmin)
     admin_app.add_view(MessageAdmin)
@@ -134,3 +149,4 @@ def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(SystemPromptAdmin)
     admin_app.add_view(MetricsSnapshotAdmin)
     admin_app.add_view(ReferralAdmin)
+    admin_app.add_view(FeedbackAdmin)

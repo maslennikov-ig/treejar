@@ -168,9 +168,9 @@ class TestAdvanceStageInvalid:
         assert "Cannot transition" in result
 
     @pytest.mark.asyncio
-    async def test_closing_has_no_exits(self) -> None:
-        """CLOSING is a terminal state, no transitions allowed."""
-        conv = _make_conversation(SalesStage.CLOSING)
+    async def test_feedback_has_no_exits(self) -> None:
+        """FEEDBACK is a terminal state, no transitions allowed."""
+        conv = _make_conversation(SalesStage.FEEDBACK)
         ctx = _FakeRunContext(deps=_make_deps(conv))
         for stage in SalesStage:
             result = await advance_stage(ctx, stage)  # type: ignore[arg-type]
@@ -220,7 +220,7 @@ class TestFullFunnelTraversal:
 
     @pytest.mark.asyncio
     async def test_full_happy_path(self) -> None:
-        """GREETING → QUALIFYING → NEEDS → SOLUTION → COMPANY → QUOTING → CLOSING."""
+        """GREETING → QUALIFYING → NEEDS → SOLUTION → COMPANY → QUOTING → CLOSING → FEEDBACK."""
         happy_path = [
             SalesStage.QUALIFYING,
             SalesStage.NEEDS_ANALYSIS,
@@ -228,6 +228,7 @@ class TestFullFunnelTraversal:
             SalesStage.COMPANY_DETAILS,
             SalesStage.QUOTING,
             SalesStage.CLOSING,
+            SalesStage.FEEDBACK,
         ]
         conv = _make_conversation(SalesStage.GREETING)
         ctx = _FakeRunContext(deps=_make_deps(conv))

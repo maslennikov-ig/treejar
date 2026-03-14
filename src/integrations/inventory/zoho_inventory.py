@@ -210,6 +210,30 @@ class ZohoInventoryClient(InventoryProvider):
                 return None
             raise
 
+    async def get_sale_order_status(self, order_id: str) -> dict[str, Any] | None:
+        """Get sale order status summary.
+
+        Args:
+            order_id: Zoho Inventory Sale Order ID.
+
+        Returns:
+            Normalized dict with status fields, or None if not found.
+        """
+        raw = await self.get_sale_order(order_id)
+        if not raw:
+            return None
+
+        so = raw.get("salesorder", raw)
+        return {
+            "salesorder_id": so.get("salesorder_id", ""),
+            "salesorder_number": so.get("salesorder_number", ""),
+            "status": so.get("status", ""),
+            "shipment_date": so.get("shipment_date", ""),
+            "delivery_method": so.get("delivery_method", ""),
+            "total": so.get("total", 0.0),
+            "customer_name": so.get("customer_name", ""),
+        }
+
     async def __aenter__(self) -> ZohoInventoryClient:
         return self
 

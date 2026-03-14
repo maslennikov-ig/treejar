@@ -79,6 +79,13 @@ class DashboardMetricsResponse(BaseModel):
     manager_deal_conversion_rate: float = 0.0
     manager_leaderboard: list[ManagerLeaderboardEntry] = []
 
+    # 8. Feedback
+    feedback_count: int = 0
+    avg_rating_overall: float = 0.0
+    avg_rating_delivery: float = 0.0
+    nps_score: float = 0.0
+    recommend_rate: float = 0.0
+
 
 class TimeseriesPoint(BaseModel):
     """A single data point in a timeseries."""
