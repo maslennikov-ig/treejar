@@ -167,3 +167,77 @@ async def test_update_deal() -> None:
     )
     assert result == {"code": "SUCCESS"}
     await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_deal_status_found() -> None:
+    """get_deal_status returns deal data including Stage when found."""
+    redis = AsyncMock()
+    redis.get.return_value = b"valid_token"
+    client = ZohoCRMClient(redis)
+
+    deal_data = {
+        "data": [
+            {
+                "id": "DEAL001",
+                "Deal_Name": "Office Chairs",
+                "Stage": "Order Confirmed",
+                "Amount": 1500.0,
+                "Closing_Date": "2026-04-01",
+            }
+        ]
+    }
+    response_200 = _make_response(200, deal_data)
+
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = response_200
+        result = await client.get_deal_status("DEAL001")
+
+    assert result is not None
+    assert result["id"] == "DEAL001"
+    assert result["Stage"] == "Order Confirmed"
+    mock_request.assert_awaited_once_with(
+        method="GET",
+        url="/Deals/DEAL001",
+        params=None,
+        json=None,
+        headers={"Authorization": "Zoho-oauthtoken valid_token"},
+    )
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_deal_status_not_found_204() -> None:
+    """get_deal_status returns None when API returns 204 No Content."""
+    redis = AsyncMock()
+    redis.get.return_value = b"valid_token"
+    client = ZohoCRMClient(redis)
+
+    response_204 = _make_response(204)
+
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = response_204
+        result = await client.get_deal_status("NONEXISTENT")
+
+    assert result is None
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_deal_status_empty_data() -> None:
+    """get_deal_status returns None when API returns 200 with empty data."""
+    redis = AsyncMock()
+    redis.get.return_value = b"valid_token"
+    client = ZohoCRMClient(redis)
+
+    response_200 = _make_response(200, {"data": []})
+
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = response_200
+        result = await client.get_deal_status("DEAL_EMPTY")
+
+    assert result is None
+    await client.close()
