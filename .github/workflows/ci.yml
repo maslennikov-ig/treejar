@@ -79,7 +79,7 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
       - name: Run migrations
-        run: alembic upgrade head
+        run: python -m alembic upgrade head
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
