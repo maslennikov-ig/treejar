@@ -38,6 +38,8 @@ class Message(UUIDMixin, Base):
     tokens_out: Mapped[int | None] = mapped_column(default=None)
     cost: Mapped[float | None] = mapped_column(Numeric(10, 6), default=None)
     model: Mapped[str | None] = mapped_column(String, default=None)
+    audio_url: Mapped[str | None] = mapped_column(String, default=None)
+    transcription: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(),
     )

@@ -63,6 +63,20 @@ class WazzupProvider(MessagingProvider):
 
         raise RuntimeError("Unreachable")
 
+    async def download_media(self, url: str) -> bytes:
+        """Download media content (audio, images, etc.) from a URL.
+
+        Args:
+            url: Full URL to the media file (typically from Wazzup CDN).
+
+        Returns:
+            Raw bytes of the media file.
+        """
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as dl_client:
+            response = await dl_client.get(url)
+            response.raise_for_status()
+            return response.content
+
     async def send_text(self, chat_id: str, text: str) -> str:
         """Send a text message. Returns message ID.
 

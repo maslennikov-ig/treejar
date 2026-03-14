@@ -90,6 +90,38 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     )
     combined_text = "\n".join(m.text for m in messages if m.text)
 
+    # Check for audio/voice messages and transcribe them
+    audio_url: str | None = None
+    transcription: str | None = None
+    audio_messages = [m for m in messages if m.type in ("audio", "voice") and m.media and m.media.url]
+    if audio_messages:
+        from src.integrations.voice.voxtral import transcribe_audio
+
+        audio_msg = audio_messages[0]  # Process the first audio message
+        assert audio_msg.media is not None  # guaranteed by filter above
+        audio_url = audio_msg.media.url
+        logger.info("Audio message detected for %s, downloading from %s", chat_id, audio_url)
+        try:
+            async with WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_dl:
+                audio_bytes = await wazzup_dl.download_media(audio_url)
+            # Determine format from mime type
+            mime = audio_msg.media.mimeType or ""
+            audio_format = "ogg" if "ogg" in mime else "mp3" if "mp3" in mime else "wav" if "wav" in mime else "mp3"
+            transcription = await transcribe_audio(audio_bytes, audio_format=audio_format)
+            logger.info("Transcription for %s: %s", chat_id, transcription[:200])
+            # Use transcription as combined_text (overrides empty text from audio msg)
+            if transcription:
+                combined_text = transcription if not combined_text.strip() else f"{combined_text}\n{transcription}"
+        except Exception:
+            logger.exception("Failed to transcribe audio for %s", chat_id)
+            # Send fallback message and return
+            async with WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_fallback:
+                await wazzup_fallback.send_text(
+                    chat_id=chat_id,
+                    text="Sorry, I couldn't process your voice message. Could you please type your message instead?",
+                )
+            return
+
     if not combined_text.strip():
         logger.warning("No text content in batch for %s, skipping.", chat_id)
         return
@@ -137,11 +169,15 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
         for m in messages:
             if m.messageId and m.messageId not in existing_ids:
                 role = _determine_role(m)
+                is_audio = m.type in ("audio", "voice")
                 new_msg = Message(
                     conversation_id=conv.id,
                     role=role,
-                    content=m.text or "",
+                    content=transcription if is_audio and transcription else (m.text or ""),
+                    message_type=m.type,
                     wazzup_message_id=m.messageId,
+                    audio_url=audio_url if is_audio else None,
+                    transcription=transcription if is_audio else None,
                 )
                 db.add(new_msg)
                 existing_ids.add(m.messageId)
