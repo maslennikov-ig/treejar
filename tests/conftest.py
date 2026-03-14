@@ -23,7 +23,7 @@ def _is_db_available() -> bool:
     try:
         import asyncio
 
-        import asyncpg  # type: ignore
+        import asyncpg
 
         from src.core.config import settings
 

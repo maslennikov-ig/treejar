@@ -120,7 +120,7 @@ async def test_feedback_cron_sql_structure() -> None:
     # Compile the SQLAlchemy statement to raw SQL string
     from sqlalchemy.dialects import postgresql
 
-    compiled = str(stmt.compile(dialect=postgresql.dialect()))
+    compiled = str(stmt.compile(dialect=postgresql.dialect()))  # type: ignore[no-untyped-call]
     compiled_lower = compiled.lower()
 
     # Verify LEFT OUTER JOIN on feedbacks table

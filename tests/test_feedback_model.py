@@ -63,7 +63,7 @@ class TestFeedbackStage:
     """Tests for FEEDBACK stage integration."""
 
     def test_feedback_stage_exists(self) -> None:
-        assert SalesStage.FEEDBACK == "feedback"
+        assert SalesStage.FEEDBACK.value == "feedback"
         assert "feedback" in [s.value for s in SalesStage]
 
     def test_feedback_in_allowed_transitions(self) -> None:
