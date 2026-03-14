@@ -9,6 +9,7 @@ from src.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from src.models.escalation import Escalation
+    from src.models.feedback import Feedback
     from src.models.manager_review import ManagerReview
     from src.models.message import Message
     from src.models.quality_review import QualityReview
@@ -28,6 +29,7 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
     sales_stage: Mapped[str] = mapped_column(String, default="greeting")
     status: Mapped[str] = mapped_column(String, default="active")
     escalation_status: Mapped[str] = mapped_column(String, default="none")
+    deal_status: Mapped[str | None] = mapped_column(String, default=None)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column(
         "metadata", JSON, nullable=True, default=None
     )
@@ -43,5 +45,8 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
         back_populates="conversation",
     )
     manager_reviews: Mapped[list[ManagerReview]] = relationship(
+        back_populates="conversation",
+    )
+    feedbacks: Mapped[list[Feedback]] = relationship(
         back_populates="conversation",
     )

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
+from src.models.feedback import Feedback
 from src.models.message import Message
 from src.models.quality_review import QualityReview
 from src.schemas import (
@@ -264,6 +265,31 @@ async def calculate_dashboard_metrics(
         for row in lb_result.all()
     ]
 
+    # ── QUERY 5: Feedback metrics ──
+    fb_q = select(
+        func.count(Feedback.id),
+        func.avg(Feedback.rating_overall),
+        func.avg(Feedback.rating_delivery),
+        func.count().filter(Feedback.recommend.is_(True)),
+        func.count().filter(Feedback.recommend.is_(False)),
+    ).select_from(Feedback)
+
+    if period_start:
+        fb_q = fb_q.where(Feedback.created_at >= period_start)
+
+    fb_result = await db.execute(fb_q)
+    fb_row = fb_result.one()
+    feedback_count = fb_row[0] or 0
+    avg_rating_overall = float(fb_row[1] or 0.0)
+    avg_rating_delivery = float(fb_row[2] or 0.0)
+    promoters = fb_row[3] or 0  # recommend=True
+    detractors = fb_row[4] or 0  # recommend=False
+    nps_score = 0.0
+    recommend_rate = 0.0
+    if feedback_count > 0:
+        nps_score = round((promoters - detractors) / feedback_count * 100, 1)
+        recommend_rate = round(promoters / feedback_count * 100, 1)
+
     return DashboardMetricsResponse(
         period=period,
         total_conversations=total_conversations,
@@ -286,6 +312,11 @@ async def calculate_dashboard_metrics(
         avg_manager_response_time_seconds=round(avg_manager_response_time, 1),
         manager_deal_conversion_rate=manager_deal_conversion_rate,
         manager_leaderboard=manager_leaderboard,
+        feedback_count=feedback_count,
+        avg_rating_overall=round(avg_rating_overall, 1),
+        avg_rating_delivery=round(avg_rating_delivery, 1),
+        nps_score=nps_score,
+        recommend_rate=recommend_rate,
     )
 
 

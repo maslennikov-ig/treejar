@@ -20,6 +20,7 @@ class SalesStage(StrEnum):
     COMPANY_DETAILS = "company_details"
     QUOTING = "quoting"
     CLOSING = "closing"
+    FEEDBACK = "feedback"
 
 
 class ConversationStatus(StrEnum):
