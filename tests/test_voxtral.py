@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,8 +11,6 @@ import pytest
 
 from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
 
-
-from typing import Any
 
 def _make_mock_response(json_data: dict[str, Any]) -> MagicMock:
     """Create a mock httpx.Response with synchronous .json()."""
