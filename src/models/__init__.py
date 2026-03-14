@@ -2,6 +2,7 @@ from src.models.base import Base
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
 from src.models.knowledge_base import KnowledgeBase
+from src.models.manager_review import ManagerReview
 from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
 from src.models.product import Product
@@ -15,6 +16,7 @@ __all__ = [
     "Conversation",
     "Escalation",
     "KnowledgeBase",
+    "ManagerReview",
     "Message",
     "MetricsSnapshot",
     "Product",

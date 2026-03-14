@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from .common import Language, UUIDModel
+from .manager_review import ManagerLeaderboardEntry
 
 
 class PromptRead(UUIDModel):
@@ -71,6 +72,12 @@ class DashboardMetricsResponse(BaseModel):
 
     # 6. Cost
     llm_cost_usd: float = 0.0
+
+    # 7. Manager Performance
+    avg_manager_score: float = 0.0
+    avg_manager_response_time_seconds: float = 0.0
+    manager_deal_conversion_rate: float = 0.0
+    manager_leaderboard: list[ManagerLeaderboardEntry] = []
 
 
 class TimeseriesPoint(BaseModel):
