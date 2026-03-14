@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.models.conversation import Conversation
-from src.schemas.common import SalesStage
+from src.schemas.common import DealStatus, SalesStage
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_feedback_cron_triggers_for_delivered_deals() -> None:
         language="en",
         escalation_status="none",
         deal_status="delivered",
-        updated_at=now - timedelta(hours=30),
+        deal_delivered_at=now - timedelta(hours=30),
     )
 
     mock_db = AsyncMock()
@@ -138,7 +138,92 @@ async def test_feedback_cron_sql_structure() -> None:
         f"Expected deal_status filter in SQL, got:\n{compiled}"
     )
 
-    # Verify time-window filters (updated_at)
-    assert compiled_lower.count("updated_at") >= 2, (
-        f"Expected at least 2 updated_at filters (min/max time window) in SQL, got:\n{compiled}"
+    # Verify time-window filters (deal_delivered_at — NOT updated_at)
+    assert "deal_delivered_at" in compiled_lower, (
+        f"Expected deal_delivered_at filter in SQL (not updated_at), got:\n{compiled}"
     )
+    assert "updated_at" not in compiled_lower or compiled_lower.count("deal_delivered_at") >= 2, (
+        f"Expected deal_delivered_at used for time window filters, got:\n{compiled}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_deal_delivered_at_set_on_first_delivered_transition() -> None:
+    """CR: When deal_status is updated to DELIVERED and deal_delivered_at is None,
+    deal_delivered_at should be set to current UTC timestamp.
+    """
+    from datetime import UTC, datetime
+
+    from src.api.v1.conversations import update_conversation
+    from src.schemas.conversation import ConversationUpdate
+
+    conv_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    conv = Conversation(
+        id=conv_id,
+        phone="+971501234567",
+        sales_stage=SalesStage.CLOSING.value,
+        language="en",
+        status="active",
+        escalation_status="none",
+        deal_status=None,
+        deal_delivered_at=None,
+        created_at=now,
+    )
+
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = conv
+    mock_db.execute.return_value = mock_result
+    mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock(side_effect=lambda obj: None)
+
+    body = ConversationUpdate(deal_status="delivered")
+
+    before = datetime.now(UTC)
+    await update_conversation(conv_id, body, mock_db)
+    after = datetime.now(UTC)
+
+    assert conv.deal_status == DealStatus.DELIVERED.value
+    assert conv.deal_delivered_at is not None
+    assert before <= conv.deal_delivered_at <= after
+
+
+@pytest.mark.asyncio
+async def test_deal_delivered_at_not_overwritten_on_subsequent_update() -> None:
+    """CR: If deal_delivered_at is already set, it must NOT be overwritten on
+    subsequent PATCH requests that keep deal_status = DELIVERED.
+    """
+    from datetime import UTC, datetime
+
+    from src.api.v1.conversations import update_conversation
+    from src.schemas.conversation import ConversationUpdate
+
+    original_ts = datetime.now(UTC) - timedelta(hours=5)
+    now = datetime.now(UTC)
+    conv_id = uuid.uuid4()
+    conv = Conversation(
+        id=conv_id,
+        phone="+971501234567",
+        sales_stage=SalesStage.FEEDBACK.value,
+        language="en",
+        status="active",
+        escalation_status="none",
+        deal_status="delivered",
+        deal_delivered_at=original_ts,
+        created_at=now,
+    )
+
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = conv
+    mock_db.execute.return_value = mock_result
+    mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock(side_effect=lambda obj: None)
+
+    body = ConversationUpdate(deal_status="delivered")
+
+    await update_conversation(conv_id, body, mock_db)
+
+    # deal_delivered_at must remain unchanged
+    assert conv.deal_delivered_at == original_ts
