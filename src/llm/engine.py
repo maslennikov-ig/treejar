@@ -17,6 +17,7 @@ from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.base import MessagingProvider
 from src.llm.context import build_message_history
+from src.llm.order_status import format_order_status
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.models.conversation import Conversation
@@ -349,7 +350,20 @@ async def create_quotation(
         draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
             customer_id=customer_id, items=zoho_line_items, status="draft"
         )
-        quote_number = draft_resp.get("saleorder", {}).get("salesorder_number", "DRAFT")
+        saleorder_data = draft_resp.get("saleorder", {})
+        quote_number = saleorder_data.get("salesorder_number", "DRAFT")
+
+        # Save sale order ID in conversation metadata for order status tracking (CR-1)
+        sale_order_id = saleorder_data.get("salesorder_id", "")
+        if sale_order_id:
+            conv = ctx.deps.conversation
+            metadata = dict(conv.metadata_ or {})
+            metadata["zoho_sale_order_id"] = sale_order_id
+            conv.metadata_ = metadata
+            try:
+                await ctx.deps.db.flush()
+            except Exception as flush_err:
+                logger.warning("Failed to persist sale_order_id in metadata: %s", flush_err)
     except Exception as e:
         logger.error("Failed to create draft sale order: %s", e)
         return "Failed to create draft sale order in Zoho Inventory."
@@ -569,13 +583,13 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
     """
     logger.info("LLM Tool called: check_order_status()")
 
+    language = ctx.deps.conversation.language or "en"
+
     deal_id = ctx.deps.conversation.zoho_deal_id
     if not deal_id:
+        if language.startswith("ar"):
+            return "لم يتم العثور على طلب مرتبط بهذه المحادثة. قد لا يكون لدى العميل صفقة مؤكدة بعد."
         return "No order found linked to this conversation. The customer may not have a confirmed deal yet."
-
-    from src.llm.order_status import format_order_status
-
-    language = ctx.deps.conversation.language or "en"
 
     # Fetch CRM deal status
     deal_data = None

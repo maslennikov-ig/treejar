@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -11,7 +12,7 @@ from src.integrations.crm.zoho_crm import ZohoCRMClient
 
 
 def _make_response(
-    status_code: int, json_body: dict[str, object] | None = None
+    status_code: int, json_body: dict[str, Any] | None = None
 ) -> httpx.Response:
     """Build a real httpx.Response so raise_for_status() works correctly."""
     return httpx.Response(
