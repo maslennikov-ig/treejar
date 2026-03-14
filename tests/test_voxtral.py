@@ -11,7 +11,9 @@ import pytest
 from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
 
 
-def _make_mock_response(json_data: dict) -> MagicMock:
+from typing import Any
+
+def _make_mock_response(json_data: dict[str, Any]) -> MagicMock:
     """Create a mock httpx.Response with synchronous .json()."""
     mock_resp = MagicMock()
     mock_resp.json.return_value = json_data
@@ -19,7 +21,7 @@ def _make_mock_response(json_data: dict) -> MagicMock:
     return mock_resp
 
 
-def _patch_client(mock_response: MagicMock):
+def _patch_client(mock_response: MagicMock) -> Any:
     """Patch httpx.AsyncClient to return mock_response from .post()."""
     mock_client = AsyncMock()
     mock_client.post.return_value = mock_response

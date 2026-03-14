@@ -5,6 +5,7 @@ import logging
 import traceback
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 
 from src.core.config import settings
@@ -91,84 +92,95 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     combined_text = "\n".join(m.text for m in messages if m.text)
 
     # Check for audio/voice messages and transcribe them
-    audio_url: str | None = None
-    transcription: str | None = None
+    audio_results: dict[str, dict[str, str]] = {}
     audio_messages = [m for m in messages if m.type in ("audio", "voice") and m.media and m.media.url]
+
     if audio_messages:
         from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
 
-        transcriptions: list[str] = []
-        try:
-            async with WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_dl:
-                for audio_msg in audio_messages:
-                    if audio_msg.media is None:
-                        continue  # CR-V-01: safe guard instead of assert
-                    audio_url = audio_msg.media.url
-                    logger.info(
-                        "Audio message detected for %s, downloading from %s",
+        async def _process_single_audio(
+            audio_msg: Any,
+            wazzup_dl: WazzupProvider,
+            shared_client: httpx.AsyncClient,
+        ) -> tuple[str, str | None, str | None]:
+            msg_id = audio_msg.messageId or ""
+            if audio_msg.media is None or not audio_msg.media.url:
+                return msg_id, None, None
+
+            try:
+                audio_url = audio_msg.media.url
+                logger.info(
+                    "Audio message detected for %s, downloading from %s",
+                    chat_id,
+                    audio_url,
+                )
+
+                audio_bytes = await wazzup_dl.download_media(
+                    audio_url, max_retries=2, client=shared_client
+                )
+
+                if len(audio_bytes) > MAX_AUDIO_SIZE:
+                    logger.warning(
+                        "Audio too large for %s: %d bytes (max %d)",
                         chat_id,
-                        audio_url,
+                        len(audio_bytes),
+                        MAX_AUDIO_SIZE,
                     )
-                    audio_bytes = await wazzup_dl.download_media(audio_url)
+                    return msg_id, audio_url, "[System: Unreadable voice message (file too large)]"
 
-                    # CR-V-02: size limit check
-                    if len(audio_bytes) > MAX_AUDIO_SIZE:
-                        logger.warning(
-                            "Audio too large for %s: %d bytes (max %d)",
-                            chat_id,
-                            len(audio_bytes),
-                            MAX_AUDIO_SIZE,
-                        )
-                        await wazzup_dl.send_text(
-                            chat_id=chat_id,
-                            text=(
-                                "The voice message is too large to process. "
-                                "Please send a shorter message.\n"
-                                "الرسالة الصوتية كبيرة جداً. يرجى إرسال رسالة أقصر."
-                            ),
-                        )
-                        return
+                mime = (audio_msg.media.mimeType or "").split(";")[0].strip()
+                format_map = {
+                    "audio/ogg": "ogg",
+                    "audio/mpeg": "mp3",
+                    "audio/mp3": "mp3",
+                    "audio/wav": "wav",
+                    "audio/x-wav": "wav",
+                    "audio/webm": "webm",
+                }
+                audio_format = format_map.get(mime, "mp3")
 
-                    # CR-V-11: robust MIME → format mapping
-                    mime = (audio_msg.media.mimeType or "").split(";")[0].strip()
-                    format_map = {
-                        "audio/ogg": "ogg",
-                        "audio/mpeg": "mp3",
-                        "audio/mp3": "mp3",
-                        "audio/wav": "wav",
-                        "audio/x-wav": "wav",
-                        "audio/webm": "webm",
-                    }
-                    audio_format = format_map.get(mime, "mp3")
+                t = await transcribe_audio(
+                    audio_bytes, audio_format=audio_format, client=shared_client
+                )
+                if t:
+                    logger.info("Transcription for %s: %s", chat_id, t[:200])
+                    return msg_id, audio_url, t
 
-                    t = await transcribe_audio(audio_bytes, audio_format=audio_format)
-                    if t:
-                        transcriptions.append(t)
-                        logger.info("Transcription for %s: %s", chat_id, t[:200])
+                return msg_id, audio_url, None
 
-            # CR-V-06: combine all transcriptions
+            except Exception:
+                logger.exception("Failed to process audio message for %s", chat_id)
+                url = audio_msg.media.url if audio_msg.media else None
+                return msg_id, url, "[System: Unreadable voice message (error during processing)]"
+
+        try:
+            async with (
+                WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_dl,
+                httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as shared_client,
+            ):
+                tasks = [
+                    _process_single_audio(msg, wazzup_dl, shared_client)
+                    for msg in audio_messages
+                ]
+                results = await asyncio.gather(*tasks)
+
+            transcriptions: list[str] = []
+            for msg_id, url, t in results:
+                if msg_id:
+                    audio_results[msg_id] = {"url": url or "", "transcription": t or ""}
+                if t:
+                    transcriptions.append(t)
+
             if transcriptions:
-                transcription = "\n".join(transcriptions)
+                transcription_text = "\n".join(transcriptions)
                 combined_text = (
-                    transcription
+                    transcription_text
                     if not combined_text.strip()
-                    else f"{combined_text}\n{transcription}"
+                    else f"{combined_text}\n{transcription_text}"
                 )
 
         except Exception:
-            logger.exception("Failed to transcribe audio for %s", chat_id)
-            # CR-V-07: bilingual fallback message
-            async with WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_fallback:
-                await wazzup_fallback.send_text(
-                    chat_id=chat_id,
-                    text=(
-                        "Sorry, I couldn't process your voice message. "
-                        "Could you please type your message instead?\n"
-                        "عذراً، لم أتمكن من معالجة الرسالة الصوتية. "
-                        "هل يمكنك كتابة رسالتك بدلاً من ذلك؟"
-                    ),
-                )
-            return
+            logger.exception("Unexpected error in audio batch processing for %s", chat_id)
 
     if not combined_text.strip():
         logger.warning("No text content in batch for %s, skipping.", chat_id)
@@ -218,14 +230,21 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             if m.messageId and m.messageId not in existing_ids:
                 role = _determine_role(m)
                 is_audio = m.type in ("audio", "voice")
+
+                audio_url = None
+                transcription = None
+                if is_audio and m.messageId in audio_results:
+                    audio_url = audio_results[m.messageId].get("url")
+                    transcription = audio_results[m.messageId].get("transcription")
+
                 new_msg = Message(
                     conversation_id=conv.id,
                     role=role,
                     content=transcription if is_audio and transcription else (m.text or ""),
                     message_type=m.type,
                     wazzup_message_id=m.messageId,
-                    audio_url=audio_url if is_audio else None,
-                    transcription=transcription if is_audio else None,
+                    audio_url=audio_url,
+                    transcription=transcription,
                 )
                 db.add(new_msg)
                 existing_ids.add(m.messageId)
