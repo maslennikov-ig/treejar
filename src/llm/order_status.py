@@ -56,10 +56,33 @@ def format_order_status(
     language: str,
 ) -> str:
     """Combine CRM deal and Inventory order data into a human-readable status message."""
+    is_ar = _lang_index(language) == 1
+
     if not deal_data and not order_data:
-        if _lang_index(language) == 1:
+        if is_ar:
             return "لم يتم العثور على طلب مرتبط بهذه المحادثة."
         return "No order found linked to this conversation."
+
+    # Localized label templates
+    labels = (
+        {
+            "order": "الطلب",
+            "deal_status": "حالة الصفقة",
+            "so_number": "رقم الطلب",
+            "ship_status": "حالة الشحن",
+            "ship_date": "تاريخ الشحن",
+            "delivery": "طريقة التوصيل",
+        }
+        if is_ar
+        else {
+            "order": "Order",
+            "deal_status": "Deal status",
+            "so_number": "Sale Order",
+            "ship_status": "Shipment status",
+            "ship_date": "Shipment date",
+            "delivery": "Delivery method",
+        }
+    )
 
     parts: list[str] = []
 
@@ -69,16 +92,10 @@ def format_order_status(
         label = get_deal_stage_label(stage, language) if stage else ""
         deal_name = deal_data.get("Deal_Name", "")
 
-        if _lang_index(language) == 1:
-            if deal_name:
-                parts.append(f"الطلب: {deal_name}")
-            if label:
-                parts.append(f"حالة الصفقة: {label}")
-        else:
-            if deal_name:
-                parts.append(f"Order: {deal_name}")
-            if label:
-                parts.append(f"Deal status: {label}")
+        if deal_name:
+            parts.append(f"{labels['order']}: {deal_name}")
+        if label:
+            parts.append(f"{labels['deal_status']}: {label}")
 
     # Inventory Sale Order info
     if order_data:
@@ -88,23 +105,13 @@ def format_order_status(
         shipment_date = order_data.get("shipment_date", "")
         delivery_method = order_data.get("delivery_method", "")
 
-        if _lang_index(language) == 1:
-            if so_number:
-                parts.append(f"رقم الطلب: {so_number}")
-            if label:
-                parts.append(f"حالة الشحن: {label}")
-            if shipment_date:
-                parts.append(f"تاريخ الشحن: {shipment_date}")
-            if delivery_method:
-                parts.append(f"طريقة التوصيل: {delivery_method}")
-        else:
-            if so_number:
-                parts.append(f"Sale Order: {so_number}")
-            if label:
-                parts.append(f"Shipment status: {label}")
-            if shipment_date:
-                parts.append(f"Shipment date: {shipment_date}")
-            if delivery_method:
-                parts.append(f"Delivery method: {delivery_method}")
+        if so_number:
+            parts.append(f"{labels['so_number']}: {so_number}")
+        if label:
+            parts.append(f"{labels['ship_status']}: {label}")
+        if shipment_date:
+            parts.append(f"{labels['ship_date']}: {shipment_date}")
+        if delivery_method:
+            parts.append(f"{labels['delivery']}: {delivery_method}")
 
     return "\n".join(parts)

@@ -46,12 +46,11 @@ async def test_get_sale_order_status_confirmed() -> None:
 
     zoho_client = ZohoInventoryClient(redis_client=redis_mock)
 
-    from unittest.mock import MagicMock
+    import httpx
 
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.json = MagicMock(
-        return_value={
+    mock_response = httpx.Response(
+        200,
+        json={
             "salesorder": {
                 "salesorder_id": "SO001",
                 "salesorder_number": "SO-00003",
@@ -61,10 +60,12 @@ async def test_get_sale_order_status_confirmed() -> None:
                 "total": 1500.0,
                 "customer_name": "John Doe",
             }
-        }
+        },
+        request=httpx.Request("GET", "https://example.com"),
     )
 
-    with patch("httpx.AsyncClient.request", return_value=mock_response):
+    with patch.object(zoho_client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = mock_response
         result = await zoho_client.get_sale_order_status("SO001")
 
     assert result is not None
@@ -92,9 +93,10 @@ async def test_get_sale_order_status_not_found() -> None:
         request=httpx.Request("GET", "https://example.com"),
     )
 
-    with patch("httpx.AsyncClient.request", side_effect=httpx.HTTPStatusError(
-        "Not Found", request=mock_response.request, response=mock_response
-    )):
+    with patch.object(zoho_client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.side_effect = httpx.HTTPStatusError(
+            "Not Found", request=mock_response.request, response=mock_response
+        )
         result = await zoho_client.get_sale_order_status("NONEXISTENT")
 
     assert result is None

@@ -496,6 +496,7 @@ async def test_tools_create_deal(
     )
 
 
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_tools_check_order_status_with_deal(
     mock_deps: tuple[
@@ -541,6 +542,7 @@ async def test_tools_check_order_status_with_deal(
     zoho_crm.get_deal_status.assert_awaited_once_with("DEAL_123")
 
 
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_tools_check_order_status_no_deal(
     mock_deps: tuple[
@@ -575,6 +577,7 @@ async def test_tools_check_order_status_no_deal(
     assert "no order" in result.lower() or "not found" in result.lower()
 
 
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_tools_check_order_status_no_crm(
     mock_deps: tuple[
@@ -609,3 +612,43 @@ async def test_tools_check_order_status_no_crm(
     # Should still work but without CRM data
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_tools_check_order_status_crm_exception(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """check_order_status handles CRM exception gracefully and returns partial status."""
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = "DEAL_ERR"
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    # CRM throws an exception
+    zoho_crm.get_deal_status.side_effect = ConnectionError("Zoho CRM unreachable")
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import check_order_status
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await check_order_status(ctx)
+    # Should not raise, should return something (may be "no order found" if no inventory data either)
+    assert isinstance(result, str)
+    zoho_crm.get_deal_status.assert_awaited_once_with("DEAL_ERR")
