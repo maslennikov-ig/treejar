@@ -3,7 +3,7 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import requires_db
+from tests.conftest import integration
 
 
 @pytest.mark.asyncio
@@ -13,7 +13,7 @@ async def test_admin_requires_auth(client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
-@requires_db
+@integration
 @pytest.mark.asyncio
 async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     # --- test_admin_prompts ---
@@ -67,7 +67,7 @@ async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     assert "/admin/login" in response_rm.headers["location"]
 
 
-@requires_db
+@integration
 @pytest.mark.asyncio
 async def test_dashboard_metrics(admin_client: AsyncClient) -> None:
     """Test the expanded dashboard metrics endpoint (17 KPIs, 6 categories)."""
@@ -115,7 +115,7 @@ async def test_dashboard_metrics(admin_client: AsyncClient) -> None:
     assert resp_bad.status_code == 422
 
 
-@requires_db
+@integration
 @pytest.mark.asyncio
 async def test_admin_models_list(client: AsyncClient) -> None:
     import uuid
