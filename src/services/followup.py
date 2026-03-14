@@ -45,20 +45,20 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
             conversations: list[Conversation] = list(result.scalars().all())
 
             logfire.info(
-                    "Found {count} conversations for {hours}h follow-up",
-                    count=len(conversations),
-                    hours=min_hrs,
-                )
+                "Found {count} conversations for {hours}h follow-up",
+                count=len(conversations),
+                hours=min_hrs,
+            )
 
             for conv in conversations:
                 try:
                     await _process_followup_for_conversation(db, conv)
                 except Exception as e:
-                        logfire.error(
-                            "Failed to process followup for {conv_id}: {error}",
-                            conv_id=conv.id,
-                            error=str(e),
-                        )
+                    logfire.error(
+                        "Failed to process followup for {conv_id}: {error}",
+                        conv_id=conv.id,
+                        error=str(e),
+                    )
 
 
 async def _process_followup_for_conversation(db: Any, conv: Conversation) -> None:

@@ -52,9 +52,9 @@ async def test_process_incoming_batch_new_conversation(
     mock_conv.escalation_status = "none"
 
     mock_session.execute.side_effect = [
-        MockResult(None),       # bot_enabled
-        MockResult(None),       # conv lookup (None = create new)
-        MockResult([]),         # msg dedup check
+        MockResult(None),  # bot_enabled
+        MockResult(None),  # conv lookup (None = create new)
+        MockResult([]),  # msg dedup check
     ]
 
     # Simulate LLM response

@@ -30,7 +30,9 @@ async def require_admin_session(request: Request) -> None:
         token = request.session.get("token")
     except AssertionError:
         # SessionMiddleware not installed — treat as unauthenticated
-        raise HTTPException(status_code=401, detail="Admin authentication required") from None
+        raise HTTPException(
+            status_code=401, detail="Admin authentication required"
+        ) from None
     if token != "admin_session":
         raise HTTPException(status_code=401, detail="Admin authentication required")
 

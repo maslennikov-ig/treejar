@@ -3,6 +3,7 @@
 Separate from src/schemas/quality.py (which are the API-facing schemas).
 These are used by the PydanticAI judge agent for structured output.
 """
+
 from __future__ import annotations
 
 from typing import Literal

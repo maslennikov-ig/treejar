@@ -31,9 +31,7 @@ def _is_db_available() -> bool:
 
         async def _probe() -> bool:
             try:
-                conn = await asyncio.wait_for(
-                    asyncpg.connect(url), timeout=2.0
-                )
+                conn = await asyncio.wait_for(asyncpg.connect(url), timeout=2.0)
                 await conn.close()
                 return True
             except Exception:

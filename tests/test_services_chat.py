@@ -70,9 +70,9 @@ async def test_process_incoming_batch_success(
 
     # Simulate: no bot_enabled config, existing conversation found, empty message dedup
     mock_db.execute.side_effect = [
-        MockResult(None),     # bot_enabled config lookup
+        MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
-        MockResult([]),       # batch messages dedup check
+        MockResult([]),  # batch messages dedup check
     ]
 
     # 3. Setup LLM response mock

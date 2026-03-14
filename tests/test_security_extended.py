@@ -27,10 +27,10 @@ def test_no_hardcoded_secrets_in_source() -> None:
 
     # Patterns that indicate hardcoded secrets (not env var references)
     secret_patterns = [
-        re.compile(r'sk-[a-zA-Z0-9]{20,}'),                 # OpenAI-style keys
-        re.compile(r'password\s*=\s*"(?!").{8,}"'),          # password = "..."
-        re.compile(r'api_key\s*=\s*"(?!").{8,}"'),           # api_key = "..."
-        re.compile(r'token\s*=\s*"[a-zA-Z0-9_\-]{20,}"'),   # token = "long-thing"
+        re.compile(r"sk-[a-zA-Z0-9]{20,}"),  # OpenAI-style keys
+        re.compile(r'password\s*=\s*"(?!").{8,}"'),  # password = "..."
+        re.compile(r'api_key\s*=\s*"(?!").{8,}"'),  # api_key = "..."
+        re.compile(r'token\s*=\s*"[a-zA-Z0-9_\-]{20,}"'),  # token = "long-thing"
     ]
 
     # Safe patterns that should NOT be flagged (env lookups, empty, placeholders)
@@ -61,7 +61,9 @@ def test_no_hardcoded_secrets_in_source() -> None:
                     continue
                 for pattern in secret_patterns:
                     if pattern.search(stripped):
-                        offending.append(f"{py_file.relative_to(src_dir.parent)}:{lineno}: {line.rstrip()}")
+                        offending.append(
+                            f"{py_file.relative_to(src_dir.parent)}:{lineno}: {line.rstrip()}"
+                        )
                         break
 
     assert not offending, (
@@ -85,7 +87,7 @@ def test_rag_pipeline_no_raw_string_interpolation() -> None:
         (r'f".*SELECT.*\{', "f-string with SELECT"),
         (r'f".*WHERE.*\{', "f-string with WHERE"),
         (r'"SELECT\s+.*"\s*\+', "String concatenation with SELECT"),
-        (r'%\s*\(.*user', "%-formatting with user input"),
+        (r"%\s*\(.*user", "%-formatting with user input"),
     ]
 
     for pattern, description in dangerous_patterns:
@@ -129,7 +131,9 @@ async def test_admin_panel_requires_authentication() -> None:
 
     from src.main import app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         response = await ac.get("/admin/", follow_redirects=False)
 
     allowed_statuses = {200, 302, 303, 307, 401, 403}

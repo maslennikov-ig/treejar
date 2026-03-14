@@ -2,6 +2,7 @@
 
 Verifies model creation, field types, and relationship definitions.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -19,7 +20,12 @@ def test_manager_review_fields() -> None:
         max_score=20,
         rating="good",
         criteria=[
-            {"rule_number": 1, "rule_name": "Quick pickup", "score": 2, "comment": "Good"},
+            {
+                "rule_number": 1,
+                "rule_name": "Quick pickup",
+                "score": 2,
+                "comment": "Good",
+            },
         ],
         summary="Good performance overall",
         first_response_time_seconds=300,

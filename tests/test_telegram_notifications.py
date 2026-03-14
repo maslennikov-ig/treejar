@@ -6,6 +6,7 @@ Covers:
 - NotificationService formatting and dispatching
 - API endpoints: POST /notifications/test, GET /notifications/config
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -33,9 +34,7 @@ async def test_telegram_send_message_calls_api() -> None:
     ) as MockClient:
         mock_client_instance = AsyncMock()
         mock_client_instance.post = AsyncMock(return_value=mock_response)
-        mock_client_instance.__aenter__ = AsyncMock(
-            return_value=mock_client_instance
-        )
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
         mock_client_instance.__aexit__ = AsyncMock(return_value=False)
         MockClient.return_value = mock_client_instance
 
@@ -77,9 +76,7 @@ async def test_telegram_send_document_calls_api() -> None:
     ) as MockClient:
         mock_client_instance = AsyncMock()
         mock_client_instance.post = AsyncMock(return_value=mock_response)
-        mock_client_instance.__aenter__ = AsyncMock(
-            return_value=mock_client_instance
-        )
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
         mock_client_instance.__aexit__ = AsyncMock(return_value=False)
         MockClient.return_value = mock_client_instance
 
@@ -118,7 +115,9 @@ async def test_notify_quality_alert_formats_html() -> None:
     from src.services.notifications import format_quality_alert_message
 
     conv_id = uuid4()
-    msg = format_quality_alert_message(conv_id, score=8.0, rating="poor", summary="Bad dialogue")
+    msg = format_quality_alert_message(
+        conv_id, score=8.0, rating="poor", summary="Bad dialogue"
+    )
     assert "<b>" in msg
     assert "8.0" in msg
     assert "poor" in msg

@@ -5,6 +5,7 @@ Evaluates completed dialogues against 15 criteria from the sales dialogue checkl
 
 See: docs/06-dialogue-evaluation-checklist.md
 """
+
 from __future__ import annotations
 
 import logging

@@ -46,7 +46,9 @@ from src.schemas.product import ProductRead, ProductSearchResult
 _env_path = Path(__file__).resolve().parents[1] / ".env"
 _env_values = dotenv_values(_env_path) if _env_path.exists() else {}
 OPENROUTER_KEY: str = _env_values.get("OPENROUTER_API_KEY", "") or ""
-MODEL_NAME: str = _env_values.get("OPENROUTER_MODEL_MAIN") or settings.openrouter_model_main or ""
+MODEL_NAME: str = (
+    _env_values.get("OPENROUTER_MODEL_MAIN") or settings.openrouter_model_main or ""
+)
 
 pytestmark = pytest.mark.skipif(
     not OPENROUTER_KEY or OPENROUTER_KEY == "test-key",
@@ -169,9 +171,9 @@ class TestRealLLMGreeting:
 
         # Quality checks (fuzzy — real LLM responses vary)
         assert len(result.output) > 20, "Response too short"
-        assert any(word in text for word in ["treejar", "noor", "furniture", "office", "help"]), (
-            f"Expected bot to mention Treejar/Noor/furniture: {result.output}"
-        )
+        assert any(
+            word in text for word in ["treejar", "noor", "furniture", "office", "help"]
+        ), f"Expected bot to mention Treejar/Noor/furniture: {result.output}"
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +221,9 @@ class TestRealLLMProductSearch:
 
         # Response should mention the product that was returned
         text = result.output.lower()
-        assert any(word in text for word in ["ergomax", "chair", "ergonomic", "1500", "aed"]), (
-            f"Expected product details in response: {result.output}"
-        )
+        assert any(
+            word in text for word in ["ergomax", "chair", "ergonomic", "1500", "aed"]
+        ), f"Expected product details in response: {result.output}"
 
 
 # ---------------------------------------------------------------------------
@@ -303,9 +305,7 @@ class TestRealLLMWholesaleDiscount:
         )
 
         conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Ahmed")
-        deps = _mock_deps(
-            conv, crm_context={"Name": "Ahmed", "Segment": "Wholesale"}
-        )
+        deps = _mock_deps(conv, crm_context={"Name": "Ahmed", "Segment": "Wholesale"})
 
         result = await sales_agent.run(
             "Hi Ahmed. Show me your best standing desks.",
@@ -322,15 +322,23 @@ class TestRealLLMWholesaleDiscount:
 
         # Response should mention the product and some pricing/discount info
         text = result.output.lower()
-        has_product = any(w in text for w in ["desk", "standing", "executive", "desk-exec"])
+        has_product = any(
+            w in text for w in ["desk", "standing", "executive", "desk-exec"]
+        )
         has_discount = any(
             w in text
-            for w in ["1700", "1,700", "15%", "discount", "wholesale", "special", "offer"]
+            for w in [
+                "1700",
+                "1,700",
+                "15%",
+                "discount",
+                "wholesale",
+                "special",
+                "offer",
+            ]
         )
         has_price = any(w in text for w in ["2000", "2,000", "aed", "price"])
-        assert has_product, (
-            f"Expected product mention in response: {result.output}"
-        )
+        assert has_product, f"Expected product mention in response: {result.output}"
         assert has_discount or has_price, (
             f"Expected price or discount info in response: {result.output}"
         )
@@ -377,12 +385,13 @@ class TestRealLLMEscalation:
         print(f"\n[REAL LLM] Escalation response:\n{result.output}\n")
 
         # Quality checks
-        assert any(word in text for word in ["manager", "team", "colleague", "supervisor", "someone"]), (
-            f"Expected mention of manager/team: {result.output}"
-        )
-        assert any(word in text for word in ["understand", "apologize", "sorry", "appreciate"]), (
-            f"Expected empathetic language: {result.output}"
-        )
+        assert any(
+            word in text
+            for word in ["manager", "team", "colleague", "supervisor", "someone"]
+        ), f"Expected mention of manager/team: {result.output}"
+        assert any(
+            word in text for word in ["understand", "apologize", "sorry", "appreciate"]
+        ), f"Expected empathetic language: {result.output}"
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +425,7 @@ class TestRealLLMArabic:
         print(f"\n[REAL LLM] Arabic response:\n{result.output}\n")
 
         # Check for Arabic characters (Unicode range)
-        arabic_chars = sum(1 for c in result.output if '\u0600' <= c <= '\u06FF')
+        arabic_chars = sum(1 for c in result.output if "\u0600" <= c <= "\u06ff")
         total_alpha = sum(1 for c in result.output if c.isalpha())
 
         arabic_ratio = arabic_chars / max(total_alpha, 1)

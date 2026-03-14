@@ -5,6 +5,7 @@ Verifies:
 - format_report_text includes manager section when data present
 - No manager section when count is 0
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

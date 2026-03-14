@@ -257,9 +257,7 @@ class TestScenario2WholesaleDiscount:
             )
 
         conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Ahmed")
-        deps = _mock_deps(
-            conv, crm_context={"Name": "Ahmed", "Segment": "Wholesale"}
-        )
+        deps = _mock_deps(conv, crm_context={"Name": "Ahmed", "Segment": "Wholesale"})
 
         with sales_agent.override(model=FunctionModel(model_fn)):
             _result = await sales_agent.run(
@@ -421,7 +419,10 @@ class TestScenario4Escalation:
         assert escalation_result.should_escalate is True
 
         # Simulate the system note injection that process_message does
-        modified_text = angry_text + "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"
+        modified_text = (
+            angry_text
+            + "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"
+        )
 
         with sales_agent.override(model=FunctionModel(model_fn)):
             result = await sales_agent.run(
@@ -434,7 +435,10 @@ class TestScenario4Escalation:
 
         # Verify bot response is empathetic and mentions escalation
         assert "manager" in result.output.lower()
-        assert "understand" in result.output.lower() or "apologize" in result.output.lower()
+        assert (
+            "understand" in result.output.lower()
+            or "apologize" in result.output.lower()
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 Verifies DashboardMetricsResponse includes manager performance fields.
 """
+
 from __future__ import annotations
 
 

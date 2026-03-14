@@ -6,6 +6,7 @@ Verifies:
 - Job handles errors gracefully
 - Worker has manager evaluation registered
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -39,5 +40,8 @@ def test_worker_has_manager_evaluation_registered() -> None:
     func_names = [getattr(f, "__name__", "") for f in WorkerSettings.functions]
     assert "evaluate_escalated_conversations" in func_names
 
-    cron_func_names = [getattr(j.coroutine, "__name__", getattr(j.coroutine, "__qualname__", "")) for j in WorkerSettings.cron_jobs]
+    cron_func_names = [
+        getattr(j.coroutine, "__name__", getattr(j.coroutine, "__qualname__", ""))
+        for j in WorkerSettings.cron_jobs
+    ]
     assert "evaluate_escalated_conversations" in cron_func_names

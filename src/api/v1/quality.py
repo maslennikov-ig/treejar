@@ -1,4 +1,5 @@
 """Quality API endpoints — conversation quality reviews and reports."""
+
 from __future__ import annotations
 
 import asyncio
@@ -83,7 +84,9 @@ async def create_review(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except UnexpectedModelBehavior as e:
-        logger.error("LLM judge failed for conversation %s: %s", body.conversation_id, e)
+        logger.error(
+            "LLM judge failed for conversation %s: %s", body.conversation_id, e
+        )
         raise HTTPException(
             status_code=502, detail="LLM evaluation failed after retries"
         ) from e

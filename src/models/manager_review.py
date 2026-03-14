@@ -47,9 +47,7 @@ class ManagerReview(UUIDMixin, Base):
     )
     message_count: Mapped[int | None] = mapped_column(Integer, default=None)
     deal_converted: Mapped[bool] = mapped_column(Boolean, default=False)
-    deal_amount: Mapped[float | None] = mapped_column(
-        Numeric(12, 2), default=None
-    )
+    deal_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), default=None)
 
     reviewer: Mapped[str] = mapped_column(String, default="ai")
     created_at: Mapped[datetime] = mapped_column(

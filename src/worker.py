@@ -40,7 +40,9 @@ async def startup(ctx: dict[str, Any]) -> None:
 
     logger.info(
         "ARQ worker started. channel_id=%s, model=%s, log_level=%s",
-        settings.wazzup_channel_id[:8] + "..." if settings.wazzup_channel_id else "MISSING",
+        settings.wazzup_channel_id[:8] + "..."
+        if settings.wazzup_channel_id
+        else "MISSING",
         settings.openrouter_model_main,
         settings.app_log_level,
     )

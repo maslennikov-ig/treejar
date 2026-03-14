@@ -93,7 +93,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
     # Check for audio/voice messages and transcribe them
     audio_results: dict[str, dict[str, str]] = {}
-    audio_messages = [m for m in messages if m.type in ("audio", "voice") and m.media and m.media.url]
+    audio_messages = [
+        m for m in messages if m.type in ("audio", "voice") and m.media and m.media.url
+    ]
 
     if audio_messages:
         from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
@@ -126,7 +128,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         len(audio_bytes),
                         MAX_AUDIO_SIZE,
                     )
-                    return msg_id, audio_url, "[System: Unreadable voice message (file too large)]"
+                    return (
+                        msg_id,
+                        audio_url,
+                        "[System: Unreadable voice message (file too large)]",
+                    )
 
                 mime = (audio_msg.media.mimeType or "").split(";")[0].strip()
                 format_map = {
@@ -151,7 +157,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             except Exception:
                 logger.exception("Failed to process audio message for %s", chat_id)
                 url = audio_msg.media.url if audio_msg.media else None
-                return msg_id, url, "[System: Unreadable voice message (error during processing)]"
+                return (
+                    msg_id,
+                    url,
+                    "[System: Unreadable voice message (error during processing)]",
+                )
 
         try:
             async with (
@@ -180,7 +190,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 )
 
         except Exception:
-            logger.exception("Unexpected error in audio batch processing for %s", chat_id)
+            logger.exception(
+                "Unexpected error in audio batch processing for %s", chat_id
+            )
 
     if not combined_text.strip():
         logger.warning("No text content in batch for %s, skipping.", chat_id)
@@ -240,7 +252,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 new_msg = Message(
                     conversation_id=conv.id,
                     role=role,
-                    content=transcription if is_audio and transcription else (m.text or ""),
+                    content=transcription
+                    if is_audio and transcription
+                    else (m.text or ""),
                     message_type=m.type,
                     wazzup_message_id=m.messageId,
                     audio_url=audio_url,

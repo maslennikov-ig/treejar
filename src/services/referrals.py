@@ -2,6 +2,7 @@
 
 Handles code generation, validation, application, and statistics.
 """
+
 from __future__ import annotations
 
 import logging
@@ -81,7 +82,9 @@ async def generate_code(
             )
         except IntegrityError:
             await db.rollback()
-            logger.warning("Referral code collision on attempt %d: %s", attempt + 1, code)
+            logger.warning(
+                "Referral code collision on attempt %d: %s", attempt + 1, code
+            )
             continue
 
     return ReferralResult(
@@ -130,9 +133,7 @@ async def apply_code(
             message="This referral code has already been used.",
         )
 
-    if referral.status == "expired" or referral.expires_at < datetime.now(
-        tz=UTC
-    ):
+    if referral.status == "expired" or referral.expires_at < datetime.now(tz=UTC):
         return ReferralResult(
             success=False,
             code=code,

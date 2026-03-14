@@ -6,6 +6,7 @@ Verifies:
 - Messages saved with correct roles (user/manager)
 - _determine_role helper function
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -105,9 +106,9 @@ async def test_bot_silent_when_escalated(
     mock_conv = _make_mock_conv(escalation_status="pending")
 
     mock_session.execute.side_effect = [
-        MockResult(None),      # bot_enabled check
+        MockResult(None),  # bot_enabled check
         MockResult(mock_conv),  # conv lookup
-        MockResult([]),         # msg dedup check
+        MockResult([]),  # msg dedup check
     ]
 
     # Client message during escalation
@@ -289,7 +290,8 @@ async def test_manager_message_saved_with_correct_role(
     from src.models.message import Message
 
     manager_msgs = [
-        call.args[0] for call in add_calls
+        call.args[0]
+        for call in add_calls
         if isinstance(call.args[0], Message) and call.args[0].role == "manager"
     ]
     assert len(manager_msgs) == 1

@@ -5,6 +5,7 @@ Endpoints:
 - GET /{review_id} — review details
 - POST /{escalation_id}/evaluate — manual evaluation trigger
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,10 +69,7 @@ async def list_manager_reviews(
         .offset(offset)
         .limit(page_size)
     )
-    items = [
-        ManagerReviewRead.model_validate(r)
-        for r in items_result.scalars().all()
-    ]
+    items = [ManagerReviewRead.model_validate(r) for r in items_result.scalars().all()]
 
     return PaginatedResponse[ManagerReviewRead](
         items=items,

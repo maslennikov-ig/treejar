@@ -8,6 +8,7 @@ Verifies:
 - calculate_manager_metrics — mocked DB queries
 - save_manager_review — mocked DB session
 """
+
 from __future__ import annotations
 
 import uuid

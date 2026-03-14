@@ -141,7 +141,10 @@ async def test_engine_process_message_with_escalation(
     )
 
     from typing import Any
-    async def side_effect(conv_obj: Any, reason: Any, context: Any, session: Any) -> None:
+
+    async def side_effect(
+        conv_obj: Any, reason: Any, context: Any, session: Any
+    ) -> None:
         conv_obj.escalation_status = EscalationStatus.PENDING.value
 
     mock_notify = AsyncMock(side_effect=side_effect)

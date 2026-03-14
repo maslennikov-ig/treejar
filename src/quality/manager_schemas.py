@@ -5,6 +5,7 @@ for structured output when evaluating manager conversations.
 
 Scale: 0-2 per criterion, 10 criteria, max 20 points.
 """
+
 from __future__ import annotations
 
 from typing import Literal

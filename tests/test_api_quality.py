@@ -2,6 +2,7 @@
 
 Updated from stubs (501) to verify real implementation.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -67,7 +68,13 @@ async def test_create_review_success() -> None:
     mock_review.max_score = 30
     mock_review.rating = "excellent"
     mock_review.criteria = [
-        {"rule_number": i, "rule_name": f"Rule {i}", "score": 2, "max_score": 2, "comment": "ok"}
+        {
+            "rule_number": i,
+            "rule_name": f"Rule {i}",
+            "score": 2,
+            "max_score": 2,
+            "comment": "ok",
+        }
         for i in range(1, 16)
     ]
     mock_review.summary = "Great dialogue"
@@ -76,7 +83,9 @@ async def test_create_review_success() -> None:
 
     with (
         patch("src.api.v1.quality.conversation_already_reviewed", return_value=False),
-        patch("src.api.v1.quality.evaluate_conversation", return_value=mock_eval_result),
+        patch(
+            "src.api.v1.quality.evaluate_conversation", return_value=mock_eval_result
+        ),
         patch("src.api.v1.quality.save_review", return_value=mock_review),
     ):
         async with AsyncClient(

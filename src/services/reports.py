@@ -8,6 +8,7 @@ Generates structured weekly reports with key business metrics:
 
 Outputs both text (for Telegram) and JSON (for API).
 """
+
 from __future__ import annotations
 
 import logging
@@ -93,9 +94,7 @@ async def generate_report(
     avg_deal_value = float(deals_row[1] or 0.0)
 
     conversion_rate = (
-        (total_deals / total_conversations * 100)
-        if total_conversations > 0
-        else 0.0
+        (total_deals / total_conversations * 100) if total_conversations > 0 else 0.0
     )
 
     # Quality score
@@ -189,7 +188,8 @@ async def generate_report(
         mgr_deals = mgr_row[3] or 0
         manager_deal_conversion_rate = (
             round(mgr_deals / manager_reviews_count * 100, 1)
-            if manager_reviews_count > 0 else 0.0
+            if manager_reviews_count > 0
+            else 0.0
         )
 
         # Top managers
@@ -261,7 +261,9 @@ def format_report_text(data: ReportData) -> str:
         lines.append("")
         lines.append("<b>Top Products:</b>")
         for prod in data.top_products[:5]:
-            lines.append(f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} mentions")
+            lines.append(
+                f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} mentions"
+            )
 
     if data.manager_reviews_count > 0:
         lines.append("")

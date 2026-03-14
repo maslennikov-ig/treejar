@@ -4,6 +4,7 @@ Verifies:
 - API routes registered and require auth
 - Pydantic schemas validate correctly
 """
+
 from __future__ import annotations
 
 import uuid
@@ -57,9 +58,7 @@ def test_manager_review_detail_schema() -> None:
 
 def test_manager_leaderboard_entry() -> None:
     """ManagerLeaderboardEntry validates correctly."""
-    entry = ManagerLeaderboardEntry(
-        name="Israullah", avg_score=17.5, reviews_count=10
-    )
+    entry = ManagerLeaderboardEntry(name="Israullah", avg_score=17.5, reviews_count=10)
     assert entry.reviews_count == 10
     assert entry.avg_score == 17.5
 

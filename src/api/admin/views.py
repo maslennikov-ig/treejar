@@ -134,4 +134,3 @@ def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(SystemPromptAdmin)
     admin_app.add_view(MetricsSnapshotAdmin)
     admin_app.add_view(ReferralAdmin)
-

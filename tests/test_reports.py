@@ -1,4 +1,5 @@
 """Tests for report generation service (TDD)."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
