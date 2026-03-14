@@ -11,7 +11,7 @@ from src.integrations.messaging.wazzup import WazzupProvider
 from src.models.conversation import Conversation
 from src.models.feedback import Feedback
 from src.rag.embeddings import EmbeddingEngine
-from src.schemas.common import EscalationStatus, SalesStage
+from src.schemas.common import DealStatus, EscalationStatus, SalesStage
 
 logfire = Logfire()
 
@@ -156,7 +156,7 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
             select(Conversation)
             .outerjoin(Feedback, Feedback.conversation_id == Conversation.id)
             .where(
-                Conversation.deal_status == "delivered",
+                Conversation.deal_status == DealStatus.DELIVERED.value,
                 Conversation.updated_at >= min_time,
                 Conversation.updated_at < max_time,
                 Feedback.id.is_(None),  # No feedback yet
@@ -188,11 +188,7 @@ async def _send_feedback_request(db: Any, conv: Conversation) -> None:
 
     messaging = WazzupProvider()
 
-    # Set the conversation stage to feedback
-    conv.sales_stage = SalesStage.FEEDBACK.value
-    await db.commit()
-
-    # Send initial feedback request
+    # Send initial feedback request FIRST (before committing stage change)
     if conv.language == "ar":
         text = (
             "مرحبًا! 🎉 نأمل أنك تستمتع بأثاثك الجديد من Treejar. "
@@ -207,5 +203,10 @@ async def _send_feedback_request(db: Any, conv: Conversation) -> None:
         )
 
     await messaging.send_text(conv.phone, text)
+
+    # Only commit stage change AFTER successful message send
+    conv.sales_stage = SalesStage.FEEDBACK.value
+    await db.commit()
+
     logfire.info(f"Feedback request sent to {conv.phone}")
 

@@ -35,6 +35,14 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "rating_overall BETWEEN 1 AND 5",
+            name="ck_feedbacks_rating_overall",
+        ),
+        sa.CheckConstraint(
+            "rating_delivery BETWEEN 1 AND 5",
+            name="ck_feedbacks_rating_delivery",
+        ),
     )
     op.create_index(
         "ix_feedbacks_conversation_id", "feedbacks", ["conversation_id"]

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, UUIDMixin
@@ -17,6 +17,10 @@ class Feedback(UUIDMixin, Base):
     """Post-sale customer feedback."""
 
     __tablename__ = "feedbacks"
+    __table_args__ = (
+        CheckConstraint("rating_overall BETWEEN 1 AND 5", name="ck_feedbacks_rating_overall"),
+        CheckConstraint("rating_delivery BETWEEN 1 AND 5", name="ck_feedbacks_rating_delivery"),
+    )
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id"),

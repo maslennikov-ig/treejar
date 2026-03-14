@@ -103,7 +103,7 @@ def feedback_deps() -> tuple[
     mock_result.scalars.return_value.all.return_value = []
     mock_config_result = MagicMock()
     mock_config_result.scalar_one_or_none.return_value = None
-    mock_result.scalar_one_or_none.return_value = None
+    mock_result.scalar_one_or_none.return_value = None  # No existing feedback
     db.execute.return_value = mock_result
 
     engine = AsyncMock()
@@ -263,12 +263,66 @@ class TestSaveFeedbackTool:
             usage=RunUsage(),
         )
 
+        from pydantic_ai import ModelRetry
+
+        with pytest.raises(ModelRetry, match="(?i)invalid|between"):
+            await save_feedback(
+                ctx,
+                rating_overall=0,
+                rating_delivery=6,
+                recommend=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_save_feedback_duplicate(
+        self,
+        feedback_deps: tuple[
+            AsyncMock,
+            Conversation,
+            AsyncMock,
+            AsyncMock,
+            AsyncMock,
+            AsyncMock,
+            AsyncMock,
+        ],
+    ) -> None:
+        """Test save_feedback returns message if feedback already exists."""
+        db, conv, engine, zoho, zoho_crm, redis, messaging = feedback_deps
+
+        # Mock existing feedback found
+        mock_existing = MagicMock()
+        mock_existing.scalar_one_or_none.return_value = uuid.uuid4()
+        db.execute.return_value = mock_existing
+
+        deps = SalesDeps(
+            db=db,
+            conversation=conv,
+            embedding_engine=engine,
+            zoho_inventory=zoho,
+            zoho_crm=zoho_crm,
+            messaging_client=messaging,
+            pii_map={},
+            redis=redis,
+        )
+        from pydantic_ai import RunContext
+
+        from src.llm.engine import save_feedback
+
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+
         result = await save_feedback(
             ctx,
-            rating_overall=0,
-            rating_delivery=6,
+            rating_overall=5,
+            rating_delivery=4,
             recommend=True,
         )
 
-        assert "invalid" in result.lower() or "between" in result.lower()
+        assert "already" in result.lower()
         db.add.assert_not_called()

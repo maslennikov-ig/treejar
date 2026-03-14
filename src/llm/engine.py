@@ -519,6 +519,8 @@ async def save_feedback(
         recommend: Whether the customer would recommend Treejar to others.
         comment: Optional free-form comment or suggestion from the customer.
     """
+    from pydantic_ai import ModelRetry
+
     logger.info(
         "LLM Tool called: save_feedback(overall=%s, delivery=%s, recommend=%s)",
         rating_overall,
@@ -528,9 +530,23 @@ async def save_feedback(
 
     # Validate ratings
     if not (1 <= rating_overall <= 5) or not (1 <= rating_delivery <= 5):
-        return "Invalid ratings. Both rating_overall and rating_delivery must be between 1 and 5."
+        raise ModelRetry(
+            "Invalid ratings. Both rating_overall and rating_delivery must be between 1 and 5. "
+            "Please ask the customer to clarify their rating."
+        )
+
+    # Check for existing feedback (prevent duplicates)
+    from sqlalchemy import select
 
     from src.models.feedback import Feedback
+
+    existing = await ctx.deps.db.execute(
+        select(Feedback.id).where(
+            Feedback.conversation_id == ctx.deps.conversation.id
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return "Feedback has already been recorded for this conversation. Thank the customer warmly."
 
     feedback = Feedback(
         conversation_id=ctx.deps.conversation.id,
