@@ -1,6 +1,6 @@
 # План задач: ИИ-продавец Treejar
 
-**Обновлено:** 2026-03-11
+**Обновлено:** 2026-03-14
 **Общий срок:** 13 недель (16 февраля -- 15 мая 2026)
 
 Отмечайте `[x]` по мере выполнения. Вложенные задачи -- подзадачи, которые можно делать параллельно.
@@ -9,7 +9,7 @@
 
 ## Этап 1: Базовая автоматизация (недели 1-8)
 
-### Неделя 1: Архитектура и проектирование (24ч)
+### Неделя 1: Архитектура и проектирование (24ч) ✅
 
 - [x] Схема БД (6 таблиц: conversations, messages, products, knowledge_base, quality_reviews, escalations)
 - [x] SQLAlchemy модели + Alembic миграция
@@ -22,7 +22,7 @@
 - [x] Документ для клиента (пошаговые инструкции регистрации сервисов)
 - [x] Доступы получены (Zoho CRM, Zoho Inventory, Wazzup, DeepSeek, Shopify bazara.ae)
 - [ ] **Ожидание от клиента:** Отдельный выделенный VPS (вместо текущего разделяемого Hetzner) и аккаунт OpenRouter
-### Неделя 2: База знаний + RAG pipeline (40ч)
+### Неделя 2: База знаний + RAG pipeline (40ч) ✅
 
 - [x] Zoho Inventory sync -- коннектор
   - [x] `src/integrations/inventory/zoho_inventory.py` -- реализация `InventoryProvider`
@@ -47,7 +47,7 @@
   - [x] `GET /api/v1/products/` -- список товаров с фильтрами
 - [x] Тесты: unit для RAG pipeline, integration для sync
 
-### Неделя 3: LLM ядро + WhatsApp (32ч)
+### Неделя 3: LLM ядро + WhatsApp (32ч) ✅
 
 - [x] LLM Engine
   - [x] `src/llm/engine.py` -- PydanticAI agent с OpenRouter
@@ -62,6 +62,7 @@
   - [x] Правила из анализа реальных диалогов: избегать 8 типичных ошибок менеджеров (см. `docs/dialogue-examples/README.md`)
   - [x] Идеальный цикл продажи (9 шагов): запрос → приветствие → уточнение → показ товара → аналог → sample/шоурум → КП → follow-up → оплата → доставка
   - [x] PII masking: UUID вместо реальных данных в LLM-контексте
+  - [x] WhatsApp-совместимое форматирование (жирный, курсив, моно, цитаты)
 - [x] Wazzup интеграция
   - [x] `src/integrations/messaging/wazzup.py` -- реализация `MessagingProvider`
   - [x] Отправка текста, фото, файлов через Wazzup API v3
@@ -69,18 +70,19 @@
   - [x] Message debouncing: Redis key `debounce:{chat_id}` с TTL 3-5 сек
   - [x] Webhook idempotency: `SET NX EX 86400` по message_id
   - [x] ARQ background worker: webhook -> 200 OK за <100ms -> фоновая обработка
+  - [x] Author routing: client → LLM, manager → save only, bot → skip
 - [x] Conversations
   - [x] `GET /api/v1/conversations/` -- реализация (pagination, фильтры)
   - [x] `GET /api/v1/conversations/{id}` -- с сообщениями
   - [x] `PATCH /api/v1/conversations/{id}` -- обновление статуса/этапа
-- [x] **Контрольная точка (Этап 1a):** бот отвечает в WhatsApp на тестовые вопросы
+- [x] **Контрольная точка (Этап 1a):** бот отвечает в WhatsApp на тестовые вопросы ✅ Оплачено
 
 #### Дополнительно реализовано (сверх плана Недели 3):
 - [x] Тестовое покрытие (Code Coverage) доведено до **91%** (включая безопасность, RAG, API и кэш).
 - [x] Интегрирован `deptry` для контроля чистоты зависимостей (проверка в CI).
 - [x] Введены строгие Pre-push проверки (Ruff --fix, MyPy --strict, Pytest) для защиты main-ветки.
 
-### Неделя 4: Zoho CRM + проверка остатков (36ч)
+### Неделя 4: Zoho CRM + проверка остатков (36ч) ✅
 
 - [x] Zoho CRM коннектор (EU регион: zohoapis.eu, 97 полей контакта, 72 поля сделки)
   - [x] `src/integrations/crm/zoho_crm.py` -- реализация `CRMProvider`
@@ -105,7 +107,7 @@
   - [x] Tool: `check_stock` -- для LLM (доступность, цена, склад)
 - [x] Тесты: mock Zoho API, integration для CRM flow
 
-> ⚠️ **branch `feature/quotation-generation` (worktree) — не мержен в main**
+### Неделя 5: Генерация КП / SaleOrder (36ч) ✅
 
 - [x] Инфраструктура PDF (WeasyPrint)
   - [x] Установка `weasyprint`, `jinja2`, настройка Docker-образа (зависмости Pango, HarfBuzz, шрифты для кириллицы)
@@ -123,7 +125,7 @@
   - [x] Подтверждение менеджером/клиентом перед отправкой
 - [x] Тесты: mock WeasyPrint, mock Zoho API, PDF flow
 
-### Неделя 6: Персональные цены + эскалация (32ч)
+### Неделя 6: Персональные цены + эскалация (32ч) ✅
 
 - [x] Индивидуальные цены и скидки
   - [x] Таблица скидок: segment -> discount% (из Google Sheets или Zoho)
@@ -135,12 +137,13 @@
   - [x] Передача полной истории диалога
   - [x] Escalation API: `POST /api/v1/conversations/{id}/escalate`
   - [x] Модель Escalation: запись в БД, статус pending/in_progress/resolved
+  - [x] **Manual takeover:** менеджер пишет в чат без эскалации → бот останавливается (escalation_status = manual_takeover)
 - [x] Follow-up и 24h WhatsApp правило
   - [x] Cron job: проверка last_message_at
   - [x] Если >24ч -- только template messages через Wazzup (Wazzup Max тариф, HSM-шаблоны НЕ используются)
   - [x] Follow-up расписание: 24ч → 3д → 7д → 30д → 90д (для крупных B2B)
 
-### Неделя 7: Админ-панель (32ч)
+### Неделя 7: Админ-панель (32ч) ✅
 
 > **Архитектура:** Гибрид — SQLAdmin (CRUD) + React/Vite дашборд (аналитика).
 > SQLAdmin встроен в FastAPI для управления данными. React/Vite (`frontend/admin/`) — тот же стек, что и лендинг — для дашборда, метрик и отчётов.
@@ -172,7 +175,7 @@
   - [x] ModelView для `system_config` с редактированием JSONB-значений
   - [x] Настройки: язык по умолчанию, порог эскалации, follow-up таймаут
 
-### Неделя 8: Тестирование + Деплой (36ч)
+### Неделя 8: Тестирование + Деплой (36ч) ✅
 
 - [x] Тестирование этапа 1
   - [x] Unit-тесты: LLM engine (mock OpenRouter), RAG pipeline, Zoho clients
@@ -194,7 +197,7 @@
 
 ## Этап 2: Контроль и аналитика (недели 9-13)
 
-### Неделя 9-10: Контроль качества (32ч)
+### Неделя 9-10: Контроль качества (32ч) ✅
 
 - [x] Quality evaluator
   - [x] `src/quality/evaluator.py` -- LLM-as-a-judge
@@ -205,12 +208,21 @@
   - [x] `POST /api/v1/quality/reviews/` -- создание оценки (автоматическая)
   - [x] `GET /api/v1/quality/reviews/` -- список оценок с фильтрами
   - [x] ARQ job: автоматическая оценка завершённых диалогов
-- [ ] Оценка менеджеров
-  - [ ] Анализ диалогов живых продавцов (из Wazzup history)
-  - [ ] Еженедельные отчёты по менеджерам
-  - [ ] Сравнение: бот vs менеджер
+- [x] Оценка менеджеров (**merged 2026-03-14**)
+  - [x] `src/quality/manager_evaluator.py` -- LLM-судья с 10 критериями (макс 20 баллов)
+  - [x] `src/quality/manager_schemas.py` -- Pydantic-схемы для Manager Assessment
+  - [x] `src/quality/manager_job.py` -- ARQ cron job: автоматическая оценка
+  - [x] `migrations/.../add_manager_reviews_table.py` -- таблица manager_reviews
+  - [x] Количественные метрики: SLA, время ответа, конверсия, средний чек
+  - [x] Dashboard KPI: avg_manager_score, leaderboard, response_time
+  - [x] Telegram weekly report: секция Manager Performance
+  - [x] Author routing в webhook: client/manager/bot через Wazzup authorType
+  - [x] Manual takeover: менеджер перехватывает диалог без формальной эскалации
+  - [x] Bot silencing: бот молчит при активной эскалации/takeover
+  - [x] API: `GET /api/v1/manager-reviews/`, `POST /{escalation_id}/evaluate`
+  - [x] 8 файлов тестов, 39 тестов (all green)
 
-### Неделя 11: Уведомления + отчёты (28ч)
+### Неделя 11: Уведомления + отчёты (28ч) ✅
 
 - [x] Telegram-уведомления
   - [x] Telegram Bot API: `TelegramClient` с retries, no-op guard
@@ -223,7 +235,7 @@
   - [x] Отправка через Telegram `send_message` + `send_document`
   - [x] ARQ cron: еженедельный автоотчёт (Monday 06:00 UTC)
 
-### Неделя 12: Рекомендательная + реферальная система (48ч)
+### Неделя 12: Рекомендательная + реферальная система (48ч) ✅
 
 - [x] Рекомендации товаров
   - [x] Аналоги: pgvector similarity по embedding (`get_similar_products`)
@@ -252,23 +264,42 @@
   - [ ] Проверка .env (нет секретов в коде)
   - [ ] SQL injection, XSS в админке
   - [ ] Wazzup webhook signature verification
-- [ ] Документация
-  - [ ] Обновить README, dev-guide
-  - [ ] Инструкция для менеджера (как передать диалог)
-  - [ ] Инструкция для администратора (промпты, настройки)
+- [x] Документация
+  - [x] Обновить README, dev-guide
+  - [x] Инструкция для менеджера (`docs/manager-guide.md`)
+  - [x] Инструкция для администратора (`docs/admin-guide.md`)
 - [ ] **Контрольная точка (Финальная сдача):** все модули работают, отчёты отправляются
+
+---
+
+## Нереализованные требования ТЗ (backlog)
+
+> Эти задачи выявлены при аудите 2026-03-13 и заведены в Beads.
+
+| ID | Приоритет | Требование ТЗ | Статус |
+|----|-----------|---------------|--------|
+| `tj-6mv` | P1 | **Распознавание голосовых сообщений** (Whisper API, EN/AR) | open |
+| `tj-dpv` | P2 | **Статус заказа клиента** (check_order_status через Zoho CRM/Inventory) | open |
+| `tj-lzt` | P2 | **Сбор обратной связи** после закрытия сделки (ratings, NPS) | open |
+
+### Мелкие доработки (не заведены как задачи):
+- [ ] LLM tool для отправки фото товара по запросу (`send_product_photo`)
+- [ ] LLM-извлечение структурированных фильтров (category, price, color) в RAG
+- [ ] Context enrichment: история покупок из CRM -> system prompt
+- [ ] Парсинг сайтов Treejar (HTML -> текст -> chunks -> embeddings)
+- [ ] Обновить `docs/architecture.md` (Qdrant → pgvector, Jina → BGE-M3)
 
 ---
 
 ## Контрольные точки и оплата
 
-| Дата | Этап | Критерий приёмки | Оплата |
-|------|------|------------------|--------|
-| До старта | Предоплата | -- | 150 000 руб |
-| ~6 марта | Этап 1a (неделя 3) | Бот отвечает в WhatsApp на EN/AR | 150 000 руб |
-| ~10 апреля | Этап 1b (неделя 8) | Полный цикл: консультация -> КП -> CRM. Админка. Деплой | 150 000 руб |
-| ~15 мая | Этап 2 (неделя 13) | Качество, отчёты, рекомендации, рефералы | 150 000 руб |
-| При сдаче | Премия за сроки | Все этапы в срок | +100 000 руб |
+| Дата | Этап | Критерий приёмки | Оплата | Статус |
+|------|------|------------------|--------|--------|
+| До старта | Предоплата | — | 150 000 руб | ✅ Оплачено |
+| ~6 марта | Этап 1a (неделя 3) | Бот отвечает в WhatsApp на EN/AR | 150 000 руб | ✅ Оплачено |
+| ~10 апреля | Этап 1b (неделя 8) | Полный цикл: консультация -> КП -> CRM. Админка. Деплой | 150 000 руб | ⏳ Ожидает приёмки |
+| ~15 мая | Этап 2 (неделя 13) | Качество, отчёты, рекомендации, рефералы | 150 000 руб | ⏳ В работе |
+| При сдаче | Премия за сроки | Все этапы в срок | +100 000 руб | ⏳ |
 
 ---
 
@@ -276,9 +307,14 @@
 
 | Метрика | Значение |
 |---------|----------|
-| Всего задач верхнего уровня | ~70 |
-| Выполнено | ~68 (недели 1-12, вкл. уведомления, отчёты, рекомендации, рефералы) |
-| Оставшиеся часы (по ТЗ) | ~24 из 444 (только неделя 13) |
+| Всего задач верхнего уровня | ~75 |
+| Выполнено | ~69 (недели 1-12 + доработки) |
+| Осталось (план) | ~6 (неделя 13 + 3 требования ТЗ) |
+| Текущая неделя по roadmap | 4 (фактически: неделя 12 завершена) |
+| Тесты | 294 passed, 91% coverage |
+| Модели БД | 12 (+ system_prompts, system_config, referrals, manager_reviews, metrics_snapshot) |
+| API endpoints | 25+ |
+| Деплой | Production (noor.starec.ai), Dev (dev.noor.starec.ai) |
 
 ---
 
@@ -293,5 +329,6 @@
 | `docs/sample-quotations/README.md` | 4 образца КП (12K-161K AED) + структура |
 | `docs/04-sales-dialogue-guidelines.md` | 17 правил ведения диалогов (RU + EN) |
 | `docs/05-company-values.md` | 14 ценностей компании (RU + EN) |
-| `docs/06-dialogue-evaluation-checklist.md` | Методика оценки: 15 правил, шкала 0-2, макс 30 баллов |
+| `docs/06-dialogue-evaluation-checklist.md` | Методика оценки бота: 15 правил, шкала 0-2, макс 30 баллов |
 | `docs/07-knowledge-base-spec.md` | Спецификация базы знаний |
+| `docs/08-manager-evaluation-criteria.md` | Методика оценки менеджеров: 10 критериев, шкала 0-2, макс 20 баллов |
