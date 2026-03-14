@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -8,7 +9,7 @@ client = TestClient(app)
 
 
 @patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_endpoint(mock_settings: object) -> None:
+def test_wazzup_webhook_endpoint(mock_settings: Any) -> None:
     mock_settings.wazzup_webhook_secret = ""  # Skip auth check in this test
 
     # Mock redis and arq_pool
@@ -44,7 +45,7 @@ def test_wazzup_webhook_endpoint(mock_settings: object) -> None:
 
 
 @patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_test_ping(mock_settings: object) -> None:
+def test_wazzup_webhook_test_ping(mock_settings: Any) -> None:
     """Test that Wazzup test ping returns 200 OK."""
     mock_settings.wazzup_webhook_secret = ""
     response = client.post("/api/v1/webhook/wazzup", json={"test": True})
@@ -53,7 +54,7 @@ def test_wazzup_webhook_test_ping(mock_settings: object) -> None:
 
 
 @patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_empty_payload(mock_settings: object) -> None:
+def test_wazzup_webhook_empty_payload(mock_settings: Any) -> None:
     """Test that empty payload (no messages) returns 200 OK."""
     mock_settings.wazzup_webhook_secret = ""
     response = client.post("/api/v1/webhook/wazzup", json={})
@@ -62,7 +63,7 @@ def test_wazzup_webhook_empty_payload(mock_settings: object) -> None:
 
 
 @patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_status_only(mock_settings: object) -> None:
+def test_wazzup_webhook_status_only(mock_settings: Any) -> None:
     """Test that status-only payload returns 200 OK."""
     mock_settings.wazzup_webhook_secret = ""
     response = client.post(
@@ -74,7 +75,7 @@ def test_wazzup_webhook_status_only(mock_settings: object) -> None:
 
 
 @patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_rejects_unauthorized(mock_settings: object) -> None:
+def test_wazzup_webhook_rejects_unauthorized(mock_settings: Any) -> None:
     """Test that webhook rejects unauthorized requests when secret is set."""
     mock_settings.wazzup_webhook_secret = "my-secret"
 
@@ -88,7 +89,7 @@ def test_wazzup_webhook_rejects_unauthorized(mock_settings: object) -> None:
 
 
 @patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_accepts_valid_auth(mock_settings: object) -> None:
+def test_wazzup_webhook_accepts_valid_auth(mock_settings: Any) -> None:
     """Test that webhook accepts requests with valid Bearer token."""
     mock_settings.wazzup_webhook_secret = "my-secret"
 
@@ -102,3 +103,4 @@ def test_wazzup_webhook_accepts_valid_auth(mock_settings: object) -> None:
     )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+

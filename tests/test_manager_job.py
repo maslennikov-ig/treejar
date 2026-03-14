@@ -36,8 +36,8 @@ def test_worker_has_manager_evaluation_registered() -> None:
     """Worker should have evaluate_escalated_conversations in functions and cron."""
     from src.worker import WorkerSettings
 
-    func_names = [f.__name__ for f in WorkerSettings.functions]
+    func_names = [getattr(f, "__name__", "") for f in WorkerSettings.functions]
     assert "evaluate_escalated_conversations" in func_names
 
-    cron_func_names = [j.coroutine.__name__ for j in WorkerSettings.cron_jobs]
+    cron_func_names = [getattr(j.coroutine, "__name__", getattr(j.coroutine, "__qualname__", "")) for j in WorkerSettings.cron_jobs]
     assert "evaluate_escalated_conversations" in cron_func_names
