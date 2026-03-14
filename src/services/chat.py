@@ -5,9 +5,6 @@ import logging
 import traceback
 from typing import Any
 
-# Maximum time to wait for LLM response (seconds)
-LLM_TIMEOUT = 120
-
 from sqlalchemy import select
 
 from src.core.config import settings
@@ -24,6 +21,20 @@ from src.schemas.webhook import WazzupIncomingMessage
 
 logger = logging.getLogger(__name__)
 
+# Maximum time to wait for LLM response (seconds)
+LLM_TIMEOUT = 120
+
+
+def _determine_role(msg: WazzupIncomingMessage) -> str:
+    """Determine message role based on Wazzup authorType field.
+
+    Returns:
+        'manager' if authorType is 'manager', otherwise 'user'.
+    """
+    if msg.authorType == "manager":
+        return "manager"
+    return "user"
+
 
 async def process_incoming_batch(
     ctx: dict[str, Any],
@@ -36,10 +47,9 @@ async def process_incoming_batch(
 
     1. Pop all queued messages from Redis.
     2. Get or create conversation based on chat_id (phone number).
-    3. Save incoming messages.
-    4. Generate LLM response from the combined text.
-    5. Save LLM response.
-    6. Send reply via Wazzup.
+    3. Save incoming messages (with correct role: user/manager).
+    4. If escalation is active or message is from manager → skip LLM.
+    5. Otherwise generate LLM response, save, and send via Wazzup.
     """
     # ARQ automatically injects its Redis pool as ctx["redis"]
     redis = ctx["redis"]
@@ -71,6 +81,13 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
     # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
+
+    # Determine roles for each message
+    has_manager_message = any(m.authorType == "manager" for m in messages)
+    manager_name = next(
+        (m.authorName for m in messages if m.authorType == "manager" and m.authorName),
+        None,
+    )
     combined_text = "\n".join(m.text for m in messages if m.text)
 
     if not combined_text.strip():
@@ -100,7 +117,16 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             db.add(conv)
             await db.flush()
 
-        # 2. Save incoming messages (deduplicate by wazzup_message_id)
+        # 2. Manual takeover: manager writes when no escalation is active
+        if has_manager_message and conv.escalation_status in ("none", None):
+            conv.escalation_status = "manual_takeover"
+            logger.info(
+                "Manual takeover for %s by manager %s",
+                chat_id,
+                manager_name or "unknown",
+            )
+
+        # 3. Save incoming messages (deduplicate by wazzup_message_id)
         message_ids = [m.messageId for m in messages if m.messageId]
         existing_msgs_stmt = select(Message.wazzup_message_id).where(
             Message.wazzup_message_id.in_(message_ids)
@@ -110,9 +136,10 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
         for m in messages:
             if m.messageId and m.messageId not in existing_ids:
+                role = _determine_role(m)
                 new_msg = Message(
                     conversation_id=conv.id,
-                    role="user",
+                    role=role,
                     content=m.text or "",
                     wazzup_message_id=m.messageId,
                 )
@@ -121,7 +148,16 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
         await db.commit()
 
-        # 3. Generate LLM response
+        # 4. Bot silencing: if escalation is active, don't call LLM
+        if conv.escalation_status not in ("none", None):
+            logger.info(
+                "Escalation active (%s) for %s. Saving messages but NOT calling LLM.",
+                conv.escalation_status,
+                chat_id,
+            )
+            return
+
+        # 5. Generate LLM response
         embedding_engine = EmbeddingEngine()
 
         # CR-WA-01 fix: pass channel_id from settings to WazzupProvider
@@ -147,7 +183,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                     ),
                     timeout=LLM_TIMEOUT,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.error(
                     "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
                 )

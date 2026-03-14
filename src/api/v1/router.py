@@ -9,6 +9,7 @@ from src.api.v1 import (
     crm,
     health,
     inventory,
+    manager_reviews,
     notifications,
     products,
     quality,
@@ -54,6 +55,12 @@ api_v1_router.include_router(
     referrals.router,
     prefix="/referrals",
     tags=["Referrals"],
+    dependencies=[Depends(require_api_key)],
+)
+api_v1_router.include_router(
+    manager_reviews.router,
+    prefix="/manager-reviews",
+    tags=["Manager Reviews"],
     dependencies=[Depends(require_api_key)],
 )
 api_v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])

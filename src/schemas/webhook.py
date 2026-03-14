@@ -42,8 +42,10 @@ class WazzupIncomingMessage(BaseModel):
     timestamp: int | None = None
 
     # Additional Wazzup v3 fields
-    authorType: str | None = None  # "client", "operator", "system"
+    authorType: str | None = None  # "client", "manager", "bot"
     isEcho: bool | None = None
+    authorId: str | None = None  # Manager ID from Wazzup
+    authorName: str | None = None  # Manager name from Wazzup
 
     model_config = {"extra": "allow"}
 
