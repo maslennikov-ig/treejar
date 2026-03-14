@@ -64,7 +64,9 @@ async def test_get_sale_order_status_confirmed() -> None:
         request=httpx.Request("GET", "https://example.com"),
     )
 
-    with patch.object(zoho_client.client, "request", new_callable=AsyncMock) as mock_request:
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
         mock_request.return_value = mock_response
         result = await zoho_client.get_sale_order_status("SO001")
 
@@ -93,7 +95,9 @@ async def test_get_sale_order_status_not_found() -> None:
         request=httpx.Request("GET", "https://example.com"),
     )
 
-    with patch.object(zoho_client.client, "request", new_callable=AsyncMock) as mock_request:
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
         mock_request.side_effect = httpx.HTTPStatusError(
             "Not Found", request=mock_response.request, response=mock_response
         )

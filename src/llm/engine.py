@@ -363,7 +363,9 @@ async def create_quotation(
             try:
                 await ctx.deps.db.flush()
             except Exception as flush_err:
-                logger.warning("Failed to persist sale_order_id in metadata: %s", flush_err)
+                logger.warning(
+                    "Failed to persist sale_order_id in metadata: %s", flush_err
+                )
     except Exception as e:
         logger.error("Failed to create draft sale order: %s", e)
         return "Failed to create draft sale order in Zoho Inventory."
@@ -555,9 +557,7 @@ async def save_feedback(
     from src.models.feedback import Feedback
 
     existing = await ctx.deps.db.execute(
-        select(Feedback.id).where(
-            Feedback.conversation_id == ctx.deps.conversation.id
-        )
+        select(Feedback.id).where(Feedback.conversation_id == ctx.deps.conversation.id)
     )
     if existing.scalar_one_or_none() is not None:
         return "Feedback has already been recorded for this conversation. Thank the customer warmly."
