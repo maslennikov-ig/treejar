@@ -49,7 +49,8 @@ ALLOWED_TRANSITIONS = {
     SalesStage.SOLUTION: [SalesStage.COMPANY_DETAILS, SalesStage.NEEDS_ANALYSIS],
     SalesStage.COMPANY_DETAILS: [SalesStage.QUOTING, SalesStage.SOLUTION],
     SalesStage.QUOTING: [SalesStage.CLOSING, SalesStage.SOLUTION],
-    SalesStage.CLOSING: [],
+    SalesStage.CLOSING: [SalesStage.FEEDBACK],
+    SalesStage.FEEDBACK: [],
 }
 
 
@@ -498,6 +499,50 @@ async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
     if result.success:
         return result.message
     return f"Referral code issue: {result.message}"
+
+
+@sales_agent.tool
+async def save_feedback(
+    ctx: RunContext[SalesDeps],
+    rating_overall: int,
+    rating_delivery: int,
+    recommend: bool,
+    comment: str | None = None,
+) -> str:
+    """Save the customer's post-delivery feedback after collecting all ratings.
+    Call this after the customer has provided their overall rating, delivery rating,
+    recommendation, and optional comment.
+
+    Args:
+        rating_overall: Customer's overall satisfaction rating (1-5, where 5 is best).
+        rating_delivery: Customer's delivery experience rating (1-5, where 5 is best).
+        recommend: Whether the customer would recommend Treejar to others.
+        comment: Optional free-form comment or suggestion from the customer.
+    """
+    logger.info(
+        "LLM Tool called: save_feedback(overall=%s, delivery=%s, recommend=%s)",
+        rating_overall,
+        rating_delivery,
+        recommend,
+    )
+
+    # Validate ratings
+    if not (1 <= rating_overall <= 5) or not (1 <= rating_delivery <= 5):
+        return "Invalid ratings. Both rating_overall and rating_delivery must be between 1 and 5."
+
+    from src.models.feedback import Feedback
+
+    feedback = Feedback(
+        conversation_id=ctx.deps.conversation.id,
+        deal_id=ctx.deps.conversation.zoho_deal_id,
+        rating_overall=rating_overall,
+        rating_delivery=rating_delivery,
+        recommend=recommend,
+        comment=comment,
+    )
+    ctx.deps.db.add(feedback)
+
+    return "Feedback saved successfully. Thank you for sharing your experience!"
 
 
 async def process_message(
