@@ -25,3 +25,7 @@ class CRMProvider(Protocol):
     async def update_deal(self, deal_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing deal."""
         ...
+
+    async def get_deal_status(self, deal_id: str) -> dict[str, Any] | None:
+        """Get deal status including stage."""
+        ...

@@ -27,3 +27,7 @@ class InventoryProvider(Protocol):
     async def get_sale_order(self, order_id: str) -> dict[str, Any] | None:
         """Get sale order details including PDF URL."""
         ...
+
+    async def get_sale_order_status(self, order_id: str) -> dict[str, Any] | None:
+        """Get sale order status summary."""
+        ...

@@ -545,6 +545,46 @@ async def save_feedback(
     return "Feedback saved successfully. Thank you for sharing your experience!"
 
 
+@sales_agent.tool
+async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
+    """Check the current status of the customer's order.
+    Call this when the customer asks about their order status, delivery, or shipment.
+    This tool looks up the deal in CRM and the sale order in Inventory.
+    """
+    logger.info("LLM Tool called: check_order_status()")
+
+    deal_id = ctx.deps.conversation.zoho_deal_id
+    if not deal_id:
+        return "No order found linked to this conversation. The customer may not have a confirmed deal yet."
+
+    from src.llm.order_status import format_order_status
+
+    language = ctx.deps.conversation.language or "en"
+
+    # Fetch CRM deal status
+    deal_data = None
+    if ctx.deps.zoho_crm:
+        try:
+            deal_data = await ctx.deps.zoho_crm.get_deal_status(deal_id)
+        except Exception as e:
+            logger.warning("Failed to fetch CRM deal status: %s", e)
+
+    # Fetch Inventory sale order status (use deal_id as reference, or from metadata)
+    order_data = None
+    metadata = ctx.deps.conversation.metadata_ or {}
+    sale_order_id = metadata.get("zoho_sale_order_id")
+
+    if sale_order_id:
+        try:
+            order_data = await ctx.deps.zoho_inventory.get_sale_order_status(
+                sale_order_id
+            )
+        except Exception as e:
+            logger.warning("Failed to fetch Inventory order status: %s", e)
+
+    return format_order_status(deal_data, order_data, language)
+
+
 async def process_message(
     conversation_id: UUID,
     combined_text: str,

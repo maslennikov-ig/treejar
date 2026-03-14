@@ -184,6 +184,26 @@ class ZohoCRMClient(CRMProvider):
             return dict(resp_data["data"][0])
         return dict(resp_data)
 
+    async def get_deal_status(self, deal_id: str) -> dict[str, Any] | None:
+        """Get deal details including current stage.
+
+        Args:
+            deal_id: Zoho CRM Deal ID.
+
+        Returns:
+            Deal data dict with Stage field, or None if not found.
+        """
+        response = await self._request("GET", f"/Deals/{deal_id}")
+
+        if response.status_code == 204:
+            return None
+
+        data = response.json()
+        if "data" in data and len(data["data"]) > 0:
+            return dict(data["data"][0])
+
+        return None
+
     async def __aenter__(self) -> ZohoCRMClient:
         return self
 
