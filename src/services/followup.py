@@ -209,4 +209,3 @@ async def _send_feedback_request(db: Any, conv: Conversation) -> None:
     await db.commit()
 
     logfire.info(f"Feedback request sent to {conv.phone}")
-

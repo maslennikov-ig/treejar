@@ -32,7 +32,9 @@ class TestDealStageMapping:
 
     @pytest.mark.unit
     def test_order_confirmed_ar(self) -> None:
-        assert get_deal_stage_label("Order Confirmed", "ar") == "تم التأكيد، جاري التحضير"
+        assert (
+            get_deal_stage_label("Order Confirmed", "ar") == "تم التأكيد، جاري التحضير"
+        )
 
     @pytest.mark.unit
     def test_consignment_en(self) -> None:

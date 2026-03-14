@@ -69,9 +69,9 @@ class TestFeedbackStage:
     def test_feedback_in_allowed_transitions(self) -> None:
         from src.llm.engine import ALLOWED_TRANSITIONS
 
-        assert SalesStage.FEEDBACK in ALLOWED_TRANSITIONS.get(
-            SalesStage.CLOSING, []
-        ), "CLOSING should be able to transition to FEEDBACK"
+        assert SalesStage.FEEDBACK in ALLOWED_TRANSITIONS.get(SalesStage.CLOSING, []), (
+            "CLOSING should be able to transition to FEEDBACK"
+        )
 
     def test_feedback_prompt_exists(self) -> None:
         from src.llm.prompts import STAGE_RULES

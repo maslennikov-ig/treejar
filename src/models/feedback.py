@@ -18,8 +18,12 @@ class Feedback(UUIDMixin, Base):
 
     __tablename__ = "feedbacks"
     __table_args__ = (
-        CheckConstraint("rating_overall BETWEEN 1 AND 5", name="ck_feedbacks_rating_overall"),
-        CheckConstraint("rating_delivery BETWEEN 1 AND 5", name="ck_feedbacks_rating_delivery"),
+        CheckConstraint(
+            "rating_overall BETWEEN 1 AND 5", name="ck_feedbacks_rating_overall"
+        ),
+        CheckConstraint(
+            "rating_delivery BETWEEN 1 AND 5", name="ck_feedbacks_rating_delivery"
+        ),
     )
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
