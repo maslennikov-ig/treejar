@@ -1,4 +1,5 @@
 """Tests for product recommendations service (TDD)."""
+
 from __future__ import annotations
 
 # =============================================================================
@@ -30,8 +31,6 @@ def test_recommendation_item_defaults() -> None:
 
     from src.services.recommendations import RecommendationItem
 
-    item = RecommendationItem(
-        id=uuid4(), name="Chair", price=500.0, stock=5
-    )
+    item = RecommendationItem(id=uuid4(), name="Chair", price=500.0, stock=5)
     assert item.recommendation_type == "similar"
     assert item.similarity_score is None

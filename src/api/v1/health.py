@@ -17,10 +17,8 @@ async def debug_redis(request: Request) -> dict[str, Any]:
     redis = request.app.state.redis
     queue_len = await redis.llen("wazzup:incoming:+971500000004")
     raw_msgs = await redis.lrange("wazzup:incoming:+971500000004", 0, -1)
-    return {
-        "len": queue_len,
-        "msgs": [m.decode("utf-8") for m in raw_msgs]
-    }
+    return {"len": queue_len, "msgs": [m.decode("utf-8") for m in raw_msgs]}
+
 
 @router.get("/health", response_model=HealthCheckResponse)
 async def health_check(

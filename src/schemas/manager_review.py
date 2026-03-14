@@ -1,4 +1,5 @@
 """API schemas for manager reviews (Component 8)."""
+
 from __future__ import annotations
 
 import uuid

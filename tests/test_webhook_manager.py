@@ -6,6 +6,7 @@ Verifies:
 - Bot messages → skipped entirely
 - authorId/authorName parsed correctly
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock

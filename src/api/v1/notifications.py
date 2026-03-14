@@ -2,6 +2,7 @@
 
 Provides test send and configuration viewing endpoints.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter

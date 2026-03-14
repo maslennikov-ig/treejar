@@ -28,4 +28,3 @@ def get_redis_client() -> aioredis.Redis:
     Use this instead of get_redis() when not inside a FastAPI request lifecycle.
     """
     return redis_client
-

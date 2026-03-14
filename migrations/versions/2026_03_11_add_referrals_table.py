@@ -21,13 +21,27 @@ def upgrade() -> None:
         sa.Column("code", sa.String, nullable=False),
         sa.Column("referrer_phone", sa.String, nullable=False),
         sa.Column("referee_phone", sa.String, nullable=True),
-        sa.Column("referrer_discount_percent", sa.Float, nullable=False, server_default="5.0"),
-        sa.Column("referee_discount_percent", sa.Float, nullable=False, server_default="10.0"),
+        sa.Column(
+            "referrer_discount_percent", sa.Float, nullable=False, server_default="5.0"
+        ),
+        sa.Column(
+            "referee_discount_percent", sa.Float, nullable=False, server_default="10.0"
+        ),
         sa.Column("status", sa.String, nullable=False, server_default="active"),
         sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
     )
     op.create_index("ix_referrals_code", "referrals", ["code"], unique=True)
     op.create_index("ix_referrals_referrer_phone", "referrals", ["referrer_phone"])

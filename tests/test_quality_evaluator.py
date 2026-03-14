@@ -2,6 +2,7 @@
 
 TDD: Tests written first, then implementation.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -190,7 +191,7 @@ async def test_output_validator_recomputes_total_score() -> None:
         criteria=mock_criteria,
         summary="Good",
         total_score=999.0,  # LLM arithmetic error
-        rating="poor",       # LLM rating error
+        rating="poor",  # LLM rating error
     )
     mock_run_result = MagicMock()
     mock_run_result.output = mock_evaluation
@@ -252,7 +253,9 @@ async def test_usage_limits_passed_to_agent_run() -> None:
         await evaluate_conversation(uuid4(), mock_db)
 
     call_kwargs = mock_agent.run.call_args.kwargs
-    assert "usage_limits" in call_kwargs, "usage_limits must be passed to judge_agent.run()"
+    assert "usage_limits" in call_kwargs, (
+        "usage_limits must be passed to judge_agent.run()"
+    )
     assert isinstance(call_kwargs["usage_limits"], UsageLimits)
 
 
@@ -292,7 +295,9 @@ async def test_prompt_injection_uses_dialogue_tags() -> None:
 
     call_args = mock_agent.run.call_args
     prompt = call_args[0][0]
-    assert "<DIALOGUE>" in prompt, "Prompt must contain <DIALOGUE> tag for injection protection"
+    assert "<DIALOGUE>" in prompt, (
+        "Prompt must contain <DIALOGUE> tag for injection protection"
+    )
     assert "</DIALOGUE>" in prompt, "Prompt must contain </DIALOGUE> closing tag"
     assert "untrusted" in prompt.lower() or "ignore any" in prompt.lower(), (
         "Prompt must warn LLM about untrusted content"
@@ -322,7 +327,9 @@ async def test_api_returns_502_on_unexpected_model_behavior() -> None:
             side_effect=UnexpectedModelBehavior("Max retries exceeded"),
         ),
     ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             response = await ac.post(
                 "/api/v1/quality/reviews/",
                 json={"conversation_id": str(conv_id)},
@@ -347,7 +354,9 @@ async def test_api_returns_504_on_timeout() -> None:
             side_effect=TimeoutError(),
         ),
     ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
             response = await ac.post(
                 "/api/v1/quality/reviews/",
                 json={"conversation_id": str(conv_id)},

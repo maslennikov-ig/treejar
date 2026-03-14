@@ -7,6 +7,7 @@ Provides functions for different notification types:
 
 All functions are safe to call even when Telegram is not configured.
 """
+
 from __future__ import annotations
 
 import logging
@@ -129,9 +130,7 @@ async def notify_quality_alert(
     """
     try:
         client = _get_telegram_client()
-        message = format_quality_alert_message(
-            conversation_id, score, rating, summary
-        )
+        message = format_quality_alert_message(conversation_id, score, rating, summary)
         await client.send_message(message)
     except Exception:
         logfire.error(

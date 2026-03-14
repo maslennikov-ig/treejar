@@ -246,7 +246,10 @@ class TestCreateQuotation:
     """Tests for the create_quotation tool (Inventory + PDF + Messaging)."""
 
     @pytest.mark.asyncio
-    @patch("src.services.pdf.generator.render_quotation_html", return_value="<html>QUOTE</html>")
+    @patch(
+        "src.services.pdf.generator.render_quotation_html",
+        return_value="<html>QUOTE</html>",
+    )
     @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
     async def test_quotation_happy_path(
         self,
@@ -301,7 +304,9 @@ class TestCreateQuotation:
         mock_inv.get_stock_bulk.return_value = []  # no items found
 
         conv = _make_conversation()
-        deps = _make_deps(conv, zoho_inventory=mock_inv, crm_context={"Segment": "Unknown"})
+        deps = _make_deps(
+            conv, zoho_inventory=mock_inv, crm_context={"Segment": "Unknown"}
+        )
         ctx = _FakeRunContext(deps=deps)
 
         items = [QuotationItem(sku="NONEXISTENT", quantity=1)]
@@ -310,7 +315,9 @@ class TestCreateQuotation:
         assert "not found" in result
 
     @pytest.mark.asyncio
-    @patch("src.services.pdf.generator.render_quotation_html", return_value="<html></html>")
+    @patch(
+        "src.services.pdf.generator.render_quotation_html", return_value="<html></html>"
+    )
     @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
     async def test_quotation_messaging_failure(
         self,
@@ -353,7 +360,10 @@ class TestCreateQuotation:
         assert "failed to send" in result.lower()
 
     @pytest.mark.asyncio
-    @patch("src.services.pdf.generator.render_quotation_html", return_value="<html>Q</html>")
+    @patch(
+        "src.services.pdf.generator.render_quotation_html",
+        return_value="<html>Q</html>",
+    )
     @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
     async def test_quotation_vat_calculation(
         self,

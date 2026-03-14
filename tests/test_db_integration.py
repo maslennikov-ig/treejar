@@ -3,6 +3,7 @@
 CR-12: Tests that exercise the actual SQL query construction
 with mocked AsyncSession.execute() responses.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -49,16 +50,16 @@ async def test_generate_report_returns_correct_structure() -> None:
     ]
 
     mock_db.execute.side_effect = [
-        mock_conv_result,     # conv_q
-        mock_deals_result,    # deals_q
+        mock_conv_result,  # conv_q
+        mock_deals_result,  # deals_q
         mock_esc_reasons_result,  # esc_reasons_q
-        mock_top_prod_result,     # top_prod_sql
+        mock_top_prod_result,  # top_prod_sql
     ]
 
     # scalar() calls are separate
     mock_db.scalar.side_effect = [
         22.5,  # avg_quality_score
-        8,     # escalation_count
+        8,  # escalation_count
     ]
 
     start = datetime.now(tz=UTC) - timedelta(days=7)
@@ -182,7 +183,7 @@ async def test_get_cross_sell_with_rules() -> None:
 
     mock_db = AsyncMock()
     mock_db.execute.side_effect = [
-        mock_config_result,    # SystemConfig query
+        mock_config_result,  # SystemConfig query
         mock_products_result,  # Products query
     ]
 

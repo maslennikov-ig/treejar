@@ -126,7 +126,6 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
                 msg.text[:100] if msg.text else "(no text)",
             )
 
-
         # Push to Redis list
         await redis.rpush(f"wazzup_msgs:{msg.chatId}", msg.model_dump_json())
 

@@ -87,7 +87,9 @@ class WazzupProvider(MessagingProvider):
                     response.raise_for_status()
                     return response.content
                 else:
-                    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as dl_client:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(30.0)
+                    ) as dl_client:
                         response = await dl_client.get(url)
                         response.raise_for_status()
                         return response.content

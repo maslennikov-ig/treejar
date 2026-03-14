@@ -3,6 +3,7 @@
 Provides functions to save, retrieve, and query quality reviews
 in the quality_reviews table.
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,8 +79,10 @@ async def conversation_already_reviewed(
     Returns:
         True if at least one review exists for this conversation.
     """
-    stmt = select(func.count()).select_from(QualityReview).where(
-        QualityReview.conversation_id == conversation_id
+    stmt = (
+        select(func.count())
+        .select_from(QualityReview)
+        .where(QualityReview.conversation_id == conversation_id)
     )
     result = await db.execute(stmt)
     count = result.scalar_one()

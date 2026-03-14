@@ -1,4 +1,5 @@
 """API endpoints for report generation and retrieval."""
+
 from __future__ import annotations
 
 import logging
@@ -44,7 +45,9 @@ async def generate_report_endpoint(request: ReportRequest) -> ReportResponse:
             )
     except Exception:
         logger.exception("Failed to generate report")
-        raise HTTPException(status_code=500, detail="Failed to generate report") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to generate report"
+        ) from None
 
     return ReportResponse(
         data=report,

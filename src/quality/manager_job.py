@@ -5,6 +5,7 @@ and evaluates them using the LLM judge + quantitative metrics.
 
 See: src/quality/job.py for bot quality evaluation (similar pattern).
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,9 +39,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
         logger.info("Manager evaluator: no pending escalations to evaluate")
         return
 
-    logger.info(
-        "Manager evaluator: found %d escalations to evaluate", len(pending_ids)
-    )
+    logger.info("Manager evaluator: found %d escalations to evaluate", len(pending_ids))
 
     evaluated = 0
     errors = 0
@@ -104,10 +103,6 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     )
         except Exception:
             errors += 1
-            logger.exception(
-                "Failed to evaluate escalation %s", esc_id
-            )
+            logger.exception("Failed to evaluate escalation %s", esc_id)
 
-    logger.info(
-        "Manager evaluator: done. evaluated=%d, errors=%d", evaluated, errors
-    )
+    logger.info("Manager evaluator: done. evaluated=%d, errors=%d", evaluated, errors)

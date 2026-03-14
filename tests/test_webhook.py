@@ -103,4 +103,3 @@ def test_wazzup_webhook_accepts_valid_auth(mock_settings: Any) -> None:
     )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-

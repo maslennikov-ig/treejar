@@ -35,9 +35,17 @@ def _patch_client(mock_response: MagicMock) -> Any:
 class TestTranscribeAudio:
     async def test_transcribe_english_audio(self) -> None:
         """Test successful English audio transcription."""
-        resp = _make_mock_response({
-            "choices": [{"message": {"content": "Hello, I would like to order 10 office chairs"}}]
-        })
+        resp = _make_mock_response(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Hello, I would like to order 10 office chairs"
+                        }
+                    }
+                ]
+            }
+        )
         with _patch_client(resp) as mock_cls:
             result = await transcribe_audio(b"fake_audio_bytes", audio_format="mp3")
 
@@ -51,9 +59,9 @@ class TestTranscribeAudio:
 
     async def test_transcribe_arabic_audio(self) -> None:
         """Test Arabic audio transcription."""
-        resp = _make_mock_response({
-            "choices": [{"message": {"content": "مرحبا، أريد طلب عشرة كراسي مكتب"}}]
-        })
+        resp = _make_mock_response(
+            {"choices": [{"message": {"content": "مرحبا، أريد طلب عشرة كراسي مكتب"}}]}
+        )
         with _patch_client(resp):
             result = await transcribe_audio(b"fake_arabic_audio", audio_format="ogg")
 
@@ -61,9 +69,9 @@ class TestTranscribeAudio:
 
     async def test_transcribe_strips_whitespace(self) -> None:
         """Test that transcription output is stripped."""
-        resp = _make_mock_response({
-            "choices": [{"message": {"content": "  hello  \n"}}]
-        })
+        resp = _make_mock_response(
+            {"choices": [{"message": {"content": "  hello  \n"}}]}
+        )
         with _patch_client(resp):
             result = await transcribe_audio(b"audio", audio_format="mp3")
 
@@ -91,9 +99,7 @@ class TestTranscribeAudio:
         test_audio = b"test_audio_content"
         expected_b64 = base64.b64encode(test_audio).decode("ascii")
 
-        resp = _make_mock_response({
-            "choices": [{"message": {"content": "test"}}]
-        })
+        resp = _make_mock_response({"choices": [{"message": {"content": "test"}}]})
         with _patch_client(resp) as mock_cls:
             await transcribe_audio(test_audio, audio_format="wav")
 
@@ -112,9 +118,7 @@ class TestTranscribeAudio:
     async def test_accepts_audio_at_limit(self) -> None:
         """Test that audio exactly at MAX_AUDIO_SIZE is accepted."""
         limit_audio = b"x" * MAX_AUDIO_SIZE
-        resp = _make_mock_response({
-            "choices": [{"message": {"content": "ok"}}]
-        })
+        resp = _make_mock_response({"choices": [{"message": {"content": "ok"}}]})
         with _patch_client(resp):
             result = await transcribe_audio(limit_audio)
 
@@ -122,9 +126,7 @@ class TestTranscribeAudio:
 
     async def test_uses_provided_client(self) -> None:
         """CR-V-03: Test that an externally provided client is used."""
-        resp = _make_mock_response({
-            "choices": [{"message": {"content": "hello"}}]
-        })
+        resp = _make_mock_response({"choices": [{"message": {"content": "hello"}}]})
         mock_client = AsyncMock()
         mock_client.post.return_value = resp
 

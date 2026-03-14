@@ -36,9 +36,7 @@ class ConversationRead(UUIDModel, TimestampModel):
 
 class ConversationDetail(ConversationRead):
     messages: list[MessageRead]
-    metadata: dict[str, Any] | None = Field(
-        default=None, validation_alias="metadata_"
-    )
+    metadata: dict[str, Any] | None = Field(default=None, validation_alias="metadata_")
 
 
 class ConversationUpdate(BaseModel):

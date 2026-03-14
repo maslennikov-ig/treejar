@@ -112,11 +112,9 @@ async def calculate_dashboard_metrics(
     )
 
     # New vs returning (phone appears once = new, more = returning)
-    phone_counts_subq = (
-        select(
-            Conversation.phone,
-            func.count(Conversation.id).label("conv_count"),
-        )
+    phone_counts_subq = select(
+        Conversation.phone,
+        func.count(Conversation.id).label("conv_count"),
     )
     if period_start:
         phone_counts_subq = phone_counts_subq.where(
@@ -154,9 +152,7 @@ async def calculate_dashboard_metrics(
     seg_q = select(
         func.coalesce(Conversation.metadata_["segment"].as_string(), "unknown"),
         func.count(Conversation.id),
-    ).group_by(
-        func.coalesce(Conversation.metadata_["segment"].as_string(), "unknown")
-    )
+    ).group_by(func.coalesce(Conversation.metadata_["segment"].as_string(), "unknown"))
     if period_start:
         seg_q = seg_q.where(Conversation.created_at >= period_start)
     seg_rows = await db.execute(seg_q)
@@ -177,19 +173,14 @@ async def calculate_dashboard_metrics(
         cost_q = cost_q.where(Message.created_at >= period_start)
     llm_cost = await db.scalar(cost_q) or 0.0
 
-    msg_per_conv = (
-        select(
-            Message.conversation_id,
-            func.count(Message.id).label("msg_count"),
-        )
-        .group_by(Message.conversation_id)
-    )
+    msg_per_conv = select(
+        Message.conversation_id,
+        func.count(Message.id).label("msg_count"),
+    ).group_by(Message.conversation_id)
     if period_start:
         msg_per_conv = msg_per_conv.where(Message.created_at >= period_start)
     msg_sub = msg_per_conv.subquery()
-    avg_conv_length = (
-        await db.scalar(select(func.avg(msg_sub.c.msg_count))) or 0.0
-    )
+    avg_conv_length = await db.scalar(select(func.avg(msg_sub.c.msg_count))) or 0.0
 
     # Quality score
     qr_q = select(func.avg(QualityReview.total_score))

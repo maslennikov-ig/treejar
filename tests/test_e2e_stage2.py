@@ -91,8 +91,12 @@ async def test_telegram_escalation_notification_delivered() -> None:
     conv_id = uuid4()
     phone = "+971501234567"
 
-    with patch("src.services.notifications._get_telegram_client", return_value=mock_client):
-        await notify_escalation(phone=phone, conversation_id=conv_id, reason="Customer requested human")
+    with patch(
+        "src.services.notifications._get_telegram_client", return_value=mock_client
+    ):
+        await notify_escalation(
+            phone=phone, conversation_id=conv_id, reason="Customer requested human"
+        )
 
     mock_client.send_message.assert_called_once()
     html_message: str = mock_client.send_message.call_args[0][0]
@@ -145,7 +149,9 @@ async def test_report_generation_and_send() -> None:
     mock_client = MagicMock()
     mock_client.send_message = AsyncMock()
 
-    with patch("src.services.notifications._get_telegram_client", return_value=mock_client):
+    with patch(
+        "src.services.notifications._get_telegram_client", return_value=mock_client
+    ):
         await send_telegram_message(text)
 
     mock_client.send_message.assert_called_once_with(text)

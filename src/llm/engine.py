@@ -421,7 +421,9 @@ async def recommend_products(
     """
     logger.info(
         "LLM Tool called: recommend_products(product_id=%s, category=%s, type=%s)",
-        product_id, category, recommendation_type,
+        product_id,
+        category,
+        recommendation_type,
     )
     from src.services.recommendations import get_cross_sell, get_similar_products
 
@@ -439,7 +441,9 @@ async def recommend_products(
 
         lines = ["Also recommended (similar products):"]
         for item in items:
-            sim = f" ({item.similarity_score:.0%} match)" if item.similarity_score else ""
+            sim = (
+                f" ({item.similarity_score:.0%} match)" if item.similarity_score else ""
+            )
             lines.append(f"- {item.name}: {item.price:.2f} AED{sim}")
         return "\n".join(lines)
 
@@ -450,10 +454,14 @@ async def recommend_products(
 
         lines = ["You might also need:"]
         for item in items:
-            lines.append(f"- {item.name}: {item.price:.2f} AED (in stock: {item.stock})")
+            lines.append(
+                f"- {item.name}: {item.price:.2f} AED (in stock: {item.stock})"
+            )
         return "\n".join(lines)
 
-    return "Please specify either product_id (for similar) or category (for cross_sell)."
+    return (
+        "Please specify either product_id (for similar) or category (for cross_sell)."
+    )
 
 
 @sales_agent.tool

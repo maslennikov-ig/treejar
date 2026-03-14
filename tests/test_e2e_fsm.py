@@ -70,9 +70,11 @@ def _make_conversation(stage: SalesStage) -> Any:
 # tool functions expect a RunContext[SalesDeps] as first arg.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _FakeRunContext:
     """Minimal RunContext-like object carrying deps."""
+
     deps: SalesDeps
 
 
@@ -246,4 +248,6 @@ class TestAllowedTransitionsMap:
 
     def test_every_stage_has_an_entry(self) -> None:
         for stage in SalesStage:
-            assert stage in ALLOWED_TRANSITIONS, f"{stage} missing from ALLOWED_TRANSITIONS"
+            assert stage in ALLOWED_TRANSITIONS, (
+                f"{stage} missing from ALLOWED_TRANSITIONS"
+            )

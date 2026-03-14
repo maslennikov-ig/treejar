@@ -109,9 +109,7 @@ class TestPerformSearchProducts:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.search_products")
-    async def test_returns_formatted_product_info(
-        self, mock_search: AsyncMock
-    ) -> None:
+    async def test_returns_formatted_product_info(self, mock_search: AsyncMock) -> None:
         """Successful search returns formatted product strings."""
         from src.schemas.product import ProductSearchResult
 
@@ -154,9 +152,7 @@ class TestPerformSearchProducts:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.search_products")
-    async def test_wholesale_discount_applied(
-        self, mock_search: AsyncMock
-    ) -> None:
+    async def test_wholesale_discount_applied(self, mock_search: AsyncMock) -> None:
         """Wholesale segment should get 15% discount on prices."""
         from src.schemas.product import ProductSearchResult
 
@@ -178,9 +174,7 @@ class TestPerformSearchProducts:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.search_products")
-    async def test_horeca_discount_applied(
-        self, mock_search: AsyncMock
-    ) -> None:
+    async def test_horeca_discount_applied(self, mock_search: AsyncMock) -> None:
         """Horeca segment should get 10% discount on prices."""
         from src.schemas.product import ProductSearchResult
 
@@ -202,9 +196,7 @@ class TestPerformSearchProducts:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.search_products")
-    async def test_unknown_segment_no_discount(
-        self, mock_search: AsyncMock
-    ) -> None:
+    async def test_unknown_segment_no_discount(self, mock_search: AsyncMock) -> None:
         """Unknown segment gets base price (0% discount)."""
         from src.schemas.product import ProductSearchResult
 
@@ -226,9 +218,7 @@ class TestPerformSearchProducts:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.search_products")
-    async def test_multiple_products_formatted(
-        self, mock_search: AsyncMock
-    ) -> None:
+    async def test_multiple_products_formatted(self, mock_search: AsyncMock) -> None:
         """Multiple products should be separated by '---'."""
         from src.schemas.product import ProductSearchResult
 

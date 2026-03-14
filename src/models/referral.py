@@ -2,6 +2,7 @@
 
 Tracks referral codes, their usage, and discount percentages.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -20,12 +21,8 @@ class Referral(UUIDMixin, TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String, unique=True, index=True)
     referrer_phone: Mapped[str] = mapped_column(String, index=True)
     referee_phone: Mapped[str | None] = mapped_column(String, default=None)
-    referrer_discount_percent: Mapped[float] = mapped_column(
-        Float, default=5.0
-    )
-    referee_discount_percent: Mapped[float] = mapped_column(
-        Float, default=10.0
-    )
+    referrer_discount_percent: Mapped[float] = mapped_column(Float, default=5.0)
+    referee_discount_percent: Mapped[float] = mapped_column(Float, default=10.0)
     status: Mapped[str] = mapped_column(
         String, default="active"
     )  # active, used, expired

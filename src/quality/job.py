@@ -3,6 +3,7 @@
 Runs hourly to find closed conversations without a quality review
 and evaluates them using the LLM judge.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,7 +56,9 @@ async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
             evaluated += 1
             logger.info(
                 "Evaluated conversation %s: score=%.1f rating=%s",
-                conv_id, result.total_score, result.rating
+                conv_id,
+                result.total_score,
+                result.rating,
             )
 
             # Send Telegram alert for poor quality dialogues
@@ -70,9 +73,7 @@ async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
                         summary=result.summary,
                     )
                 except Exception:
-                    logger.exception(
-                        "Failed to send quality alert for %s", conv_id
-                    )
+                    logger.exception("Failed to send quality alert for %s", conv_id)
         except Exception:
             errors += 1
             logger.exception(
@@ -82,6 +83,4 @@ async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
                 len(pending_ids),
             )
 
-    logger.info(
-        "Quality evaluator: done. evaluated=%d, errors=%d", evaluated, errors
-    )
+    logger.info("Quality evaluator: done. evaluated=%d, errors=%d", evaluated, errors)

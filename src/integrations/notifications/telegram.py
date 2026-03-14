@@ -3,6 +3,7 @@
 Sends text messages and documents via the Telegram Bot API.
 Silently no-ops when bot_token is empty (not configured).
 """
+
 from __future__ import annotations
 
 import logging
@@ -120,9 +121,7 @@ class TelegramClient:
                 result: dict[str, Any] = resp.json()
 
                 if not result.get("ok"):
-                    logger.warning(
-                        "Telegram API returned ok=false: %s", result
-                    )
+                    logger.warning("Telegram API returned ok=false: %s", result)
                 return result
 
             except httpx.HTTPStatusError as e:

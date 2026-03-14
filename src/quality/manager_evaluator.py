@@ -7,6 +7,7 @@ business metrics (response time, conversion, message count, deal amount).
 
 See: docs/08-manager-evaluation-criteria.md
 """
+
 from __future__ import annotations
 
 import logging
@@ -141,13 +142,10 @@ async def calculate_manager_metrics(
         ManagerMetrics with response time, message count, conversion, and deal amount.
     """
     # First response time: first manager message after escalation
-    first_mgr_msg_stmt = (
-        select(func.min(Message.created_at))
-        .where(
-            Message.conversation_id == conversation.id,
-            Message.role == "manager",
-            Message.created_at >= escalation.created_at,
-        )
+    first_mgr_msg_stmt = select(func.min(Message.created_at)).where(
+        Message.conversation_id == conversation.id,
+        Message.role == "manager",
+        Message.created_at >= escalation.created_at,
     )
     first_mgr_time_result = await db.scalar(first_mgr_msg_stmt)
 
@@ -221,7 +219,9 @@ async def evaluate_manager_conversation(
     if escalation is None:
         raise ValueError(f"Escalation {escalation_id} not found")
 
-    conv_stmt = select(Conversation).where(Conversation.id == escalation.conversation_id)
+    conv_stmt = select(Conversation).where(
+        Conversation.id == escalation.conversation_id
+    )
     conv_result = await db.execute(conv_stmt)
     conversation = conv_result.scalar_one_or_none()
 

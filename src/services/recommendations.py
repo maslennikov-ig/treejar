@@ -4,6 +4,7 @@ Provides two types of recommendations:
 1. Similar products via pgvector cosine similarity on embeddings
 2. Cross-sell rules loaded from SystemConfig
 """
+
 from __future__ import annotations
 
 import logging
@@ -103,9 +104,7 @@ async def get_cross_sell(
         List of cross-sell products.
     """
     # Load rules from SystemConfig
-    rules_stmt = select(SystemConfig).where(
-        SystemConfig.key == "cross_sell_rules"
-    )
+    rules_stmt = select(SystemConfig).where(SystemConfig.key == "cross_sell_rules")
     result = await db.execute(rules_stmt)
     config = result.scalar_one_or_none()
 
