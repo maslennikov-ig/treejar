@@ -195,8 +195,9 @@ class TestRealLLMProductSearch:
         mock_prompt.return_value = (
             "You are Noor, an expert B2B office furniture sales consultant at Treejar.\n"
             "STAGE: SOLUTION\n"
-            "Your current objective is to present product solutions. "
+            "Your current objective is to present product solutions.\n"
             "You MUST use the `search_products` tool to find items.\n"
+            "After receiving the items, you MUST explicitly describe them to the user, including their name and price.\n"
             "CRITICAL: You are PHYSICALLY UNABLE to see products without using tools.\n"
             "IMPORTANT: Reply in English."
         )

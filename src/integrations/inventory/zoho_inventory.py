@@ -94,7 +94,7 @@ class ZohoInventoryClient(InventoryProvider):
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make an authenticated request to Zoho Inventory API with retries."""
-        params = params or {}
+        params = dict(params) if params else {}
         params["organization_id"] = self.org_id
 
         # Retry mechanism (3 attempts with backoff)
