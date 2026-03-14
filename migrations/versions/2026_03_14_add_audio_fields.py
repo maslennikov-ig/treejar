@@ -10,7 +10,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "2026_03_14_add_audio_fields"
-down_revision = "2026_03_13_add_manager_reviews_table"
+down_revision = "e5f6a7b8c9d0"
 branch_labels = None
 depends_on = None
 
