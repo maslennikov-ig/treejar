@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -111,15 +112,13 @@ async def update_conversation(
             setattr(conversation, field, value)
 
     # If deal_status transitions to DELIVERED for the first time, stamp the timestamp.
-    from datetime import UTC, datetime as dt
-
     from src.schemas.common import DealStatus
 
     if (
         update_data.get("deal_status") == DealStatus.DELIVERED.value
         and conversation.deal_delivered_at is None
     ):
-        conversation.deal_delivered_at = dt.now(UTC)
+        conversation.deal_delivered_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(conversation)
