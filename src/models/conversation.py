@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Numeric, String
+from sqlalchemy import JSON, DateTime, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin, UUIDMixin
@@ -30,6 +31,9 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String, default="active")
     escalation_status: Mapped[str] = mapped_column(String, default="none")
     deal_status: Mapped[str | None] = mapped_column(String, default=None)
+    deal_delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     metadata_: Mapped[dict[str, Any] | None] = mapped_column(
         "metadata", JSON, nullable=True, default=None
     )

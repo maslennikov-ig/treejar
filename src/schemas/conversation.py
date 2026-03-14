@@ -44,6 +44,7 @@ class ConversationUpdate(BaseModel):
     sales_stage: SalesStage | None = None
     escalation_status: EscalationStatus | None = None
     customer_name: str | None = None
+    deal_status: str | None = None
 
 
 class MessageCreate(BaseModel):

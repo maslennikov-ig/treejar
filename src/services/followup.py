@@ -157,11 +157,12 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
             .outerjoin(Feedback, Feedback.conversation_id == Conversation.id)
             .where(
                 Conversation.deal_status == DealStatus.DELIVERED.value,
-                Conversation.updated_at >= min_time,
-                Conversation.updated_at < max_time,
+                Conversation.deal_delivered_at >= min_time,
+                Conversation.deal_delivered_at < max_time,
                 Feedback.id.is_(None),  # No feedback yet
             )
         )
+
 
         result = await db.execute(stmt)
         conversations: list[Conversation] = list(result.scalars().all())
