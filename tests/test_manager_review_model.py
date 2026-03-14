@@ -69,7 +69,7 @@ def test_escalation_status_manual_takeover() -> None:
     """EscalationStatus enum includes manual_takeover."""
     from src.schemas.common import EscalationStatus
 
-    assert EscalationStatus.MANUAL_TAKEOVER == "manual_takeover"
+    assert EscalationStatus.MANUAL_TAKEOVER.value == "manual_takeover"
     assert "manual_takeover" in [e.value for e in EscalationStatus]
 
 

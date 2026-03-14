@@ -68,5 +68,5 @@ def test_manager_reviews_router_registered() -> None:
     """Manager reviews router is registered in the API."""
     from src.api.v1.router import api_v1_router
 
-    route_paths = [route.path for route in api_v1_router.routes]
+    route_paths = [getattr(route, "path", "") for route in api_v1_router.routes]
     assert any("/manager-reviews" in path for path in route_paths)
