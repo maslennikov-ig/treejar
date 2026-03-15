@@ -54,7 +54,7 @@ class TestTranscribeAudio:
         # Verify API payload structure
         mock_client = mock_cls.return_value
         payload = mock_client.post.call_args.kwargs["json"]
-        assert payload["model"] == "mistralai/voxtral-small-24b-2507"
+        assert payload["model"] == "openai/gpt-audio-mini"
         assert payload["messages"][0]["content"][1]["type"] == "input_audio"
 
     async def test_transcribe_arabic_audio(self) -> None:
