@@ -44,9 +44,26 @@ def _is_db_available() -> bool:
 
 DB_AVAILABLE = _is_db_available()
 
-requires_db = pytest.mark.skipif(
+_skipif_no_db = pytest.mark.skipif(
     not DB_AVAILABLE, reason="PostgreSQL not available in this environment"
 )
+
+
+def integration(fn: object) -> object:
+    """Decorator: marks test as 'integration' AND skips when DB is unavailable.
+
+    Usage:
+        @integration
+        @pytest.mark.asyncio
+        async def test_something(): ...
+
+    Run only integration tests:  pytest -m integration
+    Run only unit tests:         pytest -m 'not integration'
+    """
+    fn = pytest.mark.integration(fn)
+    fn = _skipif_no_db(fn)
+    return fn
+
 
 
 @pytest.fixture
