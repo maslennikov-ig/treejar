@@ -14,7 +14,7 @@ class TestVoxtralConfig:
     def test_voxtral_model_setting_exists(self) -> None:
         """Test that voxtral_model config setting exists and has correct default."""
         assert hasattr(settings, "voxtral_model")
-        assert settings.voxtral_model == "mistralai/voxtral-small-24b-2507"
+        assert settings.voxtral_model == "openai/gpt-audio-mini"
 
     def test_main_model_unchanged(self) -> None:
         """Test that main LLM model was NOT changed to voxtral."""
