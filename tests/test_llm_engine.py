@@ -223,8 +223,8 @@ async def test_tools_search_products(
     import src.llm.engine as engine_module
 
     # Save the original
-    orig_search = getattr(engine_module, "search_products", None)
-    engine_module.search_products = mock_search  # type: ignore
+    orig_search = getattr(engine_module, "rag_search_products", None)
+    engine_module.rag_search_products = mock_search  # type: ignore
 
     try:
         from pydantic_ai import RunContext
@@ -241,13 +241,13 @@ async def test_tools_search_products(
             usage=RunUsage(),
         )
 
-        result_text = await engine_module.perform_search_products(ctx, "chair")
+        result_text = await engine_module.search_products(ctx, "chair")
         assert "Office Chair" in result_text
         assert "CHAIR-01" in result_text
         assert "100.00 USD (Your segment price)" in result_text
     finally:
         if orig_search:
-            engine_module.search_products = orig_search  # type: ignore
+            engine_module.rag_search_products = orig_search  # type: ignore
 
 
 @pytest.mark.asyncio

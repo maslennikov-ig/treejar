@@ -186,7 +186,7 @@ class TestRealLLMProductSearch:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-    @patch("src.llm.engine.search_products", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
     async def test_model_calls_search_products(
         self,
         mock_search: AsyncMock,
@@ -281,7 +281,7 @@ class TestRealLLMWholesaleDiscount:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-    @patch("src.llm.engine.search_products", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
     async def test_wholesale_price_shown(
         self,
         mock_search: AsyncMock,

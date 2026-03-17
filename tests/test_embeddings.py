@@ -13,22 +13,20 @@ from src.rag.embeddings import (
 
 @pytest.fixture
 def mock_embedding_engine() -> Generator[Any, None, None]:
-    with patch("src.rag.embeddings.TextEmbedding") as MockTextEmbedding:
-        mock_model = MockTextEmbedding.return_value
+    with patch("src.rag.embeddings.SentenceTransformer") as MockSentenceTransformer:
+        mock_model = MockSentenceTransformer.return_value
 
-        # Mocks the embed generator
-        def mock_embed(texts: list[str]) -> Generator[Any, None, None]:
+        # Mocks the encode method
+        def mock_encode(texts: str | list[str], **kwargs: Any) -> Any:
             class MockArray:
-                def __iter__(self) -> Any:
-                    return iter([0.1] * 1024)
-
                 def tolist(self) -> list[float]:
                     return [0.1] * 1024
 
-            for _ in texts:
-                yield MockArray()
+            if isinstance(texts, str):
+                return MockArray()
+            return [MockArray() for _ in texts]
 
-        mock_model.embed.side_effect = mock_embed
+        mock_model.encode.side_effect = mock_encode
 
         # Reset singleton instance before tests
         EmbeddingEngine._instance = None
