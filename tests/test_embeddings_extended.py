@@ -197,7 +197,7 @@ def test_singleton_returns_same_instance() -> None:
     EmbeddingEngine._instance = None
 
     try:
-        with patch("src.rag.embeddings.TextEmbedding"):
+        with patch("src.rag.embeddings.SentenceTransformer"):
             engine_a = EmbeddingEngine()
             engine_b = EmbeddingEngine()
             assert engine_a is engine_b
@@ -211,12 +211,12 @@ def test_singleton_reset_between_tests() -> None:
     created.  This verifies the reset pattern used by test fixtures."""
     EmbeddingEngine._instance = None
 
-    with patch("src.rag.embeddings.TextEmbedding"):
+    with patch("src.rag.embeddings.SentenceTransformer"):
         first = EmbeddingEngine()
 
     EmbeddingEngine._instance = None
 
-    with patch("src.rag.embeddings.TextEmbedding"):
+    with patch("src.rag.embeddings.SentenceTransformer"):
         second = EmbeddingEngine()
 
     # After the reset, a new object is created
@@ -231,29 +231,27 @@ def test_singleton_class_level_patch_works() -> None:
     EmbeddingEngine._instance = None
 
     try:
-        with patch("src.rag.embeddings.TextEmbedding") as MockTextEmbedding:
+        with patch("src.rag.embeddings.SentenceTransformer") as MockSentenceTransformer:
             mock_model = MagicMock()
 
-            def _fake_embed(texts: list[str]):  # type: ignore[no-untyped-def]
+            def _fake_encode(texts: str | list[str], **kwargs: Any) -> Any:
                 class _FakeArray:
-                    def __iter__(self):  # type: ignore[no-untyped-def]
-                        return iter([0.42] * 1024)
-
                     def tolist(self) -> list[float]:
                         return [0.42] * 1024
 
-                for _ in texts:
-                    yield _FakeArray()
+                if isinstance(texts, str):
+                    return _FakeArray()
+                return [_FakeArray() for _ in texts]
 
-            mock_model.embed.side_effect = _fake_embed
-            MockTextEmbedding.return_value = mock_model
+            mock_model.encode.side_effect = _fake_encode
+            MockSentenceTransformer.return_value = mock_model
 
             engine = EmbeddingEngine()
             result = engine.embed("test sentence")
 
         assert len(result) == 1024
         assert result[0] == 0.42
-        MockTextEmbedding.assert_called_once()
+        MockSentenceTransformer.assert_called_once()
     finally:
         EmbeddingEngine._instance = None
 
@@ -266,11 +264,11 @@ def test_singleton_model_not_loaded_until_embed_called() -> None:
     EmbeddingEngine._model = None
 
     try:
-        with patch("src.rag.embeddings.TextEmbedding") as MockTextEmbedding:
-            MockTextEmbedding.return_value = MagicMock()
+        with patch("src.rag.embeddings.SentenceTransformer") as MockSentenceTransformer:
+            MockSentenceTransformer.return_value = MagicMock()
             _engine = EmbeddingEngine()
             # Model not yet loaded
-            MockTextEmbedding.assert_not_called()
+            MockSentenceTransformer.assert_not_called()
     finally:
         EmbeddingEngine._instance = None
         EmbeddingEngine._model = None

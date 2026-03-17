@@ -1,4 +1,4 @@
-"""E2E tests for the RAG pipeline: perform_search_products tool.
+"""E2E tests for the RAG pipeline: search_products tool.
 
 Covers:
   - Successful product search with mocked EmbeddingEngine + DB.
@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.base import MessagingProvider
-from src.llm.engine import SalesDeps, perform_search_products
+from src.llm.engine import SalesDeps, search_products
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
@@ -105,10 +105,10 @@ def _fake_product_read(
 
 
 class TestPerformSearchProducts:
-    """Test the perform_search_products tool (RAG pipeline)."""
+    """Test the search_products tool (RAG pipeline)."""
 
     @pytest.mark.asyncio
-    @patch("src.llm.engine.search_products")
+    @patch("src.llm.engine.rag_search_products")
     async def test_returns_formatted_product_info(self, mock_search: AsyncMock) -> None:
         """Successful search returns formatted product strings."""
         from src.schemas.product import ProductSearchResult
@@ -124,7 +124,7 @@ class TestPerformSearchProducts:
         deps = _make_deps(conv, crm_context={"Segment": "Unknown"})
         ctx = _FakeRunContext(deps=deps)
 
-        result = await perform_search_products(ctx, "ergonomic chair")  # type: ignore[arg-type]
+        result = await search_products(ctx, "ergonomic chair")  # type: ignore[arg-type]
 
         assert "CHAIR-01" in result
         assert "Ergonomic Office Chair" in result
@@ -132,7 +132,7 @@ class TestPerformSearchProducts:
         mock_search.assert_awaited_once()
 
     @pytest.mark.asyncio
-    @patch("src.llm.engine.search_products")
+    @patch("src.llm.engine.rag_search_products")
     async def test_empty_results(self, mock_search: AsyncMock) -> None:
         """When no products match, return appropriate message."""
         from src.schemas.product import ProductSearchResult
@@ -147,11 +147,11 @@ class TestPerformSearchProducts:
         deps = _make_deps(conv)
         ctx = _FakeRunContext(deps=deps)
 
-        result = await perform_search_products(ctx, "nonexistent item")  # type: ignore[arg-type]
+        result = await search_products(ctx, "nonexistent item")  # type: ignore[arg-type]
         assert "No products found" in result
 
     @pytest.mark.asyncio
-    @patch("src.llm.engine.search_products")
+    @patch("src.llm.engine.rag_search_products")
     async def test_wholesale_discount_applied(self, mock_search: AsyncMock) -> None:
         """Wholesale segment should get 15% discount on prices."""
         from src.schemas.product import ProductSearchResult
@@ -167,13 +167,13 @@ class TestPerformSearchProducts:
         deps = _make_deps(conv, crm_context={"Segment": "Wholesale"})
         ctx = _FakeRunContext(deps=deps)
 
-        result = await perform_search_products(ctx, "chair")  # type: ignore[arg-type]
+        result = await search_products(ctx, "chair")  # type: ignore[arg-type]
 
         # 1000 * 0.85 = 850.00
         assert "850.00" in result
 
     @pytest.mark.asyncio
-    @patch("src.llm.engine.search_products")
+    @patch("src.llm.engine.rag_search_products")
     async def test_horeca_discount_applied(self, mock_search: AsyncMock) -> None:
         """Horeca segment should get 10% discount on prices."""
         from src.schemas.product import ProductSearchResult
@@ -189,13 +189,13 @@ class TestPerformSearchProducts:
         deps = _make_deps(conv, crm_context={"Segment": "Horeca"})
         ctx = _FakeRunContext(deps=deps)
 
-        result = await perform_search_products(ctx, "table")  # type: ignore[arg-type]
+        result = await search_products(ctx, "table")  # type: ignore[arg-type]
 
         # 200 * 0.90 = 180.00
         assert "180.00" in result
 
     @pytest.mark.asyncio
-    @patch("src.llm.engine.search_products")
+    @patch("src.llm.engine.rag_search_products")
     async def test_unknown_segment_no_discount(self, mock_search: AsyncMock) -> None:
         """Unknown segment gets base price (0% discount)."""
         from src.schemas.product import ProductSearchResult
@@ -211,13 +211,13 @@ class TestPerformSearchProducts:
         deps = _make_deps(conv, crm_context={"Segment": "Unknown"})
         ctx = _FakeRunContext(deps=deps)
 
-        result = await perform_search_products(ctx, "desk")  # type: ignore[arg-type]
+        result = await search_products(ctx, "desk")  # type: ignore[arg-type]
 
         # 100 * 1.0 = 100.00
         assert "100.00" in result
 
     @pytest.mark.asyncio
-    @patch("src.llm.engine.search_products")
+    @patch("src.llm.engine.rag_search_products")
     async def test_multiple_products_formatted(self, mock_search: AsyncMock) -> None:
         """Multiple products should be separated by '---'."""
         from src.schemas.product import ProductSearchResult
@@ -236,7 +236,7 @@ class TestPerformSearchProducts:
         deps = _make_deps(conv, crm_context={"Segment": "Unknown"})
         ctx = _FakeRunContext(deps=deps)
 
-        result = await perform_search_products(ctx, "office furniture")  # type: ignore[arg-type]
+        result = await search_products(ctx, "office furniture")  # type: ignore[arg-type]
 
         assert "---" in result
         assert "A1" in result

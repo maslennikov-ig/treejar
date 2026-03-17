@@ -31,7 +31,7 @@ dependencies = [
     # LLM client (OpenRouter via base_url)
     "openai>=1.60,<2.0",
     # Embeddings (local, multilingual)
-    "fastembed>=0.5,<1.0",
+    "sentence-transformers>=3.0.0",
     # Utilities
     "python-multipart>=0.0.18",
     "python-dotenv>=1.0,<2.0",
