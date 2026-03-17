@@ -226,7 +226,7 @@ def test_singleton_reset_between_tests() -> None:
 
 @pytest.mark.unit
 def test_singleton_class_level_patch_works() -> None:
-    """Patching TextEmbedding at the class level prevents any real model
+    """Patching SentenceTransformer at the class level prevents any real model
     loading when EmbeddingEngine._get_model is called."""
     EmbeddingEngine._instance = None
 
@@ -258,7 +258,7 @@ def test_singleton_class_level_patch_works() -> None:
 
 @pytest.mark.unit
 def test_singleton_model_not_loaded_until_embed_called() -> None:
-    """_get_model is lazy: the TextEmbedding constructor must not be called
+    """_get_model is lazy: the SentenceTransformer constructor must not be called
     until embed() or embed_batch() is invoked."""
     EmbeddingEngine._instance = None
     EmbeddingEngine._model = None
