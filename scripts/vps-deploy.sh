@@ -29,8 +29,9 @@ if [ "$BRANCH" = "develop" ]; then
     fi
 
     # Build and restart Development Compose stack
-    docker compose -f docker-compose.dev.yml up -d --build
-    docker compose -f docker-compose.dev.yml restart nginx
+    # -p ensures dev containers don't collide with prod containers
+    docker compose -p treejar-dev -f docker-compose.dev.yml up -d --build
+    docker compose -p treejar-dev -f docker-compose.dev.yml restart nginx
     echo "Development deployment successful!"
 
 elif [ "$BRANCH" = "main" ]; then
@@ -45,8 +46,9 @@ elif [ "$BRANCH" = "main" ]; then
     fi
 
     # Build and restart Production Compose stack
-    docker compose -f docker-compose.yml up -d --build
-    docker compose -f docker-compose.yml restart nginx
+    # -p ensures prod containers don't collide with dev containers
+    docker compose -p treejar-prod -f docker-compose.yml up -d --build
+    docker compose -p treejar-prod -f docker-compose.yml restart nginx
     echo "Production deployment successful!"
 
 else
