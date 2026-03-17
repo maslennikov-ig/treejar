@@ -22,7 +22,7 @@ from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
-from src.rag.pipeline import search_products
+from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductSearchQuery
 
@@ -95,8 +95,10 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
     return base_prompt
 
 
+# NOTE: Function name MUST match prompt references (prompts.py) exactly.
+# PydanticAI derives tool name from function name.
 @sales_agent.tool
-async def perform_search_products(ctx: RunContext[SalesDeps], query: str) -> str:
+async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
     """Search for products in the Treejar catalog based on the customer's query.
     Call this whenever a customer asks for recommendations, prices, or product features.
 
@@ -106,7 +108,7 @@ async def perform_search_products(ctx: RunContext[SalesDeps], query: str) -> str
     logger.info(f"LLM Tool called: search_products(query={query!r})")
     search_query = ProductSearchQuery(query=query, limit=3)
 
-    results = await search_products(
+    results = await rag_search_products(
         db=ctx.deps.db,
         query=search_query,
         embedding_engine=ctx.deps.embedding_engine,

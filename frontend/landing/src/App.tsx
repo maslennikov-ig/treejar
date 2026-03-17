@@ -21,13 +21,13 @@ import {
 
 const translations = {
   en: {
-    nav: { features: "Features", integrations: "Integrations", howItWorks: "How it works", login: "Войти" },
+    nav: { features: "Features", integrations: "Integrations", howItWorks: "How it works", login: "Log in" },
     hero: {
       badge: "AI-assistant for B2B sales",
       title1: "A new era of sales in ",
       title2: " with AI",
       desc: "Automate customer communication, check stock, and create quotes 24/7. Your perfect salesperson who never sleeps.",
-      startFree: "Войти",
+      startFree: "Log in",
       watchDemo: "Watch demo",
       noCard: "No credit card required",
       setup: "5-minute setup",
@@ -60,7 +60,8 @@ const translations = {
     footer: {
       rights: "© 2026 Treejar Trading LLC. All rights reserved.",
       privacy: "Privacy Policy",
-      terms: "Terms of Service"
+      terms: "Terms of Service",
+      devBy: "Developed by"
     },
     legal: {
       privacy: {
@@ -161,7 +162,8 @@ const translations = {
     footer: {
       rights: "© 2026 Treejar Trading LLC. جميع الحقوق محفوظة.",
       privacy: "سياسة الخصوصية",
-      terms: "شروط الخدمة"
+      terms: "شروط الخدمة",
+      devBy: "Разработано"
     },
     legal: {
       privacy: {
@@ -645,7 +647,7 @@ const Footer = ({ onOpenLegal }: { onOpenLegal: (type: 'privacy' | 'terms') => v
             {t.footer.rights}
           </p>
           <p className="text-slate-400 text-xs text-center">
-            Разработано <a href="https://aidevteam.ru/" target="_blank" rel="noopener noreferrer" className="hover:text-brand-orange transition-colors font-medium">AI Dev Team</a>
+            {t.footer.devBy} <a href="https://aidevteam.ru/" target="_blank" rel="noopener noreferrer" className="hover:text-brand-orange transition-colors font-medium">AI Dev Team</a>
           </p>
         </div>
 

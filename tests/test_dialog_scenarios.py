@@ -135,7 +135,7 @@ class TestScenario1HappyPath:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-    @patch("src.llm.engine.search_products", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
     async def test_search_products_called_on_query(
         self,
         mock_search: AsyncMock,
@@ -155,7 +155,7 @@ class TestScenario1HappyPath:
                 return ModelResponse(
                     parts=[
                         ToolCallPart(
-                            "perform_search_products",
+                            "search_products",
                             {"query": "ergonomic chairs under 2000 AED"},
                         )
                     ]
@@ -192,7 +192,7 @@ class TestScenario2WholesaleDiscount:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-    @patch("src.llm.engine.search_products", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
     async def test_wholesale_segment_gets_discounted_price(
         self,
         mock_search: AsyncMock,
@@ -236,7 +236,7 @@ class TestScenario2WholesaleDiscount:
                 return ModelResponse(
                     parts=[
                         ToolCallPart(
-                            "perform_search_products",
+                            "search_products",
                             {"query": "reception desks"},
                         )
                     ]
@@ -451,7 +451,7 @@ class TestScenario5MultiToolChaining:
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-    @patch("src.llm.engine.search_products", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
     async def test_search_then_stock_check(
         self,
         mock_search: AsyncMock,
@@ -502,7 +502,7 @@ class TestScenario5MultiToolChaining:
                 return ModelResponse(
                     parts=[
                         ToolCallPart(
-                            "perform_search_products",
+                            "search_products",
                             {"query": "ergonomic chairs"},
                         )
                     ]

@@ -4,7 +4,7 @@ import asyncio
 import logging
 import threading
 
-from fastembed import TextEmbedding
+from sentence_transformers import SentenceTransformer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingEngine:
-    """Singleton engine for generating embeddings using BAAI/bge-m3."""
+    """Singleton engine for generating text embeddings."""
 
     _instance: EmbeddingEngine | None = None
-    _model: TextEmbedding | None = None
+    _model: SentenceTransformer | None = None
     _lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> EmbeddingEngine:
@@ -29,7 +29,7 @@ class EmbeddingEngine:
             cls._instance._model = None
         return cls._instance
 
-    def _get_model(self) -> TextEmbedding:
+    def _get_model(self) -> SentenceTransformer:
         """Lazy load the embedding model with double-checked locking."""
         if self._model is None:
             with self._lock:
@@ -37,25 +37,21 @@ class EmbeddingEngine:
                     logger.info(
                         "Loading embedding model %s...", settings.embedding_model
                     )
-                    self._model = TextEmbedding(model_name=settings.embedding_model)
+                    self._model = SentenceTransformer(settings.embedding_model)
                     logger.info("Embedding model loaded successfully.")
         return self._model
 
     def embed(self, text: str) -> list[float]:
         """Generate an embedding for a single text string."""
         model = self._get_model()
-        # model.embed returns a generator of numpy arrays
-        generator = model.embed([text])
-        for result in generator:
-            return list(float(x) for x in result)
-        return []
+        embedding = model.encode(text, normalize_embeddings=True)
+        return embedding.tolist()
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a batch of text strings."""
         model = self._get_model()
-        generator = model.embed(texts)
-        # Convert generator of numpy arrays to list of lists of floats
-        return [vec.tolist() for vec in generator]
+        embeddings = model.encode(texts, normalize_embeddings=True)
+        return [e.tolist() for e in embeddings]
 
     async def embed_async(self, text: str) -> list[float]:
         """Generate an embedding for a single text string without blocking the event loop."""
