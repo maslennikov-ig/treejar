@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deploy Script - Merge current branch into main for production deployment
+# Deploy Script - Merge current branch into main for direct production deployment
 # Uses Git Worktrees to isolate local checks from the active developer workspace.
 #
 # Usage: ./deploy.sh [--force] [--yes] [--sync]
