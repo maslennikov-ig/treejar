@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import time
 import traceback
+from functools import lru_cache
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -16,27 +18,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@lru_cache(maxsize=1)
+def _parse_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """Parse WAZZUP_ALLOWED_IPS into a list of IP networks (cached)."""
+    raw = settings.wazzup_allowed_ips.strip()
+    if not raw:
+        return []
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for cidr in raw.split(","):
+        cidr = cidr.strip()
+        if cidr:
+            networks.append(ipaddress.ip_network(cidr, strict=False))
+    return networks
+
+
 def _verify_webhook_origin(request: Request) -> bool:
-    """Verify that webhook request comes from Wazzup.
+    """Verify that webhook request comes from Wazzup IP ranges.
 
-    Wazzup v3 sends `Authorization: Bearer ${crmKey}` if a crmKey is configured.
-    We check against our stored wazzup_webhook_secret.
-
-    If wazzup_webhook_secret is empty (not configured), we skip the check
-    to not block messages during initial setup.
+    Wazzup v3 sends webhooks from known IP ranges.  We check the
+    client IP against the configured WAZZUP_ALLOWED_IPS (comma-separated
+    CIDRs).  If not configured, all requests are accepted (dev mode).
     """
-    secret = settings.wazzup_webhook_secret
-    if not secret:
-        # No secret configured — skip verification (log warning on first call)
+    networks = _parse_allowed_networks()
+    if not networks:
+        # No allowlist configured — accept all (dev / initial setup)
         return True
 
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        return token == secret
+    client_host = request.client.host if request.client else None
+    if not client_host:
+        return False
 
-    # No auth header but secret is configured — reject
-    return False
+    try:
+        client_ip = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+
+    return any(client_ip in network for network in networks)
 
 
 @router.post("/wazzup")
@@ -54,13 +71,13 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     - authorType='manager' (isEcho=true) → save as role='manager', no LLM
     - authorType='bot' → skip (echo of our own bot messages)
     """
-    # CR-WA-08: Verify webhook origin
+    # CR-WA-08: Verify webhook origin (IP allowlist)
     if not _verify_webhook_origin(request):
         logger.warning(
-            "Wazzup webhook: unauthorized request from %s",
+            "Wazzup webhook: blocked request from non-allowed IP %s",
             request.client.host if request.client else "unknown",
         )
-        return JSONResponse({"error": "unauthorized"}, status_code=403)
+        return JSONResponse({"error": "forbidden"}, status_code=403)
 
     try:
         raw_body = await request.json()

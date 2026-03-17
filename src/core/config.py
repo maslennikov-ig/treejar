@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     wazzup_api_key: str = ""
     wazzup_api_url: str = "https://api.wazzup24.com/v3"
     wazzup_channel_id: str = ""  # UUID of the WhatsApp channel in Wazzup
-    wazzup_webhook_secret: str = ""
+    wazzup_allowed_ips: str = ""  # Comma-separated CIDRs, e.g. "94.242.232.0/22,172.241.70.0/22"
 
     # Zoho CRM
     zoho_crm_client_id: str = ""
