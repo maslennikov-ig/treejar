@@ -72,12 +72,17 @@ jobs:
           script: |
             BRANCH_NAME=${GITHUB_REF##*/}
 
-            if [ "$BRANCH_NAME" != "main" ] && [ "$BRANCH_NAME" != "develop" ]; then
+            if [ "$BRANCH_NAME" = "main" ]; then
+              TARGET_DIR="/opt/treejar-prod"
+            elif [ "$BRANCH_NAME" = "develop" ]; then
+              TARGET_DIR="/opt/treejar-dev"
+            else
               echo "Deployment only supported for main and develop branches."
+              exit 1
             fi
 
-            cd /home/starec/treejar-ai-bot || {
-              echo "Repository not found at /home/starec/treejar-ai-bot."
+            cd "$TARGET_DIR" || {
+              echo "Repository not found at $TARGET_DIR."
               exit 1
             }
 

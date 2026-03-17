@@ -6,12 +6,25 @@
 set -e
 
 # Configuration
-REPO_DIR="/home/starec/treejar-ai-bot" # Change to the path of your cloned repository on the VPS
 BRANCH="${1:-main}"    # Default to main if no argument provided
 
-echo "Starting deployment for branch: $BRANCH"
+# Determine REPO_DIR based on branch
+if [ "$BRANCH" = "main" ]; then
+    REPO_DIR="/opt/treejar-prod"
+elif [ "$BRANCH" = "develop" ]; then
+    REPO_DIR="/opt/treejar-dev"
+else
+    echo "Error: Unknown branch '$BRANCH'. Please use 'main' or 'develop'."
+    exit 1
+fi
 
-cd "$REPO_DIR"
+echo "Starting deployment for branch: $BRANCH in directory $REPO_DIR"
+
+cd "$REPO_DIR" || {
+    echo "Repository not found at $REPO_DIR. Please clone it first:"
+    echo "git clone -b $BRANCH git@github.com:maslennikov-ig/treejar.git $REPO_DIR"
+    exit 1
+}
 
 # Fetch latest changes
 git fetch origin
