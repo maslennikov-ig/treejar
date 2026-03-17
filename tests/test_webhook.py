@@ -8,10 +8,8 @@ from src.main import app
 client = TestClient(app)
 
 
-@patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_endpoint(mock_settings: Any) -> None:
-    mock_settings.wazzup_webhook_secret = ""  # Skip auth check in this test
-
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_endpoint(mock_networks: Any) -> None:
     # Mock redis and arq_pool
     app.state.redis = AsyncMock()
     app.state.arq_pool = AsyncMock()
@@ -44,28 +42,25 @@ def test_wazzup_webhook_endpoint(mock_settings: Any) -> None:
     assert call_args.kwargs["_defer_by"] == 5
 
 
-@patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_test_ping(mock_settings: Any) -> None:
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_test_ping(mock_networks: Any) -> None:
     """Test that Wazzup test ping returns 200 OK."""
-    mock_settings.wazzup_webhook_secret = ""
     response = client.post("/api/v1/webhook/wazzup", json={"test": True})
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
 
-@patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_empty_payload(mock_settings: Any) -> None:
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_empty_payload(mock_networks: Any) -> None:
     """Test that empty payload (no messages) returns 200 OK."""
-    mock_settings.wazzup_webhook_secret = ""
     response = client.post("/api/v1/webhook/wazzup", json={})
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
 
-@patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_status_only(mock_settings: Any) -> None:
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_status_only(mock_networks: Any) -> None:
     """Test that status-only payload returns 200 OK."""
-    mock_settings.wazzup_webhook_secret = ""
     response = client.post(
         "/api/v1/webhook/wazzup",
         json={"statuses": [{"messageId": "123", "status": "delivered"}]},
@@ -74,32 +69,28 @@ def test_wazzup_webhook_status_only(mock_settings: Any) -> None:
     assert response.json() == {"ok": True}
 
 
-@patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_rejects_unauthorized(mock_settings: Any) -> None:
-    """Test that webhook rejects unauthorized requests when secret is set."""
-    mock_settings.wazzup_webhook_secret = "my-secret"
+def test_wazzup_webhook_rejects_disallowed_ip() -> None:
+    """Test that webhook rejects requests from non-allowed IPs."""
+    import ipaddress
 
-    response = client.post(
-        "/api/v1/webhook/wazzup",
-        json={"messages": []},
-        headers={"Authorization": "Bearer wrong-secret"},
-    )
+    networks = [ipaddress.ip_network("10.0.0.0/8")]
+    with patch(
+        "src.api.v1.webhook._parse_allowed_networks", return_value=networks
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={"messages": []},
+        )
     assert response.status_code == 403
-    assert response.json() == {"error": "unauthorized"}
+    assert response.json() == {"error": "forbidden"}
 
 
-@patch("src.api.v1.webhook.settings")
-def test_wazzup_webhook_accepts_valid_auth(mock_settings: Any) -> None:
-    """Test that webhook accepts requests with valid Bearer token."""
-    mock_settings.wazzup_webhook_secret = "my-secret"
-
-    app.state.redis = AsyncMock()
-    app.state.arq_pool = AsyncMock()
-
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_accepts_all_when_no_allowlist(mock_networks: Any) -> None:
+    """Test that webhook accepts all requests when no allowlist is configured."""
     response = client.post(
         "/api/v1/webhook/wazzup",
         json={"test": True},
-        headers={"Authorization": "Bearer my-secret"},
     )
     assert response.status_code == 200
     assert response.json() == {"ok": True}

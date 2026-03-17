@@ -1,22 +1,20 @@
-"""Tests for Wazzup webhook — manager message routing (Component 1).
-
-Verifies:
-- Client messages → rpush + enqueue (existing flow)
-- Manager messages → rpush + enqueue (saved for processing)
-- Bot messages → skipped entirely
-- authorId/authorName parsed correctly
-"""
-
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
-from src.core.config import settings
 from src.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _skip_ip_check() -> None:  # type: ignore[misc]
+    """Skip IP allowlist verification for all tests in this module."""
+    with patch("src.api.v1.webhook._parse_allowed_networks", return_value=[]):
+        yield  # type: ignore[misc]
 
 
 def _setup_mocks() -> tuple[AsyncMock, AsyncMock]:
@@ -24,7 +22,6 @@ def _setup_mocks() -> tuple[AsyncMock, AsyncMock]:
     mock_arq = AsyncMock()
     app.state.redis = mock_redis
     app.state.arq_pool = mock_arq
-    settings.wazzup_webhook_secret = ""  # Skip auth check in tests
     return mock_redis, mock_arq
 
 
