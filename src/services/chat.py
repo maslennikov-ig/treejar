@@ -20,10 +20,32 @@ from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
 
+import re
+
 logger = logging.getLogger(__name__)
 
 # Maximum time to wait for LLM response (seconds)
 LLM_TIMEOUT = 120
+
+
+def _format_for_whatsapp(text: str) -> str:
+    """Convert standard Markdown from LLM into WhatsApp-native formatting.
+    
+    WhatsApp supports: *bold*, _italic_, ~strikethrough~, ```monospace```
+    """
+    if not text:
+        return text
+    
+    # 1. Headers: ### Title -> *Title*
+    text = re.sub(r'^(#{1,6})\s*(.+)$', r'*\2*', text, flags=re.MULTILINE)
+    
+    # 2. Bold: **text** -> *text*
+    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
+    
+    # 3. Links: [text](url) -> text: url
+    text = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1: \2', text)
+    
+    return text
 
 
 def _determine_role(msg: WazzupIncomingMessage) -> str:
@@ -326,8 +348,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
             # 5. Send via Wazzup
             logger.info("Sending reply to %s via Wazzup", chat_id)
+            whatsapp_text = _format_for_whatsapp(llm_response.text)
             await wazzup_provider.send_text(
                 chat_id=chat_id,
-                text=llm_response.text,
+                text=whatsapp_text,
             )
             logger.info("Reply sent to %s successfully", chat_id)
