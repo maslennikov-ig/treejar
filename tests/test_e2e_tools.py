@@ -89,7 +89,7 @@ class TestGetStock:
     async def test_stock_found(self) -> None:
         """When SKU exists, report available count."""
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock.return_value = {"available_stock": 42}
+        mock_inv.get_stock.return_value = {"stock_on_hand": 42}
 
         conv = _make_conversation()
         deps = _make_deps(conv, zoho_inventory=mock_inv)

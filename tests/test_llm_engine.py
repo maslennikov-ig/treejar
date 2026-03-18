@@ -310,7 +310,7 @@ async def test_tools_get_stock(
 
     from src.llm.engine import get_stock
 
-    zoho.get_stock.return_value = {"available_stock": 25}
+    zoho.get_stock.return_value = {"stock_on_hand": 25}
     ctx = RunContext(
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
     )
