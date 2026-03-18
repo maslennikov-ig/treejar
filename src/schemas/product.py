@@ -49,3 +49,5 @@ class ProductSyncResponse(BaseModel):
     created: int
     updated: int
     errors: int
+    deactivated: int = 0
+    embeddings_generated: int = 0
