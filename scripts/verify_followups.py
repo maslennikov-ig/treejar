@@ -101,7 +101,8 @@ async def main() -> None:
         import importlib
 
         worker = importlib.import_module("src.worker")
-        source = open(worker.__file__).read()  # type: ignore
+        with open(worker.__file__) as f:  # type: ignore
+            source = f.read()
         if "run_automatic_followups" in source:
             ok("run_automatic_followups registered in worker.py")
         else:

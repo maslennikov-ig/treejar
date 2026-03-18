@@ -14,7 +14,6 @@ from sqlalchemy import inspect, text
 
 from src.core.database import async_session_factory, engine
 
-
 EXPECTED_TABLES = [
     "conversations",
     "messages",

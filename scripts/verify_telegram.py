@@ -67,12 +67,12 @@ async def main() -> None:
     # 3. Message formatting
     print("\n--- 8.3 Message formatting ---")
     try:
+        from uuid import uuid4
+
         from src.services.notifications import (
-            format_daily_summary,
             format_escalation_message,
             format_quality_alert_message,
         )
-        from uuid import uuid4
 
         esc_msg = format_escalation_message("971501234567", uuid4(), "Customer unhappy")
         if esc_msg and len(esc_msg) > 20:

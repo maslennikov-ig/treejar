@@ -1,6 +1,6 @@
 import asyncio
+
 import httpx
-import sys
 
 TOKEN = "8651031074:AAG5OJ5KHUOiXZz0v8s6hGXEK5HiuNfg02o"
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
