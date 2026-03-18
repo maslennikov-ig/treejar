@@ -40,6 +40,8 @@ class SalesDeps:
     messaging_client: SkipValidation[MessagingProvider]
     pii_map: dict[str, str]
     crm_context: dict[str, Any] | None = None
+    user_query: str = ""
+    faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
 
 
 # Allowed transitions for the advance_stage tool
@@ -87,6 +89,17 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         stage=ctx.deps.conversation.sales_stage,
         language=ctx.deps.conversation.language,
     )
+
+    # RAG: inject cached knowledge base FAQ context
+    if ctx.deps.faq_context:
+        faq_block = "\n\n[KNOWLEDGE BASE (FAQ)]\n"
+        for item in ctx.deps.faq_context:
+            faq_block += f"Q: {item['title']}\nA: {item['content']}\n---\n"
+        faq_block += (
+            "Use the above FAQ entries when answering. "
+            "If the answer is NOT in the FAQ, do NOT make up information.\n"
+        )
+        base_prompt += faq_block
 
     if ctx.deps.crm_context:
         profile_str = "\n".join(f"{k}: {v}" for k, v in ctx.deps.crm_context.items())
@@ -734,7 +747,18 @@ async def process_message(
         messaging_client=messaging_client,
         pii_map=pii_map,
         crm_context=crm_context,
+        user_query=masked_text,
     )
+
+    # Pre-compute FAQ search results (once per message, not per tool roundtrip)
+    try:
+        from src.rag.pipeline import search_knowledge
+
+        deps.faq_context = await search_knowledge(
+            db, masked_text, embedding_engine, limit=3
+        )
+    except Exception:
+        logger.warning("FAQ knowledge base search failed", exc_info=True)
 
     try:
         from src.core.config import get_system_config
