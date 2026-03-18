@@ -41,7 +41,7 @@ async def main() -> None:
     print("\n--- 5.1 Embedding engine ---")
     try:
         engine = EmbeddingEngine()
-        vector = await engine.embed("ergonomic office chair for home work")
+        vector = await engine.embed_async("ergonomic office chair for home work")
         dim = len(vector)
         expected_dim = settings.embedding_dimension
         if dim == expected_dim:
@@ -87,8 +87,8 @@ async def main() -> None:
     # 3. Multi-language embedding check
     print("\n--- 5.3 Multi-language embeddings ---")
     try:
-        vec_en = await engine.embed("office chair")
-        vec_ar = await engine.embed("كرسي مكتب")
+        vec_en = await engine.embed_async("office chair")
+        vec_ar = await engine.embed_async("كرسي مكتب")
         if len(vec_en) == len(vec_ar) == expected_dim:
             ok(f"EN and AR embeddings both {expected_dim}-dim")
         else:

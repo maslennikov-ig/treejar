@@ -41,7 +41,7 @@ async def main() -> None:
     try:
         from src.quality.evaluator import evaluate_conversation  # noqa: F401
         from src.quality.job import evaluate_completed_conversations  # noqa: F401
-        from src.quality.schemas import QualityReviewResult  # noqa: F401
+        from src.quality.schemas import EvaluationResult  # noqa: F401
         from src.quality.service import get_reviews, save_review  # noqa: F401
 
         ok("All quality modules imported OK")

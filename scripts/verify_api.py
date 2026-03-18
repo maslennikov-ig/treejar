@@ -73,7 +73,7 @@ async def main(base_url: str) -> None:
 
         # 4. Quality endpoints
         print("\n--- 11.4 Quality ---")
-        await check_endpoint(client, "GET", "/api/v1/quality/reviews/", "Quality reviews")
+        await check_endpoint(client, "GET", "/api/v1/quality/reviews/", "Quality reviews", expect_status=403)
 
         # 5. Webhook endpoint (should accept POST but may require valid payload)
         print("\n--- 11.5 Webhook ---")

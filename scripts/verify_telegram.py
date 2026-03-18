@@ -56,7 +56,7 @@ async def main() -> None:
         from src.integrations.notifications.telegram import TelegramClient
 
         client = TelegramClient(bot_token=bot_token, chat_id=chat_id)
-        if client.is_configured():
+        if client.is_configured:
             ok("TelegramClient is configured")
         else:
             fail("TelegramClient.is_configured() returned False")
@@ -80,7 +80,7 @@ async def main() -> None:
         else:
             fail("Escalation message format returned empty/short result")
 
-        quality_msg = format_quality_alert_message(uuid4(), 25.0, "Very poor greeting")
+        quality_msg = format_quality_alert_message(uuid4(), 25.0, "good", "Very poor greeting")
         if quality_msg and len(quality_msg) > 20:
             ok(f"Quality alert formatted ({len(quality_msg)} chars)")
         else:

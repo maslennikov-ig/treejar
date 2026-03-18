@@ -22,7 +22,7 @@ EXPECTED_TABLES = [
     "knowledge_base",
     "quality_reviews",
     "escalations",
-    "feedback",
+    "feedbacks",
     "referrals",
     "manager_reviews",
     "metrics_snapshots",

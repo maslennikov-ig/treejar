@@ -69,7 +69,7 @@ async def main() -> None:
     print("\n--- 9.4 Database state ---")
     async with async_session_factory() as db:
         # Feedback entries
-        result = await db.execute(text("SELECT COUNT(*) FROM feedback"))
+        result = await db.execute(text("SELECT COUNT(*) FROM feedbacks"))
         count = result.scalar()
         ok(f"Feedback entries in DB: {count}")
 
@@ -89,7 +89,7 @@ async def main() -> None:
             text(
                 "SELECT COUNT(*) FROM conversations c "
                 "WHERE c.status IN ('completed', 'closed') "
-                "AND NOT EXISTS (SELECT 1 FROM feedback f WHERE f.conversation_id = c.id)"
+                "AND NOT EXISTS (SELECT 1 FROM feedbacks f WHERE f.conversation_id = c.id)"
             )
         )
         needs_feedback = result.scalar()

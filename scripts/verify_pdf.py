@@ -45,18 +45,27 @@ async def main() -> None:
     print("\n--- 10.2 HTML rendering ---")
     try:
         context = {
-            "company_name": "Test LLC",
-            "customer_name": "John Doe",
+            "quote_number": "QT-TEST-001",
+            "trn": "100418386400003",
+            "date": "18 March 2026",
+            "customer": {
+                "name": "John Doe",
+                "company": "Test LLC",
+                "email": "test@example.com",
+                "address": "UAE",
+            },
             "items": [
-                {"name": "Office Chair", "qty": 2, "price": 500.0, "total": 1000.0},
-                {"name": "Desk Lamp", "qty": 1, "price": 150.0, "total": 150.0},
+                {"sku": "CHAIR-01", "name": "Office Chair", "description": "A chair", "quantity": 2, "unit_price": 500.0, "total_price": 1000.0, "image_url": ""},
+                {"sku": "LAMP-01", "name": "Desk Lamp", "description": "A lamp", "quantity": 1, "unit_price": 150.0, "total_price": 150.0, "image_url": ""},
             ],
             "subtotal": 1150.0,
-            "discount": 50.0,
-            "total": 1100.0,
-            "currency": "AED",
-            "date": "2026-03-18",
-            "quotation_number": "QT-TEST-001",
+            "vat_amount": 57.5,
+            "grand_total": 1207.5,
+            "manager": {
+                "name": "Test Manager",
+                "phone": "+971000000000",
+                "email": "manager@example.com",
+            },
         }
         html = render_quotation_html(context)
         if html and len(html) > 100:
