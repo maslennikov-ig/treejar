@@ -39,6 +39,11 @@ def create_app() -> FastAPI:
 
     app.include_router(api_v1_router, prefix="/api/v1")
 
+    # Telegram webhook for manager FAQ responses
+    from src.api.telegram_webhook import router as telegram_router
+
+    app.include_router(telegram_router, prefix="/api/v1")
+
     # Mount SQLAdmin
     from src.api.admin.auth import authentication_backend
 

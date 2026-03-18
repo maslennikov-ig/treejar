@@ -67,6 +67,61 @@ class TelegramClient:
 
         return await self._post("sendMessage", json=payload)
 
+    async def send_message_with_inline_keyboard(
+        self,
+        text: str,
+        buttons: list[list[dict[str, str]]],
+        chat_id: str | None = None,
+        parse_mode: str = "HTML",
+    ) -> dict[str, Any] | None:
+        """Send a text message with an inline keyboard.
+
+        Args:
+            text: Message text (supports HTML formatting).
+            buttons: Nested list of button dicts with 'text' and 'callback_data'.
+            chat_id: Override default chat_id.
+            parse_mode: Message parse mode.
+
+        Returns:
+            API response dict or None if not configured.
+        """
+        if not self.is_configured:
+            logger.debug("Telegram not configured, skipping send with keyboard")
+            return None
+
+        target = chat_id or self.chat_id
+        payload: dict[str, Any] = {
+            "chat_id": target,
+            "text": text,
+            "parse_mode": parse_mode,
+            "reply_markup": {"inline_keyboard": buttons},
+        }
+
+        return await self._post("sendMessage", json=payload)
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        text: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Acknowledge a callback query (inline button press).
+
+        Args:
+            callback_query_id: ID of the callback query to answer.
+            text: Optional notification text.
+
+        Returns:
+            API response dict or None.
+        """
+        if not self.is_configured:
+            return None
+
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text
+
+        return await self._post("answerCallbackQuery", json=payload)
+
     async def send_document(
         self,
         file_bytes: bytes,
