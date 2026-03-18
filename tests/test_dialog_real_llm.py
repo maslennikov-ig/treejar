@@ -247,7 +247,7 @@ class TestRealLLMStockCheck:
         )
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock.return_value = {"available_stock": 37}
+        mock_inv.get_stock.return_value = {"stock_on_hand": 37}
 
         conv = _mock_conversation(SalesStage.SOLUTION)
         deps = _mock_deps(conv, zoho_inventory=mock_inv)

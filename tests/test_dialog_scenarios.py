@@ -489,7 +489,7 @@ class TestScenario5MultiToolChaining:
         )
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock.return_value = {"available_stock": 42}
+        mock_inv.get_stock.return_value = {"stock_on_hand": 42}
 
         call_count = 0
 
