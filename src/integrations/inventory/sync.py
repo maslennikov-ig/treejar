@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import case, text
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 from sqlalchemy.sql import func
 
@@ -153,6 +153,17 @@ async def _upsert_items_batch(
             # Create PostgreSQL INSERT ... ON CONFLICT DO UPDATE (upsert) statement
             stmt = pg_upsert(Product).values(values)
 
+            # Only reset embedding when content that feeds it actually changed.
+            # This avoids regenerating embeddings for 800 unchanged products every sync.
+            conditional_embedding = case(
+                (
+                    (Product.name_en != stmt.excluded.name_en)
+                    | (Product.description_en != stmt.excluded.description_en),
+                    None,
+                ),
+                else_=Product.embedding,
+            )
+
             # Update columns corresponding to the values mapping, excluding sku on conflict
             set_dict = {
                 "zoho_item_id": stmt.excluded.zoho_item_id,
@@ -163,7 +174,7 @@ async def _upsert_items_batch(
                 "stock": stmt.excluded.stock,
                 "image_url": stmt.excluded.image_url,
                 "is_active": stmt.excluded.is_active,
-                "embedding": None,  # Reset embedding so product gets re-embedded
+                "embedding": conditional_embedding,
             }
 
             set_dict["synced_at"] = func.now()  # type: ignore[assignment]
