@@ -1,3 +1,4 @@
+from datetime import UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -148,17 +149,17 @@ async def test_upsert_resets_embedding(mock_session_factory: AsyncMock) -> None:
 async def test_deactivate_stale_products(mock_session_factory: AsyncMock) -> None:
     mock_session = AsyncMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
-    
+
     # Mock the execute result to return rowcount = 3
     mock_result = AsyncMock()
     mock_result.rowcount = 3
     mock_session.execute.return_value = mock_result
 
-    from datetime import datetime, timezone
-    sync_start = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
-    
+    from datetime import datetime
+    sync_start = datetime(2026, 3, 18, 12, 0, 0, tzinfo=UTC)
+
     count = await _deactivate_stale_products(sync_start)
-    
+
     assert count == 3
     mock_session.execute.assert_awaited_once()
     mock_session.commit.assert_awaited_once()
@@ -178,7 +179,7 @@ async def test_sync_calls_deactivate_and_embed() -> None:
         stats.synced += len(items)
 
     with (
-        patch("src.integrations.inventory.sync._upsert_items_batch", new_callable=AsyncMock, side_effect=mock_upsert_impl) as mock_upsert,
+        patch("src.integrations.inventory.sync._upsert_items_batch", new_callable=AsyncMock, side_effect=mock_upsert_impl),
         patch("src.integrations.inventory.sync._zoho_client") as mock_cm,
         patch("src.integrations.inventory.sync._deactivate_stale_products", new_callable=AsyncMock, return_value=2) as mock_deactivate,
         patch("src.integrations.inventory.sync._generate_missing_embeddings", new_callable=AsyncMock, return_value=5) as mock_embed,
