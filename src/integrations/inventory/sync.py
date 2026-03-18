@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import case, text
@@ -41,13 +41,13 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
     Returns:
         A dictionary with the sync stats matching ProductSyncResponse schema.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     logger.info("Starting Zoho Inventory product sync...")
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
-    sync_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    sync_started_at = datetime.now(UTC).replace(tzinfo=None)
 
     # --- Phase 1: Fetch and upsert from Zoho ---
     async with _zoho_client(redis) as client:
@@ -204,10 +204,10 @@ async def _upsert_items_batch(
 
 async def _deactivate_stale_products(sync_started_at: datetime) -> int:
     """Mark products as inactive if they were not updated during this sync cycle.
-    
+
     Any product whose synced_at is older than the sync start time was not
     present in the Zoho response, meaning it was deleted or deactivated there.
-    
+
     Returns:
         Number of products deactivated.
     """
@@ -219,10 +219,10 @@ async def _deactivate_stale_products(sync_started_at: datetime) -> int:
                     "WHERE is_active = true AND (synced_at IS NULL OR synced_at < :cutoff)"
                 )
             ).bindparams(cutoff=sync_started_at)
-            
+
             result = await session.execute(stmt)
             await session.commit()
-            
+
             deactivated = result.rowcount
             if deactivated:
                 logger.info("Deactivated %d stale products", deactivated)
@@ -236,7 +236,7 @@ async def _deactivate_stale_products(sync_started_at: datetime) -> int:
 async def _generate_missing_embeddings() -> int:
     """Generate embeddings for all products that lack them."""
     from src.rag.embeddings import generate_product_embeddings
-    
+
     async with async_session_factory() as session:
         try:
             count = await generate_product_embeddings(session)
