@@ -126,24 +126,37 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
     )
 
     formatted_results = []
+    send_tasks = []
+
+    import asyncio
+
+    async def _safe_send_media(url: str, caption: str) -> None:
+        try:
+            await ctx.deps.messaging_client.send_media(
+                chat_id=ctx.deps.conversation.phone,
+                url=url,
+                caption=caption,
+            )
+        except Exception as e:
+            logger.warning("Failed to send product image: %s", e, exc_info=True)
+
     for r in results.products:
         discounted_price = apply_discount(float(r.price), segment)
-
-        if r.image_url:
-            try:
-                await ctx.deps.messaging_client.send_media(
-                    chat_id=ctx.deps.conversation.phone,
-                    url=r.image_url,
-                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send product image: {e}")
-
         desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {discounted_price:.2f} {r.currency} (Your segment price)\nDescription: {r.description_en}"
+
         if r.image_url:
             desc += f"\nImage: {r.image_url}"
+            send_tasks.append(
+                _safe_send_media(
+                    url=r.image_url,
+                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}"
+                )
+            )
 
         formatted_results.append(desc)
+
+    if send_tasks:
+        await asyncio.gather(*send_tasks)
 
     return "\n---\n".join(formatted_results)
 
