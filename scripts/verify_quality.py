@@ -10,10 +10,9 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 from src.core.database import async_session_factory
-from src.models.conversation import Conversation
 
 passed = 0
 failed = 0
@@ -69,8 +68,12 @@ async def main() -> None:
     # 3. Manager evaluator
     print("\n--- 7.3 Manager evaluator ---")
     try:
-        from src.quality.manager_evaluator import evaluate_manager_conversation  # noqa: F401
-        from src.quality.manager_job import evaluate_escalated_conversations  # noqa: F401
+        from src.quality.manager_evaluator import (
+            evaluate_manager_conversation,  # noqa: F401
+        )
+        from src.quality.manager_job import (
+            evaluate_escalated_conversations,  # noqa: F401
+        )
 
         ok("Manager evaluator modules imported OK")
     except ImportError as e:
@@ -84,8 +87,8 @@ async def main() -> None:
     # 4. API endpoint check
     print("\n--- 7.4 API endpoints ---")
     try:
-        from src.api.v1.quality import router as quality_router  # noqa: F401
         from src.api.v1.manager_reviews import router as manager_router  # noqa: F401
+        from src.api.v1.quality import router as quality_router  # noqa: F401
 
         ok("Quality API routers imported OK")
     except ImportError as e:
