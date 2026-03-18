@@ -47,7 +47,7 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
-    sync_started_at = datetime.now(UTC).replace(tzinfo=None)
+    sync_started_at = datetime.now(UTC)
 
     # --- Phase 1: Fetch and upsert from Zoho ---
     async with _zoho_client(redis) as client:

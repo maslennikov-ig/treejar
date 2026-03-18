@@ -23,7 +23,7 @@ from src.llm.prompts import build_system_prompt
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
-from src.schemas.common import SalesStage
+from src.schemas.common import SalesStage, Language
 from src.schemas.product import ProductSearchQuery
 
 logger = logging.getLogger(__name__)
@@ -187,7 +187,7 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str:
     if not stock_info:
         return f"Product with SKU {sku} not found in inventory."
 
-    available = stock_info.get("available_stock", 0)
+    available = stock_info.get("stock_on_hand", 0)
     return f"Stock for {sku}: {available} items available."
 
 
@@ -209,6 +209,17 @@ async def advance_stage(ctx: RunContext[SalesDeps], next_stage: SalesStage) -> s
     ctx.deps.conversation.sales_stage = next_stage.value
     # Note: caller is responsible for committing the DB transaction.
     return f"Successfully advanced to stage {next_stage.value}. New system instructions will apply on the next turn."
+
+
+@sales_agent.tool
+async def update_language(ctx: RunContext[SalesDeps], language: Language) -> str:
+    """Update the preferred language of the conversation based on the user's messages.
+    Call this immediately if the user starts speaking a language different from the current setting.
+    Supported languages: 'en', 'ar'.
+    """
+    logger.info(f"LLM Tool called: update_language(language={language.value})")
+    ctx.deps.conversation.language = language.value
+    return f"Language updated to {language.value}."
 
 
 @sales_agent.tool

@@ -209,6 +209,7 @@ async def cleanup_phone(phone: str) -> None:
     from src.core.database import async_session_factory
     from src.models.conversation import Conversation
     from src.models.message import Message
+    from src.models.feedback import Feedback
     from sqlalchemy import delete
     from sqlalchemy.future import select
 
@@ -217,6 +218,7 @@ async def cleanup_phone(phone: str) -> None:
         result = await db.execute(stmt)
         conv = result.scalar_one_or_none()
         if conv:
+            await db.execute(delete(Feedback).where(Feedback.conversation_id == conv.id))
             await db.execute(delete(Message).where(Message.conversation_id == conv.id))
             await db.execute(delete(Conversation).where(Conversation.id == conv.id))
             await db.commit()
