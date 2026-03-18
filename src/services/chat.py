@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import traceback
 from typing import Any
 
@@ -20,8 +21,6 @@ from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
 
-import re
-
 logger = logging.getLogger(__name__)
 
 # Maximum time to wait for LLM response (seconds)
@@ -30,21 +29,21 @@ LLM_TIMEOUT = 120
 
 def _format_for_whatsapp(text: str) -> str:
     """Convert standard Markdown from LLM into WhatsApp-native formatting.
-    
+
     WhatsApp supports: *bold*, _italic_, ~strikethrough~, ```monospace```
     """
     if not text:
         return text
-    
+
     # 1. Headers: ### Title -> *Title*
     text = re.sub(r'^(#{1,6})\s*(.+)$', r'*\2*', text, flags=re.MULTILINE)
-    
+
     # 2. Bold: **text** -> *text*
     text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
-    
+
     # 3. Links: [text](url) -> text: url
     text = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1: \2', text)
-    
+
     return text
 
 
