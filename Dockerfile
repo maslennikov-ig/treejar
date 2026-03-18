@@ -57,6 +57,7 @@ COPY src/ ./src/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 COPY scripts/entrypoint.sh /entrypoint.sh
+COPY docs/ docs/
 
 # Copy built frontend from Node stage
 COPY --from=frontend-builder /app/frontend/landing/dist /app/frontend/landing/dist

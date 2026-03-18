@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -40,11 +41,15 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
     Returns:
         A dictionary with the sync stats matching ProductSyncResponse schema.
     """
+    from datetime import datetime, timezone
+    
     logger.info("Starting Zoho Inventory product sync...")
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
+    sync_started_at = datetime.now(timezone.utc)
 
+    # --- Phase 1: Fetch and upsert from Zoho ---
     async with _zoho_client(redis) as client:
         page = 1
         has_more = True
@@ -71,10 +76,16 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
             page += 1
 
+    # --- Phase 2: Lifecycle management (only if sync had no errors) ---
+    if stats.errors == 0 and stats.synced > 0:
+        stats.deactivated = await _deactivate_stale_products(sync_started_at)
+        stats.embeddings_generated = await _generate_missing_embeddings()
+
     logger.info(
-        "Zoho sync completed. Synced: %d, Errors: %d",
-        stats.synced,
-        stats.errors,
+        "Zoho sync completed. Synced: %d, Created: %d, Updated: %d, "
+        "Deactivated: %d, Embeddings: %d, Errors: %d",
+        stats.synced, stats.created, stats.updated,
+        stats.deactivated, stats.embeddings_generated, stats.errors,
     )
 
     return stats.model_dump()
@@ -152,6 +163,7 @@ async def _upsert_items_batch(
                 "stock": stmt.excluded.stock,
                 "image_url": stmt.excluded.image_url,
                 "is_active": stmt.excluded.is_active,
+                "embedding": None,  # Reset embedding so product gets re-embedded
             }
 
             set_dict["synced_at"] = func.now()  # type: ignore[assignment]
@@ -177,3 +189,48 @@ async def _upsert_items_batch(
             logger.error("Database error during upsert batch: %s", e)
             stats.errors += len(values)
             raise
+
+
+async def _deactivate_stale_products(sync_started_at: datetime) -> int:
+    """Mark products as inactive if they were not updated during this sync cycle.
+    
+    Any product whose synced_at is older than the sync start time was not
+    present in the Zoho response, meaning it was deleted or deactivated there.
+    
+    Returns:
+        Number of products deactivated.
+    """
+    async with async_session_factory() as session:
+        try:
+            stmt = (
+                text(
+                    "UPDATE products SET is_active = false, embedding = NULL "
+                    "WHERE is_active = true AND (synced_at IS NULL OR synced_at < :cutoff)"
+                )
+            ).bindparams(cutoff=sync_started_at)
+            
+            result = await session.execute(stmt)
+            await session.commit()
+            
+            deactivated = result.rowcount
+            if deactivated:
+                logger.info("Deactivated %d stale products", deactivated)
+            return deactivated
+        except Exception as e:
+            await session.rollback()
+            logger.error("Error deactivating stale products: %s", e)
+            return 0
+
+
+async def _generate_missing_embeddings() -> int:
+    """Generate embeddings for all products that lack them."""
+    from src.rag.embeddings import generate_product_embeddings
+    
+    async with async_session_factory() as session:
+        try:
+            count = await generate_product_embeddings(session)
+            logger.info("Generated embeddings for %d products", count)
+            return count
+        except Exception as e:
+            logger.error("Error generating embeddings: %s", e)
+            return 0
