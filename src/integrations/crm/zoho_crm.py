@@ -35,7 +35,7 @@ class ZohoCRMClient(CRMProvider):
         # 1. Try to get existing token
         token = await self.redis.get(token_key)
         if token:
-            return str(token.decode("utf-8"))
+            return token if isinstance(token, str) else token.decode("utf-8")
 
         # 2. Acquire lock (race condition protection)
         acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
@@ -46,7 +46,7 @@ class ZohoCRMClient(CRMProvider):
                 await asyncio.sleep(0.5)
                 token = await self.redis.get(token_key)
                 if token:
-                    return str(token.decode("utf-8"))
+                    return token if isinstance(token, str) else token.decode("utf-8")
 
             raise RuntimeError("Timeout waiting for Zoho CRM token refresh lock")
 
@@ -54,7 +54,7 @@ class ZohoCRMClient(CRMProvider):
             # 3. We have the lock, check token again just in case
             token = await self.redis.get(token_key)
             if token:
-                return str(token.decode("utf-8"))
+                return token if isinstance(token, str) else token.decode("utf-8")
 
             # 4. Refresh token
             async with httpx.AsyncClient() as client:

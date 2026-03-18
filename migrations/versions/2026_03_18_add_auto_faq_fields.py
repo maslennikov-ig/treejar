@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "2026_03_18_auto_faq"
-down_revision = "feedback_001"
+down_revision = "deal_delivered_at_001"
 branch_labels = None
 depends_on = None
 

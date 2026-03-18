@@ -47,7 +47,7 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
-    sync_started_at = datetime.now(UTC).replace(tzinfo=None)
+    sync_started_at = datetime.now(UTC)
 
     # --- Phase 1: Fetch and upsert from Zoho ---
     async with _zoho_client(redis) as client:
@@ -177,8 +177,8 @@ async def _upsert_items_batch(
                 "embedding": conditional_embedding,
             }
 
-            set_dict["synced_at"] = func.now()  # type: ignore[assignment]
-            set_dict["updated_at"] = func.now()  # type: ignore[assignment]
+            set_dict["synced_at"] = func.now()
+            set_dict["updated_at"] = func.now()
 
             stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=set_dict)
 
@@ -223,10 +223,10 @@ async def _deactivate_stale_products(sync_started_at: datetime) -> int:
             result = await session.execute(stmt)
             await session.commit()
 
-            deactivated = result.rowcount
+            deactivated = result.rowcount  # type: ignore[attr-defined]
             if deactivated:
                 logger.info("Deactivated %d stale products", deactivated)
-            return deactivated
+            return deactivated  # type: ignore[no-any-return]
         except Exception as e:
             await session.rollback()
             logger.error("Error deactivating stale products: %s", e)
