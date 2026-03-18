@@ -42,12 +42,12 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
         A dictionary with the sync stats matching ProductSyncResponse schema.
     """
     from datetime import datetime, timezone
-    
+
     logger.info("Starting Zoho Inventory product sync...")
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
-    sync_started_at = datetime.now(timezone.utc)
+    sync_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # --- Phase 1: Fetch and upsert from Zoho ---
     async with _zoho_client(redis) as client:

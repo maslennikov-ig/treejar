@@ -21,7 +21,7 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
     logfire.info("Starting automatic follow-ups cron job")
 
     async with async_session_factory() as db:
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
         # We target conversations that have not been escalated, have no messages in last X hours
         # and match 24h, 72h (3d), or 168h (7d) inactivity within a 1-hour window.
@@ -148,7 +148,7 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
     logfire.info("Starting feedback requests cron job")
 
     async with async_session_factory() as db:
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         min_time = now - datetime.timedelta(hours=48)
         max_time = now - datetime.timedelta(hours=24)
 
