@@ -759,7 +759,7 @@ class TestSuite:
         try:
             # Create a conversation that's 25h stale
             async with async_session_factory() as db:
-                stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
+                stale_time = datetime.utcnow() - timedelta(hours=25)
                 conv = Conversation(
                     phone=phone,
                     sales_stage=SalesStage.SOLUTION.value,
@@ -804,7 +804,7 @@ class TestSuite:
 
         try:
             async with async_session_factory() as db:
-                stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
+                stale_time = datetime.utcnow() - timedelta(hours=25)
                 conv = Conversation(
                     phone=phone,
                     sales_stage=SalesStage.SOLUTION.value,
