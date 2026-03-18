@@ -750,10 +750,11 @@ class TestSuite:
 
     async def test_9_1_followup_sends_for_inactive(self) -> dict:
         """Follow-up отправляется для неактивных разговоров."""
+        from sqlalchemy.future import select
+
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
         from src.schemas.common import EscalationStatus, SalesStage
-        from sqlalchemy.future import select
 
         phone = self._phone("9_1")
         await cleanup_phone(phone)
@@ -799,7 +800,6 @@ class TestSuite:
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
         from src.schemas.common import EscalationStatus, SalesStage
-        from sqlalchemy.future import select
 
         phone = self._phone("9_2")
         await cleanup_phone(phone)
@@ -822,8 +822,9 @@ class TestSuite:
             await run_automatic_followups({})
 
             async with async_session_factory() as db:
-                from src.models.message import Message
                 from sqlalchemy import select as sel
+
+                from src.models.message import Message
                 stmt = sel(Message).where(
                     Message.conversation_id == conv_id,
                     Message.role == "assistant",
