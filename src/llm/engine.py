@@ -128,7 +128,21 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
     formatted_results = []
     for r in results.products:
         discounted_price = apply_discount(float(r.price), segment)
+
+        if r.image_url:
+            try:
+                await ctx.deps.messaging_client.send_media(
+                    chat_id=ctx.deps.conversation.phone,
+                    url=r.image_url,
+                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send product image: {e}")
+
         desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {discounted_price:.2f} {r.currency} (Your segment price)\nDescription: {r.description_en}"
+        if r.image_url:
+            desc += f"\nImage: {r.image_url}"
+
         formatted_results.append(desc)
 
     return "\n---\n".join(formatted_results)

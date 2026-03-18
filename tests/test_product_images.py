@@ -1,0 +1,129 @@
+from dataclasses import dataclass
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from src.llm.engine import SalesDeps, search_products
+from src.models.conversation import Conversation
+from src.schemas.product import ProductRead
+
+pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture
+def mock_messaging_client():
+    client = MagicMock()
+    client.send_media = AsyncMock()
+    return client
+
+
+@pytest.fixture
+def run_context(mock_messaging_client):
+    deps = SalesDeps(
+        db=AsyncMock(),
+        redis=AsyncMock(),
+        conversation=Conversation(
+            id="00000000-0000-0000-0000-000000000000",
+            phone="+1234567890",
+            sales_stage="greeting",
+            language="en",
+        ),
+        embedding_engine=AsyncMock(),
+        zoho_inventory=AsyncMock(),
+        zoho_crm=AsyncMock(),
+        messaging_client=mock_messaging_client,
+        pii_map={},
+        crm_context={"Segment": "Unknown"},
+    )
+
+    @dataclass
+    class _FakeRunContext:
+        deps: SalesDeps
+
+    return _FakeRunContext(deps=deps)
+
+
+async def test_search_products_sends_image_if_present(run_context, monkeypatch, mock_messaging_client):
+    # Mock rag_search_products to return a product with an image_url
+    product1 = ProductRead(
+        id="11111111-1111-1111-1111-111111111111",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Test Chair",
+        description_en="A great chair",
+        sku="CHAIR-01",
+        price="100.00",
+        currency="AED",
+        image_url="https://example.com/chair.jpg",
+        created_at="2024-01-01T00:00:00Z",
+        stock=10,
+        is_active=True,
+    )
+    product2 = ProductRead(
+        id="33333333-3333-3333-3333-333333333333",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Test Table",
+        description_en="A great table",
+        sku="TABLE-01",
+        price="200.00",
+        currency="AED",
+        image_url=None,
+        created_at="2024-01-01T00:00:00Z",
+        stock=5,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product1, product2]
+
+    async def mock_rag_search(*args, **kwargs):
+        return MockResults()
+
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "furniture")
+
+    # Verify text includes Image url for product1
+    assert "Image: https://example.com/chair.jpg" in result
+    assert "Test Table" in result
+    assert "https://example.com/chair.jpg" in result
+    # For product 2 there should not be Image: None or something, just no "Image:"
+
+    # Verify send_media was called once (for product1)
+    mock_messaging_client.send_media.assert_called_once_with(
+        chat_id="+1234567890",
+        url="https://example.com/chair.jpg",
+        caption="Test Chair — 100.00 AED",
+    )
+
+
+async def test_search_products_graceful_fallback(run_context, monkeypatch, mock_messaging_client):
+    product1 = ProductRead(
+        id="11111111-1111-1111-1111-111111111111",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Test Chair",
+        description_en="A great chair",
+        sku="CHAIR-01",
+        price="100.00",
+        currency="AED",
+        image_url="https://example.com/chair.jpg",
+        created_at="2024-01-01T00:00:00Z",
+        stock=10,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product1]
+
+    async def mock_rag_search(*args, **kwargs):
+        return MockResults()
+
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    # Force send_media to raise exception
+    mock_messaging_client.send_media.side_effect = Exception("Network error")
+
+    # Should not raise
+    result = await search_products(run_context, "furniture")
+
+    assert "Image: https://example.com/chair.jpg" in result
+    mock_messaging_client.send_media.assert_called_once()
