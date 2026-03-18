@@ -33,7 +33,7 @@ import sys
 import traceback
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 # ─── Suppress noise ──────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ for noisy in ("httpx", "httpcore", "sqlalchemy.engine", "pydantic_ai", "openai")
 
 # ─── Mock Messaging Provider ─────────────────────────────────────────────────
 
-from src.integrations.messaging.base import MessagingProvider
+from src.integrations.messaging.base import MessagingProvider  # noqa: E402
 
 
 class MockMessagingProvider(MessagingProvider):
@@ -113,6 +113,8 @@ async def send_message(
     messaging: MockMessagingProvider | None = None,
 ) -> tuple[str, MockMessagingProvider]:
     """Send a message through the bot pipeline and return the response text."""
+    from sqlalchemy.future import select
+
     from src.core.database import async_session_factory
     from src.core.redis import redis_client
     from src.integrations.crm.zoho_crm import ZohoCRMClient
@@ -122,7 +124,6 @@ async def send_message(
     from src.models.message import Message
     from src.rag.embeddings import EmbeddingEngine
     from src.schemas.common import SalesStage
-    from sqlalchemy.future import select
 
     if messaging is None:
         messaging = MockMessagingProvider()
@@ -184,9 +185,10 @@ async def send_message(
 
 async def get_conversation_state(phone: str) -> dict[str, Any]:
     """Fetch conversation state from DB."""
+    from sqlalchemy.future import select
+
     from src.core.database import async_session_factory
     from src.models.conversation import Conversation
-    from sqlalchemy.future import select
 
     async with async_session_factory() as db:
         stmt = select(Conversation).where(Conversation.phone == phone)
@@ -206,12 +208,13 @@ async def get_conversation_state(phone: str) -> dict[str, Any]:
 
 async def cleanup_phone(phone: str) -> None:
     """Delete test conversation and messages."""
-    from src.core.database import async_session_factory
-    from src.models.conversation import Conversation
-    from src.models.message import Message
-    from src.models.feedback import Feedback
     from sqlalchemy import delete
     from sqlalchemy.future import select
+
+    from src.core.database import async_session_factory
+    from src.models.conversation import Conversation
+    from src.models.feedback import Feedback
+    from src.models.message import Message
 
     async with async_session_factory() as db:
         stmt = select(Conversation).where(Conversation.phone == phone)
@@ -693,11 +696,12 @@ class TestSuite:
 
     async def test_8_1_feedback_collection(self) -> dict:
         """Бот собирает обратную связь через инструмент save_feedback."""
+        from sqlalchemy import select
+
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
         from src.models.feedback import Feedback
         from src.schemas.common import DealStatus, SalesStage
-        from sqlalchemy import select
 
         phone = self._phone("8_1")
         await cleanup_phone(phone)
@@ -750,7 +754,6 @@ class TestSuite:
 
     async def test_9_1_followup_sends_for_inactive(self) -> dict:
         """Follow-up отправляется для неактивных разговоров."""
-        from sqlalchemy.future import select
 
         from src.core.database import async_session_factory
         from src.models.conversation import Conversation
@@ -780,8 +783,9 @@ class TestSuite:
 
             # Check if a message was added to DB
             async with async_session_factory() as db:
-                from src.models.message import Message
                 from sqlalchemy import select as sel
+
+                from src.models.message import Message
                 stmt = sel(Message).where(
                     Message.conversation_id == conv_id,
                     Message.role == "assistant",
