@@ -23,7 +23,7 @@ from src.llm.prompts import build_system_prompt
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
-from src.schemas.common import SalesStage, Language
+from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery
 
 logger = logging.getLogger(__name__)
