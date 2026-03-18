@@ -177,8 +177,8 @@ async def _upsert_items_batch(
                 "embedding": conditional_embedding,
             }
 
-            set_dict["synced_at"] = func.now()  # type: ignore[assignment]
-            set_dict["updated_at"] = func.now()  # type: ignore[assignment]
+            set_dict["synced_at"] = func.now()
+            set_dict["updated_at"] = func.now()
 
             stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=set_dict)
 
@@ -223,10 +223,10 @@ async def _deactivate_stale_products(sync_started_at: datetime) -> int:
             result = await session.execute(stmt)
             await session.commit()
 
-            deactivated = result.rowcount
+            deactivated = result.rowcount  # type: ignore[attr-defined]
             if deactivated:
                 logger.info("Deactivated %d stale products", deactivated)
-            return deactivated
+            return deactivated  # type: ignore[no-any-return]
         except Exception as e:
             await session.rollback()
             logger.error("Error deactivating stale products: %s", e)
