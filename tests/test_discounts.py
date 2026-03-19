@@ -50,7 +50,7 @@ class TestGetDiscountPercentage:
             ([], 0),
         ],
     )
-    def test_discount_lookup(self, segment: str | list | None, expected: int) -> None:
+    def test_discount_lookup(self, segment: str | list[str] | None, expected: int) -> None:
         assert get_discount_percentage(segment) == expected
 
 

@@ -107,7 +107,7 @@ async def live_redis() -> AsyncGenerator[Any, None]:
     import redis.asyncio as aioredis
 
     url = _get("REDIS_URL") or "redis://localhost:6379/0"
-    client = aioredis.from_url(url, decode_responses=True)
+    client = aioredis.from_url(url, decode_responses=True)  # type: ignore
     try:
         await client.ping()
         yield client
@@ -158,18 +158,19 @@ async def zoho_crm_client(live_redis: Any) -> AsyncGenerator[Any, None]:
     saved = {}
     for k, v in real_env.items():
         saved[k] = os.environ.get(k)
-        os.environ[k] = v
+        if v is not None:
+            os.environ[k] = str(v)
 
     try:
         client = ZohoCRMClient(redis_client=live_redis)
         yield client
         await client.close()
     finally:
-        for k, v in saved.items():
-            if v is None:
-                os.environ.pop(k, None)
+        for saved_k, saved_v in saved.items():
+            if saved_v is None:
+                os.environ.pop(saved_k, None)
             else:
-                os.environ[k] = v
+                os.environ[saved_k] = str(saved_v)
 
 
 @pytest.fixture
@@ -187,18 +188,19 @@ async def zoho_inventory_client(live_redis: Any) -> AsyncGenerator[Any, None]:
     saved = {}
     for k, v in real_env.items():
         saved[k] = os.environ.get(k)
-        os.environ[k] = v
+        if v is not None:
+            os.environ[k] = str(v)
 
     try:
         client = ZohoInventoryClient(redis_client=live_redis)
         yield client
         await client.close()
     finally:
-        for k, v in saved.items():
-            if v is None:
-                os.environ.pop(k, None)
+        for saved_k, saved_v in saved.items():
+            if saved_v is None:
+                os.environ.pop(saved_k, None)
             else:
-                os.environ[k] = v
+                os.environ[saved_k] = str(saved_v)
 
 
 @pytest.fixture
