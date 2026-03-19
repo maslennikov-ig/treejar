@@ -231,7 +231,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         "[System: Unreadable voice message (file too large)]",
                     )
 
-                mime = (audio_msg.media.mimeType or "").split(";")[0].strip()
+                mime = (audio_msg.media.mimeType if audio_msg.media else "").split(";")[0].strip()
                 format_map = {
                     "audio/ogg": "ogg",
                     "audio/mpeg": "mp3",
