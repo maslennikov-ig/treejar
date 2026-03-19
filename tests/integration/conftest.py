@@ -6,6 +6,14 @@ All DB-touching tests use a nested transaction with rollback → idempotent.
 
 from __future__ import annotations
 
+import os
+from collections.abc import AsyncGenerator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from dotenv import dotenv_values
+
 # ---------------------------------------------------------------------------
 # Known test contact in Zoho CRM (do NOT delete from CRM!)
 # ---------------------------------------------------------------------------
@@ -15,14 +23,6 @@ TEST_CONTACT_CRM_ID = "559571000034673035"
 TEST_CONTACT_NAME = "Integration TestBot"
 TEST_CONTACT_EMAIL = "integration-test@treejar.test"
 TEST_CONTACT_SEGMENT = ["Wholesale"]  # multi-select list — exact Zoho type
-
-import os
-from collections.abc import AsyncGenerator
-from pathlib import Path
-from typing import Any
-
-import pytest
-from dotenv import dotenv_values
 
 # ---------------------------------------------------------------------------
 # Load real credentials from .env / .env.dev (conftest.py sets fake env vars
@@ -122,7 +122,6 @@ async def live_db_session() -> AsyncGenerator[Any, None]:
     Uses begin_nested() so that test data never persists.
     """
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
 
     db_url = _get("DATABASE_URL")
     if not db_url:
@@ -133,7 +132,7 @@ async def live_db_session() -> AsyncGenerator[Any, None]:
         txn = await conn.begin()
         session = AsyncSession(bind=conn, expire_on_commit=False)
         # Nested txn so that session.commit() inside tests doesn't actually commit
-        nested = await conn.begin_nested()
+        await conn.begin_nested()
 
         yield session
 

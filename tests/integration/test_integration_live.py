@@ -17,6 +17,7 @@ Known test contact in Zoho CRM:
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -33,7 +34,6 @@ from tests.integration.conftest import (
     skip_no_zoho_crm,
     skip_no_zoho_inventory,
 )
-
 
 # ====================================================================
 # 1. Zoho CRM — Segment field type validation (known test contact)
@@ -236,7 +236,7 @@ class TestLLMSearchProductsLive:
 
         orig_search = engine_module.rag_search_products
 
-        from datetime import datetime, timezone
+        from datetime import datetime
         fake_product = ProductRead(
             id=uuid4(),
             sku="INTEG-TEST-001",
@@ -246,7 +246,7 @@ class TestLLMSearchProductsLive:
             stock=10,
             is_active=True,
             description_en="Test product for integration testing",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         mock_rag = AsyncMock(
             return_value=ProductSearchResult(
