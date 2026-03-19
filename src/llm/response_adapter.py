@@ -7,6 +7,7 @@ WhatsApp delivery to Treejar customers.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from pydantic_ai import Agent
@@ -65,5 +66,7 @@ async def adapt_manager_response(question: str, draft: str, language: str = "en"
     )
 
     logger.info("Adapting manager response for question: %s", question[:80])
-    result = await response_adapter_agent.run(user_prompt)
+    result = await asyncio.wait_for(
+        response_adapter_agent.run(user_prompt), timeout=30.0
+    )
     return result.output

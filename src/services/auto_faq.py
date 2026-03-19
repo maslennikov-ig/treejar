@@ -9,6 +9,7 @@ storing near-duplicate answers in the knowledge base.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from pydantic_ai import Agent
@@ -53,7 +54,9 @@ async def _normalize_to_english(question: str, answer: str) -> tuple[str, str]:
     """
     try:
         content = f"Q: {question}\nA: {answer}"
-        result = await _translate_agent.run(content)
+        result = await asyncio.wait_for(
+            _translate_agent.run(content), timeout=30.0
+        )
         translated = result.output.strip()
 
         # Parse back into Q and A
