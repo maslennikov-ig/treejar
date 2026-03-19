@@ -42,3 +42,27 @@ Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.ym
 *   **Database**: PostgreSQL 16 (with pgvector for LLM embeddings) & Redis 7 (for caching/queues).
 *   **Dependency Manager**: `uv` (project defined in `pyproject.toml`).
 *   **Task Management**: "Beads" (`bd` CLI tool) for macro-tasks (bug, feature, task). All tasks must be done in isolated worktrees (`using-git-worktrees` skill) under a strict TDD paradigm.
+
+## Integration Testing
+
+### Test Contact in Zoho CRM
+A permanent test contact exists in Zoho CRM for use in integration tests:
+*   **Zoho CRM ID**: `559571000034673035`
+*   **Phone**: `+971000000001`
+*   **Name**: Integration TestBot
+*   **Email**: `integration-test@treejar.test`
+*   **Segment**: `["Wholesale"]` (multi-select list — the exact type returned by real API)
+*   **Lead Source**: Chatbot
+
+**Usage**: All integration tests under `tests/integration/` reference this contact via `TEST_CONTACT_PHONE = "+971000000001"` in `tests/integration/conftest.py`.
+
+**Important**: Do NOT delete this contact from Zoho CRM. It is used by `@pytest.mark.integration` tests.
+
+### Wazzup Channel for Tests
+*   **Channel ID**: `b49b1b9d-757f-4104-b56d-8f43d62cc515`
+*   **Name**: Treejar
+*   **Phone**: `+971551220665`
+*   **Transport**: WhatsApp
+
+> **Note**: Wazzup v3 API requires `contentUri` (a publicly accessible URL) for sending files, NOT inline base64. The current `WazzupProvider.send_media` base64 `content` field is silently ignored by Wazzup.
+
