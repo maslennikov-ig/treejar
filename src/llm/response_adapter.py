@@ -46,20 +46,22 @@ response_adapter_agent: Agent[None, str] = Agent(
 )
 
 
-async def adapt_manager_response(question: str, draft: str) -> str:
+async def adapt_manager_response(question: str, draft: str, language: str = "en") -> str:
     """Adapt a manager's rough draft into a polished customer message.
 
     Args:
         question: The original customer question.
         draft: The manager's short/technical response draft.
+        language: The target language code (e.g., 'en', 'ar', 'ru').
 
     Returns:
-        A polished, customer-friendly message ready for WhatsApp delivery.
+        A polished, customer-friendly message ready for WhatsApp delivery in the target language.
     """
     user_prompt = (
         f"Customer question: {question}\n\n"
         f"Manager draft: {draft}\n\n"
-        "Rewrite the draft as a polished customer message."
+        f"Rewrite the draft as a polished customer message in language code '{language}'.\n"
+        "Translate the manager draft into the requested language if necessary."
     )
 
     logger.info("Adapting manager response for question: %s", question[:80])

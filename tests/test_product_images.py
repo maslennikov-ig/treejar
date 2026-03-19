@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,14 +12,14 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-def mock_messaging_client():
+def mock_messaging_client() -> MagicMock:
     client = MagicMock()
     client.send_media = AsyncMock()
     return client
 
 
 @pytest.fixture
-def run_context(mock_messaging_client):
+def run_context(mock_messaging_client: MagicMock) -> Any:
     deps = SalesDeps(
         db=AsyncMock(),
         redis=AsyncMock(),
@@ -43,7 +44,7 @@ def run_context(mock_messaging_client):
     return _FakeRunContext(deps=deps)
 
 
-async def test_search_products_sends_image_if_present(run_context, monkeypatch, mock_messaging_client):
+async def test_search_products_sends_image_if_present(run_context: Any, monkeypatch: pytest.MonkeyPatch, mock_messaging_client: MagicMock) -> None:
     # Mock rag_search_products to return a product with an image_url
     product1 = ProductRead(
         id="11111111-1111-1111-1111-111111111111",
@@ -75,7 +76,7 @@ async def test_search_products_sends_image_if_present(run_context, monkeypatch, 
     class MockResults:
         products = [product1, product2]
 
-    async def mock_rag_search(*args, **kwargs):
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
         return MockResults()
 
     monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
@@ -96,7 +97,7 @@ async def test_search_products_sends_image_if_present(run_context, monkeypatch, 
     )
 
 
-async def test_search_products_graceful_fallback(run_context, monkeypatch, mock_messaging_client):
+async def test_search_products_graceful_fallback(run_context: Any, monkeypatch: pytest.MonkeyPatch, mock_messaging_client: MagicMock) -> None:
     product1 = ProductRead(
         id="11111111-1111-1111-1111-111111111111",
         category_id="22222222-2222-2222-2222-222222222222",
@@ -114,7 +115,7 @@ async def test_search_products_graceful_fallback(run_context, monkeypatch, mock_
     class MockResults:
         products = [product1]
 
-    async def mock_rag_search(*args, **kwargs):
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
         return MockResults()
 
     monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)

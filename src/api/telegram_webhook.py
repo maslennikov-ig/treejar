@@ -161,14 +161,13 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
     client = _get_telegram_client()
 
     try:
-        # 1. Adapt the response
-        from src.llm.response_adapter import adapt_manager_response
-
-        adapted = await adapt_manager_response(question, draft)
-
-        # 2. Send adapted response to the client via Wazzup
-        phone = await _get_conversation_phone(uuid.UUID(conv_id))
+        phone, language = await _get_conversation_phone_and_lang(uuid.UUID(conv_id))
         if phone:
+            # 1. Adapt the response
+            from src.llm.response_adapter import adapt_manager_response
+
+            adapted = await adapt_manager_response(question, draft, language)
+
             from src.integrations.messaging.wazzup import WazzupProvider
 
             wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
@@ -234,13 +233,16 @@ async def _get_last_user_question(conv_id: uuid.UUID) -> str | None:
         return result.scalar_one_or_none()
 
 
-async def _get_conversation_phone(conv_id: uuid.UUID) -> str | None:
-    """Fetch the phone number for a conversation by UUID."""
+async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | None, str]:
+    """Fetch the phone number and language for a conversation by UUID."""
     async with async_session_factory() as db:
         stmt = (
-            select(Conversation.phone)
+            select(Conversation.phone, Conversation.language)
             .where(Conversation.id == conv_id)
             .limit(1)
         )
         result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        row = result.first()
+        if row:
+            return row.phone, row.language or "en"
+        return None, "en"
