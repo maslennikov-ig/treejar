@@ -1,7 +1,7 @@
 """Tests for the auto-FAQ service."""
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +22,16 @@ def mock_embedding_engine() -> MagicMock:
     return engine
 
 
+async def _mock_normalize(question: str, answer: str) -> tuple[str, str]:
+    """Passthrough mock — treats input as already English."""
+    return question, answer
+
+
 @pytest.mark.asyncio
 @pytest.mark.unit
+@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
 async def test_save_to_faq_success(
-    mock_db: AsyncMock, mock_embedding_engine: MagicMock
+    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
 ) -> None:
     """Test that a new FAQ entry is created when no duplicate exists."""
     # Mock: no existing entries (nearest returns None)
@@ -49,6 +55,7 @@ async def test_save_to_faq_success(
 
     assert result is not None
     assert result.source == "auto_faq"
+    assert result.language == "en"
     assert result.is_auto_generated is True
     assert result.original_question == "What is the delivery time?"
     assert result.manager_draft == "3-5 days UAE"
@@ -58,8 +65,9 @@ async def test_save_to_faq_success(
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
 async def test_save_to_faq_duplicate_rejected(
-    mock_db: AsyncMock, mock_embedding_engine: MagicMock
+    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
 ) -> None:
     """Test that duplicates (similarity > 0.92) are rejected."""
     # Mock: nearest entry with very small distance (high similarity)
@@ -84,8 +92,9 @@ async def test_save_to_faq_duplicate_rejected(
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
 async def test_save_to_faq_similar_but_not_duplicate(
-    mock_db: AsyncMock, mock_embedding_engine: MagicMock
+    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
 ) -> None:
     """Test that entries with similarity <= 0.92 are saved."""
     # Mock: nearest entry with distance indicating low similarity
@@ -110,4 +119,6 @@ async def test_save_to_faq_similar_but_not_duplicate(
 
     assert result is not None
     assert result.source == "auto_faq"
+    assert result.language == "en"
     mock_db.add.assert_called_once()
+
