@@ -54,7 +54,7 @@ async def main() -> None:
         record("Redis connection", False, str(e))
         log.error("Cannot proceed without Redis")
         return
-    
+
     # ── Zoho CRM ──────────────────────────────────────────────────
     from src.integrations.crm.zoho_crm import ZohoCRMClient
 

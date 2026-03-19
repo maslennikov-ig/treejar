@@ -10,7 +10,6 @@ Usage:
 import asyncio
 import datetime as _dt
 import logging
-import os
 from pathlib import Path
 
 import httpx
