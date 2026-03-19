@@ -49,21 +49,26 @@ async def _normalize_to_english(question: str, answer: str) -> tuple[str, str]:
 
     Returns:
         Tuple of (english_question, english_answer).
+        Falls back to original text if translation fails.
     """
-    content = f"Q: {question}\nA: {answer}"
-    result = await _translate_agent.run(content)
-    translated = result.output.strip()
+    try:
+        content = f"Q: {question}\nA: {answer}"
+        result = await _translate_agent.run(content)
+        translated = result.output.strip()
 
-    # Parse back into Q and A
-    if "\nA:" in translated:
-        parts = translated.split("\nA:", 1)
-        q = parts[0].removeprefix("Q:").strip()
-        a = parts[1].strip()
-        return q, a
+        # Parse back into Q and A
+        if "\nA:" in translated:
+            parts = translated.split("\nA:", 1)
+            q = parts[0].removeprefix("Q:").strip()
+            a = parts[1].strip()
+            return q, a
 
-    # Fallback: return original if parsing fails
-    logger.warning("Failed to parse translated FAQ, using original text")
-    return question, answer
+        # Fallback: return original if parsing fails
+        logger.warning("Failed to parse translated FAQ, using original text")
+        return question, answer
+    except Exception:
+        logger.exception("LLM translation failed, saving FAQ in original language")
+        return question, answer
 
 
 async def save_to_faq(
@@ -113,7 +118,7 @@ async def save_to_faq(
     nearest = result.first()
 
     if nearest is not None:
-        distance = nearest.distance  # type: ignore[attr-defined]
+        distance = nearest.distance
         similarity = 1 - (distance or 0)
         if similarity > DUPLICATE_THRESHOLD:
             logger.info(

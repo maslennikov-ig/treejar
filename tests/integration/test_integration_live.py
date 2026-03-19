@@ -255,7 +255,7 @@ class TestLLMSearchProductsLive:
                 total_found=1,
             )
         )
-        engine_module.rag_search_products = mock_rag  # type: ignore[assignment]
+        engine_module.rag_search_products = mock_rag
 
         try:
             ctx = RunContext(
@@ -276,7 +276,7 @@ class TestLLMSearchProductsLive:
             # Verify discount was applied (15% off 1000 = 850)
             assert "850" in result
         finally:
-            engine_module.rag_search_products = orig_search  # type: ignore[assignment]
+            engine_module.rag_search_products = orig_search
 
 
 # ====================================================================

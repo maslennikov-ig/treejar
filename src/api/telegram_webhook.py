@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import uuid
 from typing import Any
@@ -37,7 +38,7 @@ router = APIRouter(tags=["telegram"])
 
 # Redis key prefix for pending manager responses; TTL = 5 minutes.
 _PENDING_KEY_PREFIX = "tg_pending:"
-_PENDING_TTL_SECONDS = 300
+_PENDING_TTL_SECONDS = 600
 
 
 def _get_telegram_client() -> TelegramClient:
@@ -117,8 +118,6 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     question = await _get_last_user_question(conv_uuid)
 
     # Store the pending response context in Redis (survives restarts)
-    import json
-
     pending_data = json.dumps({
         "conversation_id": str(conv_uuid),
         "mode": mode,
@@ -140,8 +139,6 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
 
 async def _handle_manager_reply(message: dict[str, Any]) -> None:
     """Process the manager's text reply after they clicked a button."""
-    import json
-
     chat_id = message["chat"]["id"]
     draft = message["text"]
 
@@ -162,12 +159,14 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
 
     try:
         phone, language = await _get_conversation_phone_and_lang(uuid.UUID(conv_id))
+
+        # 1. Adapt the response (before phone check — needed in both branches)
+        from src.llm.response_adapter import adapt_manager_response
+
+        adapted = await adapt_manager_response(question, draft, language)
+
+        # 2. Send adapted response to the client via Wazzup
         if phone:
-            # 1. Adapt the response
-            from src.llm.response_adapter import adapt_manager_response
-
-            adapted = await adapt_manager_response(question, draft, language)
-
             from src.integrations.messaging.wazzup import WazzupProvider
 
             wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)

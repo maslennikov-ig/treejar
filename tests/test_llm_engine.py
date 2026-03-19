@@ -224,7 +224,7 @@ async def test_tools_search_products(
 
     # Save the original
     orig_search = getattr(engine_module, "rag_search_products", None)
-    engine_module.rag_search_products = mock_search  # type: ignore
+    engine_module.rag_search_products = mock_search
 
     try:
         from pydantic_ai import RunContext
@@ -247,7 +247,7 @@ async def test_tools_search_products(
         assert "100.00 USD (Your segment price)" in result_text
     finally:
         if orig_search:
-            engine_module.rag_search_products = orig_search  # type: ignore
+            engine_module.rag_search_products = orig_search
 
 
 @pytest.mark.asyncio
