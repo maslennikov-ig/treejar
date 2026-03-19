@@ -18,8 +18,7 @@ async def notify_manager_escalation(
     db: AsyncSession,
 ) -> None:
     """
-    Notify the manager about a soft escalation.
-    Currently logs the escalation. Can be extended to send a Telegram or Wazzup message.
+    Notify the manager about a soft escalation via logging and Telegram.
     """
     logger.warning(
         "ESCALATION TRIGGERED for Conversation %s (%s). Reason: %s. Messages: %d",

@@ -30,7 +30,7 @@ INSTRUCTIONS:
 2. Preserve ALL factual content (numbers, dates, prices, conditions). \
    Do NOT invent or alter any facts.
 3. Add a brief greeting and an offer of further help when appropriate.
-4. Reply in the SAME language as the customer's question.
+4. Reply in the language specified in the user request (e.g. 'en', 'ar', 'ru').
 5. Use WhatsApp formatting: *bold*, _italic_ (NOT Markdown headers or links).
 6. Return ONLY the final message text, no commentary.
 """

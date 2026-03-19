@@ -54,10 +54,13 @@ def _mask_phone(phone: str) -> str:
 
 
 def format_escalation_message(phone: str, conversation_id: UUID, reason: str) -> str:
-    """Format an escalation alert as HTML for Telegram."""
+    """Format an escalation alert as HTML for Telegram.
+
+    Shows full phone number since this goes to the internal manager channel.
+    """
     return (
         "🚨 <b>Escalation Alert</b>\n\n"
-        f"<b>Phone:</b> <code>{_mask_phone(phone)}</code>\n"
+        f"<b>Phone:</b> <code>{phone}</code>\n"
         f"<b>Reason:</b> {reason}\n"
         f"<b>Conversation:</b> <code>{conversation_id}</code>\n\n"
         "A human manager has been notified and should review this conversation."

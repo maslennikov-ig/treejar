@@ -28,6 +28,8 @@ from src.schemas.product import ProductSearchQuery
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["rag_search_products"]
+
 
 @dataclass
 class SalesDeps:
@@ -378,7 +380,7 @@ async def create_quotation(
 
     sem = asyncio.Semaphore(3)  # limit concurrent image downloads
 
-    async def _fetch_image(tpl_item: dict) -> None:
+    async def _fetch_image(tpl_item: dict[str, Any]) -> None:
         if not tpl_item.get("_has_image") or not tpl_item.get("_item_id"):
             return
         async with sem:
