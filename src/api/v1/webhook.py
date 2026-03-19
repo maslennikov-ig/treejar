@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse
 from src.core.config import settings
 from src.schemas import WazzupWebhookPayload
 
-logger = logging.getLogger(__name__)
+# Bind to uvicorn.error so info logs appear in docker logs
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
 
