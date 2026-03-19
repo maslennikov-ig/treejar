@@ -364,12 +364,41 @@ async def create_quotation(
                 "quantity": item.quantity,
                 "unit_price": unit_price,
                 "total_price": total_price,
-                # Weasyprint can load URLs directly if they are public.
-                "image_url": zoho_item.get(
-                    "image_document_id"
-                ),  # Assuming Zoho structure has an image URL or ID
+                "image_url": None,  # Resolved below via authenticated download
+                "_item_id": zoho_item.get("item_id"),  # For image fetch
+                "_has_image": bool(zoho_item.get("image_document_id")),
             }
         )
+
+    # --- Download product images and embed as base64 data URIs ---
+    # Zoho image URLs require OAuth, so we download via the authenticated client
+    # and embed them directly into the HTML for WeasyPrint.
+    import asyncio
+    import base64
+
+    sem = asyncio.Semaphore(3)  # limit concurrent image downloads
+
+    async def _fetch_image(tpl_item: dict) -> None:
+        if not tpl_item.get("_has_image") or not tpl_item.get("_item_id"):
+            return
+        async with sem:
+            try:
+                result = await ctx.deps.zoho_inventory.get_item_image(
+                    str(tpl_item["_item_id"])
+                )
+                if result:
+                    img_bytes, content_type = result
+                    b64 = base64.b64encode(img_bytes).decode("ascii")
+                    tpl_item["image_url"] = f"data:{content_type};base64,{b64}"
+            except Exception as e:
+                logger.warning("Failed to download image for %s: %s", tpl_item["sku"], e)
+
+    await asyncio.gather(*[_fetch_image(ti) for ti in template_items])
+
+    # Clean up internal keys before passing to template
+    for ti in template_items:
+        ti.pop("_item_id", None)
+        ti.pop("_has_image", None)
 
     # Resolve customer data from CRM or conversation context
     # Priority: CRM contact > crm_context > conversation fields > fallback

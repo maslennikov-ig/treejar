@@ -234,6 +234,29 @@ class ZohoInventoryClient(InventoryProvider):
             "customer_name": so.get("customer_name", ""),
         }
 
+    async def get_item_image(
+        self, item_id: str,
+    ) -> tuple[bytes, str] | None:
+        """Download a product image from Zoho Inventory.
+
+        Zoho stores images behind OAuth-protected URLs. This method uses
+        the authenticated client to download and return raw image bytes.
+
+        Args:
+            item_id: The Zoho Inventory item_id (NOT sku).
+
+        Returns:
+            Tuple of (image_bytes, content_type) or None if no image.
+        """
+        try:
+            response = await self._request("GET", f"/items/{item_id}/image")
+            ct = response.headers.get("content-type", "image/png")
+            if response.status_code == 200 and len(response.content) > 0:
+                return response.content, ct
+        except httpx.HTTPStatusError:
+            pass
+        return None
+
     async def __aenter__(self) -> ZohoInventoryClient:
         return self
 
