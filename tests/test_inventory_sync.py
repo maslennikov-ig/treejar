@@ -175,7 +175,7 @@ async def test_sync_calls_deactivate_and_embed() -> None:
         "page_context": {"has_more_page": False},
     }
 
-    async def mock_upsert_impl(items, stats):
+    async def mock_upsert_impl(items: list[dict[str, str]], stats: ProductSyncResponse) -> None:
         stats.synced += len(items)
 
     with (

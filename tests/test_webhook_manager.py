@@ -14,7 +14,7 @@ client = TestClient(app)
 def _skip_ip_check() -> None:  # type: ignore[misc]
     """Skip IP allowlist verification for all tests in this module."""
     with patch("src.api.v1.webhook._parse_allowed_networks", return_value=[]):
-        yield  # type: ignore[misc]
+        yield
 
 
 def _setup_mocks() -> tuple[AsyncMock, AsyncMock]:

@@ -57,7 +57,7 @@ async def save_to_faq(
     nearest = result.first()
 
     if nearest is not None:
-        distance = nearest.distance  # type: ignore[attr-defined]
+        distance = nearest.distance
         similarity = 1 - (distance or 0)
         if similarity > DUPLICATE_THRESHOLD:
             logger.info(
