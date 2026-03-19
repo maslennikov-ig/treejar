@@ -36,6 +36,7 @@ class WazzupIncomingMessage(BaseModel):
     channelId: str = ""
     status: str | None = None
     media: WazzupMedia | None = None
+    contentUri: str | None = None  # Wazzup v3 uses this for audio/voice messages
 
     # Wazzup v3 sends `dateTime` (string), not `timestamp` (int)
     dateTime: str | None = None
