@@ -3,7 +3,57 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.services.chat import process_incoming_batch
+from src.services.chat import _format_for_whatsapp, process_incoming_batch
+
+
+def test_format_for_whatsapp() -> None:
+    assert _format_for_whatsapp("Hello") == "Hello"
+    assert _format_for_whatsapp("## Header") == "*Header*"
+    assert _format_for_whatsapp("### **Header Bold**") == "*Header Bold*"
+    assert _format_for_whatsapp("**Bold Text**") == "*Bold Text*"
+    assert _format_for_whatsapp("***Bold Italic***") == "*Bold Italic*"
+    assert _format_for_whatsapp("*Already correct*") == "*Already correct*"
+    assert _format_for_whatsapp("Check this link: [OpenAI](https://openai.com)") == "Check this link: OpenAI: https://openai.com"
+    assert _format_for_whatsapp("![Image](https://image.com/img.png)") == "Image"
+    assert _format_for_whatsapp("**🪑 Our Top Picks:**") == "*🪑 Our Top Picks:*"
+    assert _format_for_whatsapp("## **1. Executive Chair**") == "*1. Executive Chair*"
+    assert _format_for_whatsapp("`inline code`") == "```inline code```"
+    assert _format_for_whatsapp("This is `code1` and `code2`") == "This is ```code1``` and ```code2```"
+
+
+def test_format_for_whatsapp_tables() -> None:
+    """Markdown tables should be converted to key-value lists."""
+    # Simple 2-column table
+    table = (
+        "| Product | Price |\n"
+        "| --- | --- |\n"
+        "| Chair | 1200 AED |"
+    )
+    expected = "*Product:* Chair\n*Price:* 1200 AED"
+    assert _format_for_whatsapp(table) == expected
+
+    # Multi-row table
+    table_multi = (
+        "| Name | Price | Stock |\n"
+        "| --- | --- | --- |\n"
+        "| Chair | 1200 | 5 |\n"
+        "| Desk | 3500 | 2 |"
+    )
+    expected_multi = (
+        "*Name:* Chair\n*Price:* 1200\n*Stock:* 5\n"
+        "\n"
+        "*Name:* Desk\n*Price:* 3500\n*Stock:* 2"
+    )
+    assert _format_for_whatsapp(table_multi) == expected_multi
+
+    # Table with surrounding text
+    mixed = "Here is a comparison:\n| A | B |\n| --- | --- |\n| 1 | 2 |\nEnd of table."
+    expected_mixed = "Here is a comparison:\n*A:* 1\n*B:* 2\nEnd of table."
+    assert _format_for_whatsapp(mixed) == expected_mixed
+
+    # No table — should pass through unchanged
+    no_table = "Just regular text with | pipes | in it."
+    assert _format_for_whatsapp(no_table) == no_table
 
 
 @pytest.fixture

@@ -26,6 +26,72 @@ logger = logging.getLogger(__name__)
 # Maximum time to wait for LLM response (seconds)
 LLM_TIMEOUT = 120
 
+# WhatsApp Formatting Regexes
+WHATSAPP_HEADERS_RE = re.compile(r'^#{1,6}\s*\*{0,3}\s*(.+?)\s*\*{0,3}\s*$', flags=re.MULTILINE)
+WHATSAPP_BOLD_RE = re.compile(r'\*{2,3}(.*?)\*{2,3}')
+WHATSAPP_INLINE_CODE_RE = re.compile(r'(?<!`)(`)([^`]+)\1(?!`)')
+WHATSAPP_IMG_RE = re.compile(r'!\[(.*?)\]\((.*?)\)')
+WHATSAPP_LINK_RE = re.compile(r'\[(.*?)\]\((.*?)\)')
+# Matches a markdown table separator row: | --- | --- | or |:---:|:---|
+WHATSAPP_TABLE_SEP_RE = re.compile(r'^\|?[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)+\|?\s*$')
+
+
+def _convert_markdown_table(text: str) -> str:
+    """Detect Markdown tables and convert them into key-value lists.
+
+    A Markdown table is identified by:
+    - A header row with pipes: | Col1 | Col2 |
+    - A separator row: | --- | --- |
+    - One or more data rows: | val1 | val2 |
+
+    Converted into:
+    *Col1:* val1
+    *Col2:* val2
+    (blank line between rows)
+    """
+    lines = text.split('\n')
+    result: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        # Look for a separator row to identify a table
+        if i >= 1 and WHATSAPP_TABLE_SEP_RE.match(lines[i]):
+            # Header is the line before the separator
+            header_line = lines[i - 1]
+            headers = [h.strip() for h in header_line.strip().strip('|').split('|')]
+            headers = [h for h in headers if h]
+
+            if not headers:
+                result.append(lines[i])
+                i += 1
+                continue
+
+            # Remove the header line we already added to result
+            if result and result[-1] == lines[i - 1]:
+                result.pop()
+
+            # Skip the separator row
+            i += 1
+
+            # Process data rows
+            data_rows: list[str] = []
+            while i < len(lines) and '|' in lines[i] and not lines[i].strip().startswith('#'):
+                cells = [c.strip() for c in lines[i].strip().strip('|').split('|')]
+                row_parts: list[str] = []
+                for col_idx, cell in enumerate(cells):
+                    if col_idx < len(headers) and cell:
+                        row_parts.append(f"*{headers[col_idx]}:* {cell}")
+                if row_parts:
+                    data_rows.append('\n'.join(row_parts))
+                i += 1
+
+            result.append('\n\n'.join(data_rows))
+        else:
+            result.append(lines[i])
+            i += 1
+
+    return '\n'.join(result)
+
 
 def _format_for_whatsapp(text: str) -> str:
     """Convert standard Markdown from LLM into WhatsApp-native formatting.
@@ -35,14 +101,23 @@ def _format_for_whatsapp(text: str) -> str:
     if not text:
         return text
 
-    # 1. Headers: ### Title -> *Title*
-    text = re.sub(r'^(#{1,6})\s*(.+)$', r'*\2*', text, flags=re.MULTILINE)
+    # 0. Markdown tables -> key-value lists (must run first, line-based)
+    text = _convert_markdown_table(text)
 
-    # 2. Bold: **text** -> *text*
-    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
+    # 1. Headers: ### Title or ### **Title** -> *Title*
+    text = WHATSAPP_HEADERS_RE.sub(r'*\1*', text)
 
-    # 3. Links: [text](url) -> text: url
-    text = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1: \2', text)
+    # 2. Bold/Italic-Bold: ***text*** or **text** -> *text*
+    text = WHATSAPP_BOLD_RE.sub(r'*\1*', text)
+
+    # 3. Inline Code: `text` -> ```text```
+    text = WHATSAPP_INLINE_CODE_RE.sub(r'```\2```', text)
+
+    # 4. Image markdown: ![alt](url) -> alt
+    text = WHATSAPP_IMG_RE.sub(r'\1', text)
+
+    # 5. Links: [text](url) -> text: url
+    text = WHATSAPP_LINK_RE.sub(r'\1: \2', text)
 
     return text
 
