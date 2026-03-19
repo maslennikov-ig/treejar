@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-import base64
+import logging
+import mimetypes
 from typing import Any
 
 import httpx
 
 from src.core.config import settings
 from src.integrations.messaging.base import MessagingProvider
+
+logger = logging.getLogger(__name__)
+
+# Temporary file hosting for Wazzup contentUri (files expire after ~1h).
+# Wazzup v3 API requires a *public URL* for media — base64 is NOT supported.
+_TMPFILES_UPLOAD_URL = "https://tmpfiles.org/api/v1/upload"
 
 
 class WazzupProvider(MessagingProvider):
@@ -63,6 +70,44 @@ class WazzupProvider(MessagingProvider):
 
         raise RuntimeError("Unreachable")
 
+    @staticmethod
+    async def _upload_to_tmpfiles(
+        content: bytes,
+        content_type: str | None = None,
+    ) -> str:
+        """Upload bytes to tmpfiles.org and return a direct-download URL.
+
+        Wazzup v3 requires ``contentUri`` — a publicly accessible URL.
+        tmpfiles.org provides free temporary hosting (files expire ~1 h),
+        which is sufficient because WhatsApp caches media on delivery.
+
+        Returns:
+            Public direct-download URL (https://tmpfiles.org/dl/…).
+
+        Raises:
+            RuntimeError: If upload fails or the service is unavailable.
+        """
+        ext = mimetypes.guess_extension(content_type or "application/octet-stream") or ""
+        filename = f"file{ext}"
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as http:
+            resp = await http.post(
+                _TMPFILES_UPLOAD_URL,
+                files={"file": (filename, content, content_type or "application/octet-stream")},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        if data.get("status") != "success":
+            raise RuntimeError(f"tmpfiles.org upload failed: {data}")
+
+        # tmpfiles.org URL: https://tmpfiles.org/12345/file.pdf
+        # Direct-download:  https://tmpfiles.org/dl/12345/file.pdf
+        page_url: str = data["data"]["url"]
+        dl_url = page_url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+        logger.info("Uploaded %d bytes to %s", len(content), dl_url)
+        return dl_url
+
     async def download_media(
         self, url: str, max_retries: int = 2, client: httpx.AsyncClient | None = None
     ) -> bytes:
@@ -100,12 +145,17 @@ class WazzupProvider(MessagingProvider):
                 raise
         raise RuntimeError("Unreachable")
 
-    async def send_text(self, chat_id: str, text: str) -> str:
-        """Send a text message. Returns message ID.
+    @staticmethod
+    def _extract_message_id(data: Any) -> str:
+        """Extract messageId from Wazzup response (dict or list)."""
+        if isinstance(data, dict):
+            return str(data.get("messageId", "unknown"))
+        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+            return str(data[0].get("messageId", "unknown"))
+        return "unknown"
 
-        Wazzup returns a message ID if successful, or an empty response body
-        sometimes, so we return a placeholder if not present.
-        """
+    async def send_text(self, chat_id: str, text: str) -> str:
+        """Send a text message. Returns message ID."""
         payload: dict[str, Any] = {
             "chatId": chat_id,
             "chatType": "whatsapp",
@@ -115,13 +165,7 @@ class WazzupProvider(MessagingProvider):
             payload["channelId"] = self.channel_id
 
         response = await self._request("POST", "/message", json=payload)
-        data = response.json()
-
-        if isinstance(data, dict):
-            return str(data.get("messageId", "unknown"))
-        elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-            return str(data[0].get("messageId", "unknown"))
-        return "unknown"
+        return self._extract_message_id(response.json())
 
     async def send_media(
         self,
@@ -131,31 +175,48 @@ class WazzupProvider(MessagingProvider):
         content: bytes | None = None,
         content_type: str | None = None,
     ) -> str:
-        """Send media (image/document/audio). Returns message ID."""
+        """Send media (image/document/audio). Returns message ID.
+
+        Wazzup v3 constraints:
+        - Files must be sent via ``contentUri`` (publicly accessible URL).
+        - ``text`` and ``contentUri`` **cannot** coexist in the same request.
+
+        When ``content`` (raw bytes) is provided, the file is first uploaded
+        to a temporary hosting service to obtain a public URL.
+
+        If both a file and a caption are provided, two messages are sent:
+        first the file, then the caption text.
+        """
+        # Resolve the public URL for the file
+        content_uri: str | None = url
+        if content and not content_uri:
+            content_uri = await self._upload_to_tmpfiles(content, content_type)
+
+        if not content_uri:
+            raise ValueError("send_media requires either url or content")
+
+        # --- Send the file (contentUri only, no text) ---
         payload: dict[str, Any] = {
             "chatId": chat_id,
             "chatType": "whatsapp",
+            "contentUri": content_uri,
         }
-        if url:
-            payload["contentUri"] = url
-        if content:
-            payload["content"] = base64.b64encode(content).decode("ascii")
-            if content_type:
-                # Although Wazzup might infer this, sometimes it's needed or omitted
-                pass
-        if caption:
-            payload["text"] = caption
         if self.channel_id:
             payload["channelId"] = self.channel_id
 
         response = await self._request("POST", "/message", json=payload)
-        data = response.json()
+        msg_id = self._extract_message_id(response.json())
 
-        if isinstance(data, dict):
-            return str(data.get("messageId", "unknown"))
-        elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-            return str(data[0].get("messageId", "unknown"))
-        return "unknown"
+        # --- Send caption as a separate text message (if provided) ---
+        if caption:
+            try:
+                await self.send_text(chat_id, caption)
+            except Exception:
+                logger.warning(
+                    "File sent (msg_id=%s) but caption failed", msg_id, exc_info=True
+                )
+
+        return msg_id
 
     async def send_template(
         self, chat_id: str, template_name: str, params: dict[str, str] | None = None
@@ -178,13 +239,7 @@ class WazzupProvider(MessagingProvider):
             payload["channelId"] = self.channel_id
 
         response = await self._request("POST", "/message", json=payload)
-        data = response.json()
-
-        if isinstance(data, dict):
-            return str(data.get("messageId", "unknown"))
-        elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-            return str(data[0].get("messageId", "unknown"))
-        return "unknown"
+        return self._extract_message_id(response.json())
 
     async def __aenter__(self) -> WazzupProvider:
         return self
