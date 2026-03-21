@@ -17,6 +17,8 @@ async def notify_manager_escalation(
     db: AsyncSession,
     *,
     escalation_type: EscalationType = EscalationType.GENERAL,
+    pdf_bytes: bytes | None = None,
+    pdf_filename: str = "quotation.pdf",
 ) -> None:
     """
     Notify the manager about a soft escalation via logging and Telegram.
@@ -27,6 +29,8 @@ async def notify_manager_escalation(
         recent_messages: List of recent message strings for context.
         db: Database session.
         escalation_type: Type of escalation (determines button layout).
+        pdf_bytes: Optional PDF file bytes to attach as Telegram document.
+        pdf_filename: Filename for the PDF attachment.
     """
     phone_display = (
         conversation.phone
@@ -98,5 +102,17 @@ async def notify_manager_escalation(
             ]
 
         await client.send_message_with_inline_keyboard(message, buttons)
+
+        # Send PDF document if provided (ORDER_CONFIRMATION with quotation)
+        if pdf_bytes:
+            try:
+                await client.send_document(
+                    file_bytes=pdf_bytes,
+                    filename=pdf_filename,
+                    caption="📄 Quotation for review",
+                )
+            except Exception:
+                logger.exception("Failed to send PDF document to Telegram")
+
     except Exception:
         logger.exception("Failed to send Telegram escalation notification")
