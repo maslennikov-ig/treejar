@@ -192,10 +192,17 @@ async def _handle_escalation_fallback(
             phone_display = (
                 conv.phone if conv.phone.startswith("+") else f"+{conv.phone}"
             )
+            # R3-1: HTML-escape client text to prevent Telegram API 400 errors
+            safe_text = (
+                combined_text[:200]
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
             await client.send_message(
                 f"⚠️ <b>Клиент снова пишет</b> (эскалация активна)\n\n"
                 f'📞 <a href="tel:{phone_display}">{phone_display}</a>\n'
-                f"💬 <i>{combined_text[:200]}</i>"
+                f"💬 <i>{safe_text}</i>"
             )
         except Exception:
             logger.exception("Failed to re-notify manager for %s", conv.phone)
@@ -497,10 +504,16 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 logger.error(
                     "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
                 )
-                # Send a fallback message so the user isn't left hanging
+                # R3-11: Send timeout fallback in client's language
+                lang = conv.language or "en"
+                timeout_msg = (
+                    "عذراً، أنا مشغول حالياً. يرجى إعادة المحاولة بعد دقيقة."
+                    if lang == "ar"
+                    else "Sorry, I'm currently overloaded. Please try again in a minute."
+                )
                 await wazzup_provider.send_text(
                     chat_id=chat_id,
-                    text="Извините, я сейчас перегружен. Пожалуйста, попробуйте написать ещё раз через минуту.",
+                    text=timeout_msg,
                 )
                 return
 

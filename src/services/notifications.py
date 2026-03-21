@@ -103,11 +103,18 @@ def format_quality_alert_message(
 ) -> str:
     """Format a quality alert as HTML for Telegram."""
     emoji = "🔴" if score < 10 else "🟡"
+    # R3-4: HTML-escape summary (LLM-generated, may contain < > &)
+    safe_summary = (
+        summary
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
     return (
         f"{emoji} <b>Quality Alert</b>\n\n"
         f"<b>Score:</b> {score}/30 ({rating})\n"
         f"<b>Conversation:</b> <code>{conversation_id}</code>\n"
-        f"<b>Summary:</b> {summary}\n\n"
+        f"<b>Summary:</b> {safe_summary}\n\n"
         "This dialogue scored below the acceptable threshold."
     )
 

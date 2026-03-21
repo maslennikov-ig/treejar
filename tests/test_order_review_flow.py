@@ -21,7 +21,6 @@ import pytest
 
 from src.schemas.common import EscalationType
 
-
 # =============================================================================
 # Redis key constants (must match implementation)
 # =============================================================================

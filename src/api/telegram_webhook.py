@@ -184,9 +184,37 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
             finally:
                 await wazzup.close()
 
-            await client.send_message(
-                f"✅ Ответ отправлен клиенту:\n\n{adapted}", chat_id=str(chat_id)
+            # R3-2: HTML-escape adapted text before Telegram notification
+            safe_adapted = (
+                adapted
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
             )
+            await client.send_message(
+                f"✅ Ответ отправлен клиенту:\n\n{safe_adapted}",
+                chat_id=str(chat_id),
+            )
+
+            # R3-3: Resolve escalation after successful manager reply
+            try:
+                async with async_session_factory() as resolve_db:
+                    stmt = select(Conversation).where(
+                        Conversation.id == uuid.UUID(conv_id),
+                    )
+                    result = await resolve_db.execute(stmt)
+                    conv = result.scalar_one_or_none()
+                    if conv and conv.escalation_status not in ("resolved", None):
+                        conv.escalation_status = "resolved"
+                        await resolve_db.commit()
+                        logger.info(
+                            "Escalation resolved for %s after manager reply",
+                            conv_id,
+                        )
+            except Exception:
+                logger.exception(
+                    "Failed to resolve escalation for %s", conv_id,
+                )
         else:
             await client.send_message(
                 "⚠️ Не удалось найти номер телефона клиента. "

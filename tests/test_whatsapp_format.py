@@ -9,8 +9,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-
 from src.services.chat import _format_for_whatsapp
 
 
