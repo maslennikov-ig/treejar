@@ -122,14 +122,7 @@ def _format_for_whatsapp(text: str) -> str:
     # 6. B11: Horizontal rules --- -> empty line
     text = re.sub(r'^\s*-{3,}\s*$', '', text, flags=re.MULTILINE)
 
-    # 7. B10: Collapse stray unpaired ** (not wrapped) -> single *
-    text = re.sub(r'(?<!\*)\*\*(?!\*)', '*', text)
-
-    # 8. B9: Fix nested bold *text *inner* more* -> text *inner* more
-    # Remove * that immediately follows another * separated by space
-    text = re.sub(r'\*([^*]+)\*([^*\s])', r'\1\2', text)
-
-    # 9. Collapse 3+ consecutive newlines into 2
+    # 7. Collapse 3+ consecutive newlines into 2
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text

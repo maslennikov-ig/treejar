@@ -103,9 +103,8 @@ async def test_notify_escalation_formats_html() -> None:
 
     msg = format_escalation_message(phone, conv_id, "Customer asked for a manager")
     assert "<b>" in msg
-    # Phone should be masked (PII protection)
-    assert "+971501234567" not in msg
-    assert "+97150***4567" in msg
+    # Phone should be shown in full (I3 fix: managers need to contact clients)
+    assert "+971501234567" in msg
     assert "Customer asked for a manager" in msg
 
 

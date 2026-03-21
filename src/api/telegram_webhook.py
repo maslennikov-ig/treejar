@@ -103,8 +103,13 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
 
     mode, conv_id_str = callback_data.split(":", 1)
 
-    if mode not in ("faq_global", "faq_private"):
+    if mode not in ("faq_global", "faq_private", "order_confirm", "order_reject"):
         await client.answer_callback_query(callback_id, "❌ Unknown action")
+        return
+
+    # Handle order confirmation/rejection immediately (no text input needed)
+    if mode in ("order_confirm", "order_reject"):
+        await _handle_order_decision(client, callback_id, chat_id, mode, conv_id_str)
         return
 
     # Validate conversation UUID
@@ -245,3 +250,87 @@ async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | No
         if row:
             return row.phone, row.language or "en"
         return None, "en"
+
+
+async def _handle_order_decision(
+    client: "TelegramClient",
+    callback_id: str,
+    chat_id: int,
+    mode: str,
+    conv_id_str: str,
+) -> None:
+    """Handle order confirmation or rejection from manager.
+
+    Unlike FAQ responses, order decisions don't require text input.
+    The manager clicks a button and the resulting action is immediate.
+    """
+    try:
+        conv_uuid = uuid.UUID(conv_id_str)
+    except ValueError:
+        await client.answer_callback_query(callback_id, "❌ Invalid conversation ID")
+        return
+
+    phone, language = await _get_conversation_phone_and_lang(conv_uuid)
+    is_confirm = mode == "order_confirm"
+
+    # 1. Ack the button press
+    ack_text = "✅ Заказ подтверждён" if is_confirm else "❌ Заказ отклонён"
+    await client.answer_callback_query(callback_id, ack_text)
+
+    # 2. Send confirmation/rejection to client
+    if phone:
+        from src.integrations.messaging.wazzup import WazzupProvider
+
+        if is_confirm:
+            client_msg = (
+                "تم تأكيد طلبك! ✅\nسيتواصل معك المدير قريباً لتأكيد التفاصيل والدفع. شكراً لاختيارك Treejar! 🌳"
+                if language == "ar"
+                else "Your order has been confirmed! ✅\nA manager will contact you shortly to finalize details and payment. Thank you for choosing Treejar! 🌳"
+            )
+        else:
+            client_msg = (
+                "شكراً لاهتمامك! 🙏\nللأسف، لم نتمكن من تأكيد هذا الطلب حالياً. سيتواصل معك أحد المديرين لمناقشة البدائل المتاحة."
+                if language == "ar"
+                else "Thank you for your interest! 🙏\nUnfortunately, we couldn't confirm this order at the moment. A manager will reach out to discuss available options."
+            )
+
+        wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
+        try:
+            await wazzup.send_text(phone, client_msg)
+        finally:
+            await wazzup.close()
+
+        # Save message to DB
+        from src.models.message import Message as MsgModel
+
+        async with async_session_factory() as db:
+            msg = MsgModel(
+                conversation_id=conv_uuid,
+                role="assistant",
+                content=client_msg,
+                model="manager_decision",
+            )
+            db.add(msg)
+
+            # Resolve escalation
+            stmt = (
+                select(Conversation)
+                .where(Conversation.id == conv_uuid)
+            )
+            conv_result = await db.execute(stmt)
+            conv = conv_result.scalar_one_or_none()
+            if conv:
+                conv.escalation_status = "resolved"
+            await db.commit()
+
+        action_label = "подтверждён ✅" if is_confirm else "отклонён ❌"
+        await client.send_message(
+            f"📦 Заказ {action_label}. Ответ отправлен клиенту.",
+            chat_id=str(chat_id),
+        )
+    else:
+        await client.send_message(
+            "⚠️ Не удалось найти номер телефона клиента.",
+            chat_id=str(chat_id),
+        )
+

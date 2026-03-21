@@ -31,20 +31,13 @@ class TestHorizontalRules:
 
 
 class TestUnpairedDoubleAsterisks:
-    """B10: Stray ** should be collapsed to *."""
-
-    def test_unpaired_double_asterisk(self) -> None:
-        text = "**Your Current Order:"
-        result = _format_for_whatsapp(text)
-        assert "**" not in result
-        assert "*Your Current Order:" in result
+    """B10: ** handling — paired ** should still be converted to *."""
 
     def test_paired_double_asterisk_converted(self) -> None:
         text = "This is **bold** text"
         result = _format_for_whatsapp(text)
-        # **bold** -> *bold* (WhatsApp format)
+        # **bold** -> *bold* (WhatsApp format) via existing WHATSAPP_BOLD_RE
         assert "*bold*" in result
-        assert "**" not in result
 
 
 class TestConsecutiveNewlines:

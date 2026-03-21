@@ -53,20 +53,39 @@ def _mask_phone(phone: str) -> str:
 # =============================================================================
 
 
-def format_escalation_message(phone: str, conversation_id: UUID, reason: str) -> str:
+def format_escalation_message(
+    phone: str,
+    conversation_id: UUID,
+    reason: str,
+    *,
+    context: str | None = None,
+) -> str:
     """Format an escalation alert as HTML for Telegram.
 
     Phone is shown in full so managers can call back or find in CRM.
+    Context (if provided) shows recent messages so manager knows what's happening.
     """
     # Format phone with + prefix for tel: link if not already prefixed
     phone_display = phone if phone.startswith("+") else f"+{phone}"
-    return (
+    msg = (
         "🚨 <b>Escalation Alert</b>\n\n"
         f'📞 <b>Phone:</b> <a href="tel:{phone_display}">{phone_display}</a>\n'
         f"<b>Reason:</b> {reason}\n"
-        f"<b>Conversation:</b> <code>{conversation_id}</code>\n\n"
-        "A human manager has been notified and should review this conversation."
+        f"<b>Conversation:</b> <code>{conversation_id}</code>\n"
     )
+
+    if context:
+        # Truncate and escape HTML chars in context
+        safe_context = (
+            context[:500]
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        msg += f"\n<b>Контекст:</b>\n<i>{safe_context}</i>\n"
+
+    msg += "\nA human manager has been notified and should review this conversation."
+    return msg
 
 
 def format_quality_alert_message(

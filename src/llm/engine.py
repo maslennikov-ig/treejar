@@ -772,7 +772,8 @@ async def process_message(
             )
 
             await notify_manager_escalation(
-                conv, escalation_eval.reason, [recent_context], db
+                conv, escalation_eval.reason, [recent_context], db,
+                escalation_type=escalation_eval.escalation_type,
             )
 
             # Instead of returning immediately, we proceed but inject a system note

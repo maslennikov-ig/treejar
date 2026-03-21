@@ -4,6 +4,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+from src.schemas.common import EscalationType
 
 
 class EscalationEvaluation(BaseModel):
@@ -13,6 +14,15 @@ class EscalationEvaluation(BaseModel):
     reason: str | None = Field(
         default=None,
         description="The specific trigger reason if should_escalate is True, else None.",
+    )
+    escalation_type: EscalationType = Field(
+        default=EscalationType.GENERAL,
+        description=(
+            "Type of escalation: 'order_confirmation' for triggers 1,3 "
+            "(B2B/wholesale order, high-value order), "
+            "'human_requested' for trigger 12 (explicit manager request), "
+            "'general' for all other triggers."
+        ),
     )
 
 
@@ -41,6 +51,11 @@ TRIGGERS:
 
 Return should_escalate=True if ANY of these strongly match. Provide the reason.
 If none match, return should_escalate=False.
+
+Also classify the escalation_type:
+- 'order_confirmation' if trigger 1 or 3 applies (B2B/wholesale or high-value order)
+- 'human_requested' if trigger 12 applies (customer explicitly asked for a human)
+- 'general' for all other triggers
 """
 
 
