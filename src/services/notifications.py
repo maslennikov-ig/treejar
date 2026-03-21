@@ -67,10 +67,17 @@ def format_escalation_message(
     """
     # Format phone with + prefix for tel: link if not already prefixed
     phone_display = phone if phone.startswith("+") else f"+{phone}"
+    # CR-4: HTML-escape reason (may contain LLM-generated text with <, >, &)
+    safe_reason = (
+        reason
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
     msg = (
         "🚨 <b>Escalation Alert</b>\n\n"
         f'📞 <b>Phone:</b> <a href="tel:{phone_display}">{phone_display}</a>\n'
-        f"<b>Reason:</b> {reason}\n"
+        f"<b>Reason:</b> {safe_reason}\n"
         f"<b>Conversation:</b> <code>{conversation_id}</code>\n"
     )
 

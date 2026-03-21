@@ -45,7 +45,6 @@ async def notify_manager_escalation(
     # Set the escalation state in the database
     conversation.escalation_status = EscalationStatus.PENDING.value
     await db.commit()
-    await db.refresh(conversation)
 
     # Send Telegram notification with action buttons (non-blocking)
     try:

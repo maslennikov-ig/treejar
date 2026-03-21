@@ -34,6 +34,8 @@ WHATSAPP_IMG_RE = re.compile(r'!\[(.*?)\]\((.*?)\)')
 WHATSAPP_LINK_RE = re.compile(r'\[(.*?)\]\((.*?)\)')
 # Matches a markdown table separator row: | --- | --- | or |:---:|:---|
 WHATSAPP_TABLE_SEP_RE = re.compile(r'^\|?[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)+\|?\s*$')
+WHATSAPP_HR_RE = re.compile(r'^\s*-{3,}\s*$', flags=re.MULTILINE)
+WHATSAPP_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 
 def _convert_markdown_table(text: str) -> str:
@@ -120,10 +122,10 @@ def _format_for_whatsapp(text: str) -> str:
     text = WHATSAPP_LINK_RE.sub(r'\1: \2', text)
 
     # 6. B11: Horizontal rules --- -> empty line
-    text = re.sub(r'^\s*-{3,}\s*$', '', text, flags=re.MULTILINE)
+    text = WHATSAPP_HR_RE.sub('', text)
 
     # 7. Collapse 3+ consecutive newlines into 2
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = WHATSAPP_MULTI_NEWLINE_RE.sub('\n\n', text)
 
     return text
 
@@ -440,7 +442,8 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
         await db.commit()
 
         # 4. Escalation active: send fallback to client + re-notify manager
-        if conv.escalation_status not in ("none", None):
+        # CR-3: Skip fallback during manual_takeover — manager is handling it
+        if conv.escalation_status not in ("none", None, "manual_takeover"):
             logger.info(
                 "Escalation active (%s) for %s. Sending fallback response.",
                 conv.escalation_status,
@@ -456,6 +459,12 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                     redis=redis,
                     db=db,
                 )
+            return
+        if conv.escalation_status == "manual_takeover":
+            logger.info(
+                "Manual takeover active for %s. Skipping LLM + fallback.",
+                chat_id,
+            )
             return
 
         # 5. Generate LLM response

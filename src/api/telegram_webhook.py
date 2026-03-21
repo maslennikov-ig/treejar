@@ -95,6 +95,7 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     callback_id = callback_query["id"]
     callback_data = callback_query.get("data", "")
     chat_id = callback_query["message"]["chat"]["id"]
+    message_id = callback_query["message"].get("message_id")
 
     # Parse callback_data: "faq_global:<conv_id>" or "faq_private:<conv_id>"
     if ":" not in callback_data:
@@ -109,7 +110,9 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
 
     # Handle order confirmation/rejection immediately (no text input needed)
     if mode in ("order_confirm", "order_reject"):
-        await _handle_order_decision(client, callback_id, chat_id, mode, conv_id_str)
+        await _handle_order_decision(
+            client, callback_id, chat_id, message_id, mode, conv_id_str,
+        )
         return
 
     # Validate conversation UUID
@@ -244,8 +247,6 @@ async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | No
     if the client switched languages), we check the last 3 user messages to detect
     the actual language being used.
     """
-    from src.models.message import Message
-
     async with async_session_factory() as db:
         # Get conversation phone and stored language
         stmt = (
@@ -285,6 +286,7 @@ async def _handle_order_decision(
     client: "TelegramClient",
     callback_id: str,
     chat_id: int,
+    message_id: int | None,
     mode: str,
     conv_id_str: str,
 ) -> None:
@@ -292,6 +294,10 @@ async def _handle_order_decision(
 
     Unlike FAQ responses, order decisions don't require text input.
     The manager clicks a button and the resulting action is immediate.
+
+    CR-1: Idempotency — checks escalation_status before processing.
+    CR-2: Removes inline keyboard after processing.
+    CR-5: Only resolves escalation after successful WhatsApp send.
     """
     try:
         conv_uuid = uuid.UUID(conv_id_str)
@@ -299,12 +305,28 @@ async def _handle_order_decision(
         await client.answer_callback_query(callback_id, "❌ Invalid conversation ID")
         return
 
+    # CR-1: Idempotency check — prevent double-click
+    async with async_session_factory() as db:
+        stmt = select(Conversation).where(Conversation.id == conv_uuid)
+        result = await db.execute(stmt)
+        conv = result.scalar_one_or_none()
+        if not conv:
+            await client.answer_callback_query(callback_id, "❌ Разговор не найден")
+            return
+        if conv.escalation_status == "resolved":
+            await client.answer_callback_query(callback_id, "⚠️ Уже обработано")
+            return
+
     phone, language = await _get_conversation_phone_and_lang(conv_uuid)
     is_confirm = mode == "order_confirm"
 
     # 1. Ack the button press
     ack_text = "✅ Заказ подтверждён" if is_confirm else "❌ Заказ отклонён"
     await client.answer_callback_query(callback_id, ack_text)
+
+    # CR-2: Remove inline keyboard to prevent re-clicks
+    if message_id:
+        await client.edit_message_reply_markup(chat_id, message_id)
 
     # 2. Send confirmation/rejection to client
     if phone:
@@ -323,17 +345,23 @@ async def _handle_order_decision(
                 else "Thank you for your interest! 🙏\nUnfortunately, we couldn't confirm this order at the moment. A manager will reach out to discuss available options."
             )
 
+        # CR-5: Send to client FIRST, only resolve if successful
         wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
         try:
             await wazzup.send_text(phone, client_msg)
+        except Exception:
+            logger.exception("Failed to send order decision to %s", phone)
+            await client.send_message(
+                "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                chat_id=str(chat_id),
+            )
+            return
         finally:
             await wazzup.close()
 
-        # Save message to DB
-        from src.models.message import Message as MsgModel
-
+        # Save message and resolve escalation AFTER successful send
         async with async_session_factory() as db:
-            msg = MsgModel(
+            msg = Message(
                 conversation_id=conv_uuid,
                 role="assistant",
                 content=client_msg,
@@ -341,11 +369,7 @@ async def _handle_order_decision(
             )
             db.add(msg)
 
-            # Resolve escalation
-            stmt = (
-                select(Conversation)
-                .where(Conversation.id == conv_uuid)
-            )
+            stmt = select(Conversation).where(Conversation.id == conv_uuid)
             conv_result = await db.execute(stmt)
             conv = conv_result.scalar_one_or_none()
             if conv:
