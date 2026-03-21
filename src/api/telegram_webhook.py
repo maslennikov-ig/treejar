@@ -238,8 +238,16 @@ async def _get_last_user_question(conv_id: uuid.UUID) -> str | None:
 
 
 async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | None, str]:
-    """Fetch the phone number and language for a conversation by UUID."""
+    """Fetch the phone number and detect current language for a conversation.
+
+    B6 fix: Instead of relying solely on conversation.language (which may be stale
+    if the client switched languages), we check the last 3 user messages to detect
+    the actual language being used.
+    """
+    from src.models.message import Message
+
     async with async_session_factory() as db:
+        # Get conversation phone and stored language
         stmt = (
             select(Conversation.phone, Conversation.language)
             .where(Conversation.id == conv_id)
@@ -247,9 +255,30 @@ async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | No
         )
         result = await db.execute(stmt)
         row = result.first()
-        if row:
-            return row.phone, row.language or "en"
-        return None, "en"
+        if not row:
+            return None, "en"
+
+        phone = row.phone
+        stored_lang = row.language or "en"
+
+        # B6: Check last 3 user messages for actual language
+        msg_stmt = (
+            select(Message.content)
+            .where(Message.conversation_id == conv_id, Message.role == "user")
+            .order_by(Message.created_at.desc())
+            .limit(3)
+        )
+        msg_result = await db.execute(msg_stmt)
+        user_messages = [r[0] for r in msg_result.fetchall() if r[0]]
+
+        if user_messages:
+            # Simple heuristic: if any recent message contains Arabic characters,
+            # the client is writing in Arabic
+            combined = " ".join(user_messages)
+            if any("\u0600" <= c <= "\u06ff" for c in combined):
+                return phone, "ar"
+
+        return phone, stored_lang
 
 
 async def _handle_order_decision(
