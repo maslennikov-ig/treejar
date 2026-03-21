@@ -55,7 +55,7 @@ async def transcribe_audio(
 
     b64_audio = base64.b64encode(audio_bytes).decode("ascii")
 
-    payload = {
+    payload: dict[str, object] = {
         "model": settings.voxtral_model,
         "messages": [
             {
@@ -72,6 +72,12 @@ async def transcribe_audio(
                 ],
             }
         ],
+        # Pin to OpenAI provider to avoid routing to providers
+        # that don't support input_audio
+        "provider": {
+            "order": ["OpenAI"],
+            "allow_fallbacks": False,
+        },
     }
 
     start = time.monotonic()
@@ -100,6 +106,14 @@ async def transcribe_audio(
 
     elapsed = time.monotonic() - start
     data = response.json()
+
+    # Log provider and model for debugging routing issues
+    logger.info(
+        "OpenRouter audio response: model=%s, provider=%s, status=%d",
+        data.get("model", "?"),
+        data.get("provider", "?"),
+        response.status_code,
+    )
 
     try:
         text: str = data["choices"][0]["message"]["content"]
