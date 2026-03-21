@@ -47,6 +47,14 @@ class EscalationStatus(StrEnum):
     MANUAL_TAKEOVER = "manual_takeover"
 
 
+class EscalationType(StrEnum):
+    """Type of escalation, determines Telegram button layout."""
+
+    ORDER_CONFIRMATION = "order_confirmation"  # B2B/wholesale, high-value
+    HUMAN_REQUESTED = "human_requested"        # Customer asked for manager
+    GENERAL = "general"                        # All other triggers
+
+
 class QualityRating(StrEnum):
     EXCELLENT = "excellent"  # 26-30
     GOOD = "good"  # 20-25

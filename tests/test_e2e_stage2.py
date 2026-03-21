@@ -101,10 +101,10 @@ async def test_telegram_escalation_notification_delivered() -> None:
     mock_client.send_message.assert_called_once()
     html_message: str = mock_client.send_message.call_args[0][0]
 
-    # Message must contain alert header and masked phone (PII protection)
+    # Message must contain alert header and full phone (managers need to call back)
     assert "Escalation Alert" in html_message, "Expected 'Escalation Alert' in message"
-    assert "+97150***" in html_message or "***" in html_message, (
-        f"Phone should be masked, got: {html_message}"
+    assert "+971501234567" in html_message, (
+        f"Phone should be shown in full for managers, got: {html_message}"
     )
     assert "Customer requested human" in html_message
 

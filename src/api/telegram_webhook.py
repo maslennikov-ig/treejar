@@ -15,6 +15,7 @@ NOTE: This requires setting up the Telegram webhook externally
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -95,6 +96,7 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     callback_id = callback_query["id"]
     callback_data = callback_query.get("data", "")
     chat_id = callback_query["message"]["chat"]["id"]
+    message_id = callback_query["message"].get("message_id")
 
     # Parse callback_data: "faq_global:<conv_id>" or "faq_private:<conv_id>"
     if ":" not in callback_data:
@@ -103,8 +105,15 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
 
     mode, conv_id_str = callback_data.split(":", 1)
 
-    if mode not in ("faq_global", "faq_private"):
+    if mode not in ("faq_global", "faq_private", "order_confirm", "order_reject"):
         await client.answer_callback_query(callback_id, "❌ Unknown action")
+        return
+
+    # Handle order confirmation/rejection immediately (no text input needed)
+    if mode in ("order_confirm", "order_reject"):
+        await _handle_order_decision(
+            client, callback_id, chat_id, message_id, mode, conv_id_str,
+        )
         return
 
     # Validate conversation UUID
@@ -233,8 +242,14 @@ async def _get_last_user_question(conv_id: uuid.UUID) -> str | None:
 
 
 async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | None, str]:
-    """Fetch the phone number and language for a conversation by UUID."""
+    """Fetch the phone number and detect current language for a conversation.
+
+    B6 fix: Instead of relying solely on conversation.language (which may be stale
+    if the client switched languages), we check the last 3 user messages to detect
+    the actual language being used.
+    """
     async with async_session_factory() as db:
+        # Get conversation phone and stored language
         stmt = (
             select(Conversation.phone, Conversation.language)
             .where(Conversation.id == conv_id)
@@ -242,6 +257,217 @@ async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | No
         )
         result = await db.execute(stmt)
         row = result.first()
-        if row:
-            return row.phone, row.language or "en"
-        return None, "en"
+        if not row:
+            return None, "en"
+
+        phone = row.phone
+        stored_lang = row.language or "en"
+
+        # B6: Check last 3 user messages for actual language
+        msg_stmt = (
+            select(Message.content)
+            .where(Message.conversation_id == conv_id, Message.role == "user")
+            .order_by(Message.created_at.desc())
+            .limit(3)
+        )
+        msg_result = await db.execute(msg_stmt)
+        user_messages = [r[0] for r in msg_result.fetchall() if r[0]]
+
+        if user_messages:
+            # Simple heuristic: if any recent message contains Arabic characters,
+            # the client is writing in Arabic
+            combined = " ".join(user_messages)
+            if any("\u0600" <= c <= "\u06ff" for c in combined):
+                return phone, "ar"
+
+        return phone, stored_lang
+
+
+async def _handle_order_decision(
+    client: TelegramClient,
+    callback_id: str,
+    chat_id: int,
+    message_id: int | None,
+    mode: str,
+    conv_id_str: str,
+) -> None:
+    """Handle order confirmation or rejection from manager.
+
+    Unlike FAQ responses, order decisions don't require text input.
+    The manager clicks a button and the resulting action is immediate.
+
+    CR-1: Idempotency — checks escalation_status before processing.
+    CR-2: Removes inline keyboard after processing.
+    CR-5: Only resolves escalation after successful WhatsApp send.
+    """
+    try:
+        conv_uuid = uuid.UUID(conv_id_str)
+    except ValueError:
+        await client.answer_callback_query(callback_id, "❌ Invalid conversation ID")
+        return
+
+    # CR-1: Idempotency check — prevent double-click
+    async with async_session_factory() as db:
+        stmt = select(Conversation).where(Conversation.id == conv_uuid)
+        result = await db.execute(stmt)
+        conv = result.scalar_one_or_none()
+        if not conv:
+            await client.answer_callback_query(callback_id, "❌ Разговор не найден")
+            return
+        if conv.escalation_status == "resolved":
+            await client.answer_callback_query(callback_id, "⚠️ Уже обработано")
+            return
+
+    phone, language = await _get_conversation_phone_and_lang(conv_uuid)
+    is_confirm = mode == "order_confirm"
+
+    # 1. Ack the button press
+    ack_text = "✅ Заказ подтверждён" if is_confirm else "❌ Заказ отклонён"
+    await client.answer_callback_query(callback_id, ack_text)
+
+    # CR-2: Remove inline keyboard to prevent re-clicks
+    if message_id:
+        await client.edit_message_reply_markup(chat_id, message_id)
+
+    # 2. Send confirmation/rejection to client
+    if phone:
+        from src.integrations.messaging.wazzup import WazzupProvider
+
+        if is_confirm:
+            # Retrieve PDF from Redis (stored by create_quotation tool)
+            pdf_key = f"quotation_pdf:{conv_id_str}"
+            meta_key = f"quotation_meta:{conv_id_str}"
+            pdf_b64_raw = await redis_client.get(pdf_key)
+            meta_raw = await redis_client.get(meta_key)
+
+            pdf_bytes: bytes | None = None
+            quote_number = "DRAFT"
+
+            if pdf_b64_raw:
+                try:
+                    pdf_bytes = base64.b64decode(pdf_b64_raw)
+                except Exception:
+                    logger.warning(
+                        "Failed to decode PDF from Redis for conv %s", conv_id_str,
+                    )
+
+            if meta_raw:
+                try:
+                    meta = json.loads(meta_raw)
+                    quote_number = meta.get("quote_number", "DRAFT")
+                except Exception:
+                    logger.warning(
+                        "Failed to parse quotation meta for conv %s", conv_id_str,
+                    )
+
+            # Send PDF to client via Wazzup if available
+            wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
+            try:
+                if pdf_bytes:
+                    try:
+                        await wazzup.send_media(
+                            chat_id=phone,
+                            content=pdf_bytes,
+                            content_type="application/pdf",
+                            caption=f"Your quotation: {quote_number}",
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to send PDF to client for conv %s", conv_id_str,
+                        )
+                        await client.send_message(
+                            "⚠️ Не удалось отправить PDF клиенту.",
+                            chat_id=str(chat_id),
+                        )
+                else:
+                    await client.send_message(
+                        "⚠️ PDF не найден (срок хранения истёк). "
+                        "Отправлено только текстовое подтверждение.",
+                        chat_id=str(chat_id),
+                    )
+
+                # Send text confirmation
+                client_msg = (
+                    "تم تأكيد طلبك! ✅\nسيتواصل معك المدير قريباً لتأكيد التفاصيل والدفع. شكراً لاختيارك Treejar! 🌳"
+                    if language == "ar"
+                    else "Your order has been confirmed! ✅\nA manager will contact you shortly to finalize details and payment. Thank you for choosing Treejar! 🌳"
+                )
+                await wazzup.send_text(phone, client_msg)
+            except Exception:
+                logger.exception("Failed to send order decision to %s", phone)
+                await client.send_message(
+                    "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                    chat_id=str(chat_id),
+                )
+                return
+            finally:
+                await wazzup.close()
+
+            # Clean up Redis PDF/meta keys
+            try:
+                await redis_client.delete(pdf_key, meta_key)
+            except Exception:
+                logger.warning(
+                    "Failed to clean up quotation Redis keys for %s", conv_id_str,
+                )
+        else:
+            # Reject — no PDF sent, just text
+            client_msg = (
+                "شكراً لاهتمامك! 🙏\nللأسف، لم نتمكن من تأكيد هذا الطلب حالياً. سيتواصل معك أحد المديرين لمناقشة البدائل المتاحة."
+                if language == "ar"
+                else "Thank you for your interest! 🙏\nUnfortunately, we couldn't confirm this order at the moment. A manager will reach out to discuss available options."
+            )
+
+            # CR-5: Send to client FIRST, only resolve if successful
+            wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
+            try:
+                await wazzup.send_text(phone, client_msg)
+            except Exception:
+                logger.exception("Failed to send order decision to %s", phone)
+                await client.send_message(
+                    "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                    chat_id=str(chat_id),
+                )
+                return
+            finally:
+                await wazzup.close()
+
+            # Clean up Redis PDF/meta keys (if any)
+            try:
+                pdf_key = f"quotation_pdf:{conv_id_str}"
+                meta_key = f"quotation_meta:{conv_id_str}"
+                await redis_client.delete(pdf_key, meta_key)
+            except Exception:
+                logger.warning(
+                    "Failed to clean up quotation Redis keys for %s", conv_id_str,
+                )
+
+        # Save message and resolve escalation AFTER successful send
+        async with async_session_factory() as db:
+            msg = Message(
+                conversation_id=conv_uuid,
+                role="assistant",
+                content=client_msg,
+                model="manager_decision",
+            )
+            db.add(msg)
+
+            stmt = select(Conversation).where(Conversation.id == conv_uuid)
+            conv_result = await db.execute(stmt)
+            conv = conv_result.scalar_one_or_none()
+            if conv:
+                conv.escalation_status = "resolved"
+            await db.commit()
+
+        action_label = "подтверждён ✅" if is_confirm else "отклонён ❌"
+        await client.send_message(
+            f"📦 Заказ {action_label}. Ответ отправлен клиенту.",
+            chat_id=str(chat_id),
+        )
+    else:
+        await client.send_message(
+            "⚠️ Не удалось найти номер телефона клиента.",
+            chat_id=str(chat_id),
+        )
+
+

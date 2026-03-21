@@ -122,6 +122,36 @@ class TelegramClient:
 
         return await self._post("answerCallbackQuery", json=payload)
 
+    async def edit_message_reply_markup(
+        self,
+        chat_id: str | int,
+        message_id: int,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Edit inline keyboard of an existing message.
+
+        Pass reply_markup=None or empty dict to remove the keyboard.
+
+        Args:
+            chat_id: Chat identifier.
+            message_id: Message to edit.
+            reply_markup: New markup (None to remove).
+
+        Returns:
+            API response dict or None.
+        """
+        if not self.is_configured:
+            return None
+
+        payload: dict[str, Any] = {
+            "chat_id": str(chat_id),
+            "message_id": message_id,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        return await self._post("editMessageReplyMarkup", json=payload)
+
     async def send_document(
         self,
         file_bytes: bytes,

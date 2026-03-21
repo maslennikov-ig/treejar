@@ -377,6 +377,7 @@ async def create_quotation(
     # and embed them directly into the HTML for WeasyPrint.
     import asyncio
     import base64
+    import json as json_mod
 
     sem = asyncio.Semaphore(3)  # limit concurrent image downloads
 
@@ -487,21 +488,44 @@ async def create_quotation(
     html_content = render_quotation_html(pdf_context)
     pdf_bytes = await generate_pdf(html_content)
 
-    # Send via Messaging Provider
-    chat_id = ctx.deps.conversation.phone
+    # Store PDF in Redis for manager review (instead of sending directly to client)
+    conv_id_str = str(ctx.deps.conversation.id)
+    pdf_filename = f"quotation_{quote_number}.pdf"
     try:
-        await ctx.deps.messaging_client.send_media(
-            chat_id=chat_id,
-            url=None,
-            caption=f"Here is your quotation: {quote_number}",
-            content=pdf_bytes,
-            content_type="application/pdf",
+        await ctx.deps.redis.setex(
+            f"quotation_pdf:{conv_id_str}", 86400, base64.b64encode(pdf_bytes),
+        )
+        await ctx.deps.redis.setex(
+            f"quotation_meta:{conv_id_str}",
+            86400,
+            json_mod.dumps({"quote_number": quote_number, "filename": pdf_filename}),
         )
     except Exception as e:
-        logger.error(f"Failed to send PDF via Wazzup: {e}")
-        return "Generated quotation but failed to send it via WhatsApp."
+        logger.error("Failed to store PDF in Redis: %s", e)
+        return "Generated quotation but failed to save it for review."
 
-    return f"Successfully generated quotation {quote_number} and sent it to the customer via WhatsApp."
+    # Trigger manager escalation with PDF attachment
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    recent_context = f"Customer confirmed order. Quotation {quote_number} generated."
+    try:
+        await notify_manager_escalation(
+            conversation=ctx.deps.conversation,
+            reason=f"Order quotation {quote_number} requires manager approval",
+            recent_messages=[recent_context],
+            db=ctx.deps.db,
+            escalation_type=EscalationType.ORDER_CONFIRMATION,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=pdf_filename,
+        )
+    except Exception as e:
+        logger.error("Failed to send escalation with PDF: %s", e)
+
+    return (
+        f"Quotation {quote_number} has been prepared and sent to the manager for review. "
+        "The customer will receive the quotation once the manager approves it."
+    )
 
 
 @sales_agent.tool
@@ -772,7 +796,8 @@ async def process_message(
             )
 
             await notify_manager_escalation(
-                conv, escalation_eval.reason, [recent_context], db
+                conv, escalation_eval.reason, [recent_context], db,
+                escalation_type=escalation_eval.escalation_type,
             )
 
             # Instead of returning immediately, we proceed but inject a system note

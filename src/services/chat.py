@@ -34,6 +34,8 @@ WHATSAPP_IMG_RE = re.compile(r'!\[(.*?)\]\((.*?)\)')
 WHATSAPP_LINK_RE = re.compile(r'\[(.*?)\]\((.*?)\)')
 # Matches a markdown table separator row: | --- | --- | or |:---:|:---|
 WHATSAPP_TABLE_SEP_RE = re.compile(r'^\|?[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)+\|?\s*$')
+WHATSAPP_HR_RE = re.compile(r'^\s*-{3,}\s*$', flags=re.MULTILINE)
+WHATSAPP_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 
 def _convert_markdown_table(text: str) -> str:
@@ -119,7 +121,84 @@ def _format_for_whatsapp(text: str) -> str:
     # 5. Links: [text](url) -> text: url
     text = WHATSAPP_LINK_RE.sub(r'\1: \2', text)
 
+    # 6. B11: Horizontal rules --- -> empty line
+    text = WHATSAPP_HR_RE.sub('', text)
+
+    # 7. Collapse 3+ consecutive newlines into 2
+    text = WHATSAPP_MULTI_NEWLINE_RE.sub('\n\n', text)
+
     return text
+
+
+# Cooldown for re-notifying the manager (seconds)
+_ESCALATION_RENOTIFY_COOLDOWN = 300  # 5 minutes
+
+
+async def _handle_escalation_fallback(
+    conv: Any,
+    combined_text: str,
+    wazzup: WazzupProvider,
+    redis: Any,
+    db: Any,
+) -> None:
+    """Send a contextual fallback to client + re-notify manager with cooldown.
+
+    Called when a client message arrives while escalation is active.
+    Instead of silently saving the message, we:
+      1. Send a brief acknowledgement to the client (in their language).
+      2. Save the fallback as an assistant message in DB.
+      3. Re-notify the manager in Telegram (with 5-min cooldown to prevent spam).
+    """
+    lang = conv.language or "en"
+
+    # 1. Client fallback — contextual ack
+    if lang == "ar":
+        fallback = (
+            "شكراً لتواصلك! 🙏\n"
+            "تم إبلاغ المدير بطلبك وسيتواصل معك قريباً.\n"
+            "يرجى الانتظار قليلاً."
+        )
+    else:
+        fallback = (
+            "Thank you for your message! 🙏\n"
+            "A manager has been notified and will get back to you shortly.\n"
+            "Please bear with us."
+        )
+
+    await wazzup.send_text(chat_id=conv.phone, text=fallback)
+
+    # Save fallback as assistant message
+    fb_msg = Message(
+        conversation_id=conv.id,
+        role="assistant",
+        content=fallback,
+        model="fallback",
+    )
+    db.add(fb_msg)
+    await db.commit()
+
+    # 2. Re-notify manager (with cooldown)
+    cooldown_key = f"escalation_renotify:{conv.id}"
+    already_notified = await redis.get(cooldown_key)
+    if not already_notified:
+        await redis.setex(cooldown_key, _ESCALATION_RENOTIFY_COOLDOWN, "1")
+        try:
+            from src.integrations.notifications.telegram import TelegramClient
+
+            client = TelegramClient(
+                bot_token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
+            )
+            phone_display = (
+                conv.phone if conv.phone.startswith("+") else f"+{conv.phone}"
+            )
+            await client.send_message(
+                f"⚠️ <b>Клиент снова пишет</b> (эскалация активна)\n\n"
+                f'📞 <a href="tel:{phone_display}">{phone_display}</a>\n'
+                f"💬 <i>{combined_text[:200]}</i>"
+            )
+        except Exception:
+            logger.exception("Failed to re-notify manager for %s", conv.phone)
 
 
 def _determine_role(msg: WazzupIncomingMessage) -> str:
@@ -362,11 +441,28 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
         await db.commit()
 
-        # 4. Bot silencing: if escalation is active, don't call LLM
-        if conv.escalation_status not in ("none", None):
+        # 4. Escalation active: send fallback to client + re-notify manager
+        # CR-3: Skip fallback during manual_takeover — manager is handling it
+        if conv.escalation_status not in ("none", None, "manual_takeover"):
             logger.info(
-                "Escalation active (%s) for %s. Saving messages but NOT calling LLM.",
+                "Escalation active (%s) for %s. Sending fallback response.",
                 conv.escalation_status,
+                chat_id,
+            )
+            async with WazzupProvider(
+                channel_id=settings.wazzup_channel_id,
+            ) as wazzup_fallback:
+                await _handle_escalation_fallback(
+                    conv=conv,
+                    combined_text=combined_text,
+                    wazzup=wazzup_fallback,
+                    redis=redis,
+                    db=db,
+                )
+            return
+        if conv.escalation_status == "manual_takeover":
+            logger.info(
+                "Manual takeover active for %s. Skipping LLM + fallback.",
                 chat_id,
             )
             return

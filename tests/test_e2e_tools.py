@@ -247,6 +247,10 @@ class TestCreateQuotation:
 
     @pytest.mark.asyncio
     @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
+    @patch(
         "src.services.pdf.generator.render_quotation_html",
         return_value="<html>QUOTE</html>",
     )
@@ -255,8 +259,9 @@ class TestCreateQuotation:
         self,
         mock_gen_pdf: AsyncMock,
         mock_render: AsyncMock,
+        mock_notify: AsyncMock,
     ) -> None:
-        """Full quotation flow: fetch items, build PDF, send via messaging."""
+        """Full quotation flow: fetch items, build PDF, store in Redis, escalate."""
         mock_gen_pdf.return_value = b"%PDF-fake-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
@@ -275,6 +280,8 @@ class TestCreateQuotation:
         }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
+        mock_redis = AsyncMock()
+        mock_redis.setex = AsyncMock()
 
         conv = _make_conversation()
         deps = _make_deps(
@@ -283,16 +290,17 @@ class TestCreateQuotation:
             messaging_client=mock_messaging,
             crm_context={"Segment": "Wholesale"},
         )
+        deps.redis = mock_redis
         ctx = _FakeRunContext(deps=deps)
 
         items = [QuotationItem(sku="CHAIR-01", quantity=3)]
         result = await create_quotation(ctx, items)  # type: ignore[arg-type]
 
         assert "SO-0001" in result
-        assert "Successfully generated" in result
         mock_inv.get_stock_bulk.assert_awaited_once()
         mock_inv.create_sale_order.assert_awaited_once()
-        mock_messaging.send_media.assert_awaited_once()
+        mock_redis.setex.assert_awaited()
+        mock_notify.assert_awaited_once()
 
         # Verify PDF was generated with bytes
         mock_gen_pdf.assert_awaited_once()
@@ -319,12 +327,12 @@ class TestCreateQuotation:
         "src.services.pdf.generator.render_quotation_html", return_value="<html></html>"
     )
     @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
-    async def test_quotation_messaging_failure(
+    async def test_quotation_redis_failure(
         self,
         mock_gen_pdf: AsyncMock,
         mock_render: AsyncMock,
     ) -> None:
-        """When messaging fails, report the error but PDF was generated."""
+        """When Redis store fails, report the error but PDF was generated."""
         mock_gen_pdf.return_value = b"%PDF-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
@@ -343,7 +351,8 @@ class TestCreateQuotation:
         }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
-        mock_messaging.send_media.side_effect = Exception("Wazzup API timeout")
+        mock_redis = AsyncMock()
+        mock_redis.setex = AsyncMock(side_effect=Exception("Redis connection lost"))
 
         conv = _make_conversation()
         deps = _make_deps(
@@ -352,14 +361,19 @@ class TestCreateQuotation:
             messaging_client=mock_messaging,
             crm_context={"Segment": "Unknown"},
         )
+        deps.redis = mock_redis
         ctx = _FakeRunContext(deps=deps)
 
         items = [QuotationItem(sku="DESK-01", quantity=1)]
         result = await create_quotation(ctx, items)  # type: ignore[arg-type]
 
-        assert "failed to send" in result.lower()
+        assert "failed" in result.lower()
 
     @pytest.mark.asyncio
+    @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
     @patch(
         "src.services.pdf.generator.render_quotation_html",
         return_value="<html>Q</html>",
@@ -369,6 +383,7 @@ class TestCreateQuotation:
         self,
         mock_gen_pdf: AsyncMock,
         mock_render: AsyncMock,
+        mock_notify: AsyncMock,
     ) -> None:
         """Verify correct VAT (5%) and grand total are in the PDF context."""
         mock_gen_pdf.return_value = b"%PDF-bytes"
@@ -389,6 +404,8 @@ class TestCreateQuotation:
         }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
+        mock_redis = AsyncMock()
+        mock_redis.setex = AsyncMock()
 
         conv = _make_conversation()
         # No discount (Unknown segment) → rate stays 1000
@@ -398,6 +415,7 @@ class TestCreateQuotation:
             messaging_client=mock_messaging,
             crm_context={"Segment": "Unknown"},
         )
+        deps.redis = mock_redis
         ctx = _FakeRunContext(deps=deps)
 
         items = [QuotationItem(sku="TABLE-01", quantity=2)]
