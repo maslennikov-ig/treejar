@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai import RunContext
@@ -8,7 +8,11 @@ from src.models.conversation import Conversation
 
 
 @pytest.mark.asyncio
-async def test_create_quotation_tool() -> None:
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     # Setup mocks
     mock_inventory = AsyncMock()
     mock_inventory.get_stock_bulk.return_value = [
@@ -29,11 +33,20 @@ async def test_create_quotation_tool() -> None:
     mock_conversation.phone = "+1234567890"
     mock_conversation.customer_name = "Test Customer"
 
+    # Redis must be AsyncMock (not MagicMock) for setex to be awaitable
+    mock_redis = AsyncMock()
+    mock_redis.setex = AsyncMock()
+
+    mock_db = AsyncMock()
+    mock_db.flush = AsyncMock()
+
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
     deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
     deps.crm_context = None
+    deps.redis = mock_redis
+    deps.db = mock_db
     # Provide a zoho_crm mock so CRM lookup works (returns no contact → uses conversation data)
     mock_crm = AsyncMock()
     mock_crm.find_contact_by_phone.return_value = None
@@ -45,11 +58,10 @@ async def test_create_quotation_tool() -> None:
     items = [QuotationItem(sku="CHAIR-1", quantity=2)]
 
     # Patch generate_pdf at the definition module (lazy import inside function)
-    from unittest.mock import AsyncMock as AM
-    from unittest.mock import patch
-
     with (
-        patch("src.services.pdf.generator.generate_pdf", new_callable=AM) as mock_pdf,
+        patch(
+            "src.services.pdf.generator.generate_pdf", new_callable=AsyncMock
+        ) as mock_pdf,
         patch(
             "src.services.pdf.generator.render_quotation_html", return_value="<html>"
         ),
@@ -57,7 +69,6 @@ async def test_create_quotation_tool() -> None:
         mock_pdf.return_value = b"pdf_data"
         result = await create_quotation(ctx, items)
 
-    assert "Successfully generated quotation" in result
     assert "SA-001" in result
 
     # Verify Inventory calls
@@ -71,14 +82,9 @@ async def test_create_quotation_tool() -> None:
     # Verify PDF generation was called
     mock_pdf.assert_called_once()
 
-    # Verify Messaging
-    mock_messaging.send_media.assert_called_once_with(
-        chat_id="+1234567890",
-        url=None,
-        caption="Here is your quotation: SA-001",
-        content=b"pdf_data",
-        content_type="application/pdf",
-    )
+    # New flow: PDF stored in Redis + escalation notification
+    mock_redis.setex.assert_awaited()
+    mock_notify.assert_awaited_once()
 
 
 @pytest.mark.asyncio

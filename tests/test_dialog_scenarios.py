@@ -280,6 +280,10 @@ class TestScenario3QuotationFlow:
     """Customer confirms items and requests a quotation PDF."""
 
     @pytest.mark.asyncio
+    @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
     @patch(
         "src.services.pdf.generator.render_quotation_html",
@@ -291,6 +295,7 @@ class TestScenario3QuotationFlow:
         mock_gen_pdf: AsyncMock,
         mock_render: AsyncMock,
         mock_prompt: AsyncMock,
+        mock_notify: AsyncMock,
     ) -> None:
         """When customer asks for a quote, bot should call create_quotation and send PDF."""
         mock_prompt.return_value = "You are Noor. STAGE: QUOTING."
@@ -335,12 +340,18 @@ class TestScenario3QuotationFlow:
         conv = _mock_conversation(
             SalesStage.QUOTING, customer_name="Sarah", phone="+971509876543"
         )
+
+        # Redis must be AsyncMock for setex/get (not MagicMock from spec=Redis)
+        mock_redis = AsyncMock()
+        mock_redis.setex = AsyncMock()
+
         deps = _mock_deps(
             conv,
             zoho_inventory=mock_inv,
             messaging_client=mock_messaging,
             crm_context={"Segment": "Unknown"},
         )
+        deps.redis = mock_redis
 
         with sales_agent.override(model=FunctionModel(model_fn)):
             result = await sales_agent.run(
@@ -352,7 +363,9 @@ class TestScenario3QuotationFlow:
         mock_inv.get_stock_bulk.assert_awaited_once()
         mock_inv.create_sale_order.assert_awaited_once()
         mock_gen_pdf.assert_awaited_once()
-        mock_messaging.send_media.assert_awaited_once()
+        # New flow: PDF stored in Redis + escalation, not direct send_media
+        mock_redis.setex.assert_awaited()
+        mock_notify.assert_awaited_once()
 
         assert "SO-TEST-001" in result.output
 

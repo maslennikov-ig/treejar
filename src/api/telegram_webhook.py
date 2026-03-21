@@ -15,6 +15,7 @@ NOTE: This requires setting up the Telegram webhook externally
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -283,7 +284,7 @@ async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | No
 
 
 async def _handle_order_decision(
-    client: "TelegramClient",
+    client: TelegramClient,
     callback_id: str,
     chat_id: int,
     message_id: int | None,
@@ -333,31 +334,113 @@ async def _handle_order_decision(
         from src.integrations.messaging.wazzup import WazzupProvider
 
         if is_confirm:
-            client_msg = (
-                "تم تأكيد طلبك! ✅\nسيتواصل معك المدير قريباً لتأكيد التفاصيل والدفع. شكراً لاختيارك Treejar! 🌳"
-                if language == "ar"
-                else "Your order has been confirmed! ✅\nA manager will contact you shortly to finalize details and payment. Thank you for choosing Treejar! 🌳"
-            )
+            # Retrieve PDF from Redis (stored by create_quotation tool)
+            pdf_key = f"quotation_pdf:{conv_id_str}"
+            meta_key = f"quotation_meta:{conv_id_str}"
+            pdf_b64_raw = await redis_client.get(pdf_key)
+            meta_raw = await redis_client.get(meta_key)
+
+            pdf_bytes: bytes | None = None
+            quote_number = "DRAFT"
+
+            if pdf_b64_raw:
+                try:
+                    pdf_bytes = base64.b64decode(pdf_b64_raw)
+                except Exception:
+                    logger.warning(
+                        "Failed to decode PDF from Redis for conv %s", conv_id_str,
+                    )
+
+            if meta_raw:
+                try:
+                    meta = json.loads(meta_raw)
+                    quote_number = meta.get("quote_number", "DRAFT")
+                except Exception:
+                    logger.warning(
+                        "Failed to parse quotation meta for conv %s", conv_id_str,
+                    )
+
+            # Send PDF to client via Wazzup if available
+            wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
+            try:
+                if pdf_bytes:
+                    try:
+                        await wazzup.send_media(
+                            chat_id=phone,
+                            content=pdf_bytes,
+                            content_type="application/pdf",
+                            caption=f"Your quotation: {quote_number}",
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to send PDF to client for conv %s", conv_id_str,
+                        )
+                        await client.send_message(
+                            "⚠️ Не удалось отправить PDF клиенту.",
+                            chat_id=str(chat_id),
+                        )
+                else:
+                    await client.send_message(
+                        "⚠️ PDF не найден (срок хранения истёк). "
+                        "Отправлено только текстовое подтверждение.",
+                        chat_id=str(chat_id),
+                    )
+
+                # Send text confirmation
+                client_msg = (
+                    "تم تأكيد طلبك! ✅\nسيتواصل معك المدير قريباً لتأكيد التفاصيل والدفع. شكراً لاختيارك Treejar! 🌳"
+                    if language == "ar"
+                    else "Your order has been confirmed! ✅\nA manager will contact you shortly to finalize details and payment. Thank you for choosing Treejar! 🌳"
+                )
+                await wazzup.send_text(phone, client_msg)
+            except Exception:
+                logger.exception("Failed to send order decision to %s", phone)
+                await client.send_message(
+                    "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                    chat_id=str(chat_id),
+                )
+                return
+            finally:
+                await wazzup.close()
+
+            # Clean up Redis PDF/meta keys
+            try:
+                await redis_client.delete(pdf_key, meta_key)
+            except Exception:
+                logger.warning(
+                    "Failed to clean up quotation Redis keys for %s", conv_id_str,
+                )
         else:
+            # Reject — no PDF sent, just text
             client_msg = (
                 "شكراً لاهتمامك! 🙏\nللأسف، لم نتمكن من تأكيد هذا الطلب حالياً. سيتواصل معك أحد المديرين لمناقشة البدائل المتاحة."
                 if language == "ar"
                 else "Thank you for your interest! 🙏\nUnfortunately, we couldn't confirm this order at the moment. A manager will reach out to discuss available options."
             )
 
-        # CR-5: Send to client FIRST, only resolve if successful
-        wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
-        try:
-            await wazzup.send_text(phone, client_msg)
-        except Exception:
-            logger.exception("Failed to send order decision to %s", phone)
-            await client.send_message(
-                "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
-                chat_id=str(chat_id),
-            )
-            return
-        finally:
-            await wazzup.close()
+            # CR-5: Send to client FIRST, only resolve if successful
+            wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
+            try:
+                await wazzup.send_text(phone, client_msg)
+            except Exception:
+                logger.exception("Failed to send order decision to %s", phone)
+                await client.send_message(
+                    "❌ Не удалось отправить сообщение клиенту. Эскалация не закрыта.",
+                    chat_id=str(chat_id),
+                )
+                return
+            finally:
+                await wazzup.close()
+
+            # Clean up Redis PDF/meta keys (if any)
+            try:
+                pdf_key = f"quotation_pdf:{conv_id_str}"
+                meta_key = f"quotation_meta:{conv_id_str}"
+                await redis_client.delete(pdf_key, meta_key)
+            except Exception:
+                logger.warning(
+                    "Failed to clean up quotation Redis keys for %s", conv_id_str,
+                )
 
         # Save message and resolve escalation AFTER successful send
         async with async_session_factory() as db:
@@ -386,4 +469,5 @@ async def _handle_order_decision(
             "⚠️ Не удалось найти номер телефона клиента.",
             chat_id=str(chat_id),
         )
+
 
