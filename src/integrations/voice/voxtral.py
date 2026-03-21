@@ -1,7 +1,11 @@
-"""Voxtral audio transcription via OpenRouter API.
+"""Audio transcription via OpenRouter API (OpenAI SDK).
 
-Uses `mistralai/voxtral-small-24b-2507` to transcribe audio messages
-(English, Arabic, and 100+ other languages).
+Uses `openai/gpt-audio-mini` to transcribe audio messages
+(English, Arabic, Russian, and 100+ other languages).
+
+NOTE: Uses the OpenAI Python SDK (`AsyncOpenAI`) pointed at OpenRouter,
+matching the proven pattern from igor-bot.  Raw httpx was previously used
+but gpt-audio-mini silently ignored the `input_audio` block.
 """
 
 from __future__ import annotations
@@ -10,7 +14,7 @@ import base64
 import logging
 import time
 
-import httpx
+from openai import AsyncOpenAI
 
 from src.core.config import settings
 
@@ -26,25 +30,39 @@ _TRANSCRIPTION_PROMPT = (
 # Maximum audio file size (25 MB) to prevent DoS via large files
 MAX_AUDIO_SIZE = 25 * 1024 * 1024
 
+# Lazy-initialized client (created on first call)
+_client: AsyncOpenAI | None = None
+
+
+def _get_client() -> AsyncOpenAI:
+    """Get or create the OpenAI SDK client pointed at OpenRouter."""
+    global _client  # noqa: PLW0603
+    if _client is None:
+        _client = AsyncOpenAI(
+            api_key=settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+            timeout=90.0,
+            max_retries=2,
+        )
+    return _client
+
 
 async def transcribe_audio(
     audio_bytes: bytes,
     audio_format: str = "mp3",
-    client: httpx.AsyncClient | None = None,
+    client: object = None,  # kept for backward compat, ignored
 ) -> str:
-    """Transcribe audio bytes using Voxtral via OpenRouter.
+    """Transcribe audio bytes using gpt-audio-mini via OpenRouter.
 
     Args:
         audio_bytes: Raw audio file content.
         audio_format: Audio format hint (mp3, ogg, wav, etc.).
-        client: Optional reusable httpx.AsyncClient. If not provided,
-                a temporary one is created for this call.
+        client: DEPRECATED — ignored, uses internal OpenAI SDK client.
 
     Returns:
         Transcribed text string.
 
     Raises:
-        httpx.HTTPStatusError: If the API returns an error status.
         ValueError: If the response cannot be parsed or audio is too large.
     """
     if len(audio_bytes) > MAX_AUDIO_SIZE:
@@ -55,76 +73,49 @@ async def transcribe_audio(
 
     b64_audio = base64.b64encode(audio_bytes).decode("ascii")
 
-    payload: dict[str, object] = {
-        "model": settings.voxtral_model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": _TRANSCRIPTION_PROMPT},
-                    {
-                        "type": "input_audio",
-                        "input_audio": {
-                            "data": b64_audio,
-                            "format": audio_format,
-                        },
+    messages: list[dict[str, object]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": _TRANSCRIPTION_PROMPT},
+                {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": b64_audio,
+                        "format": audio_format,
                     },
-                ],
-            }
-        ],
-        # Pin to OpenAI provider to avoid routing to providers
-        # that don't support input_audio
-        "provider": {
-            "order": ["OpenAI"],
-            "allow_fallbacks": False,
-        },
-    }
+                },
+            ],
+        }
+    ]
 
     start = time.monotonic()
 
-    if client is not None:
-        response = await client.post(
-            f"{settings.openrouter_base_url}/chat/completions",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-        response.raise_for_status()
-    else:
-        async with httpx.AsyncClient(timeout=60.0) as tmp_client:
-            response = await tmp_client.post(
-                f"{settings.openrouter_base_url}/chat/completions",
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {settings.openrouter_api_key}",
-                    "Content-Type": "application/json",
-                },
-            )
-            response.raise_for_status()
+    openai_client = _get_client()
 
-    elapsed = time.monotonic() - start
-    data = response.json()
-
-    # Log provider and model for debugging routing issues
-    logger.info(
-        "OpenRouter audio response: model=%s, provider=%s, status=%d",
-        data.get("model", "?"),
-        data.get("provider", "?"),
-        response.status_code,
+    response = await openai_client.chat.completions.create(
+        model=settings.voxtral_model,
+        messages=messages,  # type: ignore[arg-type]
+        temperature=0.0,
     )
 
-    try:
-        text: str = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as exc:
-        logger.error("Unexpected Voxtral response structure: %s", data)
-        raise ValueError("Failed to parse Voxtral transcription response") from exc
+    elapsed = time.monotonic() - start
 
-    # CR-V-12: Structured metrics logging
+    text = response.choices[0].message.content
+    if text is None:
+        logger.error(
+            "Voice transcription returned None content from model %s. "
+            "Full response choices: %s",
+            settings.voxtral_model,
+            response.choices,
+        )
+        raise ValueError("Failed to parse transcription response (None content)")
+
+    # Log provider and model for debugging
     logger.info(
-        "Voxtral transcription complete: audio_size=%d bytes, format=%s, "
+        "Voxtral transcription complete: model=%s, audio_size=%d bytes, format=%s, "
         "duration=%.2fs, result_length=%d chars",
+        response.model,
         len(audio_bytes),
         audio_format,
         elapsed,
