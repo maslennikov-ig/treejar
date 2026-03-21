@@ -38,7 +38,14 @@ You are communicating via WhatsApp. Use ONLY WhatsApp-native formatting:
 - > quote (prefix line with >)
 - Numbered lists: use "1. " / "2. " etc.
 - Bullet lists: use "• " (bullet character)
-NEVER use Markdown: no **, no ## headers, no [links](url), no ![images].
+
+STRICT PROHIBITIONS:
+- NEVER use ** (double asterisks). Always use single * for bold.
+- NEVER nest bold markers: ❌ *1️⃣ *Executive Chair** → ✅ 1️⃣ *Executive Chair*
+- NEVER leave unpaired * at the start or end of a line.
+- NEVER use ## or ### headers. Use *Bold Title* instead.
+- NEVER use --- horizontal rules.
+- NEVER use [text](url) or ![alt](url) markdown syntax.
 Keep messages short and scannable — WhatsApp is a mobile messenger.
 
 **VALUE PROPOSITION**
