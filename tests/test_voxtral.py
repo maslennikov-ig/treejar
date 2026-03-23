@@ -11,6 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import base64
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,7 +33,7 @@ def _make_mock_response(content: str | None) -> MagicMock:
     return mock_resp
 
 
-def _patch_openai_client(mock_response: MagicMock) -> tuple:
+def _patch_openai_client(mock_response: MagicMock) -> tuple[Any, MagicMock]:
     """Patch _get_client to return a mock AsyncOpenAI client.
 
     Returns (patcher, mock_client) so tests can inspect call args.
