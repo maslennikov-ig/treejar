@@ -69,3 +69,15 @@ EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["web"]
+
+# ============================================================
+# Stage 4: Test runner (extends runtime with dev dependencies)
+# ============================================================
+FROM runtime AS test
+
+COPY pyproject.toml README.md /tmp/build/
+RUN pip install --no-cache-dir "/tmp/build[dev]" && rm -rf /tmp/build
+
+COPY tests/ ./tests/
+
+CMD ["test"]

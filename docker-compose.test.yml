@@ -1,0 +1,21 @@
+# Test runner compose override
+# Usage:
+#   Unit tests:        docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm test-runner
+#   Integration tests: docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm -e TEST_ARGS="-v -m integration" test-runner
+#   All tests:         docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm -e TEST_ARGS="-v --timeout=120" test-runner
+
+services:
+  test-runner:
+    build:
+      context: .
+      target: test
+    command: test
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=test
+    depends_on:
+      db:
+        condition: service_started
+      redis:
+        condition: service_started

@@ -2,6 +2,10 @@
 set -euo pipefail
 
 case "${1:-web}" in
+  test)
+    echo "Running tests..."
+    exec python -m pytest tests/ ${TEST_ARGS:--v --timeout=120 -m 'not integration'}
+    ;;
   worker)
     echo "Starting ARQ worker..."
     exec arq src.worker.WorkerSettings
@@ -53,7 +57,7 @@ with engine.begin() as conn:
     ;;
   *)
     echo "Unknown command: $1"
-    echo "Usage: entrypoint.sh [web|worker]"
+    echo "Usage: entrypoint.sh [web|worker|test]"
     exit 1
     ;;
 esac
