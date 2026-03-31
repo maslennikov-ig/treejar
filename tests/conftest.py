@@ -65,6 +65,16 @@ def integration(fn: object) -> object:
     return fn
 
 
+@pytest.fixture(autouse=True)
+async def cleanup_db_pool() -> AsyncGenerator[None, None]:
+    """Force SQLAlchemy to dispose of the connection pool after each test.
+    This prevents 'different event loop' errors when engines are reused across tests.
+    """
+    yield
+    from src.core.database import engine
+
+    await engine.dispose()
+
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
