@@ -3,7 +3,7 @@
 **Purpose**: This file serves as a memory anchor for project-specific infrastructure, deployment flows, and custom workflows.
 
 ## Environment & Deployment Infrastructure
-The project uses a single TreeJar VPS (`136.243.71.213`) to securely host both Development and Production environments in parallel, physically isolated via separate Docker Compose configurations and Nginx Host routing.
+The project currently runs on a new Hetzner VPS (`95.216.204.189`, Helsinki, 8 vCPU, 16 GB RAM) to securely host both Development and Production environments in parallel, physically isolated via separate Docker Compose configurations and Nginx Host routing.
 
 *   **Production (Stage/Prod)**
     *   **Domain**: `noor.starec.ai` (Listens on port `8002` internally via Nginx)
@@ -25,6 +25,18 @@ Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.ym
 2.  **Action**: GitHub Actions connects to the VPS via SSH (`root` or configured user) using repository secrets (`VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`).
 3.  **Execution**: It executes `scripts/vps-deploy.sh [branch_name]` on the server.
 4.  **Result**: The script updates the git tree, resets to the remote branch, and runs `docker compose up -d --build` targeting the correct `.yml` configuration.
+
+### VPS SSH Access (Agent Notes)
+*   **Host**: `95.216.204.189`
+*   **Port**: `2222`
+*   **User**: `noor-dev`
+*   **Key file**: `~/.ssh/treejar_vps` (Saved locally on agent's machine)
+*   **Role**: Agent has limited NOPASSWD sudo access to restart services and run `docker compose up -d` in `/opt/noor/`. 
+*   **SSH Config Alias**: `noor-server`
+*   **DB Reset Command** (for testing):
+    ```bash
+    ssh noor-server "docker exec treejar-prod-db-1 psql -U treejar -d treejar -c \"<SQL_HERE>\""
+    ```
 
 ## Custom Workflows & Scripts
 

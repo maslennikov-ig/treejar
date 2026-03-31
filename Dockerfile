@@ -75,8 +75,8 @@ CMD ["web"]
 # ============================================================
 FROM runtime AS test
 
-COPY pyproject.toml README.md /tmp/build/
-RUN pip install --no-cache-dir "/tmp/build[dev]" && rm -rf /tmp/build
+COPY pyproject.toml README.md ./
+RUN pip install --no-cache-dir ".[dev]"
 
 COPY tests/ ./tests/
 
