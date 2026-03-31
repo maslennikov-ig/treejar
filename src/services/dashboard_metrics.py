@@ -153,7 +153,7 @@ async def calculate_dashboard_metrics(
     seg_q = select(
         func.coalesce(Conversation.metadata_["segment"].as_string(), "unknown"),
         func.count(Conversation.id),
-    ).group_by(func.coalesce(Conversation.metadata_["segment"].as_string(), "unknown"))
+    ).group_by(text("1"))
     if period_start:
         seg_q = seg_q.where(Conversation.created_at >= period_start)
     seg_rows = await db.execute(seg_q)
