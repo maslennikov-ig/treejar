@@ -42,7 +42,7 @@ def _get_period_days(period: str) -> int:
 
 def _get_period_start(period: str) -> datetime | None:
     """Return the start datetime for the given period, or None for all_time."""
-    now = datetime.now(tz=UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     match period:
         case "day":
             return now - timedelta(days=1)
@@ -325,7 +325,7 @@ async def calculate_timeseries(
 ) -> TimeseriesResponse:
     """Calculate daily new vs returning conversation counts for the given period."""
     days = _get_period_days(period)
-    period_start = datetime.now(tz=UTC) - timedelta(days=days)
+    period_start = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
 
     # CTE: first appearance date per phone
     # Then classify each conversation on each day as new (first day) or returning
