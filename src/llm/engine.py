@@ -152,12 +152,15 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
             content = None
             content_type = None
 
-            if zoho_item_id and "inventory.zoho.com" in url:
+            if zoho_item_id and "zoho-image" not in url and "zoho" in url:
                 # Zoho DB stores image_urls but Wazzup cannot download them due to OAuth.
                 # Use our authenticated client to fetch the raw image bytes.
                 res = await ctx.deps.zoho_inventory.get_item_image(zoho_item_id)
                 if res:
                     content, content_type = res
+                else:
+                    logger.warning("Zoho image missing or could not be downloaded for item %s", zoho_item_id)
+                    return  # Early exit to avoid sending broken OAuth URL to Wazzup
 
             await ctx.deps.messaging_client.send_media(
                 chat_id=ctx.deps.conversation.phone,
