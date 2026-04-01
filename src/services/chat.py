@@ -351,7 +351,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
         try:
             async with (
-                WazzupProvider(channel_id=settings.wazzup_channel_id) as wazzup_dl,
+                WazzupProvider(channel_id=channel_id) as wazzup_dl,
                 httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as shared_client,
             ):
                 tasks = [
