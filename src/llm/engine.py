@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import SkipValidation
@@ -728,7 +729,7 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
 async def escalate_to_manager(
     ctx: RunContext[SalesDeps],
     reason: str,
-    escalation_type: str = "general",
+    escalation_type: Literal["order_confirmation", "human_requested", "general"] = "general",
 ) -> str:
     """Escalate the conversation to a human manager.
     Call this ONLY when the situation genuinely requires human intervention.
@@ -749,9 +750,7 @@ async def escalate_to_manager(
 
     Args:
         reason: Clear explanation of WHY escalation is needed.
-        escalation_type: 'order_confirmation' (concrete order),
-                         'human_requested' (customer asked for human),
-                         'general' (all other cases).
+        escalation_type: Type of escalation.
     """
     logger.info(
         "LLM Tool called: escalate_to_manager(reason=%r, type=%s)",
@@ -761,12 +760,7 @@ async def escalate_to_manager(
     from src.integrations.notifications.escalation import notify_manager_escalation
     from src.schemas.common import EscalationType
 
-    type_map = {
-        "order_confirmation": EscalationType.ORDER_CONFIRMATION,
-        "human_requested": EscalationType.HUMAN_REQUESTED,
-        "general": EscalationType.GENERAL,
-    }
-    esc_type = type_map.get(escalation_type, EscalationType.GENERAL)
+    esc_type = EscalationType(escalation_type)
 
     # Use pre-built history from SalesDeps (no extra SQL query)
     recent_messages = ctx.deps.recent_history or []

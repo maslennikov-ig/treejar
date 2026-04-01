@@ -156,51 +156,7 @@ async def test_tools_escalate_to_manager(
         notifications.notify_manager_escalation = orig_notify
 
 
-@pytest.mark.asyncio
-async def test_tools_escalate_to_manager_general_default(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    """escalate_to_manager defaults to 'general' type for unknown escalation_type."""
-    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
 
-    deps = SalesDeps(
-        db=db,
-        conversation=conv,
-        embedding_engine=engine,
-        zoho_inventory=zoho,
-        zoho_crm=zoho_crm,
-        messaging_client=messaging,
-        pii_map={},
-        redis=redis,
-    )
-
-    from pydantic_ai import RunContext
-    from pydantic_ai.usage import RunUsage
-
-    from src.llm.engine import escalate_to_manager
-
-    ctx = RunContext(
-        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
-    )
-
-    import src.integrations.notifications.escalation as notifications
-
-    orig_notify = notifications.notify_manager_escalation
-    mock_notify = AsyncMock()
-    notifications.notify_manager_escalation = mock_notify
-
-    try:
-        result = await escalate_to_manager(
-            ctx, reason="Customer complaint", escalation_type="unknown_type"
-        )
-
-        assert "Manager has been notified" in result
-        call_kwargs = mock_notify.call_args
-        assert call_kwargs.kwargs["escalation_type"].value == "general"
-    finally:
-        notifications.notify_manager_escalation = orig_notify
 
 
 @pytest.mark.asyncio
