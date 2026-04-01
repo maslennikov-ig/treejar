@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from src.core.escalation import escalation_agent
 from src.llm.engine import SalesDeps, process_message, sales_agent
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
@@ -61,18 +60,9 @@ async def test_engine_process_message_success(
 ) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
 
-    # We use `test_model` from pydantic-ai to mock responses without hitting an API
     test_model = TestModel()
 
-    # We inject the test model via the `override` context manager
-    with (
-        sales_agent.override(model=test_model),
-        escalation_agent.override(
-            model=TestModel(
-                custom_output_args={"should_escalate": False, "reason": None}
-            )
-        ),
-    ):
+    with sales_agent.override(model=test_model):
         response = await process_message(
             conversation_id=conv.id,
             combined_text="Hello, what do you sell?",
@@ -113,68 +103,103 @@ async def test_engine_process_message_db_error(
 
 
 @pytest.mark.asyncio
-async def test_engine_process_message_with_escalation(
+async def test_tools_escalate_to_manager(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
+    """escalate_to_manager tool calls notify_manager_escalation with correct args."""
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
-    from src.schemas.common import EscalationStatus
 
-    assert conv.escalation_status == EscalationStatus.NONE.value
-
-    test_model = TestModel()
-
-    # We patch the escalation_agent to force a positive hit
-    import src.core.escalation as core_escalation
-    import src.integrations.notifications.escalation as notifications
-
-    # Save original functions
-    orig_eval = core_escalation.evaluate_escalation_triggers
-    orig_notify = notifications.notify_manager_escalation
-
-    # Mock them
-    mock_eval = AsyncMock(
-        return_value=core_escalation.EscalationEvaluation(
-            should_escalate=True, reason="Test Escalation"
-        )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: I want to speak to your manager"],
     )
 
-    from typing import Any
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
 
-    async def side_effect(
-        conv_obj: Any, reason: Any, context: Any, session: Any, **kwargs: Any
-    ) -> None:
-        conv_obj.escalation_status = EscalationStatus.PENDING.value
+    from src.llm.engine import escalate_to_manager
 
-    mock_notify = AsyncMock(side_effect=side_effect)
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
 
-    core_escalation.evaluate_escalation_triggers = mock_eval
+    import src.integrations.notifications.escalation as notifications
+
+    orig_notify = notifications.notify_manager_escalation
+    mock_notify = AsyncMock()
     notifications.notify_manager_escalation = mock_notify
 
     try:
-        with sales_agent.override(model=test_model):
-            _response = await process_message(
-                conversation_id=conv.id,
-                combined_text="I want to speak to your manager right now!",
-                db=db,
-                redis=redis,
-                embedding_engine=engine,
-                zoho_client=zoho,
-                crm_client=zoho_crm,
-                messaging_client=messaging,
-            )
+        result = await escalate_to_manager(
+            ctx, reason="Customer demanded a human", escalation_type="human_requested"
+        )
 
-        # Verify internal flow
-        mock_eval.assert_awaited_once()
+        assert "Manager has been notified" in result
         mock_notify.assert_awaited_once()
 
-        # Verify the dependency injection correctly updated DB object
-        assert conv.escalation_status == EscalationStatus.PENDING.value
-
+        call_kwargs = mock_notify.call_args
+        assert call_kwargs.kwargs["escalation_type"].value == "human_requested"
+        assert call_kwargs.kwargs["reason"] == "Customer demanded a human"
+        assert call_kwargs.kwargs["recent_messages"] == [
+            "user: I want to speak to your manager"
+        ]
     finally:
-        # Restore
-        core_escalation.evaluate_escalation_triggers = orig_eval
+        notifications.notify_manager_escalation = orig_notify
+
+
+@pytest.mark.asyncio
+async def test_tools_escalate_to_manager_general_default(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """escalate_to_manager defaults to 'general' type for unknown escalation_type."""
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import escalate_to_manager
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    import src.integrations.notifications.escalation as notifications
+
+    orig_notify = notifications.notify_manager_escalation
+    mock_notify = AsyncMock()
+    notifications.notify_manager_escalation = mock_notify
+
+    try:
+        result = await escalate_to_manager(
+            ctx, reason="Customer complaint", escalation_type="unknown_type"
+        )
+
+        assert "Manager has been notified" in result
+        call_kwargs = mock_notify.call_args
+        assert call_kwargs.kwargs["escalation_type"].value == "general"
+    finally:
         notifications.notify_manager_escalation = orig_notify
 
 

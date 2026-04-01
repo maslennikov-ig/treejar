@@ -44,6 +44,7 @@ class SalesDeps:
     crm_context: dict[str, Any] | None = None
     user_query: str = ""
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
+    recent_history: list[str] | None = None  # Last N messages for escalation context
 
 
 # Allowed transitions for the advance_stage tool
@@ -723,6 +724,67 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
     return format_order_status(deal_data, order_data, language)
 
 
+@sales_agent.tool
+async def escalate_to_manager(
+    ctx: RunContext[SalesDeps],
+    reason: str,
+    escalation_type: str = "general",
+) -> str:
+    """Escalate the conversation to a human manager.
+    Call this ONLY when the situation genuinely requires human intervention.
+
+    DO NOT call this for:
+    - Simple product questions (even about wholesale, MOQ, bulk)
+    - Questions you can answer from the catalog or FAQ
+    - Price inquiries for products in stock
+
+    DO call this for:
+    - Customer places a concrete large order with quantities and delivery details
+    - Customer explicitly asks to speak to a human/manager
+    - Complaints about existing orders (damaged, delayed, wrong product)
+    - Request for refund/return
+    - Highly technical questions you cannot answer
+    - Customer threatening legal action
+    - Customization requests not in catalog
+
+    Args:
+        reason: Clear explanation of WHY escalation is needed.
+        escalation_type: 'order_confirmation' (concrete order),
+                         'human_requested' (customer asked for human),
+                         'general' (all other cases).
+    """
+    logger.info(
+        "LLM Tool called: escalate_to_manager(reason=%r, type=%s)",
+        reason,
+        escalation_type,
+    )
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    type_map = {
+        "order_confirmation": EscalationType.ORDER_CONFIRMATION,
+        "human_requested": EscalationType.HUMAN_REQUESTED,
+        "general": EscalationType.GENERAL,
+    }
+    esc_type = type_map.get(escalation_type, EscalationType.GENERAL)
+
+    # Use pre-built history from SalesDeps (no extra SQL query)
+    recent_messages = ctx.deps.recent_history or []
+
+    await notify_manager_escalation(
+        conversation=ctx.deps.conversation,
+        reason=reason,
+        recent_messages=recent_messages,
+        db=ctx.deps.db,
+        escalation_type=esc_type,
+    )
+
+    return (
+        "Manager has been notified. Acknowledge the customer's request politely "
+        "and let them know a human manager will review their conversation shortly."
+    )
+
+
 async def process_message(
     conversation_id: UUID,
     combined_text: str,
@@ -774,35 +836,13 @@ async def process_message(
     masked_text, new_piis = mask_pii(combined_text)
     pii_map.update(new_piis)
 
-    # Evaluate escalation triggers (Task 6)
-    from src.core.escalation import evaluate_escalation_triggers
-    from src.schemas.common import EscalationStatus
-
-    # Only evaluate if not already escalated
-    if conv.escalation_status == EscalationStatus.NONE.value:
-        escalation_eval = await evaluate_escalation_triggers(masked_text)
-        if escalation_eval.should_escalate and escalation_eval.reason:
-            from src.integrations.notifications.escalation import (
-                notify_manager_escalation,
-            )
-
-            # Get last 5 messages for context
-            recent_context = "\n".join(
-                [
-                    f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}"
-                    for msg in history[-5:]
-                ]
-                + [f"user: {masked_text}"]
-            )
-
-            await notify_manager_escalation(
-                conv, escalation_eval.reason, [recent_context], db,
-                escalation_type=escalation_eval.escalation_type,
-            )
-
-            # Instead of returning immediately, we proceed but inject a system note
-            # so the LLM responds politely indicating a human will follow up.
-            masked_text += "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"
+    # Escalation is now handled by the agent's escalate_to_manager tool.
+    # The agent decides when to escalate based on full conversation context.
+    # Build recent history for potential escalation context
+    recent_history = [
+        f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}"
+        for msg in history[-5:]
+    ] + [f"user: {masked_text}"]
 
     deps = SalesDeps(
         db=db,
@@ -815,6 +855,7 @@ async def process_message(
         pii_map=pii_map,
         crm_context=crm_context,
         user_query=masked_text,
+        recent_history=recent_history,
     )
 
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)
