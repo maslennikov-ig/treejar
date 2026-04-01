@@ -174,7 +174,7 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
         desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {discounted_price:.2f} {r.currency} (Your segment price)\nDescription: {r.description_en}"
 
         if r.image_url:
-            desc += f"\nImage: {r.image_url}"
+            desc += "\n[Note: Image of this product has been automatically sent to the customer's WhatsApp. Do not mention or include image URLs in your response.]"
             send_tasks.append(
                 _safe_send_media(
                     url=r.image_url,
