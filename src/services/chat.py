@@ -127,6 +127,9 @@ def _format_for_whatsapp(text: str) -> str:
     # 7. Collapse 3+ consecutive newlines into 2
     text = WHATSAPP_MULTI_NEWLINE_RE.sub('\n\n', text)
 
+    # 8. Final cleanup: strip any remaining ** or *** (e.g. nested bold from LLM)
+    text = text.replace('***', '').replace('**', '')
+
     return text
 
 
