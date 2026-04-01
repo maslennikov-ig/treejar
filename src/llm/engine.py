@@ -147,12 +147,24 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
 
     import asyncio
 
-    async def _safe_send_media(url: str, caption: str) -> None:
+    async def _safe_send_media(url: str, caption: str, zoho_item_id: str | None = None) -> None:
         try:
+            content = None
+            content_type = None
+
+            if zoho_item_id and "inventory.zoho.com" in url:
+                # Zoho DB stores image_urls but Wazzup cannot download them due to OAuth.
+                # Use our authenticated client to fetch the raw image bytes.
+                res = await ctx.deps.zoho_inventory.get_item_image(zoho_item_id)
+                if res:
+                    content, content_type = res
+
             await ctx.deps.messaging_client.send_media(
                 chat_id=ctx.deps.conversation.phone,
-                url=url,
+                url=url if not content else None,
                 caption=caption,
+                content=content,
+                content_type=content_type,
             )
         except Exception as e:
             logger.warning("Failed to send product image: %s", e, exc_info=True)
@@ -166,7 +178,8 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
             send_tasks.append(
                 _safe_send_media(
                     url=r.image_url,
-                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}"
+                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
+                    zoho_item_id=getattr(r, "zoho_item_id", None),
                 )
             )
 
