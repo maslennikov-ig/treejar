@@ -101,7 +101,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
             faq_block += f"Q: {item['title']}\nA: {item['content']}\n---\n"
         faq_block += (
             "Use the above FAQ entries when answering. "
-            "If the answer is NOT in the FAQ, do NOT make up information.\n"
+            "If the answer is NOT in the FAQ, do NOT make up information. "
+            "WARNING: If the user asks for specific products or catalog items (e.g. chairs, tables), "
+            "you MUST call the `search_products` tool. Do not rely solely on the FAQ for products because the tool fetches live images!\n"
         )
         base_prompt += faq_block
 
