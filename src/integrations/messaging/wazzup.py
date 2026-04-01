@@ -56,6 +56,7 @@ class WazzupProvider(MessagingProvider):
                 return response
 
             except httpx.HTTPStatusError as e:
+                logger.error("Wazzup HTTP error %s: %s", e.response.status_code, e.response.text)
                 # 429 Too Many Requests
                 if e.response.status_code == 429 and attempt < max_retries:
                     await asyncio.sleep(2**attempt)

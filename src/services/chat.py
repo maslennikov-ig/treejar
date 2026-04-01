@@ -265,6 +265,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
 
+    # Determine channel_id from incoming messages or fallback to settings
+    channel_id = next((m.channelId for m in messages if m.channelId), settings.wazzup_channel_id)
+
     # Determine roles for each message
     has_manager_message = any(m.authorType == "manager" for m in messages)
     manager_name = next(
@@ -457,7 +460,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 chat_id,
             )
             async with WazzupProvider(
-                channel_id=settings.wazzup_channel_id,
+                channel_id=channel_id,
             ) as wazzup_fallback:
                 await _handle_escalation_fallback(
                     conv=conv,
@@ -482,7 +485,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             ZohoInventoryClient(redis_client=redis) as zoho_client,
             ZohoCRMClient(redis_client=redis) as crm_client,
             WazzupProvider(
-                channel_id=settings.wazzup_channel_id,
+                channel_id=channel_id,
             ) as wazzup_provider,
         ):
             logger.info("Calling LLM for %s (timeout=%ds)", chat_id, LLM_TIMEOUT)
