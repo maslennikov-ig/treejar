@@ -1,0 +1,28 @@
+# Orchestrator Handoff
+
+Updated: 2026-04-02
+Current baseline branch: `develop`
+Current baseline commit: `a9f0c0a40f73e124202a331050f92d734f0ef925`
+
+## Current repo state
+
+- Repo-local orchestration is intentionally minimal here: `.codex/orchestrator.toml` plus this handoff file only.
+- `.gitignore` already allows those two files to be tracked; no broader `.codex/` ignore change was needed.
+- Existing local `.codex/config.toml` in the primary worktree was reviewed for this setup and left untouched.
+- Prefer dedicated worktrees for orchestration work; the primary worktree may contain unrelated local-only changes.
+- `bd ready` crashed in this environment while this handoff was prepared, so fall back to `.beads/issues.jsonl` and targeted `bd show <id>` queries if task selection is blocked.
+
+## Open follow-ups / nearest ready tasks
+
+- `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
+- `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
+- `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
+- Secondary ready validation work: `tj-084.2` and `tj-084.3` under open epic `tj-084`
+
+## Rules for the next orchestrator
+
+- Read `AGENTS.md`, `README.md`, and `.codex/orchestrator.toml` first; read `.codex/config.toml` too if it exists locally.
+- Keep simple process-only tasks local; switch to orchestration when scope becomes multi-file, docs-sensitive, schema-sensitive, route-expanding, or parallel.
+- Use dedicated worktrees with strict write zones and avoid unrelated local changes in the primary worktree.
+- Keep reviews findings-first and do not treat a stage as closed until fresh local verification is done.
+- Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
