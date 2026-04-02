@@ -1,0 +1,77 @@
+schema_version = 1
+role = "technical-orchestrator"
+beads_dir = "/home/me/code/treejar/.beads"
+handoff_file = ".codex/handoff.md"
+
+[execution]
+default_mode = "hybrid"
+simple_task_max_files = 2
+simple_task_max_minutes = 15
+
+[execution.simple_task_policy]
+do_locally = true
+use_beads_if_handoff_needed = true
+disallow_if_schema_change = true
+disallow_if_route_expansion = true
+disallow_if_docs_sensitive = true
+disallow_if_parallel_work_needed = true
+
+[execution.medium_complex_policy]
+orchestrate = true
+require_repo_context_first = true
+require_beads_tracking = true
+require_local_review_before_close = true
+require_local_verification_before_close = true
+
+[docs]
+required_read_paths = [
+  "AGENTS.md",
+  "README.md",
+]
+optional_read_paths = [
+  ".codex/config.toml",
+]
+stage_close_update_paths = [
+  ".codex/handoff.md",
+]
+runtime_contract_update_paths = [
+  "README.md",
+  ".codex/handoff.md",
+]
+rules = [
+  "Update .codex/handoff.md when a stage closes or the next recommended work changes.",
+  "Update README.md only when operator-facing workflow, verification, or runtime instructions change.",
+  "Do not churn docs for internal-only changes.",
+]
+
+[workflow]
+require_context7_for_docs_sensitive_changes = true
+
+[delegation]
+require_base_branch_and_commit = true
+require_dedicated_worktree = true
+require_strict_write_zone = true
+require_clean_git_status = true
+require_short_completion_message = true
+
+[review]
+format = "findings-first"
+allowed_decisions = ["merge", "fix", "split", "defer"]
+
+[verification]
+process_only_commands = [
+  "git diff --check",
+  "git status --short",
+]
+code_change_commands = [
+  "ruff check src/ tests/",
+  "mypy src/",
+  "pytest tests/ -v",
+]
+
+[session_completion]
+required_commands = [
+  "git pull --rebase",
+  "bd sync",
+  "git push",
+]
