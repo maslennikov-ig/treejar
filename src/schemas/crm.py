@@ -23,7 +23,7 @@ class ContactRead(UUIDModel):
     email: str | None = None
     company: str | None = None
     zoho_contact_id: str | None = None
-    segment: str | None = None
+    segment: str | list[str] | None = None
     created_at: datetime
 
 

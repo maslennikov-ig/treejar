@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
 from src.models.conversation import Conversation
+from src.models.escalation import Escalation
 from src.schemas.common import EscalationStatus, EscalationType
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,15 @@ async def notify_manager_escalation(
         len(recent_messages),
     )
 
-    # Set the escalation state in the database
+    # Persist the escalation row so manager-review jobs and audit paths can track it.
     conversation.escalation_status = EscalationStatus.PENDING.value
+    db.add(
+        Escalation(
+            conversation_id=conversation.id,
+            reason=reason,
+            status=EscalationStatus.PENDING.value,
+        )
+    )
     await db.commit()
 
     # Send Telegram notification with action buttons (non-blocking)

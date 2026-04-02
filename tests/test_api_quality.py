@@ -43,6 +43,35 @@ async def test_list_reviews_with_filters() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_reviews_normalizes_legacy_object_criteria() -> None:
+    """GET /reviews/ tolerates legacy rows where criteria is stored as {}."""
+    from datetime import datetime
+
+    mock_review = MagicMock()
+    mock_review.id = uuid4()
+    mock_review.conversation_id = uuid4()
+    mock_review.total_score = 0.0
+    mock_review.max_score = 30
+    mock_review.rating = "poor"
+    mock_review.criteria = {}
+    mock_review.summary = None
+    mock_review.reviewer = "ai"
+    mock_review.created_at = datetime(2026, 4, 2, 12, 0, 0)
+
+    with patch("src.api.v1.quality.get_reviews") as mock_get:
+        mock_get.return_value = ([mock_review], 1)
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.get("/api/v1/quality/reviews/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["criteria"] == []
+
+
+@pytest.mark.asyncio
 async def test_create_review_success() -> None:
     """POST /reviews/ should return 201 with QualityReviewRead."""
     from src.quality.schemas import CriterionScore, EvaluationResult

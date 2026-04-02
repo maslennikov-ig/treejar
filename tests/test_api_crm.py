@@ -50,6 +50,29 @@ async def test_get_contact_found(
 
 
 @pytest.mark.asyncio
+async def test_get_contact_found_with_multiselect_segment(
+    override_get_crm_client: None, mock_crm: AsyncMock
+) -> None:
+    mock_crm.find_contact_by_phone.return_value = {
+        "id": "123",
+        "Phone": "123456789",
+        "First_Name": "Jane",
+        "Last_Name": "Doe",
+        "Email": "jane@example.com",
+        "Created_Time": "2026-02-26T12:00:00+00:00",
+        "Segment": ["Wholesale"],
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/crm/contacts/123456789")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["segment"] == ["Wholesale"]
+
+
+@pytest.mark.asyncio
 async def test_get_contact_not_found(
     override_get_crm_client: None, mock_crm: AsyncMock
 ) -> None:

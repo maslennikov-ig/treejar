@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -8,6 +8,7 @@ from scripts.escalation_guard import maybe_suppress_external_escalation_alerts
 
 from src.integrations.notifications.escalation import notify_manager_escalation
 from src.models.conversation import Conversation
+from src.models.escalation import Escalation
 from src.schemas.common import EscalationStatus, EscalationType, SalesStage
 
 
@@ -25,6 +26,7 @@ async def test_helper_suppresses_telegram_but_preserves_escalation_state(
         language="en",
     )
     db = AsyncMock()
+    db.add = MagicMock()
 
     with maybe_suppress_external_escalation_alerts() as mocks:
         await notify_manager_escalation(
@@ -37,6 +39,12 @@ async def test_helper_suppresses_telegram_but_preserves_escalation_state(
 
     assert mocks is not None
     assert conversation.escalation_status == EscalationStatus.PENDING.value
+    db.add.assert_called_once()
+    saved_escalation = db.add.call_args.args[0]
+    assert isinstance(saved_escalation, Escalation)
+    assert saved_escalation.conversation_id == conversation.id
+    assert saved_escalation.reason == "Customer requested a manager"
+    assert saved_escalation.status == EscalationStatus.PENDING.value
     db.commit.assert_awaited_once()
     mocks.send_message_with_inline_keyboard.assert_awaited_once()
     mocks.send_document.assert_not_awaited()

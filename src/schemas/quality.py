@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .common import QualityRating, UUIDModel
 
@@ -34,6 +35,25 @@ class QualityReviewRead(UUIDModel):
     summary: str | None = None
     reviewer: str
     created_at: datetime
+
+    @field_validator("criteria", mode="before")
+    @classmethod
+    def normalize_legacy_criteria(cls, value: Any) -> Any:
+        """Tolerate legacy rows where criteria was stored as a JSON object."""
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            if not value:
+                return []
+            if {"rule_number", "rule_name", "score"}.issubset(value):
+                return [value]
+            values = list(value.values())
+            if all(isinstance(item, dict) for item in values):
+                return values
+            return []
+        return value
 
 
 class QualityReportRequest(BaseModel):

@@ -74,6 +74,7 @@ async def test_escalation_with_pdf_sends_document(
 
     mock_conv = _make_fake_conv(escalation_status="none")
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()
 
     await notify_manager_escalation(
         conversation=mock_conv,
@@ -114,6 +115,7 @@ async def test_escalation_without_pdf_no_document(
 
     mock_conv = _make_fake_conv(escalation_status="none")
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()
 
     await notify_manager_escalation(
         conversation=mock_conv,
