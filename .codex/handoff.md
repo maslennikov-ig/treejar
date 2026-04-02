@@ -16,6 +16,7 @@ Current baseline branch: `main`
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
+- `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-19ol.3.2` — P1 bug: `/api/v1/quality/reviews/` returns 500 on canonical env
 - `tj-19ol.3.4` — P1 bug: `/api/v1/crm/contacts/{phone}` returns 500 on canonical env
@@ -34,4 +35,4 @@ Current baseline branch: `main`
 - Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
 - Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.
-- The current active execution stage is `tj-19ol.3`: repo-side auth fail-open fix from `tj-19ol.3.1` is done and verified, and repo-side workflow/docs drift was partially fixed in `ac00294` by switching CI SSH to port `2222`. The current blocker is now external to the repo: CI run `23899200755` reaches the deploy step but fails with `dial tcp ***:2222: i/o timeout`, so the next realistic step is to validate `VPS_HOST`/SSH secrets and network reachability to the canonical host before rechecking `tj-19ol.3.2` / `tj-19ol.3.4` and resuming controlled live smoke on `https://noor.starec.ai`.
+- The current active execution stage is `tj-19ol.3`: repo-side auth fail-open fix from `tj-19ol.3.1` is done and verified, and repo-side workflow/docs drift was partially fixed in `ac00294` by switching CI SSH to port `2222`. The current blocker is now verified as server-side provisioning drift: CI run `23900085133` reaches the target host and authenticates over SSH, but fails immediately because `/opt/treejar-prod` does not exist. Direct SSH checks confirm that the live runtime is under `/opt/noor`, that directory has no `.git` checkout, and `noor-dev` cannot access Docker. The next realistic step is `tj-5ypi`: align the VPS deploy contract before any further canonical recheck, before `tj-19ol.3.2` / `tj-19ol.3.4`, and before resuming controlled live smoke on `https://noor.starec.ai`.
