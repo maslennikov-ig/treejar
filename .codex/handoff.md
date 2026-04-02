@@ -5,8 +5,8 @@ Current baseline branch: `main`
 
 ## Current repo state
 
-- Repo-local orchestration is intentionally minimal here: `.codex/orchestrator.toml` plus this handoff file only.
-- `.gitignore` already allows those two files to be tracked; no broader `.codex/` ignore change was needed.
+- Repo-local orchestration is intentionally minimal here: tracked contract files live in `.codex/`, while delegated agent reports are local-only under `.codex/agent-reports/`.
+- `.gitignore` tracks the repo-local contract files and keeps delegated agent reports under `.codex/agent-reports/` local-only.
 - Existing local `.codex/config.toml` in the primary worktree was reviewed for this setup and left untouched.
 - The repository now operates in a main-only workflow: promote finished work directly into `main` instead of treating `develop` as a required intermediate branch.
 - Prefer dedicated worktrees for orchestration work when the primary worktree contains unrelated local-only changes.

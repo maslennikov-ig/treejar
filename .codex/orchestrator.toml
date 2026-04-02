@@ -3,7 +3,7 @@ role = "technical-orchestrator"
 beads_dir = ".beads"
 handoff_file = ".codex/handoff.md"
 report_template = ".codex/report-template.md"
-report_path_template = "docs/reports/agent-reports/{date}/{task_id}.md"
+report_path_template = ".codex/agent-reports/{date}/{task_id}.md"
 
 [execution]
 default_mode = "hybrid"
