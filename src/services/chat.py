@@ -27,15 +27,19 @@ logger = logging.getLogger(__name__)
 LLM_TIMEOUT = 120
 
 # WhatsApp Formatting Regexes
-WHATSAPP_HEADERS_RE = re.compile(r'^#{1,6}\s*\*{0,3}\s*(.+?)\s*\*{0,3}\s*$', flags=re.MULTILINE)
-WHATSAPP_BOLD_RE = re.compile(r'\*{2,3}(.*?)\*{2,3}')
-WHATSAPP_INLINE_CODE_RE = re.compile(r'(?<!`)(`)([^`]+)\1(?!`)')
-WHATSAPP_IMG_RE = re.compile(r'!\[(.*?)\]\((.*?)\)')
-WHATSAPP_LINK_RE = re.compile(r'\[(.*?)\]\((.*?)\)')
+WHATSAPP_HEADERS_RE = re.compile(
+    r"^#{1,6}\s*\*{0,3}\s*(.+?)\s*\*{0,3}\s*$", flags=re.MULTILINE
+)
+WHATSAPP_BOLD_RE = re.compile(r"\*{2,3}(.*?)\*{2,3}")
+WHATSAPP_INLINE_CODE_RE = re.compile(r"(?<!`)(`)([^`]+)\1(?!`)")
+WHATSAPP_IMG_RE = re.compile(r"!\[(.*?)\]\((.*?)\)")
+WHATSAPP_LINK_RE = re.compile(r"\[(.*?)\]\((.*?)\)")
 # Matches a markdown table separator row: | --- | --- | or |:---:|:---|
-WHATSAPP_TABLE_SEP_RE = re.compile(r'^\|?[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)+\|?\s*$')
-WHATSAPP_HR_RE = re.compile(r'^\s*-{3,}\s*$', flags=re.MULTILINE)
-WHATSAPP_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
+WHATSAPP_TABLE_SEP_RE = re.compile(
+    r"^\|?[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)+\|?\s*$"
+)
+WHATSAPP_HR_RE = re.compile(r"^\s*-{3,}\s*$", flags=re.MULTILINE)
+WHATSAPP_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 
 
 def _convert_markdown_table(text: str) -> str:
@@ -51,7 +55,7 @@ def _convert_markdown_table(text: str) -> str:
     *Col2:* val2
     (blank line between rows)
     """
-    lines = text.split('\n')
+    lines = text.split("\n")
     result: list[str] = []
     i = 0
 
@@ -60,7 +64,7 @@ def _convert_markdown_table(text: str) -> str:
         if i >= 1 and WHATSAPP_TABLE_SEP_RE.match(lines[i]):
             # Header is the line before the separator
             header_line = lines[i - 1]
-            headers = [h.strip() for h in header_line.strip().strip('|').split('|')]
+            headers = [h.strip() for h in header_line.strip().strip("|").split("|")]
             headers = [h for h in headers if h]
 
             if not headers:
@@ -77,22 +81,26 @@ def _convert_markdown_table(text: str) -> str:
 
             # Process data rows
             data_rows: list[str] = []
-            while i < len(lines) and '|' in lines[i] and not lines[i].strip().startswith('#'):
-                cells = [c.strip() for c in lines[i].strip().strip('|').split('|')]
+            while (
+                i < len(lines)
+                and "|" in lines[i]
+                and not lines[i].strip().startswith("#")
+            ):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
                 row_parts: list[str] = []
                 for col_idx, cell in enumerate(cells):
                     if col_idx < len(headers) and cell:
                         row_parts.append(f"*{headers[col_idx]}:* {cell}")
                 if row_parts:
-                    data_rows.append('\n'.join(row_parts))
+                    data_rows.append("\n".join(row_parts))
                 i += 1
 
-            result.append('\n\n'.join(data_rows))
+            result.append("\n\n".join(data_rows))
         else:
             result.append(lines[i])
             i += 1
 
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 def _format_for_whatsapp(text: str) -> str:
@@ -107,25 +115,28 @@ def _format_for_whatsapp(text: str) -> str:
     text = _convert_markdown_table(text)
 
     # 1. Headers: ### Title or ### **Title** -> *Title*
-    text = WHATSAPP_HEADERS_RE.sub(r'*\1*', text)
+    text = WHATSAPP_HEADERS_RE.sub(r"*\1*", text)
 
     # 2. Bold/Italic-Bold: ***text*** or **text** -> *text*
-    text = WHATSAPP_BOLD_RE.sub(r'*\1*', text)
+    text = WHATSAPP_BOLD_RE.sub(r"*\1*", text)
 
     # 3. Inline Code: `text` -> ```text```
-    text = WHATSAPP_INLINE_CODE_RE.sub(r'```\2```', text)
+    text = WHATSAPP_INLINE_CODE_RE.sub(r"```\2```", text)
 
     # 4. Image markdown: ![alt](url) -> alt
-    text = WHATSAPP_IMG_RE.sub(r'\1', text)
+    text = WHATSAPP_IMG_RE.sub(r"\1", text)
 
     # 5. Links: [text](url) -> text: url
-    text = WHATSAPP_LINK_RE.sub(r'\1: \2', text)
+    text = WHATSAPP_LINK_RE.sub(r"\1: \2", text)
 
     # 6. B11: Horizontal rules --- -> empty line
-    text = WHATSAPP_HR_RE.sub('', text)
+    text = WHATSAPP_HR_RE.sub("", text)
 
     # 7. Collapse 3+ consecutive newlines into 2
-    text = WHATSAPP_MULTI_NEWLINE_RE.sub('\n\n', text)
+    text = WHATSAPP_MULTI_NEWLINE_RE.sub("\n\n", text)
+
+    # 8. Final cleanup: strip any remaining ** or *** (e.g. nested bold from LLM)
+    text = text.replace("***", "").replace("**", "")
 
     return text
 
@@ -266,7 +277,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
 
     # Determine channel_id from incoming messages or fallback to settings
-    channel_id = next((m.channelId for m in messages if m.channelId), settings.wazzup_channel_id)
+    channel_id = next(
+        (m.channelId for m in messages if m.channelId), settings.wazzup_channel_id
+    )
 
     # Determine roles for each message
     has_manager_message = any(m.authorType == "manager" for m in messages)
@@ -279,7 +292,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     # Check for audio/voice messages and transcribe them
     audio_results: dict[str, dict[str, str]] = {}
     audio_messages = [
-        m for m in messages if m.type in ("audio", "voice") and (m.contentUri or (m.media and m.media.url))
+        m
+        for m in messages
+        if m.type in ("audio", "voice") and (m.contentUri or (m.media and m.media.url))
     ]
 
     if audio_messages:
@@ -291,7 +306,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             shared_client: httpx.AsyncClient,
         ) -> tuple[str, str | None, str | None]:
             msg_id = audio_msg.messageId or ""
-            audio_url = audio_msg.contentUri or (audio_msg.media.url if audio_msg.media else None)
+            audio_url = audio_msg.contentUri or (
+                audio_msg.media.url if audio_msg.media else None
+            )
 
             if not audio_url:
                 return msg_id, None, None
@@ -320,7 +337,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         "[System: Unreadable voice message (file too large)]",
                     )
 
-                mime = (audio_msg.media.mimeType if audio_msg.media else "").split(";")[0].strip()
+                mime = (
+                    (audio_msg.media.mimeType if audio_msg.media else "")
+                    .split(";")[0]
+                    .strip()
+                )
                 format_map = {
                     "audio/ogg": "ogg",
                     "audio/mpeg": "mp3",
@@ -342,7 +363,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
             except Exception:
                 logger.exception("Failed to process audio message for %s", chat_id)
-                url = audio_msg.contentUri or (audio_msg.media.url if audio_msg.media else None)
+                url = audio_msg.contentUri or (
+                    audio_msg.media.url if audio_msg.media else None
+                )
                 return (
                     msg_id,
                     url,

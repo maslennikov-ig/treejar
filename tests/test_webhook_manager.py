@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from src.main import app
 
 client = TestClient(app)
+EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
 
 
 @pytest.fixture(autouse=True)
@@ -37,14 +38,15 @@ def test_client_message_processed() -> None:
                 "chatType": "whatsapp",
                 "text": "Hello!",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567890,
                 "authorType": "client",
             }
         ]
     }
 
-    response = client.post("/api/v1/webhook/wazzup", json=payload)
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
@@ -64,7 +66,7 @@ def test_manager_message_processed() -> None:
                 "chatType": "whatsapp",
                 "text": "I'll handle this client",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567890,
                 "authorType": "manager",
                 "isEcho": True,
@@ -74,7 +76,8 @@ def test_manager_message_processed() -> None:
         ]
     }
 
-    response = client.post("/api/v1/webhook/wazzup", json=payload)
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
@@ -94,7 +97,7 @@ def test_bot_message_skipped() -> None:
                 "chatType": "whatsapp",
                 "text": "Bot auto-reply",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567890,
                 "authorType": "bot",
                 "isEcho": False,
@@ -102,7 +105,8 @@ def test_bot_message_skipped() -> None:
         ]
     }
 
-    response = client.post("/api/v1/webhook/wazzup", json=payload)
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
@@ -122,13 +126,14 @@ def test_missing_author_type_treated_as_client() -> None:
                 "chatType": "whatsapp",
                 "text": "Hi there",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567890,
             }
         ]
     }
 
-    response = client.post("/api/v1/webhook/wazzup", json=payload)
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
 
     assert response.status_code == 200
     mock_redis.rpush.assert_called_once()
@@ -147,7 +152,7 @@ def test_mixed_batch_routes_correctly() -> None:
                 "chatType": "whatsapp",
                 "text": "Client msg",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567890,
                 "authorType": "client",
             },
@@ -157,16 +162,45 @@ def test_mixed_batch_routes_correctly() -> None:
                 "chatType": "whatsapp",
                 "text": "Bot echo",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567891,
                 "authorType": "bot",
             },
         ]
     }
 
-    response = client.post("/api/v1/webhook/wazzup", json=payload)
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
 
     assert response.status_code == 200
     # Only 1 message pushed (client), bot skipped
     assert mock_redis.rpush.call_count == 1
     assert mock_arq.enqueue_job.call_count == 1
+
+
+def test_unexpected_channel_skipped() -> None:
+    """Messages from another Wazzup channel are ignored."""
+    mock_redis, mock_arq = _setup_mocks()
+
+    payload = {
+        "messages": [
+            {
+                "messageId": "msg-foreign",
+                "chatId": "971501234567",
+                "chatType": "whatsapp",
+                "text": "Need a manager now",
+                "type": "text",
+                "channelId": "foreign-channel-id",
+                "timestamp": 1234567890,
+                "authorType": "client",
+            }
+        ]
+    }
+
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    mock_redis.rpush.assert_not_called()
+    mock_arq.enqueue_job.assert_not_called()

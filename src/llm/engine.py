@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import SkipValidation
@@ -44,6 +44,7 @@ class SalesDeps:
     crm_context: dict[str, Any] | None = None
     user_query: str = ""
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
+    recent_history: list[str] | None = None  # Last N messages for escalation context
 
 
 # Allowed transitions for the advance_stage tool
@@ -99,7 +100,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
             faq_block += f"Q: {item['title']}\nA: {item['content']}\n---\n"
         faq_block += (
             "Use the above FAQ entries when answering. "
-            "If the answer is NOT in the FAQ, do NOT make up information.\n"
+            "If the answer is NOT in the FAQ, do NOT make up information. "
+            "WARNING: If the user asks for specific products or catalog items (e.g. chairs, tables), "
+            "you MUST call the `search_products` tool. Do not rely solely on the FAQ for products because the tool fetches live images!\n"
         )
         base_prompt += faq_block
 
@@ -145,12 +148,32 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
 
     import asyncio
 
-    async def _safe_send_media(url: str, caption: str) -> None:
+    async def _safe_send_media(
+        url: str, caption: str, zoho_item_id: str | None = None
+    ) -> None:
         try:
+            content = None
+            content_type = None
+
+            if zoho_item_id and "zoho-image" not in url and "zoho" in url:
+                # Zoho DB stores image_urls but Wazzup cannot download them due to OAuth.
+                # Use our authenticated client to fetch the raw image bytes.
+                res = await ctx.deps.zoho_inventory.get_item_image(zoho_item_id)
+                if res:
+                    content, content_type = res
+                else:
+                    logger.warning(
+                        "Zoho image missing or could not be downloaded for item %s",
+                        zoho_item_id,
+                    )
+                    return  # Early exit to avoid sending broken OAuth URL to Wazzup
+
             await ctx.deps.messaging_client.send_media(
                 chat_id=ctx.deps.conversation.phone,
-                url=url,
+                url=url if not content else None,
                 caption=caption,
+                content=content,
+                content_type=content_type,
             )
         except Exception as e:
             logger.warning("Failed to send product image: %s", e, exc_info=True)
@@ -160,11 +183,12 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
         desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {discounted_price:.2f} {r.currency} (Your segment price)\nDescription: {r.description_en}"
 
         if r.image_url:
-            desc += f"\nImage: {r.image_url}"
+            desc += "\n[Note: Image of this product has been automatically sent to the customer's WhatsApp. Do not mention or include image URLs in your response.]"
             send_tasks.append(
                 _safe_send_media(
                     url=r.image_url,
-                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}"
+                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
+                    zoho_item_id=getattr(r, "zoho_item_id", None),
                 )
             )
 
@@ -394,7 +418,9 @@ async def create_quotation(
                     b64 = base64.b64encode(img_bytes).decode("ascii")
                     tpl_item["image_url"] = f"data:{content_type};base64,{b64}"
             except Exception as e:
-                logger.warning("Failed to download image for %s: %s", tpl_item["sku"], e)
+                logger.warning(
+                    "Failed to download image for %s: %s", tpl_item["sku"], e
+                )
 
     await asyncio.gather(*[_fetch_image(ti) for ti in template_items])
 
@@ -493,7 +519,9 @@ async def create_quotation(
     pdf_filename = f"quotation_{quote_number}.pdf"
     try:
         await ctx.deps.redis.setex(
-            f"quotation_pdf:{conv_id_str}", 86400, base64.b64encode(pdf_bytes),
+            f"quotation_pdf:{conv_id_str}",
+            86400,
+            base64.b64encode(pdf_bytes),
         )
         await ctx.deps.redis.setex(
             f"quotation_meta:{conv_id_str}",
@@ -723,6 +751,62 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
     return format_order_status(deal_data, order_data, language)
 
 
+@sales_agent.tool
+async def escalate_to_manager(
+    ctx: RunContext[SalesDeps],
+    reason: str,
+    escalation_type: Literal[
+        "order_confirmation", "human_requested", "general"
+    ] = "general",
+) -> str:
+    """Escalate the conversation to a human manager.
+    Call this ONLY when the situation genuinely requires human intervention.
+
+    DO NOT call this for:
+    - Simple product questions (even about wholesale, MOQ, bulk)
+    - Questions you can answer from the catalog or FAQ
+    - Price inquiries for products in stock
+
+    DO call this for:
+    - Customer places a concrete large order with quantities and delivery details
+    - Customer explicitly asks to speak to a human/manager
+    - Complaints about existing orders (damaged, delayed, wrong product)
+    - Request for refund/return
+    - Highly technical questions you cannot answer
+    - Customer threatening legal action
+    - Customization requests not in catalog
+
+    Args:
+        reason: Clear explanation of WHY escalation is needed.
+        escalation_type: Type of escalation.
+    """
+    logger.info(
+        "LLM Tool called: escalate_to_manager(reason=%r, type=%s)",
+        reason,
+        escalation_type,
+    )
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    esc_type = EscalationType(escalation_type)
+
+    # Use pre-built history from SalesDeps (no extra SQL query)
+    recent_messages = ctx.deps.recent_history or []
+
+    await notify_manager_escalation(
+        conversation=ctx.deps.conversation,
+        reason=reason,
+        recent_messages=recent_messages,
+        db=ctx.deps.db,
+        escalation_type=esc_type,
+    )
+
+    return (
+        "Manager has been notified. Acknowledge the customer's request politely "
+        "and let them know a human manager will review their conversation shortly."
+    )
+
+
 async def process_message(
     conversation_id: UUID,
     combined_text: str,
@@ -774,35 +858,13 @@ async def process_message(
     masked_text, new_piis = mask_pii(combined_text)
     pii_map.update(new_piis)
 
-    # Evaluate escalation triggers (Task 6)
-    from src.core.escalation import evaluate_escalation_triggers
-    from src.schemas.common import EscalationStatus
-
-    # Only evaluate if not already escalated
-    if conv.escalation_status == EscalationStatus.NONE.value:
-        escalation_eval = await evaluate_escalation_triggers(masked_text)
-        if escalation_eval.should_escalate and escalation_eval.reason:
-            from src.integrations.notifications.escalation import (
-                notify_manager_escalation,
-            )
-
-            # Get last 5 messages for context
-            recent_context = "\n".join(
-                [
-                    f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}"
-                    for msg in history[-5:]
-                ]
-                + [f"user: {masked_text}"]
-            )
-
-            await notify_manager_escalation(
-                conv, escalation_eval.reason, [recent_context], db,
-                escalation_type=escalation_eval.escalation_type,
-            )
-
-            # Instead of returning immediately, we proceed but inject a system note
-            # so the LLM responds politely indicating a human will follow up.
-            masked_text += "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"
+    # Escalation is now handled by the agent's escalate_to_manager tool.
+    # The agent decides when to escalate based on full conversation context.
+    # Build recent history for potential escalation context
+    recent_history = [
+        f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}"
+        for msg in history[-5:]
+    ] + [f"user: {masked_text}"]
 
     deps = SalesDeps(
         db=db,
@@ -815,6 +877,7 @@ async def process_message(
         pii_map=pii_map,
         crm_context=crm_context,
         user_query=masked_text,
+        recent_history=recent_history,
     )
 
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)

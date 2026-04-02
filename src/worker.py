@@ -66,7 +66,12 @@ class WorkerSettings:
         run_weekly_report,
     ]
     cron_jobs = [
-        cron(sync_products_from_zoho, hour={0, 6, 12, 18}, minute={0}, run_at_startup=False),
+        cron(
+            sync_products_from_zoho,
+            hour={0, 6, 12, 18},
+            minute={0},
+            run_at_startup=False,
+        ),
         cron(run_automatic_followups, minute={0}, run_at_startup=False),
         cron(run_feedback_requests, hour={10}, minute={0}, run_at_startup=False),
         cron(

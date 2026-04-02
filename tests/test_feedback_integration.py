@@ -142,9 +142,10 @@ async def test_feedback_cron_sql_structure() -> None:
     assert "deal_delivered_at" in compiled_lower, (
         f"Expected deal_delivered_at filter in SQL (not updated_at), got:\n{compiled}"
     )
-    assert "updated_at" not in compiled_lower or compiled_lower.count("deal_delivered_at") >= 2, (
-        f"Expected deal_delivered_at used for time window filters, got:\n{compiled}"
-    )
+    assert (
+        "updated_at" not in compiled_lower
+        or compiled_lower.count("deal_delivered_at") >= 2
+    ), f"Expected deal_delivered_at used for time window filters, got:\n{compiled}"
 
 
 @pytest.mark.asyncio

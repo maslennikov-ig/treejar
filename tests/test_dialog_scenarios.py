@@ -376,40 +376,38 @@ class TestScenario3QuotationFlow:
 
 
 class TestScenario4Escalation:
-    """Angry customer message should trigger escalation flow."""
+    """Customer message that warrants escalation should trigger the tool."""
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
-    @patch("src.core.escalation.evaluate_escalation_triggers", new_callable=AsyncMock)
     @patch(
         "src.integrations.notifications.escalation.notify_manager_escalation",
         new_callable=AsyncMock,
     )
-    async def test_escalation_appends_system_note(
+    async def test_escalation_via_tool(
         self,
         mock_notify: AsyncMock,
-        mock_eval: AsyncMock,
         mock_prompt: AsyncMock,
     ) -> None:
-        """When escalation triggers fire, system note is injected and manager notified."""
+        """When agent calls escalate_to_manager tool, manager is notified."""
         mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
 
-        from src.core.escalation import EscalationEvaluation
-
-        mock_eval.return_value = EscalationEvaluation(
-            should_escalate=True,
-            reason="Customer demanded to speak with manager",
-        )
-
-        captured_prompts: list[str] = []
+        tool_calls_made: list[str] = []
 
         def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-            # Capture the user prompt (which should have [SYSTEM NOTE] appended)
-            for msg in messages:
-                for part in msg.parts:
-                    if hasattr(part, "content") and isinstance(part.content, str):
-                        captured_prompts.append(part.content)
-
+            if len(messages) == 1:
+                tool_calls_made.append("escalate_to_manager")
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "escalate_to_manager",
+                            {
+                                "reason": "Customer demanded to speak with manager",
+                                "escalation_type": "human_requested",
+                            },
+                        )
+                    ]
+                )
             return ModelResponse(
                 parts=[
                     TextPart(
@@ -422,31 +420,23 @@ class TestScenario4Escalation:
 
         conv = _mock_conversation(SalesStage.SOLUTION)
         deps = _mock_deps(conv)
-
-        # We need to patch process_message's internal flow, but since we're
-        # testing at the agent level with FunctionModel, we simulate what
-        # process_message does: evaluate escalation, append system note, then run agent
-        angry_text = "This is ridiculous! Let me speak to your manager NOW!"
-        escalation_result = await mock_eval(angry_text)
-
-        assert escalation_result.should_escalate is True
-
-        # Simulate the system note injection that process_message does
-        modified_text = (
-            angry_text
-            + "\n[SYSTEM NOTE: This message triggered a manager escalation. Briefly acknowledge their request and state that a human manager has been notified and will review the chat shortly. Do NOT try to solve it completely if it requires human intervention.]"
-        )
+        deps.recent_history = ["user: Let me speak to your manager NOW!"]
 
         with sales_agent.override(model=FunctionModel(model_fn)):
             result = await sales_agent.run(
-                modified_text,
+                "This is ridiculous! Let me speak to your manager NOW!",
                 deps=deps,
             )
 
-        # Verify the system note was in the prompt
-        assert any("[SYSTEM NOTE" in p for p in captured_prompts)
+        # Tool was called
+        assert "escalate_to_manager" in tool_calls_made
 
-        # Verify bot response is empathetic and mentions escalation
+        # notify_manager_escalation was triggered
+        mock_notify.assert_awaited_once()
+        call_kwargs = mock_notify.call_args
+        assert call_kwargs.kwargs["escalation_type"].value == "human_requested"
+
+        # Bot response is empathetic and mentions escalation
         assert "manager" in result.output.lower()
         assert (
             "understand" in result.output.lower()

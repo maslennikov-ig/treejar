@@ -120,6 +120,17 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
             logger.debug("Skipping non-inbound message: status=%s", msg.status)
             continue
 
+        # Accept only the configured Wazzup channel when explicitly set.
+        expected_channel = settings.wazzup_channel_id
+        if expected_channel and msg.channelId and msg.channelId != expected_channel:
+            logger.warning(
+                "Skipping message from unexpected Wazzup channel: expected=%s got=%s chatId=%s",
+                expected_channel,
+                msg.channelId,
+                msg.chatId,
+            )
+            continue
+
         # Route by authorType
         author_type = msg.authorType or "client"
 

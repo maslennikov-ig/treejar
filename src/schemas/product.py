@@ -20,6 +20,7 @@ class ProductRead(UUIDModel, TimestampModel):
     currency: str
     stock: int
     image_url: str | None = None
+    zoho_item_id: str | None = None
     attributes: dict[str, Any] | None = None
     is_active: bool
 

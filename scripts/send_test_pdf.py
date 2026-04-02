@@ -55,27 +55,38 @@ async def main() -> None:
         qty = 2
         tot = up * qty
         subtotal += tot
-        template_items.append({
-            "sku": inv_item.get("sku", "N/A"),
-            "name": inv_item.get("name", "Unknown"),
-            "description": inv_item.get("description", ""),
-            "quantity": qty,
-            "unit_price": up,
-            "total_price": tot,
-            "image_url": inv_item.get("image_document_id"),
-        })
+        template_items.append(
+            {
+                "sku": inv_item.get("sku", "N/A"),
+                "name": inv_item.get("name", "Unknown"),
+                "description": inv_item.get("description", ""),
+                "quantity": qty,
+                "unit_price": up,
+                "total_price": tot,
+                "image_url": inv_item.get("image_document_id"),
+            }
+        )
 
     vat = subtotal * 0.05
     pdf_context = {
         "quote_number": "INTEG-PDF-002",
         "trn": "100418386400003",
         "date": _dt.date.today().strftime("%d %B %Y"),
-        "customer": {"name": "Integration TestBot", "company": "Test Co.", "email": "test@test.test", "address": "UAE"},
+        "customer": {
+            "name": "Integration TestBot",
+            "company": "Test Co.",
+            "email": "test@test.test",
+            "address": "UAE",
+        },
         "items": template_items,
         "subtotal": subtotal,
         "vat_amount": vat,
         "grand_total": subtotal + vat,
-        "manager": {"name": "Syed Amanullah", "phone": "+971545467851", "email": "syed.h@treejartrading.ae"},
+        "manager": {
+            "name": "Syed Amanullah",
+            "phone": "+971545467851",
+            "email": "syed.h@treejartrading.ae",
+        },
     }
 
     html = render_quotation_html(pdf_context)

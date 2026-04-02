@@ -54,48 +54,49 @@ async def main() -> None:
             deal_contact_data = {
                 "Phone": test_phone,
                 "Last_Name": "Verification Test Contact",
-                "Lead_Source": "Chatbot"
+                "Lead_Source": "Chatbot",
             }
             # Note: create_contact is actually defined in the CRM router or using _request directly
             # For simplicity, we'll try to use the raw request
             create_resp = await crm_client._request(
-                method="POST",
-                path="/Contacts",
-                json={"data": [deal_contact_data]}
+                method="POST", path="/Contacts", json={"data": [deal_contact_data]}
             )
             data = create_resp.json()
             if data and "data" in data and len(data["data"]) > 0:
                 contact_id = data["data"][0]["details"]["id"]
                 print(f"✅ Contact created with ID: {contact_id}")
             else:
-                 print(f"❌ Failed to create contact: {data}")
+                print(f"❌ Failed to create contact: {data}")
 
         if contact_id:
-             print("\nCreating a test deal...")
-             deal_data = {
-                 "Deal_Name": "Integration Test Deal",
-                 "Contact_Name": {"id": contact_id},
-                 "Stage": "New Lead",
-                 "Pipeline": "Standard (Standard)",
-                 "Amount": 100.0,
-             }
-             deal_resp = await crm_client._request(
-                 method="POST",
-                 path="/Deals",
-                 json={"data": [deal_data]}
-             )
-             deal_resp_json = deal_resp.json()
-             if deal_resp_json and "data" in deal_resp_json and len(deal_resp_json["data"]) > 0:
-                  deal_id = deal_resp_json["data"][0]["details"]["id"]
-                  print(f"✅ Deal created with ID: {deal_id}")
-             else:
-                  print(f"❌ Failed to create deal: {deal_resp_json}")
+            print("\nCreating a test deal...")
+            deal_data = {
+                "Deal_Name": "Integration Test Deal",
+                "Contact_Name": {"id": contact_id},
+                "Stage": "New Lead",
+                "Pipeline": "Standard (Standard)",
+                "Amount": 100.0,
+            }
+            deal_resp = await crm_client._request(
+                method="POST", path="/Deals", json={"data": [deal_data]}
+            )
+            deal_resp_json = deal_resp.json()
+            if (
+                deal_resp_json
+                and "data" in deal_resp_json
+                and len(deal_resp_json["data"]) > 0
+            ):
+                deal_id = deal_resp_json["data"][0]["details"]["id"]
+                print(f"✅ Deal created with ID: {deal_id}")
+            else:
+                print(f"❌ Failed to create deal: {deal_resp_json}")
 
     except Exception as e:
-         print(f"❌ Zoho CRM test failed: {e}")
+        print(f"❌ Zoho CRM test failed: {e}")
 
     finally:
-         await redis_client.close()
+        await redis_client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

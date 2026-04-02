@@ -62,7 +62,10 @@ async def notify_manager_escalation(
         # B13: Include conversation context in the alert
         context = "\n".join(recent_messages[-3:]) if recent_messages else None
         message = format_escalation_message(
-            conversation.phone, conversation.id, reason, context=context,
+            conversation.phone,
+            conversation.id,
+            reason,
+            context=context,
         )
 
         # B12: Choose buttons based on escalation type

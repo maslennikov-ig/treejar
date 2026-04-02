@@ -44,7 +44,11 @@ def run_context(mock_messaging_client: MagicMock) -> Any:
     return _FakeRunContext(deps=deps)
 
 
-async def test_search_products_sends_image_if_present(run_context: Any, monkeypatch: pytest.MonkeyPatch, mock_messaging_client: MagicMock) -> None:
+async def test_search_products_sends_image_if_present(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
     # Mock rag_search_products to return a product with an image_url
     product1 = ProductRead(
         id="11111111-1111-1111-1111-111111111111",
@@ -83,21 +87,26 @@ async def test_search_products_sends_image_if_present(run_context: Any, monkeypa
 
     result = await search_products(run_context, "furniture")
 
-    # Verify text includes Image url for product1
-    assert "Image: https://example.com/chair.jpg" in result
+    # Verify text reflects WhatsApp image delivery, without leaking raw URLs.
+    assert "automatically sent to the customer's WhatsApp" in result
     assert "Test Table" in result
-    assert "https://example.com/chair.jpg" in result
-    # For product 2 there should not be Image: None or something, just no "Image:"
+    assert "https://example.com/chair.jpg" not in result
 
     # Verify send_media was called once (for product1)
     mock_messaging_client.send_media.assert_called_once_with(
         chat_id="+1234567890",
         url="https://example.com/chair.jpg",
         caption="Test Chair — 100.00 AED",
+        content=None,
+        content_type=None,
     )
 
 
-async def test_search_products_graceful_fallback(run_context: Any, monkeypatch: pytest.MonkeyPatch, mock_messaging_client: MagicMock) -> None:
+async def test_search_products_graceful_fallback(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
     product1 = ProductRead(
         id="11111111-1111-1111-1111-111111111111",
         category_id="22222222-2222-2222-2222-222222222222",
@@ -126,5 +135,6 @@ async def test_search_products_graceful_fallback(run_context: Any, monkeypatch: 
     # Should not raise
     result = await search_products(run_context, "furniture")
 
-    assert "Image: https://example.com/chair.jpg" in result
+    assert "automatically sent to the customer's WhatsApp" in result
+    assert "https://example.com/chair.jpg" not in result
     mock_messaging_client.send_media.assert_called_once()

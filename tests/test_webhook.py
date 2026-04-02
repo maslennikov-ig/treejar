@@ -74,9 +74,7 @@ def test_wazzup_webhook_rejects_disallowed_ip() -> None:
     import ipaddress
 
     networks = [ipaddress.ip_network("10.0.0.0/8")]
-    with patch(
-        "src.api.v1.webhook._parse_allowed_networks", return_value=networks
-    ):
+    with patch("src.api.v1.webhook._parse_allowed_networks", return_value=networks):
         response = client.post(
             "/api/v1/webhook/wazzup",
             json={"messages": []},

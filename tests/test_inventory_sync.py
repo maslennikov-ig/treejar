@@ -112,7 +112,9 @@ async def test_upsert_items_batch_empty() -> None:
 
 
 def test_sync_response_has_new_fields() -> None:
-    resp = ProductSyncResponse(synced=0, created=0, updated=0, errors=0, deactivated=0, embeddings_generated=0)
+    resp = ProductSyncResponse(
+        synced=0, created=0, updated=0, errors=0, deactivated=0, embeddings_generated=0
+    )
     assert resp.deactivated == 0
     assert resp.embeddings_generated == 0
 
@@ -156,6 +158,7 @@ async def test_deactivate_stale_products(mock_session_factory: AsyncMock) -> Non
     mock_session.execute.return_value = mock_result
 
     from datetime import datetime
+
     sync_start = datetime(2026, 3, 18, 12, 0, 0, tzinfo=UTC)
 
     count = await _deactivate_stale_products(sync_start)
@@ -175,14 +178,28 @@ async def test_sync_calls_deactivate_and_embed() -> None:
         "page_context": {"has_more_page": False},
     }
 
-    async def mock_upsert_impl(items: list[dict[str, str]], stats: ProductSyncResponse) -> None:
+    async def mock_upsert_impl(
+        items: list[dict[str, str]], stats: ProductSyncResponse
+    ) -> None:
         stats.synced += len(items)
 
     with (
-        patch("src.integrations.inventory.sync._upsert_items_batch", new_callable=AsyncMock, side_effect=mock_upsert_impl),
+        patch(
+            "src.integrations.inventory.sync._upsert_items_batch",
+            new_callable=AsyncMock,
+            side_effect=mock_upsert_impl,
+        ),
         patch("src.integrations.inventory.sync._zoho_client") as mock_cm,
-        patch("src.integrations.inventory.sync._deactivate_stale_products", new_callable=AsyncMock, return_value=2) as mock_deactivate,
-        patch("src.integrations.inventory.sync._generate_missing_embeddings", new_callable=AsyncMock, return_value=5) as mock_embed,
+        patch(
+            "src.integrations.inventory.sync._deactivate_stale_products",
+            new_callable=AsyncMock,
+            return_value=2,
+        ) as mock_deactivate,
+        patch(
+            "src.integrations.inventory.sync._generate_missing_embeddings",
+            new_callable=AsyncMock,
+            return_value=5,
+        ) as mock_embed,
     ):
         mock_cm.return_value.__aenter__.return_value = mock_client_instance
 

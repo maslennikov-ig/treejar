@@ -61,7 +61,9 @@ async def main() -> None:
 
             if items:
                 first = items[0]
-                print(f"       Example: {first.get('name', 'N/A')} (SKU: {first.get('sku', 'N/A')})")
+                print(
+                    f"       Example: {first.get('name', 'N/A')} (SKU: {first.get('sku', 'N/A')})"
+                )
         except Exception as e:
             fail(f"Failed to fetch items: {e}")
 

@@ -47,7 +47,9 @@ response_adapter_agent: Agent[None, str] = Agent(
 )
 
 
-async def adapt_manager_response(question: str, draft: str, language: str = "en") -> str:
+async def adapt_manager_response(
+    question: str, draft: str, language: str = "en"
+) -> str:
     """Adapt a manager's rough draft into a polished customer message.
 
     Args:

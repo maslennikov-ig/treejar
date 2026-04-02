@@ -17,6 +17,7 @@ Known test contact in Zoho CRM:
 
 from __future__ import annotations
 
+import os
 from datetime import UTC
 from typing import Any
 
@@ -34,6 +35,16 @@ from tests.integration.conftest import (
     skip_no_zoho_crm,
     skip_no_zoho_inventory,
 )
+
+RUN_LIVE_INTEGRATION_TESTS = os.getenv("RUN_LIVE_INTEGRATION_TESTS") == "1"
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not RUN_LIVE_INTEGRATION_TESTS,
+        reason="Live integration tests require RUN_LIVE_INTEGRATION_TESTS=1",
+    ),
+]
 
 # ====================================================================
 # 1. Zoho CRM — Segment field type validation (known test contact)
@@ -57,9 +68,7 @@ class TestZohoCRMLive:
         assert contact.get("First_Name") == "Integration"
         assert contact.get("Last_Name") == "TestBot"
 
-    async def test_crm_contact_segment_is_list(
-        self, zoho_crm_client: Any
-    ) -> None:
+    async def test_crm_contact_segment_is_list(self, zoho_crm_client: Any) -> None:
         """Zoho CRM returns Segment as a list (multi-select field).
 
         This is the EXACT bug that went to production:
@@ -116,9 +125,7 @@ class TestZohoInventoryLive:
             f"Expected stock_on_hand to be numeric, got {type(stock).__name__}: {stock!r}"
         )
 
-    async def test_inventory_get_stock_by_sku(
-        self, zoho_inventory_client: Any
-    ) -> None:
+    async def test_inventory_get_stock_by_sku(self, zoho_inventory_client: Any) -> None:
         """get_stock returns a dict with stock_on_hand for a real SKU."""
         # First, get any real item to know a valid SKU
         data = await zoho_inventory_client.get_items(page=1, per_page=3)
@@ -237,6 +244,7 @@ class TestLLMSearchProductsLive:
         orig_search = engine_module.rag_search_products
 
         from datetime import datetime
+
         fake_product = ProductRead(
             id=uuid4(),
             sku="INTEG-TEST-001",
@@ -319,21 +327,25 @@ class TestQuotationPDFGeneration:
         subtotal = 0.0
 
         for inv_item in items[:3]:  # use up to 3 items
-            base_price = float(inv_item.get("rate", 0) or inv_item.get("price", 0) or 100)
+            base_price = float(
+                inv_item.get("rate", 0) or inv_item.get("price", 0) or 100
+            )
             unit_price = apply_discount(base_price, segment)
             quantity = 2
             total_price = unit_price * quantity
             subtotal += total_price
 
-            template_items.append({
-                "sku": inv_item.get("sku", "N/A"),
-                "name": inv_item.get("name", "Unknown item"),
-                "description": inv_item.get("description", ""),
-                "quantity": quantity,
-                "unit_price": unit_price,
-                "total_price": total_price,
-                "image_url": inv_item.get("image_document_id"),
-            })
+            template_items.append(
+                {
+                    "sku": inv_item.get("sku", "N/A"),
+                    "name": inv_item.get("name", "Unknown item"),
+                    "description": inv_item.get("description", ""),
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "total_price": total_price,
+                    "image_url": inv_item.get("image_document_id"),
+                }
+            )
 
         vat_amount = subtotal * 0.05
         grand_total = subtotal + vat_amount
@@ -411,21 +423,25 @@ class TestWazzupSendQuotation:
         subtotal = 0.0
 
         for inv_item in items[:3]:
-            base_price = float(inv_item.get("rate", 0) or inv_item.get("price", 0) or 100)
+            base_price = float(
+                inv_item.get("rate", 0) or inv_item.get("price", 0) or 100
+            )
             unit_price = apply_discount(base_price, segment)
             quantity = 1
             total_price = unit_price * quantity
             subtotal += total_price
 
-            template_items.append({
-                "sku": inv_item.get("sku", "N/A"),
-                "name": inv_item.get("name", "Unknown item"),
-                "description": inv_item.get("description", ""),
-                "quantity": quantity,
-                "unit_price": unit_price,
-                "total_price": total_price,
-                "image_url": inv_item.get("image_document_id"),
-            })
+            template_items.append(
+                {
+                    "sku": inv_item.get("sku", "N/A"),
+                    "name": inv_item.get("name", "Unknown item"),
+                    "description": inv_item.get("description", ""),
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "total_price": total_price,
+                    "image_url": inv_item.get("image_document_id"),
+                }
+            )
 
         vat_amount = subtotal * 0.05
         grand_total = subtotal + vat_amount
@@ -467,4 +483,3 @@ class TestWazzupSendQuotation:
             content_type="application/pdf",
         )
         assert msg_id != "", "Wazzup returned empty message ID"
-

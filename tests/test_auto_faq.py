@@ -121,4 +121,3 @@ async def test_save_to_faq_similar_but_not_duplicate(
     assert result.source == "auto_faq"
     assert result.language == "en"
     mock_db.add.assert_called_once()
-

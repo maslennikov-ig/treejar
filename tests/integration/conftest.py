@@ -76,12 +76,8 @@ skip_no_zoho_inventory = pytest.mark.skipif(
 skip_no_openrouter = pytest.mark.skipif(
     not _has_openrouter, reason="OPENROUTER_API_KEY not found in .env"
 )
-skip_no_db = pytest.mark.skipif(
-    not _has_db, reason="DATABASE_URL not found in .env"
-)
-skip_no_redis = pytest.mark.skipif(
-    not _has_redis, reason="REDIS_URL not found in .env"
-)
+skip_no_db = pytest.mark.skipif(not _has_db, reason="DATABASE_URL not found in .env")
+skip_no_redis = pytest.mark.skipif(not _has_redis, reason="REDIS_URL not found in .env")
 
 _has_wazzup = bool(_get("WAZZUP_API_KEY") and _get("WAZZUP_API_URL"))
 
@@ -152,8 +148,10 @@ async def zoho_crm_client(live_redis: Any) -> AsyncGenerator[Any, None]:
         "ZOHO_CRM_CLIENT_ID": _get("ZOHO_CRM_CLIENT_ID"),
         "ZOHO_CRM_CLIENT_SECRET": _get("ZOHO_CRM_CLIENT_SECRET"),
         "ZOHO_CRM_REFRESH_TOKEN": _get("ZOHO_CRM_REFRESH_TOKEN"),
-        "ZOHO_CRM_API_URL": _get("ZOHO_CRM_API_URL") or "https://www.zohoapis.eu/crm/v7",
-        "ZOHO_CRM_ACCOUNTS_URL": _get("ZOHO_CRM_ACCOUNTS_URL") or "https://accounts.zoho.eu",
+        "ZOHO_CRM_API_URL": _get("ZOHO_CRM_API_URL")
+        or "https://www.zohoapis.eu/crm/v7",
+        "ZOHO_CRM_ACCOUNTS_URL": _get("ZOHO_CRM_ACCOUNTS_URL")
+        or "https://accounts.zoho.eu",
     }
     saved = {}
     for k, v in real_env.items():
@@ -182,7 +180,8 @@ async def zoho_inventory_client(live_redis: Any) -> AsyncGenerator[Any, None]:
         "ZOHO_INVENTORY_CLIENT_ID": _get("ZOHO_INVENTORY_CLIENT_ID"),
         "ZOHO_INVENTORY_CLIENT_SECRET": _get("ZOHO_INVENTORY_CLIENT_SECRET"),
         "ZOHO_INVENTORY_REFRESH_TOKEN": _get("ZOHO_INVENTORY_REFRESH_TOKEN"),
-        "ZOHO_INVENTORY_API_URL": _get("ZOHO_INVENTORY_API_URL") or "https://www.zohoapis.eu/inventory/v1",
+        "ZOHO_INVENTORY_API_URL": _get("ZOHO_INVENTORY_API_URL")
+        or "https://www.zohoapis.eu/inventory/v1",
         "ZOHO_INVENTORY_ORG_ID": _get("ZOHO_INVENTORY_ORG_ID"),
     }
     saved = {}

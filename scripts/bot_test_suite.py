@@ -66,12 +66,14 @@ class MockMessagingProvider(MessagingProvider):
         content: bytes | None = None,
         content_type: str | None = None,
     ) -> str:
-        self.sent_media.append({
-            "url": url,
-            "caption": caption,
-            "content_bytes": len(content) if content else 0,
-            "content_type": content_type,
-        })
+        self.sent_media.append(
+            {
+                "url": url,
+                "caption": caption,
+                "content_bytes": len(content) if content else 0,
+                "content_type": content_type,
+            }
+        )
         return f"mock_media_{uuid.uuid4().hex[:6]}"
 
     async def mark_read(self, chat_id: str, message_id: str) -> bool:
@@ -86,6 +88,7 @@ class MockMessagingProvider(MessagingProvider):
 
 
 # ─── Test Infrastructure ──────────────────────────────────────────────────────
+
 
 @dataclass
 class TestResult:
@@ -102,6 +105,7 @@ class TestResult:
 @dataclass
 class BotTestContext:
     """Holds a live conversation for multi-turn tests."""
+
     phone: str
     conv_id: uuid.UUID | None = None
     messaging: MockMessagingProvider = field(default_factory=MockMessagingProvider)
@@ -221,13 +225,16 @@ async def cleanup_phone(phone: str) -> None:
         result = await db.execute(stmt)
         conv = result.scalar_one_or_none()
         if conv:
-            await db.execute(delete(Feedback).where(Feedback.conversation_id == conv.id))
+            await db.execute(
+                delete(Feedback).where(Feedback.conversation_id == conv.id)
+            )
             await db.execute(delete(Message).where(Message.conversation_id == conv.id))
             await db.execute(delete(Conversation).where(Conversation.id == conv.id))
             await db.commit()
 
 
 # ─── Test Runner ──────────────────────────────────────────────────────────────
+
 
 class TestSuite:
     def __init__(self, verbose: bool = False):
@@ -312,7 +319,9 @@ class TestSuite:
         phone = self._phone("1_1")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "Hello! I'm looking for office furniture")
+            response, _ = await send_message(
+                phone, "Hello! I'm looking for office furniture"
+            )
             assert response, "Empty response"
             assert len(response) > 20, "Response too short"
             state = await get_conversation_state(phone)
@@ -346,12 +355,23 @@ class TestSuite:
         phone = self._phone("2_1")
         await cleanup_phone(phone)
         try:
-            response, messaging = await send_message(phone, "What ergonomic chairs do you have?")
+            response, messaging = await send_message(
+                phone, "What ergonomic chairs do you have?"
+            )
             assert response, "Empty response"
             # Bot should mention something product-related
-            keywords = any(w in response.lower() for w in [
-                "chair", "product", "sku", "aed", "price", "furniture", "catalog"
-            ])
+            keywords = any(
+                w in response.lower()
+                for w in [
+                    "chair",
+                    "product",
+                    "sku",
+                    "aed",
+                    "price",
+                    "furniture",
+                    "catalog",
+                ]
+            )
             assert keywords, f"Response doesn't mention products: {response[:300]}"
             return {
                 "response": response,
@@ -372,9 +392,18 @@ class TestSuite:
             response, _ = await send_message(phone, "How many do you have in stock?")
             assert response, "Empty response"
             # Should mention quantity or stock info
-            keywords = any(w in response.lower() for w in [
-                "stock", "available", "item", "unit", "in stock", "pieces", "quantity"
-            ])
+            keywords = any(
+                w in response.lower()
+                for w in [
+                    "stock",
+                    "available",
+                    "item",
+                    "unit",
+                    "in stock",
+                    "pieces",
+                    "quantity",
+                ]
+            )
             assert keywords, f"Response doesn't mention stock: {response[:300]}"
             return {"response": response}
         finally:
@@ -401,12 +430,20 @@ class TestSuite:
         phone = self._phone("2_4")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "Do you sell helicopter spare parts?")
+            response, _ = await send_message(
+                phone, "Do you sell helicopter spare parts?"
+            )
             assert response, "Empty response"
             # Should NOT claim to have helicopter parts
-            bad_words = ["helicopter part", "yes we have helicop", "i can help with helicop"]
+            bad_words = [
+                "helicopter part",
+                "yes we have helicop",
+                "i can help with helicop",
+            ]
             for w in bad_words:
-                assert w not in response.lower(), f"Possible hallucination: {response[:300]}"
+                assert w not in response.lower(), (
+                    f"Possible hallucination: {response[:300]}"
+                )
             return {"response": response}
         finally:
             await cleanup_phone(phone)
@@ -417,7 +454,9 @@ class TestSuite:
         await cleanup_phone(phone)
         try:
             await send_message(phone, "I'm interested in office chairs")
-            response, _ = await send_message(phone, "What else goes well with office chairs?")
+            response, _ = await send_message(
+                phone, "What else goes well with office chairs?"
+            )
             assert response, "Empty response"
             return {"response": response}
         finally:
@@ -439,7 +478,9 @@ class TestSuite:
             state = await get_conversation_state(phone)
             stages.append(state.get("sales_stage"))
 
-            await send_message(phone, "We need ergonomic chairs, budget around 500 AED each")
+            await send_message(
+                phone, "We need ergonomic chairs, budget around 500 AED each"
+            )
             state = await get_conversation_state(phone)
             stages.append(state.get("sales_stage"))
 
@@ -453,14 +494,25 @@ class TestSuite:
         phone = self._phone("3_2")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "Where is my order? What is my order status?")
+            response, _ = await send_message(
+                phone, "Where is my order? What is my order status?"
+            )
             assert response, "Empty response"
             # Should acknowledge no order found
-            no_order_keywords = any(w in response.lower() for w in [
-                "no order", "not found", "don't have", "haven't placed",
-                "لم يتم", "no confirmed"
-            ])
-            assert no_order_keywords, f"Expected 'no order' response, got: {response[:300]}"
+            no_order_keywords = any(
+                w in response.lower()
+                for w in [
+                    "no order",
+                    "not found",
+                    "don't have",
+                    "haven't placed",
+                    "لم يتم",
+                    "no confirmed",
+                ]
+            )
+            assert no_order_keywords, (
+                f"Expected 'no order' response, got: {response[:300]}"
+            )
             return {"response": response}
         finally:
             await cleanup_phone(phone)
@@ -472,7 +524,9 @@ class TestSuite:
         phone = self._phone("4_1")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "I want to speak to a real person, not a bot")
+            response, _ = await send_message(
+                phone, "I want to speak to a real person, not a bot"
+            )
             state = await get_conversation_state(phone)
             assert response, "Empty response"
             # Escalation should be triggered
@@ -481,10 +535,20 @@ class TestSuite:
                 f"Expected escalation, got status: {esc_status}\nResponse: {response[:300]}"
             )
             # Bot should acknowledge escalation, not silently fail
-            ack_words = any(w in response.lower() for w in [
-                "manager", "human", "team", "contact", "notif", "shortly", "soon",
-                "مدير", "بشري"
-            ])
+            ack_words = any(
+                w in response.lower()
+                for w in [
+                    "manager",
+                    "human",
+                    "team",
+                    "contact",
+                    "notif",
+                    "shortly",
+                    "soon",
+                    "مدير",
+                    "بشري",
+                ]
+            )
             assert ack_words, f"Bot didn't acknowledge escalation: {response[:300]}"
             return {"response": response, "escalation_status": esc_status}
         finally:
@@ -497,7 +561,7 @@ class TestSuite:
         try:
             response, _ = await send_message(
                 phone,
-                "We need 500 chairs for our warehouse. Please provide wholesale pricing."
+                "We need 500 chairs for our warehouse. Please provide wholesale pricing.",
             )
             state = await get_conversation_state(phone)
             esc_status = state.get("escalation_status")
@@ -513,7 +577,9 @@ class TestSuite:
         phone = self._phone("4_3")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "I received the wrong product and I want a refund")
+            response, _ = await send_message(
+                phone, "I received the wrong product and I want a refund"
+            )
             state = await get_conversation_state(phone)
             esc_status = state.get("escalation_status")
             assert esc_status not in ("none", None), (
@@ -530,7 +596,7 @@ class TestSuite:
         try:
             response, _ = await send_message(
                 phone,
-                "This is absolutely unacceptable! My order is 3 weeks late and nobody answers!"
+                "This is absolutely unacceptable! My order is 3 weeks late and nobody answers!",
             )
             state = await get_conversation_state(phone)
             esc_status = state.get("escalation_status")
@@ -546,7 +612,9 @@ class TestSuite:
         phone = self._phone("4_5")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "Can I get a physical sample of the chair before ordering?")
+            response, _ = await send_message(
+                phone, "Can I get a physical sample of the chair before ordering?"
+            )
             state = await get_conversation_state(phone)
             esc_status = state.get("escalation_status")
             assert esc_status not in ("none", None), (
@@ -561,7 +629,9 @@ class TestSuite:
         phone = self._phone("4_6")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "What are your delivery times to Dubai?")
+            response, _ = await send_message(
+                phone, "What are your delivery times to Dubai?"
+            )
             state = await get_conversation_state(phone)
             esc_status = state.get("escalation_status")
             assert esc_status in ("none", None), (
@@ -577,7 +647,10 @@ class TestSuite:
         phone = self._phone("4_7")
         await cleanup_phone(phone)
         try:
-            response, _ = await send_message(phone, "If you don't resolve this I'm going to take legal action against Treejar")
+            response, _ = await send_message(
+                phone,
+                "If you don't resolve this I'm going to take legal action against Treejar",
+            )
             state = await get_conversation_state(phone)
             esc_status = state.get("escalation_status")
             assert esc_status not in ("none", None), (
@@ -620,8 +693,7 @@ class TestSuite:
         await cleanup_phone(phone)
         try:
             response, _ = await send_message(
-                phone,
-                "My email is john.test@example.com and phone is +971501234567"
+                phone, "My email is john.test@example.com and phone is +971501234567"
             )
             assert response, "Empty response"
             # Bot should respond normally (PII masking shouldn't break the flow)
@@ -642,7 +714,9 @@ class TestSuite:
 
             for response in [r1, r2]:
                 has_arabic = any("\u0600" <= c <= "\u06ff" for c in response)
-                assert has_arabic or response.strip(), f"No Arabic in response: {response[:200]}"
+                assert has_arabic or response.strip(), (
+                    f"No Arabic in response: {response[:200]}"
+                )
 
             assert state.get("language") == "ar", f"Language not ar: {state}"
             return {"r1": r1[:200], "r2": r2[:200], "language": state.get("language")}
@@ -679,8 +753,7 @@ class TestSuite:
         await cleanup_phone(phone)
         try:
             response, _ = await send_message(
-                phone,
-                "Do you have a referral program? I'd like to refer a friend"
+                phone, "Do you have a referral program? I'd like to refer a friend"
             )
             assert response, "Empty response"
             # Check if referral code mentioned (NOOR- prefix)
@@ -710,6 +783,7 @@ class TestSuite:
             # Set conversation to feedback stage with delivered status
             async with async_session_factory() as db:
                 from sqlalchemy.future import select as fselect
+
                 stmt = fselect(Conversation).where(Conversation.phone == phone)
                 result = await db.execute(stmt)
                 conv = result.scalar_one_or_none()
@@ -726,9 +800,13 @@ class TestSuite:
                     conv.deal_status = DealStatus.DELIVERED.value
                     await db.commit()
 
-            r1, _ = await send_message(phone, "I'd give the overall experience a 5 out of 5")
+            r1, _ = await send_message(
+                phone, "I'd give the overall experience a 5 out of 5"
+            )
             r2, _ = await send_message(phone, "Delivery was also excellent, 5/5")
-            r3, _ = await send_message(phone, "Yes, I would definitely recommend Treejar to others")
+            r3, _ = await send_message(
+                phone, "Yes, I would definitely recommend Treejar to others"
+            )
 
             # Check if feedback was saved
             async with async_session_factory() as db:
@@ -736,7 +814,9 @@ class TestSuite:
                 result = await db.execute(stmt)
                 conv = result.scalar_one_or_none()
                 if conv:
-                    fb_stmt = select(Feedback).where(Feedback.conversation_id == conv.id)
+                    fb_stmt = select(Feedback).where(
+                        Feedback.conversation_id == conv.id
+                    )
                     fb_result = await db.execute(fb_stmt)
                     feedback = fb_result.scalar_one_or_none()
                     has_feedback = feedback is not None
@@ -779,6 +859,7 @@ class TestSuite:
 
             # Run the followup job
             from src.services.followup import run_automatic_followups
+
             await run_automatic_followups({})
 
             # Check if a message was added to DB
@@ -786,6 +867,7 @@ class TestSuite:
                 from sqlalchemy import select as sel
 
                 from src.models.message import Message
+
                 stmt = sel(Message).where(
                     Message.conversation_id == conv_id,
                     Message.role == "assistant",
@@ -823,12 +905,14 @@ class TestSuite:
                 conv_id = conv.id
 
             from src.services.followup import run_automatic_followups
+
             await run_automatic_followups({})
 
             async with async_session_factory() as db:
                 from sqlalchemy import select as sel
 
                 from src.models.message import Message
+
                 stmt = sel(Message).where(
                     Message.conversation_id == conv_id,
                     Message.role == "assistant",
@@ -844,47 +928,171 @@ class TestSuite:
 
     # ─── Runner ───────────────────────────────────────────────────────────────
 
-    async def run_all(self, group_filter: str | None = None, test_filter: str | None = None) -> None:
+    async def run_all(
+        self, group_filter: str | None = None, test_filter: str | None = None
+    ) -> None:
         tests = [
             # (test_id, name, group, coro_method)
-            ("1.1", "Первый контакт — приветствие", "basic", self.test_1_1_first_contact),
-            ("1.2", "Пустое сообщение игнорируется", "basic", self.test_1_2_empty_message_ignored),
+            (
+                "1.1",
+                "Первый контакт — приветствие",
+                "basic",
+                self.test_1_1_first_contact,
+            ),
+            (
+                "1.2",
+                "Пустое сообщение игнорируется",
+                "basic",
+                self.test_1_2_empty_message_ignored,
+            ),
             ("2.1", "Поиск товаров (EN)", "products", self.test_2_1_product_search_en),
             ("2.2", "Проверка остатков", "products", self.test_2_2_stock_check),
-            ("2.3", "Поиск товаров (AR)", "products", self.test_2_3_product_search_arabic),
-            ("2.4", "Нет галлюцинаций", "products", self.test_2_4_no_hallucination_unknown_product),
-            ("2.5", "Cross-sell рекомендации", "products", self.test_2_5_cross_sell_recommendations),
-            ("3.1", "Прогресс по стадиям продажи", "sales", self.test_3_1_sales_stage_progression),
-            ("3.2", "Статус заказа — нет сделки", "sales", self.test_3_2_order_status_no_deal),
-            ("4.1", "Эскалация — запрос живого человека", "escalation", self.test_4_1_explicit_human_request),
-            ("4.2", "Эскалация — B2B/оптовый запрос", "escalation", self.test_4_2_wholesale_b2b_escalation),
-            ("4.3", "Эскалация — запрос возврата", "escalation", self.test_4_3_refund_request_escalation),
-            ("4.4", "Эскалация — сильное недовольство", "escalation", self.test_4_4_frustrated_customer_escalation),
-            ("4.5", "Эскалация — образец товара", "escalation", self.test_4_5_sample_request_escalation),
-            ("4.6", "НЕТ эскалации — обычный вопрос", "escalation", self.test_4_6_no_escalation_normal_question),
-            ("4.7", "Эскалация — угроза судом", "escalation", self.test_4_7_legal_threat_escalation),
-            ("4.8", "Бот молчит после эскалации", "escalation", self.test_4_8_bot_silent_after_escalation),
-            ("5.1", "PII маскировка не ломает ответ", "security", self.test_5_1_pii_not_leaked_in_db_logs),
-            ("6.1", "Полный диалог на арабском", "multilang", self.test_6_1_full_arabic_flow),
-            ("6.2", "Переключение языка mid-диалог", "multilang", self.test_6_2_language_detection_switches),
-            ("7.1", "Генерация реферального кода", "referral", self.test_7_1_referral_code_generation),
-            ("8.1", "Сбор обратной связи", "feedback", self.test_8_1_feedback_collection),
-            ("9.1", "Follow-up для неактивных разговоров", "followup", self.test_9_1_followup_sends_for_inactive),
-            ("9.2", "Нет follow-up при эскалации", "followup", self.test_9_2_no_followup_when_escalated),
+            (
+                "2.3",
+                "Поиск товаров (AR)",
+                "products",
+                self.test_2_3_product_search_arabic,
+            ),
+            (
+                "2.4",
+                "Нет галлюцинаций",
+                "products",
+                self.test_2_4_no_hallucination_unknown_product,
+            ),
+            (
+                "2.5",
+                "Cross-sell рекомендации",
+                "products",
+                self.test_2_5_cross_sell_recommendations,
+            ),
+            (
+                "3.1",
+                "Прогресс по стадиям продажи",
+                "sales",
+                self.test_3_1_sales_stage_progression,
+            ),
+            (
+                "3.2",
+                "Статус заказа — нет сделки",
+                "sales",
+                self.test_3_2_order_status_no_deal,
+            ),
+            (
+                "4.1",
+                "Эскалация — запрос живого человека",
+                "escalation",
+                self.test_4_1_explicit_human_request,
+            ),
+            (
+                "4.2",
+                "Эскалация — B2B/оптовый запрос",
+                "escalation",
+                self.test_4_2_wholesale_b2b_escalation,
+            ),
+            (
+                "4.3",
+                "Эскалация — запрос возврата",
+                "escalation",
+                self.test_4_3_refund_request_escalation,
+            ),
+            (
+                "4.4",
+                "Эскалация — сильное недовольство",
+                "escalation",
+                self.test_4_4_frustrated_customer_escalation,
+            ),
+            (
+                "4.5",
+                "Эскалация — образец товара",
+                "escalation",
+                self.test_4_5_sample_request_escalation,
+            ),
+            (
+                "4.6",
+                "НЕТ эскалации — обычный вопрос",
+                "escalation",
+                self.test_4_6_no_escalation_normal_question,
+            ),
+            (
+                "4.7",
+                "Эскалация — угроза судом",
+                "escalation",
+                self.test_4_7_legal_threat_escalation,
+            ),
+            (
+                "4.8",
+                "Бот молчит после эскалации",
+                "escalation",
+                self.test_4_8_bot_silent_after_escalation,
+            ),
+            (
+                "5.1",
+                "PII маскировка не ломает ответ",
+                "security",
+                self.test_5_1_pii_not_leaked_in_db_logs,
+            ),
+            (
+                "6.1",
+                "Полный диалог на арабском",
+                "multilang",
+                self.test_6_1_full_arabic_flow,
+            ),
+            (
+                "6.2",
+                "Переключение языка mid-диалог",
+                "multilang",
+                self.test_6_2_language_detection_switches,
+            ),
+            (
+                "7.1",
+                "Генерация реферального кода",
+                "referral",
+                self.test_7_1_referral_code_generation,
+            ),
+            (
+                "8.1",
+                "Сбор обратной связи",
+                "feedback",
+                self.test_8_1_feedback_collection,
+            ),
+            (
+                "9.1",
+                "Follow-up для неактивных разговоров",
+                "followup",
+                self.test_9_1_followup_sends_for_inactive,
+            ),
+            (
+                "9.2",
+                "Нет follow-up при эскалации",
+                "followup",
+                self.test_9_2_no_followup_when_escalated,
+            ),
         ]
 
         # Apply filters
         if group_filter:
-            tests = [(tid, name, grp, fn) for tid, name, grp, fn in tests if grp == group_filter]
+            tests = [
+                (tid, name, grp, fn)
+                for tid, name, grp, fn in tests
+                if grp == group_filter
+            ]
         if test_filter:
-            tests = [(tid, name, grp, fn) for tid, name, grp, fn in tests if tid == test_filter]
+            tests = [
+                (tid, name, grp, fn)
+                for tid, name, grp, fn in tests
+                if tid == test_filter
+            ]
 
         if not tests:
-            print(f"⚠️  No tests match filter (group={group_filter}, test={test_filter})")
+            print(
+                f"⚠️  No tests match filter (group={group_filter}, test={test_filter})"
+            )
             return
 
         print(f"\n{'━' * 60}")
-        print(f"🤖 Noor Bot Test Suite | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(
+            f"🤖 Noor Bot Test Suite | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         print(f"{'━' * 60}")
         print(f"   Running {len(tests)} tests...\n")
 
@@ -902,7 +1110,9 @@ class TestSuite:
         total_ms = sum(r.duration_ms for r in self.results)
 
         print(f"\n{'━' * 60}")
-        print(f"📊 Results: {passed}/{len(self.results)} passed | {failed} failed | {total_ms/1000:.1f}s total")
+        print(
+            f"📊 Results: {passed}/{len(self.results)} passed | {failed} failed | {total_ms / 1000:.1f}s total"
+        )
         print(f"{'━' * 60}")
 
         if failed > 0:
@@ -915,11 +1125,17 @@ class TestSuite:
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Noor Bot Test Suite")
-    parser.add_argument("--group", help="Run only this group (basic/products/sales/escalation/security/multilang/referral/feedback/followup)")
+    parser.add_argument(
+        "--group",
+        help="Run only this group (basic/products/sales/escalation/security/multilang/referral/feedback/followup)",
+    )
     parser.add_argument("--test", help="Run only this test ID (e.g. 4.1)")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Print all bot responses")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Print all bot responses"
+    )
     parser.add_argument("--output", help="Save results to JSON file")
     args = parser.parse_args()
 
