@@ -18,7 +18,7 @@ ADMIN_PASSWORD=your_secure_password
 API_KEY=your_internal_endpoint_secret
 ```
 
-`API_KEY` is required for protected internal API routes on the canonical environment.
+`API_KEY` is required for protected internal API routes on the canonical environment, including `/api/v1/crm/*`, `/api/v1/quality/*`, `/api/v1/reports/*`, `/api/v1/referrals/*`, `/api/v1/notifications/*`, and `/api/v1/manager-reviews/*`.
 
 > ⚠️ The project currently uses a main-only workflow. Treat `https://noor.starec.ai` as the canonical environment and validate changes there in a controlled manner.
 
@@ -99,8 +99,7 @@ Products are synced from Zoho Inventory automatically every hour.
 ### Manual Sync
 If you need to force an immediate sync (e.g., after a large catalog update):
 ```bash
-curl -X POST https://noor.starec.ai/api/v1/products/sync \
-  -H "X-API-Key: YOUR_API_KEY"
+curl -X POST https://noor.starec.ai/api/v1/products/sync
 ```
 The sync runs in the background and typically completes in 2-5 minutes for ~856 SKUs.
 
