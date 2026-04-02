@@ -115,7 +115,9 @@ Returns `{"status": "ok"}` if the app and database are reachable.
 
 ### Docker Logs (via SSH)
 ```bash
-ssh root@136.243.71.213
+ssh -p 2222 noor-dev@95.216.204.189
+
+cd /opt/treejar-prod
 
 # App server logs (FastAPI)
 docker compose logs -f app --tail=100
@@ -168,10 +170,10 @@ docker compose stats
 If a new deployment causes issues:
 ```bash
 # SSH into VPS
-ssh root@136.243.71.213
+ssh -p 2222 noor-dev@95.216.204.189
 
 # Go to the project directory
-cd /path/to/treejar
+cd /opt/treejar-prod
 
 # Roll back to previous commit
 git log --oneline -5   # find the previous good commit
