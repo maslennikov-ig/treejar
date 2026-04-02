@@ -29,6 +29,7 @@ Current baseline branch: `main`
 - Read `AGENTS.md`, `README.md`, and `.codex/orchestrator.toml` first; read `.codex/config.toml` too if it exists locally.
 - Keep simple process-only tasks local; switch to orchestration when scope becomes multi-file, docs-sensitive, schema-sensitive, route-expanding, or parallel.
 - Use dedicated worktrees with strict write zones and avoid unrelated local changes in the primary worktree.
+- For delegated work, require a markdown report file and a short completion line with: task ID, report path, commit hash, git status clean yes/no.
 - Keep reviews findings-first and do not treat a stage as closed until fresh local verification is done.
 - Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.

@@ -81,6 +81,7 @@ docs/**/*.pdf
 .codex/*
 !.codex/handoff.md
 !.codex/orchestrator.toml
+!.codex/report-template.md
 
 .env*
 .worktrees/

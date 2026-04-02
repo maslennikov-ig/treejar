@@ -2,6 +2,8 @@ schema_version = 1
 role = "technical-orchestrator"
 beads_dir = ".beads"
 handoff_file = ".codex/handoff.md"
+report_template = ".codex/report-template.md"
+report_path_template = "docs/reports/agent-reports/{date}/{task_id}.md"
 
 [execution]
 default_mode = "hybrid"
@@ -46,6 +48,8 @@ rules = [
 
 [workflow]
 require_context7_for_docs_sensitive_changes = true
+require_report_files_for_delegated_work = true
+delegated_report_file_format = "markdown"
 
 [delegation]
 require_base_branch_and_commit = true
@@ -53,6 +57,8 @@ require_dedicated_worktree = true
 require_strict_write_zone = true
 require_clean_git_status = true
 require_short_completion_message = true
+completion_fields = ["task_id", "report_path", "commit_hash", "git_status_clean"]
+completion_format = "task ID | report path | commit hash | git status clean yes/no"
 
 [review]
 format = "findings-first"
