@@ -159,7 +159,8 @@ async def test_process_incoming_batch_success(
     mock_provider.send_text.return_value = "msg_out_1"
 
     # Execute (no messages arg — reads from Redis)
-    await process_incoming_batch(chat_context, "79991234567")
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch(chat_context, "79991234567")
 
     # Asserts
     mock_process_message.assert_awaited_once()

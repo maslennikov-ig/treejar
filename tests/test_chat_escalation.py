@@ -126,7 +126,8 @@ async def test_bot_silent_when_escalated(
     mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
     ctx = {"redis": mock_redis}
-    await process_incoming_batch(ctx, "1234567890")
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch(ctx, "1234567890")
 
     # Messages should be saved (commit called)
     mock_session.commit.assert_awaited()
@@ -174,7 +175,8 @@ async def test_bot_silent_during_manual_takeover(
     mock_redis = AsyncMock()
     mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
-    await process_incoming_batch({"redis": mock_redis}, "1234567890")
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
     mock_session.commit.assert_awaited()
     mock_process_message.assert_not_awaited()
@@ -227,7 +229,8 @@ async def test_manual_takeover_triggered(
     mock_redis = AsyncMock()
     mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
-    await process_incoming_batch({"redis": mock_redis}, "1234567890")
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
     # escalation_status should be set to manual_takeover
     assert mock_conv.escalation_status == "manual_takeover"
@@ -283,7 +286,8 @@ async def test_manager_message_saved_with_correct_role(
     mock_redis = AsyncMock()
     mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
-    await process_incoming_batch({"redis": mock_redis}, "1234567890")
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
     # Check that db.add was called with a Message having role='manager'
     add_calls = mock_session.add.call_args_list
