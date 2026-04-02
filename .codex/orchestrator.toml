@@ -51,6 +51,18 @@ require_context7_for_docs_sensitive_changes = true
 require_report_files_for_delegated_work = true
 delegated_report_file_format = "markdown"
 
+[routing]
+enabled = true
+required_for = ["medium", "complex", "docs_sensitive"]
+docs_first_for_version_sensitive = true
+check_installed_assets_first = true
+check_local_catalog = true
+use_skill_scout_if_no_fit = true
+use_asset_vetter_for_promotion_candidates = true
+prefer_installed_assets = true
+prefer_cli_over_mcp = true
+record_routing_decision_in_handoff_when_material = true
+
 [delegation]
 require_base_branch_and_commit = true
 require_dedicated_worktree = true
