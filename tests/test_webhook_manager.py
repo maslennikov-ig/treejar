@@ -204,3 +204,58 @@ def test_unexpected_channel_skipped() -> None:
     assert response.json() == {"ok": True}
     mock_redis.rpush.assert_not_called()
     mock_arq.enqueue_job.assert_not_called()
+
+
+def test_missing_expected_channel_skips_all_messages() -> None:
+    """Fail closed: without configured channel, webhook must not process messages."""
+    mock_redis, mock_arq = _setup_mocks()
+
+    payload = {
+        "messages": [
+            {
+                "messageId": "msg-no-config",
+                "chatId": "971551220665",
+                "chatType": "whatsapp",
+                "text": "Hello?",
+                "type": "text",
+                "channelId": EXPECTED_CHANNEL_ID,
+                "timestamp": 1234567890,
+                "authorType": "client",
+            }
+        ]
+    }
+
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", ""):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    mock_redis.rpush.assert_not_called()
+    mock_arq.enqueue_job.assert_not_called()
+
+
+def test_missing_message_channel_id_skipped() -> None:
+    """Fail closed: messages without channelId must not be processed."""
+    mock_redis, mock_arq = _setup_mocks()
+
+    payload = {
+        "messages": [
+            {
+                "messageId": "msg-no-channel",
+                "chatId": "971551220665",
+                "chatType": "whatsapp",
+                "text": "Hello?",
+                "type": "text",
+                "timestamp": 1234567890,
+                "authorType": "client",
+            }
+        ]
+    }
+
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    mock_redis.rpush.assert_not_called()
+    mock_arq.enqueue_job.assert_not_called()

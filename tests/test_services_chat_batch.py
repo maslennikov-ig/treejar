@@ -104,7 +104,8 @@ async def test_process_incoming_batch_new_conversation(
     ctx = {"redis": mock_redis}
     chat_id = "1234567890"
 
-    await process_incoming_batch(ctx, chat_id)
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch(ctx, chat_id)
 
     # Assertions
     mock_session.commit.assert_awaited()
@@ -112,3 +113,26 @@ async def test_process_incoming_batch_new_conversation(
     mock_wazzup.send_text.assert_awaited_once_with(
         chat_id=chat_id, text="Hello from AI"
     )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+async def test_process_incoming_batch_skips_without_expected_channel(
+    mock_session_factory: MagicMock,
+) -> None:
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi there",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", ""):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_session_factory.assert_not_called()

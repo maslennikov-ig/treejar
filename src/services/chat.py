@@ -276,10 +276,32 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
 
-    # Determine channel_id from incoming messages or fallback to settings
-    channel_id = next(
-        (m.channelId for m in messages if m.channelId), settings.wazzup_channel_id
-    )
+    expected_channel = settings.wazzup_channel_id
+    if not expected_channel:
+        logger.error(
+            "Skipping batch for %s because WAZZUP_CHANNEL_ID is not configured.",
+            chat_id,
+        )
+        return
+
+    filtered_messages = [m for m in messages if m.channelId == expected_channel]
+    skipped_count = len(messages) - len(filtered_messages)
+    if skipped_count:
+        logger.warning(
+            "Skipping %d message(s) for %s from unexpected or missing Wazzup channel IDs.",
+            skipped_count,
+            chat_id,
+        )
+
+    messages = filtered_messages
+    if not messages:
+        logger.warning(
+            "No messages left for %s after Wazzup channel filtering, skipping batch.",
+            chat_id,
+        )
+        return
+
+    channel_id = expected_channel
 
     # Determine roles for each message
     has_manager_message = any(m.authorType == "manager" for m in messages)
