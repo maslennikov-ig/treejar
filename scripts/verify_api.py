@@ -117,10 +117,14 @@ async def main(base_url: str) -> None:
         except Exception as e:
             fail(f"Admin panel check failed: {e}")
 
-        # 7. Metrics/dashboard API
+        # 7. Metrics/dashboard API (protected by admin session)
         print("\n--- 11.7 Metrics ---")
         await check_endpoint(
-            client, "GET", "/api/v1/admin/metrics", "Metrics API", expect_status=200
+            client,
+            "GET",
+            "/api/v1/admin/metrics/",
+            "Metrics API auth guard",
+            expect_status=401,
         )
 
     print("\n" + "=" * 60)
