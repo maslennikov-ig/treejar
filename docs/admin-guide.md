@@ -15,7 +15,10 @@
 ```ini
 ADMIN_USERNAME=your_admin_user
 ADMIN_PASSWORD=your_secure_password
+API_KEY=your_internal_endpoint_secret
 ```
+
+`API_KEY` is required for protected internal API routes on the canonical environment.
 
 > ⚠️ The project currently uses a main-only workflow. Treat `https://noor.starec.ai` as the canonical environment and validate changes there in a controlled manner.
 

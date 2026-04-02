@@ -92,6 +92,8 @@ class Settings(BaseSettings):
                 raise ValueError("app_secret_key must be changed in production")
             if self.admin_password == "change-me-admin-password":
                 raise ValueError("admin_password must be changed in production")
+            if not self.api_key:
+                raise ValueError("api_key must be set in production")
         return self
 
 

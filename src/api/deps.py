@@ -20,12 +20,18 @@ async def require_api_key(
 ) -> str:
     """Validate X-API-Key header for protected internal endpoints.
 
-    When settings.api_key is empty (dev mode), all requests pass through.
-    In production, the header must match settings.api_key.
+    In development, an empty settings.api_key keeps internal endpoints open.
+    In production, the app fails closed if the key is missing from config,
+    and the header must match settings.api_key when configured.
     Uses secrets.compare_digest for timing-attack resistance.
     """
     if not settings.api_key:
-        return ""  # No key configured = open (dev mode)
+        if settings.is_production:
+            raise HTTPException(
+                status_code=503,
+                detail="Internal API authentication is not configured",
+            )
+        return ""  # No key configured = open in local development
     if not api_key or not secrets.compare_digest(api_key, settings.api_key):
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
     return api_key

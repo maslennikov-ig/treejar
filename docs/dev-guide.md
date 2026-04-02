@@ -35,7 +35,7 @@ Treejar AI Bot — ИИ-продавец офисной мебели для ко
 # 1. Скопировать и настроить переменные окружения
 cp .env.example .env
 # Заполнить .env: SUPABASE_URL, REDIS_URL, OPENROUTER_API_KEY,
-# WAZZUP_API_KEY, ZOHO_CRM_*, ZOHO_INVENTORY_*
+# WAZZUP_API_KEY, ADMIN_PASSWORD, API_KEY, ZOHO_CRM_*, ZOHO_INVENTORY_*
 
 # 2a. Production-like запуск (использует Supabase Cloud как БД)
 docker compose up -d

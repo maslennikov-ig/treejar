@@ -16,7 +16,6 @@ Current baseline branch: `main`
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
-- `tj-19ol.3.1` — P1 bug: API key guard inactive on protected internal routes
 - `tj-19ol.3.2` — P1 bug: `/api/v1/quality/reviews/` returns 500 on canonical env
 - `tj-19ol.3.4` — P1 bug: `/api/v1/crm/contacts/{phone}` returns 500 on canonical env
 - `tj-19ol.2` — P1 task: controlled live smoke for the escalation refactor (blocked by runtime defects)
@@ -34,4 +33,4 @@ Current baseline branch: `main`
 - Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
 - Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.
-- The current active execution stage is `tj-19ol.3`: triage canonical runtime blockers before resuming controlled live smoke on `https://noor.starec.ai`.
+- The current active execution stage is `tj-19ol.3`: repo-side auth fail-open fix from `tj-19ol.3.1` is done locally and verified; the next realistic focus is canonical recheck plus root-cause triage for `tj-19ol.3.2` and `tj-19ol.3.4` before resuming controlled live smoke on `https://noor.starec.ai`.

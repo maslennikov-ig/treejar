@@ -21,7 +21,7 @@ AI-powered sales assistant for **Treejar** office furniture company. Communicate
 # Clone and configure
 git clone <repo-url> && cd treejar
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your credentials, including ADMIN_PASSWORD and API_KEY
 
 # Start services
 docker compose up -d                    # Production (Supabase Cloud)
