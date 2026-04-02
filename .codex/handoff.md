@@ -17,7 +17,6 @@ Current baseline branch: `main`
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
-- `tj-2e5` — P2 task: stop local verification scripts from sending real Telegram escalation alerts
 
 ## Rules for the next orchestrator
 
@@ -27,3 +26,4 @@ Current baseline branch: `main`
 - Keep reviews findings-first and do not treat a stage as closed until fresh local verification is done.
 - Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
+- Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.

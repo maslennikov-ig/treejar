@@ -1,10 +1,9 @@
 import asyncio
 import logging
-import os
 import sys
 import uuid
-from contextlib import nullcontext
-from unittest.mock import AsyncMock, patch
+
+from escalation_guard import maybe_suppress_external_escalation_alerts
 
 from src.core.database import async_session_factory
 from src.core.redis import redis_client
@@ -165,15 +164,7 @@ async def main() -> None:
 
                 start_time = time.time()
 
-                escalation_guard = (
-                    patch(
-                        "src.integrations.notifications.escalation.notify_manager_escalation",
-                        new=AsyncMock(),
-                    )
-                    if os.getenv("ALLOW_REAL_ESCALATIONS") != "1"
-                    else nullcontext()
-                )
-                with escalation_guard:
+                with maybe_suppress_external_escalation_alerts():
                     response = await process_message(
                         conversation_id=conv.id,
                         combined_text=user_input,

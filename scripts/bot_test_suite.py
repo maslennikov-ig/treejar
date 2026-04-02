@@ -29,25 +29,21 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 import traceback
 import uuid
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, patch
+
+from escalation_guard import maybe_suppress_external_escalation_alerts
+
+from src.integrations.messaging.base import MessagingProvider
 
 # ─── Suppress noise ──────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 for noisy in ("httpx", "httpcore", "sqlalchemy.engine", "pydantic_ai", "openai"):
     logging.getLogger(noisy).setLevel(logging.ERROR)
-
-
-# ─── Mock Messaging Provider ─────────────────────────────────────────────────
-
-from src.integrations.messaging.base import MessagingProvider  # noqa: E402
 
 
 class MockMessagingProvider(MessagingProvider):
@@ -166,15 +162,7 @@ async def send_message(
             ZohoInventoryClient(redis_client=redis) as zoho,
             ZohoCRMClient(redis_client=redis) as crm,
         ):
-            escalation_guard = (
-                patch(
-                    "src.integrations.notifications.escalation.notify_manager_escalation",
-                    new=AsyncMock(),
-                )
-                if os.getenv("ALLOW_REAL_ESCALATIONS") != "1"
-                else nullcontext()
-            )
-            with escalation_guard:
+            with maybe_suppress_external_escalation_alerts():
                 response = await process_message(
                     conversation_id=conv.id,
                     combined_text=text,

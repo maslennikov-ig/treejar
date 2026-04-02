@@ -3,7 +3,6 @@ import os
 import sys
 import traceback
 import uuid
-from contextlib import nullcontext
 
 # Set dummy key for testing initialization without real API hits if none exists
 if not os.environ.get("OPENROUTER_API_KEY"):
@@ -13,6 +12,7 @@ if not os.environ.get("OPENROUTER_API_KEY"):
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import redis.asyncio as aioredis
+from scripts.escalation_guard import maybe_suppress_external_escalation_alerts
 
 from src.core.config import settings
 from src.core.database import async_session_factory as async_session_maker
@@ -54,18 +54,10 @@ async def main():
             query = "Какие у вас есть компьютерные столы?"
             print(f"\nSending agent query: '{query}'")
 
-            from unittest.mock import AsyncMock, patch
+            from unittest.mock import AsyncMock
 
             # Call engine directly instead of the webhook route
-            escalation_guard = (
-                patch(
-                    "src.integrations.notifications.escalation.notify_manager_escalation",
-                    new=AsyncMock(),
-                )
-                if os.getenv("ALLOW_REAL_ESCALATIONS") != "1"
-                else nullcontext()
-            )
-            with escalation_guard:
+            with maybe_suppress_external_escalation_alerts():
                 response = await process_message(
                     conversation_id=conversation_id,
                     combined_text=query,
