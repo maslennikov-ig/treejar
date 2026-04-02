@@ -10,7 +10,7 @@ Current baseline commit: `a9f0c0a40f73e124202a331050f92d734f0ef925`
 - `.gitignore` already allows those two files to be tracked; no broader `.codex/` ignore change was needed.
 - Existing local `.codex/config.toml` in the primary worktree was reviewed for this setup and left untouched.
 - Prefer dedicated worktrees for orchestration work; the primary worktree may contain unrelated local-only changes.
-- `bd ready` crashed in this environment while this handoff was prepared, so fall back to `.beads/issues.jsonl` and targeted `bd show <id>` queries if task selection is blocked.
+- Use `bd ready --json` for the current queue and `bd show <id>` for targeted task context.
 
 ## Open follow-ups / nearest ready tasks
 
