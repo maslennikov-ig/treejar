@@ -100,9 +100,9 @@ async def main() -> None:
     pdf_path.write_bytes(pdf_bytes)
     log.info(f"Saved to {pdf_path}")
 
-    # The app is served at dev.noor.starec.ai (port 8003 internally)
+    # The app is served at noor.starec.ai
     # Static assets are mounted at /admin/assets/
-    public_url = "https://dev.noor.starec.ai/admin/assets/test_quotation.pdf"
+    public_url = "https://noor.starec.ai/admin/assets/test_quotation.pdf"
     log.info(f"Public URL: {public_url}")
 
     # 4. Send via Wazzup with contentUri

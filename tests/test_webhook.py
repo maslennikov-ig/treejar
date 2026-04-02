@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from src.main import app
 
 client = TestClient(app)
+EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
 
 
 @patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
@@ -22,13 +23,14 @@ def test_wazzup_webhook_endpoint(mock_networks: Any) -> None:
                 "chatType": "whatsapp",
                 "text": "Hello bot!",
                 "type": "text",
-                "channelId": "ch1",
+                "channelId": EXPECTED_CHANNEL_ID,
                 "timestamp": 1234567890,
             }
         ]
     }
 
-    response = client.post("/api/v1/webhook/wazzup", json=payload)
+    with patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}

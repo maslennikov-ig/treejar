@@ -16,6 +16,7 @@ Run with:
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -49,16 +50,33 @@ OPENROUTER_KEY: str = _env_values.get("OPENROUTER_API_KEY", "") or ""
 MODEL_NAME: str = (
     _env_values.get("OPENROUTER_MODEL_MAIN") or settings.openrouter_model_main or ""
 )
+RUN_REAL_LLM_TESTS = os.getenv("RUN_REAL_LLM_TESTS") == "1"
 
-pytestmark = pytest.mark.skipif(
-    not OPENROUTER_KEY or OPENROUTER_KEY == "test-key",
-    reason="Real OPENROUTER_API_KEY not found in .env — skipping real LLM tests",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not RUN_REAL_LLM_TESTS,
+        reason="Set RUN_REAL_LLM_TESTS=1 to run real LLM tests intentionally",
+    ),
+    pytest.mark.skipif(
+        not OPENROUTER_KEY or OPENROUTER_KEY == "test-key",
+        reason="Real OPENROUTER_API_KEY not found in .env — skipping real LLM tests",
+    ),
+]
 
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _mock_manager_escalation() -> Any:
+    """Never allow real Telegram escalation side effects from real-model tests."""
+    with patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new=AsyncMock(),
+    ) as mock_notify:
+        yield mock_notify
 
 
 def _real_model() -> OpenAIChatModel:

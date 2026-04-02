@@ -29,12 +29,15 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import traceback
 import uuid
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 # ─── Suppress noise ──────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -163,16 +166,25 @@ async def send_message(
             ZohoInventoryClient(redis_client=redis) as zoho,
             ZohoCRMClient(redis_client=redis) as crm,
         ):
-            response = await process_message(
-                conversation_id=conv.id,
-                combined_text=text,
-                db=db,
-                redis=redis,
-                embedding_engine=embedding_engine,
-                zoho_client=zoho,
-                messaging_client=messaging,
-                crm_client=crm,
+            escalation_guard = (
+                patch(
+                    "src.integrations.notifications.escalation.notify_manager_escalation",
+                    new=AsyncMock(),
+                )
+                if os.getenv("ALLOW_REAL_ESCALATIONS") != "1"
+                else nullcontext()
             )
+            with escalation_guard:
+                response = await process_message(
+                    conversation_id=conv.id,
+                    combined_text=text,
+                    db=db,
+                    redis=redis,
+                    embedding_engine=embedding_engine,
+                    zoho_client=zoho,
+                    messaging_client=messaging,
+                    crm_client=crm,
+                )
 
         # Save assistant message
         ai_msg = Message(

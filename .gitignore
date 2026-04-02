@@ -77,5 +77,10 @@ docs/**/*.pdf
 # Beads issue tracker (synced separately via bd sync)
 .beads/
 
+.agents/
+.codex/*
+!.codex/handoff.md
+!.codex/orchestrator.toml
+
 .env*
 .worktrees/

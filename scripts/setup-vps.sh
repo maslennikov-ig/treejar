@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VPS Infrastructure Setup Script
-# Idempotent script to install and configure Nginx for the dual-environment setup.
+# Idempotent script to install and configure Nginx for the production setup.
 # Run this once on the VPS as root.
 
 set -e
@@ -23,7 +23,7 @@ fi
 systemctl enable nginx
 
 echo "[2/4] Setting up Nginx Virtual Hosts..."
-REPO_DIR="/home/starec/treejar-ai-bot"
+REPO_DIR="/opt/treejar-prod"
 
 if [ ! -d "$REPO_DIR/scripts" ]; then
     echo "Error: Could not find the repository at $REPO_DIR."
@@ -31,13 +31,11 @@ if [ ! -d "$REPO_DIR/scripts" ]; then
     exit 1
 fi
 
-# Copy Nginx configs to sites-available
+# Copy Nginx config to sites-available
 cp "$REPO_DIR/scripts/treejar-prod.conf" /etc/nginx/sites-available/treejar-prod
-cp "$REPO_DIR/scripts/treejar-dev.conf" /etc/nginx/sites-available/treejar-dev
 
-# Enable the sites by creating symlinks
+# Enable the site by creating a symlink
 ln -sf /etc/nginx/sites-available/treejar-prod /etc/nginx/sites-enabled/
-ln -sf /etc/nginx/sites-available/treejar-dev /etc/nginx/sites-enabled/
 
 # Remove default nginx site if it exists to avoid port 80 conflicts
 if [ -f /etc/nginx/sites-enabled/default ]; then
@@ -55,5 +53,4 @@ echo "=========================================================="
 echo "                      SETUP COMPLETE                      "
 echo "=========================================================="
 echo "Traffic for noor.starec.ai -> routes to port 8002"
-echo "Traffic for dev.noor.starec.ai -> routes to port 8003"
 echo "=========================================================="
