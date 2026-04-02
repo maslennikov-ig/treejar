@@ -16,6 +16,7 @@ Current baseline branch: `main`
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
+- `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-19ol.3.2` — P1 bug: `/api/v1/quality/reviews/` returns 500 on canonical env
 - `tj-19ol.3.4` — P1 bug: `/api/v1/crm/contacts/{phone}` returns 500 on canonical env
 - `tj-19ol.2` — P1 task: controlled live smoke for the escalation refactor (blocked by runtime defects)
@@ -33,4 +34,4 @@ Current baseline branch: `main`
 - Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
 - Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.
-- The current active execution stage is `tj-19ol.3`: repo-side auth fail-open fix from `tj-19ol.3.1` is done and verified, but canonical recheck still shows pre-fix behavior because the GitHub Actions deploy path is misconfigured for SSH port 22 instead of the actual VPS port 2222. Fix the repo-side workflow/docs drift first, then recheck canonical runtime before continuing `tj-19ol.3.2` / `tj-19ol.3.4` and resuming controlled live smoke on `https://noor.starec.ai`.
+- The current active execution stage is `tj-19ol.3`: repo-side auth fail-open fix from `tj-19ol.3.1` is done and verified, and repo-side workflow/docs drift was partially fixed in `ac00294` by switching CI SSH to port `2222`. The current blocker is now external to the repo: CI run `23899200755` reaches the deploy step but fails with `dial tcp ***:2222: i/o timeout`, so the next realistic step is to validate `VPS_HOST`/SSH secrets and network reachability to the canonical host before rechecking `tj-19ol.3.2` / `tj-19ol.3.4` and resuming controlled live smoke on `https://noor.starec.ai`.
