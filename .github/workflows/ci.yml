@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   lint:
@@ -60,7 +60,7 @@ jobs:
 
   deploy:
     needs: [lint, type-check, test]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to VPS via SSH
@@ -70,21 +70,11 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            BRANCH_NAME=${GITHUB_REF##*/}
-
-            if [ "$BRANCH_NAME" = "main" ]; then
-              TARGET_DIR="/opt/treejar-prod"
-            elif [ "$BRANCH_NAME" = "develop" ]; then
-              TARGET_DIR="/opt/treejar-dev"
-            else
-              echo "Deployment only supported for main and develop branches."
-              exit 1
-            fi
-
+            TARGET_DIR="/opt/treejar-prod"
             cd "$TARGET_DIR" || {
               echo "Repository not found at $TARGET_DIR."
               exit 1
             }
 
             chmod +x scripts/vps-deploy.sh
-            ./scripts/vps-deploy.sh "$BRANCH_NAME"
+            ./scripts/vps-deploy.sh main

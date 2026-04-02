@@ -6,7 +6,7 @@
 #
 # Options:
 #   -p, --phone PHONE    Chat phone number (default: +70000000099)
-#   -u, --url URL        Base URL (default: https://dev.noor.starec.ai)
+#   -u, --url URL        Base URL (default: https://noor.starec.ai)
 #   -a, --author TYPE    Author type: client|manager|bot (default: client)
 #   -w, --wait SECS      Seconds to wait for bot reply (default: 20)
 #   -h, --help           Show this help
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # Defaults
-BASE_URL="${BOT_TEST_URL:-https://dev.noor.starec.ai}"
+BASE_URL="${BOT_TEST_URL:-https://noor.starec.ai}"
 PHONE="${BOT_TEST_PHONE:-+70000000099}"
 AUTHOR_TYPE="client"
 WAIT_SECS=20
@@ -74,7 +74,7 @@ EOF
 )
 
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X POST "$BASE_URL/api/v1/wazzup" \
+    -X POST "$BASE_URL/api/v1/webhook/wazzup" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD")
 

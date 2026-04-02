@@ -9,8 +9,7 @@
 
 | Environment | URL |
 |-------------|-----|
-| **Production** | https://noor.starec.ai/admin/ |
-| **Development** | https://dev.noor.starec.ai/admin/ |
+| **Primary** | https://noor.starec.ai/admin/ |
 
 **Credentials** are stored in the server's `.env` file:
 ```ini
@@ -18,7 +17,7 @@ ADMIN_USERNAME=your_admin_user
 ADMIN_PASSWORD=your_secure_password
 ```
 
-> ⚠️ Always test changes on **dev.noor.starec.ai** before applying to production.
+> ⚠️ The project currently uses a main-only workflow. Treat `https://noor.starec.ai` as the canonical environment and validate changes there in a controlled manner.
 
 ---
 
@@ -63,7 +62,7 @@ The bot's behavior is controlled by system prompts stored in the **System Prompt
 - To **roll back**: find the previous version record, copy its `content`, paste into the latest record, and save.
 
 ### Best Practices
-- **Test on dev first**: deploy the updated prompt to `dev.noor.starec.ai`, send test messages, verify behavior.
+- **Test carefully on the canonical environment**: deploy the updated prompt to `https://noor.starec.ai`, send controlled test messages, and verify behavior before broader use.
 - **Document changes**: add a comment in the `notes` field explaining what changed and why.
 - **One change at a time**: avoid changing multiple prompts simultaneously.
 

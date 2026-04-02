@@ -1,6 +1,6 @@
 schema_version = 1
 role = "technical-orchestrator"
-beads_dir = "/home/me/code/treejar/.beads"
+beads_dir = ".beads"
 handoff_file = ".codex/handoff.md"
 
 [execution]
@@ -64,9 +64,10 @@ process_only_commands = [
   "git status --short",
 ]
 code_change_commands = [
-  "ruff check src/ tests/",
-  "mypy src/",
-  "pytest tests/ -v",
+  "uv run ruff check src/ tests/",
+  "uv run ruff format --check src/ tests/",
+  "uv run mypy src/",
+  "uv run pytest tests/ -v --tb=short",
 ]
 
 [session_completion]
