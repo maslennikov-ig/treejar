@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import SkipValidation
@@ -149,7 +148,9 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
 
     import asyncio
 
-    async def _safe_send_media(url: str, caption: str, zoho_item_id: str | None = None) -> None:
+    async def _safe_send_media(
+        url: str, caption: str, zoho_item_id: str | None = None
+    ) -> None:
         try:
             content = None
             content_type = None
@@ -161,7 +162,10 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
                 if res:
                     content, content_type = res
                 else:
-                    logger.warning("Zoho image missing or could not be downloaded for item %s", zoho_item_id)
+                    logger.warning(
+                        "Zoho image missing or could not be downloaded for item %s",
+                        zoho_item_id,
+                    )
                     return  # Early exit to avoid sending broken OAuth URL to Wazzup
 
             await ctx.deps.messaging_client.send_media(
@@ -414,7 +418,9 @@ async def create_quotation(
                     b64 = base64.b64encode(img_bytes).decode("ascii")
                     tpl_item["image_url"] = f"data:{content_type};base64,{b64}"
             except Exception as e:
-                logger.warning("Failed to download image for %s: %s", tpl_item["sku"], e)
+                logger.warning(
+                    "Failed to download image for %s: %s", tpl_item["sku"], e
+                )
 
     await asyncio.gather(*[_fetch_image(ti) for ti in template_items])
 
@@ -513,7 +519,9 @@ async def create_quotation(
     pdf_filename = f"quotation_{quote_number}.pdf"
     try:
         await ctx.deps.redis.setex(
-            f"quotation_pdf:{conv_id_str}", 86400, base64.b64encode(pdf_bytes),
+            f"quotation_pdf:{conv_id_str}",
+            86400,
+            base64.b64encode(pdf_bytes),
         )
         await ctx.deps.redis.setex(
             f"quotation_meta:{conv_id_str}",
@@ -747,7 +755,9 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
 async def escalate_to_manager(
     ctx: RunContext[SalesDeps],
     reason: str,
-    escalation_type: Literal["order_confirmation", "human_requested", "general"] = "general",
+    escalation_type: Literal[
+        "order_confirmation", "human_requested", "general"
+    ] = "general",
 ) -> str:
     """Escalate the conversation to a human manager.
     Call this ONLY when the situation genuinely requires human intervention.

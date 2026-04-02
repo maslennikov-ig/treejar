@@ -84,8 +84,12 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
     logger.info(
         "Zoho sync completed. Synced: %d, Created: %d, Updated: %d, "
         "Deactivated: %d, Embeddings: %d, Errors: %d",
-        stats.synced, stats.created, stats.updated,
-        stats.deactivated, stats.embeddings_generated, stats.errors,
+        stats.synced,
+        stats.created,
+        stats.updated,
+        stats.deactivated,
+        stats.embeddings_generated,
+        stats.errors,
     )
 
     return stats.model_dump()

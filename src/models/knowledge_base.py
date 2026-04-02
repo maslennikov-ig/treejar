@@ -36,6 +36,4 @@ class KnowledgeBase(UUIDMixin, Base):
     original_question: Mapped[str | None] = mapped_column(
         Text, nullable=True, default=None
     )
-    manager_draft: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
+    manager_draft: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)

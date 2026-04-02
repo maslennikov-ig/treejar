@@ -112,7 +112,12 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     # Handle order confirmation/rejection immediately (no text input needed)
     if mode in ("order_confirm", "order_reject"):
         await _handle_order_decision(
-            client, callback_id, chat_id, message_id, mode, conv_id_str,
+            client,
+            callback_id,
+            chat_id,
+            message_id,
+            mode,
+            conv_id_str,
         )
         return
 
@@ -127,11 +132,13 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     question = await _get_last_user_question(conv_uuid)
 
     # Store the pending response context in Redis (survives restarts)
-    pending_data = json.dumps({
-        "conversation_id": str(conv_uuid),
-        "mode": mode,
-        "question": question or "Question not found",
-    })
+    pending_data = json.dumps(
+        {
+            "conversation_id": str(conv_uuid),
+            "mode": mode,
+            "question": question or "Question not found",
+        }
+    )
     await redis_client.setex(
         f"{_PENDING_KEY_PREFIX}{chat_id}", _PENDING_TTL_SECONDS, pending_data
     )
@@ -186,10 +193,7 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
 
             # R3-2: HTML-escape adapted text before Telegram notification
             safe_adapted = (
-                adapted
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
+                adapted.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             )
             await client.send_message(
                 f"✅ Ответ отправлен клиенту:\n\n{safe_adapted}",
@@ -213,7 +217,8 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
                         )
             except Exception:
                 logger.exception(
-                    "Failed to resolve escalation for %s", conv_id,
+                    "Failed to resolve escalation for %s",
+                    conv_id,
                 )
         else:
             await client.send_message(
@@ -228,14 +233,14 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
             from src.services.auto_faq import save_to_faq
 
             async with async_session_factory() as db:
-                result = await save_to_faq(
+                kb_entry = await save_to_faq(
                     db=db,
                     question=question,
                     adapted_answer=adapted,
                     manager_draft=draft,
                     embedding_engine=EmbeddingEngine(),
                 )
-            if result:
+            if kb_entry:
                 await client.send_message(
                     "📚 Ответ добавлен в Базу Знаний.", chat_id=str(chat_id)
                 )
@@ -269,7 +274,9 @@ async def _get_last_user_question(conv_id: uuid.UUID) -> str | None:
         return result.scalar_one_or_none()
 
 
-async def _get_conversation_phone_and_lang(conv_id: uuid.UUID) -> tuple[str | None, str]:
+async def _get_conversation_phone_and_lang(
+    conv_id: uuid.UUID,
+) -> tuple[str | None, str]:
     """Fetch the phone number and detect current language for a conversation.
 
     B6 fix: Instead of relying solely on conversation.language (which may be stale
@@ -376,7 +383,8 @@ async def _handle_order_decision(
                     pdf_bytes = base64.b64decode(pdf_b64_raw)
                 except Exception:
                     logger.warning(
-                        "Failed to decode PDF from Redis for conv %s", conv_id_str,
+                        "Failed to decode PDF from Redis for conv %s",
+                        conv_id_str,
                     )
 
             if meta_raw:
@@ -385,7 +393,8 @@ async def _handle_order_decision(
                     quote_number = meta.get("quote_number", "DRAFT")
                 except Exception:
                     logger.warning(
-                        "Failed to parse quotation meta for conv %s", conv_id_str,
+                        "Failed to parse quotation meta for conv %s",
+                        conv_id_str,
                     )
 
             # Send PDF to client via Wazzup if available
@@ -401,7 +410,8 @@ async def _handle_order_decision(
                         )
                     except Exception:
                         logger.exception(
-                            "Failed to send PDF to client for conv %s", conv_id_str,
+                            "Failed to send PDF to client for conv %s",
+                            conv_id_str,
                         )
                         await client.send_message(
                             "⚠️ Не удалось отправить PDF клиенту.",
@@ -436,7 +446,8 @@ async def _handle_order_decision(
                 await redis_client.delete(pdf_key, meta_key)
             except Exception:
                 logger.warning(
-                    "Failed to clean up quotation Redis keys for %s", conv_id_str,
+                    "Failed to clean up quotation Redis keys for %s",
+                    conv_id_str,
                 )
         else:
             # Reject — no PDF sent, just text
@@ -467,7 +478,8 @@ async def _handle_order_decision(
                 await redis_client.delete(pdf_key, meta_key)
             except Exception:
                 logger.warning(
-                    "Failed to clean up quotation Redis keys for %s", conv_id_str,
+                    "Failed to clean up quotation Redis keys for %s",
+                    conv_id_str,
                 )
 
         # Save message and resolve escalation AFTER successful send
@@ -497,5 +509,3 @@ async def _handle_order_decision(
             "⚠️ Не удалось найти номер телефона клиента.",
             chat_id=str(chat_id),
         )
-
-

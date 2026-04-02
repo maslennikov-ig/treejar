@@ -86,7 +86,7 @@ IMPORTANT: The user prefers to communicate in {language}. You MUST reply entirel
 """
 
 STAGE_RULES: dict[str, str] = {
-"greeting": """STAGE: GREETING
+    "greeting": """STAGE: GREETING
 Your current objective is to greet the customer, ask for their name if not provided, and briefly introduce Treejar.
 Do NOT recommend products yet. Just establish a friendly connection and find out what brings them to Treejar.
 Once you know why they are here, use `advance_stage` to move to `qualifying`.

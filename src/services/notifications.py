@@ -68,12 +68,7 @@ def format_escalation_message(
     # Format phone with + prefix for tel: link if not already prefixed
     phone_display = phone if phone.startswith("+") else f"+{phone}"
     # CR-4: HTML-escape reason (may contain LLM-generated text with <, >, &)
-    safe_reason = (
-        reason
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    safe_reason = reason.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     msg = (
         "🚨 <b>Escalation Alert</b>\n\n"
         f'📞 <b>Phone:</b> <a href="tel:{phone_display}">{phone_display}</a>\n'
@@ -105,10 +100,7 @@ def format_quality_alert_message(
     emoji = "🔴" if score < 10 else "🟡"
     # R3-4: HTML-escape summary (LLM-generated, may contain < > &)
     safe_summary = (
-        summary
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+        summary.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
     return (
         f"{emoji} <b>Quality Alert</b>\n\n"

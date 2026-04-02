@@ -74,7 +74,9 @@ async def main() -> None:
         segment = contact.get("Segment")
         try:
             assert segment is not None, "Segment is None"
-            assert isinstance(segment, list), f"Segment is {type(segment).__name__}, not list"
+            assert isinstance(segment, list), (
+                f"Segment is {type(segment).__name__}, not list"
+            )
             record("CRM: Segment is list", True, f"Segment={segment}")
         except Exception as e:
             record("CRM: Segment is list", False, str(e))
@@ -101,7 +103,9 @@ async def main() -> None:
         stock = item.get("stock_on_hand")
         assert stock is not None, "stock_on_hand is None"
         assert isinstance(stock, (int, float)), f"stock is {type(stock).__name__}"
-        record("Inventory: get_items", True, f"{len(inventory_items)} items, stock={stock}")
+        record(
+            "Inventory: get_items", True, f"{len(inventory_items)} items, stock={stock}"
+        )
     except Exception as e:
         record("Inventory: get_items", False, str(e))
 
@@ -150,21 +154,25 @@ async def main() -> None:
             subtotal = 0.0
 
             for inv_item in inventory_items[:3]:
-                base_price = float(inv_item.get("rate", 0) or inv_item.get("price", 0) or 100)
+                base_price = float(
+                    inv_item.get("rate", 0) or inv_item.get("price", 0) or 100
+                )
                 unit_price = apply_discount(base_price, segment)
                 quantity = 2
                 total_price = unit_price * quantity
                 subtotal += total_price
 
-                template_items.append({
-                    "sku": inv_item.get("sku", "N/A"),
-                    "name": inv_item.get("name", "Unknown"),
-                    "description": inv_item.get("description", ""),
-                    "quantity": quantity,
-                    "unit_price": unit_price,
-                    "total_price": total_price,
-                    "image_url": inv_item.get("image_document_id"),
-                })
+                template_items.append(
+                    {
+                        "sku": inv_item.get("sku", "N/A"),
+                        "name": inv_item.get("name", "Unknown"),
+                        "description": inv_item.get("description", ""),
+                        "quantity": quantity,
+                        "unit_price": unit_price,
+                        "total_price": total_price,
+                        "image_url": inv_item.get("image_document_id"),
+                    }
+                )
 
             vat_amount = subtotal * 0.05
             grand_total = subtotal + vat_amount
@@ -221,7 +229,9 @@ async def main() -> None:
             assert msg_id != ""
             record("Wazzup: send PDF to WhatsApp", True, f"msg_id={msg_id}")
         except Exception as e:
-            record("Wazzup: send PDF to WhatsApp", False, f"{e}\n{traceback.format_exc()}")
+            record(
+                "Wazzup: send PDF to WhatsApp", False, f"{e}\n{traceback.format_exc()}"
+            )
 
     # ── Cleanup ───────────────────────────────────────────────────
     await crm.close()

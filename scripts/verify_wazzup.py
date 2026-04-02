@@ -19,7 +19,10 @@ async def main() -> None:
 
     async with WazzupProvider() as client:
         try:
-            message_id = await client.send_text(test_phone, "Hello! This is an integration verification test from Treejar API.")
+            message_id = await client.send_text(
+                test_phone,
+                "Hello! This is an integration verification test from Treejar API.",
+            )
             print(f"✅ Success! Message ID: {message_id}")
         except Exception as e:
             print(f"❌ Failed to send message: {e}")

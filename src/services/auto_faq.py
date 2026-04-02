@@ -54,9 +54,7 @@ async def _normalize_to_english(question: str, answer: str) -> tuple[str, str]:
     """
     try:
         content = f"Q: {question}\nA: {answer}"
-        result = await asyncio.wait_for(
-            _translate_agent.run(content), timeout=30.0
-        )
+        result = await asyncio.wait_for(_translate_agent.run(content), timeout=30.0)
         translated = result.output.strip()
 
         # Parse back into Q and A
@@ -100,9 +98,7 @@ async def save_to_faq(
     en_question, en_answer = await _normalize_to_english(question, adapted_answer)
     content_text = f"Q: {en_question}\nA: {en_answer}"
 
-    logger.info(
-        "Normalized FAQ to English: %r -> %r", question[:60], en_question[:60]
-    )
+    logger.info("Normalized FAQ to English: %r -> %r", question[:60], en_question[:60])
 
     # 2. Generate embedding for the English content
     embedding = await embedding_engine.embed_async(content_text)

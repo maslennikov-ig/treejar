@@ -17,9 +17,12 @@ async def main() -> None:
             print("✅ Successfully connected to Wazzup API!")
             print(f"Channels found: {len(data)}")
             for ch in data:
-                print(f" - {ch.get('channelId')}: {ch.get('state')} ({ch.get('transport')})")
+                print(
+                    f" - {ch.get('channelId')}: {ch.get('state')} ({ch.get('transport')})"
+                )
         except Exception as e:
             print(f"❌ Failed to connect to Wazzup API: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

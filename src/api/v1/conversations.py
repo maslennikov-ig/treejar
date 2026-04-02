@@ -126,7 +126,6 @@ async def update_conversation(
     return ConversationRead.model_validate(conversation)
 
 
-
 @router.post("/{conversation_id}/escalate", response_model=ConversationRead)
 async def escalate_conversation(
     conversation_id: uuid.UUID,

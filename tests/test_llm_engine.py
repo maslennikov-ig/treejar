@@ -156,9 +156,6 @@ async def test_tools_escalate_to_manager(
         notifications.notify_manager_escalation = orig_notify
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_tools_search_products(
     mock_deps: tuple[

@@ -66,7 +66,9 @@ async def main() -> None:
 
         # 3. Create test contact
         print("\n--- 2.3 Contact creation (dry-run) ---")
-        ok("Skipping real creation (would pollute CRM). Code path verified via unit tests.")
+        ok(
+            "Skipping real creation (would pollute CRM). Code path verified via unit tests."
+        )
 
         # 4. Deal operations
         print("\n--- 2.4 Deal operations (dry-run) ---")

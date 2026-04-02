@@ -33,7 +33,12 @@ def fail(msg: str) -> None:
 
 
 async def check_endpoint(
-    client: httpx.AsyncClient, method: str, path: str, name: str, *, expect_status: int = 200
+    client: httpx.AsyncClient,
+    method: str,
+    path: str,
+    name: str,
+    *,
+    expect_status: int = 200,
 ) -> None:
     try:
         if method == "GET":
@@ -47,7 +52,9 @@ async def check_endpoint(
         if resp.status_code == expect_status:
             ok(f"{name}: {method} {path} → {resp.status_code}")
         else:
-            fail(f"{name}: {method} {path} → {resp.status_code} (expected {expect_status})")
+            fail(
+                f"{name}: {method} {path} → {resp.status_code} (expected {expect_status})"
+            )
     except Exception as e:
         fail(f"{name}: {method} {path} → ERROR: {e}")
 
@@ -69,11 +76,19 @@ async def main(base_url: str) -> None:
 
         # 3. Conversation endpoints
         print("\n--- 11.3 Conversations ---")
-        await check_endpoint(client, "GET", "/api/v1/conversations/", "Conversation list")
+        await check_endpoint(
+            client, "GET", "/api/v1/conversations/", "Conversation list"
+        )
 
         # 4. Quality endpoints
         print("\n--- 11.4 Quality ---")
-        await check_endpoint(client, "GET", "/api/v1/quality/reviews/", "Quality reviews", expect_status=403)
+        await check_endpoint(
+            client,
+            "GET",
+            "/api/v1/quality/reviews/",
+            "Quality reviews",
+            expect_status=403,
+        )
 
         # 5. Webhook endpoint (should accept POST but may require valid payload)
         print("\n--- 11.5 Webhook ---")

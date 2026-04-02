@@ -163,7 +163,6 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
             )
         )
 
-
         result = await db.execute(stmt)
         conversations: list[Conversation] = list(result.scalars().all())
 

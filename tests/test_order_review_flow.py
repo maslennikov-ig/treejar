@@ -145,6 +145,7 @@ def _setup_mocks_for_order_decision(
 
     Returns (mock_tg_client, mock_wazzup).
     """
+
     # Redis mock
     async def mock_get(key: str) -> bytes | None:
         if "quotation_pdf:" in key and pdf_b64_raw is not None:
@@ -206,7 +207,8 @@ async def test_order_confirm_sends_pdf_to_client(
 
     mock_phone_fn.return_value = ("+971501234567", "en")
     mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
-        mock_redis, mock_session_factory,
+        mock_redis,
+        mock_session_factory,
         pdf_b64_raw=pdf_b64.encode(),
         meta_raw=meta_json.encode(),
     )
@@ -253,7 +255,8 @@ async def test_order_confirm_no_pdf_graceful(
 
     mock_phone_fn.return_value = ("+971501234567", "en")
     mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
-        mock_redis, mock_session_factory,
+        mock_redis,
+        mock_session_factory,
         pdf_b64_raw=None,
         meta_raw=None,
     )
@@ -301,7 +304,8 @@ async def test_order_reject_deletes_pdf(
     pdf_b64 = base64.b64encode(FAKE_PDF_BYTES).decode()
     mock_phone_fn.return_value = ("+971501234567", "en")
     mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
-        mock_redis, mock_session_factory,
+        mock_redis,
+        mock_session_factory,
         pdf_b64_raw=pdf_b64.encode(),
     )
 
@@ -344,7 +348,8 @@ async def test_order_reject_no_pdf_to_client(
 
     mock_phone_fn.return_value = ("+971501234567", "en")
     mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
-        mock_redis, mock_session_factory,
+        mock_redis,
+        mock_session_factory,
     )
 
     with patch(

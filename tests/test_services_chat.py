@@ -13,22 +13,24 @@ def test_format_for_whatsapp() -> None:
     assert _format_for_whatsapp("**Bold Text**") == "*Bold Text*"
     assert _format_for_whatsapp("***Bold Italic***") == "*Bold Italic*"
     assert _format_for_whatsapp("*Already correct*") == "*Already correct*"
-    assert _format_for_whatsapp("Check this link: [OpenAI](https://openai.com)") == "Check this link: OpenAI: https://openai.com"
+    assert (
+        _format_for_whatsapp("Check this link: [OpenAI](https://openai.com)")
+        == "Check this link: OpenAI: https://openai.com"
+    )
     assert _format_for_whatsapp("![Image](https://image.com/img.png)") == "Image"
     assert _format_for_whatsapp("**🪑 Our Top Picks:**") == "*🪑 Our Top Picks:*"
     assert _format_for_whatsapp("## **1. Executive Chair**") == "*1. Executive Chair*"
     assert _format_for_whatsapp("`inline code`") == "```inline code```"
-    assert _format_for_whatsapp("This is `code1` and `code2`") == "This is ```code1``` and ```code2```"
+    assert (
+        _format_for_whatsapp("This is `code1` and `code2`")
+        == "This is ```code1``` and ```code2```"
+    )
 
 
 def test_format_for_whatsapp_tables() -> None:
     """Markdown tables should be converted to key-value lists."""
     # Simple 2-column table
-    table = (
-        "| Product | Price |\n"
-        "| --- | --- |\n"
-        "| Chair | 1200 AED |"
-    )
+    table = "| Product | Price |\n| --- | --- |\n| Chair | 1200 AED |"
     expected = "*Product:* Chair\n*Price:* 1200 AED"
     assert _format_for_whatsapp(table) == expected
 

@@ -1,4 +1,5 @@
 """Tests for src.core.discounts — normalize segment from CRM (list/str/None)."""
+
 from __future__ import annotations
 
 import pytest
@@ -50,7 +51,9 @@ class TestGetDiscountPercentage:
             ([], 0),
         ],
     )
-    def test_discount_lookup(self, segment: str | list[str] | None, expected: int) -> None:
+    def test_discount_lookup(
+        self, segment: str | list[str] | None, expected: int
+    ) -> None:
         assert get_discount_percentage(segment) == expected
 
 

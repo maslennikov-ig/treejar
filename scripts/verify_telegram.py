@@ -37,7 +37,9 @@ async def main() -> None:
 
     # 1. Configuration
     print("\n--- 8.1 Configuration ---")
-    bot_token = settings.telegram_bot_token if hasattr(settings, "telegram_bot_token") else ""
+    bot_token = (
+        settings.telegram_bot_token if hasattr(settings, "telegram_bot_token") else ""
+    )
     chat_id = settings.telegram_chat_id if hasattr(settings, "telegram_chat_id") else ""
 
     if bot_token and len(bot_token) > 10:
@@ -80,7 +82,9 @@ async def main() -> None:
         else:
             fail("Escalation message format returned empty/short result")
 
-        quality_msg = format_quality_alert_message(uuid4(), 25.0, "good", "Very poor greeting")
+        quality_msg = format_quality_alert_message(
+            uuid4(), 25.0, "good", "Very poor greeting"
+        )
         if quality_msg and len(quality_msg) > 20:
             ok(f"Quality alert formatted ({len(quality_msg)} chars)")
         else:
@@ -93,7 +97,9 @@ async def main() -> None:
     print("\n--- 8.4 Live message ---")
     if os.getenv("SEND_TEST") == "1" and client and client.is_configured():
         try:
-            await client.send_message("🤖 TreeJar verification test — if you see this, notifications work!")
+            await client.send_message(
+                "🤖 TreeJar verification test — if you see this, notifications work!"
+            )
             ok("Test message sent to Telegram successfully")
         except Exception as e:
             fail(f"Send failed: {e}")

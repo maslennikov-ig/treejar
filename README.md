@@ -13,7 +13,7 @@ AI-powered sales assistant for **Treejar** office furniture company. Communicate
 | WhatsApp | Wazzup API |
 | CRM | Zoho CRM + Zoho Inventory (custom httpx) |
 | Admin | SQLAdmin |
-| Embeddings | BAAI/bge-m3 via FastEmbed |
+| Embeddings | BAAI/bge-m3 via sentence-transformers |
 
 ## Quick Start
 

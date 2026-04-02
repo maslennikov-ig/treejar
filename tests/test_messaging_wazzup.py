@@ -188,4 +188,3 @@ async def test_send_template_success(
 
     msg_id = await wazzup_provider.send_template("123", "tmpl_1", {})
     assert msg_id == "msg_tmpl"
-

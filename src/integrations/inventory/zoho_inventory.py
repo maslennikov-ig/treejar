@@ -235,7 +235,8 @@ class ZohoInventoryClient(InventoryProvider):
         }
 
     async def get_item_image(
-        self, item_id: str,
+        self,
+        item_id: str,
     ) -> tuple[bytes, str] | None:
         """Download a product image from Zoho Inventory.
 

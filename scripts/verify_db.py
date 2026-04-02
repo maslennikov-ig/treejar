@@ -81,9 +81,7 @@ async def main() -> None:
     print("\n--- 1.3 Alembic migration status ---")
     async with engine.begin() as conn:
         try:
-            result = await conn.execute(
-                text("SELECT version_num FROM alembic_version")
-            )
+            result = await conn.execute(text("SELECT version_num FROM alembic_version"))
             version = result.scalar()
             if version:
                 ok(f"Alembic version: {version}")

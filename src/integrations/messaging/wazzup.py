@@ -56,7 +56,9 @@ class WazzupProvider(MessagingProvider):
                 return response
 
             except httpx.HTTPStatusError as e:
-                logger.error("Wazzup HTTP error %s: %s", e.response.status_code, e.response.text)
+                logger.error(
+                    "Wazzup HTTP error %s: %s", e.response.status_code, e.response.text
+                )
                 # 429 Too Many Requests
                 if e.response.status_code == 429 and attempt < max_retries:
                     await asyncio.sleep(2**attempt)
@@ -88,13 +90,21 @@ class WazzupProvider(MessagingProvider):
         Raises:
             RuntimeError: If upload fails or the service is unavailable.
         """
-        ext = mimetypes.guess_extension(content_type or "application/octet-stream") or ""
+        ext = (
+            mimetypes.guess_extension(content_type or "application/octet-stream") or ""
+        )
         filename = f"file{ext}"
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as http:
             resp = await http.post(
                 _TMPFILES_UPLOAD_URL,
-                files={"file": (filename, content, content_type or "application/octet-stream")},
+                files={
+                    "file": (
+                        filename,
+                        content,
+                        content_type or "application/octet-stream",
+                    )
+                },
             )
             resp.raise_for_status()
             data = resp.json()
