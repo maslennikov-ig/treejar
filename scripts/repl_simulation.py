@@ -1,7 +1,10 @@
 import asyncio
 import logging
+import os
 import sys
 import uuid
+from contextlib import nullcontext
+from unittest.mock import AsyncMock, patch
 
 from src.core.database import async_session_factory
 from src.core.redis import redis_client
@@ -162,16 +165,25 @@ async def main() -> None:
 
                 start_time = time.time()
 
-                response = await process_message(
-                    conversation_id=conv.id,
-                    combined_text=user_input,
-                    db=db,
-                    redis=redis,
-                    embedding_engine=embedding_engine,
-                    zoho_client=zoho_inventory,
-                    messaging_client=messaging_client,
-                    crm_client=zoho_crm,
+                escalation_guard = (
+                    patch(
+                        "src.integrations.notifications.escalation.notify_manager_escalation",
+                        new=AsyncMock(),
+                    )
+                    if os.getenv("ALLOW_REAL_ESCALATIONS") != "1"
+                    else nullcontext()
                 )
+                with escalation_guard:
+                    response = await process_message(
+                        conversation_id=conv.id,
+                        combined_text=user_input,
+                        db=db,
+                        redis=redis,
+                        embedding_engine=embedding_engine,
+                        zoho_client=zoho_inventory,
+                        messaging_client=messaging_client,
+                        crm_client=zoho_crm,
+                    )
 
                 elapsed = time.time() - start_time
 

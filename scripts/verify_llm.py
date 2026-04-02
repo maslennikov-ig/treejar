@@ -3,6 +3,7 @@ import os
 import sys
 import traceback
 import uuid
+from contextlib import nullcontext
 
 # Set dummy key for testing initialization without real API hits if none exists
 if not os.environ.get("OPENROUTER_API_KEY"):
@@ -53,19 +54,28 @@ async def main():
             query = "Какие у вас есть компьютерные столы?"
             print(f"\nSending agent query: '{query}'")
 
-            from unittest.mock import AsyncMock
+            from unittest.mock import AsyncMock, patch
 
             # Call engine directly instead of the webhook route
-            response = await process_message(
-                conversation_id=conversation_id,
-                combined_text=query,
-                db=db,
-                redis=redis,
-                messaging_client=AsyncMock(),
-                embedding_engine=engine,
-                zoho_client=inventory_client,
-                crm_client=crm_client,
+            escalation_guard = (
+                patch(
+                    "src.integrations.notifications.escalation.notify_manager_escalation",
+                    new=AsyncMock(),
+                )
+                if os.getenv("ALLOW_REAL_ESCALATIONS") != "1"
+                else nullcontext()
             )
+            with escalation_guard:
+                response = await process_message(
+                    conversation_id=conversation_id,
+                    combined_text=query,
+                    db=db,
+                    redis=redis,
+                    messaging_client=AsyncMock(),
+                    embedding_engine=engine,
+                    zoho_client=inventory_client,
+                    crm_client=crm_client,
+                )
 
             print(f"\n✅ Agent Response:\n{response.text}\n")
             print(f"Usage: IN={response.tokens_in} OUT={response.tokens_out}")
