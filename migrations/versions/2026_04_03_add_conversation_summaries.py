@@ -1,6 +1,6 @@
 """Add persistent conversation summaries.
 
-Revision ID: 2026_04_03_conversation_summaries
+Revision ID: 2026_04_03_conv_summary_001
 Revises: 2026_03_18_auto_faq
 Create Date: 2026-04-03
 """
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "2026_04_03_conversation_summaries"
+revision: str = "2026_04_03_conv_summary_001"
 down_revision: str | None = "2026_03_18_auto_faq"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -11,9 +11,9 @@ Current baseline branch: `main`
 - The repository now operates in a main-only workflow: promote finished work directly into `main` instead of treating `develop` as a required intermediate branch.
 - Prefer dedicated worktrees for orchestration work when the primary worktree contains unrelated local-only changes.
 - Use `bd ready --json` for the current queue and `bd show <id>` for targeted task context.
-- Repo-side implementation for `tj-15m.4` is ready on branch `codex/tj-15m-4-hybrid-context`: it adds persistent `ConversationSummary` storage + migration, an async ARQ refresh job on the fast model path, a shared hybrid context builder (`summary + raw recent tail`) for main/follow-up paths, and post-reply enqueue after assistant commit.
-- Review follow-up fixes on the same branch are also in place: raw tail no longer overlaps already-covered summary turns, and runtime message creation now stamps deterministic `created_at` values instead of relying on `server_default(now())` for batched ordering.
-- `tj-15m.4` intentionally did not touch deploy/runtime/canonical retest/image-upload scope (`tj-27v`). Local quality gate is green: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short`.
+- `tj-15m.4` is now merged into `main` and hot-applied on canonical runtime `/opt/noor`: it adds persistent `ConversationSummary` storage + migration, an async ARQ refresh job on the fast model path, a shared hybrid context builder (`summary + raw recent tail`) for main/follow-up paths, and post-reply enqueue after assistant commit.
+- Review follow-up fixes are also in `main`: raw tail no longer overlaps already-covered summary turns, and runtime message creation now stamps deterministic `created_at` values instead of relying on `server_default(now())` for batched ordering.
+- A late production blocker was fixed locally on 2026-04-03: Alembic revision `2026_04_03_conversation_summaries` exceeded the production `alembic_version.version_num varchar(32)` limit. It was shortened to `2026_04_03_conv_summary_001`, and `tests/test_migrations.py` now guards all Alembic revision lengths.
 
 ## Open follow-ups / nearest ready tasks
 
@@ -24,7 +24,7 @@ Current baseline branch: `main`
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
-- `tj-15m.4` — P1 task: reduce accumulated conversation context on long product dialogues
+- `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
 
 ## Rules for the next orchestrator
 
@@ -48,15 +48,27 @@ Current baseline branch: `main`
     - `What are the wholesale prices for bulk orders?` still yields no escalation in 16s on conversation `029f43b4-add3-411a-92d3-2c14352cb74c`
   - next realistic blockers are no longer in the escalation flow itself; they are ops/runtime alignment (`tj-5ypi`, `tj-19ol.3.5`) and broader product work like latency (`tj-15m`) and FAQ/RAG quality (`tj-12a`)
   - additional canonical truth from the 2026-04-03 latency pass:
-    - `tj-15m` is still active after a real profiling round
-    - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
-    - the acoustic-pods product path had an unbounded `search_products` retry loop; repo and canonical env now cap real product searches to 2 per customer message
-    - direct isolated replay for `"Tell me about your acoustic pods"` dropped to about `15.25s` after the loop cap
-    - canonical webhook canary no longer crashes on duplicate conversations for `+971000000001`; `src/services/chat.py` now chooses the most recent non-empty conversation instead of crashing on `MultipleResultsFound`
-    - canonical webhook canary for the same acoustic-pods query still took `42.19s`, with logs showing remaining tail dominated by multiple OpenRouter turns, large accumulated context (`tokens_in=10353` on that run), and failing product-image uploads
-    - `tj-27v` remains relevant: product image upload via `tmpfiles.org` currently returns HTTP `422`, so image delivery still fails and adds latency noise
+  - `tj-15m` is still active after a real profiling round
+  - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
+  - the acoustic-pods product path had an unbounded `search_products` retry loop; repo and canonical env now cap real product searches to 2 per customer message
+  - direct isolated replay for `"Tell me about your acoustic pods"` dropped to about `15.25s` after the loop cap
+  - canonical webhook canary no longer crashes on duplicate conversations for `+971000000001`; `src/services/chat.py` now chooses the most recent non-empty conversation instead of crashing on `MultipleResultsFound`
+  - canonical webhook canary for the same acoustic-pods query still took `42.19s`, with logs showing remaining tail dominated by multiple OpenRouter turns, large accumulated context (`tokens_in=10353` on that run), and failing product-image uploads
+  - `tj-15m.4` is closed after canonical deploy/retest:
+    - `/opt/noor` was updated and rebuilt successfully
+    - worker logs confirm `refresh_conversation_summary` executed successfully and created/updated a `conversation_summaries` row for `+971000000001`
+    - controlled webhook retest on canonical env after deploy showed:
+      - warmup_1 `24.55s`, `tokens_in=2427`
+      - warmup_2 `17.48s`, `tokens_in=6527`
+      - warmup_3 `36.13s`, `tokens_in=6536`
+      - target `"Tell me about your acoustic pods"` `35.84s`, `tokens_in=10396`
+      - follow-up `"Do they work for 4-person meetings and private calls?"` `16.70s`, `tokens_in=3153`
+      - wholesale guard `20.11s`, `tokens_in=2972`
+      - `escalation_status` stayed `none` throughout
+    - summary persistence is therefore no longer the blocker; residual latency moved to `tj-15m.5`
+  - `tj-27v` remains relevant: product image upload via `tmpfiles.org` currently returns HTTP `422`, so image delivery still fails and adds latency noise
   - next realistic latency slices are narrower than a broad refactor:
-    - context/token-control work under `tj-15m`
+    - product-search/tool-context work under `tj-15m.5`
     - `tj-27v` media upload repair for `search_products`
 - Operational truth for canonical host:
   - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
