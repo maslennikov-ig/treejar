@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -307,3 +308,102 @@ async def test_process_incoming_batch_skips_without_expected_channel(
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
     mock_session_factory.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_persists_stable_created_at_for_batched_messages(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-ordered"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # existing conversation
+        MockResult([]),  # msg dedup check
+        MockResult(3),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+    ]
+
+    from src.llm import LLMResponse
+
+    mock_process_message.return_value = LLMResponse(
+        text="Ordered reply",
+        tokens_in=5,
+        tokens_out=7,
+        cost=0.01,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg_out_1"
+
+    later_msg = WazzupIncomingMessage(
+        messageId="msg-later",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="second in time",
+        channelId="chan-1",
+        dateTime="2026-04-03T10:00:01.000",
+    )
+    earlier_msg = WazzupIncomingMessage(
+        messageId="msg-earlier",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="first in time",
+        channelId="chan-1",
+        dateTime="2026-04-03T10:00:00.000",
+    )
+
+    mock_redis = AsyncMock()
+    mock_redis.lpop.side_effect = [
+        later_msg.model_dump_json(),
+        earlier_msg.model_dump_json(),
+        None,
+    ]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    added_messages = [
+        call.args[0]
+        for call in mock_session.add.call_args_list
+        if getattr(call.args[0], "__class__", None).__name__ == "Message"
+    ]
+    inbound_messages = added_messages[:2]
+
+    assert [message.content for message in inbound_messages] == [
+        "first in time",
+        "second in time",
+    ]
+    assert all(isinstance(message.created_at, datetime) for message in inbound_messages)
+    assert inbound_messages[0].created_at < inbound_messages[1].created_at

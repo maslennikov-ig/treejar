@@ -58,6 +58,28 @@ def _select_raw_tail(messages_desc: list[Message]) -> list[Message]:
     return selected
 
 
+def _messages_newer_than_summary_boundary(
+    messages_desc: list[Message],
+    summary: ConversationSummary | None,
+) -> list[Message]:
+    if not summary or not summary.covered_through_message_id:
+        return messages_desc
+
+    recent_messages = list(reversed(messages_desc))
+    boundary_index = next(
+        (
+            index
+            for index, message in enumerate(recent_messages)
+            if message.id == summary.covered_through_message_id
+        ),
+        None,
+    )
+    if boundary_index is None:
+        return messages_desc
+
+    return list(reversed(recent_messages[boundary_index + 1 :]))
+
+
 async def build_message_history(
     db: AsyncSession,
     conversation_id: uuid.UUID | str,
@@ -104,7 +126,9 @@ async def build_message_history(
     if not db_messages and not (summary and summary.summary_text):
         return []
 
-    selected_messages = _select_raw_tail(db_messages)
+    selected_messages = _select_raw_tail(
+        _messages_newer_than_summary_boundary(db_messages, summary)
+    )
 
     # 4. Convert and mask
     history: list[ModelMessage] = []

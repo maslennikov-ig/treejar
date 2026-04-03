@@ -12,6 +12,7 @@ Current baseline branch: `main`
 - Prefer dedicated worktrees for orchestration work when the primary worktree contains unrelated local-only changes.
 - Use `bd ready --json` for the current queue and `bd show <id>` for targeted task context.
 - Repo-side implementation for `tj-15m.4` is ready on branch `codex/tj-15m-4-hybrid-context`: it adds persistent `ConversationSummary` storage + migration, an async ARQ refresh job on the fast model path, a shared hybrid context builder (`summary + raw recent tail`) for main/follow-up paths, and post-reply enqueue after assistant commit.
+- Review follow-up fixes on the same branch are also in place: raw tail no longer overlaps already-covered summary turns, and runtime message creation now stamps deterministic `created_at` values instead of relying on `server_default(now())` for batched ordering.
 - `tj-15m.4` intentionally did not touch deploy/runtime/canonical retest/image-upload scope (`tj-27v`). Local quality gate is green: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short`.
 
 ## Open follow-ups / nearest ready tasks

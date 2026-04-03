@@ -18,7 +18,11 @@ from src.llm.conversation_summary import should_enqueue_conversation_summary_ref
 from src.llm.engine import process_message
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
-from src.models.message import Message
+from src.models.message import (
+    Message,
+    message_created_at_from_wazzup,
+    message_created_at_now,
+)
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
@@ -207,6 +211,7 @@ async def _handle_escalation_fallback(
         role="assistant",
         content=fallback,
         model="fallback",
+        created_at=message_created_at_now(),
     )
     db.add(fb_msg)
     await db.commit()
@@ -524,7 +529,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
         existing_result = await db.execute(existing_msgs_stmt)
         existing_ids = set(existing_result.scalars().all())
 
-        for m in messages:
+        for index, m in enumerate(messages):
             if m.messageId and m.messageId not in existing_ids:
                 role = _determine_role(m)
                 is_audio = m.type in ("audio", "voice")
@@ -545,6 +550,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                     wazzup_message_id=m.messageId,
                     audio_url=audio_url,
                     transcription=transcription,
+                    created_at=message_created_at_from_wazzup(
+                        date_time=m.dateTime,
+                        timestamp=m.timestamp,
+                        sequence=index,
+                    ),
                 )
                 db.add(new_msg)
                 existing_ids.add(m.messageId)
@@ -629,6 +639,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 tokens_out=llm_response.tokens_out,
                 cost=llm_response.cost,
                 model=llm_response.model,
+                created_at=message_created_at_now(),
             )
             db.add(assistant_msg)
             await db.commit()

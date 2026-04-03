@@ -31,7 +31,7 @@ from src.core.database import async_session_factory
 from src.core.redis import redis_client
 from src.integrations.notifications.telegram import TelegramClient
 from src.models.conversation import Conversation
-from src.models.message import Message
+from src.models.message import Message, message_created_at_now
 
 logger = logging.getLogger(__name__)
 
@@ -489,6 +489,7 @@ async def _handle_order_decision(
                 role="assistant",
                 content=client_msg,
                 model="manager_decision",
+                created_at=message_created_at_now(),
             )
             db.add(msg)
 

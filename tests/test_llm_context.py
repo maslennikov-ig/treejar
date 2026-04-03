@@ -16,7 +16,6 @@ from pydantic_ai.messages import (
 
 from src.llm.context import (
     MAX_RAW_CHARS,
-    MAX_RAW_MESSAGES,
     VERBATIM_TAIL_MESSAGES,
     build_message_history,
 )
@@ -123,7 +122,7 @@ async def test_build_message_history_long_dialog_with_summary_injected_first() -
 
     history = await build_message_history(mock_db, conv_id, {})
 
-    assert len(history) == 1 + MAX_RAW_MESSAGES
+    assert len(history) == 1 + VERBATIM_TAIL_MESSAGES
 
     summary_message = history[0]
     assert isinstance(summary_message, ModelRequest)
@@ -134,10 +133,11 @@ async def test_build_message_history_long_dialog_with_summary_injected_first() -
 
     raw_history = history[1:]
     raw_contents = [_content(model_message) for model_message in raw_history]
-    assert raw_contents == [message.content for message in messages[-MAX_RAW_MESSAGES:]]
+    assert raw_contents == [message.content for message in messages[6:]]
     assert raw_contents[-VERBATIM_TAIL_MESSAGES:] == [
         message.content for message in messages[-VERBATIM_TAIL_MESSAGES:]
     ]
+    assert messages[5].content not in raw_contents
     assert sum(len(content) for content in raw_contents) <= MAX_RAW_CHARS
 
 
@@ -232,7 +232,7 @@ async def test_build_message_history_masks_pii_in_raw_messages_and_summary() -> 
     summary = ConversationSummary(
         conversation_id=conv_id,
         summary_text="Commercial facts: call +971501234567 tomorrow",
-        covered_through_message_id=messages[0].id,
+        covered_through_message_id=None,
         model="fast-model",
         version=1,
     )

@@ -86,7 +86,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     from src.llm.context import build_message_history
     from src.llm.engine import SalesDeps, sales_agent
     from src.llm.pii import unmask_pii
-    from src.models.message import Message
+    from src.models.message import Message, message_created_at_now
 
     # 1. Provide context
     pii_map: dict[str, str] = {}
@@ -128,6 +128,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
         content=final_text,
         tokens_in=result.usage().input_tokens if result.usage() else None,
         tokens_out=result.usage().output_tokens if result.usage() else None,
+        created_at=message_created_at_now(),
     )
     db.add(ai_msg)
     await db.commit()
