@@ -63,6 +63,15 @@ prefer_installed_assets = true
 prefer_cli_over_mcp = true
 record_routing_decision_in_handoff_when_material = true
 
+[brainstorming]
+enabled = true
+required_for = ["new_behavior", "non_trivial_change", "product_ambiguity", "ux_ambiguity", "architecture_ambiguity", "scope_ambiguity"]
+ask_user_questions_before_stage_planning = true
+one_question_at_a_time = true
+require_design_approval_before_planning = true
+require_writing_plans_after_brainstorming = true
+allow_skip_for = ["simple_fix", "narrow_bugfix", "process_only", "already_approved_plan"]
+
 [delegation]
 require_base_branch_and_commit = true
 require_dedicated_worktree = true
