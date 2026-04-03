@@ -7,15 +7,17 @@ import traceback
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.core.config import settings
 from src.core.database import async_session_factory
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.wazzup import WazzupProvider
+from src.llm.conversation_summary import should_enqueue_conversation_summary_refresh
 from src.llm.engine import process_message
 from src.models.conversation import Conversation
+from src.models.conversation_summary import ConversationSummary
 from src.models.message import Message
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
@@ -143,6 +145,27 @@ def _format_for_whatsapp(text: str) -> str:
 
 # Cooldown for re-notifying the manager (seconds)
 _ESCALATION_RENOTIFY_COOLDOWN = 300  # 5 minutes
+
+
+async def _enqueue_summary_refresh_if_needed(
+    redis: Any,
+    db: Any,
+    conversation_id: Any,
+) -> None:
+    total_messages_result = await db.execute(
+        select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
+    )
+    total_messages = int(total_messages_result.scalar_one())
+
+    summary_result = await db.execute(
+        select(ConversationSummary.id).where(
+            ConversationSummary.conversation_id == conversation_id
+        )
+    )
+    has_summary = summary_result.scalar_one_or_none() is not None
+
+    if should_enqueue_conversation_summary_refresh(total_messages, has_summary):
+        await redis.enqueue_job("refresh_conversation_summary", str(conversation_id))
 
 
 async def _handle_escalation_fallback(
@@ -609,6 +632,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             )
             db.add(assistant_msg)
             await db.commit()
+            await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
 
             # 5. Send via Wazzup
             logger.info("Sending reply to %s via Wazzup", chat_id)

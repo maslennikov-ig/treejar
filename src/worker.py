@@ -8,6 +8,7 @@ from arq.cron import cron
 
 from src.core.config import settings
 from src.integrations.inventory.sync import sync_products_from_zoho
+from src.llm.conversation_summary import refresh_conversation_summary
 from src.quality.job import evaluate_completed_conversations
 from src.quality.manager_job import evaluate_escalated_conversations
 from src.rag.embeddings import EmbeddingEngine
@@ -68,6 +69,7 @@ class WorkerSettings:
     functions: list[Any] = [
         sync_products_from_zoho,
         process_incoming_batch,
+        refresh_conversation_summary,
         run_automatic_followups,
         run_feedback_requests,
         calculate_and_store_metrics,

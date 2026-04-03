@@ -103,6 +103,9 @@ async def test_process_incoming_batch_success(
         def scalar_one_or_none(self) -> Any:
             return self.val
 
+        def scalar_one(self) -> Any:
+            return self.val
+
         def scalars(self) -> "MockResult":
             return self
 
@@ -125,6 +128,8 @@ async def test_process_incoming_batch_success(
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
+        MockResult(4),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
     ]
 
     # 3. Setup LLM response mock
@@ -165,6 +170,7 @@ async def test_process_incoming_batch_success(
     # Asserts
     mock_process_message.assert_awaited_once()
     mock_provider.send_text.assert_awaited_once()
+    mock_redis.enqueue_job.assert_not_called()
 
 
 @pytest.mark.asyncio

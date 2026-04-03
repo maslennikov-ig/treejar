@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import SkipValidation
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from redis.asyncio import Redis
@@ -871,10 +872,17 @@ async def process_message(
     # Escalation is now handled by the agent's escalate_to_manager tool.
     # The agent decides when to escalate based on full conversation context.
     # Build recent history for potential escalation context
-    recent_history = [
-        f"{getattr(msg, 'role', 'unknown')}: {getattr(msg, 'content', '')}"
-        for msg in history[-5:]
-    ] + [f"user: {masked_text}"]
+    recent_history: list[str] = []
+    for message in history:
+        if isinstance(message, ModelRequest):
+            for request_part in message.parts:
+                if isinstance(request_part, UserPromptPart):
+                    recent_history.append(f"user: {request_part.content}")
+        elif isinstance(message, ModelResponse):
+            for response_part in message.parts:
+                if isinstance(response_part, TextPart):
+                    recent_history.append(f"assistant: {response_part.content}")
+    recent_history = recent_history[-5:] + [f"user: {masked_text}"]
 
     deps = SalesDeps(
         db=db,

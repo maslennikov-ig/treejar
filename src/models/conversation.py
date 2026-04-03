@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from src.models.conversation_summary import ConversationSummary
     from src.models.escalation import Escalation
     from src.models.feedback import Feedback
     from src.models.manager_review import ManagerReview
@@ -53,4 +54,8 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
     )
     feedbacks: Mapped[list[Feedback]] = relationship(
         back_populates="conversation",
+    )
+    summary: Mapped[ConversationSummary | None] = relationship(
+        back_populates="conversation",
+        uselist=False,
     )

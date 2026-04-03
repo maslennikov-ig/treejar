@@ -14,12 +14,14 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    SystemPromptPart,
     TextPart,
     UserPromptPart,
 )
 from sqlalchemy import select
 
 from src.llm.pii import mask_pii
+from src.models.conversation_summary import ConversationSummary
 from src.models.message import Message
 
 if TYPE_CHECKING:
@@ -28,8 +30,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants for context window sizing
-# We keep the last N User/Assistant message pairs (so N * 2 individual messages)
-MAX_RAW_MESSAGES = 10
+RECENT_MESSAGE_CANDIDATE_WINDOW = 24
+VERBATIM_TAIL_MESSAGES = 4
+MAX_RAW_MESSAGES = 8
+MAX_RAW_CHARS = 3000
+SUMMARY_PREFIX = "[EARLIER CONVERSATION SUMMARY - FACTS ONLY]"
+
+
+def _select_raw_tail(messages_desc: list[Message]) -> list[Message]:
+    if not messages_desc:
+        return []
+
+    recent_messages = list(reversed(messages_desc))
+    if len(recent_messages) <= VERBATIM_TAIL_MESSAGES:
+        return recent_messages
+
+    selected = recent_messages[-VERBATIM_TAIL_MESSAGES:]
+    raw_chars = sum(len(message.content) for message in selected)
+
+    for message in reversed(recent_messages[:-VERBATIM_TAIL_MESSAGES]):
+        next_char_total = raw_chars + len(message.content)
+        if len(selected) >= MAX_RAW_MESSAGES or next_char_total > MAX_RAW_CHARS:
+            break
+        selected.insert(0, message)
+        raw_chars = next_char_total
+
+    return selected
 
 
 async def build_message_history(
@@ -56,32 +82,47 @@ async def build_message_history(
     if isinstance(conversation_id, str):
         conversation_id = uuid.UUID(conversation_id)
 
-    # 1. Query past messages
+    summary_result = await db.execute(
+        select(ConversationSummary).where(
+            ConversationSummary.conversation_id == conversation_id
+        )
+    )
+    summary = summary_result.scalar_one_or_none()
+    if not isinstance(summary, ConversationSummary):
+        summary = None
+
+    # 1. Query a recent candidate window from DB
     stmt = (
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.asc())
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(RECENT_MESSAGE_CANDIDATE_WINDOW)
     )
     result = await db.execute(stmt)
-    db_messages = result.scalars().all()
+    db_messages = list(result.scalars().all())
 
-    if not db_messages:
+    if not db_messages and not (summary and summary.summary_text):
         return []
 
-    # 2 & 3. Truncate
-    # We only want the last MAX_RAW_MESSAGES
-    # If there are more, we drop them. (For MVP, no summarization)
-    if len(db_messages) > MAX_RAW_MESSAGES:
-        logger.debug(
-            f"Truncating history for conv {conversation_id} from "
-            f"{len(db_messages)} to {MAX_RAW_MESSAGES}"
-        )
-        db_messages = db_messages[-MAX_RAW_MESSAGES:]
+    selected_messages = _select_raw_tail(db_messages)
 
     # 4. Convert and mask
     history: list[ModelMessage] = []
 
-    for msg in db_messages:
+    if summary and summary.summary_text:
+        masked_summary, summary_pii = mask_pii(summary.summary_text)
+        pii_map.update(summary_pii)
+        history.append(
+            ModelRequest(
+                parts=[
+                    SystemPromptPart(
+                        content=f"{SUMMARY_PREFIX}\n{masked_summary}",
+                    )
+                ]
+            )
+        )
+
+    for msg in selected_messages:
         if msg.role == "user":
             # Mask PII in incoming texts before AI sees it
             masked_text, new_pii_map = mask_pii(msg.content)
