@@ -86,6 +86,7 @@ async def test_build_system_prompt_requires_immediate_handoff_for_first_turn_con
         "before any qualifying questions, stage advancement, or product search"
         in prompt
     )
+    assert '"I need ... delivered/installed"' in prompt
 
 
 @pytest.mark.asyncio
@@ -103,6 +104,11 @@ async def test_build_system_prompt_preserves_non_escalation_examples_for_bulk_qu
     assert "What is your MOQ for chairs?" in prompt
     assert "What are your wholesale prices for bulk orders?" in prompt
     assert "We may need 200 chairs later, what options do you have?" in prompt
+    assert "We need 20 chairs for next week, what options do you have?" in prompt
+    assert (
+        "If the same message is still asking for options, ideas, recommendations,"
+        in prompt
+    )
 
 
 @pytest.mark.asyncio
