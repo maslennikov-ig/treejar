@@ -45,6 +45,7 @@ class SalesDeps:
     user_query: str = ""
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
     recent_history: list[str] | None = None  # Last N messages for escalation context
+    product_search_calls: int = 0
 
 
 # Allowed transitions for the advance_stage tool
@@ -124,6 +125,15 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
         query: What the customer is looking for (e.g. "ergonomic chair under $500")
     """
     logger.info(f"LLM Tool called: search_products(query={query!r})")
+    if ctx.deps.product_search_calls >= 2:
+        return (
+            "Search limit reached for this customer message. "
+            "Do not call search_products again. "
+            "Answer using the previous search results, or explain that no exact "
+            "match was found and offer nearby alternatives or one clarifying question."
+        )
+
+    ctx.deps.product_search_calls += 1
     search_query = ProductSearchQuery(query=query, limit=3)
 
     results = await rag_search_products(

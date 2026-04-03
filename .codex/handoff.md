@@ -21,6 +21,7 @@ Current baseline branch: `main`
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
+- `tj-19ol.3.10` — P1 bug: duplicate conversations on inbound chat lookup
 
 ## Rules for the next orchestrator
 
@@ -43,6 +44,17 @@ Current baseline branch: `main`
     - `I need 200 chairs delivered to Dubai Marina by next week` now yields `escalation_status=pending`, `escalation_count=1` in 22s on conversation `aee66c17-60e9-4de4-b4ff-235d02fa6b47`
     - `What are the wholesale prices for bulk orders?` still yields no escalation in 16s on conversation `029f43b4-add3-411a-92d3-2c14352cb74c`
   - next realistic blockers are no longer in the escalation flow itself; they are ops/runtime alignment (`tj-5ypi`, `tj-19ol.3.5`) and broader product work like latency (`tj-15m`) and FAQ/RAG quality (`tj-12a`)
+  - additional canonical truth from the 2026-04-03 latency pass:
+    - `tj-15m` is still active after a real profiling round
+    - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
+    - the acoustic-pods product path had an unbounded `search_products` retry loop; repo and canonical env now cap real product searches to 2 per customer message
+    - direct isolated replay for `"Tell me about your acoustic pods"` dropped to about `15.25s` after the loop cap
+    - canonical webhook canary no longer crashes on duplicate conversations for `+971000000001`; `src/services/chat.py` now chooses the most recent non-empty conversation instead of crashing on `MultipleResultsFound`
+    - canonical webhook canary for the same acoustic-pods query still took `42.19s`, with logs showing remaining tail dominated by multiple OpenRouter turns, large accumulated context (`tokens_in=10353` on that run), and failing product-image uploads
+    - `tj-27v` remains relevant: product image upload via `tmpfiles.org` currently returns HTTP `422`, so image delivery still fails and adds latency noise
+  - next realistic latency slices are narrower than a broad refactor:
+    - context/token-control work under `tj-15m`
+    - `tj-27v` media upload repair for `search_products`
 - Operational truth for canonical host:
   - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
   - `noor-dev` now has enough access for direct hotfix work in `/opt/noor` and Docker-based inspection/rebuilds

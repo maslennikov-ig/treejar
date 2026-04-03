@@ -442,9 +442,41 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             return
 
         # 1. Get or create conversation
-        stmt = select(Conversation).where(Conversation.phone == chat_id)
+        stmt = (
+            select(Conversation)
+            .where(Conversation.phone == chat_id)
+            .order_by(Conversation.updated_at.desc(), Conversation.created_at.desc())
+        )
         result = await db.execute(stmt)
-        conv = result.scalar_one_or_none()
+        conversations = result.scalars().all()
+
+        if not conversations:
+            conv = None
+        elif len(conversations) == 1:
+            conv = conversations[0]
+        else:
+            existing_conv_ids = [conversation.id for conversation in conversations]
+            message_conv_result = await db.execute(
+                select(Message.conversation_id)
+                .where(Message.conversation_id.in_(existing_conv_ids))
+                .distinct()
+            )
+            conv_ids_with_messages = set(message_conv_result.scalars().all())
+            conv = next(
+                (
+                    conversation
+                    for conversation in conversations
+                    if conversation.id in conv_ids_with_messages
+                ),
+                conversations[0],
+            )
+            logger.warning(
+                "Found %d conversations for %s; using %s (has_messages=%s)",
+                len(conversations),
+                chat_id,
+                conv.id,
+                conv.id in conv_ids_with_messages,
+            )
 
         if not conv:
             logger.info("Creating new conversation for %s", chat_id)

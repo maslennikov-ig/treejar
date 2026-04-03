@@ -117,6 +117,108 @@ async def test_process_incoming_batch_new_conversation(
 
 @pytest.mark.asyncio
 @patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplicates_exist(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    from typing import Any
+
+    class MockResult:
+        def __init__(self, val: Any) -> None:
+            self.val = val
+
+        def scalar_one_or_none(self) -> Any:
+            return self.val
+
+        def scalars(self) -> Any:
+            return self
+
+        def first(self) -> Any:
+            if isinstance(self.val, list):
+                return self.val[0] if self.val else None
+            return self.val
+
+        def all(self) -> Any:
+            if isinstance(self.val, list):
+                return self.val
+            return [self.val] if self.val is not None else []
+
+    duplicate_empty = MagicMock()
+    duplicate_empty.id = "conv-empty"
+    duplicate_empty.phone = "1234567890"
+    duplicate_empty.escalation_status = "none"
+
+    populated_conv = MagicMock()
+    populated_conv.id = "conv-live"
+    populated_conv.phone = "1234567890"
+    populated_conv.escalation_status = "none"
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult([duplicate_empty, populated_conv]),  # duplicate conv lookup
+        MockResult(["conv-live"]),  # conversations that already have messages
+        MockResult([]),  # msg dedup check
+    ]
+
+    from src.llm import LLMResponse
+
+    mock_process_message.return_value = LLMResponse(
+        text="Hello from AI",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg_out_1"
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi there",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    assert mock_process_message.await_args.kwargs["conversation_id"] == "conv-live"
+    mock_wazzup.send_text.assert_awaited_once_with(
+        chat_id="1234567890", text="Hello from AI"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
 async def test_process_incoming_batch_skips_without_expected_channel(
     mock_session_factory: MagicMock,
 ) -> None:
