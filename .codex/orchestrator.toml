@@ -72,6 +72,14 @@ require_design_approval_before_planning = true
 require_writing_plans_after_brainstorming = true
 allow_skip_for = ["simple_fix", "narrow_bugfix", "process_only", "already_approved_plan"]
 
+[process_skills]
+do_not_bypass_superpowers = true
+required_sequence_for_non_trivial_work = ["brainstorming", "writing-plans"]
+tdd_required_for = ["feature", "bugfix", "refactor", "behavior_change"]
+tdd_exceptions_require_user_approval = true
+systematic_debugging_required_for = ["bug", "test_failure", "unexpected_behavior", "build_failure", "integration_issue", "performance_issue"]
+verification_before_completion_required = true
+
 [delegation]
 require_base_branch_and_commit = true
 require_dedicated_worktree = true
