@@ -69,6 +69,43 @@ async def test_build_system_prompt_prioritizes_concrete_orders_without_false_pos
 
 
 @pytest.mark.asyncio
+async def test_build_system_prompt_requires_immediate_handoff_for_first_turn_concrete_orders() -> (
+    None
+):
+    db, redis = AsyncMock(), AsyncMock()
+    redis.get.return_value = None
+    db.execute.return_value.scalars.return_value.first.return_value = None
+
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.GREETING.value, language="en"
+    )
+
+    assert "I need 200 chairs delivered to Dubai Marina by next week" in prompt
+    assert "exact street address, SKU, or price approval is not required" in prompt
+    assert (
+        "before any qualifying questions, stage advancement, or product search"
+        in prompt
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_preserves_non_escalation_examples_for_bulk_questions() -> (
+    None
+):
+    db, redis = AsyncMock(), AsyncMock()
+    redis.get.return_value = None
+    db.execute.return_value.scalars.return_value.first.return_value = None
+
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.GREETING.value, language="en"
+    )
+
+    assert "What is your MOQ for chairs?" in prompt
+    assert "What are your wholesale prices for bulk orders?" in prompt
+    assert "We may need 200 chairs later, what options do you have?" in prompt
+
+
+@pytest.mark.asyncio
 async def test_build_system_prompt_caps_product_search_retries() -> None:
     db, redis = AsyncMock(), AsyncMock()
     redis.get.return_value = None
