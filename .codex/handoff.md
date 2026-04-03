@@ -15,6 +15,7 @@ Current baseline branch: `main`
 - Two additional live-fix slices were merged into `main` on 2026-04-03 and verified locally:
   - `0794240` `fix(prompt): harden concrete order escalation contract`
   - `b913444` `fix: enforce product search loop cap`
+  - `c64d84c` `fix(prompt): preserve consultative bulk discovery`
 - Review follow-up fixes are also in `main`: raw tail no longer overlaps already-covered summary turns, and runtime message creation now stamps deterministic `created_at` values instead of relying on `server_default(now())` for batched ordering.
 - A late production blocker was fixed locally on 2026-04-03: Alembic revision `2026_04_03_conversation_summaries` exceeded the production `alembic_version.version_num varchar(32)` limit. It was shortened to `2026_04_03_conv_summary_001`, and `tests/test_migrations.py` now guards all Alembic revision lengths.
 
@@ -92,8 +93,10 @@ Current baseline branch: `main`
     - PASS: refund -> `general`
   - next realistic step is now `tj-19ol.3.12`, not a new code slice:
     - hot-apply `0794240` and `b913444` to `/opt/noor`
+    - include `c64d84c` as well: it softens the prompt so quantity/timing messages that still ask for options/recommendations/pricing stay consultative instead of escalating too early
     - rebuild `app` + `worker`
     - rerun targeted live checks on `+79262810921`:
       - `I need 200 chairs delivered to Dubai Marina by next week`
+      - `We need 20 chairs for next week, what options do you have?`
       - `Tell me about your acoustic pods`
     - if both pass, close `tj-19ol.3.11` and `tj-15m.5.1`; if not, branch the next bug from fresh evidence
