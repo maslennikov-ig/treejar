@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-02
+Updated: 2026-04-03
 Current baseline branch: `main`
 
 ## Current repo state
@@ -16,8 +16,6 @@ Current baseline branch: `main`
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
-- `tj-19ol.3.8` — P1 bug: investigate `LLM timeout after 120s` on canonical smoke path
-- `tj-19ol.2` — P1 task: controlled live smoke for the escalation refactor (blocked by `tj-19ol.3.8`)
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
@@ -34,12 +32,17 @@ Current baseline branch: `main`
 - Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
 - Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.
-- The current active execution stage remains `tj-19ol.3`, but the truth changed materially on 2026-04-02:
+- The current active execution stage remains `tj-19ol.3`, but the truth changed materially on 2026-04-03:
   - repo-side auth fail-open fix from `tj-19ol.3.1` is done and verified
   - canonical env fixes for `tj-19ol.3.2` and `tj-19ol.3.4` were applied locally, hot-applied to `/opt/noor`, and verified on `https://noor.starec.ai`
   - `tj-19ol.3.7` is closed: `notify_manager_escalation()` now persists an `Escalation` row, local tests are green, and direct in-container verification on canonical env confirmed `escalation_count=1` with `pending` status
-  - current nearest blocker is `tj-19ol.3.8`: the live webhook path reaches `process_incoming_batch`, persists the user message, then stalls on the LLM call and aborts with `LLM timeout after 120s for chat_id=+971000000001`; the transaction rolls back and the conversation stays `escalation_status=none`
-  - `tj-19ol.2` is therefore blocked again until `tj-19ol.3.8` is triaged
+  - `tj-19ol.3.8` is closed as transient/non-reproducible: after canonical recheck, direct `process_message()` replay, webhook canary, and live smoke no longer hit the 120s timeout
+  - `tj-19ol.2` is closed: canonical escalation smoke is green by evidence
+  - the only logic regression found in smoke was `tj-19ol.3.9` (concrete bulk order missing `order_confirmation` escalation on first turn); it is fixed via prompt contract update in `src/llm/prompts.py`, hot-applied to `/opt/noor`, rebuilt, and revalidated live
+  - live evidence for the fix:
+    - `I need 200 chairs delivered to Dubai Marina by next week` now yields `escalation_status=pending`, `escalation_count=1` in 22s on conversation `aee66c17-60e9-4de4-b4ff-235d02fa6b47`
+    - `What are the wholesale prices for bulk orders?` still yields no escalation in 16s on conversation `029f43b4-add3-411a-92d3-2c14352cb74c`
+  - next realistic blockers are no longer in the escalation flow itself; they are ops/runtime alignment (`tj-5ypi`, `tj-19ol.3.5`) and broader product work like latency (`tj-15m`) and FAQ/RAG quality (`tj-12a`)
 - Operational truth for canonical host:
   - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
   - `noor-dev` now has enough access for direct hotfix work in `/opt/noor` and Docker-based inspection/rebuilds

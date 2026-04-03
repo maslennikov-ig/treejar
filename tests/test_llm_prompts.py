@@ -48,3 +48,21 @@ async def test_build_system_prompt_unknown_stage() -> None:
     assert "You are Noor" in prompt
     # Shouldn't crash and returns at least the base
     assert len(prompt) > 100
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_prioritizes_concrete_orders_without_false_positives() -> (
+    None
+):
+    db, redis = AsyncMock(), AsyncMock()
+    redis.get.return_value = None
+    db.execute.return_value.scalars.return_value.first.return_value = None
+
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.GREETING.value, language="en"
+    )
+
+    assert "Product questions, even about wholesale/MOQ/bulk pricing" in prompt
+    assert "a concrete order on the first turn" in prompt
+    assert "already gave enough order details" in prompt
+    assert "escalate immediately" in prompt
