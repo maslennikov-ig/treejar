@@ -541,3 +541,83 @@ class TestScenario5MultiToolChaining:
         mock_inv.get_stock.assert_awaited_once_with("ERGO-PRO")
         assert "42" in result.output
         assert call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Scenario 6: Product-search cap — one retry allowed, third call removed
+# ---------------------------------------------------------------------------
+
+
+class TestScenario6ProductSearchCap:
+    """Product search can retry once, then must continue without a third search."""
+
+    @pytest.mark.asyncio
+    @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
+    async def test_search_products_removed_after_second_empty_result(
+        self,
+        mock_search: AsyncMock,
+        mock_prompt: AsyncMock,
+    ) -> None:
+        mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
+
+        from src.schemas.product import ProductSearchResult
+
+        mock_search.return_value = ProductSearchResult(
+            products=[],
+            query_interpreted="acoustic pods",
+            total_found=0,
+        )
+
+        tool_names_by_step: list[set[str]] = []
+        model_calls = 0
+
+        def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            nonlocal model_calls
+            model_calls += 1
+            tool_names = {tool.name for tool in info.function_tools}
+            tool_names_by_step.append(tool_names)
+
+            if model_calls == 1:
+                assert "search_products" in tool_names
+                return ModelResponse(
+                    parts=[ToolCallPart("search_products", {"query": "acoustic pods"})]
+                )
+
+            if model_calls == 2:
+                assert "search_products" in tool_names
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_products",
+                            {"query": "phone booth acoustic office pod"},
+                        )
+                    ]
+                )
+
+            assert "search_products" not in tool_names
+            return ModelResponse(
+                parts=[
+                    TextPart(
+                        "I couldn't find an exact match in our catalog. "
+                        "The closest fit is an acoustic privacy booth for calls "
+                        "and one-person focus use."
+                    )
+                ]
+            )
+
+        conv = _mock_conversation(SalesStage.SOLUTION)
+        deps = _mock_deps(conv)
+
+        with sales_agent.override(model=FunctionModel(model_fn)):
+            result = await sales_agent.run(
+                "Tell me about your acoustic pods",
+                deps=deps,
+            )
+
+        assert mock_search.await_count == 2
+        assert model_calls == 3
+        assert "search_products" in tool_names_by_step[0]
+        assert "search_products" in tool_names_by_step[1]
+        assert "search_products" not in tool_names_by_step[2]
+        assert "acoustic privacy booth" in result.output.lower()

@@ -10,6 +10,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.tools import ToolDefinition
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,17 @@ from src.schemas.product import ProductSearchQuery
 logger = logging.getLogger(__name__)
 
 __all__ = ["rag_search_products"]
+MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
+
+
+def _search_products_limit_message(*, include_no_results: bool = False) -> str:
+    prefix = "No products found matching the query. " if include_no_results else ""
+    return (
+        prefix + "Search limit reached for this customer message. "
+        "Do not call search_products again. "
+        "Answer using the previous search results, or explain that no exact "
+        "match was found and offer nearby alternatives or one clarifying question."
+    )
 
 
 @dataclass
@@ -71,6 +83,28 @@ class LLMResponse:
     model: str
 
 
+async def _prepare_sales_tools(
+    ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
+) -> list[ToolDefinition]:
+    """Hide product search after the allowed per-message budget is exhausted."""
+    if ctx.deps.product_search_calls < MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
+        return tool_defs
+
+    filtered_tool_defs = [
+        tool_def for tool_def in tool_defs if tool_def.name != "search_products"
+    ]
+
+    if len(filtered_tool_defs) != len(tool_defs):
+        logger.info(
+            "search_products removed from available tools after %d real calls for "
+            "conversation %s",
+            ctx.deps.product_search_calls,
+            ctx.deps.conversation.id,
+        )
+
+    return filtered_tool_defs
+
+
 # Initialize model with OpenRouter provider
 model = OpenAIChatModel(
     settings.openrouter_model_main,
@@ -81,6 +115,7 @@ model = OpenAIChatModel(
 sales_agent = Agent(
     model=model,
     deps_type=SalesDeps,
+    prepare_tools=_prepare_sales_tools,
     retries=2,
 )
 
@@ -125,16 +160,25 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
     Args:
         query: What the customer is looking for (e.g. "ergonomic chair under $500")
     """
-    logger.info(f"LLM Tool called: search_products(query={query!r})")
-    if ctx.deps.product_search_calls >= 2:
-        return (
-            "Search limit reached for this customer message. "
-            "Do not call search_products again. "
-            "Answer using the previous search results, or explain that no exact "
-            "match was found and offer nearby alternatives or one clarifying question."
+    logger.info(
+        "LLM Tool requested: search_products(query=%r, executed_calls=%d)",
+        query,
+        ctx.deps.product_search_calls,
+    )
+    if ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
+        logger.info(
+            "Blocked search_products after reaching per-message cap for conversation %s",
+            ctx.deps.conversation.id,
         )
+        return _search_products_limit_message()
 
     ctx.deps.product_search_calls += 1
+    logger.info(
+        "Executing real search_products call %d/%d for query=%r",
+        ctx.deps.product_search_calls,
+        MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE,
+        query,
+    )
     search_query = ProductSearchQuery(query=query, limit=3)
 
     results = await rag_search_products(
@@ -144,6 +188,8 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
     )
 
     if not results.products:
+        if ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
+            return _search_products_limit_message(include_no_results=True)
         return "No products found matching the query."
 
     from src.core.discounts import apply_discount

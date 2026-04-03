@@ -274,8 +274,64 @@ async def test_tools_search_products_caps_retries_per_run(
         third = await engine_module.search_products(ctx, "phone booth")
 
         assert first == "No products found matching the query."
-        assert second == "No products found matching the query."
+        assert "No products found matching the query." in second
+        assert "Search limit reached for this customer message" in second
         assert "Do not call search_products again" in third
+        assert mock_search.await_count == 2
+    finally:
+        if orig_search:
+            engine_module.rag_search_products = orig_search
+
+
+@pytest.mark.asyncio
+async def test_tools_search_products_second_empty_result_exhausts_retry_budget(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from src.schemas.product import ProductSearchResult
+
+    mock_search = AsyncMock()
+    mock_search.return_value = ProductSearchResult(products=[], total_found=0)
+
+    import src.llm.engine as engine_module
+
+    orig_search = getattr(engine_module, "rag_search_products", None)
+    engine_module.rag_search_products = mock_search
+
+    try:
+        from pydantic_ai import RunContext
+        from pydantic_ai.usage import RunUsage
+
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="acoustic pods",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+
+        first = await engine_module.search_products(ctx, "acoustic pods")
+        second = await engine_module.search_products(
+            ctx, "phone booth acoustic office pod"
+        )
+
+        assert first == "No products found matching the query."
+        assert "Search limit reached for this customer message" in second
+        assert "Do not call search_products again" in second
         assert mock_search.await_count == 2
     finally:
         if orig_search:
