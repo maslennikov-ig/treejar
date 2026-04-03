@@ -23,15 +23,15 @@ Current baseline branch: `main`
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
-- `tj-19ol.3.12` — P1 task: hot-apply merged live fixes to canonical runtime and rerun targeted live retest
+- `tj-19ol.3.13` — P1 bug: prompt-only fix was insufficient; implement a non-prompt first-turn concrete-order handoff fix
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
-- `tj-19ol.3.11` — P1 bug: live first-turn concrete order regression is fixed in repo, pending canonical retest
-- `tj-15m.5.1` — P1 bug: live product-search loop overflow is fixed in repo, pending canonical retest
+- `tj-19ol.3.11` — P1 bug: prompt slice is merged, but canonical retest showed the live first-turn concrete-order regression still persists; see `tj-19ol.3.13`
+- `tj-15m.5.2` — P1 bug: improve product-answer quality on the acoustic-pods path after the verified search cap
 
 ## Rules for the next orchestrator
 
@@ -48,12 +48,16 @@ Current baseline branch: `main`
   - canonical env fixes for `tj-19ol.3.2` and `tj-19ol.3.4` were applied locally, hot-applied to `/opt/noor`, and verified on `https://noor.starec.ai`
   - `tj-19ol.3.7` is closed: `notify_manager_escalation()` now persists an `Escalation` row, local tests are green, and direct in-container verification on canonical env confirmed `escalation_count=1` with `pending` status
   - `tj-19ol.3.8` is closed as transient/non-reproducible: after canonical recheck, direct `process_message()` replay, webhook canary, and live smoke no longer hit the 120s timeout
-  - `tj-19ol.2` is closed: canonical escalation smoke is green by evidence
-  - the only logic regression found in smoke was `tj-19ol.3.9` (concrete bulk order missing `order_confirmation` escalation on first turn); it is fixed via prompt contract update in `src/llm/prompts.py`, hot-applied to `/opt/noor`, rebuilt, and revalidated live
-  - live evidence for the fix:
-    - `I need 200 chairs delivered to Dubai Marina by next week` now yields `escalation_status=pending`, `escalation_count=1` in 22s on conversation `aee66c17-60e9-4de4-b4ff-235d02fa6b47`
-    - `What are the wholesale prices for bulk orders?` still yields no escalation in 16s on conversation `029f43b4-add3-411a-92d3-2c14352cb74c`
-  - next realistic blockers are no longer in the escalation flow itself; they are ops/runtime alignment (`tj-5ypi`, `tj-19ol.3.5`) and broader product work like latency (`tj-15m`) and FAQ/RAG quality (`tj-12a`)
+  - `tj-19ol.2` should no longer be treated as fully green: the earlier broad smoke passed except for the first-turn concrete-order case, and the targeted retest on 2026-04-03 confirmed that this regression still exists on the real-recipient runtime path
+  - `tj-19ol.3.12` is closed as an execution task: merged fixes were hot-applied to `/opt/noor`, `app` + `worker` were rebuilt, and the targeted retest completed on real recipient `+79262810921`
+  - targeted live retest truth after hot-apply:
+    - concrete order still FAILS: `I need 200 chairs delivered to Dubai Marina by next week` on conversation `4425381e-3ebc-4f78-8a1c-e6b120b5b0c9` produced a qualifying assistant reply in `16.02s`, `tokens_in=2020`, `escalation_status=none`, `escalations=0`; prompt-only hardening is insufficient on the hosted model/runtime path
+    - consultative bulk guard PASSES: `We need 20 chairs for next week, what options do you have?` on conversation `76e78300-3df5-47a3-ade1-59dfa5bb26ab` stayed non-escalation, returned useful chair options in `10.11s`, and executed exactly one real `search_products` call
+    - acoustic pods remains PARTIAL: `Tell me about your acoustic pods` on conversation `63d6283a-3672-40a4-89cb-9c966b930905` stayed non-escalation, took `34.03s`, used `tokens_in=9429`, executed exactly two real `search_products` calls, then removed `search_products` from the available toolset as intended, but the final answer quality was weak and `tmpfiles.org` image uploads still failed with repeated `422`
+  - next realistic blockers are therefore narrower and evidence-based:
+    - `tj-19ol.3.13` for a non-prompt fix to the first-turn concrete-order handoff
+    - `tj-15m.5.2` for product-heavy answer quality after capped searches/tool exhaustion
+    - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
   - additional canonical truth from the 2026-04-03 latency pass:
   - `tj-15m` is still active after a real profiling round
   - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
@@ -83,7 +87,7 @@ Current baseline branch: `main`
   - repo-side CI/deploy contract drift (`tj-5ypi`, `tj-19ol.3.5`) still exists, but it is no longer the immediate blocker for runtime debugging because direct `/opt/noor` access is sufficient for canonical triage
   - canonical live-delivery test recipient changed on 2026-04-03: use `+79262810921` for future WhatsApp smoke and delivery verification
   - previous `+971000000001` should now be treated only as a synthetic/non-deliverable runtime artifact for DB/log-path checks, not as a real delivery target
-  - full live smoke was rerun on `+79262810921`:
+  - full live smoke was rerun on `+79262810921` before the latest hot-apply:
     - PASS: MOQ no escalation
     - FAIL before new fixes: first-turn concrete order did not escalate as `order_confirmation`
     - PASS: explicit manager request -> `human_requested`
@@ -91,12 +95,11 @@ Current baseline branch: `main`
     - PASS: complaint -> `general`
     - PASS: wholesale pricing -> no escalation
     - PASS: refund -> `general`
-  - next realistic step is now `tj-19ol.3.12`, not a new code slice:
-    - hot-apply `0794240` and `b913444` to `/opt/noor`
-    - include `c64d84c` as well: it softens the prompt so quantity/timing messages that still ask for options/recommendations/pricing stay consultative instead of escalating too early
-    - rebuild `app` + `worker`
-    - rerun targeted live checks on `+79262810921`:
-      - `I need 200 chairs delivered to Dubai Marina by next week`
-      - `We need 20 chairs for next week, what options do you have?`
-      - `Tell me about your acoustic pods`
-    - if both pass, close `tj-19ol.3.11` and `tj-15m.5.1`; if not, branch the next bug from fresh evidence
+  - targeted post-hot-apply retest is now complete:
+    - hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`
+    - rebuilt `app` + `worker`
+    - reran the three targeted live checks on `+79262810921`
+    - outcome: consultative bulk behavior is healthy, search-loop overflow is fixed, but the next realistic step is now new code work, not more blind retesting
+  - next realistic step is:
+    - investigate and implement `tj-19ol.3.13`
+    - then take `tj-15m.5.2` in parallel or immediately after, depending on write-zone split
