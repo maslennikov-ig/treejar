@@ -21,7 +21,7 @@ Current baseline branch: `main`
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
-- `tj-19ol.3.10` — P1 bug: duplicate conversations on inbound chat lookup
+- `tj-15m.4` — P1 task: reduce accumulated conversation context on long product dialogues
 
 ## Rules for the next orchestrator
 
