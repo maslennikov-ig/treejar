@@ -64,6 +64,17 @@ def test_embedding_embed_batch(mock_embedding_engine: Any) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_embedding_warmup_async_invokes_model_load(
+    mock_embedding_engine: Any,
+) -> None:
+    with patch.object(mock_embedding_engine, "_get_model") as mock_get_model:
+        await mock_embedding_engine.warmup_async()
+
+    mock_get_model.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_generate_product_embeddings() -> None:
     """Test generating embeddings for active products missing them."""
     # We mock DB session and execution

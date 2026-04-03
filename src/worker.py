@@ -10,6 +10,7 @@ from src.core.config import settings
 from src.integrations.inventory.sync import sync_products_from_zoho
 from src.quality.job import evaluate_completed_conversations
 from src.quality.manager_job import evaluate_escalated_conversations
+from src.rag.embeddings import EmbeddingEngine
 from src.services.chat import process_incoming_batch
 from src.services.followup import run_automatic_followups, run_feedback_requests
 from src.services.metrics import calculate_and_store_metrics
@@ -46,6 +47,16 @@ async def startup(ctx: dict[str, Any]) -> None:
         settings.openrouter_model_main,
         settings.app_log_level,
     )
+
+    try:
+        await EmbeddingEngine().warmup_async()
+        logger.info("Embedding model warmed up successfully.")
+    except Exception:
+        logger.warning(
+            "Embedding model warmup failed during worker startup; "
+            "continuing with lazy loading.",
+            exc_info=True,
+        )
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:

@@ -31,13 +31,32 @@ def test_worker_startup_shutdown_callable() -> None:
 async def test_worker_startup_runs() -> None:
     """Verify startup doesn't crash and configures logging."""
     import logging
+    from unittest.mock import AsyncMock, patch
 
     ctx = {"redis": None}
-    await WorkerSettings.on_startup(ctx)
+    with patch("src.worker.EmbeddingEngine") as MockEngine:
+        mock_engine = MockEngine.return_value
+        mock_engine.warmup_async = AsyncMock()
+        await WorkerSettings.on_startup(ctx)
 
     # Check that root logger has been configured
     root_logger = logging.getLogger()
     assert root_logger.level is not None
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_warms_embedding_model() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    ctx = {"redis": None}
+
+    with patch("src.worker.EmbeddingEngine") as MockEngine:
+        mock_engine = MockEngine.return_value
+        mock_engine.warmup_async = AsyncMock()
+
+        await WorkerSettings.on_startup(ctx)
+
+    mock_engine.warmup_async.assert_awaited_once()
 
 
 @pytest.mark.asyncio

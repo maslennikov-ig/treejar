@@ -61,6 +61,10 @@ class EmbeddingEngine:
         """Generate embeddings for a batch of text strings without blocking the event loop."""
         return await asyncio.to_thread(self.embed_batch, texts)
 
+    async def warmup_async(self) -> None:
+        """Preload the embedding model without blocking the event loop."""
+        await asyncio.to_thread(self._get_model)
+
 
 async def generate_product_embeddings(db: AsyncSession) -> int:
     """Generate embeddings for all active products that lack them.
