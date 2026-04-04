@@ -18,7 +18,14 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pydantic_ai import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+)
+from pydantic_ai.messages import UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.base import MessagingProvider
-from src.llm.engine import SalesDeps, sales_agent
+from src.llm.engine import SalesDeps, process_message, sales_agent
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import SalesStage
@@ -621,3 +628,197 @@ class TestScenario6ProductSearchCap:
         assert "search_products" in tool_names_by_step[1]
         assert "search_products" not in tool_names_by_step[2]
         assert "acoustic privacy booth" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7: Guarded first-turn concrete order handoff
+# ---------------------------------------------------------------------------
+
+
+class TestScenario7OrderHandoffGuard:
+    @pytest.mark.asyncio
+    @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+    @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+    @patch("src.core.config.get_system_config", new_callable=AsyncMock)
+    @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+    @patch("src.llm.engine.OpenAIChatModel")
+    @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
+    async def test_concrete_order_gets_second_pass_order_handoff(
+        self,
+        mock_notify: AsyncMock,
+        mock_openai_model: MagicMock,
+        mock_build_history: AsyncMock,
+        mock_get_system_config: AsyncMock,
+        mock_search_knowledge: AsyncMock,
+        mock_prompt: AsyncMock,
+    ) -> None:
+        message = "I need 200 chairs delivered to Dubai Marina by next week"
+        mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
+        mock_build_history.return_value = [
+            ModelRequest(parts=[UserPromptPart(content=message)])
+        ]
+        mock_get_system_config.return_value = "test-model"
+        mock_search_knowledge.return_value = []
+
+        conv = _mock_conversation(SalesStage.SOLUTION)
+        db = AsyncMock(spec=AsyncSession)
+        db.get.return_value = conv
+        redis = AsyncMock(spec=Redis)
+        zoho = AsyncMock(spec=ZohoInventoryClient)
+        messaging = AsyncMock(spec=MessagingProvider)
+        embedding = AsyncMock(spec=EmbeddingEngine)
+
+        model_calls = 0
+        tool_names_by_step: list[set[str]] = []
+
+        async def notify_side_effect(**kwargs: Any) -> None:
+            kwargs["conversation"].escalation_status = "pending"
+
+        mock_notify.side_effect = notify_side_effect
+
+        def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            nonlocal model_calls
+            model_calls += 1
+            tool_names_by_step.append({tool.name for tool in info.function_tools})
+
+            if model_calls == 1:
+                return ModelResponse(
+                    parts=[
+                        TextPart(
+                            "Thanks. Could you confirm whether you need installation too?"
+                        )
+                    ]
+                )
+
+            if model_calls == 2:
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "escalate_to_manager",
+                            {
+                                "reason": "Concrete order request with quantity and delivery timing",
+                                "escalation_type": "order_confirmation",
+                            },
+                        )
+                    ]
+                )
+
+            return ModelResponse(
+                parts=[
+                    TextPart(
+                        "I've notified our manager to confirm your order details shortly."
+                    )
+                ]
+            )
+
+        mock_openai_model.return_value = FunctionModel(model_fn)
+
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=message,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+        assert (
+            response.text
+            == "I've notified our manager to confirm your order details shortly."
+        )
+        assert conv.escalation_status == "pending"
+        assert mock_notify.await_count == 1
+        assert model_calls == 3
+        assert tool_names_by_step[0] == {"escalate_to_manager", "update_language"}
+        assert tool_names_by_step[1] == {"escalate_to_manager", "update_language"}
+
+    @pytest.mark.asyncio
+    @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+    @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+    @patch("src.core.config.get_system_config", new_callable=AsyncMock)
+    @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+    @patch("src.llm.engine.OpenAIChatModel")
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
+    @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
+    async def test_consultative_bulk_query_stays_on_normal_search_path(
+        self,
+        mock_notify: AsyncMock,
+        mock_search: AsyncMock,
+        mock_openai_model: MagicMock,
+        mock_build_history: AsyncMock,
+        mock_get_system_config: AsyncMock,
+        mock_search_knowledge: AsyncMock,
+        mock_prompt: AsyncMock,
+    ) -> None:
+        from src.schemas.product import ProductSearchResult
+
+        message = "We need 20 chairs for next week, what options do you have?"
+        mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
+        mock_build_history.return_value = [
+            ModelRequest(parts=[UserPromptPart(content=message)])
+        ]
+        mock_get_system_config.return_value = "test-model"
+        mock_search_knowledge.return_value = []
+        mock_search.return_value = ProductSearchResult(
+            products=[],
+            query_interpreted="chairs",
+            total_found=0,
+        )
+
+        conv = _mock_conversation(SalesStage.SOLUTION)
+        db = AsyncMock(spec=AsyncSession)
+        db.get.return_value = conv
+        redis = AsyncMock(spec=Redis)
+        zoho = AsyncMock(spec=ZohoInventoryClient)
+        messaging = AsyncMock(spec=MessagingProvider)
+        embedding = AsyncMock(spec=EmbeddingEngine)
+
+        model_calls = 0
+        tool_names_by_step: list[set[str]] = []
+
+        def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            nonlocal model_calls
+            model_calls += 1
+            tool_names_by_step.append({tool.name for tool in info.function_tools})
+
+            if model_calls == 1:
+                return ModelResponse(
+                    parts=[ToolCallPart("search_products", {"query": "chairs"})]
+                )
+
+            return ModelResponse(
+                parts=[
+                    TextPart(
+                        "Here are a few chair options that could work for next week."
+                    )
+                ]
+            )
+
+        mock_openai_model.return_value = FunctionModel(model_fn)
+
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=message,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+        assert (
+            response.text
+            == "Here are a few chair options that could work for next week."
+        )
+        assert mock_notify.await_count == 0
+        assert mock_search.await_count == 1
+        assert model_calls == 2
+        assert "search_products" in tool_names_by_step[0]
+        assert "advance_stage" in tool_names_by_step[0]
