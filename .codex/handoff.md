@@ -39,7 +39,7 @@ Current baseline branch: `main`
 - Use dedicated worktrees with strict write zones and avoid unrelated local changes in the primary worktree.
 - For delegated work, require a markdown report file and a short completion line with: task ID, report path, commit hash, git status clean yes/no.
 - Keep reviews findings-first and do not treat a stage as closed until fresh local verification is done.
-- Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, `bd sync`, then `git push`.
+- Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, then apply the Beads 1.0.0 maintenance steps as needed (`bd bootstrap --yes`, `bd import`, `bd hooks install`, `bd export -o .beads/issues.jsonl`), then `git push`.
 - Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
 - Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.
 - The current active execution stage remains `tj-19ol.3`, but the truth changed materially on 2026-04-03:
