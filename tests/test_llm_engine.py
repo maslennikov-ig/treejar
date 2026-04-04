@@ -1,10 +1,14 @@
 import uuid
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic_ai import RunContext
+from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from src.llm.engine import SalesDeps, process_message, sales_agent
+from src.llm.engine import SalesDeps, inject_system_prompt, process_message, sales_agent
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
@@ -52,6 +56,37 @@ def mock_deps() -> tuple[
     return db, conv, engine, zoho, zoho_crm, redis, messaging
 
 
+def _first_turn_history(text: str) -> list[ModelRequest]:
+    return [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+
+def _split_first_turn_history(*parts: str) -> list[ModelRequest]:
+    history = [ModelRequest(parts=[SystemPromptPart(content="summary")])]
+    history.extend(ModelRequest(parts=[UserPromptPart(content=part)]) for part in parts)
+    return history
+
+
+class _FakeAgentResult:
+    def __init__(
+        self,
+        output: str,
+        *,
+        input_tokens: int = 11,
+        output_tokens: int = 7,
+    ) -> None:
+        self.output = output
+        self._usage = SimpleNamespace(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+    def usage(self) -> SimpleNamespace:
+        return self._usage
+
+
 @pytest.mark.asyncio
 async def test_engine_process_message_success(
     mock_deps: tuple[
@@ -81,6 +116,84 @@ async def test_engine_process_message_success(
 
 
 @pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_inject_system_prompt_appends_runtime_directives(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    mock_prompt.return_value = "BASE PROMPT"
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        runtime_directives=(
+            "likely concrete order handoff",
+            "do not ask qualifying questions",
+        ),
+    )
+
+    from pydantic_ai.usage import RunUsage
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    prompt = await inject_system_prompt(ctx)
+
+    assert prompt.startswith("BASE PROMPT")
+    assert "[RUNTIME DIRECTIVES]" in prompt
+    assert "likely concrete order handoff" in prompt
+    assert "do not ask qualifying questions" in prompt
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_inject_system_prompt_omits_search_requirement_in_order_handoff_mode(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    mock_prompt.return_value = "BASE PROMPT"
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        faq_context=[{"title": "Pods", "content": "Acoustic pods are available."}],
+        tool_mode="order_handoff",
+        runtime_directives=("prefer manager handoff",),
+    )
+
+    from pydantic_ai.usage import RunUsage
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    prompt = await inject_system_prompt(ctx)
+
+    assert "[KNOWLEDGE BASE (FAQ)]" in prompt
+    assert "Acoustic pods are available." in prompt
+    assert "MUST call the `search_products` tool" not in prompt
+
+
+@pytest.mark.asyncio
 async def test_engine_process_message_db_error(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -100,6 +213,258 @@ async def test_engine_process_message_db_error(
             crm_client=zoho_crm,
             messaging_client=messaging,
         )
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_order_handoff_mode_limits_available_tools(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    mock_prompt.return_value = "You are Noor."
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        tool_mode="order_handoff",
+    )
+    seen_tool_names: list[set[str]] = []
+
+    def model_fn(messages: list[object], info: AgentInfo) -> object:
+        seen_tool_names.append({tool.name for tool in info.function_tools})
+        from pydantic_ai import ModelResponse, TextPart
+
+        return ModelResponse(parts=[TextPart("Manager handoff queued.")])
+
+    with sales_agent.override(model=FunctionModel(model_fn)):
+        await sales_agent.run(
+            "I need 200 chairs delivered to Dubai Marina by next week",
+            deps=deps,
+        )
+
+    assert seen_tool_names == [{"escalate_to_manager", "update_language"}]
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_high_confidence_candidate_uses_guarded_path(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I need 200 chairs delivered to Dubai Marina by next week"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your budget?"),
+        _FakeAgentResult("Our manager will confirm the order shortly."),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Our manager will confirm the order shortly."
+    assert mock_run.await_count == 2
+    first_call = mock_run.await_args_list[0].kwargs
+    second_call = mock_run.await_args_list[1].kwargs
+    assert first_call["deps"].tool_mode == "order_handoff"
+    assert second_call["deps"].tool_mode == "order_handoff"
+    assert any(
+        "likely a concrete order handoff case" in directive
+        for directive in first_call["deps"].runtime_directives
+    )
+    assert any(
+        "previous pass missed likely order handoff" in directive
+        for directive in second_call["deps"].runtime_directives
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_split_first_turn_still_uses_guarded_path(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "We need 200 chairs delivered to Dubai Marina by next week"
+    mock_build_history.return_value = _split_first_turn_history(
+        "We need 200 chairs",
+        "delivered to Dubai Marina by next week",
+    )
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Thanks, let me route this to our manager."),
+        _FakeAgentResult("Our manager will confirm the order shortly."),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Our manager will confirm the order shortly."
+    assert mock_run.await_count == 2
+    assert mock_run.await_args_list[0].kwargs["deps"].tool_mode == "order_handoff"
+    assert mock_run.await_args_list[1].kwargs["deps"].tool_mode == "order_handoff"
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_retries_guarded_path_once_without_hard_escalation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I need 200 chairs delivered to Dubai Marina by next week"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share the exact floor?"),
+        _FakeAgentResult("Please share the exact floor."),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 2
+    assert conv.escalation_status == "none"
+    assert response.text == "Please share the exact floor."
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_second_guarded_pass_can_succeed_with_escalation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I need 200 chairs delivered to Dubai Marina by next week"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        if mock_run.await_count == 1:
+            return _FakeAgentResult("Could you confirm the tower name?")
+        deps.conversation.escalation_status = "pending"
+        return _FakeAgentResult("Our manager will confirm your order now.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 2
+    assert conv.escalation_status == "pending"
+    assert response.text == "Our manager will confirm your order now."
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_non_candidate_uses_full_tool_mode(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "We need 20 chairs for next week, what options do you have?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Here are a few chair options.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Here are a few chair options."
+    assert mock_run.await_count == 1
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.tool_mode == "full"
+    assert deps.runtime_directives == ()
 
 
 @pytest.mark.asyncio

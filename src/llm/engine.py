@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.base import MessagingProvider
 from src.llm.context import build_message_history
+from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.order_status import format_order_status
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
@@ -32,6 +33,18 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
+ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
+ORDER_HANDOFF_PASS_1_DIRECTIVES = (
+    "this is likely a concrete order handoff case",
+    "do not ask qualifying questions if order evidence is already sufficient",
+    "either escalate_to_manager(order_confirmation) or ask only one truly necessary clarification",
+)
+ORDER_HANDOFF_PASS_2_DIRECTIVES = (
+    "previous pass missed likely order handoff",
+    "do not ask qualifying questions",
+    "do not search",
+    "if order evidence is sufficient, use escalate_to_manager(order_confirmation)",
+)
 
 
 def _search_products_limit_message(*, include_no_results: bool = False) -> str:
@@ -59,6 +72,8 @@ class SalesDeps:
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
     recent_history: list[str] | None = None  # Last N messages for escalation context
     product_search_calls: int = 0
+    tool_mode: Literal["full", "order_handoff"] = "full"
+    runtime_directives: tuple[str, ...] = ()
 
 
 # Allowed transitions for the advance_stage tool
@@ -87,6 +102,13 @@ async def _prepare_sales_tools(
     ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
     """Hide product search after the allowed per-message budget is exhausted."""
+    if ctx.deps.tool_mode == "order_handoff":
+        return [
+            tool_def
+            for tool_def in tool_defs
+            if tool_def.name in ORDER_HANDOFF_ALLOWED_TOOLS
+        ]
+
     if ctx.deps.product_search_calls < MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
         return tool_defs
 
@@ -135,17 +157,29 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         faq_block = "\n\n[KNOWLEDGE BASE (FAQ)]\n"
         for item in ctx.deps.faq_context:
             faq_block += f"Q: {item['title']}\nA: {item['content']}\n---\n"
-        faq_block += (
-            "Use the above FAQ entries when answering. "
-            "If the answer is NOT in the FAQ, do NOT make up information. "
-            "WARNING: If the user asks for specific products or catalog items (e.g. chairs, tables), "
-            "you MUST call the `search_products` tool. Do not rely solely on the FAQ for products because the tool fetches live images!\n"
-        )
+        faq_block += "Use the above FAQ entries when answering. "
+        if ctx.deps.tool_mode == "order_handoff":
+            faq_block += (
+                "If the answer is NOT in the FAQ, do NOT make up information. "
+                "This run is restricted to order handoff handling, so do not rely on FAQ context to continue product discovery.\n"
+            )
+        else:
+            faq_block += (
+                "If the answer is NOT in the FAQ, do NOT make up information. "
+                "WARNING: If the user asks for specific products or catalog items (e.g. chairs, tables), "
+                "you MUST call the `search_products` tool. Do not rely solely on the FAQ for products because the tool fetches live images!\n"
+            )
         base_prompt += faq_block
 
     if ctx.deps.crm_context:
         profile_str = "\n".join(f"{k}: {v}" for k, v in ctx.deps.crm_context.items())
         base_prompt += f"\n\n[CRM CUSTOMER CONTEXT]\n{profile_str}\n"
+
+    if ctx.deps.runtime_directives:
+        directives_block = "\n".join(
+            f"- {directive}" for directive in ctx.deps.runtime_directives
+        )
+        base_prompt += f"\n\n[RUNTIME DIRECTIVES]\n{directives_block}\n"
 
     return base_prompt
 
@@ -882,6 +916,37 @@ async def process_message(
     4. Runs LLM agent
     5. Unmasks PII in response
     """
+
+    def _is_first_turn(history_messages: list[ModelRequest | ModelResponse]) -> bool:
+        user_turns = 0
+        assistant_turns = 0
+
+        for message in history_messages:
+            if isinstance(message, ModelRequest) and any(
+                isinstance(part, UserPromptPart) for part in message.parts
+            ):
+                user_turns += 1
+            elif isinstance(message, ModelResponse) and any(
+                isinstance(part, TextPart) for part in message.parts
+            ):
+                assistant_turns += 1
+
+        return assistant_turns == 0 and user_turns >= 1
+
+    def _has_escalation(conversation: Conversation) -> bool:
+        return conversation.escalation_status not in (None, "none")
+
+    def _build_llm_response(result: Any, model_name: str) -> LLMResponse:
+        final_text = unmask_pii(result.output, pii_map)
+        usage = result.usage()
+        return LLMResponse(
+            text=final_text,
+            tokens_in=usage.input_tokens if usage else None,
+            tokens_out=usage.output_tokens if usage else None,
+            cost=None,
+            model=model_name,
+        )
+
     # Load conversation (already loaded by caller typically, but we fetch to be safe/fresh)
     conv = await db.get(Conversation, conversation_id)
     if not conv:
@@ -914,6 +979,7 @@ async def process_message(
     # Mask current incoming text
     masked_text, new_piis = mask_pii(combined_text)
     pii_map.update(new_piis)
+    is_first_turn = _is_first_turn(history)
 
     # Escalation is now handled by the agent's escalate_to_manager tool.
     # The agent decides when to escalate based on full conversation context.
@@ -966,25 +1032,36 @@ async def process_message(
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
         )
 
-        result = await sales_agent.run(
-            user_prompt=masked_text,
-            deps=deps,
-            message_history=history,
-            model=dynamic_model,
-        )
+        async def _run_agent(run_deps: SalesDeps) -> Any:
+            return await sales_agent.run(
+                user_prompt=masked_text,
+                deps=run_deps,
+                message_history=history,
+                model=dynamic_model,
+            )
 
-        # Unmask PII before sending back to user
-        final_text = unmask_pii(result.output, pii_map)
+        if is_first_turn and is_high_confidence_first_turn_order(masked_text):
+            first_result = await _run_agent(
+                replace(
+                    deps,
+                    tool_mode="order_handoff",
+                    runtime_directives=ORDER_HANDOFF_PASS_1_DIRECTIVES,
+                )
+            )
+            if _has_escalation(conv):
+                return _build_llm_response(first_result, db_model_main)
 
-        usage = result.usage()
+            second_result = await _run_agent(
+                replace(
+                    deps,
+                    tool_mode="order_handoff",
+                    runtime_directives=ORDER_HANDOFF_PASS_2_DIRECTIVES,
+                )
+            )
+            return _build_llm_response(second_result, db_model_main)
 
-        return LLMResponse(
-            text=final_text,
-            tokens_in=usage.input_tokens if usage else None,
-            tokens_out=usage.output_tokens if usage else None,
-            cost=None,  # Usage cost tracking usually needs custom logic or litellm
-            model=db_model_main,
-        )
+        result = await _run_agent(deps)
+        return _build_llm_response(result, db_model_main)
 
     except Exception:
         conv_id_str = str(conv.id) if conv else "unknown"
