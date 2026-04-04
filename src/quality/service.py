@@ -7,7 +7,7 @@ in the quality_reviews table.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
+from src.models.message import Message
 from src.models.quality_review import QualityReview
 from src.quality.schemas import EvaluationResult, compute_rating
 
@@ -52,16 +53,31 @@ async def save_review(
     computed_total = float(sum(c.score for c in result.criteria))
     rating_str = compute_rating(computed_total)
 
-    review = QualityReview(
-        conversation_id=conversation_id,
-        total_score=computed_total,
-        max_score=30,
-        criteria=criteria_data,
-        rating=rating_str,
-        summary=result.summary,
-        reviewer="ai",
+    existing_stmt = select(QualityReview).where(
+        QualityReview.conversation_id == conversation_id
     )
-    db.add(review)
+    existing_result = await db.execute(existing_stmt)
+    review = existing_result.scalar_one_or_none()
+
+    if review is None:
+        review = QualityReview(
+            conversation_id=conversation_id,
+            total_score=computed_total,
+            max_score=30,
+            criteria=criteria_data,
+            rating=rating_str,
+            summary=result.summary,
+            reviewer="ai",
+        )
+        db.add(review)
+    else:
+        review.total_score = computed_total
+        review.max_score = 30
+        review.criteria = criteria_data
+        review.rating = rating_str
+        review.summary = result.summary
+        review.reviewer = "ai"
+
     await db.flush()  # get the ID without committing
     return review
 
@@ -117,6 +133,41 @@ async def get_unreviewed_completed_conversations(
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+def _normalize_naive_utc(value: datetime) -> datetime:
+    """Normalize datetimes to naive UTC for timestamp-without-time-zone columns."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+async def get_recent_conversation_ids_with_assistant_activity(
+    db: AsyncSession,
+    *,
+    since: datetime | None = None,
+    limit: int = 50,
+) -> list[UUID]:
+    """Return recent conversation IDs with assistant activity ordered by latest turn.
+
+    This powers rolling quality evaluation for active bot dialogues.
+    """
+    threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=1)))
+    stmt = (
+        select(
+            Message.conversation_id,
+            func.max(Message.created_at).label("last_assistant_at"),
+        )
+        .where(
+            Message.role == "assistant",
+            Message.created_at >= threshold,
+        )
+        .group_by(Message.conversation_id)
+        .order_by(func.max(Message.created_at).desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return [row.conversation_id for row in result.all()]
 
 
 async def get_reviews(

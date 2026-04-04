@@ -11,26 +11,16 @@ All functions are safe to call even when Telegram is not configured.
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 import logfire
 
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
+from src.services.daily_summary import DailySummaryData, calculate_daily_summary
 
 logger = logging.getLogger(__name__)
-
-
-class HasMetrics(Protocol):
-    """Protocol for objects with dashboard metrics fields."""
-
-    total_conversations: int
-    unique_customers: int
-    escalation_count: int
-    avg_quality_score: float
-    conversion_rate: float
-    llm_cost_usd: float
 
 
 def _get_telegram_client() -> TelegramClient:
@@ -111,16 +101,23 @@ def format_quality_alert_message(
     )
 
 
-def format_daily_summary(metrics: HasMetrics) -> str:
+def _format_optional_quality(score: float | None) -> str:
+    return "N/A" if score is None else f"{score:.1f}/30"
+
+
+def _format_optional_rate(rate: float | None) -> str:
+    return "N/A" if rate is None else f"{rate:.1f}%"
+
+
+def format_daily_summary(metrics: DailySummaryData) -> str:
     """Format daily dashboard metrics as HTML for Telegram."""
     return (
         "📊 <b>Daily Summary</b>\n\n"
         f"<b>Conversations:</b> {metrics.total_conversations}\n"
         f"<b>Unique Customers:</b> {metrics.unique_customers}\n"
         f"<b>Escalations:</b> {metrics.escalation_count}\n"
-        f"<b>Avg Quality:</b> {metrics.avg_quality_score}/30\n"
-        f"<b>Conversion Rate:</b> {metrics.conversion_rate}%\n"
-        f"<b>LLM Cost:</b> ${metrics.llm_cost_usd}\n"
+        f"<b>Avg Quality:</b> {_format_optional_quality(metrics.avg_quality_score)}\n"
+        f"<b>Conversion Rate (7d):</b> {_format_optional_rate(metrics.conversion_rate_7d)}\n"
     )
 
 
@@ -172,11 +169,11 @@ async def notify_quality_alert(
         logger.exception("Failed to send quality alert notification to Telegram")
 
 
-async def notify_daily_summary_telegram(metrics: HasMetrics) -> None:
+async def notify_daily_summary_telegram(metrics: DailySummaryData) -> None:
     """Send daily summary to Telegram.
 
     Args:
-        metrics: DashboardMetricsResponse from calculate_dashboard_metrics.
+        metrics: DailySummaryData from calculate_daily_summary.
     """
     try:
         client = _get_telegram_client()
@@ -210,14 +207,13 @@ async def send_telegram_message(text: str) -> None:
 async def run_daily_summary(ctx: dict[str, Any]) -> None:
     """ARQ job: Send daily summary via Telegram.
 
-    Calculates dashboard metrics for the last 24 hours
+    Calculates dedicated daily summary metrics
     and sends a formatted summary to the configured Telegram chat.
     """
     from src.core.database import async_session_factory
-    from src.services.dashboard_metrics import calculate_dashboard_metrics
 
     async with async_session_factory() as db:
-        metrics = await calculate_dashboard_metrics(db, period="day")
+        metrics = await calculate_daily_summary(db)
 
     await notify_daily_summary_telegram(metrics)
     logger.info("Daily summary sent to Telegram")

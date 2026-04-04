@@ -8,6 +8,11 @@ Current baseline branch: `main`
 - Repo-local orchestration is intentionally minimal here: tracked contract files live in `.codex/`, while delegated agent reports are local-only under `.codex/agent-reports/`.
 - `.gitignore` tracks the repo-local contract files and keeps delegated agent reports under `.codex/agent-reports/` local-only.
 - Existing local `.codex/config.toml` in the primary worktree was reviewed for this setup and left untouched.
+- `tj-hd0n` is now closed on `main` as a reporting-quality cleanup:
+  - Telegram `Daily Summary` no longer reuses the broad dashboard payload and no longer shows `LLM Cost`
+  - daily summary now uses a dedicated calculator with honest `N/A` rendering for missing `Avg Quality` / `Conversion Rate (7d)` basis
+  - `Conversion Rate (7d)` is now defined as delivered deals over conversations with assistant activity in the last 7 days
+  - rolling quality evaluation is no longer tied only to `Conversation.status == "closed"`; worker now runs `evaluate_recent_conversations_quality()` and `save_review()` updates existing `quality_reviews` rows instead of insert-only behavior
 - The repository now operates in a main-only workflow: promote finished work directly into `main` instead of treating `develop` as a required intermediate branch.
 - Prefer dedicated worktrees for orchestration work when the primary worktree contains unrelated local-only changes.
 - Use `bd ready --json` for the current queue and `bd show <id>` for targeted task context.

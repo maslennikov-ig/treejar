@@ -25,7 +25,7 @@ class QualityReview(UUIDMixin, Base):
     )
     total_score: Mapped[float] = mapped_column(Numeric(4, 1))
     max_score: Mapped[int] = mapped_column(Integer, default=30)
-    criteria: Mapped[dict[str, Any]] = mapped_column(JSON)
+    criteria: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
     rating: Mapped[str] = mapped_column(String)
     summary: Mapped[str | None] = mapped_column(Text, default=None)
     reviewer: Mapped[str] = mapped_column(String, default="ai")

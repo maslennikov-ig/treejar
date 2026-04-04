@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -157,20 +158,41 @@ async def test_notify_quality_alert_calls_telegram() -> None:
 @pytest.mark.asyncio
 async def test_notify_daily_summary_formats_metrics() -> None:
     """notify_daily_summary should format dashboard metrics as HTML."""
+    from src.services.daily_summary import DailySummaryData
     from src.services.notifications import format_daily_summary
 
-    metrics = MagicMock()
-    metrics.total_conversations = 42
-    metrics.unique_customers = 30
-    metrics.escalation_count = 5
-    metrics.avg_quality_score = 22.5
-    metrics.conversion_rate = 11.0
-    metrics.llm_cost_usd = 1.23
+    metrics = DailySummaryData(
+        period_start=datetime.now(tz=UTC),
+        period_end=datetime.now(tz=UTC),
+        total_conversations=42,
+        unique_customers=30,
+        escalation_count=5,
+        avg_quality_score=22.5,
+        conversion_rate_7d=11.0,
+    )
 
     msg = format_daily_summary(metrics)
     assert "42" in msg
     assert "22.5" in msg
-    assert "1.23" in msg
+    assert "11.0%" in msg
+    assert "LLM Cost" not in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_daily_summary_formats_na_values() -> None:
+    """format_daily_summary should render missing metrics as N/A."""
+    from src.services.daily_summary import DailySummaryData
+    from src.services.notifications import format_daily_summary
+
+    metrics = DailySummaryData(
+        period_start=datetime.now(tz=UTC),
+        period_end=datetime.now(tz=UTC),
+    )
+
+    msg = format_daily_summary(metrics)
+    assert "<b>Avg Quality:</b> N/A" in msg
+    assert "<b>Conversion Rate (7d):</b> N/A" in msg
+    assert "LLM Cost" not in msg
 
 
 # =============================================================================

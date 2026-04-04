@@ -14,6 +14,7 @@ def test_arq_worker_settings_configured() -> None:
     function_names = [f.__name__ for f in settings.functions]
     assert "process_incoming_batch" in function_names
     assert "refresh_conversation_summary" in function_names
+    assert "evaluate_recent_conversations_quality" in function_names
 
     # Crons should include product sync
     assert settings.cron_jobs is not None
