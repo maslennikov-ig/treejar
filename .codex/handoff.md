@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-03
+Updated: 2026-04-04
 Current baseline branch: `main`
 
 ## Current repo state
@@ -23,7 +23,6 @@ Current baseline branch: `main`
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
-- `tj-19ol.3.13` — P1 bug: prompt-only fix was insufficient; implement a non-prompt first-turn concrete-order handoff fix
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
@@ -31,7 +30,7 @@ Current baseline branch: `main`
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
 - `tj-19ol.3.11` — P1 bug: prompt slice is merged, but canonical retest showed the live first-turn concrete-order regression still persists; see `tj-19ol.3.13`
-- `tj-15m.5.2` — P1 bug: improve product-answer quality on the acoustic-pods path after the verified search cap
+- `tj-15m.5.2` — P1 bug: improve product-answer quality on product-heavy consultative paths after the verified search cap
 
 ## Rules for the next orchestrator
 
@@ -54,9 +53,17 @@ Current baseline branch: `main`
     - concrete order still FAILS: `I need 200 chairs delivered to Dubai Marina by next week` on conversation `4425381e-3ebc-4f78-8a1c-e6b120b5b0c9` produced a qualifying assistant reply in `16.02s`, `tokens_in=2020`, `escalation_status=none`, `escalations=0`; prompt-only hardening is insufficient on the hosted model/runtime path
     - consultative bulk guard PASSES: `We need 20 chairs for next week, what options do you have?` on conversation `76e78300-3df5-47a3-ade1-59dfa5bb26ab` stayed non-escalation, returned useful chair options in `10.11s`, and executed exactly one real `search_products` call
     - acoustic pods remains PARTIAL: `Tell me about your acoustic pods` on conversation `63d6283a-3672-40a4-89cb-9c966b930905` stayed non-escalation, took `34.03s`, used `tokens_in=9429`, executed exactly two real `search_products` calls, then removed `search_products` from the available toolset as intended, but the final answer quality was weak and `tmpfiles.org` image uploads still failed with repeated `422`
+  - `tj-19ol.3.13` is now merged into `main`, hot-applied to `/opt/noor`, and validated on canonical runtime:
+    - merge commit on `main`: `5cf6d30` (`fix: merge order handoff guard`)
+    - targeted live retest on real recipient `+79262810921` for `"I need 200 chairs delivered to Dubai Marina by next week"` now PASSES
+    - conversation `080af0e3-e27d-4f81-8805-ba1bc2d67c2d` was created on the exact phone, triggered `escalate_to_manager(order_confirmation)`, persisted an `Escalation` row, set `escalation_status=pending`, stored a handoff-style assistant reply, and sent via Wazzup with `POST /v3/message -> 201 Created`
+    - runtime duration for that fixed case was `19.66s`; stored assistant message had `tokens_in=1268`, `tokens_out=370`
+  - consultative routing was rechecked on the same runtime and did not over-tighten:
+    - `"We need 20 chairs for next week, what options do you have?"` on conversation `30dae35f-f838-42ac-ac92-bad379377265` stayed non-escalated with `escalation_count=0`
+    - however, answer quality remained weak: the model asked qualifying questions instead of surfacing concrete options, despite normal `search_products('chairs')` and subsequent `get_stock(...)` calls
+    - runtime duration for that consultative case was `38.24s`; stored assistant message had `tokens_in=9792`, `tokens_out=711`
   - next realistic blockers are therefore narrower and evidence-based:
-    - `tj-19ol.3.13` for a non-prompt fix to the first-turn concrete-order handoff
-    - `tj-15m.5.2` for product-heavy answer quality after capped searches/tool exhaustion
+    - `tj-15m.5.2` for product-heavy consultative answer quality after search/tool work
     - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
   - additional canonical truth from the 2026-04-03 latency pass:
   - `tj-15m` is still active after a real profiling round
@@ -95,11 +102,9 @@ Current baseline branch: `main`
     - PASS: complaint -> `general`
     - PASS: wholesale pricing -> no escalation
     - PASS: refund -> `general`
-  - targeted post-hot-apply retest is now complete:
-    - hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`
-    - rebuilt `app` + `worker`
-    - reran the three targeted live checks on `+79262810921`
-    - outcome: consultative bulk behavior is healthy, search-loop overflow is fixed, but the next realistic step is now new code work, not more blind retesting
+  - targeted post-hot-apply retest is now complete in two rounds:
+    - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
+    - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
   - next realistic step is:
-    - investigate and implement `tj-19ol.3.13`
-    - then take `tj-15m.5.2` in parallel or immediately after, depending on write-zone split
+    - take `tj-15m.5.2`
+    - then `tj-27v` if media/upload noise still materially drags product replies
