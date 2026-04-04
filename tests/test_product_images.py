@@ -3,6 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic_ai import ToolReturn
 
 from src.llm.engine import SalesDeps, search_products
 from src.models.conversation import Conversation
@@ -86,11 +87,12 @@ async def test_search_products_sends_image_if_present(
     monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
 
     result = await search_products(run_context, "furniture")
+    assert isinstance(result, ToolReturn)
 
     # Verify text reflects WhatsApp image delivery, without leaking raw URLs.
-    assert "automatically sent to the customer's WhatsApp" in result
-    assert "Test Table" in result
-    assert "https://example.com/chair.jpg" not in result
+    assert "automatically sent to the customer's WhatsApp" in result.return_value
+    assert "Test Table" in result.return_value
+    assert "https://example.com/chair.jpg" not in result.return_value
 
     # Verify send_media was called once (for product1)
     mock_messaging_client.send_media.assert_called_once_with(
@@ -134,7 +136,8 @@ async def test_search_products_graceful_fallback(
 
     # Should not raise
     result = await search_products(run_context, "furniture")
+    assert isinstance(result, ToolReturn)
 
-    assert "automatically sent to the customer's WhatsApp" in result
-    assert "https://example.com/chair.jpg" not in result
+    assert "automatically sent to the customer's WhatsApp" in result.return_value
+    assert "https://example.com/chair.jpg" not in result.return_value
     mock_messaging_client.send_media.assert_called_once()

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, ToolReturn
 from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -584,10 +584,14 @@ async def test_tools_search_products(
             usage=RunUsage(),
         )
 
-        result_text = await engine_module.search_products(ctx, "chair")
-        assert "Office Chair" in result_text
-        assert "CHAIR-01" in result_text
-        assert "100.00 USD (Your segment price)" in result_text
+        result = await engine_module.search_products(ctx, "chair")
+        assert isinstance(result, ToolReturn)
+        assert "Office Chair" in result.return_value
+        assert "CHAIR-01" in result.return_value
+        assert "100.00 USD (Your segment price)" in result.return_value
+        assert isinstance(result.content, str)
+        assert "lead with 2-3 concrete options" in result.content.lower()
+        assert "at most one targeted follow-up" in result.content.lower()
     finally:
         if orig_search:
             engine_module.rag_search_products = orig_search
@@ -639,9 +643,13 @@ async def test_tools_search_products_caps_retries_per_run(
         third = await engine_module.search_products(ctx, "phone booth")
 
         assert first == "No products found matching the query."
-        assert "No products found matching the query." in second
-        assert "Search limit reached for this customer message" in second
-        assert "Do not call search_products again" in third
+        assert isinstance(second, ToolReturn)
+        assert "No products found matching the query." in second.return_value
+        assert "Search limit reached for this customer message" in second.return_value
+        assert isinstance(second.content, str)
+        assert "offer nearby alternatives" in second.content.lower()
+        assert isinstance(third, ToolReturn)
+        assert "Do not call search_products again" in third.return_value
         assert mock_search.await_count == 2
     finally:
         if orig_search:
@@ -695,8 +703,105 @@ async def test_tools_search_products_second_empty_result_exhausts_retry_budget(
         )
 
         assert first == "No products found matching the query."
-        assert "Search limit reached for this customer message" in second
-        assert "Do not call search_products again" in second
+        assert isinstance(second, ToolReturn)
+        assert "Search limit reached for this customer message" in second.return_value
+        assert "Do not call search_products again" in second.return_value
+        assert isinstance(second.content, str)
+        assert "one narrow clarifying question" in second.content.lower()
+        assert mock_search.await_count == 2
+    finally:
+        if orig_search:
+            engine_module.rag_search_products = orig_search
+
+
+@pytest.mark.asyncio
+async def test_tools_search_products_second_successful_search_adds_catalog_fallback_contract(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from datetime import UTC, datetime
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from src.schemas.product import ProductSearchResult
+
+    def _product(*, sku: str, name: str, description: str) -> ProductRead:
+        return ProductRead(
+            id=uuid.uuid4(),
+            sku=sku,
+            name_en=name,
+            price=1000.0,
+            currency="AED",
+            stock=3,
+            is_active=True,
+            description_en=description,
+            created_at=datetime.now(UTC),
+        )
+
+    mock_search = AsyncMock()
+    mock_search.side_effect = [
+        ProductSearchResult(
+            products=[
+                _product(
+                    sku="POD-1",
+                    name="Solo Privacy Booth",
+                    description="Single-person focus pod",
+                )
+            ],
+            total_found=1,
+        ),
+        ProductSearchResult(
+            products=[
+                _product(
+                    sku="POD-2",
+                    name="Meeting Booth",
+                    description="Compact acoustic booth for 2-4 people",
+                )
+            ],
+            total_found=1,
+        ),
+    ]
+
+    import src.llm.engine as engine_module
+
+    orig_search = getattr(engine_module, "rag_search_products", None)
+    engine_module.rag_search_products = mock_search
+
+    try:
+        from pydantic_ai.usage import RunUsage
+
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="acoustic pods",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+
+        first = await engine_module.search_products(ctx, "acoustic pods")
+        second = await engine_module.search_products(ctx, "meeting booth")
+
+        assert isinstance(first, ToolReturn)
+        assert isinstance(second, ToolReturn)
+        assert isinstance(second.content, str)
+        assert (
+            "search budget for this customer message is exhausted"
+            in second.content.lower()
+        )
+        assert "do not say that you lack catalog access" in second.content.lower()
+        assert "closest alternatives" in second.content.lower()
         assert mock_search.await_count == 2
     finally:
         if orig_search:
@@ -768,8 +873,15 @@ async def test_tools_get_stock(
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
     )
 
+    deps.product_results_seen = True
     result = await get_stock(ctx, "CHAIR-01")
-    assert "25 items available" in result
+    assert isinstance(result, ToolReturn)
+    assert "25 items available" in result.return_value
+    assert isinstance(result.content, str)
+    assert (
+        "use this stock fact to strengthen the concrete options"
+        in result.content.lower()
+    )
     zoho.get_stock.assert_awaited_once_with("CHAIR-01")
 
 

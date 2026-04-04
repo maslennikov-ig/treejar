@@ -14,6 +14,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic_ai import ToolReturn
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -125,10 +126,11 @@ class TestPerformSearchProducts:
         ctx = _FakeRunContext(deps=deps)
 
         result = await search_products(ctx, "ergonomic chair")  # type: ignore[arg-type]
+        assert isinstance(result, ToolReturn)
 
-        assert "CHAIR-01" in result
-        assert "Ergonomic Office Chair" in result
-        assert "AED" in result
+        assert "CHAIR-01" in result.return_value
+        assert "Ergonomic Office Chair" in result.return_value
+        assert "AED" in result.return_value
         mock_search.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -168,9 +170,10 @@ class TestPerformSearchProducts:
         ctx = _FakeRunContext(deps=deps)
 
         result = await search_products(ctx, "chair")  # type: ignore[arg-type]
+        assert isinstance(result, ToolReturn)
 
         # 1000 * 0.85 = 850.00
-        assert "850.00" in result
+        assert "850.00" in result.return_value
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.rag_search_products")
@@ -190,9 +193,10 @@ class TestPerformSearchProducts:
         ctx = _FakeRunContext(deps=deps)
 
         result = await search_products(ctx, "table")  # type: ignore[arg-type]
+        assert isinstance(result, ToolReturn)
 
         # 200 * 0.90 = 180.00
-        assert "180.00" in result
+        assert "180.00" in result.return_value
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.rag_search_products")
@@ -212,9 +216,10 @@ class TestPerformSearchProducts:
         ctx = _FakeRunContext(deps=deps)
 
         result = await search_products(ctx, "desk")  # type: ignore[arg-type]
+        assert isinstance(result, ToolReturn)
 
         # 100 * 1.0 = 100.00
-        assert "100.00" in result
+        assert "100.00" in result.return_value
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.rag_search_products")
@@ -237,7 +242,8 @@ class TestPerformSearchProducts:
         ctx = _FakeRunContext(deps=deps)
 
         result = await search_products(ctx, "office furniture")  # type: ignore[arg-type]
+        assert isinstance(result, ToolReturn)
 
-        assert "---" in result
-        assert "A1" in result
-        assert "B2" in result
+        assert "---" in result.return_value
+        assert "A1" in result.return_value
+        assert "B2" in result.return_value

@@ -25,7 +25,7 @@ from pydantic_ai import (
     TextPart,
     ToolCallPart,
 )
-from pydantic_ai.messages import UserPromptPart
+from pydantic_ai.messages import ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -822,3 +822,253 @@ class TestScenario7OrderHandoffGuard:
         assert model_calls == 2
         assert "search_products" in tool_names_by_step[0]
         assert "advance_stage" in tool_names_by_step[0]
+
+    @pytest.mark.asyncio
+    @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+    @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+    @patch("src.core.config.get_system_config", new_callable=AsyncMock)
+    @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+    @patch("src.llm.engine.OpenAIChatModel")
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
+    @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
+    async def test_consultative_product_search_and_stock_get_option_first_contract(
+        self,
+        mock_notify: AsyncMock,
+        mock_search: AsyncMock,
+        mock_openai_model: MagicMock,
+        mock_build_history: AsyncMock,
+        mock_get_system_config: AsyncMock,
+        mock_search_knowledge: AsyncMock,
+        mock_prompt: AsyncMock,
+    ) -> None:
+        import uuid
+        from datetime import datetime
+
+        from src.schemas.product import ProductRead, ProductSearchResult
+
+        message = "We need 20 chairs for next week, what options do you have?"
+        mock_prompt.return_value = "You are Noor. STAGE: NEEDS ANALYSIS."
+        mock_build_history.return_value = [
+            ModelRequest(parts=[UserPromptPart(content=message)])
+        ]
+        mock_get_system_config.return_value = "test-model"
+        mock_search_knowledge.return_value = []
+        mock_search.return_value = ProductSearchResult(
+            products=[
+                ProductRead(
+                    id=uuid.uuid4(),
+                    sku="CHAIR-01",
+                    name_en="Ergo Visitor Chair",
+                    name_ar=None,
+                    description_en="Stackable ergonomic meeting chair",
+                    category="Chairs",
+                    subcategory=None,
+                    price=450.0,
+                    currency="AED",
+                    stock=20,
+                    image_url=None,
+                    attributes=None,
+                    is_active=True,
+                    created_at=datetime.now(UTC),
+                    updated_at=None,
+                )
+            ],
+            query_interpreted="chairs",
+            total_found=1,
+        )
+
+        conv = _mock_conversation(SalesStage.NEEDS_ANALYSIS)
+        db = AsyncMock(spec=AsyncSession)
+        db.get.return_value = conv
+        redis = AsyncMock(spec=Redis)
+        zoho = AsyncMock(spec=ZohoInventoryClient)
+        zoho.get_stock.return_value = {"stock_on_hand": 20}
+        messaging = AsyncMock(spec=MessagingProvider)
+        embedding = AsyncMock(spec=EmbeddingEngine)
+
+        model_calls = 0
+        observed_contracts: list[str] = []
+
+        def _collect_user_contract(messages: list[ModelMessage]) -> str:
+            parts = messages[-1].parts
+            assert any(isinstance(part, ToolReturnPart) for part in parts)
+            contract_parts = [
+                part.content
+                for part in parts
+                if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+            ]
+            assert contract_parts
+            return "\n".join(contract_parts)
+
+        def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            nonlocal model_calls
+            model_calls += 1
+
+            if model_calls == 1:
+                return ModelResponse(
+                    parts=[ToolCallPart("search_products", {"query": "chairs"})]
+                )
+
+            if model_calls == 2:
+                observed_contracts.append(_collect_user_contract(messages))
+                return ModelResponse(
+                    parts=[ToolCallPart("get_stock", {"sku": "CHAIR-01"})]
+                )
+
+            observed_contracts.append(_collect_user_contract(messages))
+            return ModelResponse(
+                parts=[
+                    TextPart(
+                        "Here are two chair options that can work for next week. "
+                        "The Ergo Visitor Chair is available now with 20 units in stock. "
+                        "Would you like me to narrow this down by meeting-room use or all-day seating?"
+                    )
+                ]
+            )
+
+        mock_openai_model.return_value = FunctionModel(model_fn)
+
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=message,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+        assert mock_notify.await_count == 0
+        assert mock_search.await_count == 1
+        zoho.get_stock.assert_awaited_once_with("CHAIR-01")
+        assert model_calls == 3
+        assert any(
+            "lead with 2-3 concrete options" in contract.lower()
+            for contract in observed_contracts
+        )
+        assert any(
+            "use this stock fact to strengthen the concrete options" in contract.lower()
+            for contract in observed_contracts
+        )
+        assert "would you like me to narrow this down" in response.text.lower()
+
+    @pytest.mark.asyncio
+    @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+    @patch("src.llm.engine.rag_search_products", new_callable=AsyncMock)
+    async def test_search_cap_uses_previous_results_contract_after_second_nearby_search(
+        self,
+        mock_search: AsyncMock,
+        mock_prompt: AsyncMock,
+    ) -> None:
+        import uuid
+        from datetime import datetime
+
+        from src.schemas.product import ProductRead, ProductSearchResult
+
+        mock_prompt.return_value = "You are Noor. STAGE: SOLUTION."
+
+        def _product(*, sku: str, name: str, description: str) -> ProductRead:
+            return ProductRead(
+                id=uuid.uuid4(),
+                sku=sku,
+                name_en=name,
+                name_ar=None,
+                description_en=description,
+                category="Pods",
+                subcategory=None,
+                price=12000.0,
+                currency="AED",
+                stock=2,
+                image_url=None,
+                attributes=None,
+                is_active=True,
+                created_at=datetime.now(UTC),
+                updated_at=None,
+            )
+
+        mock_search.side_effect = [
+            ProductSearchResult(
+                products=[
+                    _product(
+                        sku="POD-1",
+                        name="Solo Privacy Booth",
+                        description="Single-person focus booth",
+                    )
+                ],
+                query_interpreted="acoustic pods",
+                total_found=1,
+            ),
+            ProductSearchResult(
+                products=[
+                    _product(
+                        sku="POD-2",
+                        name="Meeting Booth",
+                        description="Compact acoustic booth for small meetings",
+                    )
+                ],
+                query_interpreted="meeting booth",
+                total_found=1,
+            ),
+        ]
+
+        conv = _mock_conversation(SalesStage.SOLUTION)
+        deps = _mock_deps(conv)
+
+        model_calls = 0
+        tool_names_by_step: list[set[str]] = []
+        fallback_contracts: list[str] = []
+
+        def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            nonlocal model_calls
+            model_calls += 1
+            tool_names = {tool.name for tool in info.function_tools}
+            tool_names_by_step.append(tool_names)
+
+            if model_calls == 1:
+                return ModelResponse(
+                    parts=[ToolCallPart("search_products", {"query": "acoustic pods"})]
+                )
+
+            if model_calls == 2:
+                return ModelResponse(
+                    parts=[ToolCallPart("search_products", {"query": "meeting booth"})]
+                )
+
+            contract_parts = [
+                part.content
+                for part in messages[-1].parts
+                if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+            ]
+            fallback_contracts.extend(contract_parts)
+            return ModelResponse(
+                parts=[
+                    TextPart(
+                        "The closest alternatives are our Solo Privacy Booth and Meeting Booth. "
+                        "If you need a larger multi-person pod, I can narrow it down to that format."
+                    )
+                ]
+            )
+
+        with sales_agent.override(model=FunctionModel(model_fn)):
+            result = await sales_agent.run(
+                "Tell me about your acoustic pods",
+                deps=deps,
+            )
+
+        assert mock_search.await_count == 2
+        assert model_calls == 3
+        assert "search_products" in tool_names_by_step[0]
+        assert "search_products" in tool_names_by_step[1]
+        assert "search_products" not in tool_names_by_step[2]
+        assert any(
+            "do not say that you lack catalog access" in contract.lower()
+            for contract in fallback_contracts
+        )
+        assert any(
+            "closest alternatives" in contract.lower()
+            for contract in fallback_contracts
+        )
+        assert "closest alternatives" in result.output.lower()

@@ -6,7 +6,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import SkipValidation
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -52,8 +52,57 @@ def _search_products_limit_message(*, include_no_results: bool = False) -> str:
     return (
         prefix + "Search limit reached for this customer message. "
         "Do not call search_products again. "
-        "Answer using the previous search results, or explain that no exact "
-        "match was found and offer nearby alternatives or one clarifying question."
+        "Answer using the previous search results if you already have relevant items. "
+        "Otherwise explain that no exact match was found and offer nearby "
+        "alternatives or one clarifying question."
+    )
+
+
+def _product_search_response_contract(*, search_budget_exhausted: bool = False) -> str:
+    contract_parts = [
+        "Relevant catalog results were found for this customer message.",
+        "In your next reply, lead with 2-3 concrete options or closest alternatives from these results before any generic qualifying questions.",
+        "Use only facts already present in tool results, such as price or stock, and do not invent specs.",
+        "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
+        "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
+        "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
+    ]
+
+    if search_budget_exhausted:
+        contract_parts.extend(
+            [
+                "Product search budget for this customer message is exhausted.",
+                "Do not say that you lack catalog access or that you cannot browse the catalog.",
+                "Use the product results already returned in this conversation and, if needed, offer the closest alternatives plus one narrow clarification.",
+            ]
+        )
+
+    return " ".join(contract_parts)
+
+
+def _search_budget_fallback_contract(*, prior_results_seen: bool) -> str:
+    if prior_results_seen:
+        return (
+            "Product search budget for this customer message is exhausted. "
+            "Do not say that you lack catalog access or that you cannot browse the catalog. "
+            "Use the product results already returned in this conversation. "
+            "If the exact match is still missing, say that honestly, present the closest alternatives, "
+            "and ask at most one narrow clarifying question."
+        )
+
+    return (
+        "Product search budget for this customer message is exhausted and no exact match was found. "
+        "Do not search again. Be honest that no exact match was found, offer nearby alternatives if any, "
+        "and ask at most one narrow clarifying question instead of an apology-only fallback."
+    )
+
+
+def _stock_follow_up_contract() -> str:
+    return (
+        "Use this stock fact to strengthen the concrete options you already have. "
+        "Keep the answer option-first, mention the relevant availability fact, "
+        "and ask at most one targeted follow-up only after presenting options. "
+        "Do not switch back to generic qualifying questions before showing the options."
     )
 
 
@@ -72,6 +121,7 @@ class SalesDeps:
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
     recent_history: list[str] | None = None  # Last N messages for escalation context
     product_search_calls: int = 0
+    product_results_seen: bool = False
     tool_mode: Literal["full", "order_handoff"] = "full"
     runtime_directives: tuple[str, ...] = ()
 
@@ -187,7 +237,7 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
 # NOTE: Function name MUST match prompt references (prompts.py) exactly.
 # PydanticAI derives tool name from function name.
 @sales_agent.tool
-async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
+async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolReturn:
     """Search for products in the Treejar catalog based on the customer's query.
     Call this whenever a customer asks for recommendations, prices, or product features.
 
@@ -204,7 +254,12 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
             "Blocked search_products after reaching per-message cap for conversation %s",
             ctx.deps.conversation.id,
         )
-        return _search_products_limit_message()
+        return ToolReturn(
+            return_value=_search_products_limit_message(),
+            content=_search_budget_fallback_contract(
+                prior_results_seen=ctx.deps.product_results_seen
+            ),
+        )
 
     ctx.deps.product_search_calls += 1
     logger.info(
@@ -223,7 +278,12 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
 
     if not results.products:
         if ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
-            return _search_products_limit_message(include_no_results=True)
+            return ToolReturn(
+                return_value=_search_products_limit_message(include_no_results=True),
+                content=_search_budget_fallback_contract(
+                    prior_results_seen=ctx.deps.product_results_seen
+                ),
+            )
         return "No products found matching the query."
 
     from src.core.discounts import apply_discount
@@ -288,11 +348,20 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str:
     if send_tasks:
         await asyncio.gather(*send_tasks)
 
-    return "\n---\n".join(formatted_results)
+    ctx.deps.product_results_seen = True
+    search_budget_exhausted = (
+        ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
+    )
+    return ToolReturn(
+        return_value="\n---\n".join(formatted_results),
+        content=_product_search_response_contract(
+            search_budget_exhausted=search_budget_exhausted
+        ),
+    )
 
 
 @sales_agent.tool
-async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str:
+async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
     """Check current stock level for a specific product SKU.
 
     Args:
@@ -305,7 +374,14 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str:
         return f"Product with SKU {sku} not found in inventory."
 
     available = stock_info.get("stock_on_hand", 0)
-    return f"Stock for {sku}: {available} items available."
+    stock_text = f"Stock for {sku}: {available} items available."
+    if ctx.deps.product_results_seen:
+        return ToolReturn(
+            return_value=stock_text,
+            content=_stock_follow_up_contract(),
+        )
+
+    return stock_text
 
 
 @sales_agent.tool
