@@ -157,12 +157,18 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         faq_block = "\n\n[KNOWLEDGE BASE (FAQ)]\n"
         for item in ctx.deps.faq_context:
             faq_block += f"Q: {item['title']}\nA: {item['content']}\n---\n"
-        faq_block += (
-            "Use the above FAQ entries when answering. "
-            "If the answer is NOT in the FAQ, do NOT make up information. "
-            "WARNING: If the user asks for specific products or catalog items (e.g. chairs, tables), "
-            "you MUST call the `search_products` tool. Do not rely solely on the FAQ for products because the tool fetches live images!\n"
-        )
+        faq_block += "Use the above FAQ entries when answering. "
+        if ctx.deps.tool_mode == "order_handoff":
+            faq_block += (
+                "If the answer is NOT in the FAQ, do NOT make up information. "
+                "This run is restricted to order handoff handling, so do not rely on FAQ context to continue product discovery.\n"
+            )
+        else:
+            faq_block += (
+                "If the answer is NOT in the FAQ, do NOT make up information. "
+                "WARNING: If the user asks for specific products or catalog items (e.g. chairs, tables), "
+                "you MUST call the `search_products` tool. Do not rely solely on the FAQ for products because the tool fetches live images!\n"
+            )
         base_prompt += faq_block
 
     if ctx.deps.crm_context:
@@ -925,7 +931,7 @@ async def process_message(
             ):
                 assistant_turns += 1
 
-        return assistant_turns == 0 and user_turns == 1
+        return assistant_turns == 0 and user_turns >= 1
 
     def _has_escalation(conversation: Conversation) -> bool:
         return conversation.escalation_status not in (None, "none")

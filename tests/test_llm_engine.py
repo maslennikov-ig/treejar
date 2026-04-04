@@ -63,6 +63,12 @@ def _first_turn_history(text: str) -> list[ModelRequest]:
     ]
 
 
+def _split_first_turn_history(*parts: str) -> list[ModelRequest]:
+    history = [ModelRequest(parts=[SystemPromptPart(content="summary")])]
+    history.extend(ModelRequest(parts=[UserPromptPart(content=part)]) for part in parts)
+    return history
+
+
 class _FakeAgentResult:
     def __init__(
         self,
@@ -147,6 +153,44 @@ async def test_inject_system_prompt_appends_runtime_directives(
     assert "[RUNTIME DIRECTIVES]" in prompt
     assert "likely concrete order handoff" in prompt
     assert "do not ask qualifying questions" in prompt
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_inject_system_prompt_omits_search_requirement_in_order_handoff_mode(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    mock_prompt.return_value = "BASE PROMPT"
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        faq_context=[{"title": "Pods", "content": "Acoustic pods are available."}],
+        tool_mode="order_handoff",
+        runtime_directives=("prefer manager handoff",),
+    )
+
+    from pydantic_ai.usage import RunUsage
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    prompt = await inject_system_prompt(ctx)
+
+    assert "[KNOWLEDGE BASE (FAQ)]" in prompt
+    assert "Acoustic pods are available." in prompt
+    assert "MUST call the `search_products` tool" not in prompt
 
 
 @pytest.mark.asyncio
@@ -257,6 +301,49 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
         "previous pass missed likely order handoff" in directive
         for directive in second_call["deps"].runtime_directives
     )
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_split_first_turn_still_uses_guarded_path(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "We need 200 chairs delivered to Dubai Marina by next week"
+    mock_build_history.return_value = _split_first_turn_history(
+        "We need 200 chairs",
+        "delivered to Dubai Marina by next week",
+    )
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Thanks, let me route this to our manager."),
+        _FakeAgentResult("Our manager will confirm the order shortly."),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Our manager will confirm the order shortly."
+    assert mock_run.await_count == 2
+    assert mock_run.await_args_list[0].kwargs["deps"].tool_mode == "order_handoff"
+    assert mock_run.await_args_list[1].kwargs["deps"].tool_mode == "order_handoff"
 
 
 @pytest.mark.asyncio
