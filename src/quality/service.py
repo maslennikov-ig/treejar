@@ -105,6 +105,16 @@ async def conversation_already_reviewed(
     return count > 0
 
 
+async def get_review_for_conversation(
+    db: AsyncSession,
+    conversation_id: UUID,
+) -> QualityReview | None:
+    """Fetch the existing quality review for a conversation, if any."""
+    stmt = select(QualityReview).where(QualityReview.conversation_id == conversation_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def get_unreviewed_completed_conversations(
     db: AsyncSession,
     limit: int = 50,

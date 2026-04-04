@@ -186,7 +186,17 @@ async def calculate_dashboard_metrics(
     # Quality score
     qr_q = select(func.avg(QualityReview.total_score))
     if period_start:
-        qr_q = qr_q.where(QualityReview.created_at >= period_start)
+        assistant_activity_sq = (
+            select(Message.conversation_id)
+            .where(Message.role == "assistant")
+            .where(Message.created_at >= period_start)
+            .subquery()
+        )
+        qr_q = qr_q.where(
+            QualityReview.conversation_id.in_(
+                select(assistant_activity_sq.c.conversation_id)
+            )
+        )
     avg_quality_score = await db.scalar(qr_q) or 0.0
 
     # ── QUERY 3: Avg response time (LATERAL JOIN) ──

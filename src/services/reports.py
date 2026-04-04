@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
+from src.models.message import Message
 from src.models.quality_review import QualityReview
 
 logger = logging.getLogger(__name__)
@@ -97,10 +98,20 @@ async def generate_report(
         (total_deals / total_conversations * 100) if total_conversations > 0 else 0.0
     )
 
+    assistant_activity_sq = (
+        select(Message.conversation_id)
+        .where(Message.role == "assistant")
+        .where(Message.created_at >= start_date)
+        .where(Message.created_at <= end_date)
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
+
     # Quality score
     qr_q = select(func.avg(QualityReview.total_score)).where(
-        QualityReview.created_at >= start_date,
-        QualityReview.created_at <= end_date,
+        QualityReview.conversation_id.in_(
+            select(assistant_activity_sq.c.conversation_id)
+        )
     )
     avg_quality_score = float(await db.scalar(qr_q) or 0.0)
 

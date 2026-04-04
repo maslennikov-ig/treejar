@@ -9,6 +9,7 @@ from src.core.database import async_session_factory
 from src.quality.evaluator import evaluate_conversation
 from src.quality.service import (
     get_recent_conversation_ids_with_assistant_activity,
+    get_review_for_conversation,
     save_review,
 )
 
@@ -43,6 +44,12 @@ async def evaluate_recent_conversations_quality(ctx: dict[str, Any]) -> None:
     for conv_id in pending_ids:
         try:
             async with async_session_factory() as db:
+                previous_review = await get_review_for_conversation(db, conv_id)
+                previous_score = (
+                    float(previous_review.total_score)
+                    if previous_review is not None
+                    else None
+                )
                 result = await evaluate_conversation(conv_id, db)
                 await save_review(db, conv_id, result)
                 await db.commit()
@@ -55,7 +62,8 @@ async def evaluate_recent_conversations_quality(ctx: dict[str, Any]) -> None:
             )
 
             # Send Telegram alert for poor quality dialogues
-            if result.total_score < 14:
+            score_crossed_threshold = previous_score is None or previous_score >= 14
+            if result.total_score < 14 and score_crossed_threshold:
                 try:
                     from src.services.notifications import notify_quality_alert
 

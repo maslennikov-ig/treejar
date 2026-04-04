@@ -49,6 +49,10 @@ async def test_evaluate_recent_conversations_quality_creates_review_for_recent_c
             "src.quality.job.get_recent_conversation_ids_with_assistant_activity",
             new=AsyncMock(return_value=[conv_id]),
         ),
+        patch(
+            "src.quality.job.get_review_for_conversation",
+            new=AsyncMock(return_value=None),
+        ),
         patch("src.quality.job.evaluate_conversation", new=mock_evaluate),
         patch("src.quality.job.save_review", new=AsyncMock()),
     ):
@@ -82,12 +86,96 @@ async def test_evaluate_recent_conversations_quality_skips_when_no_recent_candid
             "src.quality.job.get_recent_conversation_ids_with_assistant_activity",
             new=AsyncMock(return_value=[]),
         ),
+        patch(
+            "src.quality.job.get_review_for_conversation",
+            new=AsyncMock(return_value=None),
+        ),
         patch("src.quality.job.evaluate_conversation", new=mock_evaluate),
     ):
         await evaluate_recent_conversations_quality({})
 
     mock_evaluate.assert_not_awaited()
     mock_db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_recent_conversations_quality_alerts_only_on_new_poor_score() -> (
+    None
+):
+    """Low-score alert should fire only when score newly crosses the threshold."""
+    from src.quality.job import evaluate_recent_conversations_quality
+
+    conv_id = uuid4()
+    mock_db = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    mock_session_ctx = AsyncMock()
+    mock_session_ctx.__aenter__.return_value = mock_db
+    mock_session_ctx.__aexit__.return_value = False
+
+    poor_result = _make_evaluation_result(score=12.0)
+    poor_result.rating = "poor"
+    mock_evaluate = AsyncMock(return_value=poor_result)
+    mock_notify = AsyncMock()
+    mock_existing = MagicMock(total_score=18.0)
+
+    with (
+        patch("src.quality.job.async_session_factory", return_value=mock_session_ctx),
+        patch(
+            "src.quality.job.get_recent_conversation_ids_with_assistant_activity",
+            new=AsyncMock(return_value=[conv_id]),
+        ),
+        patch(
+            "src.quality.job.get_review_for_conversation",
+            new=AsyncMock(return_value=mock_existing),
+        ),
+        patch("src.quality.job.evaluate_conversation", new=mock_evaluate),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch("src.services.notifications.notify_quality_alert", new=mock_notify),
+    ):
+        await evaluate_recent_conversations_quality({})
+
+    mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_recent_conversations_quality_suppresses_repeat_poor_alert() -> (
+    None
+):
+    """Low-score alert should not repeat when the previous saved score was already poor."""
+    from src.quality.job import evaluate_recent_conversations_quality
+
+    conv_id = uuid4()
+    mock_db = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    mock_session_ctx = AsyncMock()
+    mock_session_ctx.__aenter__.return_value = mock_db
+    mock_session_ctx.__aexit__.return_value = False
+
+    poor_result = _make_evaluation_result(score=10.0)
+    poor_result.rating = "poor"
+    mock_evaluate = AsyncMock(return_value=poor_result)
+    mock_notify = AsyncMock()
+    mock_existing = MagicMock(total_score=11.0)
+
+    with (
+        patch("src.quality.job.async_session_factory", return_value=mock_session_ctx),
+        patch(
+            "src.quality.job.get_recent_conversation_ids_with_assistant_activity",
+            new=AsyncMock(return_value=[conv_id]),
+        ),
+        patch(
+            "src.quality.job.get_review_for_conversation",
+            new=AsyncMock(return_value=mock_existing),
+        ),
+        patch("src.quality.job.evaluate_conversation", new=mock_evaluate),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch("src.services.notifications.notify_quality_alert", new=mock_notify),
+    ):
+        await evaluate_recent_conversations_quality({})
+
+    mock_notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio

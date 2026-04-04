@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 # =============================================================================
 # Reports: generate_report() DB integration tests
@@ -96,11 +97,23 @@ async def test_generate_report_handles_empty_data() -> None:
     mock_top_prod_result = MagicMock()
     mock_top_prod_result.all.return_value = []
 
+    mock_mgr_result = MagicMock()
+    mock_mgr_result.one.return_value = (None, None, 0, 0)
+
+    mock_mgr_conv_result = MagicMock()
+    mock_mgr_conv_result.one.return_value = (0, 0)
+
+    mock_top_mgr_result = MagicMock()
+    mock_top_mgr_result.all.return_value = []
+
     mock_db.execute.side_effect = [
         mock_conv_result,
         mock_deals_result,
         mock_esc_reasons_result,
         mock_top_prod_result,
+        mock_mgr_result,
+        mock_mgr_conv_result,
+        mock_top_mgr_result,
     ]
     mock_db.scalar.side_effect = [None, 0]
 
@@ -110,6 +123,114 @@ async def test_generate_report_handles_empty_data() -> None:
     assert report.conversion_rate == 0.0
     assert report.avg_deal_value == 0.0
     assert report.top_products == []
+
+
+@pytest.mark.asyncio
+async def test_generate_report_quality_uses_active_conversation_window() -> None:
+    """Weekly report quality should be tied to assistant activity, not review created_at."""
+    from src.services.reports import generate_report
+
+    mock_db = AsyncMock()
+
+    mock_conv_result = MagicMock()
+    mock_conv_result.one.return_value = (1, 1)
+
+    mock_deals_result = MagicMock()
+    mock_deals_result.one.return_value = (0, None)
+
+    mock_esc_reasons_result = MagicMock()
+    mock_esc_reasons_result.all.return_value = []
+
+    mock_top_prod_result = MagicMock()
+    mock_top_prod_result.all.return_value = []
+
+    mock_db.execute.side_effect = [
+        mock_conv_result,
+        mock_deals_result,
+        mock_esc_reasons_result,
+        mock_top_prod_result,
+    ]
+    mock_db.scalar.side_effect = [22.5, 0]
+
+    start = datetime.now(tz=UTC) - timedelta(days=7)
+    end = datetime.now(tz=UTC)
+    await generate_report(mock_db, start_date=start, end_date=end)
+
+    quality_stmt = mock_db.scalar.call_args_list[0].args[0]
+    compiled = str(
+        quality_stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).lower()
+
+    assert "messages" in compiled
+    assert "quality_reviews.created_at" not in compiled
+
+
+@pytest.mark.asyncio
+async def test_dashboard_metrics_quality_uses_active_conversation_window() -> None:
+    """Dashboard quality should follow assistant activity, not review created_at."""
+    from src.services.dashboard_metrics import calculate_dashboard_metrics
+
+    mock_db = AsyncMock()
+
+    conv_result = MagicMock()
+    conv_result.one.return_value = MagicMock(
+        total_conversations=1,
+        unique_customers=1,
+        target_count=1,
+        escalation_count=0,
+        noor_sales_count=0,
+        post_esc_sales_count=0,
+        avg_deal_value=None,
+    )
+
+    lang_result = MagicMock()
+    lang_result.all.return_value = []
+
+    seg_result = MagicMock()
+    seg_result.all.return_value = []
+
+    esc_result = MagicMock()
+    esc_result.all.return_value = []
+
+    mgr_result = MagicMock()
+    mgr_result.one.return_value = (None, None)
+
+    mgr_conv_result = MagicMock()
+    mgr_conv_result.one.return_value = (0, 0)
+
+    lb_result = MagicMock()
+    lb_result.all.return_value = []
+
+    fb_result = MagicMock()
+    fb_result.one.return_value = (0, None, None, 0, 0)
+
+    mock_db.execute.side_effect = [
+        conv_result,
+        lang_result,
+        seg_result,
+        esc_result,
+        mgr_result,
+        mgr_conv_result,
+        lb_result,
+        fb_result,
+    ]
+    mock_db.scalar.side_effect = [0, 0, 0.0, 0.0, 22.5, 0.0]
+
+    await calculate_dashboard_metrics(mock_db, period="week")
+
+    quality_stmt = mock_db.scalar.call_args_list[4].args[0]
+    compiled = str(
+        quality_stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).lower()
+
+    assert "messages" in compiled
+    assert "quality_reviews.created_at" not in compiled
 
 
 # =============================================================================
