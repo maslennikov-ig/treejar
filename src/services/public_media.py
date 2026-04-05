@@ -13,7 +13,11 @@ _PRODUCT_MEDIA_SIGNING_SALT = "product-media-v1"
 def _public_base_url() -> str:
     domain = settings.domain.strip()
     if not domain:
-        return _CANONICAL_BASE_URL
+        if settings.is_production:
+            return _CANONICAL_BASE_URL
+        raise RuntimeError(
+            "DOMAIN is required to build public media URLs outside production."
+        )
     if domain.startswith(("http://", "https://")):
         return domain.rstrip("/")
     return f"https://{domain}".rstrip("/")

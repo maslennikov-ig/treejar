@@ -20,9 +20,11 @@ from src.services.public_media import (
 def restore_public_media_settings() -> Generator[None, None, None]:
     original_domain = settings.domain
     original_secret = settings.app_secret_key
+    original_env = settings.app_env
     yield
     settings.domain = original_domain
     settings.app_secret_key = original_secret
+    settings.app_env = original_env
 
 
 @pytest.fixture
@@ -34,16 +36,28 @@ async def public_media_client() -> AsyncGenerator[AsyncClient, None]:
         yield client
 
 
-def test_build_signed_product_image_url_uses_canonical_fallback(
+def test_build_signed_product_image_url_uses_canonical_fallback_in_production(
     restore_public_media_settings: None,
 ) -> None:
     settings.domain = ""
     settings.app_secret_key = "test-secret"
+    settings.app_env = "production"
 
     url = build_signed_product_image_url("ITEM-1")
     assert url.startswith(
         "https://noor.starec.ai/api/v1/public-media/products/ITEM-1?token="
     )
+
+
+def test_build_signed_product_image_url_raises_when_domain_missing_in_non_production(
+    restore_public_media_settings: None,
+) -> None:
+    settings.domain = ""
+    settings.app_secret_key = "test-secret"
+    settings.app_env = "development"
+
+    with pytest.raises(RuntimeError, match="DOMAIN is required"):
+        build_signed_product_image_url("ITEM-1")
 
 
 def test_verify_signed_product_image_token_rejects_expired(

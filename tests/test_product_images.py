@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic_ai import ToolReturn
 
+from src.core.config import settings
 from src.llm.engine import SalesDeps, search_products
 from src.models.conversation import Conversation
 from src.schemas.product import ProductRead
@@ -43,6 +44,15 @@ def run_context(mock_messaging_client: MagicMock) -> Any:
         deps: SalesDeps
 
     return _FakeRunContext(deps=deps)
+
+
+@pytest.fixture
+def restore_media_url_settings() -> Any:
+    original_env = settings.app_env
+    original_domain = settings.domain
+    yield
+    settings.app_env = original_env
+    settings.domain = original_domain
 
 
 async def test_search_products_sends_image_if_present(
@@ -147,7 +157,11 @@ async def test_search_products_uses_signed_proxy_for_zoho_images(
     run_context: Any,
     monkeypatch: pytest.MonkeyPatch,
     mock_messaging_client: MagicMock,
+    restore_media_url_settings: Any,
 ) -> None:
+    settings.app_env = "production"
+    settings.domain = ""
+
     product = ProductRead(
         id="44444444-4444-4444-4444-444444444444",
         category_id="22222222-2222-2222-2222-222222222222",
@@ -185,3 +199,40 @@ async def test_search_products_uses_signed_proxy_for_zoho_images(
     assert kwargs["content"] is None
     assert kwargs["content_type"] is None
     run_context.deps.zoho_inventory.get_item_image.assert_not_awaited()
+
+
+async def test_search_products_skips_zoho_media_when_domain_missing_in_non_production(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+    restore_media_url_settings: Any,
+) -> None:
+    settings.app_env = "development"
+    settings.domain = ""
+
+    product = ProductRead(
+        id="55555555-5555-5555-5555-555555555555",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Silent Pod",
+        description_en="Acoustic pod",
+        sku="POD-02",
+        price="26000.00",
+        currency="AED",
+        image_url="https://inventory.zoho.eu/api/v1/documents/xyz",
+        zoho_item_id="ZOHO-ITEM-2",
+        created_at="2024-01-01T00:00:00Z",
+        stock=1,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product]
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "acoustic pod")
+    assert isinstance(result, ToolReturn)
+    mock_messaging_client.send_media.assert_not_called()
