@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-04
+Updated: 2026-04-05
 Current baseline branch: `main`
 
 ## Current repo state
@@ -34,8 +34,7 @@ Current baseline branch: `main`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
-- `tj-19ol.3.11` — P1 bug: prompt slice is merged, but canonical retest showed the live first-turn concrete-order regression still persists; see `tj-19ol.3.13`
-- `tj-15m.5.2` — P1 bug: improve product-answer quality on product-heavy consultative paths after the verified search cap
+- `tj-tauh` — P1 bug: improve no-exact-match product fallback quality on the acoustic-pods path
 
 ## Rules for the next orchestrator
 
@@ -63,12 +62,16 @@ Current baseline branch: `main`
     - targeted live retest on real recipient `+79262810921` for `"I need 200 chairs delivered to Dubai Marina by next week"` now PASSES
     - conversation `080af0e3-e27d-4f81-8805-ba1bc2d67c2d` was created on the exact phone, triggered `escalate_to_manager(order_confirmation)`, persisted an `Escalation` row, set `escalation_status=pending`, stored a handoff-style assistant reply, and sent via Wazzup with `POST /v3/message -> 201 Created`
     - runtime duration for that fixed case was `19.66s`; stored assistant message had `tokens_in=1268`, `tokens_out=370`
-  - consultative routing was rechecked on the same runtime and did not over-tighten:
-    - `"We need 20 chairs for next week, what options do you have?"` on conversation `30dae35f-f838-42ac-ac92-bad379377265` stayed non-escalated with `escalation_count=0`
-    - however, answer quality remained weak: the model asked qualifying questions instead of surfacing concrete options, despite normal `search_products('chairs')` and subsequent `get_stock(...)` calls
-    - runtime duration for that consultative case was `38.24s`; stored assistant message had `tokens_in=9792`, `tokens_out=711`
+  - the later `tj-15m.5.2` engine-only slice is now landed on `main` as `e7f8ebb` and hot-applied to `/opt/noor`:
+    - consultative chairs path is materially improved on canonical runtime:
+      - `"We need 20 chairs for next week, what options do you have?"` on conversation `7253e445-9ade-435d-847e-c73fb137d762` stayed non-escalated and answered option-first with two concrete in-stock chair options plus one narrow follow-up
+      - runtime for that improved consultative case was about `22.32s`; stored assistant message had `tokens_in=6947`, `tokens_out=573`
+    - acoustic/no-exact-match path is still only PARTIAL after the same hot-apply:
+      - `"Tell me about your acoustic pods"` on conversation `95668449-d1a5-4b51-9503-9cb51146b961` stayed non-escalated and delivered successfully
+      - runtime was about `21.17s`; stored assistant message had `tokens_in=4346`, `tokens_out=575`
+      - the reply quality is still weak: after one `search_products('acoustic pods')` call and repeated `tmpfiles.org` image-upload `422`s, the bot said it could not see exact acoustic pods and fell back to a generic clarification instead of giving stronger nearby alternatives
   - next realistic blockers are therefore narrower and evidence-based:
-    - `tj-15m.5.2` for product-heavy consultative answer quality after search/tool work
+    - `tj-tauh` for no-exact-match product fallback quality on the acoustic-pods path
     - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
   - additional canonical truth from the 2026-04-03 latency pass:
   - `tj-15m` is still active after a real profiling round
@@ -111,5 +114,5 @@ Current baseline branch: `main`
     - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
     - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
   - next realistic step is:
-    - take `tj-15m.5.2`
+    - take `tj-tauh`
     - then `tj-27v` if media/upload noise still materially drags product replies
