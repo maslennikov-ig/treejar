@@ -60,6 +60,80 @@ def test_policy_marks_high_risk_question_as_missing_without_matching_faq() -> No
     assert decision.confirmed_fact is None
 
 
+def test_policy_marks_external_delivery_request_as_partial_for_uae_only_faq() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Do you deliver to Saudi Arabia?",
+        faq_context=[
+            {
+                "title": "Delivery coverage",
+                "content": "Q: Where do you deliver?\nA: We provide delivery and installation across UAE.",
+            }
+        ],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.faq_support == "partial"
+    assert decision.requires_manager_handoff is True
+    assert decision.confirmed_fact == "We provide delivery and installation across UAE."
+
+
+def test_policy_marks_external_installation_request_as_partial_for_uae_only_faq() -> (
+    None
+):
+    decision = evaluate_verified_answer_policy(
+        query="Can you install in Qatar?",
+        faq_context=[
+            {
+                "title": "Installation coverage",
+                "content": "Q: Do you offer installation?\nA: We provide delivery and installation across UAE.",
+            }
+        ],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.faq_support == "partial"
+    assert decision.requires_manager_handoff is True
+    assert decision.confirmed_fact == "We provide delivery and installation across UAE."
+
+
+def test_policy_marks_net_30_request_as_partial_when_faq_only_lists_payment_methods() -> (
+    None
+):
+    decision = evaluate_verified_answer_policy(
+        query="Can you do net 30?",
+        faq_context=[
+            {
+                "title": "Payment methods",
+                "content": "Q: How can I pay?\nA: We accept bank transfer and card payment.",
+            }
+        ],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.faq_support == "partial"
+    assert decision.requires_manager_handoff is True
+    assert decision.confirmed_fact == "We accept bank transfer and card payment."
+
+
+def test_policy_marks_deferred_payment_request_as_partial_when_faq_only_lists_payment_methods() -> (
+    None
+):
+    decision = evaluate_verified_answer_policy(
+        query="Do you offer deferred payment for this order?",
+        faq_context=[
+            {
+                "title": "Payment methods",
+                "content": "Q: How can I pay?\nA: We accept bank transfer and card payment.",
+            }
+        ],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.faq_support == "partial"
+    assert decision.requires_manager_handoff is True
+    assert decision.confirmed_fact == "We accept bank transfer and card payment."
+
+
 def test_policy_marks_low_risk_missing_without_inventing_support() -> None:
     decision = evaluate_verified_answer_policy(
         query="Do you have a showroom?",

@@ -118,6 +118,28 @@ _LOCATION_TERMS = (
     "ras al khaimah",
     "fujairah",
 )
+_UAE_WIDE_TERMS = ("uae", "across uae", "across the uae", "within uae")
+_EXTERNAL_LOCATION_TERMS = (
+    "saudi arabia",
+    "saudi",
+    "qatar",
+    "oman",
+    "kuwait",
+    "bahrain",
+)
+_PAYMENT_SPECIFIC_TERMS = (
+    "net 30",
+    "net30",
+    "net 60",
+    "net60",
+    "deferred payment",
+    "payment terms",
+    "credit terms",
+    "credit term",
+    "on credit",
+    "postpaid",
+    "delayed payment",
+)
 _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "delivery": (
         "delivery",
@@ -266,7 +288,11 @@ def _asks_for_specific_commitment(query: str) -> bool:
     normalized = _normalize(query)
     if bool(_DATE_RE.search(normalized)):
         return True
+    if any(location in normalized for location in _EXTERNAL_LOCATION_TERMS):
+        return True
     if any(location in normalized for location in _LOCATION_TERMS):
+        return True
+    if any(term in normalized for term in _PAYMENT_SPECIFIC_TERMS):
         return True
     return any(
         phrase in normalized
@@ -292,6 +318,21 @@ def _entry_supports_specificity(query: str, entry_text: str) -> bool:
     ):
         return False
 
+    requested_external_locations = {
+        location
+        for location in _EXTERNAL_LOCATION_TERMS
+        if location in normalized_query
+    }
+    if requested_external_locations and not (
+        requested_external_locations
+        & {
+            location
+            for location in requested_external_locations
+            if location in normalized_entry
+        }
+    ):
+        return False
+
     requested_locations = {
         location for location in _LOCATION_TERMS if location in normalized_query
     }
@@ -301,8 +342,15 @@ def _entry_supports_specificity(query: str, entry_text: str) -> bool:
             requested_locations
             & {location for location in _LOCATION_TERMS if location in normalized_entry}
         )
-        and "across uae" not in normalized_entry
-        and "across the uae" not in normalized_entry
+        and not any(term in normalized_entry for term in _UAE_WIDE_TERMS)
+    ):
+        return False
+
+    requested_payment_terms = {
+        term for term in _PAYMENT_SPECIFIC_TERMS if term in normalized_query
+    }
+    if requested_payment_terms and not any(
+        term in normalized_entry for term in requested_payment_terms
     ):
         return False
 
