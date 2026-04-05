@@ -23,6 +23,10 @@ Current baseline branch: `main`
   - `c64d84c` `fix(prompt): preserve consultative bulk discovery`
 - Review follow-up fixes are also in `main`: raw tail no longer overlaps already-covered summary turns, and runtime message creation now stamps deterministic `created_at` values instead of relying on `server_default(now())` for batched ordering.
 - A late production blocker was fixed locally on 2026-04-03: Alembic revision `2026_04_03_conversation_summaries` exceeded the production `alembic_version.version_num varchar(32)` limit. It was shortened to `2026_04_03_conv_summary_001`, and `tests/test_migrations.py` now guards all Alembic revision lengths.
+- Verified-answer policy is now merged into `main` via `tj-hwls.1`:
+  - `src/llm/verified_answers.py` adds deterministic classification for `product`, `service_low_risk`, and `service_high_risk` questions plus FAQ support states `verified`, `partial`, and `missing`
+  - `src/llm/engine.py` now branches before the final answer so high-risk service questions do not rely on general model knowledge when FAQ support is weak
+  - external geography and payment-concession edge cases were explicitly tightened in follow-up commit `d63eb49`, so UAE-wide FAQ facts no longer incorrectly verify requests like delivery to Saudi Arabia/Qatar or `net 30` / deferred-payment concessions
 
 ## Open follow-ups / nearest ready tasks
 
@@ -31,6 +35,8 @@ Current baseline branch: `main`
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
+- `tj-hwls` — P1 epic: implement verified answers policy across FAQ and product fallback
+- `tj-hwls.2` — P1 bug: guard global FAQ saves from context-specific manager replies
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
@@ -71,6 +77,7 @@ Current baseline branch: `main`
       - runtime was about `21.17s`; stored assistant message had `tokens_in=4346`, `tokens_out=575`
       - the reply quality is still weak: after one `search_products('acoustic pods')` call and repeated `tmpfiles.org` image-upload `422`s, the bot said it could not see exact acoustic pods and fell back to a generic clarification instead of giving stronger nearby alternatives
   - next realistic blockers are therefore narrower and evidence-based:
+    - `tj-hwls.2` for the human-factor risk in `faq_global` saves that can currently preserve context-specific manager promises as global KB facts
     - `tj-tauh` for no-exact-match product fallback quality on the acoustic-pods path
     - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
   - additional canonical truth from the 2026-04-03 latency pass:
@@ -114,5 +121,6 @@ Current baseline branch: `main`
     - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
     - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
   - next realistic step is:
-    - take `tj-tauh`
+    - take `tj-hwls.2`
+    - then `tj-tauh`
     - then `tj-27v` if media/upload noise still materially drags product replies
