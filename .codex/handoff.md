@@ -37,6 +37,7 @@ Current baseline branch: `main`
   - guarded classes currently include time-specific promises, one-off offers, customer-specific commitments, project/logistics-specific arrangements, and callback-style manager commitments
   - `src/api/telegram_webhook.py` keeps client delivery unchanged but downgrades blocked `faq_global` saves to private-only with operator feedback instead of polluting the global KB
   - local verification for this slice passed in a clean worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short` (`498 passed, 19 skipped`)
+  - this slice was landed to `main` but not hot-applied to `/opt/noor` in the same session; there is no canonical live retest yet for the Telegram manager FAQ-authoring flow
 - Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
   - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 
@@ -133,6 +134,6 @@ Current baseline branch: `main`
     - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
     - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
   - next realistic step is:
-    - take `tj-tauh`
+    - take `tj-tauh` from a fresh clean `origin/main` worktree
     - then `tj-27v` if media/upload noise still materially drags product replies
     - keep `tj-5dbj` queued as the separate operational follow-up for the canonical rebuild path
