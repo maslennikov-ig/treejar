@@ -468,6 +468,256 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_high_risk_partial_bypasses_agent_with_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Can you install in Abu Dhabi next Tuesday?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = [
+        {
+            "title": "Installation coverage",
+            "content": "Q: Do you offer installation?\nA: We provide delivery and installation across UAE.",
+        }
+    ]
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_awaited_once()
+    assert conv.escalation_status == "pending"
+    assert "delivery and installation across UAE" in response.text
+    assert "manager" in response.text.lower()
+    assert response.model == "mock-model|verified-policy"
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_high_risk_verified_uses_service_policy_mode(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "What are your delivery times in Dubai?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = [
+        {
+            "title": "Delivery policy",
+            "content": "Q: What are your delivery times?\nA: Standard delivery takes 3-5 business days in Dubai and 5-7 business days across UAE.",
+        }
+    ]
+    mock_run.return_value = _FakeAgentResult(
+        "Standard delivery takes 3-5 business days in Dubai."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Standard delivery takes 3-5 business days in Dubai."
+    assert mock_run.await_count == 1
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.tool_mode == "service_policy"
+    assert any(
+        "verified faq support" in directive.lower()
+        for directive in deps.runtime_directives
+    )
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_missing_low_risk_hands_off_without_agent_run(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Do you have a showroom?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_awaited_once()
+    assert conv.escalation_status == "pending"
+    assert "manager" in response.text.lower()
+    assert "showroom" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_order_status_bypasses_faq_service_policy(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Where is my order now?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Let me check your order status.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Let me check your order status."
+    assert mock_run.await_count == 1
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.tool_mode == "full"
+
+
+@pytest.mark.asyncio
+async def test_tools_search_products_marks_nearby_alternatives_explicitly(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from datetime import UTC, datetime
+
+    from pydantic_ai.usage import RunUsage
+
+    import src.llm.engine as engine_module
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    mock_search = AsyncMock()
+    mock_search.return_value = ProductSearchResult(
+        products=[
+            ProductRead(
+                id=uuid.uuid4(),
+                sku="POD-1",
+                name_en="Meeting Booth",
+                price=12000.0,
+                currency="AED",
+                stock=2,
+                is_active=True,
+                description_en="Compact acoustic booth for small meetings",
+                created_at=datetime.now(UTC),
+            )
+        ],
+        query_interpreted="acoustic pods",
+        total_found=1,
+    )
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    orig_search = getattr(engine_module, "rag_search_products", None)
+    engine_module.rag_search_products = mock_search
+
+    try:
+        result = await engine_module.search_products(ctx, "acoustic pods")
+        assert isinstance(result, ToolReturn)
+        assert "meeting booth" in result.return_value.lower()
+        assert "closest alternatives" in result.content.lower()
+        assert (
+            "do not claim that these are the exact item requested"
+            in result.content.lower()
+        )
+    finally:
+        if orig_search is not None:
+            engine_module.rag_search_products = orig_search
+
+
+@pytest.mark.asyncio
 async def test_tools_escalate_to_manager(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

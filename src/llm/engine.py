@@ -23,6 +23,13 @@ from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.order_status import format_order_status
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
+from src.llm.verified_answers import (
+    build_service_handoff_reason,
+    build_service_handoff_response,
+    build_service_runtime_directives,
+    classify_product_match,
+    evaluate_verified_answer_policy,
+)
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
@@ -34,6 +41,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
+SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 ORDER_HANDOFF_PASS_1_DIRECTIVES = (
     "this is likely a concrete order handoff case",
     "do not ask qualifying questions if order evidence is already sufficient",
@@ -58,15 +66,36 @@ def _search_products_limit_message(*, include_no_results: bool = False) -> str:
     )
 
 
-def _product_search_response_contract(*, search_budget_exhausted: bool = False) -> str:
-    contract_parts = [
-        "Relevant catalog results were found for this customer message.",
-        "In your next reply, lead with 2-3 concrete options or closest alternatives from these results before any generic qualifying questions.",
-        "Use only facts already present in tool results, such as price or stock, and do not invent specs.",
-        "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
-        "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
-        "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
-    ]
+def _product_search_response_contract(
+    *,
+    match_kind: Literal["exact", "nearby", "missing"] = "exact",
+    search_budget_exhausted: bool = False,
+) -> str:
+    if match_kind == "nearby":
+        contract_parts = [
+            "Catalog results were found, but they are the closest alternatives rather than a confirmed exact match.",
+            "Lead with 2-3 closest alternatives from these results before any generic qualifying questions.",
+            "Say honestly that the exact requested item is not confirmed from the catalog results.",
+            "Do not claim that these are the exact item requested.",
+            "Use only facts already present in tool results, such as price or stock, and do not invent specs.",
+            "After presenting the closest alternatives, you may ask at most one targeted follow-up to narrow the recommendation.",
+        ]
+    elif match_kind == "missing":
+        contract_parts = [
+            "Current catalog results are too weak to establish a reliable match for this request.",
+            "Do not present these results as exact options.",
+            "Ask at most one narrow clarification unless you can justify a clearly related alternative from the returned items.",
+            "Use only facts already present in tool results and do not invent specs or prices.",
+        ]
+    else:
+        contract_parts = [
+            "Relevant catalog results were found for this customer message.",
+            "In your next reply, lead with 2-3 concrete options or closest alternatives from these results before any generic qualifying questions.",
+            "Use only facts already present in tool results, such as price or stock, and do not invent specs.",
+            "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
+            "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
+            "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
+        ]
 
     if search_budget_exhausted:
         contract_parts.extend(
@@ -122,7 +151,7 @@ class SalesDeps:
     recent_history: list[str] | None = None  # Last N messages for escalation context
     product_search_calls: int = 0
     product_results_seen: bool = False
-    tool_mode: Literal["full", "order_handoff"] = "full"
+    tool_mode: Literal["full", "order_handoff", "service_policy"] = "full"
     runtime_directives: tuple[str, ...] = ()
 
 
@@ -157,6 +186,12 @@ async def _prepare_sales_tools(
             tool_def
             for tool_def in tool_defs
             if tool_def.name in ORDER_HANDOFF_ALLOWED_TOOLS
+        ]
+    if ctx.deps.tool_mode == "service_policy":
+        return [
+            tool_def
+            for tool_def in tool_defs
+            if tool_def.name in SERVICE_POLICY_ALLOWED_TOOLS
         ]
 
     if ctx.deps.product_search_calls < MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
@@ -212,6 +247,11 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
             faq_block += (
                 "If the answer is NOT in the FAQ, do NOT make up information. "
                 "This run is restricted to order handoff handling, so do not rely on FAQ context to continue product discovery.\n"
+            )
+        elif ctx.deps.tool_mode == "service_policy":
+            faq_block += (
+                "If the answer is NOT in the FAQ, do NOT make up information. "
+                "This run is restricted to verified service-answer handling, so answer only from confirmed FAQ facts and do not continue product discovery.\n"
             )
         else:
             faq_block += (
@@ -348,6 +388,25 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
     if send_tasks:
         await asyncio.gather(*send_tasks)
 
+    product_match = classify_product_match(
+        query,
+        [
+            f"{product.name_en}\n{product.description_en or ''}\n{product.category or ''}"
+            for product in results.products
+        ],
+    )
+
+    if product_match == "nearby":
+        formatted_results.insert(
+            0,
+            "Closest catalog alternatives (exact requested item not confirmed):",
+        )
+    elif product_match == "missing":
+        formatted_results.insert(
+            0,
+            "Weak catalog matches only (not a reliable exact match):",
+        )
+
     ctx.deps.product_results_seen = True
     search_budget_exhausted = (
         ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
@@ -355,7 +414,7 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
     return ToolReturn(
         return_value="\n---\n".join(formatted_results),
         content=_product_search_response_contract(
-            search_budget_exhausted=search_budget_exhausted
+            match_kind=product_match, search_budget_exhausted=search_budget_exhausted
         ),
     )
 
@@ -1023,6 +1082,19 @@ async def process_message(
             model=model_name,
         )
 
+    async def _build_policy_handoff_response(
+        model_name: str, decision_language: str, decision_text: str
+    ) -> LLMResponse:
+        return LLMResponse(
+            text=decision_text
+            if decision_text
+            else build_service_handoff_response(policy_decision, decision_language),
+            tokens_in=0,
+            tokens_out=0,
+            cost=None,
+            model=f"{model_name}|verified-policy",
+        )
+
     # Load conversation (already loaded by caller typically, but we fetch to be safe/fresh)
     conv = await db.get(Conversation, conversation_id)
     if not conv:
@@ -1096,6 +1168,10 @@ async def process_message(
     except Exception:
         logger.warning("FAQ knowledge base search failed", exc_info=True)
 
+    policy_decision = evaluate_verified_answer_policy(
+        masked_text, deps.faq_context or []
+    )
+
     try:
         from src.core.config import get_system_config
 
@@ -1135,6 +1211,42 @@ async def process_message(
                 )
             )
             return _build_llm_response(second_result, db_model_main)
+
+        if (
+            not policy_decision.is_order_status
+            and policy_decision.question_class != "product"
+        ):
+            if policy_decision.requires_manager_handoff:
+                from src.integrations.notifications.escalation import (
+                    notify_manager_escalation,
+                )
+                from src.schemas.common import EscalationType
+
+                await notify_manager_escalation(
+                    conversation=deps.conversation,
+                    reason=build_service_handoff_reason(masked_text, policy_decision),
+                    recent_messages=deps.recent_history or [],
+                    db=deps.db,
+                    escalation_type=EscalationType.GENERAL,
+                )
+                return await _build_policy_handoff_response(
+                    db_model_main,
+                    str(deps.conversation.language),
+                    build_service_handoff_response(
+                        policy_decision, str(deps.conversation.language)
+                    ),
+                )
+
+            result = await _run_agent(
+                replace(
+                    deps,
+                    tool_mode="service_policy",
+                    runtime_directives=build_service_runtime_directives(
+                        policy_decision
+                    ),
+                )
+            )
+            return _build_llm_response(result, db_model_main)
 
         result = await _run_agent(deps)
         return _build_llm_response(result, db_model_main)
