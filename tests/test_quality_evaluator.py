@@ -438,7 +438,7 @@ async def test_evaluate_conversation_with_mock_agent() -> None:
 
     with patch("src.quality.evaluator.judge_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_run_result)
-        result = await evaluate_conversation(conv_id, mock_db)
+        result = await evaluate_conversation(conv_id, mock_db, sales_stage="feedback")
 
     assert result.total_score == 30.0
     assert result.rating == "excellent"
@@ -448,6 +448,53 @@ async def test_evaluate_conversation_with_mock_agent() -> None:
     # Verify the prompt contains the dialogue
     assert "Hello" in call_args[0][0]
     assert "Siyyad" in call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_evaluate_conversation_infers_sales_stage_when_missing() -> None:
+    """evaluate_conversation should load sales_stage when the caller omits it."""
+    from src.quality.evaluator import evaluate_conversation
+    from src.quality.schemas import CriterionScore, EvaluationResult
+
+    mock_criteria = [
+        CriterionScore(rule_number=i, rule_name=f"Rule {i}", score=2, comment="ok")
+        for i in range(1, 16)
+    ]
+    mock_run_result = MagicMock()
+    mock_run_result.output = EvaluationResult(
+        criteria=mock_criteria,
+        summary="Great dialogue",
+        total_score=30.0,
+        rating="excellent",
+    )
+
+    mock_db = AsyncMock()
+    mock_msg1 = MagicMock()
+    mock_msg1.role = "user"
+    mock_msg1.content = "Hello"
+    mock_msg2 = MagicMock()
+    mock_msg2.role = "assistant"
+    mock_msg2.content = "Hi! I am Siyyad from Treejar."
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [mock_msg1, mock_msg2]
+    mock_message_result = MagicMock()
+    mock_message_result.scalars.return_value = mock_scalars
+
+    mock_stage_result = MagicMock()
+    mock_stage_result.scalar_one_or_none.return_value = "greeting"
+    mock_db.execute = AsyncMock(side_effect=[mock_message_result, mock_stage_result])
+
+    with patch("src.quality.evaluator.judge_agent") as mock_agent:
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
+        await evaluate_conversation(uuid4(), mock_db)
+
+    call_kwargs = mock_agent.run.call_args.kwargs
+    deps = call_kwargs["deps"]
+    assert deps.rule_applicability[1] is True
+    assert deps.rule_applicability[12] is False
+    prompt = mock_agent.run.call_args[0][0]
+    assert "Current sales stage: greeting" in prompt
 
 
 @pytest.mark.asyncio
@@ -494,18 +541,21 @@ async def test_output_validator_recomputes_total_score() -> None:
     mock_run_result.output = mock_evaluation
 
     mock_db = AsyncMock()
-    mock_msg = MagicMock()
-    mock_msg.role = "user"
-    mock_msg.content = "Hello"
+    mock_msg_user = MagicMock()
+    mock_msg_user.role = "user"
+    mock_msg_user.content = "Hello"
+    mock_msg_assistant = MagicMock()
+    mock_msg_assistant.role = "assistant"
+    mock_msg_assistant.content = "Hi! I am Siyyad from Treejar."
     mock_scalars = MagicMock()
-    mock_scalars.all.return_value = [mock_msg]
+    mock_scalars.all.return_value = [mock_msg_user, mock_msg_assistant]
     mock_execute_result = MagicMock()
     mock_execute_result.scalars.return_value = mock_scalars
     mock_db.execute = AsyncMock(return_value=mock_execute_result)
 
     with patch("src.quality.evaluator.judge_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_run_result)
-        result = await evaluate_conversation(uuid4(), mock_db)
+        result = await evaluate_conversation(uuid4(), mock_db, sales_stage="feedback")
 
     # Output validator must override LLM's wrong values
     assert result.total_score == 30.0, f"Expected 30.0, got {result.total_score}"
@@ -547,7 +597,7 @@ async def test_usage_limits_passed_to_agent_run() -> None:
 
     with patch("src.quality.evaluator.judge_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_run_result)
-        await evaluate_conversation(uuid4(), mock_db)
+        await evaluate_conversation(uuid4(), mock_db, sales_stage="greeting")
 
     call_kwargs = mock_agent.run.call_args.kwargs
     assert "usage_limits" in call_kwargs, (
@@ -588,7 +638,7 @@ async def test_prompt_injection_uses_dialogue_tags() -> None:
 
     with patch("src.quality.evaluator.judge_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_run_result)
-        await evaluate_conversation(uuid4(), mock_db)
+        await evaluate_conversation(uuid4(), mock_db, sales_stage="greeting")
 
     call_args = mock_agent.run.call_args
     prompt = call_args[0][0]

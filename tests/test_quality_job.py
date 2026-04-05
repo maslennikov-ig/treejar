@@ -236,6 +236,54 @@ async def test_changed_red_flag_signature_realerts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_red_flag_warning_paginates_full_candidate_set() -> None:
+    """Realtime warning job should keep reading candidate pages beyond the first batch."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    candidate_a = _make_candidate()
+    candidate_b = _make_candidate()
+    candidate_c = _make_candidate()
+    query_db = AsyncMock()
+    worker_db_a = AsyncMock()
+    worker_db_b = AsyncMock()
+    worker_db_c = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(side_effect=[None, None, None])
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+    fetch_mock = AsyncMock(return_value=[candidate_a, candidate_b])
+    fetch_mock.side_effect = [[candidate_a, candidate_b], [candidate_c]]
+
+    with (
+        patch("src.quality.job._QUERY_BATCH_SIZE", 2),
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[
+                _make_session_ctx(query_db),
+                _make_session_ctx(worker_db_a),
+                _make_session_ctx(worker_db_b),
+                _make_session_ctx(worker_db_c),
+            ],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=fetch_mock,
+        ),
+        patch(
+            "src.quality.job.evaluate_red_flags",
+            new=AsyncMock(return_value=_make_red_flag_result(["missing_identity"])),
+        ),
+        patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
+    ):
+        await evaluate_realtime_red_flags({"redis": mock_redis})
+
+    assert fetch_mock.await_count == 2
+    assert fetch_mock.await_args_list[0].kwargs["offset"] == 0
+    assert fetch_mock.await_args_list[1].kwargs["offset"] == 2
+    assert mock_notify.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_final_review_triggers_on_closed() -> None:
     """Final review job should send a review for closed conversations."""
     from src.quality.job import evaluate_mature_conversations_quality
@@ -346,6 +394,62 @@ async def test_final_review_does_not_trigger_before_idle_threshold() -> None:
 
     mock_evaluate.assert_not_awaited()
     mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_final_review_paginates_full_candidate_set() -> None:
+    """Final review job should keep evaluating pages beyond the first candidate batch."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate_a = _make_candidate(
+        status="closed", updated_at=datetime.now(tz=UTC) - timedelta(hours=4)
+    )
+    candidate_b = _make_candidate(
+        status="closed", updated_at=datetime.now(tz=UTC) - timedelta(hours=5)
+    )
+    candidate_c = _make_candidate(
+        status="closed", updated_at=datetime.now(tz=UTC) - timedelta(hours=6)
+    )
+    query_db = AsyncMock()
+    worker_db_a = AsyncMock()
+    worker_db_b = AsyncMock()
+    worker_db_c = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(side_effect=[None, None, None])
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+    fetch_mock = AsyncMock(side_effect=[[candidate_a, candidate_b], [candidate_c]])
+
+    with (
+        patch("src.quality.job._QUERY_BATCH_SIZE", 2),
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[
+                _make_session_ctx(query_db),
+                _make_session_ctx(worker_db_a),
+                _make_session_ctx(worker_db_b),
+                _make_session_ctx(worker_db_c),
+            ],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=fetch_mock,
+        ),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(return_value=_make_evaluation_result(score=18.0)),
+        ),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch(
+            "src.services.notifications.notify_final_quality_review", new=mock_notify
+        ),
+    ):
+        await evaluate_mature_conversations_quality({"redis": mock_redis})
+
+    assert fetch_mock.await_count == 2
+    assert fetch_mock.await_args_list[0].kwargs["offset"] == 0
+    assert fetch_mock.await_args_list[1].kwargs["offset"] == 2
+    assert mock_notify.await_count == 3
 
 
 @pytest.mark.asyncio

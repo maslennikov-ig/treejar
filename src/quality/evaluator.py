@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.models.conversation import Conversation
 from src.models.message import Message
 from src.quality.schemas import (
     RULE_NAMES,
@@ -334,6 +335,18 @@ async def _load_messages(
     return list(messages)
 
 
+async def _load_sales_stage(
+    conversation_id: UUID,
+    db: AsyncSession,
+) -> str | None:
+    stmt = select(Conversation.sales_stage).where(Conversation.id == conversation_id)
+    result = await db.execute(stmt)
+    stage = result.scalar_one_or_none()
+    if isinstance(stage, str) and stage.strip():
+        return stage
+    return None
+
+
 def _build_dialogue_prompt(messages: Sequence[Message]) -> str:
     dialogue_text = "\n---\n".join(
         f"[{message.role.upper()}]: {message.content}" for message in messages
@@ -353,12 +366,8 @@ async def evaluate_conversation(
 ) -> EvaluationResult:
     """Evaluate a conversation for the owner-facing final quality review."""
     messages = await _load_messages(conversation_id, db)
-    stage = sales_stage or "unknown"
-    applicability_map = (
-        _build_rule_applicability(messages, stage)
-        if sales_stage is not None
-        else {rule_number: True for rule_number in range(1, 16)}
-    )
+    stage = sales_stage or await _load_sales_stage(conversation_id, db) or "unknown"
+    applicability_map = _build_rule_applicability(messages, stage)
 
     user_prompt = (
         f"{_format_applicability_instructions(applicability_map)}\n\n"

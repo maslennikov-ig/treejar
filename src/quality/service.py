@@ -171,6 +171,7 @@ async def get_recent_conversation_ids_with_assistant_activity(
     *,
     since: datetime | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[UUID]:
     """Return recent conversation IDs with assistant activity ordered by latest turn.
 
@@ -180,6 +181,7 @@ async def get_recent_conversation_ids_with_assistant_activity(
         db,
         since=since,
         limit=limit,
+        offset=offset,
     )
     return [candidate.conversation_id for candidate in candidates]
 
@@ -189,8 +191,9 @@ async def get_recent_assistant_conversation_candidates(
     *,
     since: datetime | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[QualityConversationCandidate]:
-    """Fetch recent conversations with assistant activity for red-flag scans."""
+    """Fetch a stable page of recent assistant conversations for red-flag scans."""
     threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=1)))
     stmt = (
         select(
@@ -214,8 +217,9 @@ async def get_recent_assistant_conversation_candidates(
             Conversation.phone,
             Conversation.customer_name,
         )
-        .order_by(func.max(Message.created_at).desc())
+        .order_by(func.max(Message.created_at).desc(), Conversation.id.desc())
         .limit(limit)
+        .offset(offset)
     )
     result = await db.execute(stmt)
     return [
@@ -236,8 +240,9 @@ async def get_recent_updated_conversation_candidates(
     *,
     since: datetime | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[QualityConversationCandidate]:
-    """Fetch recently updated conversations for mature final-review checks."""
+    """Fetch a stable page of updated conversations for mature final-review checks."""
     threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=7)))
     stmt = (
         select(
@@ -255,8 +260,9 @@ async def get_recent_updated_conversation_candidates(
                 Message.role == "assistant",
             ),
         )
-        .order_by(Conversation.updated_at.desc())
+        .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
         .limit(limit)
+        .offset(offset)
     )
     result = await db.execute(stmt)
     return [

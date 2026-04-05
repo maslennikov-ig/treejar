@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -26,6 +27,7 @@ _FINAL_TTL_SECONDS = 30 * 24 * 60 * 60
 _RED_FLAG_LOOKBACK = timedelta(days=1)
 _FINAL_LOOKBACK = timedelta(days=7)
 _FINAL_IDLE_THRESHOLD = timedelta(hours=3)
+_QUERY_BATCH_SIZE = 50
 
 
 def _normalise_utc(value: datetime) -> datetime:
@@ -69,6 +71,33 @@ def _resolve_redis(ctx: dict[str, Any]) -> Any:
     return ctx.get("redis") or get_redis_client()
 
 
+async def _load_candidates_in_batches(
+    fetch_page: Callable[..., Awaitable[list[QualityConversationCandidate]]],
+    *,
+    since: datetime,
+) -> list[QualityConversationCandidate]:
+    """Read the full eligible candidate set in deterministic pages."""
+    candidates: list[QualityConversationCandidate] = []
+    offset = 0
+
+    async with async_session_factory() as db:
+        while True:
+            batch = await fetch_page(
+                db,
+                since=since,
+                limit=_QUERY_BATCH_SIZE,
+                offset=offset,
+            )
+            if not batch:
+                break
+            candidates.extend(batch)
+            if len(batch) < _QUERY_BATCH_SIZE:
+                break
+            offset += len(batch)
+
+    return candidates
+
+
 def _final_review_trigger(
     candidate: QualityConversationCandidate,
     *,
@@ -95,13 +124,10 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
     """ARQ job: send compact realtime warnings only for critical red flags."""
     now = datetime.now(UTC)
     redis = _resolve_redis(ctx)
-
-    async with async_session_factory() as db:
-        candidates = await get_recent_assistant_conversation_candidates(
-            db,
-            since=now - _RED_FLAG_LOOKBACK,
-            limit=50,
-        )
+    candidates = await _load_candidates_in_batches(
+        get_recent_assistant_conversation_candidates,
+        since=now - _RED_FLAG_LOOKBACK,
+    )
 
     if not candidates:
         logger.info("Quality red-flag evaluator: no recent assistant conversations")
@@ -165,13 +191,10 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
     """ARQ job: persist and send owner-facing final reviews for mature dialogues."""
     now = datetime.now(UTC)
     redis = _resolve_redis(ctx)
-
-    async with async_session_factory() as db:
-        candidates = await get_recent_updated_conversation_candidates(
-            db,
-            since=now - _FINAL_LOOKBACK,
-            limit=50,
-        )
+    candidates = await _load_candidates_in_batches(
+        get_recent_updated_conversation_candidates,
+        since=now - _FINAL_LOOKBACK,
+    )
 
     if not candidates:
         logger.info("Quality final-review evaluator: no recent conversations")
