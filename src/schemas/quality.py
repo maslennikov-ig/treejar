@@ -15,6 +15,12 @@ class QualityCriterion(BaseModel):
     score: int = Field(ge=0, le=2)
     max_score: int = 2
     comment: str | None = None
+    category: str | None = None
+    block_name: str | None = None
+    applicable: bool | None = None
+    n_a: bool | None = None
+    weight_points: float | None = None
+    evidence: list[str] = Field(default_factory=list)
 
 
 class QualityReviewCreate(BaseModel):

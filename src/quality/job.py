@@ -1,91 +1,227 @@
-"""ARQ background jobs for automatic quality evaluation."""
+"""ARQ background jobs for bot quality monitoring."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.core.database import async_session_factory
-from src.quality.evaluator import evaluate_conversation
+from src.core.redis import get_redis_client
+from src.quality.evaluator import evaluate_conversation, evaluate_red_flags
+from src.quality.schemas import RedFlagItem
 from src.quality.service import (
-    get_recent_conversation_ids_with_assistant_activity,
-    get_review_for_conversation,
+    QualityConversationCandidate,
+    get_recent_assistant_conversation_candidates,
+    get_recent_updated_conversation_candidates,
     save_review,
 )
 
 logger = logging.getLogger(__name__)
 
+_RED_FLAG_TTL_SECONDS = 30 * 24 * 60 * 60
+_FINAL_TTL_SECONDS = 30 * 24 * 60 * 60
+_RED_FLAG_LOOKBACK = timedelta(days=1)
+_FINAL_LOOKBACK = timedelta(days=7)
+_FINAL_IDLE_THRESHOLD = timedelta(hours=3)
+
+
+def _normalise_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _updated_at_iso(value: datetime) -> str:
+    return _normalise_utc(value).isoformat()
+
+
+def _red_flag_marker_key(conversation_id: Any) -> str:
+    return f"quality:redflag:{conversation_id}"
+
+
+def _final_marker_key(conversation_id: Any) -> str:
+    return f"quality:final:{conversation_id}"
+
+
+def _build_red_flag_signature(flags: list[RedFlagItem]) -> str:
+    joined_codes = "|".join(sorted(flag.code for flag in flags))
+    return hashlib.sha256(joined_codes.encode("utf-8")).hexdigest()
+
+
+def _extract_previous_signature(raw_marker: str | None) -> str | None:
+    if not raw_marker:
+        return None
+    try:
+        payload = json.loads(raw_marker)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict):
+        signature = payload.get("signature")
+        if isinstance(signature, str):
+            return signature
+    return None
+
+
+def _resolve_redis(ctx: dict[str, Any]) -> Any:
+    return ctx.get("redis") or get_redis_client()
+
+
+def _final_review_trigger(
+    candidate: QualityConversationCandidate,
+    *,
+    now: datetime,
+) -> str | None:
+    if candidate.status == "closed":
+        return "closed"
+    if _normalise_utc(candidate.updated_at) <= now - _FINAL_IDLE_THRESHOLD:
+        return "idle 3h"
+    return None
+
 
 async def evaluate_completed_conversations(ctx: dict[str, Any]) -> None:
-    """Backward-compatible wrapper around the rolling quality evaluator."""
-    await evaluate_recent_conversations_quality(ctx)
+    """Backward-compatible wrapper around the mature final-review job."""
+    await evaluate_mature_conversations_quality(ctx)
 
 
 async def evaluate_recent_conversations_quality(ctx: dict[str, Any]) -> None:
-    """ARQ job: evaluate recent bot conversations and upsert current reviews."""
+    """Backward-compatible wrapper around the mature final-review job."""
+    await evaluate_mature_conversations_quality(ctx)
+
+
+async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
+    """ARQ job: send compact realtime warnings only for critical red flags."""
+    now = datetime.now(UTC)
+    redis = _resolve_redis(ctx)
+
     async with async_session_factory() as db:
-        pending_ids = await get_recent_conversation_ids_with_assistant_activity(
+        candidates = await get_recent_assistant_conversation_candidates(
             db,
+            since=now - _RED_FLAG_LOOKBACK,
             limit=50,
         )
 
-    if not pending_ids:
-        logger.info("Quality evaluator: no recent assistant conversations to evaluate")
+    if not candidates:
+        logger.info("Quality red-flag evaluator: no recent assistant conversations")
         return
 
-    logger.info(
-        "Quality evaluator: found %d recent conversations to evaluate",
-        len(pending_ids),
-    )
-
-    evaluated = 0
+    sent = 0
     errors = 0
 
-    for conv_id in pending_ids:
+    for candidate in candidates:
         try:
             async with async_session_factory() as db:
-                previous_review = await get_review_for_conversation(db, conv_id)
-                previous_score = (
-                    float(previous_review.total_score)
-                    if previous_review is not None
-                    else None
-                )
-                result = await evaluate_conversation(conv_id, db)
-                await save_review(db, conv_id, result)
-                await db.commit()
-            evaluated += 1
-            logger.info(
-                "Evaluated conversation %s: score=%.1f rating=%s",
-                conv_id,
-                result.total_score,
-                result.rating,
+                result = await evaluate_red_flags(candidate.conversation_id, db)
+
+            if not result.flags:
+                continue
+
+            signature = _build_red_flag_signature(result.flags)
+            marker_key = _red_flag_marker_key(candidate.conversation_id)
+            previous_signature = _extract_previous_signature(
+                await redis.get(marker_key)
             )
 
-            # Send Telegram alert for poor quality dialogues
-            score_crossed_threshold = previous_score is None or previous_score >= 14
-            if result.total_score < 14 and score_crossed_threshold:
-                try:
-                    from src.services.notifications import notify_quality_alert
+            if previous_signature == signature:
+                continue
 
-                    await notify_quality_alert(
-                        conv_id,
-                        score=result.total_score,
-                        rating=result.rating,
-                        summary=result.summary,
-                    )
-                except Exception:
-                    logger.exception("Failed to send quality alert for %s", conv_id)
+            from src.services.notifications import notify_red_flag_warning
+
+            await notify_red_flag_warning(
+                conversation_id=candidate.conversation_id,
+                phone=candidate.phone,
+                sales_stage=candidate.sales_stage,
+                flags=result.flags,
+                recommended_action=result.recommended_action,
+            )
+            await redis.setex(
+                marker_key,
+                _RED_FLAG_TTL_SECONDS,
+                json.dumps(
+                    {
+                        "signature": signature,
+                        "updated_at": _updated_at_iso(candidate.updated_at),
+                    }
+                ),
+            )
+            sent += 1
         except Exception:
             errors += 1
             logger.exception(
-                "Failed to evaluate conversation %s (%d/%d)",
-                conv_id,
-                pending_ids.index(conv_id) + 1,
-                len(pending_ids),
+                "Failed to evaluate realtime red flags for conversation %s",
+                candidate.conversation_id,
             )
 
     logger.info(
-        "Rolling quality evaluator: done. evaluated=%d, errors=%d",
-        evaluated,
+        "Quality red-flag evaluator: done. sent=%d, errors=%d",
+        sent,
+        errors,
+    )
+
+
+async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
+    """ARQ job: persist and send owner-facing final reviews for mature dialogues."""
+    now = datetime.now(UTC)
+    redis = _resolve_redis(ctx)
+
+    async with async_session_factory() as db:
+        candidates = await get_recent_updated_conversation_candidates(
+            db,
+            since=now - _FINAL_LOOKBACK,
+            limit=50,
+        )
+
+    if not candidates:
+        logger.info("Quality final-review evaluator: no recent conversations")
+        return
+
+    reviewed = 0
+    errors = 0
+
+    for candidate in candidates:
+        trigger = _final_review_trigger(candidate, now=now)
+        if trigger is None:
+            continue
+
+        current_updated_at = _updated_at_iso(candidate.updated_at)
+        marker_key = _final_marker_key(candidate.conversation_id)
+        previous_updated_at = await redis.get(marker_key)
+        if previous_updated_at == current_updated_at:
+            continue
+
+        try:
+            async with async_session_factory() as db:
+                result = await evaluate_conversation(
+                    candidate.conversation_id,
+                    db,
+                    candidate.sales_stage,
+                )
+                await save_review(db, candidate.conversation_id, result)
+                await db.commit()
+
+            from src.services.notifications import notify_final_quality_review
+
+            await notify_final_quality_review(
+                conversation_id=candidate.conversation_id,
+                phone=candidate.phone,
+                customer_name=candidate.customer_name,
+                sales_stage=candidate.sales_stage,
+                trigger=trigger,
+                result=result,
+            )
+            await redis.setex(marker_key, _FINAL_TTL_SECONDS, current_updated_at)
+            reviewed += 1
+        except Exception:
+            errors += 1
+            logger.exception(
+                "Failed to evaluate mature conversation %s",
+                candidate.conversation_id,
+            )
+
+    logger.info(
+        "Quality final-review evaluator: done. reviewed=%d, errors=%d",
+        reviewed,
         errors,
     )

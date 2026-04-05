@@ -7,6 +7,7 @@ in the quality_reviews table.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -17,9 +18,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.conversation import Conversation
 from src.models.message import Message
 from src.models.quality_review import QualityReview
-from src.quality.schemas import EvaluationResult, compute_rating
+from src.quality.schemas import EvaluationResult, finalize_evaluation_result
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class QualityConversationCandidate:
+    conversation_id: UUID
+    updated_at: datetime
+    status: str
+    sales_stage: str
+    phone: str | None
+    customer_name: str | None
 
 
 async def save_review(
@@ -37,7 +48,8 @@ async def save_review(
     Returns:
         Persisted QualityReview ORM object.
     """
-    # Convert internal schema criteria to JSON-serialisable dict
+    final_result = finalize_evaluation_result(result)
+
     criteria_data: list[dict[str, Any]] = [
         {
             "rule_number": c.rule_number,
@@ -45,13 +57,15 @@ async def save_review(
             "score": c.score,
             "max_score": 2,
             "comment": c.comment,
+            "category": c.category,
+            "block_name": c.block_name,
+            "applicable": c.applicable,
+            "n_a": c.n_a,
+            "weight_points": c.weight_points,
+            "evidence": c.evidence,
         }
-        for c in result.criteria
+        for c in final_result.criteria
     ]
-
-    # Compute score deterministically — don't trust LLM arithmetic
-    computed_total = float(sum(c.score for c in result.criteria))
-    rating_str = compute_rating(computed_total)
 
     existing_stmt = select(QualityReview).where(
         QualityReview.conversation_id == conversation_id
@@ -62,20 +76,20 @@ async def save_review(
     if review is None:
         review = QualityReview(
             conversation_id=conversation_id,
-            total_score=computed_total,
+            total_score=final_result.total_score,
             max_score=30,
             criteria=criteria_data,
-            rating=rating_str,
-            summary=result.summary,
+            rating=final_result.rating,
+            summary=final_result.summary,
             reviewer="ai",
         )
         db.add(review)
     else:
-        review.total_score = computed_total
+        review.total_score = final_result.total_score
         review.max_score = 30
         review.criteria = criteria_data
-        review.rating = rating_str
-        review.summary = result.summary
+        review.rating = final_result.rating
+        review.summary = final_result.summary
         review.reviewer = "ai"
 
     await db.flush()  # get the ID without committing
@@ -162,22 +176,100 @@ async def get_recent_conversation_ids_with_assistant_activity(
 
     This powers rolling quality evaluation for active bot dialogues.
     """
+    candidates = await get_recent_assistant_conversation_candidates(
+        db,
+        since=since,
+        limit=limit,
+    )
+    return [candidate.conversation_id for candidate in candidates]
+
+
+async def get_recent_assistant_conversation_candidates(
+    db: AsyncSession,
+    *,
+    since: datetime | None = None,
+    limit: int = 50,
+) -> list[QualityConversationCandidate]:
+    """Fetch recent conversations with assistant activity for red-flag scans."""
     threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=1)))
     stmt = (
         select(
-            Message.conversation_id,
-            func.max(Message.created_at).label("last_assistant_at"),
+            Conversation.id,
+            Conversation.updated_at,
+            Conversation.status,
+            Conversation.sales_stage,
+            Conversation.phone,
+            Conversation.customer_name,
         )
+        .join(Message, Message.conversation_id == Conversation.id)
         .where(
             Message.role == "assistant",
             Message.created_at >= threshold,
         )
-        .group_by(Message.conversation_id)
+        .group_by(
+            Conversation.id,
+            Conversation.updated_at,
+            Conversation.status,
+            Conversation.sales_stage,
+            Conversation.phone,
+            Conversation.customer_name,
+        )
         .order_by(func.max(Message.created_at).desc())
         .limit(limit)
     )
     result = await db.execute(stmt)
-    return [row.conversation_id for row in result.all()]
+    return [
+        QualityConversationCandidate(
+            conversation_id=row.id,
+            updated_at=row.updated_at,
+            status=row.status,
+            sales_stage=row.sales_stage,
+            phone=row.phone,
+            customer_name=row.customer_name,
+        )
+        for row in result.all()
+    ]
+
+
+async def get_recent_updated_conversation_candidates(
+    db: AsyncSession,
+    *,
+    since: datetime | None = None,
+    limit: int = 50,
+) -> list[QualityConversationCandidate]:
+    """Fetch recently updated conversations for mature final-review checks."""
+    threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=7)))
+    stmt = (
+        select(
+            Conversation.id,
+            Conversation.updated_at,
+            Conversation.status,
+            Conversation.sales_stage,
+            Conversation.phone,
+            Conversation.customer_name,
+        )
+        .where(
+            Conversation.updated_at >= threshold,
+            exists().where(
+                Message.conversation_id == Conversation.id,
+                Message.role == "assistant",
+            ),
+        )
+        .order_by(Conversation.updated_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return [
+        QualityConversationCandidate(
+            conversation_id=row.id,
+            updated_at=row.updated_at,
+            status=row.status,
+            sales_stage=row.sales_stage,
+            phone=row.phone,
+            customer_name=row.customer_name,
+        )
+        for row in result.all()
+    ]
 
 
 async def get_reviews(

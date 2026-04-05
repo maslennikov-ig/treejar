@@ -110,17 +110,33 @@ async def test_notify_escalation_formats_html() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notify_quality_alert_formats_html() -> None:
-    """notify_quality_alert should format HTML with score and rating."""
-    from src.services.notifications import format_quality_alert_message
+async def test_red_flag_warning_formatting() -> None:
+    """Realtime red-flag warning should be compact and evidence-based."""
+    from src.quality.schemas import RedFlagItem
+    from src.services.notifications import format_red_flag_warning_message
 
     conv_id = uuid4()
-    msg = format_quality_alert_message(
-        conv_id, score=8.0, rating="poor", summary="Bad dialogue"
+    msg = format_red_flag_warning_message(
+        conversation_id=conv_id,
+        phone="+971501234567",
+        sales_stage="greeting",
+        flags=[
+            RedFlagItem(
+                code="missing_identity",
+                title="Missing identity",
+                explanation="The first reply omitted Siyyad and Treejar.",
+                evidence=["Hello, how can I help?", "Tell me what you need."],
+            )
+        ],
+        recommended_action="Reply with a corrective follow-up and restate identity.",
     )
-    assert "<b>" in msg
-    assert "8.0" in msg
-    assert "poor" in msg
+    assert "🚨 <b>Red Flag Warning</b>" in msg
+    assert "Conversation UUID" in msg
+    assert "+971501234567" in msg
+    assert "greeting" in msg
+    assert "Missing identity" in msg
+    assert "Hello, how can I help?" in msg
+    assert "Recommended action" in msg
 
 
 @pytest.mark.asyncio
@@ -139,11 +155,187 @@ async def test_notify_escalation_calls_telegram() -> None:
 
 
 @pytest.mark.asyncio
+async def test_final_quality_review_formatting() -> None:
+    """Final review should render weighted breakdown and owner-facing sections."""
+    from src.quality.schemas import BlockScore, CriterionScore, EvaluationResult
+    from src.services.notifications import format_final_quality_review_message
+
+    conv_id = uuid4()
+    result = EvaluationResult(
+        criteria=[
+            CriterionScore(
+                rule_number=i,
+                rule_name=f"Rule {i}",
+                score=2,
+                comment="ok",
+                applicable=True,
+                evidence=[f"Evidence {i}"],
+            )
+            for i in range(1, 16)
+        ],
+        summary="Structured narrative",
+        total_score=24.5,
+        rating="good",
+        strengths=["Strong opening and clear tone"],
+        weaknesses=["Discovery could go deeper"],
+        recommendations=["Ask for team size before quoting"],
+        next_best_action="Send a concise quote follow-up after confirming quantities.",
+        block_scores=[
+            BlockScore(
+                block_name="Opening & Trust", weight=6.0, points=5.0, applicable_rules=4
+            ),
+            BlockScore(
+                block_name="Relationship & Discovery",
+                weight=9.0,
+                points=7.0,
+                applicable_rules=5,
+            ),
+            BlockScore(
+                block_name="Consultative Solution",
+                weight=9.0,
+                points=7.5,
+                applicable_rules=3,
+            ),
+            BlockScore(
+                block_name="Conversion & Next Step",
+                weight=6.0,
+                points=5.0,
+                applicable_rules=3,
+            ),
+        ],
+    )
+    msg = format_final_quality_review_message(
+        conversation_id=conv_id,
+        phone="+971501234567",
+        customer_name="Acme",
+        sales_stage="quoting",
+        trigger="idle 3h",
+        result=result,
+    )
+    assert "🟢 <b>Quality Review</b>" in msg
+    assert "Score:</b> 24.5/30 (good)" in msg
+    assert "Trigger:</b> idle 3h" in msg
+    assert "Opening &amp; Trust: 5.0/6" in msg
+    assert "Relationship &amp; Discovery: 7.0/9" in msg
+    assert "What went well" in msg
+    assert "What hurt the dialogue" in msg
+    assert "Recommendations" in msg
+    assert "Next best action" in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_red_flag_warning_calls_telegram() -> None:
+    """notify_red_flag_warning should send a message via TelegramClient."""
+    from src.quality.schemas import RedFlagItem
+    from src.services.notifications import notify_red_flag_warning
+
+    conv_id = uuid4()
+
+    with patch("src.services.notifications.TelegramClient") as MockTg:
+        mock_instance = AsyncMock()
+        MockTg.return_value = mock_instance
+        mock_instance.send_message = AsyncMock()
+
+        await notify_red_flag_warning(
+            conversation_id=conv_id,
+            phone="+971501234567",
+            sales_stage="greeting",
+            flags=[
+                RedFlagItem(
+                    code="missing_identity",
+                    title="Missing identity",
+                    explanation="The first reply omitted Siyyad and Treejar.",
+                    evidence=["Hello, how can I help?"],
+                )
+            ],
+            recommended_action="Reply with a corrective follow-up and restate identity.",
+        )
+
+        mock_instance.send_message.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_final_quality_review_calls_telegram() -> None:
+    """notify_final_quality_review should send a rich owner-facing report."""
+    from src.quality.schemas import BlockScore, CriterionScore, EvaluationResult
+    from src.services.notifications import notify_final_quality_review
+
+    conv_id = uuid4()
+    result = EvaluationResult(
+        criteria=[
+            CriterionScore(
+                rule_number=i,
+                rule_name=f"Rule {i}",
+                score=2,
+                comment="ok",
+                applicable=True,
+            )
+            for i in range(1, 16)
+        ],
+        summary="Structured narrative",
+        total_score=12.0,
+        rating="poor",
+        strengths=["Polite opening"],
+        weaknesses=["Missed the direct question"],
+        recommendations=["Answer the customer question before redirecting"],
+        next_best_action="Send an apology and concrete answer now.",
+        block_scores=[
+            BlockScore(
+                block_name="Opening & Trust", weight=6.0, points=4.0, applicable_rules=4
+            ),
+            BlockScore(
+                block_name="Relationship & Discovery",
+                weight=9.0,
+                points=3.0,
+                applicable_rules=5,
+            ),
+            BlockScore(
+                block_name="Consultative Solution",
+                weight=9.0,
+                points=3.0,
+                applicable_rules=3,
+            ),
+            BlockScore(
+                block_name="Conversion & Next Step",
+                weight=6.0,
+                points=2.0,
+                applicable_rules=3,
+            ),
+        ],
+    )
+
+    with patch("src.services.notifications.TelegramClient") as MockTg:
+        mock_instance = AsyncMock()
+        MockTg.return_value = mock_instance
+        mock_instance.send_message = AsyncMock()
+
+        await notify_final_quality_review(
+            conversation_id=conv_id,
+            phone="+971501234567",
+            customer_name="Acme",
+            sales_stage="closing",
+            trigger="closed",
+            result=result,
+        )
+
+        mock_instance.send_message.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_notify_quality_alert_calls_telegram() -> None:
-    """notify_quality_alert should send message via TelegramClient when score < 14."""
+    """Legacy notify_quality_alert should remain callable for compatibility."""
     from src.services.notifications import notify_quality_alert
 
     conv_id = uuid4()
+
+    with patch("src.services.notifications.TelegramClient") as MockTg:
+        mock_instance = AsyncMock()
+        MockTg.return_value = mock_instance
+        mock_instance.send_message = AsyncMock()
+
+        await notify_quality_alert(conv_id, score=8.0, rating="poor", summary="Bad")
+
+        mock_instance.send_message.assert_called_once()
 
     with patch("src.services.notifications.TelegramClient") as MockTg:
         mock_instance = AsyncMock()

@@ -71,6 +71,41 @@ async def test_list_reviews_normalizes_legacy_object_criteria() -> None:
     assert data["items"][0]["criteria"] == []
 
 
+def test_quality_review_read_accepts_legacy_criteria_without_new_fields() -> None:
+    """Schema should keep reading legacy criteria rows after JSON enrichment."""
+    from datetime import datetime
+
+    from src.schemas.quality import QualityReviewRead
+
+    review = QualityReviewRead.model_validate(
+        {
+            "id": uuid4(),
+            "conversation_id": uuid4(),
+            "total_score": 14.0,
+            "max_score": 30,
+            "rating": "satisfactory",
+            "criteria": [
+                {
+                    "rule_number": 1,
+                    "rule_name": "Greeting",
+                    "score": 2,
+                    "max_score": 2,
+                    "comment": "ok",
+                }
+            ],
+            "summary": "Legacy summary",
+            "reviewer": "ai",
+            "created_at": datetime(2026, 4, 5, 9, 0, 0),
+        }
+    )
+
+    assert len(review.criteria) == 1
+    assert review.criteria[0].rule_number == 1
+    assert review.criteria[0].applicable is None
+    assert review.criteria[0].weight_points is None
+    assert review.criteria[0].evidence == []
+
+
 @pytest.mark.asyncio
 async def test_create_review_success() -> None:
     """POST /reviews/ should return 201 with QualityReviewRead."""

@@ -89,6 +89,303 @@ def test_compute_rating_poor() -> None:
     assert compute_rating(0) == "poor"
 
 
+def test_compute_rating_preserves_decimal_thresholds() -> None:
+    from src.quality.schemas import compute_rating
+
+    assert compute_rating(26.0) == "excellent"
+    assert compute_rating(25.9) == "good"
+    assert compute_rating(20.0) == "good"
+    assert compute_rating(19.9) == "satisfactory"
+    assert compute_rating(14.0) == "satisfactory"
+    assert compute_rating(13.9) == "poor"
+
+
+def test_calculate_weighted_score_uses_block_weights() -> None:
+    from src.quality.schemas import (
+        BLOCKS_BY_NAME,
+        CriterionScore,
+        calculate_weighted_score,
+    )
+
+    criteria = [
+        CriterionScore(
+            rule_number=1,
+            rule_name="Greeting",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=2,
+            rule_name="Polite intro",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=3,
+            rule_name="Ask preferred name",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=7,
+            rule_name="Value proposition",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=4,
+            rule_name="Friendly tone",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=5,
+            rule_name="Show interest",
+            score=1,
+            comment="partial",
+            applicable=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=6,
+            rule_name="Compliment",
+            score=0,
+            comment="missing",
+            applicable=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=8,
+            rule_name="Clarifying questions",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=13,
+            rule_name="Ask company activity",
+            score=1,
+            comment="partial",
+            applicable=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=9,
+            rule_name="Drill and hole",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Consultative Solution",
+        ),
+        CriterionScore(
+            rule_number=10,
+            rule_name="Comprehensive solution",
+            score=1,
+            comment="partial",
+            applicable=True,
+            category="Consultative Solution",
+        ),
+        CriterionScore(
+            rule_number=11,
+            rule_name="Discount or bundle",
+            score=0,
+            comment="missing",
+            applicable=True,
+            category="Consultative Solution",
+        ),
+        CriterionScore(
+            rule_number=12,
+            rule_name="Collect contact details",
+            score=0,
+            comment="not applicable",
+            applicable=False,
+            n_a=True,
+            category="Conversion & Next Step",
+        ),
+        CriterionScore(
+            rule_number=14,
+            rule_name="Confirm order and next step",
+            score=0,
+            comment="not applicable",
+            applicable=False,
+            n_a=True,
+            category="Conversion & Next Step",
+        ),
+        CriterionScore(
+            rule_number=15,
+            rule_name="Agree next contact",
+            score=0,
+            comment="not applicable",
+            applicable=False,
+            n_a=True,
+            category="Conversion & Next Step",
+        ),
+    ]
+
+    total_score, block_scores = calculate_weighted_score(criteria)
+
+    assert total_score == 15.9
+    assert block_scores[0].block_name == "Opening & Trust"
+    assert block_scores[0].points == BLOCKS_BY_NAME["Opening & Trust"].weight
+    assert block_scores[1].points == 5.4
+    assert block_scores[2].points == 4.5
+    assert block_scores[3].points == 0.0
+
+
+def test_non_applicable_rules_do_not_penalize_weighted_score() -> None:
+    from src.quality.schemas import CriterionScore, calculate_weighted_score
+
+    criteria = [
+        CriterionScore(
+            rule_number=1,
+            rule_name="Greeting",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=2,
+            rule_name="Polite intro",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=3,
+            rule_name="Ask preferred name",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=7,
+            rule_name="Value proposition",
+            score=2,
+            comment="ok",
+            applicable=True,
+            category="Opening & Trust",
+        ),
+        CriterionScore(
+            rule_number=4,
+            rule_name="Friendly tone",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=5,
+            rule_name="Show interest",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=6,
+            rule_name="Compliment",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=8,
+            rule_name="Clarifying questions",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=13,
+            rule_name="Ask company activity",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Relationship & Discovery",
+        ),
+        CriterionScore(
+            rule_number=9,
+            rule_name="Drill and hole",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Consultative Solution",
+        ),
+        CriterionScore(
+            rule_number=10,
+            rule_name="Comprehensive solution",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Consultative Solution",
+        ),
+        CriterionScore(
+            rule_number=11,
+            rule_name="Discount or bundle",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Consultative Solution",
+        ),
+        CriterionScore(
+            rule_number=12,
+            rule_name="Collect contact details",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Conversion & Next Step",
+        ),
+        CriterionScore(
+            rule_number=14,
+            rule_name="Confirm order and next step",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Conversion & Next Step",
+        ),
+        CriterionScore(
+            rule_number=15,
+            rule_name="Agree next contact",
+            score=0,
+            comment="n/a",
+            applicable=False,
+            n_a=True,
+            category="Conversion & Next Step",
+        ),
+    ]
+
+    total_score, block_scores = calculate_weighted_score(criteria)
+
+    assert total_score == 6.0
+    assert [block.points for block in block_scores] == [6.0, 0.0, 0.0, 0.0]
+
+
 # =============================================================================
 # Task 2: Evaluator tests
 # =============================================================================

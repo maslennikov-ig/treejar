@@ -77,14 +77,28 @@ Key runtime settings are stored in **Admin → System Config** as key-value pair
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `escalation_threshold` | `10` | Quality score below which a quality alert is sent to Telegram |
 | `followup_timeout_hours` | `24` | Hours of inactivity before the first follow-up message |
 | `followup_schedule_days` | `[1, 3, 7, 30, 90]` | Follow-up schedule in days after last contact |
 | `max_context_messages` | `5` | Number of recent messages kept in LLM context |
 
+### Quality Review Delivery
+
+Bot quality monitoring now uses a **hybrid owner-facing flow**:
+- **Realtime warning** is sent only for critical red flags.
+- **Final quality review** is sent for every matured bot dialogue when either:
+  - the conversation is `closed`, or
+  - there were no new messages for **3 hours**
+- Final reviews use the preserved **0–30** rating scale with the current thresholds:
+  - `excellent`: `26–30`
+  - `good`: `20–25.9`
+  - `satisfactory`: `14–19.9`
+  - `poor`: `<14`
+
+There is no separate admin threshold key for bot quality alerts anymore. Telegram delivery is driven by the fixed red-flag rules and the mature-dialogue final-review logic above.
+
 ### How to Edit a Config Value
 1. Go to **Admin → System Config**.
-2. Find the key (e.g., `escalation_threshold`).
+2. Find the key you want to change (for example, `followup_timeout_hours`).
 3. Click Edit → update the `value` field (must be valid JSON).
 4. Save.
 

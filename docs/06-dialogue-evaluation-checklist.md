@@ -7,15 +7,29 @@
    • 1 – частично выполнено.  
    • 0 – не выполнено.
 
-2\. Все правила имеют одинаковый вес. Максимальное количество баллов за один диалог: 30 (15 правил × 2).
+2\. Итоговая оценка остаётся по шкале 0–30, но считается по 4 weighted blocks:
+   • **Opening & Trust** — 6.0 points (rules 1, 2, 3, 7)
+   • **Relationship & Discovery** — 9.0 points (rules 4, 5, 6, 8, 13)
+   • **Consultative Solution** — 9.0 points (rules 9, 10, 11)
+   • **Conversion & Next Step** — 6.0 points (rules 12, 14, 15)
 
-3\. Интерпретация итоговой оценки:  
+3\. Внутри блока используется та же шкала 0–2 для каждого правила, но итог блока считается так:
+   • учитываются только **applicable** rules
+   • `normalized_rule = score / 2`
+   • `block_ratio = average(normalized_rule)`
+   • `block_points = block_ratio × block_weight`
+
+4\. Если блок ещё не достигнут по стадии диалога и в transcript нет соответствующих сигналов, правила блока помечаются как **not applicable / n_a**:
+   • они не входят в знаменатель
+   • они не тянут итоговый score вниз
+
+5\. Интерпретация итоговой оценки:
    • 26–30 баллов – Отлично. Диалог на высоком уровне, продавец соблюдает все стандарты.  
    • 20–25 баллов – Хорошо. Есть мелкие недочёты, но структура диалога сохранена.  
    • 14–19 баллов – Удовлетворительно. Требуются доработки, часть этапов пропущена.  
    • Менее 14 баллов – Плохо. Диалог не соответствует стандартам.
 
-4\. После оценки:  
+6\. После оценки:
    • Указать сильные стороны диалога.  
    • Указать зоны для улучшения.  
    • Сформировать рекомендации для следующего контакта.
@@ -27,15 +41,29 @@
    • 1 – partially followed.  
    • 0 – not followed.
 
-2\. All rules have equal weight. Maximum score per dialogue: 30 points (15 rules × 2).
+2\. The final score remains on a 0–30 scale, but it is calculated from 4 weighted blocks:
+   • **Opening & Trust** — 6.0 points (rules 1, 2, 3, 7)
+   • **Relationship & Discovery** — 9.0 points (rules 4, 5, 6, 8, 13)
+   • **Consultative Solution** — 9.0 points (rules 9, 10, 11)
+   • **Conversion & Next Step** — 6.0 points (rules 12, 14, 15)
 
-3\. Score interpretation:  
+3\. Inside each block, the same 0–2 rule score is used, but the block total is calculated as:
+   • include only **applicable** rules
+   • `normalized_rule = score / 2`
+   • `block_ratio = average(normalized_rule)`
+   • `block_points = block_ratio × block_weight`
+
+4\. If the dialogue has not yet reached a block and the transcript contains no corresponding signals, the block rules are marked **not applicable / n_a**:
+   • they are excluded from the denominator
+   • they do not drag the final score down
+
+5\. Score interpretation:
    • 26–30 points – Excellent. Dialogue at a very high level, all standards met.  
    • 20–25 points – Good. Minor issues, but overall structure maintained.  
    • 14–19 points – Satisfactory. Needs improvement, some stages skipped.  
    • Below 14 points – Poor. Dialogue does not meet standards.
 
-4\. After scoring:  
+6\. After scoring:
    • Identify the dialogue’s strengths.  
    • Highlight areas for improvement.  
    • Provide recommendations for the next contact.
@@ -65,4 +93,3 @@
 Сильные стороны диалога / Dialogue Strengths:
 
 Зоны для улучшения / Areas for Improvement:
-

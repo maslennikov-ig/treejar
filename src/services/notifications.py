@@ -11,6 +11,7 @@ All functions are safe to call even when Telegram is not configured.
 from __future__ import annotations
 
 import logging
+from html import escape
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,7 @@ import logfire
 
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
+from src.quality.schemas import EvaluationResult, RedFlagItem
 from src.services.daily_summary import DailySummaryData, calculate_daily_summary
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,33 @@ def _mask_phone(phone: str) -> str:
     if len(phone) > 6:
         return phone[:6] + "***" + phone[-4:]
     return "***"
+
+
+def _format_bullets(items: list[str], *, fallback: str) -> str:
+    cleaned = [item.strip() for item in items if item and item.strip()]
+    values = cleaned or [fallback]
+    return "\n".join(f"• {escape(item)}" for item in values)
+
+
+def _collect_evidence_quotes(result: EvaluationResult, *, limit: int = 4) -> list[str]:
+    quotes: list[str] = []
+    sorted_criteria = sorted(
+        result.criteria,
+        key=lambda criterion: (
+            criterion.weight_points or 0.0,
+            criterion.score,
+            criterion.rule_number,
+        ),
+        reverse=True,
+    )
+    for criterion in sorted_criteria:
+        for quote in criterion.evidence:
+            cleaned = quote.strip()
+            if cleaned and cleaned not in quotes:
+                quotes.append(cleaned)
+            if len(quotes) >= limit:
+                return quotes
+    return quotes
 
 
 # =============================================================================
@@ -98,6 +127,90 @@ def format_quality_alert_message(
         f"<b>Conversation:</b> <code>{conversation_id}</code>\n"
         f"<b>Summary:</b> {safe_summary}\n\n"
         "This dialogue scored below the acceptable threshold."
+    )
+
+
+def format_red_flag_warning_message(
+    *,
+    conversation_id: UUID,
+    phone: str | None,
+    sales_stage: str,
+    flags: list[RedFlagItem],
+    recommended_action: str,
+) -> str:
+    """Format a compact realtime red-flag warning for Telegram."""
+    phone_line = f"<b>Phone:</b> {escape(phone)}\n" if phone and phone.strip() else ""
+    red_flag_lines = "\n".join(
+        f"• <b>{escape(flag.title)}</b>: {escape(flag.explanation)}" for flag in flags
+    )
+    evidence_quotes: list[str] = []
+    for flag in flags:
+        for quote in flag.evidence:
+            cleaned = quote.strip()
+            if cleaned and cleaned not in evidence_quotes:
+                evidence_quotes.append(cleaned)
+            if len(evidence_quotes) >= 2:
+                break
+        if len(evidence_quotes) >= 2:
+            break
+    evidence_block = _format_bullets(
+        evidence_quotes,
+        fallback="No explicit transcript evidence returned by the judge.",
+    )
+
+    return (
+        "🚨 <b>Red Flag Warning</b>\n\n"
+        f"<b>Conversation UUID:</b> <code>{conversation_id}</code>\n"
+        f"{phone_line}"
+        f"<b>Sales stage:</b> {escape(sales_stage)}\n\n"
+        f"<b>Red flags:</b>\n{red_flag_lines}\n\n"
+        f"<b>Evidence:</b>\n{evidence_block}\n\n"
+        f"<b>Recommended action:</b> {escape(recommended_action)}"
+    )
+
+
+def format_final_quality_review_message(
+    *,
+    conversation_id: UUID,
+    phone: str | None,
+    customer_name: str | None,
+    sales_stage: str,
+    trigger: str,
+    result: EvaluationResult,
+) -> str:
+    """Format the owner-facing final quality review for Telegram."""
+    rating_emoji = (
+        "🔴"
+        if result.rating == "poor"
+        else "🟡"
+        if result.rating == "satisfactory"
+        else "🟢"
+    )
+    customer_bits = []
+    if phone and phone.strip():
+        customer_bits.append(f"<b>Customer phone:</b> {escape(phone)}")
+    if customer_name and customer_name.strip():
+        customer_bits.append(f"<b>Customer name:</b> {escape(customer_name)}")
+    customer_block = "\n".join(customer_bits) + ("\n" if customer_bits else "")
+    breakdown_lines = "\n".join(
+        f"• {escape(block.block_name)}: {block.points:.1f}/{block.weight:.0f}"
+        for block in result.block_scores
+    )
+    evidence_quotes = _collect_evidence_quotes(result)
+
+    return (
+        f"{rating_emoji} <b>Quality Review</b>\n\n"
+        f"<b>Score:</b> {result.total_score:.1f}/30 ({escape(result.rating)})\n"
+        f"<b>Trigger:</b> {escape(trigger)}\n"
+        f"<b>Conversation UUID:</b> <code>{conversation_id}</code>\n"
+        f"{customer_block}"
+        f"<b>Current stage:</b> {escape(sales_stage)}\n\n"
+        f"<b>Weighted breakdown:</b>\n{breakdown_lines}\n\n"
+        f"<b>What went well</b>\n{_format_bullets(result.strengths, fallback='No clear strengths noted.')}\n\n"
+        f"<b>What hurt the dialogue</b>\n{_format_bullets(result.weaknesses, fallback='No material weaknesses noted.')}\n\n"
+        f"<b>Evidence</b>\n{_format_bullets(evidence_quotes, fallback='No transcript evidence captured.')}\n\n"
+        f"<b>Recommendations</b>\n{_format_bullets(result.recommendations, fallback='No additional recommendations captured.')}\n\n"
+        f"<b>Next best action</b>\n• {escape(result.next_best_action)}"
     )
 
 
@@ -167,6 +280,65 @@ async def notify_quality_alert(
             score=score,
         )
         logger.exception("Failed to send quality alert notification to Telegram")
+
+
+async def notify_red_flag_warning(
+    *,
+    conversation_id: UUID,
+    phone: str | None,
+    sales_stage: str,
+    flags: list[RedFlagItem],
+    recommended_action: str,
+) -> None:
+    """Send a realtime red-flag warning to Telegram."""
+    try:
+        client = _get_telegram_client()
+        message = format_red_flag_warning_message(
+            conversation_id=conversation_id,
+            phone=phone,
+            sales_stage=sales_stage,
+            flags=flags,
+            recommended_action=recommended_action,
+        )
+        await client.send_message(message)
+    except Exception:
+        logfire.error(
+            "telegram.notify_red_flag_warning.failed",
+            notification_type="quality_red_flag",
+            conv_id=str(conversation_id),
+        )
+        logger.exception("Failed to send red-flag warning to Telegram")
+
+
+async def notify_final_quality_review(
+    *,
+    conversation_id: UUID,
+    phone: str | None,
+    customer_name: str | None,
+    sales_stage: str,
+    trigger: str,
+    result: EvaluationResult,
+) -> None:
+    """Send the owner-facing final quality review to Telegram."""
+    try:
+        client = _get_telegram_client()
+        message = format_final_quality_review_message(
+            conversation_id=conversation_id,
+            phone=phone,
+            customer_name=customer_name,
+            sales_stage=sales_stage,
+            trigger=trigger,
+            result=result,
+        )
+        await client.send_message(message)
+    except Exception:
+        logfire.error(
+            "telegram.notify_final_quality_review.failed",
+            notification_type="quality_final_review",
+            conv_id=str(conversation_id),
+            score=result.total_score,
+        )
+        logger.exception("Failed to send final quality review to Telegram")
 
 
 async def notify_daily_summary_telegram(metrics: DailySummaryData) -> None:
