@@ -12,6 +12,7 @@ from src.api.v1 import (
     manager_reviews,
     notifications,
     products,
+    public_media,
     quality,
     referrals,
     reports,
@@ -26,6 +27,11 @@ api_v1_router.include_router(
     conversations.router, prefix="/conversations", tags=["Conversations"]
 )
 api_v1_router.include_router(products.router, prefix="/products", tags=["Products"])
+api_v1_router.include_router(
+    public_media.router,
+    prefix="/public-media",
+    tags=["Public Media"],
+)
 api_v1_router.include_router(
     crm.router,
     prefix="/crm",

@@ -35,6 +35,7 @@ from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery
+from src.services.public_media import build_signed_product_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -343,28 +344,16 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
         url: str, caption: str, zoho_item_id: str | None = None
     ) -> None:
         try:
-            content = None
-            content_type = None
-
+            send_url = url
             if zoho_item_id and "zoho-image" not in url and "zoho" in url:
-                # Zoho DB stores image_urls but Wazzup cannot download them due to OAuth.
-                # Use our authenticated client to fetch the raw image bytes.
-                res = await ctx.deps.zoho_inventory.get_item_image(zoho_item_id)
-                if res:
-                    content, content_type = res
-                else:
-                    logger.warning(
-                        "Zoho image missing or could not be downloaded for item %s",
-                        zoho_item_id,
-                    )
-                    return  # Early exit to avoid sending broken OAuth URL to Wazzup
+                send_url = build_signed_product_image_url(zoho_item_id)
 
             await ctx.deps.messaging_client.send_media(
                 chat_id=ctx.deps.conversation.phone,
-                url=url if not content else None,
+                url=send_url,
                 caption=caption,
-                content=content,
-                content_type=content_type,
+                content=None,
+                content_type=None,
             )
         except Exception as e:
             logger.warning("Failed to send product image: %s", e, exc_info=True)

@@ -141,3 +141,47 @@ async def test_search_products_graceful_fallback(
     assert "automatically sent to the customer's WhatsApp" in result.return_value
     assert "https://example.com/chair.jpg" not in result.return_value
     mock_messaging_client.send_media.assert_called_once()
+
+
+async def test_search_products_uses_signed_proxy_for_zoho_images(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
+    product = ProductRead(
+        id="44444444-4444-4444-4444-444444444444",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Focus Pod",
+        description_en="Acoustic pod",
+        sku="POD-01",
+        price="25000.00",
+        currency="AED",
+        image_url="https://inventory.zoho.eu/api/v1/documents/abc",
+        zoho_item_id="ZOHO-ITEM-1",
+        created_at="2024-01-01T00:00:00Z",
+        stock=2,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product]
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    run_context.deps.zoho_inventory.get_item_image = AsyncMock(
+        return_value=(b"fake-image", "image/jpeg")
+    )
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "acoustic pod")
+    assert isinstance(result, ToolReturn)
+
+    _, kwargs = mock_messaging_client.send_media.call_args
+    assert kwargs["chat_id"] == "+1234567890"
+    assert kwargs["url"].startswith(
+        "https://noor.starec.ai/api/v1/public-media/products/ZOHO-ITEM-1?token="
+    )
+    assert kwargs["content"] is None
+    assert kwargs["content_type"] is None
+    run_context.deps.zoho_inventory.get_item_image.assert_not_awaited()
