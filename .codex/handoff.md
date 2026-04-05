@@ -50,6 +50,14 @@ Current baseline branch: `main`
   - canonical `/opt/noor` was hot-applied from current `main`, rebuilt, and externally validated with a real signed media URL for Zoho item `378603000004698178`: `GET /api/v1/public-media/products/... -> 200 OK`, `content-type=image/jpeg`, `content-length=51132`
   - direct canary via `WazzupProvider.send_media()` to live recipient `+79262810921` returned message id `5b54a1ba-32cb-4562-88f3-f7d9e11865aa`; app logs show Wazzup IP `172.241.70.100` did `HEAD 405` then `GET 200`, and the subsequent Wazzup webhook echo reported the image as `status=delivered`
   - canonical runtime drift surfaced during this slice: `/opt/noor` still had `APP_ENV=development`, so `DOMAIN=https://noor.starec.ai` had to be written into runtime `.env` before the signed URL path was usable; treat this as more evidence for existing deploy/runtime drift issues rather than a new product bug
+- The hybrid redesign for bot quality reviews is now landed on `main`:
+  - realtime monitoring now sends Telegram warnings only for explicit critical red flags; mature dialogues get a full owner-facing final review when `closed` or idle for `3h`
+  - final review scoring is now deterministic weighted `/30` with 4 blocks and stage-aware applicability, while `quality_reviews` remains the canonical last-review store with backward-compatible `criteria` enrichment
+  - Redis markers now dedupe red-flag warnings and final-review resends; if a conversation continues after a final review, a new final review can be sent after the next mature pause
+  - follow-up review fixes are also in `main`: manual/API-triggered reviews now infer `Conversation.sales_stage` instead of bypassing stage-aware applicability, quality jobs page through candidate sets instead of silently dropping rows above the first `50`, and `docs/admin-guide.md` now uses canonical runtime path `/opt/noor`
+  - review artifacts:
+    - implementation report: `.codex/agent-reports/2026-04-05/quality-review-redesign-v1.md` (local-only)
+    - independent code review: `docs/reports/code-reviews/2026-04/CR-2026-04-05-quality-review-redesign.md`
 - Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
   - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 

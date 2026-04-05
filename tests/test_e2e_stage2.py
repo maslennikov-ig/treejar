@@ -61,7 +61,7 @@ async def test_quality_evaluation_e2e_pipeline() -> None:
 
     with patch("src.quality.evaluator.judge_agent") as mock_agent:
         mock_agent.run = AsyncMock(return_value=mock_run_result)
-        result = await evaluate_conversation(conv_id, mock_db)
+        result = await evaluate_conversation(conv_id, mock_db, sales_stage="feedback")
 
     # Verify scores are recomputed deterministically
     assert result.total_score == 30.0, f"Expected 30.0, got {result.total_score}"
