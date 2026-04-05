@@ -37,7 +37,8 @@ Current baseline branch: `main`
   - guarded classes currently include time-specific promises, one-off offers, customer-specific commitments, project/logistics-specific arrangements, and callback-style manager commitments
   - `src/api/telegram_webhook.py` keeps client delivery unchanged but downgrades blocked `faq_global` saves to private-only with operator feedback instead of polluting the global KB
   - local verification for this slice passed in a clean worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short` (`498 passed, 19 skipped`)
-  - this slice was landed to `main` but not hot-applied to `/opt/noor` in the same session; there is no canonical live retest yet for the Telegram manager FAQ-authoring flow
+  - this slice was later hot-applied from current `origin/main` to `/opt/noor` on 2026-04-05; `app` + `worker` were rebuilt successfully, `blocked_context_specific` is now present on runtime, and canonical health returned to `200 OK` after a brief restart-time `502`
+  - there is still no canonical live retest yet for the Telegram manager FAQ-authoring flow itself
 - Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
   - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 
@@ -49,11 +50,9 @@ Current baseline branch: `main`
 - `tj-5dbj` — P2 bug: make canonical `/opt/noor` rebuild deterministic and CPU-only
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
-- `tj-hwls` — P1 epic: implement verified answers policy across FAQ and product fallback
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
-- `tj-tauh` — P1 bug: improve no-exact-match product fallback quality on the acoustic-pods path
 
 ## Rules for the next orchestrator
 
@@ -90,9 +89,9 @@ Current baseline branch: `main`
       - runtime was about `21.17s`; stored assistant message had `tokens_in=4346`, `tokens_out=575`
       - the reply quality is still weak: after one `search_products('acoustic pods')` call and repeated `tmpfiles.org` image-upload `422`s, the bot said it could not see exact acoustic pods and fell back to a generic clarification instead of giving stronger nearby alternatives
   - next realistic blockers are therefore narrower and evidence-based:
-    - `tj-tauh` for no-exact-match product fallback quality on the acoustic-pods path
     - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
     - `tj-5dbj` is the new operational follow-up for the slow/non-deterministic canonical rebuild path
+    - `tj-tauh` should not be reopened without fresh evidence: the no-exact-match product fallback work is already closed in Beads and the corresponding nearby/missing product-match policy is present on `main`
   - additional canonical truth from the 2026-04-03 latency pass:
   - `tj-15m` is still active after a real profiling round
   - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
@@ -134,6 +133,6 @@ Current baseline branch: `main`
     - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
     - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
   - next realistic step is:
-    - take `tj-tauh` from a fresh clean `origin/main` worktree
-    - then `tj-27v` if media/upload noise still materially drags product replies
+    - take `tj-27v` from a fresh clean `origin/main` worktree
     - keep `tj-5dbj` queued as the separate operational follow-up for the canonical rebuild path
+    - treat a dedicated Telegram manager FAQ-authoring live retest as a separate operational check if canonical validation for `tj-hwls.2` becomes necessary
