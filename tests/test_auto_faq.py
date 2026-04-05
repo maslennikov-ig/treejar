@@ -1,6 +1,7 @@
 """Tests for the auto-FAQ service."""
 
 import uuid
+from collections.abc import Sequence
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -53,12 +54,14 @@ async def test_save_to_faq_success(
         embedding_engine=mock_embedding_engine,
     )
 
-    assert result is not None
-    assert result.source == "auto_faq"
-    assert result.language == "en"
-    assert result.is_auto_generated is True
-    assert result.original_question == "What is the delivery time?"
-    assert result.manager_draft == "3-5 days UAE"
+    assert result.status == "saved"
+    assert result.entry is not None
+    assert result.entry.source == "auto_faq"
+    assert result.entry.language == "en"
+    assert result.entry.is_auto_generated is True
+    assert result.entry.original_question == "What is the delivery time?"
+    assert result.entry.manager_draft == "3-5 days UAE"
+    assert result.guard_reasons == ()
     mock_db.add.assert_called_once()
     mock_db.commit.assert_awaited_once()
 
@@ -85,7 +88,9 @@ async def test_save_to_faq_duplicate_rejected(
         embedding_engine=mock_embedding_engine,
     )
 
-    assert result is None
+    assert result.status == "duplicate"
+    assert result.entry is None
+    assert result.guard_reasons == ()
     mock_db.add.assert_not_called()
     mock_db.commit.assert_not_awaited()
 
@@ -117,7 +122,61 @@ async def test_save_to_faq_similar_but_not_duplicate(
         embedding_engine=mock_embedding_engine,
     )
 
-    assert result is not None
-    assert result.source == "auto_faq"
-    assert result.language == "en"
+    assert result.status == "saved"
+    assert result.entry is not None
+    assert result.entry.source == "auto_faq"
+    assert result.entry.language == "en"
     mock_db.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("question", "adapted_answer", "manager_draft", "expected_reasons"),
+    [
+        (
+            "Can you deliver next week?",
+            "Yes, we can deliver tomorrow to Dubai Marina.",
+            "Tomorrow delivery to Dubai Marina confirmed",
+            ("time_specific_promise", "project_specific_logistics"),
+        ),
+        (
+            "Can you do better pricing?",
+            "We can offer a 10% discount for this order.",
+            "10% discount for this order",
+            ("one_off_offer", "customer_specific_commitment"),
+        ),
+        (
+            "Who will contact me?",
+            "Ahmed will call you back today.",
+            "Ahmed will call today",
+            ("time_specific_promise", "callback_commitment"),
+        ),
+    ],
+)
+@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
+async def test_save_to_faq_blocks_context_specific_global_save(
+    mock_normalize: AsyncMock,
+    mock_db: AsyncMock,
+    mock_embedding_engine: MagicMock,
+    question: str,
+    adapted_answer: str,
+    manager_draft: str,
+    expected_reasons: Sequence[str],
+) -> None:
+    """Context-specific manager replies must downgrade faq_global to private-only."""
+    result = await save_to_faq(
+        db=mock_db,
+        question=question,
+        adapted_answer=adapted_answer,
+        manager_draft=manager_draft,
+        embedding_engine=mock_embedding_engine,
+    )
+
+    assert result.status == "blocked_context_specific"
+    assert result.entry is None
+    assert set(expected_reasons).issubset(set(result.guard_reasons))
+    mock_embedding_engine.embed_async.assert_not_awaited()
+    mock_db.execute.assert_not_awaited()
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_awaited()

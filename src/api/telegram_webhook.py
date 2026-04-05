@@ -233,20 +233,31 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
             from src.services.auto_faq import save_to_faq
 
             async with async_session_factory() as db:
-                kb_entry = await save_to_faq(
+                save_result = await save_to_faq(
                     db=db,
                     question=question,
                     adapted_answer=adapted,
                     manager_draft=draft,
                     embedding_engine=EmbeddingEngine(),
                 )
-            if kb_entry:
+            if save_result.status == "saved":
                 await client.send_message(
                     "📚 Ответ добавлен в Базу Знаний.", chat_id=str(chat_id)
                 )
-            else:
+            elif save_result.status == "duplicate":
                 await client.send_message(
                     "ℹ️ Похожий ответ уже есть в Базе Знаний (дубликат).",
+                    chat_id=str(chat_id),
+                )
+            else:
+                logger.info(
+                    "Downgrading faq_global save to private-only for %s: reasons=%s",
+                    conv_id,
+                    ",".join(save_result.guard_reasons),
+                )
+                await client.send_message(
+                    "⚠️ Ответ отправлен клиенту, но не добавлен в Базу Знаний: "
+                    "он выглядит как контекстный/private-only.",
                     chat_id=str(chat_id),
                 )
 

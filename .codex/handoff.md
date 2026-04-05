@@ -27,16 +27,28 @@ Current baseline branch: `main`
   - `src/llm/verified_answers.py` adds deterministic classification for `product`, `service_low_risk`, and `service_high_risk` questions plus FAQ support states `verified`, `partial`, and `missing`
   - `src/llm/engine.py` now branches before the final answer so high-risk service questions do not rely on general model knowledge when FAQ support is weak
   - external geography and payment-concession edge cases were explicitly tightened in follow-up commit `d63eb49`, so UAE-wide FAQ facts no longer incorrectly verify requests like delivery to Saudi Arabia/Qatar or `net 30` / deferred-payment concessions
+- Canonical runtime was refreshed from clean `origin/main` on 2026-04-05 before taking the next slice:
+  - `/opt/noor` was overlaid from a clean worktree and `docker compose up -d --build app worker` completed successfully; `app` and `worker` were recreated and canonical health returned to `200 OK` after a brief restart-time `502`
+  - the live `knowledge_base` on canonical currently contains only 5 test rows, so a clean `verified` or `partial` FAQ-backed service retest was not available without inventing data
+  - the exact-phone retest on `+79262810921` could therefore only confirm the high-risk `missing` fail-closed branch: `"Do you deliver to Saudi Arabia?"` on conversation `95668449-d1a5-4b51-9503-9cb51146b961` produced deterministic `verified-policy` handoff text, set `escalation_status=pending`, and persisted an escalation reason about missing verified FAQ support
+  - a follow-up exact-thread `"Can you do net 30?"` on the same conversation is not a clean verified-policy signal because it hit the active-escalation fallback branch, not a fresh payment-policy evaluation
+- `tj-hwls.2` is now landed on `main` as the separate FAQ-authoring policy slice:
+  - `src/services/auto_faq.py` returns structured `saved` / `duplicate` / `blocked_context_specific` results and applies a fail-closed guard before embedding/dedupe/write
+  - guarded classes currently include time-specific promises, one-off offers, customer-specific commitments, project/logistics-specific arrangements, and callback-style manager commitments
+  - `src/api/telegram_webhook.py` keeps client delivery unchanged but downgrades blocked `faq_global` saves to private-only with operator feedback instead of polluting the global KB
+  - local verification for this slice passed in a clean worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short` (`498 passed, 19 skipped`)
+- Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
+  - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 
 ## Open follow-ups / nearest ready tasks
 
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
+- `tj-5dbj` — P2 bug: make canonical `/opt/noor` rebuild deterministic and CPU-only
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
 - `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-hwls` — P1 epic: implement verified answers policy across FAQ and product fallback
-- `tj-hwls.2` — P1 bug: guard global FAQ saves from context-specific manager replies
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
@@ -77,9 +89,9 @@ Current baseline branch: `main`
       - runtime was about `21.17s`; stored assistant message had `tokens_in=4346`, `tokens_out=575`
       - the reply quality is still weak: after one `search_products('acoustic pods')` call and repeated `tmpfiles.org` image-upload `422`s, the bot said it could not see exact acoustic pods and fell back to a generic clarification instead of giving stronger nearby alternatives
   - next realistic blockers are therefore narrower and evidence-based:
-    - `tj-hwls.2` for the human-factor risk in `faq_global` saves that can currently preserve context-specific manager promises as global KB facts
     - `tj-tauh` for no-exact-match product fallback quality on the acoustic-pods path
     - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
+    - `tj-5dbj` is the new operational follow-up for the slow/non-deterministic canonical rebuild path
   - additional canonical truth from the 2026-04-03 latency pass:
   - `tj-15m` is still active after a real profiling round
   - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
@@ -121,6 +133,6 @@ Current baseline branch: `main`
     - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
     - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
   - next realistic step is:
-    - take `tj-hwls.2`
-    - then `tj-tauh`
+    - take `tj-tauh`
     - then `tj-27v` if media/upload noise still materially drags product replies
+    - keep `tj-5dbj` queued as the separate operational follow-up for the canonical rebuild path
