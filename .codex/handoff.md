@@ -39,6 +39,12 @@ Current baseline branch: `main`
   - local verification for this slice passed in a clean worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short` (`498 passed, 19 skipped`)
   - this slice was later hot-applied from current `origin/main` to `/opt/noor` on 2026-04-05; `app` + `worker` were rebuilt successfully, `blocked_context_specific` is now present on runtime, and canonical health returned to `200 OK` after a brief restart-time `502`
   - there is still no canonical live retest yet for the Telegram manager FAQ-authoring flow itself
+- `tj-27v` is now landed on `main` and verified on canonical runtime as the separate media-delivery slice:
+  - product images from `search_products` no longer hand raw Zoho OAuth URLs or `tmpfiles.org` uploads to Wazzup; Zoho-backed images now use signed first-party URLs under `/api/v1/public-media/products/{zoho_item_id}`
+  - local verification passed in the delegated worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `uv run pytest tests/test_product_images.py tests/test_messaging_wazzup.py tests/test_public_media.py tests/test_llm_engine.py -v --tb=short` (`48 passed`)
+  - canonical `/opt/noor` was hot-applied from current `main`, rebuilt, and externally validated with a real signed media URL for Zoho item `378603000004698178`: `GET /api/v1/public-media/products/... -> 200 OK`, `content-type=image/jpeg`, `content-length=51132`
+  - direct canary via `WazzupProvider.send_media()` to live recipient `+79262810921` returned message id `5b54a1ba-32cb-4562-88f3-f7d9e11865aa`; app logs show Wazzup IP `172.241.70.100` did `HEAD 405` then `GET 200`, and the subsequent Wazzup webhook echo reported the image as `status=delivered`
+  - canonical runtime drift surfaced during this slice: `/opt/noor` still had `APP_ENV=development`, so `DOMAIN=https://noor.starec.ai` had to be written into runtime `.env` before the signed URL path was usable; treat this as more evidence for existing deploy/runtime drift issues rather than a new product bug
 - Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
   - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 
@@ -49,7 +55,6 @@ Current baseline branch: `main`
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
 - `tj-5dbj` — P2 bug: make canonical `/opt/noor` rebuild deterministic and CPU-only
 - `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
-- `tj-27v` — P1 bug: Wazzup cannot fetch Zoho OAuth-protected image URLs from `search_products`
 - `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
 - `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
 - `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
@@ -89,7 +94,6 @@ Current baseline branch: `main`
       - runtime was about `21.17s`; stored assistant message had `tokens_in=4346`, `tokens_out=575`
       - the reply quality is still weak: after one `search_products('acoustic pods')` call and repeated `tmpfiles.org` image-upload `422`s, the bot said it could not see exact acoustic pods and fell back to a generic clarification instead of giving stronger nearby alternatives
   - next realistic blockers are therefore narrower and evidence-based:
-    - `tj-27v` still matters because media/upload failures are adding noise and hurting product replies
     - `tj-5dbj` is the new operational follow-up for the slow/non-deterministic canonical rebuild path
     - `tj-tauh` should not be reopened without fresh evidence: the no-exact-match product fallback work is already closed in Beads and the corresponding nearby/missing product-match policy is present on `main`
   - additional canonical truth from the 2026-04-03 latency pass:
@@ -111,14 +115,13 @@ Current baseline branch: `main`
       - wholesale guard `20.11s`, `tokens_in=2972`
       - `escalation_status` stayed `none` throughout
     - summary persistence is therefore no longer the blocker; residual latency moved to `tj-15m.5`
-  - `tj-27v` remains relevant: product image upload via `tmpfiles.org` currently returns HTTP `422`, so image delivery still fails and adds latency noise
   - next realistic latency slices are narrower than a broad refactor:
     - product-search/tool-context work under `tj-15m.5`
-    - `tj-27v` media upload repair for `search_products`
 - Operational truth for canonical host:
   - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
   - `noor-dev` now has enough access for direct hotfix work in `/opt/noor` and Docker-based inspection/rebuilds
   - repo-side CI/deploy contract drift (`tj-5ypi`, `tj-19ol.3.5`) still exists, but it is no longer the immediate blocker for runtime debugging because direct `/opt/noor` access is sufficient for canonical triage
+  - canonical runtime still carries env drift relative to the repo contract: during `tj-27v`, `/opt/noor` was running with `APP_ENV=development`; the live signed-media path only became usable after explicitly setting `DOMAIN=https://noor.starec.ai` in runtime `.env`
   - canonical live-delivery test recipient changed on 2026-04-03: use `+79262810921` for future WhatsApp smoke and delivery verification
   - previous `+971000000001` should now be treated only as a synthetic/non-deliverable runtime artifact for DB/log-path checks, not as a real delivery target
   - full live smoke was rerun on `+79262810921` before the latest hot-apply:
@@ -132,7 +135,10 @@ Current baseline branch: `main`
   - targeted post-hot-apply retest is now complete in two rounds:
     - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
     - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
+  - `tj-27v` canonical media retest is now complete:
+    - a direct signed-media smoke on a real Zoho-backed product returned `200 OK` with JPEG bytes from `https://noor.starec.ai/api/v1/public-media/products/...`
+    - a direct Wazzup image canary to `+79262810921` succeeded end-to-end; logs show Wazzup probing the signed URL with `HEAD` and then fetching it with `GET`, and the resulting media webhook echo reported `status=delivered`
   - next realistic step is:
-    - take `tj-27v` from a fresh clean `origin/main` worktree
     - keep `tj-5dbj` queued as the separate operational follow-up for the canonical rebuild path
     - treat a dedicated Telegram manager FAQ-authoring live retest as a separate operational check if canonical validation for `tj-hwls.2` becomes necessary
+    - use `tj-19ol` / `tj-19ol.3` only for new blocker-driven canonical live testing, not to reopen already-closed `tj-27v`
