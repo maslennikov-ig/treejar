@@ -93,6 +93,15 @@ completion_format = "task ID | report path | commit hash | git status clean yes/
 format = "findings-first"
 allowed_decisions = ["merge", "fix", "split", "defer"]
 
+[corrective_loop]
+enabled = true
+treat_review_findings_as_mandatory_when_in_scope = true
+treat_verification_discoveries_as_mandatory_when_in_scope = true
+fix_in_scope_issues_before_merge = true
+fix_in_scope_issues_before_close = true
+allow_defer_only_for = ["external_blocker", "unrelated_scope", "high_risk_separate_batch", "explicit_user_direction"]
+require_explicit_followup_when_deferred = true
+
 [verification]
 process_only_commands = [
   "git diff --check",
