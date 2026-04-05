@@ -38,7 +38,12 @@ Current baseline branch: `main`
   - `src/api/telegram_webhook.py` keeps client delivery unchanged but downgrades blocked `faq_global` saves to private-only with operator feedback instead of polluting the global KB
   - local verification for this slice passed in a clean worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short` (`498 passed, 19 skipped`)
   - this slice was later hot-applied from current `origin/main` to `/opt/noor` on 2026-04-05; `app` + `worker` were rebuilt successfully, `blocked_context_specific` is now present on runtime, and canonical health returned to `200 OK` after a brief restart-time `502`
-  - there is still no canonical live retest yet for the Telegram manager FAQ-authoring flow itself
+  - the canonical Telegram manager FAQ-authoring flow is now retested on 2026-04-05 via the live webhook path:
+    - a controlled `faq_global` callback + manager reply roundtrip was posted to `https://noor.starec.ai/api/v1/webhook/telegram` for conversation `df0f48ab-7806-421d-9837-b6440cc870ef` on live test recipient `+79262810921`
+    - the manager draft `"Yes, we can deliver tomorrow to Dubai Marina."` remained client-deliverable; Wazzup webhook echo reported message `46593572-ea71-45b7-8f17-b152b7422e09` with `status=delivered`
+    - the conversation moved from `escalation_status=pending` to `resolved`
+    - `knowledge_base` stayed at `5` rows before/after the roundtrip, and no row matching the test `original_question` / `manager_draft` was created
+    - replaying `save_to_faq()` on the exact question + delivered adapted answer returned `blocked_context_specific` with guard reasons `time_specific_promise` and `project_specific_logistics`
 - `tj-27v` is now landed on `main` and verified on canonical runtime as the separate media-delivery slice:
   - product images from `search_products` no longer hand raw Zoho OAuth URLs or `tmpfiles.org` uploads to Wazzup; Zoho-backed images now use signed first-party URLs under `/api/v1/public-media/products/{zoho_item_id}`
   - local verification passed in the delegated worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `uv run pytest tests/test_product_images.py tests/test_messaging_wazzup.py tests/test_public_media.py tests/test_llm_engine.py -v --tb=short` (`48 passed`)
@@ -140,5 +145,4 @@ Current baseline branch: `main`
     - a direct Wazzup image canary to `+79262810921` succeeded end-to-end; logs show Wazzup probing the signed URL with `HEAD` and then fetching it with `GET`, and the resulting media webhook echo reported `status=delivered`
   - next realistic step is:
     - keep `tj-5dbj` queued as the separate operational follow-up for the canonical rebuild path
-    - treat a dedicated Telegram manager FAQ-authoring live retest as a separate operational check if canonical validation for `tj-hwls.2` becomes necessary
     - use `tj-19ol` / `tj-19ol.3` only for new blocker-driven canonical live testing, not to reopen already-closed `tj-27v`
