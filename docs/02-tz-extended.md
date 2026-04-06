@@ -3,6 +3,8 @@
 **Техническое задание**  
 ---
 
+> Актуализация на 2026-04-06: для Noor единым источником истины по каталогу считается `https://new.treejartrading.ae/api/catalog`. Упоминания `bazara.ae`, `treejartrading.ae/ksa-en`, Google-таблиц как основного каталога и каталога из Zoho Inventory в этом документе относятся к ранней постановке; Zoho Inventory остаётся операционным контуром.
+
 ## 1\. Общие положения
 
 1. **Наименование проекта:**  
@@ -55,7 +57,7 @@
 | **Предоставление отчётности по работе ИИ продавца** | Бот контроля качества по запросу предоставляет отчётность о работе чат-бота продавца-консультанта. | Бот контроля качества по запросу предоставляет отчётность о работе чат-бота продавца-консультанта. |
 | **Предоставление отчётности по работе продавцов** | Бот контроля качества по запросу предоставляет отчётность о работе продавцов исходя из анализа диалогов. | Бот контроля качества анализирует диалоги продавцов и по запросу предоставляет отчётность о их работе. |
 | **Предоставление фотографий товара**  | ИИ-продавец предоставляет фотографии товаров, о которых идёт речь, при запросе клиентом. | Бот при запросе предоставляет клиенту фото товара, о котором идёт речь. Фото забираются из сайтов или файлов заказчика. |
-| **Создание базы данных** | Создаётся внутренняя база данных для бота. | Создаётся внутренняя база данных для бота с информацией из следующих источников: API Zoho Inventory, API Zoho CRM, Google таблица с прайс листом, сайты [http://treejartrading.ae/ksa-en](http://treejartrading.ae/ksa-en) и [http://bazara.ae](http://bazara.ae) (CSV файл) \- google таблица (фото товара в виде ссылок). |
+| **Создание базы данных** | Создаётся внутренняя база данных для бота. | Создаётся внутренняя база данных для бота с информацией из следующих источников: Treejar Catalog API `https://new.treejartrading.ae/api/catalog` как единый источник истины по каталогу, API Zoho CRM, API Zoho Inventory как операционный контур и подтверждённые заказчиком документы/ценовые правила. |
 
 **2.2. Дополнительные требования:**
 
@@ -73,7 +75,7 @@
 
 * **База знаний**: Указанные внешние интернет-ресурсы, данные, взятые по API Zoho CRM, данные, взяты по API сайта заказчика или из таблицы наличия и стоимости товаров, предоставленные заказчиком файлы алгоритмов: ([https://docs.google.com/document/d/1wPOL3H4zg1qwyJ33FF\_kLzICI7nTpEpnVUialJ-JXuA/edit?tab=t.ewy6uvjcy26j](https://docs.google.com/document/d/1wPOL3H4zg1qwyJ33FF_kLzICI7nTpEpnVUialJ-JXuA/edit?tab=t.ewy6uvjcy26j)) ; ([https://docs.google.com/document/d/1wPOL3H4zg1qwyJ33FF\_kLzICI7nTpEpnVUialJ-JXuA/edit?tab=t.v5l1b2ws90v2](https://docs.google.com/document/d/1wPOL3H4zg1qwyJ33FF_kLzICI7nTpEpnVUialJ-JXuA/edit?tab=t.v5l1b2ws90v2)) ; ([https://docs.google.com/document/d/1wPOL3H4zg1qwyJ33FF\_kLzICI7nTpEpnVUialJ-JXuA/edit?tab=t.7miz803kzgbs\#heading=h.p8owhs9fxs2k](https://docs.google.com/document/d/1wPOL3H4zg1qwyJ33FF_kLzICI7nTpEpnVUialJ-JXuA/edit?tab=t.7miz803kzgbs#heading=h.p8owhs9fxs2k))
 
-* **Внешние ресурсы**: API WhatsApp Business (Wazzup), API Zoho CRM, API Zoho Inventory, API сайта [treejartrading.ae/ksa-en](http://treejartrading.ae/ksa-en) , API сайта bazara.ae.
+* **Внешние ресурсы**: API WhatsApp Business (Wazzup), API Zoho CRM, API Zoho Inventory (операционный контур), Treejar Catalog API `https://new.treejartrading.ae/api/catalog` как единый источник истины по каталогу.
 
 **3.2. Безопасность:**
 
@@ -93,7 +95,7 @@
 
 * Предоставить файлы с алгоритмами работы бота.
 
-* Предоставить доступы к сервисам для подключения (В том числе: API и данные для входа в Zoho CRM, API Zoho Inventory, доступ к сайту [treejartrading.ae/ksa-en](http://treejartrading.ae/ksa-en), доступ к сайту [bazara.ae](http://bazara.ae), API WhatsApp Business (Wazzup)).
+* Предоставить доступы к сервисам для подключения (В том числе: API и данные для входа в Zoho CRM, API Zoho Inventory, доступ к Treejar Catalog API `https://new.treejartrading.ae/api/catalog`, API WhatsApp Business (Wazzup)).
 
 * Доступы к сервису отслеживания заказов клиента и сервису, содержащему актуальный ассортимент и цены товаров, цены доставки. (При отсутствии последнего сервиса создаётся GOOGLE таблица с данными об актуальном ассортименте, ценах товаров и доставок).
 
@@ -129,4 +131,3 @@
 \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ / Виктор/ Дата: 5 сентября 2025  
 **Исполнитель:**  
 \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ / Н.С. Ерофеев/ Дата: 5 сентября 2025
-

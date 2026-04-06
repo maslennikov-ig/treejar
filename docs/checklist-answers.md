@@ -12,7 +12,7 @@
 | 1.2 | Zoho Inventory — API-ключ | ✅ Готово | Единый Zoho One аккаунт. Inventory API проверен — **2 122 активных товара** в каталоге. Ключи в Starec Vault |
 | 1.3 | Wazzup — API-ключ | ✅ Готово | API-ключ получен и сохранён |
 | 1.4 | GitHub аккаунт | ✅ Готово | Репозиторий: `Starec-net/noor-ai-seller`. Добавить исполнителя как Collaborator |
-| 1.5 | URL обоих сайтов компании | ✅ / ⏳ | **bazara.ae** (Shopify, API получен) + **treejartrading.ae** (доступ позже — идёт реконструкция сайта) |
+| 1.5 | Канонический источник каталога | ✅ | Подтверждён единый источник истины для каталога: `https://new.treejartrading.ae/api/catalog`. `bazara.ae` и старый `treejartrading.ae` больше не считаются каталог-источниками для Noor |
 
 ### Zoho API Scopes (полученные)
 
@@ -50,7 +50,7 @@ curl -X POST "https://accounts.zoho.com/oauth/v2/token" \
 | 2.1 | Правила ведения диалогов | ✅ Готово | 17 правил (15 основных + 2 доп.) RU + EN. См. `docs/sales-dialogue-rules.md` |
 | 2.2 | Преимущества компании | ✅ Готово | 14 ценностей по приоритету, RU + EN. См. `docs/treejar-values.md` |
 | 2.3 | Контактные данные отдела продаж | ✅ Готово | 7 менеджеров с телефонами и email. См. `docs/dialogue-examples/README.md` и `CLAUDE.md` |
-| 2.4 | Каталог товаров | ✅ В Zoho | Фильтр: status=active AND end_product=Yes. Описания только на EN |
+| 2.4 | Каталог товаров | ✅ | Для Noor канонический каталог теперь закреплён за `https://new.treejartrading.ae/api/catalog`. Zoho Inventory остаётся операционным контуром для quotation / SaleOrder / stock checks |
 | 2.5 | Спеццены / таблица скидок | ⏳ TODO | Если есть VIP-клиенты или особые условия |
 
 ---

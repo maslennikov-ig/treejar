@@ -3,6 +3,8 @@
 **Обновлено:** 2026-03-14
 **Общий срок:** 13 недель (16 февраля -- 15 мая 2026)
 
+> Актуализация на 2026-04-06: единый источник истины по каталогу для Noor — `https://new.treejartrading.ae/api/catalog`. Упоминания `bazara.ae`, старого `treejartrading.ae/ksa-en` и каталога из Zoho Inventory ниже относятся к историческому плану; Zoho Inventory остаётся операционным контуром.
+
 Отмечайте `[x]` по мере выполнения. Вложенные задачи -- подзадачи, которые можно делать параллельно.
 
 ---
@@ -20,7 +22,7 @@
 - [x] CI: GitHub Actions (ruff + mypy + pytest)
 - [x] Dev guide, README, .env.example
 - [x] Документ для клиента (пошаговые инструкции регистрации сервисов)
-- [x] Доступы получены (Zoho CRM, Zoho Inventory, Wazzup, DeepSeek, Shopify bazara.ae)
+- [x] Доступы получены (Zoho CRM, Zoho Inventory, Wazzup, DeepSeek, Treejar Catalog API как каталог-источник истины)
 - [ ] **Ожидание от клиента:** Отдельный выделенный VPS (вместо текущего разделяемого Hetzner) и аккаунт OpenRouter
 ### Неделя 2: База знаний + RAG pipeline (40ч) ✅
 
@@ -40,7 +42,7 @@
 - [x] Knowledge base indexer
   - [x] `src/rag/indexer.py` -- индексация документов: правила диалогов (17 правил), ценности (14), FAQ (20 Q&A), метрики
   - [x] Источники: `docs/faq.md`, `docs/04-sales-dialogue-guidelines.md`, `docs/05-company-values.md`
-  - [ ] Парсинг сайтов Treejar (HTML -> текст -> chunks -> embeddings)
+  - [ ] Интеграция Treejar Catalog API как канонического каталога в runtime Noor
 - [x] API endpoints
   - [x] `POST /api/v1/products/search` -- реализация поиска
   - [x] `POST /api/v1/products/sync` -- ручной запуск синхронизации

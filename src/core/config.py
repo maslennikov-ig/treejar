@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     zoho_inventory_api_url: str = "https://www.zohoapis.eu/inventory/v1"
     zoho_inventory_org_id: str = ""
 
+    # Catalog source of truth
+    catalog_source_name: str = "treejar_catalog_api"
+    catalog_api_url: str = "https://new.treejartrading.ae/api/catalog"
+
     # Embeddings
     embedding_model: str = "BAAI/bge-m3"
     embedding_dimension: int = 1024

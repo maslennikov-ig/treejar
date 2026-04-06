@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.core.database import get_db
 from src.models.product import Product
 from src.rag.embeddings import EmbeddingEngine
@@ -82,10 +83,19 @@ async def sync_products(
     body: ProductSyncRequest,
     request: Request,
 ) -> ProductSyncResponse:
-    """Trigger product sync from external source."""
+    """Queue the legacy operational product sync.
+
+    Catalog source of truth for Noor is settings.catalog_api_url.
+    This endpoint currently exists only for the remaining Zoho operational path
+    until product runtime is fully cut over to the Treejar catalog API.
+    """
     if body.source != "zoho":
         raise HTTPException(
-            status_code=400, detail="Only 'zoho' sync is currently supported."
+            status_code=400,
+            detail=(
+                "Legacy sync endpoint only supports 'zoho'. "
+                f"Catalog source of truth is '{settings.catalog_api_url}'."
+            ),
         )
 
     try:

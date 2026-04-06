@@ -33,7 +33,11 @@ async def _zoho_client(redis: Any) -> AsyncIterator[ZohoInventoryClient]:
 
 
 async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
-    """ARQ background job to synchronize products from Zoho Inventory to the database.
+    """ARQ background job for the remaining Zoho operational product sync.
+
+    The canonical source of truth for customer-facing catalog data is the
+    Treejar catalog API. This job remains only for the operational Zoho path
+    until product runtime is fully cut over.
 
     Args:
         ctx: The ARQ context dictionary containing the Redis pool.
@@ -43,7 +47,7 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
     """
     from datetime import datetime
 
-    logger.info("Starting Zoho Inventory product sync...")
+    logger.info("Starting legacy Zoho Inventory operational sync...")
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)

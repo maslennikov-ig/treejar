@@ -1,5 +1,7 @@
 Техническое задание
 
+> Актуализация на 2026-04-06: для Noor единым источником истины по каталогу считается `https://new.treejartrading.ae/api/catalog`. Упоминания `bazara.ae`, `treejartrading.ae/ksa-en` и каталога из Zoho Inventory в этом документе относятся к ранней постановке; Zoho Inventory остаётся операционным контуром, а не каноническим customer-facing каталогом.
+
 ## 1\. Общие положения
 
 1. **Наименование проекта:**  
@@ -55,7 +57,7 @@
 
 * **База знаний**: Указанные внешние интернет-ресурсы, Предоставленные заказчиком файлы алгоритмов.
 
-* **Внешние ресурсы**: API WhatsApp Business (Wazzup), API Zoho CRM, API Zoho Inventory, API сайта [treejartrading.ae/ksa-en](http://treejartrading.ae/ksa-en) , API сайта bazara.ae.
+* **Внешние ресурсы**: API WhatsApp Business (Wazzup), API Zoho CRM, API Zoho Inventory (операционный контур), Treejar Catalog API `https://new.treejartrading.ae/api/catalog` как единый источник истины по каталогу.
 
 **3.2. Безопасность:**
 
@@ -107,4 +109,3 @@
 \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ / Виктор/ Дата: 5 сентября 2025  
 **Исполнитель:**  
 \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ / Н.С. Ерофеев/ Дата: 5 сентября 2025
-

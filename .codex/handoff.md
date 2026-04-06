@@ -1,7 +1,14 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-05
+Updated: 2026-04-06
 Current baseline branch: `main`
+
+## Current truth additions
+
+- As of 2026-04-06, the canonical single source of truth for catalog data is `https://new.treejartrading.ae/api/catalog`.
+- Treat `bazara.ae`, `treejartrading.ae/ksa-en`, and Zoho Inventory catalog fields as non-canonical for customer-facing product truth.
+- Zoho Inventory remains an operational system for quotation / SaleOrder / service-level checks and related business processes.
+- Important honesty constraint: repo docs and code contract now reflect the new catalog truth, but runtime product search still depends on the local `products` table fed by the legacy Zoho sync path until a dedicated cutover slice lands.
 
 ## Current repo state
 
@@ -68,6 +75,7 @@ Current baseline branch: `main`
 
 ## Open follow-ups / nearest ready tasks
 
+- `tj-2bdj` — P1 task: cut over runtime product search from legacy Zoho sync to Treejar Catalog API
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
