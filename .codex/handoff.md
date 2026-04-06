@@ -55,6 +55,11 @@ Current baseline branch: `main`
   - final review scoring is now deterministic weighted `/30` with 4 blocks and stage-aware applicability, while `quality_reviews` remains the canonical last-review store with backward-compatible `criteria` enrichment
   - Redis markers now dedupe red-flag warnings and final-review resends; if a conversation continues after a final review, a new final review can be sent after the next mature pause
   - follow-up review fixes are also in `main`: manual/API-triggered reviews now infer `Conversation.sales_stage` instead of bypassing stage-aware applicability, quality jobs page through candidate sets instead of silently dropping rows above the first `50`, and `docs/admin-guide.md` now uses canonical runtime path `/opt/noor`
+  - canonical `/opt/noor` was hot-applied on 2026-04-06 from clean `origin/main` commit `d6fdad0` via narrow runtime-file overlay, followed by `docker compose up -d --build app worker`
+  - post-deploy checks passed on canonical runtime:
+    - external `GET https://noor.starec.ai/api/v1/health -> 200 OK`
+    - `docker compose ps app worker` showed both containers recreated and healthy
+    - runtime imports confirmed the expected codepaths: `_load_sales_stage` in `src.quality.evaluator`, `_load_candidates_in_batches` in `src.quality.job`, and worker registration for `evaluate_realtime_red_flags`, `evaluate_mature_conversations_quality`, and `evaluate_recent_conversations_quality`
   - review artifacts:
     - implementation report: `.codex/agent-reports/2026-04-05/quality-review-redesign-v1.md` (local-only)
     - independent code review: `docs/reports/code-reviews/2026-04/CR-2026-04-05-quality-review-redesign.md`
