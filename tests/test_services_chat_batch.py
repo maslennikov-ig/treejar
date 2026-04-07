@@ -96,6 +96,7 @@ async def test_process_incoming_batch_new_conversation(
     mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
     mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
     mock_wazzup.send_text.return_value = "msg_out_1"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
 
     # Mock Redis lpop to return one message then None
     mock_redis = AsyncMock()
@@ -185,6 +186,7 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
     mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
     mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
     mock_wazzup.send_text.return_value = "msg_out_1"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
 
     mock_redis = AsyncMock()
     msg = WazzupIncomingMessage(
@@ -265,6 +267,7 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
     mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
     mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
     mock_wazzup.send_text.return_value = "msg_out_1"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
 
     mock_redis = AsyncMock()
     msg = WazzupIncomingMessage(
@@ -285,6 +288,82 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
         "refresh_conversation_summary",
         "conv-with-summary",
     )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_persists_inbound_channel_metadata(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-with-inbound"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # existing conversation
+        MockResult([]),  # msg dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+    ]
+
+    from src.llm import LLMResponse
+
+    mock_process_message.return_value = LLMResponse(
+        text="Hello from AI",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg_out_1"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi there",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    assert existing_conv.metadata_["inbound_channel_id"] == "chan-1"
+    assert existing_conv.metadata_["inbound_channel_phone"] == "+971551220665"
 
 
 @pytest.mark.asyncio
@@ -364,6 +443,7 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
     mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
     mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
     mock_wazzup.send_text.return_value = "msg_out_1"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
 
     later_msg = WazzupIncomingMessage(
         messageId="msg-later",

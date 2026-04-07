@@ -106,6 +106,7 @@ class SettingsRead(BaseModel):
     bot_enabled: bool
     default_language: Language
     auto_escalation_enabled: bool
+    telegram_test_mode_enabled: bool
     follow_up_enabled: bool
     max_messages_per_conversation: int
 
@@ -114,4 +115,5 @@ class SettingsUpdate(BaseModel):
     bot_enabled: bool | None = None
     default_language: Language | None = None
     auto_escalation_enabled: bool | None = None
+    telegram_test_mode_enabled: bool | None = None
     follow_up_enabled: bool | None = None

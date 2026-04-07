@@ -52,14 +52,21 @@ async def test_admin_endpoints(admin_client: AsyncClient) -> None:
     data1 = response_s1.json()
     assert "bot_enabled" in data1
     assert "default_language" in data1
+    assert "telegram_test_mode_enabled" in data1
 
     response_s2 = await admin_client.patch(
-        "/api/v1/admin/settings/", json={"bot_enabled": False, "default_language": "ar"}
+        "/api/v1/admin/settings/",
+        json={
+            "bot_enabled": False,
+            "default_language": "ar",
+            "telegram_test_mode_enabled": False,
+        },
     )
     assert response_s2.status_code == 200
     data2 = response_s2.json()
     assert data2["bot_enabled"] is False
     assert data2["default_language"] == "ar"
+    assert data2["telegram_test_mode_enabled"] is False
 
     # --- test_admin_mount_redirects_to_login ---
     response_rm = await admin_client.get("/admin/")

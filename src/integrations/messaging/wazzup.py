@@ -9,6 +9,7 @@ import httpx
 
 from src.core.config import settings
 from src.integrations.messaging.base import MessagingProvider
+from src.services.inbound_channels import normalize_channel_phone
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,24 @@ class WazzupProvider(MessagingProvider):
 
         response = await self._request("POST", "/message", json=payload)
         return self._extract_message_id(response.json())
+
+    async def resolve_channel_phone(self, channel_id: str) -> str | None:
+        """Resolve a Wazzup channelId into a normalized plainId phone."""
+        response = await self._request("GET", "/channels")
+        payload = response.json()
+        channels = payload if isinstance(payload, list) else []
+
+        for channel in channels:
+            if not isinstance(channel, dict):
+                continue
+            if channel.get("channelId") != channel_id:
+                continue
+            plain_id = channel.get("plainId")
+            if not isinstance(plain_id, str):
+                return None
+            return normalize_channel_phone(plain_id)
+
+        return None
 
     async def __aenter__(self) -> WazzupProvider:
         return self

@@ -26,6 +26,7 @@ from src.models.message import (
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
+from src.services.inbound_channels import update_conversation_inbound_channel
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +331,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
         return
 
     channel_id = expected_channel
+    inbound_channel_phone: str | None = None
 
     # Determine roles for each message
     has_manager_message = any(m.authorType == "manager" for m in messages)
@@ -511,6 +513,29 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             conv = Conversation(phone=chat_id)
             db.add(conv)
             await db.flush()
+
+        if isinstance(channel_id, str):
+            try:
+                async with WazzupProvider(channel_id=channel_id) as wazzup_lookup:
+                    resolved_phone = await wazzup_lookup.resolve_channel_phone(
+                        channel_id
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to resolve inbound channel phone for %s via %s",
+                    chat_id,
+                    channel_id,
+                )
+                resolved_phone = None
+
+            inbound_channel_phone = (
+                resolved_phone if isinstance(resolved_phone, str) else None
+            )
+            update_conversation_inbound_channel(
+                conv,
+                channel_id=channel_id,
+                channel_phone=inbound_channel_phone,
+            )
 
         # 2. Manual takeover: manager writes when no escalation is active
         if has_manager_message and conv.escalation_status in ("none", None):

@@ -173,6 +173,9 @@ async def get_settings(
         bot_enabled=bool(configs.get("bot_enabled", True)),
         default_language=str(configs.get("default_language", "en")),
         auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
+        telegram_test_mode_enabled=bool(
+            configs.get("telegram_test_mode_enabled", True)
+        ),
         follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
         max_messages_per_conversation=int(
             str(configs.get("max_messages_per_conversation", 50))
@@ -211,6 +214,9 @@ async def update_settings(
         bot_enabled=bool(configs.get("bot_enabled", True)),
         default_language=str(configs.get("default_language", "en")),
         auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
+        telegram_test_mode_enabled=bool(
+            configs.get("telegram_test_mode_enabled", True)
+        ),
         follow_up_enabled=bool(configs.get("follow_up_enabled", True)),
         max_messages_per_conversation=int(
             str(configs.get("max_messages_per_conversation", 50))

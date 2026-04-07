@@ -24,6 +24,7 @@ async def test_helper_suppresses_telegram_but_preserves_escalation_state(
         sales_stage=SalesStage.GREETING.value,
         escalation_status=EscalationStatus.NONE.value,
         language="en",
+        metadata_={"inbound_channel_phone": "+971551220665"},
     )
     db = AsyncMock()
     db.add = MagicMock()

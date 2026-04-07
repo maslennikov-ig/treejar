@@ -46,7 +46,7 @@ def _make_fake_conv(
     conv.escalation_status = escalation_status
     conv.language = language
     conv.customer_name = "Test Customer"
-    conv.metadata_ = {}
+    conv.metadata_ = {"inbound_channel_phone": "+971551220665"}
     return conv
 
 
@@ -129,6 +129,40 @@ async def test_escalation_without_pdf_no_document(
     mock_tg.send_document.assert_not_awaited()
     # But inline keyboard should still be sent
     mock_tg.send_message_with_inline_keyboard.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.TelegramClient")
+async def test_escalation_skips_telegram_for_other_inbound_phone(
+    mock_tg_cls: MagicMock,
+) -> None:
+    from src.integrations.notifications.escalation import notify_manager_escalation
+
+    mock_tg = AsyncMock()
+    mock_tg_cls.return_value = mock_tg
+    mock_tg.send_document = AsyncMock()
+    mock_tg.send_message_with_inline_keyboard = AsyncMock(return_value={"ok": True})
+
+    mock_conv = _make_fake_conv(escalation_status="none")
+    mock_conv.metadata_ = {"inbound_channel_phone": "+971509999999"}
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+
+    with patch(
+        "src.integrations.notifications.escalation.settings.telegram_allowed_inbound_phone",
+        "+971551220665",
+    ):
+        await notify_manager_escalation(
+            conversation=mock_conv,
+            reason="Customer asked for manager",
+            recent_messages=["user: Can I speak to a human?"],
+            db=mock_db,
+            escalation_type=EscalationType.HUMAN_REQUESTED,
+        )
+
+    mock_db.commit.assert_awaited_once()
+    mock_tg.send_document.assert_not_awaited()
+    mock_tg.send_message_with_inline_keyboard.assert_not_awaited()
 
 
 # =============================================================================

@@ -188,3 +188,34 @@ async def test_send_template_success(
 
     msg_id = await wazzup_provider.send_template("123", "tmpl_1", {})
     assert msg_id == "msg_tmpl"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_resolve_channel_phone_returns_normalized_plain_id(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = [
+        {
+            "channelId": "chan-1",
+            "transport": "whatsapp",
+            "plainId": "971551220665",
+            "state": "active",
+        }
+    ]
+    mock_request.return_value = mock_resp
+
+    phone = await wazzup_provider.resolve_channel_phone("chan-1")
+
+    assert phone == "+971551220665"
+    _, kwargs = mock_request.call_args
+    assert kwargs["method"] == "GET"
+    assert kwargs["url"] == "/channels"
