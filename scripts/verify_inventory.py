@@ -1,7 +1,7 @@
 """Script 3: Verify Zoho Inventory integration (items, stock, sale orders).
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_inventory.py
+    cd /opt/noor && docker compose exec app python scripts/verify_inventory.py
 """
 
 import asyncio

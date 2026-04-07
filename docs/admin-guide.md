@@ -186,14 +186,20 @@ If a new deployment causes issues:
 # SSH into VPS
 ssh -p 2222 noor-dev@95.216.204.189
 
-# Go to the project directory
+# Go to the runtime directory
 cd /opt/noor
 
-# Roll back to previous commit
-git log --oneline -5   # find the previous good commit
-git reset --hard <commit-hash>
-docker compose up -d --build
+# List recent deployment backups
+ls -1t .hotfix-backups/deploy-*.tar.gz | head
+
+# Restore the desired backup archive through the deploy script
+bash scripts/vps-deploy.sh \
+  --archive .hotfix-backups/<backup-file>.tar.gz \
+  --target-dir /opt/noor \
+  --health-url http://127.0.0.1:8002/api/v1/health
 ```
+
+> Production deploys are artifact-based into `/opt/noor`. The live runtime is not a git checkout, so `git reset --hard` is not a supported rollback path on the VPS.
 
 ---
 

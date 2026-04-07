@@ -1,7 +1,7 @@
 """Script 6: Verify voice recognition (Voxtral / audio transcription).
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_voice.py
+    cd /opt/noor && docker compose exec app python scripts/verify_voice.py
 """
 
 import asyncio

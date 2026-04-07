@@ -1,7 +1,7 @@
 """Script 5: Verify RAG pipeline — embeddings and product search.
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_rag_pipeline.py
+    cd /opt/noor && docker compose exec app python scripts/verify_rag_pipeline.py
 """
 
 import asyncio

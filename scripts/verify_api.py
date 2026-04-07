@@ -4,7 +4,7 @@ Run from anywhere with network access to the server:
     python scripts/verify_api.py --base-url https://noor.starec.ai
 
 Or inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_api.py --base-url http://localhost:8000
+    cd /opt/noor && docker compose exec app python scripts/verify_api.py --base-url http://localhost:8000
 """
 
 import argparse

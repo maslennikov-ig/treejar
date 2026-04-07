@@ -1,7 +1,7 @@
 """Script 2: Verify Zoho CRM integration (OAuth, contacts, deals).
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_crm.py
+    cd /opt/noor && docker compose exec app python scripts/verify_crm.py
 """
 
 import asyncio

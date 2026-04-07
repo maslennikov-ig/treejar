@@ -20,11 +20,11 @@ The project currently runs on a new Hetzner VPS (`95.216.204.189`, Helsinki, 8 v
     *   **Data Volumes**: Isolated named volumes (`pgdata-dev`, `redis-data-dev`) to prevent collision.
 
 ### Deployment Flow (Automated CI/CD)
-Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.yml`):
-1.  **Trigger**: Pushing code to `develop` or `main`.
-2.  **Action**: GitHub Actions connects to the VPS via SSH (`root` or configured user) using repository secrets (`VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`).
-3.  **Execution**: It executes `scripts/vps-deploy.sh [branch_name]` on the server.
-4.  **Result**: The script updates the git tree, resets to the remote branch, and runs `docker compose up -d --build` targeting the correct `.yml` configuration.
+Deployments are fully automated via GitHub Actions (`.github/workflows/ci.yml`):
+1.  **Trigger**: Pushing code to `main` or manually running `workflow_dispatch` from `main`.
+2.  **Action**: GitHub Actions packages a release archive from the tracked repository contents and uploads it to the VPS over SSH using repository secrets (`VPS_HOST`, `VPS_USERNAME`, `VPS_SSH_KEY`).
+3.  **Execution**: CI uploads the repo version of `scripts/vps-deploy.sh` and runs it against the live runtime directory `/opt/noor`.
+4.  **Result**: The script syncs the release into `/opt/noor`, preserves runtime-only state such as `.env`, creates a rollback backup under `.hotfix-backups`, runs `docker compose up -d --build`, and verifies the local health endpoint.
 
 ### VPS SSH Access (Agent Notes)
 *   **Host**: `95.216.204.189`
@@ -35,7 +35,7 @@ Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.ym
 *   **SSH Config Alias**: `noor-server`
 *   **DB Reset Command** (for testing):
     ```bash
-    ssh noor-server "docker exec treejar-prod-db-1 psql -U treejar -d treejar -c \"<SQL_HERE>\""
+    ssh noor-server "docker exec noor-db-1 psql -U treejar -d treejar -c \"<SQL_HERE>\""
     ```
 
 ## Custom Workflows & Scripts
@@ -77,4 +77,3 @@ A permanent test contact exists in Zoho CRM for use in integration tests:
 *   **Transport**: WhatsApp
 
 > **Note**: Wazzup v3 API requires `contentUri` (a publicly accessible URL) for sending files, NOT inline base64. The current `WazzupProvider.send_media` base64 `content` field is silently ignored by Wazzup.
-

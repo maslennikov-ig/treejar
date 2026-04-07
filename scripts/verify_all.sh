@@ -5,7 +5,7 @@
 #   bash scripts/verify_all.sh
 #
 # Or from host:
-#   docker compose -p treejar-prod exec app bash scripts/verify_all.sh
+#   cd /opt/noor && docker compose exec app bash scripts/verify_all.sh
 
 set -o pipefail
 

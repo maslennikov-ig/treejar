@@ -1,7 +1,7 @@
 """Script 8: Verify Telegram notification system.
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_telegram.py
+    cd /opt/noor && docker compose exec app python scripts/verify_telegram.py
 
 Set SEND_TEST=1 to actually send a test message to Telegram.
 """

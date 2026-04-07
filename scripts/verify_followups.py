@@ -1,7 +1,7 @@
 """Script 9: Verify follow-up and feedback collection logic.
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_followups.py
+    cd /opt/noor && docker compose exec app python scripts/verify_followups.py
 """
 
 import asyncio

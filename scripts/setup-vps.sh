@@ -6,7 +6,7 @@
 set -e
 
 DOMAIN="noor.starec.ai"
-REPO_DIR="/opt/treejar-prod"
+RUNTIME_DIR="/opt/noor"
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
 BOOTSTRAP_CONFIG="treejar-prod-bootstrap.conf"
 TLS_CONFIG="treejar-prod.conf"
@@ -30,9 +30,9 @@ systemctl enable nginx
 
 echo "[2/4] Setting up Nginx Virtual Hosts..."
 
-if [ ! -d "$REPO_DIR/scripts" ]; then
-    echo "Error: Could not find the repository at $REPO_DIR."
-    echo "Please clone the repo first: git clone --branch main https://github.com/maslennikov-ig/treejar.git $REPO_DIR"
+if [ ! -d "$RUNTIME_DIR/scripts" ]; then
+    echo "Error: Could not find the deployed runtime files at $RUNTIME_DIR."
+    echo "Run the production deploy workflow first so the runtime files exist, then rerun this setup script."
     exit 1
 fi
 
@@ -48,7 +48,7 @@ else
 fi
 
 # Copy Nginx config to sites-available
-cp "$REPO_DIR/scripts/$SELECTED_CONFIG" /etc/nginx/sites-available/treejar-prod
+cp "$RUNTIME_DIR/scripts/$SELECTED_CONFIG" /etc/nginx/sites-available/treejar-prod
 
 # Enable the site by creating a symlink
 ln -sf /etc/nginx/sites-available/treejar-prod /etc/nginx/sites-enabled/

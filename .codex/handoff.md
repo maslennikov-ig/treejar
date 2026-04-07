@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-06
+Updated: 2026-04-07
 Current baseline branch: `main`
 
 ## Current truth additions
@@ -146,7 +146,7 @@ Current baseline branch: `main`
 - Operational truth for canonical host:
   - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
   - `noor-dev` now has enough access for direct hotfix work in `/opt/noor` and Docker-based inspection/rebuilds
-  - repo-side CI/deploy contract drift (`tj-5ypi`, `tj-19ol.3.5`) still exists, but it is no longer the immediate blocker for runtime debugging because direct `/opt/noor` access is sufficient for canonical triage
+  - repo-side deploy drift was closed on 2026-04-07 under `tj-5ypi`: GitHub Actions now ships an artifact-based release into `/opt/noor`, `scripts/vps-deploy.sh` no longer assumes a remote git checkout, pre-deploy backups land in `/opt/noor/.hotfix-backups`, and the compose project name is derived from the runtime directory (`noor`)
   - canonical runtime still carries env drift relative to the repo contract: during `tj-27v`, `/opt/noor` was running with `APP_ENV=development`; the live signed-media path only became usable after explicitly setting `DOMAIN=https://noor.starec.ai` in runtime `.env`
   - canonical live-delivery test recipient changed on 2026-04-03: use `+79262810921` for future WhatsApp smoke and delivery verification
   - previous `+971000000001` should now be treated only as a synthetic/non-deliverable runtime artifact for DB/log-path checks, not as a real delivery target

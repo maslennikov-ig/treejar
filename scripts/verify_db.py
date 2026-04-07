@@ -1,7 +1,7 @@
 """Script 1: Verify database schema, tables, and data integrity.
 
 Run inside Docker:
-    docker compose -p treejar-prod exec app python scripts/verify_db.py
+    cd /opt/noor && docker compose exec app python scripts/verify_db.py
 """
 
 import asyncio
