@@ -19,6 +19,9 @@ from src.quality.service import (
     get_recent_updated_conversation_candidates,
     save_review,
 )
+from src.services.inbound_channels import (
+    should_send_telegram_alert_for_conversation_with_db,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +144,13 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
             async with async_session_factory() as db:
                 result = await evaluate_red_flags(candidate.conversation_id, db)
 
-            if not result.flags:
-                continue
+                if not result.flags:
+                    continue
+                should_notify = (
+                    await should_send_telegram_alert_for_conversation_with_db(
+                        candidate, db
+                    )
+                )
 
             signature = _build_red_flag_signature(result.flags)
             marker_key = _red_flag_marker_key(candidate.conversation_id)
@@ -151,6 +159,23 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
             )
 
             if previous_signature == signature:
+                continue
+
+            if not should_notify:
+                logger.info(
+                    "Skipping red-flag warning for %s due to inbound channel gating",
+                    candidate.conversation_id,
+                )
+                await redis.setex(
+                    marker_key,
+                    _RED_FLAG_TTL_SECONDS,
+                    json.dumps(
+                        {
+                            "signature": signature,
+                            "updated_at": _updated_at_iso(candidate.updated_at),
+                        }
+                    ),
+                )
                 continue
 
             from src.services.notifications import notify_red_flag_warning
@@ -223,17 +248,28 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                 )
                 await save_review(db, candidate.conversation_id, result)
                 await db.commit()
+                should_notify = (
+                    await should_send_telegram_alert_for_conversation_with_db(
+                        candidate, db
+                    )
+                )
 
-            from src.services.notifications import notify_final_quality_review
+            if should_notify:
+                from src.services.notifications import notify_final_quality_review
 
-            await notify_final_quality_review(
-                conversation_id=candidate.conversation_id,
-                phone=candidate.phone,
-                customer_name=candidate.customer_name,
-                sales_stage=candidate.sales_stage,
-                trigger=trigger,
-                result=result,
-            )
+                await notify_final_quality_review(
+                    conversation_id=candidate.conversation_id,
+                    phone=candidate.phone,
+                    customer_name=candidate.customer_name,
+                    sales_stage=candidate.sales_stage,
+                    trigger=trigger,
+                    result=result,
+                )
+            else:
+                logger.info(
+                    "Skipping final quality review alert for %s due to inbound channel gating",
+                    candidate.conversation_id,
+                )
             await redis.setex(marker_key, _FINAL_TTL_SECONDS, current_updated_at)
             reviewed += 1
         except Exception:

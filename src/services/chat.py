@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import traceback
@@ -154,6 +155,17 @@ def _format_for_whatsapp(text: str) -> str:
 
 # Cooldown for re-notifying the manager (seconds)
 _ESCALATION_RENOTIFY_COOLDOWN = 300  # 5 minutes
+_ESCALATION_REPEAT_SUPPRESSION_SECONDS = 30 * 60
+
+
+def _normalize_escalation_repeat_text(value: str) -> str:
+    return " ".join(value.split()).strip()
+
+
+def _build_escalation_repeat_key(conversation_id: Any, combined_text: str) -> str:
+    normalized_text = _normalize_escalation_repeat_text(combined_text)
+    digest = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
+    return f"escalation_repeat:{conversation_id}:{digest}"
 
 
 async def _enqueue_summary_refresh_if_needed(
@@ -192,6 +204,14 @@ async def _handle_escalation_fallback(
       2. Save the fallback as an assistant message in DB.
       3. Re-notify the manager in Telegram (with 5-min cooldown to prevent spam).
     """
+    repeat_key = _build_escalation_repeat_key(conv.id, combined_text)
+    if await redis.get(repeat_key):
+        logger.info(
+            "Suppressing duplicate escalation fallback for %s due to repeated identical message.",
+            conv.phone,
+        )
+        return
+
     lang = conv.language or "en"
 
     # 1. Client fallback — contextual ack
@@ -220,6 +240,7 @@ async def _handle_escalation_fallback(
     )
     db.add(fb_msg)
     await db.commit()
+    await redis.setex(repeat_key, _ESCALATION_REPEAT_SUPPRESSION_SECONDS, "1")
 
     # 2. Re-notify manager (with cooldown)
     cooldown_key = f"escalation_renotify:{conv.id}"

@@ -17,12 +17,17 @@ from src.services.escalation_state import allows_automatic_followup
 logfire = Logfire()
 
 
+def _naive_utc_now() -> datetime.datetime:
+    """Return naive UTC for timestamp-without-time-zone conversation timestamps."""
+    return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+
+
 async def run_automatic_followups(ctx: dict[str, Any]) -> None:
     """Cron job to process and send follow-up messages."""
     logfire.info("Starting automatic follow-ups cron job")
 
     async with async_session_factory() as db:
-        now = datetime.datetime.now(datetime.UTC)
+        now = _naive_utc_now()
 
         # We target conversations that have not been escalated, have no messages in last X hours
         # and match 24h, 72h (3d), or 168h (7d) inactivity within a 1-hour window.

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
 from src.schemas.common import EscalationStatus
-from src.services.followup import run_automatic_followups
+from src.services.followup import _naive_utc_now, run_automatic_followups
 
 
 @pytest.fixture
@@ -62,3 +62,9 @@ async def test_run_automatic_followups_queries_db(mock_db_session: AsyncMock) ->
 
             assert mock_db_session.execute.call_count == 3
             mock_process.assert_called_once_with(mock_db_session, conv_24h)
+
+
+def test_naive_utc_now_returns_naive_datetime() -> None:
+    now = _naive_utc_now()
+
+    assert now.tzinfo is None

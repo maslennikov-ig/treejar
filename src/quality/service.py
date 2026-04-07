@@ -31,6 +31,7 @@ class QualityConversationCandidate:
     sales_stage: str
     phone: str | None
     customer_name: str | None
+    metadata_: dict[str, Any] | None = None
 
 
 async def save_review(
@@ -203,11 +204,13 @@ async def get_recent_assistant_conversation_candidates(
             Conversation.sales_stage,
             Conversation.phone,
             Conversation.customer_name,
+            Conversation.metadata_,
         )
         .join(Message, Message.conversation_id == Conversation.id)
         .where(
             Message.role == "assistant",
             Message.created_at >= threshold,
+            Conversation.escalation_status.in_(("none", "resolved")),
         )
         .group_by(
             Conversation.id,
@@ -216,6 +219,7 @@ async def get_recent_assistant_conversation_candidates(
             Conversation.sales_stage,
             Conversation.phone,
             Conversation.customer_name,
+            Conversation.metadata_,
         )
         .order_by(func.max(Message.created_at).desc(), Conversation.id.desc())
         .limit(limit)
@@ -230,6 +234,7 @@ async def get_recent_assistant_conversation_candidates(
             sales_stage=row.sales_stage,
             phone=row.phone,
             customer_name=row.customer_name,
+            metadata_=row.metadata_,
         )
         for row in result.all()
     ]
@@ -252,9 +257,11 @@ async def get_recent_updated_conversation_candidates(
             Conversation.sales_stage,
             Conversation.phone,
             Conversation.customer_name,
+            Conversation.metadata_,
         )
         .where(
             Conversation.updated_at >= threshold,
+            Conversation.escalation_status.in_(("none", "resolved")),
             exists().where(
                 Message.conversation_id == Conversation.id,
                 Message.role == "assistant",
@@ -273,6 +280,7 @@ async def get_recent_updated_conversation_candidates(
             sales_stage=row.sales_stage,
             phone=row.phone,
             customer_name=row.customer_name,
+            metadata_=row.metadata_,
         )
         for row in result.all()
     ]

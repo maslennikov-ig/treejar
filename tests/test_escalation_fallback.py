@@ -27,7 +27,7 @@ async def test_escalation_fallback_sends_message_en() -> None:
 
     mock_wazzup = AsyncMock()
     mock_redis = AsyncMock()
-    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.get = AsyncMock(side_effect=[None, None])
     mock_redis.setex = AsyncMock()
 
     mock_db = AsyncMock()
@@ -73,7 +73,7 @@ async def test_escalation_fallback_sends_message_ar() -> None:
 
     mock_wazzup = AsyncMock()
     mock_redis = AsyncMock()
-    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.get = AsyncMock(side_effect=[None, None])
     mock_redis.setex = AsyncMock()
     mock_db = AsyncMock()
     mock_db.add = MagicMock()
@@ -108,7 +108,7 @@ async def test_escalation_renotify_cooldown() -> None:
 
     mock_wazzup = AsyncMock()
     mock_redis = AsyncMock()
-    mock_redis.get = AsyncMock(return_value="1")  # Already notified
+    mock_redis.get = AsyncMock(side_effect=[None, "1"])  # repeat miss, cooldown hit
     mock_db = AsyncMock()
     mock_db.add = MagicMock()
     mock_db.commit = AsyncMock()
@@ -130,5 +130,42 @@ async def test_escalation_renotify_cooldown() -> None:
     mock_wazzup.send_text.assert_called_once()
 
     # But manager is NOT re-notified (cooldown active)
+    mock_tg_instance.send_message.assert_not_called()
+    mock_redis.setex.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_escalation_fallback_skips_duplicate_repeat_message() -> None:
+    """Repeated identical client text should not trigger a new fallback or Telegram ping."""
+    from src.services.chat import _handle_escalation_fallback
+
+    conv = MagicMock()
+    conv.id = uuid4()
+    conv.phone = "+971501234567"
+    conv.language = "en"
+
+    mock_wazzup = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value="1")
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+    mock_db.commit = AsyncMock()
+
+    with patch("src.integrations.notifications.telegram.TelegramClient") as mock_tg:
+        mock_tg_instance = MagicMock()
+        mock_tg_instance.send_message = AsyncMock()
+        mock_tg.return_value = mock_tg_instance
+
+        await _handle_escalation_fallback(
+            conv=conv,
+            combined_text="Still waiting",
+            wazzup=mock_wazzup,
+            redis=mock_redis,
+            db=mock_db,
+        )
+
+    mock_wazzup.send_text.assert_not_called()
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_called()
     mock_tg_instance.send_message.assert_not_called()
     mock_redis.setex.assert_not_called()

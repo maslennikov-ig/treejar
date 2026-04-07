@@ -84,6 +84,7 @@ def _make_candidate(
     sales_stage: str = "greeting",
     phone: str = "+971501234567",
     customer_name: str | None = "Acme",
+    metadata_: dict[str, str] | None = None,
 ):
     return SimpleNamespace(
         conversation_id=uuid4(),
@@ -92,6 +93,11 @@ def _make_candidate(
         sales_stage=sales_stage,
         phone=phone,
         customer_name=customer_name,
+        metadata_=(
+            {"inbound_channel_phone": "+971551220665"}
+            if metadata_ is None
+            else metadata_
+        ),
     )
 
 
@@ -232,6 +238,44 @@ async def test_changed_red_flag_signature_realerts() -> None:
         await evaluate_realtime_red_flags({"redis": mock_redis})
 
     mock_notify.assert_awaited_once()
+    mock_redis.setex.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_red_flag_warning_skips_telegram_for_blocked_inbound_phone() -> None:
+    """Realtime warning job should stay fail-closed outside the allowed inbound."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    candidate = _make_candidate(metadata_={"inbound_channel_phone": "+971509999999"})
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.evaluate_red_flags",
+            new=AsyncMock(return_value=_make_red_flag_result(["missing_identity"])),
+        ),
+        patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
+        patch(
+            "src.services.inbound_channels.settings.telegram_allowed_inbound_phone",
+            "+971551220665",
+        ),
+    ):
+        await evaluate_realtime_red_flags({"redis": mock_redis})
+
+    mock_notify.assert_not_awaited()
     mock_redis.setex.assert_awaited_once()
 
 
@@ -488,6 +532,53 @@ async def test_final_review_retriggers_after_new_activity() -> None:
         await evaluate_mature_conversations_quality({"redis": mock_redis})
 
     mock_notify.assert_awaited_once()
+    mock_redis.setex.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_final_review_skips_telegram_for_missing_inbound_phone() -> None:
+    """Final review should persist marker but skip Telegram when inbound is unknown."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate = _make_candidate(
+        status="closed",
+        updated_at=datetime.now(tz=UTC) - timedelta(hours=4),
+        metadata_={},
+    )
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+    mock_save = AsyncMock()
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(return_value=_make_evaluation_result(score=18.0)),
+        ),
+        patch("src.quality.job.save_review", new=mock_save),
+        patch(
+            "src.services.notifications.notify_final_quality_review", new=mock_notify
+        ),
+        patch(
+            "src.services.inbound_channels.settings.telegram_allowed_inbound_phone",
+            "+971551220665",
+        ),
+    ):
+        await evaluate_mature_conversations_quality({"redis": mock_redis})
+
+    mock_save.assert_awaited_once()
+    mock_notify.assert_not_awaited()
     mock_redis.setex.assert_awaited_once()
 
 
