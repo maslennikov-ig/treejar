@@ -7,6 +7,9 @@ from src.integrations.notifications.telegram import TelegramClient
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
 from src.schemas.common import EscalationStatus, EscalationType
+from src.services.inbound_channels import (
+    should_send_telegram_alert_for_conversation_with_db,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,15 @@ async def notify_manager_escalation(
 
     # Send Telegram notification with action buttons (non-blocking)
     try:
+        if not await should_send_telegram_alert_for_conversation_with_db(
+            conversation, db
+        ):
+            logger.info(
+                "Skipping Telegram escalation notification for %s due to inbound channel gating",
+                conversation.id,
+            )
+            return
+
         from src.services.notifications import format_escalation_message
 
         client = TelegramClient(

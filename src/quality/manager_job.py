@@ -18,6 +18,9 @@ from src.quality.manager_evaluator import (
     get_unreviewed_resolved_escalations,
     save_manager_review,
 )
+from src.services.inbound_channels import (
+    should_send_telegram_alert_for_conversation_with_db,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +62,15 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
 
                 # Get manager name from escalation
                 from sqlalchemy import select
+                from sqlalchemy.orm import selectinload
 
                 from src.models.escalation import Escalation
 
-                esc_stmt = select(Escalation).where(Escalation.id == esc_id)
+                esc_stmt = (
+                    select(Escalation)
+                    .options(selectinload(Escalation.conversation))
+                    .where(Escalation.id == esc_id)
+                )
                 esc_result = await db.execute(esc_stmt)
                 escalation = esc_result.scalar_one()
 
@@ -87,6 +95,15 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
             # Send Telegram alert for poor manager performance
             if evaluation.total_score < 9:
                 try:
+                    if not await should_send_telegram_alert_for_conversation_with_db(
+                        escalation.conversation, db
+                    ):
+                        logger.info(
+                            "Skipping low-score manager alert for %s due to inbound channel gating",
+                            esc_id,
+                        )
+                        continue
+
                     from src.services.notifications import send_telegram_message
 
                     alert_text = (

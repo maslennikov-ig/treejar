@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # Telegram Notifications (Stage 2)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_allowed_inbound_phone: str = "+971551220665"
 
     # API key for internal endpoints (referrals, reports, notifications)
     api_key: str = ""
