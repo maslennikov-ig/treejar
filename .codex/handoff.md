@@ -146,6 +146,12 @@ Current baseline branch: `main`
 - Operational truth for canonical host:
   - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
   - `noor-dev` now has enough access for direct hotfix work in `/opt/noor` and Docker-based inspection/rebuilds
+  - as of 2026-04-07, Docker storage maintenance is now a first-class operator path on canonical runtime:
+    - one-off cleanup entrypoint: `/opt/noor/scripts/docker-maintenance.sh`
+    - installed user cron: daily at `03:17` server time via `crontab` block `treejar-docker-maintenance`
+    - scheduled mode is conservative and intentionally does not prune Docker volumes
+    - maintenance logs live under `/opt/noor/logs/maintenance/`
+    - 2026-04-07 emergency cleanup reclaimed roughly `158G` and reduced `/` usage from `189G` to `31G`
   - repo-side deploy drift was closed on 2026-04-07 under `tj-5ypi`: GitHub Actions now ships an artifact-based release into `/opt/noor`, `scripts/vps-deploy.sh` no longer assumes a remote git checkout, pre-deploy backups land in `/opt/noor/.hotfix-backups`, and the compose project name is derived from the runtime directory (`noor`)
   - canonical runtime still carries env drift relative to the repo contract: during `tj-27v`, `/opt/noor` was running with `APP_ENV=development`; the live signed-media path only became usable after explicitly setting `DOMAIN=https://noor.starec.ai` in runtime `.env`
   - canonical live-delivery test recipient changed on 2026-04-03: use `+79262810921` for future WhatsApp smoke and delivery verification

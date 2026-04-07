@@ -165,7 +165,7 @@ If the summary stops arriving, check the worker logs.
 | Slow responses | `docker compose stats` (check CPU/RAM) | `docker compose restart app` |
 | Zoho sync failing | Check `ZOHO_REFRESH_TOKEN` in `.env` | Re-generate Zoho OAuth token |
 | Database connection error | `docker compose ps db` | `docker compose restart db` |
-| Out of disk space | `df -h` on VPS | Clean Docker volumes/logs |
+| Out of disk space | `df -h` and `docker system df` on VPS | Run Docker maintenance cleanup |
 
 ### Restarting Services
 ```bash
@@ -179,6 +179,34 @@ docker compose up -d --build
 # View resource usage
 docker compose stats
 ```
+
+### Docker Maintenance
+For disk cleanup on the canonical host, prefer the repo-managed maintenance script over ad-hoc prune commands:
+
+```bash
+ssh -p 2222 noor-dev@95.216.204.189
+cd /opt/noor
+
+# Preview what the script would do
+bash scripts/docker-maintenance.sh
+
+# Conservative cleanup: keep recent cache, remove old unused images
+bash scripts/docker-maintenance.sh --apply
+
+# Aggressive one-off cleanup: reclaim all unused builder cache and all unused images
+bash scripts/docker-maintenance.sh --apply --aggressive
+```
+
+To install the daily automatic cleanup under the `noor-dev` user crontab:
+
+```bash
+ssh -p 2222 noor-dev@95.216.204.189
+cd /opt/noor
+bash scripts/install-docker-maintenance-cron.sh
+crontab -l
+```
+
+The managed cron job writes logs into `/opt/noor/logs/maintenance/`.
 
 ### Rollback a Deployment
 If a new deployment causes issues:
