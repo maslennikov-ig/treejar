@@ -1,7 +1,7 @@
 """Tests for bot silencing and manual takeover (Components 2 & 3).
 
 Verifies:
-- Bot stays silent when escalation is active (pending/in_progress/resolved)
+- Bot stays silent when escalation is actively waiting on a human
 - Manager message with no escalation triggers manual_takeover
 - Messages saved with correct roles (user/manager)
 - _determine_role helper function
@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.llm import LLMResponse
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import _determine_role, process_incoming_batch
 
@@ -81,6 +82,80 @@ def _make_mock_conv(
 # ---------------------------------------------------------------------------
 # Bot silencing tests (Component 2)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat._handle_escalation_fallback", new_callable=AsyncMock)
+@patch("src.services.chat._enqueue_summary_refresh_if_needed", new_callable=AsyncMock)
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_resolved_escalation_resumes_bot(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+    mock_enqueue_summary: AsyncMock,
+    mock_escalation_fallback: AsyncMock,
+) -> None:
+    """Resolved escalations must not keep the bot in fallback mode."""
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    mock_conv = _make_mock_conv(escalation_status="resolved")
+    mock_conv.language = "en"
+
+    mock_session.execute.side_effect = [
+        MockResult(None),
+        MockResult(mock_conv),
+        MockResult([]),
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="The issue is already resolved. How else can I help?",
+        tokens_in=10,
+        tokens_out=8,
+        cost=0.001,
+        model="test-model",
+    )
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    msg = WazzupIncomingMessage(
+        messageId="msg-resolved-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Thanks, one more question.",
+        channelId="ch1",
+        timestamp=1704067200,
+        authorType="client",
+    )
+    mock_redis = AsyncMock()
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_escalation_fallback.assert_not_awaited()
+    mock_process_message.assert_awaited_once()
+    mock_enqueue_summary.assert_awaited_once()
+    mock_wazzup.send_text.assert_awaited_once()
 
 
 @pytest.mark.asyncio

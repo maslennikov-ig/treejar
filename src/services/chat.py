@@ -26,6 +26,10 @@ from src.models.message import (
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
+from src.services.escalation_state import (
+    should_pause_bot_for_escalation,
+    should_send_escalation_fallback,
+)
 from src.services.inbound_channels import update_conversation_inbound_channel
 
 logger = logging.getLogger(__name__)
@@ -538,7 +542,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             )
 
         # 2. Manual takeover: manager writes when no escalation is active
-        if has_manager_message and conv.escalation_status in ("none", None):
+        if has_manager_message and not should_pause_bot_for_escalation(
+            conv.escalation_status
+        ):
             conv.escalation_status = "manual_takeover"
             logger.info(
                 "Manual takeover for %s by manager %s",
@@ -586,9 +592,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
         await db.commit()
 
-        # 4. Escalation active: send fallback to client + re-notify manager
-        # CR-3: Skip fallback during manual_takeover — manager is handling it
-        if conv.escalation_status not in ("none", None, "manual_takeover"):
+        # 4. Active human handoff: send fallback to client + re-notify manager.
+        # Resolved escalations should not keep the bot in fallback mode.
+        if should_send_escalation_fallback(conv.escalation_status):
             logger.info(
                 "Escalation active (%s) for %s. Sending fallback response.",
                 conv.escalation_status,

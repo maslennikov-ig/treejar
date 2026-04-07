@@ -11,7 +11,8 @@ from src.integrations.messaging.wazzup import WazzupProvider
 from src.models.conversation import Conversation
 from src.models.feedback import Feedback
 from src.rag.embeddings import EmbeddingEngine
-from src.schemas.common import DealStatus, EscalationStatus, SalesStage
+from src.schemas.common import DealStatus, SalesStage
+from src.services.escalation_state import allows_automatic_followup
 
 logfire = Logfire()
 
@@ -36,10 +37,16 @@ async def run_automatic_followups(ctx: dict[str, Any]) -> None:
             min_time = now - datetime.timedelta(hours=max_hrs)
             max_time = now - datetime.timedelta(hours=min_hrs)
 
+            eligible_statuses = [
+                status
+                for status in ("none", "resolved")
+                if allows_automatic_followup(status)
+            ]
+
             stmt = select(Conversation).where(
                 Conversation.updated_at >= min_time,
                 Conversation.updated_at < max_time,
-                Conversation.escalation_status == EscalationStatus.NONE.value,
+                Conversation.escalation_status.in_(eligible_statuses),
             )
 
             result = await db.execute(stmt)

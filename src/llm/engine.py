@@ -35,6 +35,7 @@ from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery
+from src.services.escalation_state import is_active_human_handoff
 from src.services.public_media import build_signed_product_image_url
 
 logger = logging.getLogger(__name__)
@@ -1058,7 +1059,7 @@ async def process_message(
         return assistant_turns == 0 and user_turns >= 1
 
     def _has_escalation(conversation: Conversation) -> bool:
-        return conversation.escalation_status not in (None, "none")
+        return is_active_human_handoff(conversation.escalation_status)
 
     def _build_llm_response(result: Any, model_name: str) -> LLMResponse:
         final_text = unmask_pii(result.output, pii_map)
