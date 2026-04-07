@@ -196,6 +196,18 @@ async def get_recent_assistant_conversation_candidates(
 ) -> list[QualityConversationCandidate]:
     """Fetch a stable page of recent assistant conversations for red-flag scans."""
     threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=1)))
+    assistant_activity = (
+        select(
+            Message.conversation_id.label("conversation_id"),
+            func.max(Message.created_at).label("last_assistant_at"),
+        )
+        .where(
+            Message.role == "assistant",
+            Message.created_at >= threshold,
+        )
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
     stmt = (
         select(
             Conversation.id,
@@ -206,22 +218,14 @@ async def get_recent_assistant_conversation_candidates(
             Conversation.customer_name,
             Conversation.metadata_,
         )
-        .join(Message, Message.conversation_id == Conversation.id)
+        .join(
+            assistant_activity,
+            assistant_activity.c.conversation_id == Conversation.id,
+        )
         .where(
-            Message.role == "assistant",
-            Message.created_at >= threshold,
             Conversation.escalation_status.in_(("none", "resolved")),
         )
-        .group_by(
-            Conversation.id,
-            Conversation.updated_at,
-            Conversation.status,
-            Conversation.sales_stage,
-            Conversation.phone,
-            Conversation.customer_name,
-            Conversation.metadata_,
-        )
-        .order_by(func.max(Message.created_at).desc(), Conversation.id.desc())
+        .order_by(assistant_activity.c.last_assistant_at.desc(), Conversation.id.desc())
         .limit(limit)
         .offset(offset)
     )
