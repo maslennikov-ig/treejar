@@ -399,6 +399,15 @@ def test_evaluator_prompt_contains_all_rules() -> None:
         assert str(i) in EVALUATION_PROMPT, f"Rule {i} missing from evaluator prompt"
 
 
+def test_evaluator_prompt_requires_russian_human_readable_output() -> None:
+    """Judge prompt must force owner-facing text fields to be returned in Russian."""
+    from src.quality.evaluator import EVALUATION_PROMPT
+
+    assert "русском" in EVALUATION_PROMPT.lower()
+    assert "summary" in EVALUATION_PROMPT
+    assert "comment" in EVALUATION_PROMPT.lower()
+
+
 @pytest.mark.asyncio
 async def test_evaluate_conversation_with_mock_agent() -> None:
     """evaluate_conversation should call judge_agent and return EvaluationResult."""
@@ -494,7 +503,7 @@ async def test_evaluate_conversation_infers_sales_stage_when_missing() -> None:
     assert deps.rule_applicability[1] is True
     assert deps.rule_applicability[12] is False
     prompt = mock_agent.run.call_args[0][0]
-    assert "Current sales stage: greeting" in prompt
+    assert "Текущий этап продаж: greeting" in prompt
 
 
 @pytest.mark.asyncio

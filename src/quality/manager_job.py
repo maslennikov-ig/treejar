@@ -104,14 +104,19 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                         )
                         continue
 
-                    from src.services.notifications import send_telegram_message
+                    from src.services.notifications import (
+                        format_low_manager_score_alert_message,
+                        send_telegram_message,
+                    )
 
-                    alert_text = (
-                        f"⚠️ <b>Low Manager Score Alert</b>\n"
-                        f"Escalation: {esc_id}\n"
-                        f"Manager: {escalation.assigned_to or 'Unknown'}\n"
-                        f"Score: {evaluation.total_score}/20 ({evaluation.rating})\n"
-                        f"Summary: {evaluation.summary[:200] if evaluation.summary else 'N/A'}"
+                    alert_text = format_low_manager_score_alert_message(
+                        escalation_id=str(esc_id),
+                        manager_name=escalation.assigned_to,
+                        score=evaluation.total_score,
+                        rating=evaluation.rating,
+                        summary=evaluation.summary[:200]
+                        if evaluation.summary
+                        else None,
                     )
                     await send_telegram_message(alert_text)
                 except Exception:

@@ -26,7 +26,7 @@ def test_report_data_has_manager_fields() -> None:
 
 
 def test_format_report_includes_manager_section() -> None:
-    """format_report_text includes Manager Performance section."""
+    """format_report_text includes localized manager performance section."""
     now = datetime.now(tz=UTC)
     data = ReportData(
         period_start=now - timedelta(days=7),
@@ -44,9 +44,9 @@ def test_format_report_includes_manager_section() -> None:
 
     text = format_report_text(data)
 
-    assert "Manager Performance" in text
+    assert "Показатели менеджеров" in text
     assert "16.2/20" in text
-    assert "8.0 min" in text
+    assert "8.0 мин" in text
     assert "65.0%" in text
     assert "12" in text
     assert "Israullah" in text
@@ -63,4 +63,4 @@ def test_format_report_no_manager_section_when_empty() -> None:
 
     text = format_report_text(data)
 
-    assert "Manager Performance" not in text
+    assert "Показатели менеджеров" not in text

@@ -26,7 +26,7 @@ def _make_evaluation_result(score: float = 30.0):
     ]
     return EvaluationResult(
         criteria=criteria,
-        summary="What went well:\n- Strong opening\n\nWhat hurt the dialogue:\n- None",
+        summary="Что сделано хорошо:\n- Сильное начало\n\nЧто ухудшило диалог:\n- н/д",
         total_score=score,
         rating="excellent",
         strengths=["Strong opening"],
@@ -610,6 +610,6 @@ async def test_save_review_updates_existing_review_when_present() -> None:
     assert result is existing_review
     assert existing_review.total_score == 30.0
     assert existing_review.rating == "excellent"
-    assert "What went well" in existing_review.summary
+    assert "Что сделано хорошо" in existing_review.summary
     mock_db.add.assert_not_called()
     mock_db.flush.assert_awaited_once()

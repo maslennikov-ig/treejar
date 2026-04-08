@@ -132,7 +132,7 @@ async def notify_manager_escalation(
                 await client.send_document(
                     file_bytes=pdf_bytes,
                     filename=pdf_filename,
-                    caption="📄 Quotation for review",
+                    caption="📄 Коммерческое предложение на проверку",
                 )
             except Exception:
                 logger.exception("Failed to send PDF document to Telegram")

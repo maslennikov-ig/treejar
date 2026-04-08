@@ -23,6 +23,7 @@ from src.models.conversation import Conversation
 from src.models.escalation import Escalation
 from src.models.message import Message
 from src.models.quality_review import QualityReview
+from src.services.report_localization import translate_report_trigger
 
 logger = logging.getLogger(__name__)
 
@@ -250,46 +251,48 @@ async def generate_report(
 def format_report_text(data: ReportData) -> str:
     """Format report as HTML text for Telegram."""
     lines = [
-        "📈 <b>Weekly Report</b>",
+        "📈 <b>Недельный отчёт</b>",
         f"<i>{data.period_start.strftime('%Y-%m-%d')} — {data.period_end.strftime('%Y-%m-%d')}</i>",
         "",
-        f"<b>Conversations:</b> {data.total_conversations} ({data.conversations_per_day}/day)",
-        f"<b>Unique Customers:</b> {data.unique_customers}",
-        f"<b>Deals:</b> {data.total_deals}",
-        f"<b>Conversion:</b> {data.conversion_rate}%",
-        f"<b>Avg Deal Value:</b> {data.avg_deal_value} AED",
-        f"<b>Avg Quality:</b> {data.avg_quality_score}/30",
-        f"<b>Escalations:</b> {data.escalation_count}",
+        f"<b>Диалоги:</b> {data.total_conversations} ({data.conversations_per_day} в день)",
+        f"<b>Уникальные клиенты:</b> {data.unique_customers}",
+        f"<b>Сделки:</b> {data.total_deals}",
+        f"<b>Конверсия:</b> {data.conversion_rate}%",
+        f"<b>Средний чек:</b> {data.avg_deal_value} AED",
+        f"<b>Средняя оценка качества:</b> {data.avg_quality_score}/30",
+        f"<b>Эскалации:</b> {data.escalation_count}",
     ]
 
     if data.escalation_reasons:
         lines.append("")
-        lines.append("<b>Top Escalation Reasons:</b>")
+        lines.append("<b>Основные причины эскалации:</b>")
         for reason, count in list(data.escalation_reasons.items())[:5]:
-            lines.append(f"  • {reason}: {count}")
+            lines.append(
+                f"  • {translate_report_trigger(reason, surface='weekly_report', module='reports')}: {count}"
+            )
 
     if data.top_products:
         lines.append("")
-        lines.append("<b>Top Products:</b>")
+        lines.append("<b>Топ товаров:</b>")
         for prod in data.top_products[:5]:
             lines.append(
-                f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} mentions"
+                f"  • {prod['name']} ({prod['sku']}): {prod['mentions']} упоминаний"
             )
 
     if data.manager_reviews_count > 0:
         lines.append("")
-        lines.append("📊 <b>Manager Performance</b>")
+        lines.append("📊 <b>Показатели менеджеров</b>")
         # Convert seconds to minutes for display
         response_time_min = round(data.avg_manager_response_time_seconds / 60, 1)
-        lines.append(f"  Avg Score: {data.avg_manager_score}/20")
-        lines.append(f"  Avg Response Time: {response_time_min} min")
-        lines.append(f"  Deal Conversion: {data.manager_deal_conversion_rate}%")
-        lines.append(f"  Reviews: {data.manager_reviews_count}")
+        lines.append(f"  Средний балл: {data.avg_manager_score}/20")
+        lines.append(f"  Среднее время ответа: {response_time_min} мин")
+        lines.append(f"  Конверсия в сделку: {data.manager_deal_conversion_rate}%")
+        lines.append(f"  Оценок: {data.manager_reviews_count}")
         if data.top_managers:
             top_names = ", ".join(
                 f"{m['name']} ({m['avg_score']})" for m in data.top_managers[:3]
             )
-            lines.append(f"  Top: {top_names}")
+            lines.append(f"  Лучшие: {top_names}")
 
     return "\n".join(lines)
 

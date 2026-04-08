@@ -106,12 +106,73 @@ async def test_notify_escalation_formats_html() -> None:
     assert "<b>" in msg
     # Phone should be shown in full (I3 fix: managers need to contact clients)
     assert "+971501234567" in msg
-    assert "Customer asked for a manager" in msg
+    assert "Эскалация" in msg
+    assert "Телефон клиента" in msg
+    assert "запрошен менеджер" in msg
+    assert "Менеджер уведомлён" in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_escalation_unknown_reason_uses_russian_fallback() -> None:
+    """Unknown English reasons should not leak into owner-facing escalation alerts."""
+    from src.services.notifications import format_escalation_message
+
+    conv_id = uuid4()
+    with patch("src.services.report_localization.logfire.info") as mock_logfire:
+        msg = format_escalation_message(
+            "+971501234567", conv_id, "Mystery escalation cause"
+        )
+
+    assert "Mystery escalation cause" not in msg
+    assert "иная причина" in msg
+    mock_logfire.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_quality_alert_formats_html() -> None:
+    """notify_quality_alert should render the detailed quality review in Russian."""
+    from src.quality.schemas import CriterionScore
+    from src.services.notifications import format_quality_alert_message
+
+    conv_id = uuid4()
+    msg = format_quality_alert_message(
+        conv_id,
+        score=8.0,
+        rating="poor",
+        summary="Bad dialogue",
+        criteria=[
+            CriterionScore(rule_number=1, rule_name="Greeting", score=2, comment="ok"),
+            CriterionScore(
+                rule_number=8,
+                rule_name="Clarifying questions",
+                score=0,
+                comment="missed",
+            ),
+            CriterionScore(
+                rule_number=14, rule_name="Closing", score=0, comment="missed"
+            ),
+        ],
+        current_stage="qualifying",
+        trigger="low_score",
+    )
+    assert "<b>" in msg
+    assert "8.0" in msg
+    assert "Оценка качества" in msg
+    assert "Взвешенная разбивка" in msg
+    assert "Что сделано хорошо" in msg
+    assert "Что ухудшило диалог" in msg
+    assert "Рекомендации" in msg
+    assert "Следующее действие" in msg
+    assert "плохо" in msg
+    assert "Текущий этап" in msg
+    assert "квалификация" in msg
+    assert "Основание" in msg
+    assert "оценка ниже порога" in msg
 
 
 @pytest.mark.asyncio
 async def test_red_flag_warning_formatting() -> None:
-    """Realtime red-flag warning should be compact and evidence-based."""
+    """Realtime red-flag warning should be compact, owner-facing, and localized."""
     from src.quality.schemas import RedFlagItem
     from src.services.notifications import format_red_flag_warning_message
 
@@ -128,15 +189,16 @@ async def test_red_flag_warning_formatting() -> None:
                 evidence=["Hello, how can I help?", "Tell me what you need."],
             )
         ],
-        recommended_action="Reply with a corrective follow-up and restate identity.",
+        recommended_action="Отправить корректирующий follow-up и представиться заново.",
     )
-    assert "🚨 <b>Red Flag Warning</b>" in msg
-    assert "Conversation UUID" in msg
+    assert "🚨 <b>Критический сигнал</b>" in msg
+    assert "UUID диалога" in msg
     assert "+971501234567" in msg
-    assert "greeting" in msg
-    assert "Missing identity" in msg
+    assert "приветствие" in msg
+    assert "Нет идентификации" in msg
+    assert "Ассистент не представился как Siyyad из Treejar" in msg
     assert "Hello, how can I help?" in msg
-    assert "Recommended action" in msg
+    assert "Рекомендуемое действие" in msg
 
 
 @pytest.mark.asyncio
@@ -212,15 +274,15 @@ async def test_final_quality_review_formatting() -> None:
         trigger="idle 3h",
         result=result,
     )
-    assert "🟢 <b>Quality Review</b>" in msg
-    assert "Score:</b> 24.5/30 (good)" in msg
-    assert "Trigger:</b> idle 3h" in msg
-    assert "Opening &amp; Trust: 5.0/6" in msg
-    assert "Relationship &amp; Discovery: 7.0/9" in msg
-    assert "What went well" in msg
-    assert "What hurt the dialogue" in msg
-    assert "Recommendations" in msg
-    assert "Next best action" in msg
+    assert "🟢 <b>Оценка качества</b>" in msg
+    assert "Оценка:</b> 24.5/30 (хорошо)" in msg
+    assert "Основание:</b> нет ответа 3 часа" in msg
+    assert "Открытие и доверие: 5.0/6" in msg
+    assert "Контакт и выявление потребностей: 7.0/9" in msg
+    assert "Что сделано хорошо" in msg
+    assert "Что ухудшило диалог" in msg
+    assert "Рекомендации" in msg
+    assert "Следующее действие" in msg
 
 
 @pytest.mark.asyncio
@@ -367,6 +429,9 @@ async def test_notify_daily_summary_formats_metrics() -> None:
     assert "42" in msg
     assert "22.5" in msg
     assert "11.0%" in msg
+    assert "Ежедневная сводка" in msg
+    assert "Диалоги" in msg
+    assert "Средняя оценка качества" in msg
     assert "LLM Cost" not in msg
 
 
@@ -382,8 +447,8 @@ async def test_notify_daily_summary_formats_na_values() -> None:
     )
 
     msg = format_daily_summary(metrics)
-    assert "<b>Avg Quality:</b> N/A" in msg
-    assert "<b>Conversion Rate (7d):</b> N/A" in msg
+    assert "<b>Средняя оценка качества:</b> н/д" in msg
+    assert "<b>Конверсия (7д):</b> н/д" in msg
     assert "LLM Cost" not in msg
 
 

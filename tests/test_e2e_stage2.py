@@ -102,11 +102,11 @@ async def test_telegram_escalation_notification_delivered() -> None:
     html_message: str = mock_client.send_message.call_args[0][0]
 
     # Message must contain alert header and full phone (managers need to call back)
-    assert "Escalation Alert" in html_message, "Expected 'Escalation Alert' in message"
+    assert "Эскалация" in html_message, "Expected 'Эскалация' in message"
     assert "+971501234567" in html_message, (
         f"Phone should be shown in full for managers, got: {html_message}"
     )
-    assert "Customer requested human" in html_message
+    assert "запрошен менеджер" in html_message
 
 
 # =============================================================================
@@ -140,9 +140,9 @@ async def test_report_generation_and_send() -> None:
 
     # Step 1: format report text and check structure
     text = format_report_text(report_data)
-    assert "Weekly Report" in text, "Report text must contain 'Weekly Report'"
+    assert "Недельный отчёт" in text, "Report text must contain 'Недельный отчёт'"
     assert "50" in text, "Report text must contain total_conversations (50)"
-    assert "Conversations" in text
+    assert "Диалоги" in text
     assert "Executive Chair" in text
 
     # Step 2: send_telegram_message should call client.send_message

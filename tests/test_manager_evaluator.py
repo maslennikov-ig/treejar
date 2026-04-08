@@ -79,6 +79,15 @@ def test_rating_poor() -> None:
     assert compute_manager_rating(8.9) == "poor"
 
 
+def test_manager_evaluator_prompt_requires_russian_human_readable_output() -> None:
+    """Manager judge prompt must require Russian output for human-readable fields."""
+    from src.quality.manager_evaluator import MANAGER_EVALUATION_PROMPT
+
+    assert "русском" in MANAGER_EVALUATION_PROMPT.lower()
+    assert "summary" in MANAGER_EVALUATION_PROMPT
+    assert "comment" in MANAGER_EVALUATION_PROMPT.lower()
+
+
 # ---------------------------------------------------------------------------
 # Quantitative metrics tests (Component 6)
 # ---------------------------------------------------------------------------

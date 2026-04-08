@@ -49,7 +49,32 @@ def test_format_report_text_contains_key_fields() -> None:
     assert "11.9%" in text
     assert "22.5" in text
     assert "Executive Desk" in text
-    assert "customer_angry" in text
+    assert "Недельный отчёт" in text
+    assert "Диалоги" in text
+    assert "клиент недоволен" in text
+
+
+def test_format_report_text_localizes_manager_metrics() -> None:
+    """format_report_text should use Russian labels for manager metrics."""
+    from src.services.reports import ReportData, format_report_text
+
+    now = datetime.now(tz=UTC)
+    report = ReportData(
+        period_start=now,
+        period_end=now,
+        manager_reviews_count=4,
+        avg_manager_score=12.5,
+        avg_manager_response_time_seconds=1800,
+        manager_deal_conversion_rate=25.0,
+        top_managers=[{"name": "Анна", "avg_score": 15.5}],
+    )
+
+    text = format_report_text(report)
+
+    assert "Показатели менеджеров" in text
+    assert "Средний балл" in text
+    assert "Среднее время ответа" in text
+    assert "Лучшие" in text
 
 
 def test_format_report_text_empty_report() -> None:
@@ -59,7 +84,7 @@ def test_format_report_text_empty_report() -> None:
     now = datetime.now(tz=UTC)
     report = ReportData(period_start=now, period_end=now)
     text = format_report_text(report)
-    assert "Weekly Report" in text
+    assert "Недельный отчёт" in text
     assert "0" in text
 
 

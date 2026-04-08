@@ -147,25 +147,32 @@ def build_summary_text(
 ) -> str:
     """Create a deterministic narrative summary from sectioned findings."""
     summary_lines = [
-        "What went well:",
-        *[f"- {item}" for item in _clean_items(strengths, "No clear strengths noted.")],
-        "",
-        "What hurt the dialogue:",
-        *[
-            f"- {item}"
-            for item in _clean_items(weaknesses, "No material weaknesses noted.")
-        ],
-        "",
-        "Recommendations:",
+        "Что сделано хорошо:",
         *[
             f"- {item}"
             for item in _clean_items(
-                recommendations, "No additional recommendations captured."
+                strengths, "Явно выраженные сильные стороны не зафиксированы."
             )
         ],
         "",
-        "Next best action:",
-        f"- {next_best_action.strip() or 'Review the dialogue manually and decide the next customer-facing step.'}",
+        "Что ухудшило диалог:",
+        *[
+            f"- {item}"
+            for item in _clean_items(
+                weaknesses, "Существенные проблемы по диалогу не зафиксированы."
+            )
+        ],
+        "",
+        "Рекомендации:",
+        *[
+            f"- {item}"
+            for item in _clean_items(
+                recommendations, "Дополнительные рекомендации не зафиксированы."
+            )
+        ],
+        "",
+        "Следующее действие:",
+        f"- {next_best_action.strip() or 'Проверить диалог вручную и определить следующий шаг по клиенту.'}",
     ]
     return "\n".join(summary_lines)
 
@@ -266,14 +273,18 @@ def finalize_evaluation_result(
         applicability_map=applicability_map,
     )
     total_score, block_scores = calculate_weighted_score(canonical_criteria)
-    strengths = _clean_items(result.strengths, "No clear strengths noted.")
-    weaknesses = _clean_items(result.weaknesses, "No material weaknesses noted.")
+    strengths = _clean_items(
+        result.strengths, "Явно выраженные сильные стороны не зафиксированы."
+    )
+    weaknesses = _clean_items(
+        result.weaknesses, "Существенные проблемы по диалогу не зафиксированы."
+    )
     recommendations = _clean_items(
-        result.recommendations, "No additional recommendations captured."
+        result.recommendations, "Дополнительные рекомендации не зафиксированы."
     )
     next_best_action = (
         result.next_best_action.strip()
-        or "Review the dialogue manually and decide the next customer-facing step."
+        or "Проверить диалог вручную и определить следующий шаг по клиенту."
     )
 
     return result.model_copy(

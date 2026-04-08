@@ -15,8 +15,8 @@ from src.models.system_prompt import SystemPrompt
 
 class ConversationAdmin(ModelView, model=Conversation):
     column_list = [Conversation.id, Conversation.created_at, Conversation.updated_at]
-    name = "Conversation"
-    name_plural = "Conversations"
+    name = "Диалог"
+    name_plural = "Диалоги"
     icon = "fa-solid fa-comments"
 
 
@@ -27,8 +27,8 @@ class MessageAdmin(ModelView, model=Message):
         Message.role,
         Message.created_at,
     ]
-    name = "Message"
-    name_plural = "Messages"
+    name = "Сообщение"
+    name_plural = "Сообщения"
     icon = "fa-solid fa-message"
 
 
@@ -42,8 +42,8 @@ class ProductAdmin(ModelView, model=Product):
     ]
     column_details_exclude_list = [Product.embedding]
     form_excluded_columns = [Product.embedding]
-    name = "Product"
-    name_plural = "Products"
+    name = "Товар"
+    name_plural = "Товары"
     icon = "fa-solid fa-box"
 
 
@@ -51,8 +51,8 @@ class KnowledgeBaseAdmin(ModelView, model=KnowledgeBase):
     column_list = [KnowledgeBase.id, KnowledgeBase.created_at]
     column_details_exclude_list = [KnowledgeBase.embedding]
     form_excluded_columns = [KnowledgeBase.embedding]
-    name = "Knowledge Base"
-    name_plural = "Knowledge Base"
+    name = "База знаний"
+    name_plural = "База знаний"
     icon = "fa-solid fa-book"
 
 
@@ -63,8 +63,8 @@ class QualityReviewAdmin(ModelView, model=QualityReview):
         QualityReview.total_score,
         QualityReview.created_at,
     ]
-    name = "Quality Review"
-    name_plural = "Quality Reviews"
+    name = "Оценка качества"
+    name_plural = "Оценки качества"
     icon = "fa-solid fa-star"
 
 
@@ -75,15 +75,15 @@ class EscalationAdmin(ModelView, model=Escalation):
         Escalation.status,
         Escalation.created_at,
     ]
-    name = "Escalation"
-    name_plural = "Escalations"
+    name = "Эскалация"
+    name_plural = "Эскалации"
     icon = "fa-solid fa-triangle-exclamation"
 
 
 class SystemConfigAdmin(ModelView, model=SystemConfig):
     column_list = [SystemConfig.key, SystemConfig.value, SystemConfig.updated_at]
-    name = "System Config"
-    name_plural = "System Configs"
+    name = "Системная настройка"
+    name_plural = "Системные настройки"
     icon = "fa-solid fa-gear"
 
 
@@ -94,8 +94,8 @@ class MetricsSnapshotAdmin(ModelView, model=MetricsSnapshot):
         MetricsSnapshot.llm_cost_usd,
         MetricsSnapshot.updated_at,
     ]
-    name = "Metrics Snapshot"
-    name_plural = "Metrics Snapshots"
+    name = "Снимок метрик"
+    name_plural = "Снимки метрик"
     icon = "fa-solid fa-chart-line"
 
 
@@ -106,8 +106,8 @@ class SystemPromptAdmin(ModelView, model=SystemPrompt):
         SystemPrompt.is_active,
         SystemPrompt.updated_at,
     ]
-    name = "System Prompt"
-    name_plural = "System Prompts"
+    name = "Системный промпт"
+    name_plural = "Системные промпты"
     icon = "fa-solid fa-scroll"
 
 
@@ -119,8 +119,8 @@ class ReferralAdmin(ModelView, model=Referral):
         Referral.status,
         Referral.created_at,
     ]
-    name = "Referral"
-    name_plural = "Referrals"
+    name = "Реферал"
+    name_plural = "Рефералы"
     icon = "fa-solid fa-share-nodes"
 
 
@@ -133,8 +133,8 @@ class FeedbackAdmin(ModelView, model=Feedback):
         Feedback.recommend,
         Feedback.created_at,
     ]
-    name = "Feedback"
-    name_plural = "Feedbacks"
+    name = "Обратная связь"
+    name_plural = "Обратная связь"
     icon = "fa-solid fa-star-half-stroke"
 
 
