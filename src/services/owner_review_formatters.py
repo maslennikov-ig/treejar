@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from html import escape
 from typing import Any
 from uuid import UUID
 
+from src.services.customer_identity import format_owner_identity_block
 from src.services.report_localization import (
     owner_na,
     translate_criterion_status,
@@ -106,6 +108,11 @@ def format_detailed_quality_review(
     current_stage: str | None = None,
     trigger: str | None = None,
     summary: str | None = None,
+    phone: str | None = None,
+    customer_name: str | None = None,
+    inbound_channel_phone: str | None = None,
+    conversation_created_at: datetime | None = None,
+    last_activity_at: datetime | None = None,
 ) -> str:
     """Render a deterministic owner-facing quality review in Russian.
 
@@ -176,10 +183,18 @@ def format_detailed_quality_review(
         if deduped_recommendations
         else "Поддерживать текущий уровень качества и масштабировать удачные практики."
     )
+    identity_block = format_owner_identity_block(
+        phone=phone,
+        customer_name=customer_name,
+        inbound_channel_phone=inbound_channel_phone,
+        conversation_created_at=conversation_created_at,
+        last_activity_at=last_activity_at,
+    )
 
     lines = [
         "⚠️ <b>Оценка качества</b>",
         f"<b>UUID диалога:</b> <code>{escape(str(conversation_id))}</code>",
+        identity_block,
         f"<b>Оценка:</b> {score:.1f}/30 ({escape(rating_label)})",
         f"<b>Основание:</b> {escape(trigger_label)}",
         f"<b>Текущий этап:</b> {escape(stage_label)}",

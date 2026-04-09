@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class QualityConversationCandidate:
     conversation_id: UUID
+    created_at: datetime
     updated_at: datetime
     status: str
     sales_stage: str
@@ -211,6 +212,7 @@ async def get_recent_assistant_conversation_candidates(
     stmt = (
         select(
             Conversation.id,
+            Conversation.created_at,
             Conversation.updated_at,
             Conversation.status,
             Conversation.sales_stage,
@@ -233,6 +235,7 @@ async def get_recent_assistant_conversation_candidates(
     return [
         QualityConversationCandidate(
             conversation_id=row.id,
+            created_at=row.created_at,
             updated_at=row.updated_at,
             status=row.status,
             sales_stage=row.sales_stage,
@@ -256,6 +259,7 @@ async def get_recent_updated_conversation_candidates(
     stmt = (
         select(
             Conversation.id,
+            Conversation.created_at,
             Conversation.updated_at,
             Conversation.status,
             Conversation.sales_stage,
@@ -279,6 +283,7 @@ async def get_recent_updated_conversation_candidates(
     return [
         QualityConversationCandidate(
             conversation_id=row.id,
+            created_at=row.created_at,
             updated_at=row.updated_at,
             status=row.status,
             sales_stage=row.sales_stage,

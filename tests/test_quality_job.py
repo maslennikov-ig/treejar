@@ -80,6 +80,7 @@ def _make_red_flag_result(flag_codes: list[str]):
 def _make_candidate(
     *,
     status: str = "active",
+    created_at: datetime | None = None,
     updated_at: datetime | None = None,
     sales_stage: str = "greeting",
     phone: str = "+971501234567",
@@ -89,6 +90,7 @@ def _make_candidate(
     return SimpleNamespace(
         conversation_id=uuid4(),
         status=status,
+        created_at=created_at or datetime.now(tz=UTC) - timedelta(hours=1),
         updated_at=updated_at or datetime.now(tz=UTC),
         sales_stage=sales_stage,
         phone=phone,
@@ -151,6 +153,52 @@ async def test_red_flag_warning_fires_only_when_flags_exist() -> None:
 
     mock_notify.assert_awaited_once()
     mock_redis.setex.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_red_flag_warning_passes_identity_context_without_crm_lookup() -> None:
+    """Realtime warning should thread identity fields and prefer conversation name."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    created_at = datetime(2026, 4, 9, 9, 0, tzinfo=UTC)
+    updated_at = datetime(2026, 4, 9, 10, 0, tzinfo=UTC)
+    candidate = _make_candidate(
+        created_at=created_at,
+        updated_at=updated_at,
+        customer_name="Acme",
+    )
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+    mock_crm = AsyncMock()
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.evaluate_red_flags",
+            new=AsyncMock(return_value=_make_red_flag_result(["missing_identity"])),
+        ),
+        patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
+    ):
+        await evaluate_realtime_red_flags({"redis": mock_redis, "crm_client": mock_crm})
+
+    mock_notify.assert_awaited_once()
+    kwargs = mock_notify.await_args.kwargs
+    assert kwargs["customer_name"] == "Acme"
+    assert kwargs["inbound_channel_phone"] == "+971551220665"
+    assert kwargs["conversation_created_at"] == created_at
+    assert kwargs["last_activity_at"] == updated_at
+    mock_crm.find_contact_by_phone.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -365,6 +413,67 @@ async def test_final_review_triggers_on_closed() -> None:
     mock_notify.assert_awaited_once()
     assert mock_notify.await_args.kwargs["trigger"] == "closed"
     worker_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_final_review_fetches_customer_name_from_crm_and_caches_it() -> None:
+    """Final review should enrich customer name from Zoho when conversation/cache miss."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    created_at = datetime(2026, 4, 9, 9, 0, tzinfo=UTC)
+    updated_at = datetime(2026, 4, 9, 13, 5, tzinfo=UTC)
+    candidate = _make_candidate(
+        status="closed",
+        created_at=created_at,
+        updated_at=updated_at,
+        customer_name=None,
+    )
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(side_effect=[None, None])
+    mock_redis.set = AsyncMock()
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+    mock_crm = AsyncMock()
+    mock_crm.find_contact_by_phone = AsyncMock(
+        return_value={
+            "First_Name": "Aisha",
+            "Last_Name": "Khan",
+            "Segment": "B2B",
+        }
+    )
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(return_value=_make_evaluation_result(score=18.0)),
+        ),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch(
+            "src.services.notifications.notify_final_quality_review", new=mock_notify
+        ),
+    ):
+        await evaluate_mature_conversations_quality(
+            {"redis": mock_redis, "crm_client": mock_crm}
+        )
+
+    mock_notify.assert_awaited_once()
+    kwargs = mock_notify.await_args.kwargs
+    assert kwargs["customer_name"] == "Aisha Khan"
+    assert kwargs["inbound_channel_phone"] == "+971551220665"
+    assert kwargs["conversation_created_at"] == created_at
+    assert kwargs["last_activity_at"] == updated_at
+    mock_crm.find_contact_by_phone.assert_awaited_once_with("+971501234567")
+    mock_redis.set.assert_awaited_once()
 
 
 @pytest.mark.asyncio

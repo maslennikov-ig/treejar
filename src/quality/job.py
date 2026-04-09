@@ -6,11 +6,13 @@ import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.core.database import async_session_factory
 from src.core.redis import get_redis_client
+from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.quality.evaluator import evaluate_conversation, evaluate_red_flags
 from src.quality.schemas import RedFlagItem
 from src.quality.service import (
@@ -19,7 +21,9 @@ from src.quality.service import (
     get_recent_updated_conversation_candidates,
     save_review,
 )
+from src.services.customer_identity import resolve_owner_customer_name
 from src.services.inbound_channels import (
+    get_conversation_inbound_channel_phone,
     should_send_telegram_alert_for_conversation_with_db,
 )
 
@@ -72,6 +76,37 @@ def _extract_previous_signature(raw_marker: str | None) -> str | None:
 
 def _resolve_redis(ctx: dict[str, Any]) -> Any:
     return ctx.get("redis") or get_redis_client()
+
+
+@asynccontextmanager
+async def _quality_crm_client(ctx: dict[str, Any], redis: Any) -> Any:
+    existing_client = ctx.get("crm_client")
+    if existing_client is not None:
+        yield existing_client
+        return
+
+    async with ZohoCRMClient(redis) as crm_client:
+        yield crm_client
+
+
+async def _build_quality_identity_context(
+    candidate: QualityConversationCandidate,
+    *,
+    redis: Any,
+    crm_client: Any | None,
+) -> dict[str, Any]:
+    customer_name = await resolve_owner_customer_name(
+        phone=candidate.phone,
+        conversation_customer_name=candidate.customer_name,
+        redis=redis,
+        crm_client=crm_client,
+    )
+    return {
+        "customer_name": customer_name,
+        "inbound_channel_phone": get_conversation_inbound_channel_phone(candidate),
+        "conversation_created_at": candidate.created_at,
+        "last_activity_at": candidate.updated_at,
+    }
 
 
 async def _load_candidates_in_batches(
@@ -139,32 +174,61 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
     sent = 0
     errors = 0
 
-    for candidate in candidates:
-        try:
-            async with async_session_factory() as db:
-                result = await evaluate_red_flags(candidate.conversation_id, db)
+    async with _quality_crm_client(ctx, redis) as crm_client:
+        for candidate in candidates:
+            try:
+                async with async_session_factory() as db:
+                    result = await evaluate_red_flags(candidate.conversation_id, db)
 
-                if not result.flags:
-                    continue
-                should_notify = (
-                    await should_send_telegram_alert_for_conversation_with_db(
-                        candidate, db
+                    if not result.flags:
+                        continue
+                    should_notify = (
+                        await should_send_telegram_alert_for_conversation_with_db(
+                            candidate, db
+                        )
                     )
+
+                signature = _build_red_flag_signature(result.flags)
+                marker_key = _red_flag_marker_key(candidate.conversation_id)
+                previous_signature = _extract_previous_signature(
+                    await redis.get(marker_key)
                 )
 
-            signature = _build_red_flag_signature(result.flags)
-            marker_key = _red_flag_marker_key(candidate.conversation_id)
-            previous_signature = _extract_previous_signature(
-                await redis.get(marker_key)
-            )
+                if previous_signature == signature:
+                    continue
 
-            if previous_signature == signature:
-                continue
+                if not should_notify:
+                    logger.info(
+                        "Skipping red-flag warning for %s due to inbound channel gating",
+                        candidate.conversation_id,
+                    )
+                    await redis.setex(
+                        marker_key,
+                        _RED_FLAG_TTL_SECONDS,
+                        json.dumps(
+                            {
+                                "signature": signature,
+                                "updated_at": _updated_at_iso(candidate.updated_at),
+                            }
+                        ),
+                    )
+                    continue
 
-            if not should_notify:
-                logger.info(
-                    "Skipping red-flag warning for %s due to inbound channel gating",
-                    candidate.conversation_id,
+                identity_context = await _build_quality_identity_context(
+                    candidate,
+                    redis=redis,
+                    crm_client=crm_client,
+                )
+
+                from src.services.notifications import notify_red_flag_warning
+
+                await notify_red_flag_warning(
+                    conversation_id=candidate.conversation_id,
+                    phone=candidate.phone,
+                    sales_stage=candidate.sales_stage,
+                    flags=result.flags,
+                    recommended_action=result.recommended_action,
+                    **identity_context,
                 )
                 await redis.setex(
                     marker_key,
@@ -176,34 +240,13 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         }
                     ),
                 )
-                continue
-
-            from src.services.notifications import notify_red_flag_warning
-
-            await notify_red_flag_warning(
-                conversation_id=candidate.conversation_id,
-                phone=candidate.phone,
-                sales_stage=candidate.sales_stage,
-                flags=result.flags,
-                recommended_action=result.recommended_action,
-            )
-            await redis.setex(
-                marker_key,
-                _RED_FLAG_TTL_SECONDS,
-                json.dumps(
-                    {
-                        "signature": signature,
-                        "updated_at": _updated_at_iso(candidate.updated_at),
-                    }
-                ),
-            )
-            sent += 1
-        except Exception:
-            errors += 1
-            logger.exception(
-                "Failed to evaluate realtime red flags for conversation %s",
-                candidate.conversation_id,
-            )
+                sent += 1
+            except Exception:
+                errors += 1
+                logger.exception(
+                    "Failed to evaluate realtime red flags for conversation %s",
+                    candidate.conversation_id,
+                )
 
     logger.info(
         "Quality red-flag evaluator: done. sent=%d, errors=%d",
@@ -228,56 +271,63 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
     reviewed = 0
     errors = 0
 
-    for candidate in candidates:
-        trigger = _final_review_trigger(candidate, now=now)
-        if trigger is None:
-            continue
+    async with _quality_crm_client(ctx, redis) as crm_client:
+        for candidate in candidates:
+            trigger = _final_review_trigger(candidate, now=now)
+            if trigger is None:
+                continue
 
-        current_updated_at = _updated_at_iso(candidate.updated_at)
-        marker_key = _final_marker_key(candidate.conversation_id)
-        previous_updated_at = await redis.get(marker_key)
-        if previous_updated_at == current_updated_at:
-            continue
+            current_updated_at = _updated_at_iso(candidate.updated_at)
+            marker_key = _final_marker_key(candidate.conversation_id)
+            previous_updated_at = await redis.get(marker_key)
+            if previous_updated_at == current_updated_at:
+                continue
 
-        try:
-            async with async_session_factory() as db:
-                result = await evaluate_conversation(
-                    candidate.conversation_id,
-                    db,
-                    candidate.sales_stage,
-                )
-                await save_review(db, candidate.conversation_id, result)
-                await db.commit()
-                should_notify = (
-                    await should_send_telegram_alert_for_conversation_with_db(
-                        candidate, db
+            try:
+                async with async_session_factory() as db:
+                    result = await evaluate_conversation(
+                        candidate.conversation_id,
+                        db,
+                        candidate.sales_stage,
                     )
-                )
+                    await save_review(db, candidate.conversation_id, result)
+                    await db.commit()
+                    should_notify = (
+                        await should_send_telegram_alert_for_conversation_with_db(
+                            candidate, db
+                        )
+                    )
 
-            if should_notify:
-                from src.services.notifications import notify_final_quality_review
+                if should_notify:
+                    identity_context = await _build_quality_identity_context(
+                        candidate,
+                        redis=redis,
+                        crm_client=crm_client,
+                    )
 
-                await notify_final_quality_review(
-                    conversation_id=candidate.conversation_id,
-                    phone=candidate.phone,
-                    customer_name=candidate.customer_name,
-                    sales_stage=candidate.sales_stage,
-                    trigger=trigger,
-                    result=result,
-                )
-            else:
-                logger.info(
-                    "Skipping final quality review alert for %s due to inbound channel gating",
+                    from src.services.notifications import notify_final_quality_review
+
+                    await notify_final_quality_review(
+                        conversation_id=candidate.conversation_id,
+                        phone=candidate.phone,
+                        sales_stage=candidate.sales_stage,
+                        trigger=trigger,
+                        result=result,
+                        **identity_context,
+                    )
+                else:
+                    logger.info(
+                        "Skipping final quality review alert for %s due to inbound channel gating",
+                        candidate.conversation_id,
+                    )
+                await redis.setex(marker_key, _FINAL_TTL_SECONDS, current_updated_at)
+                reviewed += 1
+            except Exception:
+                errors += 1
+                logger.exception(
+                    "Failed to evaluate mature conversation %s",
                     candidate.conversation_id,
                 )
-            await redis.setex(marker_key, _FINAL_TTL_SECONDS, current_updated_at)
-            reviewed += 1
-        except Exception:
-            errors += 1
-            logger.exception(
-                "Failed to evaluate mature conversation %s",
-                candidate.conversation_id,
-            )
 
     logger.info(
         "Quality final-review evaluator: done. reviewed=%d, errors=%d",

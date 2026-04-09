@@ -154,10 +154,24 @@ async def test_notify_quality_alert_formats_html() -> None:
         ],
         current_stage="qualifying",
         trigger="low_score",
+        phone="+971501234567",
+        customer_name="Acme",
+        inbound_channel_phone="+971551220665",
+        conversation_created_at=datetime(2026, 4, 9, 9, 0),
+        last_activity_at=datetime(2026, 4, 9, 10, 15, tzinfo=UTC),
     )
     assert "<b>" in msg
     assert "8.0" in msg
     assert "Оценка качества" in msg
+    assert "Телефон клиента" in msg
+    assert "Имя клиента" in msg
+    assert "Входящий номер" in msg
+    assert "Начат (UAE)" in msg
+    assert "Последняя активность (UAE)" in msg
+    assert "Acme" in msg
+    assert "+971551220665" in msg
+    assert "09.04.2026 13:00" in msg
+    assert "09.04.2026 14:15" in msg
     assert "Взвешенная разбивка" in msg
     assert "Что сделано хорошо" in msg
     assert "Что ухудшило диалог" in msg
@@ -180,6 +194,10 @@ async def test_red_flag_warning_formatting() -> None:
     msg = format_red_flag_warning_message(
         conversation_id=conv_id,
         phone="+971501234567",
+        customer_name="Acme",
+        inbound_channel_phone="+971551220665",
+        conversation_created_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
+        last_activity_at=datetime(2026, 4, 9, 10, 0),
         sales_stage="greeting",
         flags=[
             RedFlagItem(
@@ -194,6 +212,11 @@ async def test_red_flag_warning_formatting() -> None:
     assert "🚨 <b>Критический сигнал</b>" in msg
     assert "UUID диалога" in msg
     assert "+971501234567" in msg
+    assert "Имя клиента" in msg
+    assert "Acme" in msg
+    assert "Входящий номер" in msg
+    assert "09.04.2026 13:00" in msg
+    assert "09.04.2026 14:00" in msg
     assert "приветствие" in msg
     assert "Нет идентификации" in msg
     assert "Ассистент не представился как Siyyad из Treejar" in msg
@@ -306,6 +329,9 @@ async def test_final_quality_review_formatting() -> None:
         conversation_id=conv_id,
         phone="+971501234567",
         customer_name="Acme",
+        inbound_channel_phone="+971551220665",
+        conversation_created_at=datetime(2026, 4, 9, 9, 30),
+        last_activity_at=datetime(2026, 4, 9, 10, 45, tzinfo=UTC),
         sales_stage="quoting",
         trigger="idle 3h",
         result=result,
@@ -313,6 +339,10 @@ async def test_final_quality_review_formatting() -> None:
     assert "🟢 <b>Оценка качества</b>" in msg
     assert "Оценка:</b> 24.5/30 (хорошо)" in msg
     assert "Основание:</b> нет ответа 3 часа" in msg
+    assert "Имя клиента:</b> Acme" in msg
+    assert "Входящий номер:</b> +971551220665" in msg
+    assert "Начат (UAE):</b> 09.04.2026 13:30" in msg
+    assert "Последняя активность (UAE):</b> 09.04.2026 14:45" in msg
     assert "Открытие и доверие: 5.0/6" in msg
     assert "Контакт и выявление потребностей: 7.0/9" in msg
     assert "Что сделано хорошо" in msg
@@ -337,6 +367,10 @@ async def test_notify_red_flag_warning_calls_telegram() -> None:
         await notify_red_flag_warning(
             conversation_id=conv_id,
             phone="+971501234567",
+            customer_name="Acme",
+            inbound_channel_phone="+971551220665",
+            conversation_created_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
+            last_activity_at=datetime(2026, 4, 9, 10, 0, tzinfo=UTC),
             sales_stage="greeting",
             flags=[
                 RedFlagItem(
@@ -411,6 +445,9 @@ async def test_notify_final_quality_review_calls_telegram() -> None:
             conversation_id=conv_id,
             phone="+971501234567",
             customer_name="Acme",
+            inbound_channel_phone="+971551220665",
+            conversation_created_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
+            last_activity_at=datetime(2026, 4, 9, 10, 0, tzinfo=UTC),
             sales_stage="closing",
             trigger="closed",
             result=result,
@@ -431,7 +468,17 @@ async def test_notify_quality_alert_calls_telegram() -> None:
         MockTg.return_value = mock_instance
         mock_instance.send_message = AsyncMock()
 
-        await notify_quality_alert(conv_id, score=8.0, rating="poor", summary="Bad")
+        await notify_quality_alert(
+            conv_id,
+            score=8.0,
+            rating="poor",
+            summary="Bad",
+            phone="+971501234567",
+            customer_name="не указано",
+            inbound_channel_phone="+971551220665",
+            conversation_created_at=datetime(2026, 4, 9, 9, 0, tzinfo=UTC),
+            last_activity_at=datetime(2026, 4, 9, 10, 0, tzinfo=UTC),
+        )
 
         mock_instance.send_message.assert_called_once()
 

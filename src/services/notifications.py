@@ -11,6 +11,7 @@ All functions are safe to call even when Telegram is not configured.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from html import escape
 from typing import Any
 from uuid import UUID
@@ -20,6 +21,7 @@ import logfire
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
 from src.quality.schemas import EvaluationResult, RedFlagItem
+from src.services.customer_identity import format_owner_identity_block
 from src.services.daily_summary import DailySummaryData, calculate_daily_summary
 from src.services.owner_review_formatters import format_detailed_quality_review
 from src.services.report_localization import (
@@ -168,6 +170,11 @@ def format_quality_alert_message(
     criteria: list[Any] | None = None,
     current_stage: str | None = None,
     trigger: str | None = "low_score",
+    phone: str | None = None,
+    customer_name: str | None = None,
+    inbound_channel_phone: str | None = None,
+    conversation_created_at: datetime | None = None,
+    last_activity_at: datetime | None = None,
 ) -> str:
     """Format a long quality review for Telegram."""
     return format_detailed_quality_review(
@@ -178,6 +185,11 @@ def format_quality_alert_message(
         current_stage=current_stage,
         trigger=trigger,
         summary=summary,
+        phone=phone,
+        customer_name=customer_name,
+        inbound_channel_phone=inbound_channel_phone,
+        conversation_created_at=conversation_created_at,
+        last_activity_at=last_activity_at,
     )
 
 
@@ -185,13 +197,21 @@ def format_red_flag_warning_message(
     *,
     conversation_id: UUID,
     phone: str | None,
+    customer_name: str | None,
+    inbound_channel_phone: str | None,
+    conversation_created_at: datetime | None,
+    last_activity_at: datetime | None,
     sales_stage: str,
     flags: list[RedFlagItem],
     recommended_action: str,
 ) -> str:
     """Format a compact realtime red-flag warning for Telegram."""
-    phone_line = (
-        f"<b>Телефон клиента:</b> {escape(phone)}\n" if phone and phone.strip() else ""
+    identity_block = format_owner_identity_block(
+        phone=phone,
+        customer_name=customer_name,
+        inbound_channel_phone=inbound_channel_phone,
+        conversation_created_at=conversation_created_at,
+        last_activity_at=last_activity_at,
     )
     stage_label = translate_sales_stage(
         sales_stage,
@@ -226,7 +246,7 @@ def format_red_flag_warning_message(
     return (
         "🚨 <b>Критический сигнал</b>\n\n"
         f"<b>UUID диалога:</b> <code>{conversation_id}</code>\n"
-        f"{phone_line}"
+        f"{identity_block}\n"
         f"<b>Текущий этап:</b> {escape(stage_label)}\n\n"
         f"<b>Критические сигналы:</b>\n{red_flag_lines}\n\n"
         f"<b>Доказательства:</b>\n{evidence_block}\n\n"
@@ -239,6 +259,9 @@ def format_final_quality_review_message(
     conversation_id: UUID,
     phone: str | None,
     customer_name: str | None,
+    inbound_channel_phone: str | None,
+    conversation_created_at: datetime | None,
+    last_activity_at: datetime | None,
     sales_stage: str,
     trigger: str,
     result: EvaluationResult,
@@ -266,12 +289,13 @@ def format_final_quality_review_message(
         surface="quality_final_review",
         module="notifications",
     )
-    customer_bits = []
-    if phone and phone.strip():
-        customer_bits.append(f"<b>Телефон клиента:</b> {escape(phone)}")
-    if customer_name and customer_name.strip():
-        customer_bits.append(f"<b>Имя клиента:</b> {escape(customer_name)}")
-    customer_block = "\n".join(customer_bits) + ("\n" if customer_bits else "")
+    identity_block = format_owner_identity_block(
+        phone=phone,
+        customer_name=customer_name,
+        inbound_channel_phone=inbound_channel_phone,
+        conversation_created_at=conversation_created_at,
+        last_activity_at=last_activity_at,
+    )
     breakdown_lines = "\n".join(
         "• "
         f"{escape(translate_quality_block_name(block.block_name, surface='quality_final_review', module='notifications'))}: "
@@ -305,7 +329,7 @@ def format_final_quality_review_message(
         f"<b>Оценка:</b> {result.total_score:.1f}/30 ({escape(rating_label)})\n"
         f"<b>Основание:</b> {escape(trigger_label)}\n"
         f"<b>UUID диалога:</b> <code>{conversation_id}</code>\n"
-        f"{customer_block}"
+        f"{identity_block}\n"
         f"<b>Текущий этап:</b> {escape(stage_label)}\n\n"
         f"<b>Взвешенная разбивка</b>\n{breakdown_lines}\n\n"
         f"<b>Что сделано хорошо</b>\n{strengths_block}\n\n"
@@ -431,6 +455,11 @@ async def notify_quality_alert(
     criteria: list[Any] | None = None,
     current_stage: str | None = None,
     trigger: str | None = "low_score",
+    phone: str | None = None,
+    customer_name: str | None = None,
+    inbound_channel_phone: str | None = None,
+    conversation_created_at: datetime | None = None,
+    last_activity_at: datetime | None = None,
 ) -> None:
     """Send quality alert notification when score is below threshold.
 
@@ -446,6 +475,11 @@ async def notify_quality_alert(
             criteria=criteria,
             current_stage=current_stage,
             trigger=trigger,
+            phone=phone,
+            customer_name=customer_name,
+            inbound_channel_phone=inbound_channel_phone,
+            conversation_created_at=conversation_created_at,
+            last_activity_at=last_activity_at,
         )
         await client.send_message(message)
     except Exception:
@@ -462,6 +496,10 @@ async def notify_red_flag_warning(
     *,
     conversation_id: UUID,
     phone: str | None,
+    customer_name: str | None,
+    inbound_channel_phone: str | None,
+    conversation_created_at: datetime | None,
+    last_activity_at: datetime | None,
     sales_stage: str,
     flags: list[RedFlagItem],
     recommended_action: str,
@@ -472,6 +510,10 @@ async def notify_red_flag_warning(
         message = format_red_flag_warning_message(
             conversation_id=conversation_id,
             phone=phone,
+            customer_name=customer_name,
+            inbound_channel_phone=inbound_channel_phone,
+            conversation_created_at=conversation_created_at,
+            last_activity_at=last_activity_at,
             sales_stage=sales_stage,
             flags=flags,
             recommended_action=recommended_action,
@@ -491,6 +533,9 @@ async def notify_final_quality_review(
     conversation_id: UUID,
     phone: str | None,
     customer_name: str | None,
+    inbound_channel_phone: str | None,
+    conversation_created_at: datetime | None,
+    last_activity_at: datetime | None,
     sales_stage: str,
     trigger: str,
     result: EvaluationResult,
@@ -502,6 +547,9 @@ async def notify_final_quality_review(
             conversation_id=conversation_id,
             phone=phone,
             customer_name=customer_name,
+            inbound_channel_phone=inbound_channel_phone,
+            conversation_created_at=conversation_created_at,
+            last_activity_at=last_activity_at,
             sales_stage=sales_stage,
             trigger=trigger,
             result=result,
