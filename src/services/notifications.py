@@ -128,6 +128,37 @@ def format_escalation_message(
     return msg
 
 
+def format_catalog_mismatch_message(
+    *,
+    sku: str | None,
+    treejar_slug: str,
+    product_name: str | None,
+    detail: str | None = None,
+) -> str:
+    """Format an operational alert for Treejar-vs-Zoho catalog mismatches."""
+    safe_name = (
+        escape(product_name.strip())
+        if product_name and product_name.strip()
+        else "Unknown product"
+    )
+    safe_sku = escape(sku.strip()) if sku and sku.strip() else "missing"
+    safe_slug = escape(treejar_slug.strip())
+    detail_block = ""
+    if detail and detail.strip():
+        detail_block = f"\n<b>Детали:</b> {escape(detail.strip())}\n"
+
+    return (
+        "⚠️ <b>Catalog mismatch</b>\n\n"
+        f"<b>Product:</b> {safe_name}\n"
+        f"<b>SKU:</b> <code>{safe_sku}</code>\n"
+        f"<b>Treejar slug:</b> <code>{safe_slug}</code>\n"
+        "<b>Issue:</b> Product exists in Treejar Catalog API but is missing in Zoho. "
+        "Do not promise exact price or availability until the mismatch is resolved."
+        f"{detail_block}"
+        "\nНужна проверка site/customer team."
+    )
+
+
 def format_quality_alert_message(
     conversation_id: UUID,
     score: float,
@@ -361,6 +392,34 @@ async def notify_escalation(phone: str, conversation_id: UUID, reason: str) -> N
             conv_id=str(conversation_id),
         )
         logger.exception("Failed to send escalation notification to Telegram")
+
+
+async def notify_catalog_mismatch(
+    *,
+    sku: str | None,
+    treejar_slug: str,
+    product_name: str | None,
+    detail: str | None = None,
+) -> None:
+    """Send an operational Treejar-vs-Zoho mismatch alert to Telegram."""
+    try:
+        client = _get_telegram_client()
+        await client.send_message(
+            format_catalog_mismatch_message(
+                sku=sku,
+                treejar_slug=treejar_slug,
+                product_name=product_name,
+                detail=detail,
+            )
+        )
+    except Exception:
+        logfire.error(
+            "telegram.notify_catalog_mismatch.failed",
+            notification_type="catalog_mismatch",
+            treejar_slug=treejar_slug,
+            sku=sku or "",
+        )
+        logger.exception("Failed to send catalog mismatch notification to Telegram")
 
 
 async def notify_quality_alert(

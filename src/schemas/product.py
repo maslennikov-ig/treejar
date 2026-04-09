@@ -42,9 +42,9 @@ class ProductSearchResult(BaseModel):
 
 
 class ProductSyncRequest(BaseModel):
-    # Legacy operational sync selector.
-    # Catalog source of truth is configured separately via settings.catalog_api_url.
-    source: str
+    # Defaults to the canonical Treejar catalog sync.
+    # Explicit "zoho" remains available only as a legacy operational path.
+    source: str = "treejar"
 
 
 class ProductSyncResponse(BaseModel):

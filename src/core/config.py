@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Catalog source of truth
     catalog_source_name: str = "treejar_catalog_api"
     catalog_api_url: str = "https://new.treejartrading.ae/api/catalog"
+    catalog_api_timeout_seconds: float = 20.0
+    catalog_api_max_retries: int = 3
+    catalog_api_page_size: int = 100
 
     # Embeddings
     embedding_model: str = "BAAI/bge-m3"

@@ -24,6 +24,12 @@ from src.schemas import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+SYNC_JOB_BY_SOURCE = {
+    "treejar": "sync_products_from_treejar_catalog",
+    "catalog": "sync_products_from_treejar_catalog",
+    "treejar_catalog": "sync_products_from_treejar_catalog",
+    "zoho": "sync_products_from_zoho",
+}
 
 
 @router.get("/", response_model=PaginatedResponse[ProductRead])
@@ -83,27 +89,23 @@ async def sync_products(
     body: ProductSyncRequest,
     request: Request,
 ) -> ProductSyncResponse:
-    """Queue the legacy operational product sync.
-
-    Catalog source of truth for Noor is settings.catalog_api_url.
-    This endpoint currently exists only for the remaining Zoho operational path
-    until product runtime is fully cut over to the Treejar catalog API.
-    """
-    if body.source != "zoho":
+    """Queue product sync, defaulting to the canonical Treejar catalog path."""
+    source = body.source.strip().lower()
+    job_name = SYNC_JOB_BY_SOURCE.get(source)
+    if job_name is None:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Legacy sync endpoint only supports 'zoho'. "
+                "Unsupported sync source. Use 'treejar' for the canonical catalog "
+                "sync or 'zoho' for the legacy operational path. "
                 f"Catalog source of truth is '{settings.catalog_api_url}'."
             ),
         )
 
     try:
         pool = request.app.state.arq_pool
-        await pool.enqueue_job("sync_products_from_zoho")
+        await pool.enqueue_job(job_name)
 
-        # We return a 0-filled response to indicate queued
-        # (Could also just return a generic queued status, but adhering to the schema)
         return ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
     except Exception as e:
         logger.error("Error triggering sync: %s", e)

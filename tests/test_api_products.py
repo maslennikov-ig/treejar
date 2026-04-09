@@ -108,6 +108,23 @@ async def test_search_products_error(
 
 
 @pytest.mark.asyncio
+async def test_sync_products_treejar_default(mock_db: AsyncMock) -> None:
+    mock_pool = AsyncMock()
+    app.state.arq_pool = mock_pool
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post("/api/v1/products/sync", json={})
+
+    assert response.status_code == 200
+    assert response.json()["synced"] == 0
+    mock_pool.enqueue_job.assert_awaited_with("sync_products_from_treejar_catalog")
+
+    del app.state.arq_pool
+
+
+@pytest.mark.asyncio
 async def test_sync_products_zoho(mock_db: AsyncMock) -> None:
     # We need to mock the ARQ pool on the app state
     mock_pool = AsyncMock()
@@ -134,4 +151,4 @@ async def test_sync_products_unsupported(mock_db: AsyncMock) -> None:
         response = await ac.post("/api/v1/products/sync", json={"source": "unknown"})
 
     assert response.status_code == 400
-    assert "zoho" in response.json()["detail"]
+    assert "treejar" in response.json()["detail"]

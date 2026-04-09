@@ -14,6 +14,8 @@ def test_arq_worker_settings_configured() -> None:
     function_names = [f.__name__ for f in settings.functions]
     assert "process_incoming_batch" in function_names
     assert "refresh_conversation_summary" in function_names
+    assert "sync_products_from_treejar_catalog" in function_names
+    assert "sync_products_from_zoho" in function_names
     assert "evaluate_realtime_red_flags" in function_names
     assert "evaluate_mature_conversations_quality" in function_names
     assert "evaluate_recent_conversations_quality" in function_names
@@ -22,7 +24,7 @@ def test_arq_worker_settings_configured() -> None:
     assert settings.cron_jobs is not None
     assert len(settings.cron_jobs) > 0
     cron_names = [c.coroutine.__qualname__ for c in settings.cron_jobs]
-    assert "sync_products_from_zoho" in cron_names
+    assert "sync_products_from_treejar_catalog" in cron_names
     assert "evaluate_realtime_red_flags" in cron_names
     assert "evaluate_mature_conversations_quality" in cron_names
 

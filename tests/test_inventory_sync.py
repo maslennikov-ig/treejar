@@ -1,14 +1,82 @@
 from datetime import UTC
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.integrations.inventory.sync import (
     _deactivate_stale_products,
     _upsert_items_batch,
+    _upsert_treejar_products_batch,
+    sync_products_from_treejar_catalog,
     sync_products_from_zoho,
 )
 from src.schemas.product import ProductSyncResponse
+
+
+@pytest.mark.asyncio
+async def test_sync_products_from_treejar_catalog_success() -> None:
+    ctx = {"redis": AsyncMock()}
+
+    catalog_items = [
+        {"slug": "chair-1", "sku": "SKU-1", "name": "Chair 1"},
+        {"slug": "chair-2", "sku": "SKU-2", "name": "Chair 2"},
+    ]
+
+    async def iterate_items() -> object:
+        for item in catalog_items:
+            yield item
+
+    async def mock_upsert_impl(
+        items: list[dict[str, str]], stats: ProductSyncResponse
+    ) -> None:
+        stats.synced += len(items)
+        stats.created += len(items)
+
+    with (
+        patch("src.integrations.inventory.sync._treejar_catalog_client") as mock_cm,
+        patch(
+            "src.integrations.inventory.sync._upsert_treejar_products_batch",
+            new_callable=AsyncMock,
+            side_effect=mock_upsert_impl,
+        ) as mock_upsert,
+        patch(
+            "src.integrations.inventory.sync._deactivate_stale_products",
+            new_callable=AsyncMock,
+            return_value=1,
+        ) as mock_deactivate,
+        patch(
+            "src.integrations.inventory.sync._generate_missing_embeddings",
+            new_callable=AsyncMock,
+            return_value=2,
+        ) as mock_embed,
+    ):
+        mock_client = MagicMock()
+        mock_client.iter_all_products.return_value = iterate_items()
+        mock_cm.return_value.__aenter__.return_value = mock_client
+
+        result = await sync_products_from_treejar_catalog(ctx)
+
+    mock_upsert.assert_awaited_once()
+    mock_deactivate.assert_awaited_once()
+    mock_embed.assert_awaited_once()
+    assert result["synced"] == 2
+    assert result["created"] == 2
+    assert result["deactivated"] == 1
+    assert result["embeddings_generated"] == 2
+
+
+@pytest.mark.asyncio
+async def test_sync_products_from_treejar_catalog_api_error() -> None:
+    ctx = {"redis": AsyncMock()}
+
+    with patch("src.integrations.inventory.sync._treejar_catalog_client") as mock_cm:
+        mock_client = AsyncMock()
+        mock_client.iter_all_products.side_effect = RuntimeError("catalog down")
+        mock_cm.return_value.__aenter__.return_value = mock_client
+
+        result = await sync_products_from_treejar_catalog(ctx)
+
+    assert result["errors"] == 1
 
 
 @pytest.mark.asyncio
@@ -117,6 +185,50 @@ def test_sync_response_has_new_fields() -> None:
     )
     assert resp.deactivated == 0
     assert resp.embeddings_generated == 0
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.inventory.sync.async_session_factory")
+async def test_upsert_treejar_products_batch_preserves_existing_zoho_item_id(
+    mock_session_factory: AsyncMock,
+) -> None:
+    items = [
+        {
+            "slug": "skyland-executive-chair-ch-970-grey",
+            "sku": "CH 970 grey",
+            "name": "Skyland Executive Chair CH 970 Grey",
+            "description": "Hydrated description",
+            "price": 1210,
+            "salePrice": None,
+            "currency": "AED",
+            "inStock": True,
+            "stockQuantity": 123,
+            "category": "Executive Chair",
+            "categorySlug": "executive-chair",
+            "parentCategory": "Chairs",
+            "parentCategorySlug": "chairs",
+            "images": [{"url": "https://cdn.example/product.png"}],
+            "url": "https://new.treejartrading.ae/product/skyland-executive-chair-ch-970-grey",
+        }
+    ]
+    stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+    class MockResult:
+        def all(self) -> list[tuple[str, int]]:
+            return [("uuid-1", 1)]
+
+    mock_session.execute.return_value = MockResult()
+
+    await _upsert_treejar_products_batch(items, stats)
+
+    stmt = mock_session.execute.call_args[0][0]
+    sql = str(stmt.compile()).lower()
+    assert "coalesce(products.zoho_item_id" in sql
+    assert stats.updated == 1
+    assert stats.synced == 1
 
 
 @pytest.mark.asyncio

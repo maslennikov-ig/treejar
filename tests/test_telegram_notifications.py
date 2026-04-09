@@ -217,6 +217,42 @@ async def test_notify_escalation_calls_telegram() -> None:
 
 
 @pytest.mark.asyncio
+async def test_catalog_mismatch_formatting() -> None:
+    from src.services.notifications import format_catalog_mismatch_message
+
+    msg = format_catalog_mismatch_message(
+        sku="CH 970 grey",
+        treejar_slug="skyland-executive-chair-ch-970-grey",
+        product_name="Skyland Executive Chair CH 970 Grey",
+        detail="Zoho item lookup returned no exact SKU match.",
+    )
+
+    assert "Catalog mismatch" in msg
+    assert "CH 970 grey" in msg
+    assert "skyland-executive-chair-ch-970-grey" in msg
+    assert "missing in Zoho" in msg
+    assert "site/customer team" in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_catalog_mismatch_calls_telegram() -> None:
+    from src.services.notifications import notify_catalog_mismatch
+
+    with patch("src.services.notifications.TelegramClient") as MockTg:
+        mock_instance = AsyncMock()
+        MockTg.return_value = mock_instance
+        mock_instance.send_message = AsyncMock()
+
+        await notify_catalog_mismatch(
+            sku="CH 970 grey",
+            treejar_slug="skyland-executive-chair-ch-970-grey",
+            product_name="Skyland Executive Chair CH 970 Grey",
+        )
+
+        mock_instance.send_message.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_final_quality_review_formatting() -> None:
     """Final review should render weighted breakdown and owner-facing sections."""
     from src.quality.schemas import BlockScore, CriterionScore, EvaluationResult
