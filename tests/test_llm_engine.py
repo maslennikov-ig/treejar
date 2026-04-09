@@ -17,6 +17,7 @@ from pydantic_ai.models.test import TestModel
 from src.llm.engine import (
     QuotationItem,
     SalesDeps,
+    extract_exact_quote_candidate,
     inject_system_prompt,
     process_message,
     sales_agent,
@@ -1412,6 +1413,18 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
     assert second_call["deps"].tool_mode == "exact_quote"
 
 
+def test_extract_exact_quote_candidate_accepts_exact_named_item_without_quote_terms() -> (
+    None
+):
+    candidate = extract_exact_quote_candidate(
+        "I need the exact price and current availability for 1 Reception desk 1600 SKYLAND LUMA 9788-8."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 1
+    assert "skyland luma" in candidate.item_candidate.casefold()
+
+
 @pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
@@ -1462,6 +1475,77 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_named_item_second_consultative_pass_resolves_to_catalog_sku(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "I need the exact price and current availability for "
+        "1 Reception desk 1600 SKYLAND LUMA 9788-8."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your company email."),
+    ]
+
+    product = SimpleNamespace(
+        sku="OF-HAI-Luma-Reception-RJ 9788-8-1600-Walnut",
+        name_en="Reception desk 1600 SKYLAND LUMA 9788-8",
+        description_en="Reception desk 1600 SKYLAND LUMA 9788-8 Walnut",
+        attributes={"treejar_slug": "reception-desk-1600-skyland-luma-9788-8"},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = [product]
+    db.execute.return_value = execute_result
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SA-009 has been prepared and sent to the manager for review."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert (
+        response.text
+        == "Quotation SA-009 has been prepared and sent to the manager for review."
+    )
+    assert mock_run.await_count == 2
+    mock_create_quotation.assert_awaited_once()
+    _, items = mock_create_quotation.await_args.args
+    assert items == [
+        QuotationItem(
+            sku="OF-HAI-Luma-Reception-RJ 9788-8-1600-Walnut",
+            quantity=1,
+        )
+    ]
 
 
 @pytest.mark.asyncio

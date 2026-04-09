@@ -13,7 +13,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
 from redis.asyncio import Redis
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -239,6 +239,14 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.casefold().split())
 
 
+def _tokenize_exact_match_text(text: str) -> list[str]:
+    return [
+        token
+        for token in re.split(r"[^a-z0-9]+", _normalize_text(text))
+        if token and len(token) >= 2
+    ]
+
+
 def _has_exact_commitment_intent(normalized: str) -> bool:
     if any(blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS):
         return False
@@ -312,6 +320,20 @@ def is_exact_quote_request(text: str) -> bool:
     return extract_exact_quote_candidate(text) is not None
 
 
+def _catalog_product_match_text(product: Any) -> str:
+    attributes = getattr(product, "attributes", None) or {}
+    return " ".join(
+        part
+        for part in (
+            str(getattr(product, "sku", "") or ""),
+            str(getattr(product, "name_en", "") or ""),
+            str(getattr(product, "description_en", "") or ""),
+            str(attributes.get("treejar_slug") or ""),
+        )
+        if part
+    )
+
+
 async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
     from src.models.product import Product
 
@@ -326,6 +348,75 @@ async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None
     if product is None or not isinstance(getattr(product, "sku", None), str):
         return None
     return product
+
+
+async def _resolve_exact_quote_candidate_sku(
+    db: AsyncSession,
+    candidate: ExactQuoteCandidate,
+) -> str | None:
+    if candidate.sku:
+        exact_sku_product = await _find_catalog_product_by_sku(db, candidate.sku)
+        if exact_sku_product is not None:
+            return str(exact_sku_product.sku)
+        if _normalize_text(candidate.item_candidate) == _normalize_text(candidate.sku):
+            return candidate.sku
+
+    from src.models.product import Product
+
+    candidate_tokens = _tokenize_exact_match_text(candidate.item_candidate)
+    if len(candidate_tokens) < 2:
+        return None
+
+    anchor_terms = [token for token in candidate_tokens if len(token) >= 4]
+    if not anchor_terms:
+        anchor_terms = candidate_tokens
+    anchor = max(
+        anchor_terms, key=lambda token: (any(ch.isdigit() for ch in token), len(token))
+    )
+
+    result = await db.execute(
+        select(Product).where(
+            Product.is_active.is_(True),
+            or_(
+                func.lower(Product.name_en).contains(anchor),
+                func.lower(func.coalesce(Product.description_en, "")).contains(anchor),
+                func.lower(Product.sku).contains(anchor),
+            ),
+        )
+    )
+    products = list(result.scalars().all())
+    if not products:
+        return None
+
+    candidate_token_set = set(candidate_tokens)
+    best_product: Any | None = None
+    best_score = (-1, -1, -1)
+    second_best_score = (-1, -1, -1)
+    for product in products:
+        product_tokens = set(
+            _tokenize_exact_match_text(_catalog_product_match_text(product))
+        )
+        overlap = candidate_token_set & product_tokens
+        digit_overlap = sum(1 for token in overlap if any(ch.isdigit() for ch in token))
+        long_overlap = sum(1 for token in overlap if len(token) >= 4)
+        score = (digit_overlap, long_overlap, len(overlap))
+        if score > best_score:
+            second_best_score = best_score
+            best_score = score
+            best_product = product
+        elif score > second_best_score:
+            second_best_score = score
+
+    if best_product is None:
+        return None
+
+    min_overlap = 3 if len(candidate_token_set) >= 4 else 2
+    if best_score[2] < min_overlap:
+        return None
+    if best_score == second_best_score:
+        return None
+
+    return str(best_product.sku)
 
 
 def _catalog_mismatch_customer_message() -> str:
@@ -1503,7 +1594,10 @@ async def process_message(
             if second_exact_deps.quotation_created or _has_escalation(conv):
                 return _build_llm_response(second_result, db_model_main)
 
-            if exact_quote_candidate.sku:
+            resolved_exact_sku = await _resolve_exact_quote_candidate_sku(
+                deps.db, exact_quote_candidate
+            )
+            if resolved_exact_sku:
                 from pydantic_ai.usage import RunUsage
 
                 fallback_ctx = RunContext(
@@ -1518,7 +1612,7 @@ async def process_message(
                     fallback_ctx,
                     [
                         QuotationItem(
-                            sku=exact_quote_candidate.sku,
+                            sku=resolved_exact_sku,
                             quantity=exact_quote_candidate.quantity,
                         )
                     ],
