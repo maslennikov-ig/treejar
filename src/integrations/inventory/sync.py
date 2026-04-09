@@ -367,6 +367,7 @@ async def _upsert_treejar_products_batch(
         normalized = _normalize_treejar_product(item)
         if normalized is None:
             continue
+        normalized["synced_at"] = func.now()
         values.append(normalized)
 
     if not values:

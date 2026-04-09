@@ -240,7 +240,9 @@ async def test_upsert_treejar_products_batch_preserves_existing_zoho_item_id(
 
     stmt = mock_session.execute.call_args[0][0]
     sql = str(stmt.compile()).lower()
+    insert_sql = sql.split("on conflict")[0]
     assert "coalesce(products.zoho_item_id" in sql
+    assert "synced_at" in insert_sql
     assert stats.updated == 1
     assert stats.synced == 1
 
