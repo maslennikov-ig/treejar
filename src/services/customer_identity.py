@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from html import escape
 from typing import Any
@@ -13,6 +14,14 @@ from src.services.inbound_channels import normalize_channel_phone
 _DUBAI_TZ = ZoneInfo("Asia/Dubai")
 _UNKNOWN_TEXT = "не указано"
 _UNKNOWN_PHONE = "не указан"
+_GENERIC_CUSTOMER_PLACEHOLDERS = frozenset(
+    {
+        "valued customer",
+        "unknown client",
+    }
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -20,6 +29,13 @@ def _clean_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _is_generic_customer_placeholder(value: str | None) -> bool:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return False
+    return cleaned.casefold() in _GENERIC_CUSTOMER_PLACEHOLDERS
 
 
 def _extract_name_from_profile(profile: dict[str, Any] | None) -> str | None:
@@ -77,24 +93,47 @@ async def resolve_owner_customer_name(
 ) -> str:
     """Resolve a display-ready customer name for owner-facing notifications."""
     direct_name = _clean_text(conversation_customer_name)
-    if direct_name:
+    if direct_name and not _is_generic_customer_placeholder(direct_name):
         return direct_name
 
     if redis is not None and phone:
-        cached_profile = await get_cached_crm_profile(redis, phone)
-        cached_name = _extract_name_from_profile(cached_profile)
-        if cached_name:
-            return cached_name
-
-    if crm_client is not None and phone:
-        contact = await crm_client.find_contact_by_phone(phone)
-        if contact:
-            cached_profile = _build_cached_profile(contact)
-            if redis is not None:
-                await set_cached_crm_profile(redis, phone, cached_profile)
+        try:
+            cached_profile = await get_cached_crm_profile(redis, phone)
+        except Exception:
+            logger.warning(
+                "Failed to read CRM profile cache for owner-facing identity phone=%s",
+                phone,
+                exc_info=True,
+            )
+        else:
             cached_name = _extract_name_from_profile(cached_profile)
             if cached_name:
                 return cached_name
+
+    if crm_client is not None and phone:
+        try:
+            contact = await crm_client.find_contact_by_phone(phone)
+        except Exception:
+            logger.warning(
+                "Failed to enrich owner-facing identity from CRM phone=%s",
+                phone,
+                exc_info=True,
+            )
+        else:
+            if contact:
+                cached_profile = _build_cached_profile(contact)
+                if redis is not None:
+                    try:
+                        await set_cached_crm_profile(redis, phone, cached_profile)
+                    except Exception:
+                        logger.warning(
+                            "Failed to update CRM profile cache for owner-facing identity phone=%s",
+                            phone,
+                            exc_info=True,
+                        )
+                cached_name = _extract_name_from_profile(cached_profile)
+                if cached_name:
+                    return cached_name
 
     return _UNKNOWN_TEXT
 

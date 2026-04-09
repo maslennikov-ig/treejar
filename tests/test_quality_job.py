@@ -477,6 +477,52 @@ async def test_final_review_fetches_customer_name_from_crm_and_caches_it() -> No
 
 
 @pytest.mark.asyncio
+async def test_final_review_persists_marker_when_identity_enrichment_fails() -> None:
+    """Transient cache/CRM failures should degrade to placeholder and keep marker."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate = _make_candidate(
+        status="closed",
+        updated_at=datetime.now(tz=UTC) - timedelta(hours=4),
+        customer_name="Valued Customer",
+    )
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(side_effect=[None, RuntimeError("redis down")])
+    mock_redis.setex = AsyncMock()
+    mock_notify = AsyncMock()
+    mock_crm = AsyncMock()
+    mock_crm.find_contact_by_phone = AsyncMock(side_effect=RuntimeError("crm down"))
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(return_value=_make_evaluation_result(score=18.0)),
+        ),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch(
+            "src.services.notifications.notify_final_quality_review", new=mock_notify
+        ),
+    ):
+        await evaluate_mature_conversations_quality(
+            {"redis": mock_redis, "crm_client": mock_crm}
+        )
+
+    mock_notify.assert_awaited_once()
+    assert mock_notify.await_args.kwargs["customer_name"] == "не указано"
+    mock_redis.setex.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_final_review_triggers_on_idle_threshold() -> None:
     """Final review job should send a review after 3 hours of inactivity."""
     from src.quality.job import evaluate_mature_conversations_quality

@@ -27,6 +27,33 @@ async def test_resolve_owner_customer_name_prefers_conversation_value() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_owner_customer_name_ignores_generic_placeholder() -> None:
+    from src.services.customer_identity import resolve_owner_customer_name
+
+    redis = AsyncMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.set = AsyncMock()
+    crm_client = AsyncMock()
+    crm_client.find_contact_by_phone = AsyncMock(
+        return_value={
+            "First_Name": "Aisha",
+            "Last_Name": "Khan",
+            "Segment": "B2B",
+        }
+    )
+
+    result = await resolve_owner_customer_name(
+        phone="+971501234567",
+        conversation_customer_name="Valued Customer",
+        redis=redis,
+        crm_client=crm_client,
+    )
+
+    assert result == "Aisha Khan"
+    crm_client.find_contact_by_phone.assert_awaited_once_with("+971501234567")
+
+
+@pytest.mark.asyncio
 async def test_resolve_owner_customer_name_uses_cached_crm_profile() -> None:
     from src.services.customer_identity import resolve_owner_customer_name
 
@@ -87,6 +114,25 @@ async def test_resolve_owner_customer_name_returns_placeholder_when_missing() ->
     redis.get = AsyncMock(return_value=None)
     crm_client = AsyncMock()
     crm_client.find_contact_by_phone = AsyncMock(return_value=None)
+
+    result = await resolve_owner_customer_name(
+        phone="+971501234567",
+        conversation_customer_name=None,
+        redis=redis,
+        crm_client=crm_client,
+    )
+
+    assert result == "не указано"
+
+
+@pytest.mark.asyncio
+async def test_resolve_owner_customer_name_fails_soft_on_cache_and_crm_errors() -> None:
+    from src.services.customer_identity import resolve_owner_customer_name
+
+    redis = AsyncMock()
+    redis.get = AsyncMock(side_effect=RuntimeError("redis down"))
+    crm_client = AsyncMock()
+    crm_client.find_contact_by_phone = AsyncMock(side_effect=RuntimeError("crm down"))
 
     result = await resolve_owner_customer_name(
         phone="+971501234567",
