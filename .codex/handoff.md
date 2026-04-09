@@ -8,7 +8,7 @@ Current baseline branch: `main`
 - As of 2026-04-06, the canonical single source of truth for catalog data is `https://new.treejartrading.ae/api/catalog`.
 - Treat `bazara.ae`, `treejartrading.ae/ksa-en`, and Zoho Inventory catalog fields as non-canonical for customer-facing product truth.
 - Zoho Inventory remains an operational system for quotation / SaleOrder / service-level checks and related business processes.
-- Important honesty constraint: repo docs and code contract now reflect the new catalog truth, but runtime product search still depends on the local `products` table fed by the legacy Zoho sync path until a dedicated cutover slice lands.
+- Important honesty constraint: repo docs and code contract now reflect the new catalog truth, and `main` now also routes the local catalog data plane through Treejar Catalog API; canonical `/opt/noor` still needs a hot-apply before live runtime matches this repo state.
 - As of 2026-04-09, owner decisions for the cutover are now explicit:
   - Treejar Catalog API is used for catalog discovery and customer-facing product browsing.
   - For any concrete customer question about exact price/availability, Noor must confirm through Zoho before making a commitment.
@@ -77,12 +77,21 @@ Current baseline branch: `main`
   - review artifacts:
     - implementation report: `.codex/agent-reports/2026-04-05/quality-review-redesign-v1.md` (local-only)
     - independent code review: `docs/reports/code-reviews/2026-04/CR-2026-04-05-quality-review-redesign.md`
+- `tj-2bdj` is now landed on `main` as the catalog cutover slice:
+  - local `products` table is now canonically refreshed from `https://new.treejartrading.ae/api/catalog` via `src/integrations/catalog/treejar_catalog.py` and `sync_products_from_treejar_catalog()`
+  - runtime `search_products` / RAG path was intentionally preserved: the cutover changes the source feeding local `products`, not the customer request path
+  - worker registration, cron, and `/api/v1/products/sync` now default to Treejar catalog sync; explicit `source=zoho` remains only as a legacy/manual mode
+  - Treejar upsert preserves existing `zoho_item_id` by SKU and stores `treejar_slug` plus raw source metadata in `products.attributes`
+  - independent review found one P1 regression before landing: legacy `sync_products_from_zoho()` still rewrote customer-facing catalog fields and deactivated non-Zoho rows, which would have reintroduced a second source of truth; this was fixed before landing by converting the Zoho path into enrichment-only refresh for existing SKUs (`zoho_item_id` linkage only, no inserts, no catalog overwrite, no stale deactivation)
+  - minimal reusable groundwork for Treejar/Zoho mismatch alerts now exists in `src/services/notifications.py` (`format_catalog_mismatch_message()` / `notify_catalog_mismatch()`), but customer-flow wiring for mismatch handling is still a separate follow-up
+  - verification passed in the implementation worktree on final landed code: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `uv run pytest tests/test_inventory_sync.py tests/test_api_products.py tests/test_treejar_catalog.py tests/test_telegram_notifications.py tests/test_worker.py tests/test_zoho_sync.py -v --tb=short` (`45 passed`)
+  - review artifact: `docs/reports/code-reviews/2026-04/CR-2026-04-09-tj-2bdj-catalog-cutover.md`
+  - not yet hot-applied to canonical `/opt/noor` in this turn
 - Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
   - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 
 ## Open follow-ups / nearest ready tasks
 
-- `tj-2bdj` — P1 task: cut over runtime product search from legacy Zoho sync to Treejar Catalog API
 - `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
 - `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
 - `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
