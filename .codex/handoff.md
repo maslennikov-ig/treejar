@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-07
+Updated: 2026-04-09
 Current baseline branch: `main`
 
 ## Current truth additions
@@ -9,6 +9,13 @@ Current baseline branch: `main`
 - Treat `bazara.ae`, `treejartrading.ae/ksa-en`, and Zoho Inventory catalog fields as non-canonical for customer-facing product truth.
 - Zoho Inventory remains an operational system for quotation / SaleOrder / service-level checks and related business processes.
 - Important honesty constraint: repo docs and code contract now reflect the new catalog truth, but runtime product search still depends on the local `products` table fed by the legacy Zoho sync path until a dedicated cutover slice lands.
+- As of 2026-04-09, owner decisions for the cutover are now explicit:
+  - Treejar Catalog API is used for catalog discovery and customer-facing product browsing.
+  - For any concrete customer question about exact price/availability, Noor must confirm through Zoho before making a commitment.
+  - Quotation generation is allowed only after exact `SKU + quantity` are known.
+  - Current manager-approval step for quotation delivery stays in place even after successful Zoho confirmation.
+  - If an item exists in Treejar Catalog API but is missing in Zoho, Noor may show it as an option, but must not send a quotation, must escalate to manager, and must emit a Telegram operational bug alert.
+  - Owner explicitly confirmed that site-side data quality and bug fixing for the new catalog API remain on the customer/site team.
 
 ## Current repo state
 
