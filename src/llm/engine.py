@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 from uuid import UUID
@@ -12,6 +13,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
 from redis.asyncio import Redis
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -44,6 +46,15 @@ __all__ = ["rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
+EXACT_QUOTE_ALLOWED_TOOLS = frozenset(
+    {
+        "search_products",
+        "get_stock",
+        "create_quotation",
+        "escalate_to_manager",
+        "update_language",
+    }
+)
 ORDER_HANDOFF_PASS_1_DIRECTIVES = (
     "this is likely a concrete order handoff case",
     "do not ask qualifying questions if order evidence is already sufficient",
@@ -55,6 +66,33 @@ ORDER_HANDOFF_PASS_2_DIRECTIVES = (
     "do not search",
     "if order evidence is sufficient, use escalate_to_manager(order_confirmation)",
 )
+EXACT_QUOTE_PASS_1_DIRECTIVES = (
+    "the customer is asking for an exact quotation-ready commitment",
+    "do not ask for full name, company, or email before the quote draft",
+    "if exact sku and quantity are already known, confirm via get_stock and then call create_quotation immediately",
+    "if Zoho cannot confirm the item, escalate to manager and do not promise exact price or availability",
+)
+EXACT_QUOTE_PASS_2_DIRECTIVES = (
+    "previous pass stayed consultative on an exact quotation-ready request",
+    "do not ask for company details first",
+    "use Zoho-confirmed stock and price only",
+    "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
+)
+_QUOTE_REQUEST_TERMS = ("quote", "quotation")
+_CONSULTATIVE_QUOTE_BLOCKERS = (
+    "what options",
+    "options",
+    "recommend",
+    "recommendation",
+    "ideas",
+    "similar",
+    "catalog",
+    "show me",
+    "bulk pricing",
+    "wholesale pricing",
+)
+_QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
+_SKU_SIGNAL_RE = re.compile(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b")
 
 
 def _search_products_limit_message(*, include_no_results: bool = False) -> str:
@@ -130,8 +168,8 @@ def _search_budget_fallback_contract(*, prior_results_seen: bool) -> str:
 
 def _stock_follow_up_contract() -> str:
     return (
-        "Use this stock fact to strengthen the concrete options you already have. "
-        "Keep the answer option-first, mention the relevant availability fact, "
+        "Use this Zoho-confirmed stock and price fact to strengthen the concrete options you already have. "
+        "Keep the answer option-first, mention the relevant availability and exact price facts, "
         "and ask at most one targeted follow-up only after presenting options. "
         "Do not switch back to generic qualifying questions before showing the options."
     )
@@ -153,8 +191,13 @@ class SalesDeps:
     recent_history: list[str] | None = None  # Last N messages for escalation context
     product_search_calls: int = 0
     product_results_seen: bool = False
-    tool_mode: Literal["full", "order_handoff", "service_policy"] = "full"
+    tool_mode: Literal["full", "order_handoff", "service_policy", "exact_quote"] = (
+        "full"
+    )
     runtime_directives: tuple[str, ...] = ()
+    inventory_confirmed: bool = False
+    quotation_created: bool = False
+    catalog_mismatch_alerted: bool = False
 
 
 # Allowed transitions for the advance_stage tool
@@ -179,6 +222,113 @@ class LLMResponse:
     model: str
 
 
+def is_exact_quote_request(text: str) -> bool:
+    """Return True for narrow exact quotation requests that should not stay consultative."""
+    normalized = " ".join(text.casefold().split())
+    if not normalized:
+        return False
+
+    if not any(term in normalized for term in _QUOTE_REQUEST_TERMS):
+        return False
+
+    if any(blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS):
+        return False
+
+    if not _QUANTITY_SIGNAL_RE.search(normalized):
+        return False
+
+    return bool(_SKU_SIGNAL_RE.search(normalized))
+
+
+async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
+    from src.models.product import Product
+
+    normalized_sku = sku.strip()
+    if not normalized_sku:
+        return None
+
+    result = await db.execute(
+        select(Product).where(func.lower(Product.sku) == normalized_sku.casefold())
+    )
+    product = result.scalar_one_or_none()
+    if product is None or not isinstance(getattr(product, "sku", None), str):
+        return None
+    return product
+
+
+def _catalog_mismatch_customer_message() -> str:
+    return (
+        "I couldn't confirm exact price and availability in Zoho for this item. "
+        "A manager has been asked to verify it before we make a commitment."
+    )
+
+
+async def _notify_catalog_mismatch_and_escalate(
+    ctx: RunContext[SalesDeps],
+    *,
+    sku: str,
+    catalog_product: Any,
+    detail: str,
+) -> None:
+    if ctx.deps.catalog_mismatch_alerted:
+        return
+
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+    from src.services.notifications import notify_catalog_mismatch
+
+    attributes = getattr(catalog_product, "attributes", None) or {}
+    treejar_slug = str(attributes.get("treejar_slug") or catalog_product.sku)
+    product_name = catalog_product.name_en
+
+    await notify_catalog_mismatch(
+        sku=getattr(catalog_product, "sku", sku),
+        treejar_slug=treejar_slug,
+        product_name=product_name,
+        detail=detail,
+    )
+    await notify_manager_escalation(
+        conversation=ctx.deps.conversation,
+        reason=(
+            "Catalog mismatch for exact commitment: Treejar item exists but Zoho "
+            "could not confirm exact price/availability."
+        ),
+        recent_messages=ctx.deps.recent_history or [],
+        db=ctx.deps.db,
+        escalation_type=EscalationType.GENERAL,
+    )
+    ctx.deps.catalog_mismatch_alerted = True
+
+
+async def _resolve_inventory_item(
+    ctx: RunContext[SalesDeps],
+    sku: str,
+) -> tuple[dict[str, Any] | None, Any | None]:
+    normalized_sku = sku.strip()
+    catalog_product = await _find_catalog_product_by_sku(ctx.deps.db, normalized_sku)
+
+    if catalog_product and getattr(catalog_product, "zoho_item_id", None):
+        zoho_item = await ctx.deps.zoho_inventory.get_item(catalog_product.zoho_item_id)
+        if zoho_item:
+            ctx.deps.inventory_confirmed = True
+            return zoho_item, catalog_product
+
+    zoho_item = await ctx.deps.zoho_inventory.get_stock(normalized_sku)
+    if zoho_item:
+        ctx.deps.inventory_confirmed = True
+        return zoho_item, catalog_product
+
+    if catalog_product:
+        await _notify_catalog_mismatch_and_escalate(
+            ctx,
+            sku=normalized_sku,
+            catalog_product=catalog_product,
+            detail="Exact Zoho inventory confirmation failed for a runtime quote/stock request.",
+        )
+
+    return None, catalog_product
+
+
 async def _prepare_sales_tools(
     ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
@@ -194,6 +344,12 @@ async def _prepare_sales_tools(
             tool_def
             for tool_def in tool_defs
             if tool_def.name in SERVICE_POLICY_ALLOWED_TOOLS
+        ]
+    if ctx.deps.tool_mode == "exact_quote":
+        return [
+            tool_def
+            for tool_def in tool_defs
+            if tool_def.name in EXACT_QUOTE_ALLOWED_TOOLS
         ]
 
     if ctx.deps.product_search_calls < MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
@@ -411,19 +567,28 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
 
 @sales_agent.tool
 async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
-    """Check current stock level for a specific product SKU.
+    """Check the Zoho-confirmed exact stock level and unit price for a specific product SKU.
 
     Args:
         sku: The exact SKU identifier of the product.
     """
     logger.info(f"LLM Tool called: get_stock(sku={sku!r})")
-    stock_info = await ctx.deps.zoho_inventory.get_stock(sku)
+    stock_info, catalog_product = await _resolve_inventory_item(ctx, sku)
 
     if not stock_info:
+        if catalog_product:
+            return _catalog_mismatch_customer_message()
         return f"Product with SKU {sku} not found in inventory."
 
     available = stock_info.get("stock_on_hand", 0)
-    stock_text = f"Stock for {sku}: {available} items available."
+    price = float(stock_info.get("rate", 0.0))
+    currency = str(
+        stock_info.get("currency_code") or stock_info.get("currency") or "AED"
+    )
+    stock_text = (
+        f"Zoho-confirmed stock for {sku}: {available} items available. "
+        f"Zoho-confirmed price: {price:.2f} {currency}."
+    )
     if ctx.deps.product_results_seen:
         return ToolReturn(
             return_value=stock_text,
@@ -553,7 +718,7 @@ async def create_quotation(
 ) -> str:
     """Generate a formal PDF quotation for the customer, save it to Zoho Inventory as a draft, and send it via WhatsApp.
     Call this when the customer has explicitly asked for a quote and confirmed the items and quantities.
-    Make sure you have their name, company name (if applicable), and email addressed.
+    Do not block on missing full name, company name, or email: use CRM/conversation fallback and the temporary draft customer path when needed.
 
     Args:
         items: List of the SKUs and quantities to include in the quote.
@@ -578,10 +743,15 @@ async def create_quotation(
     )
 
     for item in items:
-        if item.sku not in stock_map:
-            return f"Failed to create quotation: SKU {item.sku} not found."
+        zoho_item = stock_map.get(item.sku)
+        if not zoho_item:
+            zoho_item, catalog_product = await _resolve_inventory_item(ctx, item.sku)
+            if not zoho_item:
+                if catalog_product:
+                    return _catalog_mismatch_customer_message()
+                return f"Failed to create quotation: SKU {item.sku} not found."
+            stock_map[item.sku] = zoho_item
 
-        zoho_item = stock_map[item.sku]
         base_price = float(zoho_item.get("rate", 0.0))
         unit_price = apply_discount(base_price, segment)
         total_price = unit_price * item.quantity
@@ -766,6 +936,7 @@ async def create_quotation(
     except Exception as e:
         logger.error("Failed to send escalation with PDF: %s", e)
 
+    ctx.deps.quotation_created = True
     return (
         f"Quotation {quote_number} has been prepared and sent to the manager for review. "
         "The customer will receive the quotation once the manager approves it."
@@ -1203,6 +1374,24 @@ async def process_message(
                     runtime_directives=ORDER_HANDOFF_PASS_2_DIRECTIVES,
                 )
             )
+            return _build_llm_response(second_result, db_model_main)
+
+        if is_exact_quote_request(masked_text):
+            first_exact_deps = replace(
+                deps,
+                tool_mode="exact_quote",
+                runtime_directives=EXACT_QUOTE_PASS_1_DIRECTIVES,
+            )
+            first_result = await _run_agent(first_exact_deps)
+            if first_exact_deps.quotation_created or _has_escalation(conv):
+                return _build_llm_response(first_result, db_model_main)
+
+            second_exact_deps = replace(
+                deps,
+                tool_mode="exact_quote",
+                runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
+            )
+            second_result = await _run_agent(second_exact_deps)
             return _build_llm_response(second_result, db_model_main)
 
         if (

@@ -188,6 +188,23 @@ class ZohoInventoryClient(InventoryProvider):
         results = await asyncio.gather(*[_fetch(sku) for sku in skus])
         return [res for res in results if res is not None]
 
+    async def get_item(self, item_id: str) -> dict[str, Any] | None:
+        """Get a specific item by Zoho Inventory item_id."""
+        try:
+            response = await self._request("GET", f"/items/{item_id}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+        data = response.json()
+        item = data.get("item")
+        if isinstance(item, dict):
+            return dict(item)
+        if isinstance(data, dict):
+            return dict(data)
+        return None
+
     async def create_sale_order(
         self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"
     ) -> dict[str, Any]:

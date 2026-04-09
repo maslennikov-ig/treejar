@@ -18,6 +18,10 @@ class InventoryProvider(Protocol):
         """Get stock levels for multiple SKUs."""
         ...
 
+    async def get_item(self, item_id: str) -> dict[str, Any] | None:
+        """Get a specific Zoho item by item_id."""
+        ...
+
     async def create_sale_order(
         self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"
     ) -> dict[str, Any]:

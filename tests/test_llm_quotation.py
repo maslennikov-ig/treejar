@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -91,9 +92,15 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
 async def test_create_quotation_sku_not_found() -> None:
     mock_inventory = AsyncMock()
     mock_inventory.get_stock_bulk.return_value = []  # SKU not found
+    mock_inventory.get_stock.return_value = None
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
+    deps.db = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    deps.db.execute.return_value = execute_result
+    deps.catalog_mismatch_alerted = False
 
     ctx = MagicMock(spec=RunContext)
     ctx.deps = deps
@@ -103,3 +110,121 @@ async def test_create_quotation_sku_not_found() -> None:
     result = await create_quotation(ctx, items)
     assert "Failed to create quotation" in result
     assert "NON_EXISTENT" in result
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_create_quotation_without_company_email_uses_temp_customer(
+    mock_notify: AsyncMock,
+) -> None:
+    mock_inventory = AsyncMock()
+    mock_inventory.get_stock_bulk.return_value = [
+        {
+            "sku": "CHAIR-1",
+            "item_id": "123",
+            "rate": 150.0,
+            "description": "A nice chair",
+            "name": "Chair",
+        }
+    ]
+    mock_inventory.create_sale_order.return_value = {
+        "saleorder": {"salesorder_number": "SA-001", "status": "draft"}
+    }
+
+    mock_conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name=None,
+        metadata_={},
+    )
+    mock_redis = AsyncMock()
+    mock_redis.setex = AsyncMock()
+    mock_db = AsyncMock()
+    mock_db.flush = AsyncMock()
+
+    deps = MagicMock(spec=SalesDeps)
+    deps.zoho_inventory = mock_inventory
+    deps.messaging_client = AsyncMock()
+    deps.conversation = mock_conversation
+    deps.crm_context = None
+    deps.redis = mock_redis
+    deps.db = mock_db
+    deps.zoho_crm = AsyncMock()
+    deps.zoho_crm.find_contact_by_phone.return_value = None
+    deps.catalog_mismatch_alerted = False
+
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf", new_callable=AsyncMock
+        ) as mock_pdf,
+        patch(
+            "src.services.pdf.generator.render_quotation_html", return_value="<html>"
+        ),
+    ):
+        mock_pdf.return_value = b"pdf_data"
+        result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "SA-001" in result
+    _, kwargs = mock_inventory.create_sale_order.call_args
+    assert kwargs["customer_id"] == "temp_draft_customer_id"
+    mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_create_quotation_catalog_mismatch_notifies_and_aborts(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+) -> None:
+    mock_inventory = AsyncMock()
+    mock_inventory.get_stock_bulk.return_value = []
+    mock_inventory.get_stock.return_value = None
+
+    mock_conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name=None,
+        metadata_={},
+    )
+    mock_redis = AsyncMock()
+    mock_db = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = SimpleNamespace(
+        sku="CHAIR-1",
+        name_en="Treejar Chair",
+        attributes={"treejar_slug": "treejar-chair"},
+        zoho_item_id=None,
+    )
+    mock_db.execute.return_value = execute_result
+
+    deps = MagicMock(spec=SalesDeps)
+    deps.zoho_inventory = mock_inventory
+    deps.messaging_client = AsyncMock()
+    deps.conversation = mock_conversation
+    deps.crm_context = None
+    deps.redis = mock_redis
+    deps.db = mock_db
+    deps.zoho_crm = AsyncMock()
+    deps.zoho_crm.find_contact_by_phone.return_value = None
+    deps.recent_history = ["user: exact quote for CHAIR-1"]
+    deps.catalog_mismatch_alerted = False
+
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+
+    result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "couldn't confirm exact price and availability" in result.lower()
+    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_manager.assert_awaited_once()
+    mock_inventory.create_sale_order.assert_not_called()

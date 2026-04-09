@@ -1,6 +1,6 @@
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic_ai import RunContext, ToolReturn
@@ -1215,7 +1215,7 @@ async def test_tools_get_stock(
 
     from src.llm.engine import get_stock
 
-    zoho.get_stock.return_value = {"stock_on_hand": 25}
+    zoho.get_stock.return_value = {"stock_on_hand": 25, "rate": 1000.0}
     ctx = RunContext(
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
     )
@@ -1226,10 +1226,49 @@ async def test_tools_get_stock(
     assert "25 items available" in result.return_value
     assert isinstance(result.content, str)
     assert (
-        "use this stock fact to strengthen the concrete options"
+        "use this zoho-confirmed stock and price fact to strengthen the concrete options"
         in result.content.lower()
     )
     zoho.get_stock.assert_awaited_once_with("CHAIR-01")
+
+
+@pytest.mark.asyncio
+async def test_tools_get_stock_returns_zoho_confirmed_price_and_stock(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import get_stock
+
+    zoho.get_stock.return_value = {
+        "sku": "CHAIR-01",
+        "stock_on_hand": 7,
+        "rate": 1073.0,
+        "currency_code": "AED",
+    }
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await get_stock(ctx, "CHAIR-01")
+
+    assert isinstance(result, str)
+    assert "7 items available" in result
+    assert "1073.00 AED" in result
 
 
 @pytest.mark.asyncio
@@ -1261,6 +1300,145 @@ async def test_tools_get_stock_not_found(
 
     result = await get_stock(ctx, "NONEXISTENT")
     assert "not found" in result
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_get_stock_catalog_mismatch_notifies_and_escalates(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: exact price for CHAIR-01"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import get_stock
+
+    product = SimpleNamespace(
+        sku="CHAIR-01",
+        name_en="Exact Chair",
+        attributes={"treejar_slug": "exact-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock.return_value = None
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await get_stock(ctx, "CHAIR-01")
+
+    assert "couldn't confirm exact price and availability" in result.lower()
+    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_manager.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "Please send a quotation for 1 CHAIR-01. "
+        "I need the exact price and current availability."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Please share your full name, company, and email."),
+        _FakeAgentResult(
+            "Quotation SA-001 has been prepared and sent to the manager for review."
+        ),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert (
+        response.text
+        == "Quotation SA-001 has been prepared and sent to the manager for review."
+    )
+    assert mock_run.await_count == 2
+    first_call = mock_run.await_args_list[0].kwargs
+    second_call = mock_run.await_args_list[1].kwargs
+    assert first_call["deps"].tool_mode == "exact_quote"
+    assert second_call["deps"].tool_mode == "exact_quote"
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_consultative_query_stays_in_full_mode(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "We need 20 chairs for next week, what options do you have?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Here are some chair options for you.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Here are some chair options for you."
+    assert mock_run.await_count == 1
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "full"
 
 
 @pytest.mark.asyncio
