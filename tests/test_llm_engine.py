@@ -14,7 +14,13 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from src.llm.engine import SalesDeps, inject_system_prompt, process_message, sales_agent
+from src.llm.engine import (
+    QuotationItem,
+    SalesDeps,
+    inject_system_prompt,
+    process_message,
+    sales_agent,
+)
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
@@ -1359,6 +1365,161 @@ async def test_tools_get_stock_catalog_mismatch_notifies_and_escalates(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_price_request_without_quote_terms_uses_guarded_path(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "What is the exact price and availability for 1 CHAIR-01?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        if mock_run.await_count == 1:
+            return _FakeAgentResult("Please share your company email.")
+        deps.quotation_created = True
+        return _FakeAgentResult(
+            "Quotation SA-001 has been prepared and sent to the manager for review."
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert (
+        response.text
+        == "Quotation SA-001 has been prepared and sent to the manager for review."
+    )
+    assert mock_run.await_count == 2
+    first_call = mock_run.await_args_list[0].kwargs
+    second_call = mock_run.await_args_list[1].kwargs
+    assert first_call["deps"].tool_mode == "exact_quote"
+    assert second_call["deps"].tool_mode == "exact_quote"
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_second_consultative_pass_falls_back_to_direct_quotation(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "What is the exact price and availability for 1 CHAIR-01?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your company email."),
+    ]
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SA-001 has been prepared and sent to the manager for review."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert (
+        response.text
+        == "Quotation SA-001 has been prepared and sent to the manager for review."
+    )
+    assert mock_run.await_count == 2
+    mock_create_quotation.assert_awaited_once()
+    _, items = mock_create_quotation.await_args.args
+    assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_second_consultative_pass_fails_closed_without_exact_sku(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I need the exact price and current availability for 1 Reception desk SKYLAND LUMA."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your email address."),
+    ]
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 2
+    mock_notify.assert_awaited_once()
+    assert conv.escalation_status == "pending"
+    assert response.text != "Please also share your email address."
+    assert "manager" in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -1376,12 +1537,17 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.side_effect = [
-        _FakeAgentResult("Please share your full name, company, and email."),
-        _FakeAgentResult(
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        if mock_run.await_count == 1:
+            return _FakeAgentResult("Please share your full name, company, and email.")
+        deps.quotation_created = True
+        return _FakeAgentResult(
             "Quotation SA-001 has been prepared and sent to the manager for review."
-        ),
-    ]
+        )
+
+    mock_run.side_effect = run_side_effect
 
     response = await process_message(
         conversation_id=conv.id,

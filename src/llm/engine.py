@@ -79,6 +79,8 @@ EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
 )
 _QUOTE_REQUEST_TERMS = ("quote", "quotation")
+_EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
+_EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
 _CONSULTATIVE_QUOTE_BLOCKERS = (
     "what options",
     "options",
@@ -93,6 +95,10 @@ _CONSULTATIVE_QUOTE_BLOCKERS = (
 )
 _QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
 _SKU_SIGNAL_RE = re.compile(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b")
+_QUANTITY_ITEM_SIGNAL_RE = re.compile(
+    r"\b(?P<quantity>\d{1,4})\b\s+(?P<item>[^?.!,;\n]+)",
+    re.IGNORECASE,
+)
 
 
 def _search_products_limit_message(*, include_no_results: bool = False) -> str:
@@ -222,22 +228,88 @@ class LLMResponse:
     model: str
 
 
-def is_exact_quote_request(text: str) -> bool:
-    """Return True for narrow exact quotation requests that should not stay consultative."""
-    normalized = " ".join(text.casefold().split())
-    if not normalized:
-        return False
+@dataclass(frozen=True)
+class ExactQuoteCandidate:
+    quantity: int
+    item_candidate: str
+    sku: str | None
 
-    if not any(term in normalized for term in _QUOTE_REQUEST_TERMS):
-        return False
 
+def _normalize_text(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _has_exact_commitment_intent(normalized: str) -> bool:
     if any(blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS):
         return False
 
-    if not _QUANTITY_SIGNAL_RE.search(normalized):
+    if any(term in normalized for term in _QUOTE_REQUEST_TERMS):
+        return True
+
+    has_commitment_target = any(
+        term in normalized for term in _EXACT_COMMITMENT_TARGETS
+    )
+    has_exactness_signal = any(
+        term in normalized for term in _EXACT_COMMITMENT_QUALIFIERS
+    )
+
+    return has_commitment_target and (
+        has_exactness_signal
+        or (
+            "price" in normalized
+            and (
+                "availability" in normalized
+                or "stock" in normalized
+                or "available" in normalized
+            )
+        )
+    )
+
+
+def _looks_like_exact_item_candidate(candidate: str) -> bool:
+    normalized = _normalize_text(candidate)
+    if not normalized or any(
+        blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS
+    ):
         return False
 
-    return bool(_SKU_SIGNAL_RE.search(normalized))
+    if not re.search(r"[a-z]", normalized):
+        return False
+
+    if _SKU_SIGNAL_RE.search(normalized):
+        return True
+
+    tokens = [token for token in normalized.split() if token]
+    has_digit = bool(re.search(r"\d", normalized))
+    return (has_digit and len(tokens) >= 2) or len(tokens) >= 4
+
+
+def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
+    """Parse a concrete quantity + item request that should stay on the exact-quote path."""
+    normalized = _normalize_text(text)
+    if not normalized or not _has_exact_commitment_intent(normalized):
+        return None
+
+    for match in _QUANTITY_ITEM_SIGNAL_RE.finditer(text):
+        quantity = int(match.group("quantity"))
+        item_candidate = " ".join(match.group("item").split()).strip(" -")
+        if not _looks_like_exact_item_candidate(item_candidate):
+            continue
+
+        sku_match = re.search(_SKU_SIGNAL_RE.pattern, item_candidate, re.IGNORECASE)
+        sku = sku_match.group(0).upper() if sku_match else None
+        return ExactQuoteCandidate(
+            quantity=quantity,
+            item_candidate=item_candidate,
+            sku=sku,
+        )
+
+    return None
+
+
+def is_exact_quote_request(text: str) -> bool:
+    """Return True for narrow exact quotation requests that should not stay consultative."""
+    return extract_exact_quote_candidate(text) is not None
 
 
 async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
@@ -260,6 +332,13 @@ def _catalog_mismatch_customer_message() -> str:
     return (
         "I couldn't confirm exact price and availability in Zoho for this item. "
         "A manager has been asked to verify it before we make a commitment."
+    )
+
+
+def _exact_quote_fail_closed_message() -> str:
+    return (
+        "I couldn't finalize the exact quotation automatically. "
+        "A manager has been asked to verify exact price and availability before we make a commitment."
     )
 
 
@@ -298,6 +377,25 @@ async def _notify_catalog_mismatch_and_escalate(
         escalation_type=EscalationType.GENERAL,
     )
     ctx.deps.catalog_mismatch_alerted = True
+
+
+async def _fail_closed_exact_quote_request(deps: SalesDeps) -> str:
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    if not is_active_human_handoff(deps.conversation.escalation_status):
+        await notify_manager_escalation(
+            conversation=deps.conversation,
+            reason=(
+                "Exact quote flow stayed unresolved after two guarded passes and "
+                "no deterministic quotation could be created safely."
+            ),
+            recent_messages=deps.recent_history or [],
+            db=deps.db,
+            escalation_type=EscalationType.GENERAL,
+        )
+
+    return _exact_quote_fail_closed_message()
 
 
 async def _resolve_inventory_item(
@@ -1243,6 +1341,15 @@ async def process_message(
             model=model_name,
         )
 
+    def _build_static_response(text: str, model_name: str) -> LLMResponse:
+        return LLMResponse(
+            text=unmask_pii(text, pii_map),
+            tokens_in=0,
+            tokens_out=0,
+            cost=None,
+            model=model_name,
+        )
+
     async def _build_policy_handoff_response(
         model_name: str, decision_language: str, decision_text: str
     ) -> LLMResponse:
@@ -1376,7 +1483,8 @@ async def process_message(
             )
             return _build_llm_response(second_result, db_model_main)
 
-        if is_exact_quote_request(masked_text):
+        exact_quote_candidate = extract_exact_quote_candidate(masked_text)
+        if exact_quote_candidate:
             first_exact_deps = replace(
                 deps,
                 tool_mode="exact_quote",
@@ -1392,7 +1500,38 @@ async def process_message(
                 runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
             )
             second_result = await _run_agent(second_exact_deps)
-            return _build_llm_response(second_result, db_model_main)
+            if second_exact_deps.quotation_created or _has_escalation(conv):
+                return _build_llm_response(second_result, db_model_main)
+
+            if exact_quote_candidate.sku:
+                from pydantic_ai.usage import RunUsage
+
+                fallback_ctx = RunContext(
+                    deps=second_exact_deps,
+                    retry=0,
+                    messages=[],
+                    prompt=masked_text,
+                    model=dynamic_model,
+                    usage=RunUsage(),
+                )
+                fallback_text = await create_quotation(
+                    fallback_ctx,
+                    [
+                        QuotationItem(
+                            sku=exact_quote_candidate.sku,
+                            quantity=exact_quote_candidate.quantity,
+                        )
+                    ],
+                )
+                if second_exact_deps.quotation_created or _has_escalation(conv):
+                    return _build_static_response(
+                        fallback_text, f"{db_model_main}|exact-quote-fallback"
+                    )
+
+            fail_closed_text = await _fail_closed_exact_quote_request(second_exact_deps)
+            return _build_static_response(
+                fail_closed_text, f"{db_model_main}|exact-quote-fallback"
+            )
 
         if (
             not policy_decision.is_order_status
