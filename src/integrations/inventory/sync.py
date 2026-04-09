@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import case, func, text
+from sqlalchemy import bindparam, case, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_upsert
 
 from src.core.config import settings
@@ -220,7 +220,7 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
     The canonical source of truth for customer-facing catalog data is the
     Treejar catalog API. This job remains only for the operational Zoho path
-    until product runtime is fully cut over.
+    and must not overwrite catalog-discovery fields in the local products table.
 
     Args:
         ctx: The ARQ context dictionary containing the Redis pool.
@@ -228,15 +228,13 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
     Returns:
         A dictionary with the sync stats matching ProductSyncResponse schema.
     """
-    from datetime import datetime
-
     logger.info("Starting legacy Zoho Inventory operational sync...")
 
     redis = ctx["redis"]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
-    sync_started_at = datetime.now(UTC)
-
-    # --- Phase 1: Fetch and upsert from Zoho ---
+    # This path only refreshes Zoho linkage for rows that already exist in the
+    # canonical Treejar-backed catalog. It does not insert new catalog rows,
+    # deactivate missing rows, or rewrite customer-facing product fields.
     async with _zoho_client(redis) as client:
         page = 1
         has_more = True
@@ -263,11 +261,6 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 
             page += 1
 
-    # --- Phase 2: Lifecycle management (only if sync had no errors) ---
-    if stats.errors == 0 and stats.synced > 0:
-        stats.deactivated = await _deactivate_stale_products(sync_started_at)
-        stats.embeddings_generated = await _generate_missing_embeddings()
-
     logger.info(
         "Zoho sync completed. Synced: %d, Created: %d, Updated: %d, "
         "Deactivated: %d, Embeddings: %d, Errors: %d",
@@ -285,7 +278,7 @@ async def sync_products_from_zoho(ctx: dict[str, Any]) -> dict[str, int]:
 async def _upsert_items_batch(
     items: list[dict[str, Any]], stats: ProductSyncResponse
 ) -> None:
-    """Upsert a batch of items into the PostgreSQL database using SQLAlchemy 2.0.
+    """Refresh Zoho linkage for catalog rows that already exist locally.
 
     Args:
         items: List of item dictionaries from Zoho API.
@@ -300,84 +293,61 @@ async def _upsert_items_batch(
         if item.get("status") != "active":
             continue
 
-        # Parse fields mapping Zoho semantics to our Product model
         sku = item.get("sku")
         if not sku:
             continue
 
         item_id = item.get("item_id")
-        name = item.get("name")
-        description = item.get("description")
-        category = item.get("group_name")
-        rate = float(item.get("rate", 0.0))
-        stock_on_hand = int(item.get("stock_on_hand", 0))
-
-        image_doc_id = item.get("image_document_id")
-        # NOTE: This URL requires OAuth authentication and is not publicly accessible.
-        # For WhatsApp/client-facing use, images must be proxied through our API.
-        image_url = (
-            f"https://inventory.zoho.eu/api/v1/documents/{image_doc_id}"
-            if image_doc_id
-            else None
-        )
 
         values.append(
             {
                 "sku": sku,
                 "zoho_item_id": item_id,
-                "name_en": name or "Unknown",
-                "description_en": description,
-                "category": category,
-                "price": rate,
-                "stock": stock_on_hand,
-                "image_url": image_url,
-                "is_active": True,
             }
         )
 
     if not values:
         return
 
-    # Use a new async session to perform the database operations
     async with async_session_factory() as session:
         try:
-            # Create PostgreSQL INSERT ... ON CONFLICT DO UPDATE (upsert) statement
-            stmt = pg_upsert(Product).values(values)
+            existing_skus = set(
+                (
+                    await session.execute(
+                        select(Product.sku).where(
+                            Product.sku.in_([value["sku"] for value in values])
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
-            # Only reset embedding when content that feeds it actually changed.
-            # This avoids regenerating embeddings for 800 unchanged products every sync.
-            conditional_embedding = _embedding_reset_expression(stmt)
+            matched_values = [
+                {
+                    "match_sku": value["sku"],
+                    "zoho_item_id": value["zoho_item_id"],
+                }
+                for value in values
+                if value["sku"] in existing_skus
+            ]
+            if not matched_values:
+                return
 
-            # Update columns corresponding to the values mapping, excluding sku on conflict
-            set_dict = {
-                "zoho_item_id": stmt.excluded.zoho_item_id,
-                "name_en": stmt.excluded.name_en,
-                "description_en": stmt.excluded.description_en,
-                "category": stmt.excluded.category,
-                "price": stmt.excluded.price,
-                "stock": stmt.excluded.stock,
-                "image_url": stmt.excluded.image_url,
-                "is_active": stmt.excluded.is_active,
-                "embedding": conditional_embedding,
-            }
+            stmt = (
+                update(Product)
+                .where(Product.sku == bindparam("match_sku"))
+                .values(
+                    zoho_item_id=bindparam("zoho_item_id"),
+                    synced_at=func.now(),
+                    updated_at=func.now(),
+                )
+            )
 
-            set_dict["synced_at"] = func.now()
-            set_dict["updated_at"] = func.now()
-
-            stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=set_dict)
-
-            # Use RETURNING with xmax to distinguish inserts from updates:
-            # xmax == 0 means a new INSERT, xmax > 0 means an UPDATE (conflict)
-            result = await session.execute(stmt.returning(Product.id, text("xmax")))
-            rows = result.all()
+            await session.execute(stmt, matched_values)
             await session.commit()
-
-            for row in rows:
-                if row[1] == 0:
-                    stats.created += 1
-                else:
-                    stats.updated += 1
-            stats.synced += len(rows)
+            stats.updated += len(matched_values)
+            stats.synced += len(matched_values)
 
         except Exception as e:
             await session.rollback()

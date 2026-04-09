@@ -139,32 +139,46 @@ async def test_sync_products_from_zoho_api_error() -> None:
 @pytest.mark.asyncio
 @patch("src.integrations.inventory.sync.async_session_factory")
 async def test_upsert_items_batch(mock_session_factory: AsyncMock) -> None:
-    # 1 valid, 1 inactive (skipped), 1 missing sku (skipped)
+    # 1 valid existing SKU, 1 inactive (skipped), 1 missing sku (skipped)
     items = [
-        {"sku": "SKU_1", "status": "active", "name": "Active Item"},
+        {
+            "sku": "SKU_1",
+            "status": "active",
+            "item_id": "zoho-1",
+            "name": "Active Item",
+        },
         {"sku": "SKU_2", "status": "inactive", "name": "Inactive Item"},
         {"status": "active", "name": "No SKU Item"},
     ]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
 
-    # Mock DB session execution and returning rows pattern
     mock_session = AsyncMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
 
-    class MockResult:
-        def all(self) -> list[tuple[str, int]]:
-            return [("uuid-1", 0)]
+    existing_result = MagicMock()
+    existing_result.scalars.return_value.all.return_value = ["SKU_1"]
+    update_result = MagicMock()
+    update_result.rowcount = 1
 
-    mock_session.execute.return_value = MockResult()
+    mock_session.execute.side_effect = [existing_result, update_result]
 
     await _upsert_items_batch(items, stats)
 
-    mock_session.execute.assert_awaited_once()
+    assert mock_session.execute.await_count == 2
     mock_session.commit.assert_awaited_once()
 
-    # Only 1 item should have been processed
-    assert stats.created == 1
-    assert stats.updated == 0
+    stmt = mock_session.execute.call_args_list[1][0][0]
+    sql = str(stmt.compile()).lower()
+    assert "update products set" in sql
+    assert "zoho_item_id" in sql
+    assert "name_en" not in sql
+    assert "description_en" not in sql
+    assert "price" not in sql
+    assert "stock" not in sql
+    assert "image_url" not in sql
+
+    assert stats.created == 0
+    assert stats.updated == 1
     assert stats.synced == 1
     assert stats.errors == 0
 
@@ -233,29 +247,26 @@ async def test_upsert_treejar_products_batch_preserves_existing_zoho_item_id(
 
 @pytest.mark.asyncio
 @patch("src.integrations.inventory.sync.async_session_factory")
-async def test_upsert_resets_embedding(mock_session_factory: AsyncMock) -> None:
-    """Verify that the upsert sets embedding = NULL so changed products get re-embedded."""
-    items = [{"sku": "SKU_1", "status": "active", "name": "Updated Item"}]
+async def test_upsert_items_batch_skips_unmatched_zoho_rows(
+    mock_session_factory: AsyncMock,
+) -> None:
+    items = [{"sku": "SKU_1", "status": "active", "item_id": "zoho-1", "name": "Item"}]
     stats = ProductSyncResponse(synced=0, created=0, updated=0, errors=0)
 
     mock_session = AsyncMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
 
-    class MockResult:
-        def all(self) -> list[tuple[str, int]]:
-            return [("uuid-1", 1)]  # xmax > 0 = UPDATE
-
-    mock_session.execute.return_value = MockResult()
+    existing_result = MagicMock()
+    existing_result.scalars.return_value.all.return_value = []
+    mock_session.execute.return_value = existing_result
 
     await _upsert_items_batch(items, stats)
 
-    # Inspect the statement that was executed
-    call_args = mock_session.execute.call_args
-    stmt = call_args[0][0]
-    # The ON CONFLICT SET clause must include embedding = None
-    compiled = stmt.compile()
-    set_clause_str = str(compiled)
-    assert "embedding" in set_clause_str, "Upsert must reset embedding on conflict"
+    mock_session.execute.assert_awaited_once()
+    mock_session.commit.assert_not_awaited()
+    assert stats.created == 0
+    assert stats.updated == 0
+    assert stats.synced == 0
 
 
 @pytest.mark.asyncio
@@ -281,7 +292,7 @@ async def test_deactivate_stale_products(mock_session_factory: AsyncMock) -> Non
 
 
 @pytest.mark.asyncio
-async def test_sync_calls_deactivate_and_embed() -> None:
+async def test_sync_products_from_zoho_skips_catalog_lifecycle_steps() -> None:
     ctx = {"redis": AsyncMock()}
 
     mock_client_instance = AsyncMock()
@@ -317,7 +328,7 @@ async def test_sync_calls_deactivate_and_embed() -> None:
 
         result = await sync_products_from_zoho(ctx)
 
-        mock_deactivate.assert_awaited_once()
-        mock_embed.assert_awaited_once()
-        assert result["deactivated"] == 2
-        assert result["embeddings_generated"] == 5
+        mock_deactivate.assert_not_awaited()
+        mock_embed.assert_not_awaited()
+        assert result["deactivated"] == 0
+        assert result["embeddings_generated"] == 0
