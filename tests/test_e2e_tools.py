@@ -89,7 +89,12 @@ class TestGetStock:
     async def test_stock_found(self) -> None:
         """When SKU exists, report available count."""
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock.return_value = {"stock_on_hand": 42}
+        mock_inv.get_stock.return_value = {
+            "sku": "CHAIR-01",
+            "stock_on_hand": 42,
+            "rate": 500.0,
+            "currency_code": "AED",
+        }
 
         conv = _make_conversation()
         deps = _make_deps(conv, zoho_inventory=mock_inv)
@@ -270,6 +275,7 @@ class TestCreateQuotation:
                 "sku": "CHAIR-01",
                 "item_id": "zoho_item_001",
                 "rate": 500.0,
+                "stock_on_hand": 20,
                 "name": "Ergonomic Chair",
                 "description": "A great chair",
                 "image_document_id": None,
@@ -341,6 +347,7 @@ class TestCreateQuotation:
                 "sku": "DESK-01",
                 "item_id": "zoho_item_002",
                 "rate": 800.0,
+                "stock_on_hand": 10,
                 "name": "Standing Desk",
                 "description": "Height adjustable",
                 "image_document_id": None,
@@ -394,6 +401,7 @@ class TestCreateQuotation:
                 "sku": "TABLE-01",
                 "item_id": "zoho_003",
                 "rate": 1000.0,
+                "stock_on_hand": 8,
                 "name": "Conference Table",
                 "description": "Big table",
                 "image_document_id": None,

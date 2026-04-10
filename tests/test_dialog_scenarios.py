@@ -314,6 +314,7 @@ class TestScenario3QuotationFlow:
                 "sku": "CHAIR-01",
                 "item_id": "zoho_001",
                 "rate": 800.0,
+                "stock_on_hand": 15,
                 "name": "Executive Chair",
                 "description": "Premium ergonomic chair",
                 "image_document_id": None,
@@ -499,7 +500,12 @@ class TestScenario5MultiToolChaining:
         )
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
-        mock_inv.get_stock.return_value = {"stock_on_hand": 42}
+        mock_inv.get_stock.return_value = {
+            "sku": "ERGO-PRO",
+            "stock_on_hand": 42,
+            "rate": 1500.0,
+            "currency_code": "AED",
+        }
 
         call_count = 0
 
@@ -885,7 +891,12 @@ class TestScenario7OrderHandoffGuard:
         db.get.return_value = conv
         redis = AsyncMock(spec=Redis)
         zoho = AsyncMock(spec=ZohoInventoryClient)
-        zoho.get_stock.return_value = {"stock_on_hand": 20}
+        zoho.get_stock.return_value = {
+            "sku": "CHAIR-01",
+            "stock_on_hand": 20,
+            "rate": 450.0,
+            "currency_code": "AED",
+        }
         messaging = AsyncMock(spec=MessagingProvider)
         embedding = AsyncMock(spec=EmbeddingEngine)
 
@@ -950,7 +961,8 @@ class TestScenario7OrderHandoffGuard:
             for contract in observed_contracts
         )
         assert any(
-            "use this stock fact to strengthen the concrete options" in contract.lower()
+            "use this zoho-confirmed stock and price fact to strengthen the concrete options"
+            in contract.lower()
             for contract in observed_contracts
         )
         assert "would you like me to narrow this down" in response.text.lower()

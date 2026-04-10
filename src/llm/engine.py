@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 from uuid import UUID
@@ -426,6 +427,38 @@ def _catalog_mismatch_customer_message() -> str:
     )
 
 
+def _coerce_inventory_item(
+    raw_item: Any,
+    *,
+    require_item_id: bool,
+) -> dict[str, Any] | None:
+    if not isinstance(raw_item, Mapping):
+        return None
+
+    item = dict(raw_item)
+
+    sku = item.get("sku")
+    if not isinstance(sku, str) or not sku.strip():
+        return None
+
+    rate = item.get("rate")
+    stock_on_hand = item.get("stock_on_hand")
+    if rate is None or stock_on_hand is None:
+        return None
+    try:
+        item["rate"] = float(rate)
+        item["stock_on_hand"] = int(stock_on_hand)
+    except (TypeError, ValueError):
+        return None
+
+    if require_item_id:
+        item_id = item.get("item_id")
+        if not isinstance(item_id, str) or not item_id.strip():
+            return None
+
+    return item
+
+
 def _exact_quote_fail_closed_message() -> str:
     return (
         "I couldn't finalize the exact quotation automatically. "
@@ -497,12 +530,14 @@ async def _resolve_inventory_item(
     catalog_product = await _find_catalog_product_by_sku(ctx.deps.db, normalized_sku)
 
     if catalog_product and getattr(catalog_product, "zoho_item_id", None):
-        zoho_item = await ctx.deps.zoho_inventory.get_item(catalog_product.zoho_item_id)
+        raw_item = await ctx.deps.zoho_inventory.get_item(catalog_product.zoho_item_id)
+        zoho_item = _coerce_inventory_item(raw_item, require_item_id=False)
         if zoho_item:
             ctx.deps.inventory_confirmed = True
             return zoho_item, catalog_product
 
-    zoho_item = await ctx.deps.zoho_inventory.get_stock(normalized_sku)
+    raw_item = await ctx.deps.zoho_inventory.get_stock(normalized_sku)
+    zoho_item = _coerce_inventory_item(raw_item, require_item_id=False)
     if zoho_item:
         ctx.deps.inventory_confirmed = True
         return zoho_item, catalog_product
@@ -916,8 +951,12 @@ async def create_quotation(
 
     # Needs to fetch item details from Zoho Inventory
     skus_to_fetch = [item.sku for item in items]
-    stock_details = await ctx.deps.zoho_inventory.get_stock_bulk(skus_to_fetch)
-    stock_map = {item["sku"]: item for item in stock_details}
+    raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk(skus_to_fetch)
+    stock_map: dict[str, dict[str, Any]] = {}
+    for raw_item in raw_stock_details:
+        zoho_item = _coerce_inventory_item(raw_item, require_item_id=True)
+        if zoho_item:
+            stock_map[str(zoho_item["sku"])] = zoho_item
 
     zoho_line_items = []
     template_items = []
@@ -934,7 +973,14 @@ async def create_quotation(
     for item in items:
         zoho_item = stock_map.get(item.sku)
         if not zoho_item:
-            zoho_item, catalog_product = await _resolve_inventory_item(ctx, item.sku)
+            resolved_item, catalog_product = await _resolve_inventory_item(
+                ctx, item.sku
+            )
+            zoho_item = (
+                _coerce_inventory_item(resolved_item, require_item_id=True)
+                if resolved_item
+                else None
+            )
             if not zoho_item:
                 if catalog_product:
                     return _catalog_mismatch_customer_message()

@@ -1222,7 +1222,12 @@ async def test_tools_get_stock(
 
     from src.llm.engine import get_stock
 
-    zoho.get_stock.return_value = {"stock_on_hand": 25, "rate": 1000.0}
+    zoho.get_stock.return_value = {
+        "sku": "CHAIR-01",
+        "stock_on_hand": 25,
+        "rate": 1000.0,
+        "currency_code": "AED",
+    }
     ctx = RunContext(
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
     )
@@ -1307,6 +1312,39 @@ async def test_tools_get_stock_not_found(
 
     result = await get_stock(ctx, "NONEXISTENT")
     assert "not found" in result
+
+
+@pytest.mark.asyncio
+async def test_tools_get_stock_malformed_inventory_result_is_unresolved(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import get_stock
+
+    zoho.get_stock.return_value = "malformed payload"
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await get_stock(ctx, "CHAIR-01")
+
+    assert "not found" in result.lower()
+    assert deps.inventory_confirmed is False
 
 
 @pytest.mark.asyncio
