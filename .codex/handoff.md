@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-09
+Updated: 2026-04-10
 Current baseline branch: `main`
 
 ## Current truth additions
@@ -87,6 +87,12 @@ Current baseline branch: `main`
   - verification passed in the implementation worktree on final landed code: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `uv run pytest tests/test_inventory_sync.py tests/test_api_products.py tests/test_treejar_catalog.py tests/test_telegram_notifications.py tests/test_worker.py tests/test_zoho_sync.py -v --tb=short` (`45 passed`)
   - review artifact: `docs/reports/code-reviews/2026-04/CR-2026-04-09-tj-2bdj-catalog-cutover.md`
   - not yet hot-applied to canonical `/opt/noor` in this turn
+- `tj-lab0` is now landed on `main` as the exact quote / Zoho-confirmation slice:
+  - exact price/availability requests now have a guarded runtime path in `src/llm/engine.py` instead of relying on prompt-only behavior
+  - when exact `SKU + quantity` are resolved, runtime can proceed straight into quotation draft creation for manager approval without the old hard stop on collecting company/email first
+  - exact commitments now fail closed to Zoho-confirmed inventory data; malformed or partial `get_item()` / `get_stock()` payloads are no longer treated as confirmed facts
+  - Treejar-present / Zoho-missing exact cases now keep the customer-facing response safe and route through manager escalation plus Telegram catalog-mismatch alerting instead of attempting quotation
+  - full repo verification passed on the final accepted code before landing: `git diff --check`, `ruff check`, `ruff format --check`, `mypy src/`, and `pytest tests/ -v --tb=short` (`589 passed, 19 skipped` on the clean landing branch)
 - Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
   - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
 
