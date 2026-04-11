@@ -1,9 +1,37 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-10
+Updated: 2026-04-11
 Current baseline branch: `main`
 
 ## Current truth additions
+
+- As of 2026-04-11, the canonical host is `https://noor.starec.ai` and the canonical runtime path is `/opt/noor`.
+- Treejar Catalog API is now the single source of truth for customer-facing catalog discovery/assets; Zoho remains the exact stock/price confirmation and order-execution truth.
+- Live verification on 2026-04-11 was performed against real recipient `+79262810921`, canonical Wazzup sender `+971551220665`, and canonical channel id `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
+- Current `main` truth and deployed runtime truth now match at `e11b2f1dc798191e6693f55bece6db4ead78749e`:
+  - GitHub Actions deploy run `24284692100` succeeded before this verification round
+  - merged verification before push was `604 passed, 19 skipped`
+  - direct SSH verification on 2026-04-11 confirmed `/opt/noor/.release-sha == e11b2f1dc798191e6693f55bece6db4ead78749e`
+- Post-deploy live verification is now materially complete:
+  - quotation contour PASS:
+    - exact live request for `1 x CSC-01 beige` on conversation `e8251277-a115-4830-bc3a-637a65d8fc9f` produced a quotation-ready assistant reply at `2026-04-11T15:33:17Z`
+    - live quotation reference is `Fr3082`
+    - canonical DB proof shows real metadata, not `DRAFT`: `zoho_sale_order_id=378603000021676313`, `zoho_sale_order_number=Fr3082`
+    - canonical worker logs show Telegram manager-review notification really sent: `sendMessage -> 200 OK` at `2026-04-11T15:33:07.512Z` and `sendDocument -> 200 OK` at `2026-04-11T15:33:08.693Z`
+    - canonical app logs show Wazzup document delivery to `+79262810921` at `2026-04-11T15:36:00.001Z`, followed by caption `Your quotation: Fr3082` and confirmation text delivery
+    - the delivered PDF was fetched back from Wazzup and saved locally as `.tmp/live-artifacts/Fr3082_from_wazzup.pdf`; `pdfimages -list` shows an embedded RGB product image on page 1, so the live PDF is not text-only
+  - Telegram manager-review contour PASS with one caveat:
+    - deployed `/api/v1/webhook/telegram` processed both reject and confirm control callbacks against the real live conversation
+    - callback path resolved both `Conversation.escalation_status` and the real quotation escalation row `72d6fb2a-f982-45e8-a303-7efbfe73b1c8`
+    - DB proof for `escalations` now shows the quotation row created as `pending` at `2026-04-11 15:33:07` and updated to `resolved` at `2026-04-11 15:36:20.108484`
+    - test messages `420` and `424` now return Telegram `editMessageReplyMarkup -> 400 "message is not modified"`, which is consistent with already-removed inline keyboards
+    - caveat: these callback exercises used synthetic `callback_query.id` values, so `answerCallbackQuery` returned `400`; downstream order-decision handling still completed successfully, but callback-ack proof is not from a literal human tap
+- Repo-owned smoke tooling is now repaired locally in the clean verification worktree:
+  - `scripts/bot_test.py` now uses `/api/v1/conversations/`, injects a unique marker, verifies the matching user message before accepting an assistant reply, fails closed on HTML/non-JSON, and prints conversation ids/timestamps
+  - regression coverage lives in `tests/test_scripts_bot_test.py`
+  - a second live bug was found and fixed on 2026-04-11: API user timestamps are only second-precision, so the helper now normalizes local `started_at` to second precision before correlation
+  - local verification on the repaired helper passed: `uv run ruff check scripts/bot_test.py tests/test_scripts_bot_test.py`, `uv run ruff format --check scripts/bot_test.py tests/test_scripts_bot_test.py`, `uv run pytest tests/test_scripts_bot_test.py -v --tb=short -s` (`9 passed`)
+  - final live smoke proof after the timestamp fix succeeded on synthetic chat `+79262810921#smoke-tool-final-20260411T1552`, conversation `5d3847a8-ba43-4b71-b1b8-062b9498cfb4`, with correlated assistant reply at `2026-04-11T15:51:36.797263Z`
 
 - As of 2026-04-06, the canonical single source of truth for catalog data is `https://new.treejartrading.ae/api/catalog`.
 - Treat `bazara.ae`, `treejartrading.ae/ksa-en`, and Zoho Inventory catalog fields as non-canonical for customer-facing product truth.
