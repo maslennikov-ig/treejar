@@ -47,7 +47,15 @@ def _make_fake_conv(
     conv.language = language
     conv.customer_name = "Test Customer"
     conv.metadata_ = {"inbound_channel_phone": "+971551220665"}
+    conv.escalations = []
     return conv
+
+
+def _make_fake_escalation(status: str = "pending") -> MagicMock:
+    """Create a mock Escalation row."""
+    escalation = MagicMock()
+    escalation.status = status
+    return escalation
 
 
 FAKE_PDF_BYTES = b"%PDF-1.4 fake pdf content for testing"
@@ -177,10 +185,11 @@ def _setup_mocks_for_order_decision(
     pdf_b64_raw: bytes | None = None,
     meta_raw: bytes | None = None,
     escalation_status: str = "pending",
-) -> tuple[AsyncMock, AsyncMock]:
+    escalation_row_statuses: tuple[str, ...] = ("pending",),
+) -> tuple[AsyncMock, AsyncMock, MagicMock]:
     """Set up common mocks for _handle_order_decision tests.
 
-    Returns (mock_tg_client, mock_wazzup).
+    Returns (mock_tg_client, mock_wazzup, mock_conv).
     """
 
     # Redis mock
@@ -197,6 +206,9 @@ def _setup_mocks_for_order_decision(
     # DB session mock (for CR-1 idempotency)
     mock_db = AsyncMock()
     mock_conv = _make_fake_conv(escalation_status=escalation_status)
+    mock_conv.escalations = [
+        _make_fake_escalation(status=status) for status in escalation_row_statuses
+    ]
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_conv
     mock_db.execute = AsyncMock(return_value=mock_result)
@@ -217,7 +229,7 @@ def _setup_mocks_for_order_decision(
     mock_wazzup.send_text = AsyncMock(return_value="msg-id-456")
     mock_wazzup.close = AsyncMock()
 
-    return mock_tg_client, mock_wazzup
+    return mock_tg_client, mock_wazzup, mock_conv
 
 
 # =============================================================================
@@ -243,11 +255,12 @@ async def test_order_confirm_sends_pdf_to_client(
     )
 
     mock_phone_fn.return_value = ("+971501234567", "en")
-    mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
+    mock_tg_client, mock_wazzup, mock_conv = _setup_mocks_for_order_decision(
         mock_redis,
         mock_session_factory,
         pdf_b64_raw=pdf_b64.encode(),
         meta_raw=meta_json.encode(),
+        escalation_row_statuses=("pending", "resolved"),
     )
 
     with patch(
@@ -268,6 +281,7 @@ async def test_order_confirm_sends_pdf_to_client(
     media_call = mock_wazzup.send_media.call_args
     assert media_call.kwargs.get("content") == FAKE_PDF_BYTES
     assert media_call.kwargs.get("content_type") == "application/pdf"
+    assert [esc.status for esc in mock_conv.escalations] == ["resolved", "resolved"]
 
     # Redis keys should be cleaned up
     mock_redis.delete.assert_awaited()
@@ -291,7 +305,7 @@ async def test_order_confirm_no_pdf_graceful(
     from src.api.telegram_webhook import _handle_order_decision
 
     mock_phone_fn.return_value = ("+971501234567", "en")
-    mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
+    mock_tg_client, mock_wazzup, _ = _setup_mocks_for_order_decision(
         mock_redis,
         mock_session_factory,
         pdf_b64_raw=None,
@@ -340,10 +354,11 @@ async def test_order_reject_deletes_pdf(
 
     pdf_b64 = base64.b64encode(FAKE_PDF_BYTES).decode()
     mock_phone_fn.return_value = ("+971501234567", "en")
-    mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
+    mock_tg_client, mock_wazzup, mock_conv = _setup_mocks_for_order_decision(
         mock_redis,
         mock_session_factory,
         pdf_b64_raw=pdf_b64.encode(),
+        escalation_row_statuses=("pending", "resolved"),
     )
 
     with patch(
@@ -361,6 +376,7 @@ async def test_order_reject_deletes_pdf(
 
     # Rejection text sent to client
     mock_wazzup.send_text.assert_awaited_once()
+    assert [esc.status for esc in mock_conv.escalations] == ["resolved", "resolved"]
 
     # Redis cleanup should happen
     mock_redis.delete.assert_awaited()
@@ -384,7 +400,7 @@ async def test_order_reject_no_pdf_to_client(
     from src.api.telegram_webhook import _handle_order_decision
 
     mock_phone_fn.return_value = ("+971501234567", "en")
-    mock_tg_client, mock_wazzup = _setup_mocks_for_order_decision(
+    mock_tg_client, mock_wazzup, _ = _setup_mocks_for_order_decision(
         mock_redis,
         mock_session_factory,
     )
@@ -404,3 +420,42 @@ async def test_order_reject_no_pdf_to_client(
 
     # send_media should NOT be called for reject
     mock_wazzup.send_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.api.telegram_webhook._get_conversation_phone_and_lang")
+@patch("src.api.telegram_webhook.async_session_factory")
+@patch("src.api.telegram_webhook.redis_client")
+async def test_order_decision_double_click_is_idempotent(
+    mock_redis: AsyncMock,
+    mock_session_factory: MagicMock,
+    mock_phone_fn: AsyncMock,
+) -> None:
+    """Resolved conversations should short-circuit duplicate button taps."""
+    from src.api.telegram_webhook import _handle_order_decision
+
+    mock_phone_fn.return_value = ("+971501234567", "en")
+    mock_tg_client, mock_wazzup, _ = _setup_mocks_for_order_decision(
+        mock_redis,
+        mock_session_factory,
+        escalation_status="resolved",
+        escalation_row_statuses=("resolved",),
+    )
+
+    await _handle_order_decision(
+        client=mock_tg_client,
+        callback_id="cb-dup",
+        chat_id=12345,
+        message_id=999,
+        mode="order_confirm",
+        conv_id_str=FAKE_CONV_ID,
+    )
+
+    mock_tg_client.answer_callback_query.assert_awaited_once_with(
+        "cb-dup", "⚠️ Уже обработано"
+    )
+    mock_tg_client.edit_message_reply_markup.assert_not_awaited()
+    mock_wazzup.send_media.assert_not_awaited()
+    mock_wazzup.send_text.assert_not_awaited()
+    mock_redis.delete.assert_not_awaited()
+    mock_phone_fn.assert_not_awaited()

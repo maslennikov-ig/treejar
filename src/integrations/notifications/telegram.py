@@ -182,6 +182,41 @@ class TelegramClient:
 
         return await self._post("sendDocument", data=data, files=files)
 
+    async def get_webhook_info(self) -> dict[str, Any] | None:
+        """Fetch the currently registered Telegram webhook state."""
+        if not self.is_configured:
+            logger.debug("Telegram not configured, skipping get_webhook_info")
+            return None
+
+        return await self._post("getWebhookInfo", json={})
+
+    async def set_webhook(
+        self,
+        webhook_url: str,
+        *,
+        secret_token: str,
+        allowed_updates: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Register the Telegram webhook with the desired runtime secret."""
+        if not self.is_configured:
+            logger.debug("Telegram not configured, skipping set_webhook")
+            return None
+
+        payload: dict[str, Any] = {
+            "url": webhook_url,
+            "secret_token": secret_token,
+        }
+        if allowed_updates is not None:
+            payload["allowed_updates"] = allowed_updates
+
+        return await self._post("setWebhook", json=payload)
+
+    async def aclose(self) -> None:
+        """Close the underlying httpx client if it was opened."""
+        if self._http is None or self._http.is_closed:
+            return
+        await self._http.aclose()
+
     async def _post(
         self,
         method: str,

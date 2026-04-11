@@ -89,6 +89,137 @@ async def test_telegram_send_document_calls_api() -> None:
         assert "sendDocument" in call_args[0][0]
 
 
+@pytest.mark.asyncio
+async def test_sync_telegram_webhook_uses_current_expected_secret_token() -> None:
+    """Webhook sync must register Telegram with the same runtime secret it validates."""
+    from src.core.config import settings
+    from src.integrations.notifications.telegram_webhook import (
+        expected_telegram_webhook_secret,
+        sync_telegram_webhook,
+    )
+
+    original_token = settings.telegram_bot_token
+    original_domain = settings.domain
+    original_secret = settings.app_secret_key
+
+    settings.telegram_bot_token = "123456:TEST-TOKEN"
+    settings.domain = "https://example.com"
+    settings.app_secret_key = "runtime-secret"
+
+    try:
+        with patch(
+            "src.integrations.notifications.telegram_webhook.TelegramClient"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            MockClient.return_value = mock_client
+            mock_client.get_webhook_info = AsyncMock(
+                return_value={
+                    "ok": True,
+                    "result": {
+                        "url": "https://example.com/api/v1/webhook/telegram",
+                        "last_error_message": "Wrong response from the webhook: 403 Forbidden",
+                    },
+                }
+            )
+            mock_client.set_webhook = AsyncMock(
+                return_value={"ok": True, "result": True}
+            )
+
+            synced = await sync_telegram_webhook()
+
+        assert synced is True
+        mock_client.set_webhook.assert_awaited_once()
+        call = mock_client.set_webhook.await_args
+        assert call.kwargs["secret_token"] == expected_telegram_webhook_secret()
+        assert (
+            call.kwargs["webhook_url"] == "https://example.com/api/v1/webhook/telegram"
+        )
+        assert call.kwargs["allowed_updates"] == ["message", "callback_query"]
+    finally:
+        settings.telegram_bot_token = original_token
+        settings.domain = original_domain
+        settings.app_secret_key = original_secret
+
+
+@pytest.mark.asyncio
+async def test_sync_telegram_webhook_is_idempotent() -> None:
+    """Running webhook sync repeatedly should issue the same safe upsert."""
+    from src.core.config import settings
+    from src.integrations.notifications.telegram_webhook import sync_telegram_webhook
+
+    original_token = settings.telegram_bot_token
+    original_domain = settings.domain
+    original_secret = settings.app_secret_key
+
+    settings.telegram_bot_token = "123456:TEST-TOKEN"
+    settings.domain = "https://example.com"
+    settings.app_secret_key = "runtime-secret"
+
+    try:
+        with patch(
+            "src.integrations.notifications.telegram_webhook.TelegramClient"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            MockClient.return_value = mock_client
+            mock_client.get_webhook_info = AsyncMock(
+                return_value={
+                    "ok": True,
+                    "result": {
+                        "url": "https://example.com/api/v1/webhook/telegram",
+                    },
+                }
+            )
+            mock_client.set_webhook = AsyncMock(
+                return_value={"ok": True, "result": True}
+            )
+
+            assert await sync_telegram_webhook() is True
+            assert await sync_telegram_webhook() is True
+
+        assert mock_client.set_webhook.await_count == 2
+        first_call = mock_client.set_webhook.await_args_list[0]
+        second_call = mock_client.set_webhook.await_args_list[1]
+        assert first_call.kwargs == second_call.kwargs
+    finally:
+        settings.telegram_bot_token = original_token
+        settings.domain = original_domain
+        settings.app_secret_key = original_secret
+
+
+@pytest.mark.asyncio
+async def test_telegram_webhook_accepts_valid_secret(client: AsyncMock) -> None:
+    """Callback webhook should still pass when the registered secret matches runtime."""
+    from src.integrations.notifications.telegram_webhook import (
+        expected_telegram_webhook_secret,
+    )
+
+    payload = {
+        "callback_query": {
+            "id": "cb-1",
+            "data": "order_confirm:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "message": {
+                "message_id": 10,
+                "chat": {"id": 12345},
+            },
+        }
+    }
+
+    with patch(
+        "src.api.telegram_webhook._handle_callback_query", new=AsyncMock()
+    ) as mock_handle:
+        response = await client.post(
+            "/api/v1/webhook/telegram",
+            json=payload,
+            headers={
+                "X-Telegram-Bot-Api-Secret-Token": expected_telegram_webhook_secret(),
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mock_handle.assert_awaited_once_with(payload["callback_query"])
+
+
 # =============================================================================
 # NotificationService tests
 # =============================================================================

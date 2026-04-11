@@ -11,6 +11,7 @@ from sqladmin import Admin
 from src.core.config import settings
 from src.core.database import engine
 from src.core.redis import redis_client
+from src.integrations.notifications.telegram_webhook import sync_telegram_webhook
 
 
 @asynccontextmanager
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     app.state.redis = redis_client
+    await sync_telegram_webhook()
     yield
     # Shutdown
     await app.state.arq_pool.aclose()

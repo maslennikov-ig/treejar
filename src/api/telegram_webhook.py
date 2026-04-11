@@ -10,14 +10,12 @@ The full flow uses a two-step interaction:
 2. Manager types the answer → bot adapts it, sends it, and optionally saves to FAQ.
 
 NOTE: This requires setting up the Telegram webhook externally
-(e.g., via `setWebhook` API call with `secret_token` param).
+(the runtime now syncs `setWebhook(secret_token=...)` on startup).
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
 import json
 import logging
 import uuid
@@ -30,8 +28,12 @@ from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import redis_client
 from src.integrations.notifications.telegram import TelegramClient
+from src.integrations.notifications.telegram_webhook import (
+    expected_telegram_webhook_secret,
+)
 from src.models.conversation import Conversation
 from src.models.message import Message, message_created_at_now
+from src.services.escalation_state import resolve_conversation_pending_escalations
 
 logger = logging.getLogger(__name__)
 
@@ -49,19 +51,6 @@ def _get_telegram_client() -> TelegramClient:
     )
 
 
-def _expected_webhook_secret() -> str:
-    """Derive a stable secret token for Telegram webhook verification.
-
-    Uses HMAC-SHA256 of the bot token with the app secret key.
-    Must match the `secret_token` passed to setWebhook API.
-    """
-    return hmac.new(
-        settings.app_secret_key.encode(),
-        settings.telegram_bot_token.encode(),
-        hashlib.sha256,
-    ).hexdigest()[:32]
-
-
 @router.post("/webhook/telegram")
 async def telegram_webhook(
     request: Request,
@@ -69,7 +58,7 @@ async def telegram_webhook(
 ) -> dict[str, str]:
     """Handle incoming Telegram updates (callback queries and messages)."""
     # Validate webhook secret (prevents forged requests)
-    expected = _expected_webhook_secret()
+    expected = expected_telegram_webhook_secret()
     if x_telegram_bot_api_secret_token != expected:
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
@@ -203,18 +192,15 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
             # R3-3: Resolve escalation after successful manager reply
             try:
                 async with async_session_factory() as resolve_db:
-                    stmt = select(Conversation).where(
-                        Conversation.id == uuid.UUID(conv_id),
+                    resolved_rows = await resolve_conversation_pending_escalations(
+                        resolve_db, uuid.UUID(conv_id)
                     )
-                    result = await resolve_db.execute(stmt)
-                    conv = result.scalar_one_or_none()
-                    if conv and conv.escalation_status not in ("resolved", None):
-                        conv.escalation_status = "resolved"
-                        await resolve_db.commit()
-                        logger.info(
-                            "Escalation resolved for %s after manager reply",
-                            conv_id,
-                        )
+                    await resolve_db.commit()
+                    logger.info(
+                        "Escalation resolved for %s after manager reply; pending_rows=%d",
+                        conv_id,
+                        resolved_rows,
+                    )
             except Exception:
                 logger.exception(
                     "Failed to resolve escalation for %s",
@@ -504,17 +490,20 @@ async def _handle_order_decision(
             )
             db.add(msg)
 
-            stmt = select(Conversation).where(Conversation.id == conv_uuid)
-            conv_result = await db.execute(stmt)
-            conv = conv_result.scalar_one_or_none()
-            if conv:
-                conv.escalation_status = "resolved"
+            resolved_rows = await resolve_conversation_pending_escalations(
+                db, conv_uuid
+            )
             await db.commit()
 
         action_label = "подтверждён ✅" if is_confirm else "отклонён ❌"
         await client.send_message(
             f"📦 Заказ {action_label}. Ответ отправлен клиенту.",
             chat_id=str(chat_id),
+        )
+        logger.info(
+            "Order decision resolved escalation for %s; pending_rows=%d",
+            conv_id_str,
+            resolved_rows,
         )
     else:
         await client.send_message(
