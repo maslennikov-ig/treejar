@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.config import settings
 from src.integrations.inventory.base import InventoryProvider
@@ -140,6 +141,81 @@ def _contact_name_values(contact: Mapping[str, Any]) -> list[str]:
                 values.append(full_name)
 
     return values
+
+
+class _ZohoSaleOrder(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    salesorder_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("salesorder_id", "sales_order_id"),
+    )
+    salesorder_number: str = Field(
+        default="",
+        validation_alias=AliasChoices("salesorder_number", "sales_order_number"),
+    )
+    status: str = ""
+    shipment_date: str = ""
+    delivery_method: str = ""
+    total: float = 0.0
+    customer_name: str = ""
+
+
+class _ZohoSaleOrderEnvelope(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    saleorder: _ZohoSaleOrder | None = Field(
+        default=None,
+        validation_alias=AliasChoices("saleorder", "salesorder", "sales_order"),
+    )
+
+
+def _dump_model(model: BaseModel) -> dict[str, Any]:
+    data = model.model_dump()
+    if model.model_extra:
+        data.update(model.model_extra)
+    return data
+
+
+def extract_sale_order_data(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+
+    try:
+        envelope = _ZohoSaleOrderEnvelope.model_validate(payload)
+    except ValidationError:
+        envelope = None
+
+    if envelope and envelope.saleorder is not None:
+        return _dump_model(envelope.saleorder)
+
+    if any(
+        key in payload
+        for key in (
+            "salesorder_id",
+            "sales_order_id",
+            "salesorder_number",
+            "sales_order_number",
+            "status",
+        )
+    ):
+        try:
+            return _dump_model(_ZohoSaleOrder.model_validate(payload))
+        except ValidationError:
+            return {}
+
+    return {}
+
+
+def normalize_sale_order_response(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+
+    normalized = dict(payload)
+    saleorder = extract_sale_order_data(payload)
+    if saleorder:
+        normalized["saleorder"] = saleorder
+    return normalized
 
 
 class ZohoInventoryClient(InventoryProvider):
@@ -530,7 +606,7 @@ class ZohoInventoryClient(InventoryProvider):
             "status": status,
         }
         response = await self._request("POST", "/salesorders", json=data)
-        return dict(response.json())
+        return normalize_sale_order_response(response.json())
 
     async def get_sale_order(self, order_id: str) -> dict[str, Any] | None:
         """Get sale order details including PDF URL. (To be implemented fully later)."""
@@ -555,7 +631,7 @@ class ZohoInventoryClient(InventoryProvider):
         if not raw:
             return None
 
-        so = raw.get("salesorder", raw)
+        so = extract_sale_order_data(raw)
         return {
             "salesorder_id": so.get("salesorder_id", ""),
             "salesorder_number": so.get("salesorder_number", ""),

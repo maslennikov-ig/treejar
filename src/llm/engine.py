@@ -20,7 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.integrations.crm.zoho_crm import ZohoCRMClient
-from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+from src.integrations.inventory.zoho_inventory import (
+    ZohoInventoryClient,
+    extract_sale_order_data,
+)
 from src.integrations.messaging.base import MessagingProvider
 from src.llm.context import build_message_history
 from src.llm.order_handoff import is_high_confidence_first_turn_order
@@ -1168,6 +1171,7 @@ async def create_quotation(
     skus_to_fetch = [item.sku for item in items]
     raw_stock_details = await ctx.deps.zoho_inventory.get_stock_bulk(skus_to_fetch)
     stock_map: dict[str, dict[str, Any]] = {}
+    catalog_products: dict[str, Any | None] = {}
     for raw_item in raw_stock_details:
         zoho_item = _coerce_inventory_item(raw_item, require_item_id=True)
         if zoho_item:
@@ -1187,11 +1191,17 @@ async def create_quotation(
 
     for item in items:
         zoho_item = stock_map.get(item.sku)
-        catalog_product = await _find_catalog_product_by_sku(ctx.deps.db, item.sku)
+        normalized_sku = item.sku.strip()
+        if normalized_sku not in catalog_products:
+            catalog_products[normalized_sku] = await _find_catalog_product_by_sku(
+                ctx.deps.db, item.sku
+            )
+        catalog_product = catalog_products[normalized_sku]
         if not zoho_item:
             resolved_item, catalog_product = await _resolve_inventory_item(
                 ctx, item.sku
             )
+            catalog_products[normalized_sku] = catalog_product
             zoho_item = (
                 _coerce_inventory_item(resolved_item, require_item_id=True)
                 if resolved_item
@@ -1227,15 +1237,14 @@ async def create_quotation(
                 "quantity": item.quantity,
                 "unit_price": unit_price,
                 "total_price": total_price,
-                "image_url": None,  # Resolved below via authenticated download
-                "_item_id": zoho_item.get("item_id"),  # For image fetch
+                "image_url": None,
                 "_catalog_image_url": getattr(catalog_product, "image_url", None),
             }
         )
 
-    # --- Download product images and embed as base64 data URIs ---
-    # Zoho image URLs require OAuth, so we download via the authenticated client
-    # and embed them directly into the HTML for WeasyPrint.
+    # Customer-facing quotation assets are catalog-owned. If the catalog image is
+    # missing or cannot be downloaded, render the PDF without an image instead of
+    # falling back to Zoho's operational media.
     import asyncio
     import base64
     import json as json_mod
@@ -1243,19 +1252,13 @@ async def create_quotation(
     sem = asyncio.Semaphore(3)  # limit concurrent image downloads
 
     async def _fetch_image(tpl_item: dict[str, Any]) -> None:
-        if not tpl_item.get("_item_id") and not tpl_item.get("_catalog_image_url"):
+        if not tpl_item.get("_catalog_image_url"):
             return
         async with sem:
             try:
-                result = None
-                if tpl_item.get("_item_id"):
-                    result = await ctx.deps.zoho_inventory.get_item_image(
-                        str(tpl_item["_item_id"])
-                    )
-                if not result and tpl_item.get("_catalog_image_url"):
-                    result = await _download_catalog_image(
-                        str(tpl_item["_catalog_image_url"])
-                    )
+                result = await _download_catalog_image(
+                    str(tpl_item["_catalog_image_url"])
+                )
                 if result:
                     img_bytes, content_type = result
                     b64 = base64.b64encode(img_bytes).decode("ascii")
@@ -1269,7 +1272,6 @@ async def create_quotation(
 
     # Clean up internal keys before passing to template
     for ti in template_items:
-        ti.pop("_item_id", None)
         ti.pop("_catalog_image_url", None)
 
     # Resolve customer data from CRM or conversation context
@@ -1321,15 +1323,18 @@ async def create_quotation(
         draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
             customer_id=customer_id, items=zoho_line_items, status="draft"
         )
-        saleorder_data = draft_resp.get("saleorder", {})
-        quote_number = saleorder_data.get("salesorder_number", "DRAFT")
+        saleorder_data = extract_sale_order_data(draft_resp)
+        sale_order_number = _string_value(saleorder_data.get("salesorder_number"))
+        quote_number = sale_order_number or "DRAFT"
 
-        # Save sale order ID in conversation metadata for order status tracking (CR-1)
-        sale_order_id = saleorder_data.get("salesorder_id", "")
-        if sale_order_id:
+        sale_order_id = _string_value(saleorder_data.get("salesorder_id"))
+        if sale_order_id or sale_order_number:
             conv = ctx.deps.conversation
             metadata = dict(conv.metadata_ or {})
-            metadata["zoho_sale_order_id"] = sale_order_id
+            if sale_order_id:
+                metadata["zoho_sale_order_id"] = sale_order_id
+            if sale_order_number:
+                metadata["zoho_sale_order_number"] = sale_order_number
             conv.metadata_ = metadata
             try:
                 await ctx.deps.db.flush()
@@ -1386,7 +1391,14 @@ async def create_quotation(
         await ctx.deps.redis.setex(
             f"quotation_meta:{conv_id_str}",
             86400,
-            json_mod.dumps({"quote_number": quote_number, "filename": pdf_filename}),
+            json_mod.dumps(
+                {
+                    "quote_number": quote_number,
+                    "filename": pdf_filename,
+                    "salesorder_number": sale_order_number,
+                    "salesorder_id": sale_order_id,
+                }
+            ),
         )
     except Exception as e:
         logger.error("Failed to store PDF in Redis: %s", e)

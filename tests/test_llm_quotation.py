@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,9 +34,12 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
         }
     ]
     mock_inventory.create_sale_order.return_value = {
-        "saleorder": {"salesorder_number": "SA-001", "status": "draft"}
+        "saleorder": {
+            "salesorder_id": "so-123",
+            "salesorder_number": "SA-001",
+            "status": "draft",
+        }
     }
-    mock_inventory.get_item_image.return_value = (b"img-bytes", "image/jpeg")
     mock_inventory.find_customer_by_phone.return_value = {
         "contact_id": "inventory-contact-001",
         "contact_type": "customer",
@@ -53,6 +57,12 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
 
     mock_db = AsyncMock()
     mock_db.flush = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = SimpleNamespace(
+        sku="CHAIR-1",
+        image_url="https://cdn.treejar.test/chair-1.jpg",
+    )
+    mock_db.execute.return_value = execute_result
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
@@ -77,7 +87,16 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
 
     items = [QuotationItem(sku="CHAIR-1", quantity=2)]
 
-    # Patch generate_pdf at the definition module (lazy import inside function)
+    mock_http_client = AsyncMock()
+    mock_http_response = MagicMock()
+    mock_http_response.content = b"catalog-image-bytes"
+    mock_http_response.headers = {"content-type": "image/jpeg"}
+    mock_http_response.raise_for_status = MagicMock()
+    mock_http_client.get.return_value = mock_http_response
+    mock_http_client_cm = MagicMock()
+    mock_http_client_cm.__aenter__ = AsyncMock(return_value=mock_http_client)
+    mock_http_client_cm.__aexit__ = AsyncMock(return_value=None)
+
     with (
         patch(
             "src.services.pdf.generator.generate_pdf", new_callable=AsyncMock
@@ -85,6 +104,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
         patch(
             "src.services.pdf.generator.render_quotation_html", return_value="<html>"
         ) as mock_render,
+        patch("src.llm.engine.httpx.AsyncClient", return_value=mock_http_client_cm),
     ):
         mock_pdf.return_value = b"pdf_data"
         result = await create_quotation(ctx, items)
@@ -100,9 +120,14 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     assert kwargs["items"][0]["item_id"] == "123"
     assert kwargs["items"][0]["quantity"] == 2
 
-    mock_inventory.get_item_image.assert_awaited_once_with("123")
+    mock_inventory.get_item_image.assert_not_awaited()
+    mock_http_client.get.assert_awaited_once_with(
+        "https://cdn.treejar.test/chair-1.jpg"
+    )
     render_context = mock_render.call_args.args[0]
     assert render_context["items"][0]["image_url"].startswith("data:image/jpeg;base64,")
+    assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-123"
+    assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-001"
 
     # Verify PDF generation was called
     mock_pdf.assert_called_once()
@@ -117,7 +142,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_create_quotation_falls_back_to_catalog_image_url_when_zoho_image_missing(
+async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     mock_notify: AsyncMock,
 ) -> None:
     mock_inventory = AsyncMock()
@@ -134,7 +159,6 @@ async def test_create_quotation_falls_back_to_catalog_image_url_when_zoho_image_
     mock_inventory.create_sale_order.return_value = {
         "saleorder": {"salesorder_number": "SA-001", "status": "draft"}
     }
-    mock_inventory.get_item_image.return_value = None
     mock_inventory.find_customer_by_phone.return_value = {
         "contact_id": "inventory-contact-001",
         "contact_type": "customer",
@@ -153,7 +177,7 @@ async def test_create_quotation_falls_back_to_catalog_image_url_when_zoho_image_
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = SimpleNamespace(
         sku="CHAIR-1",
-        image_url="https://cdn.treejar.test/chair-1.jpg",
+        image_url=None,
     )
     mock_db.execute.return_value = execute_result
 
@@ -177,16 +201,6 @@ async def test_create_quotation_falls_back_to_catalog_image_url_when_zoho_image_
     ctx = MagicMock(spec=RunContext)
     ctx.deps = deps
 
-    mock_http_client = AsyncMock()
-    mock_http_response = MagicMock()
-    mock_http_response.content = b"catalog-image-bytes"
-    mock_http_response.headers = {"content-type": "image/jpeg"}
-    mock_http_response.raise_for_status = MagicMock()
-    mock_http_client.get.return_value = mock_http_response
-    mock_http_client_cm = MagicMock()
-    mock_http_client_cm.__aenter__ = AsyncMock(return_value=mock_http_client)
-    mock_http_client_cm.__aexit__ = AsyncMock(return_value=None)
-
     with (
         patch(
             "src.services.pdf.generator.generate_pdf", new_callable=AsyncMock
@@ -194,18 +208,183 @@ async def test_create_quotation_falls_back_to_catalog_image_url_when_zoho_image_
         patch(
             "src.services.pdf.generator.render_quotation_html", return_value="<html>"
         ) as mock_render,
-        patch("src.llm.engine.httpx.AsyncClient", return_value=mock_http_client_cm),
     ):
         mock_pdf.return_value = b"pdf_data"
         result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
 
     assert "SA-001" in result
-    mock_inventory.get_item_image.assert_awaited_once_with("123")
-    mock_http_client.get.assert_awaited_once_with(
-        "https://cdn.treejar.test/chair-1.jpg"
-    )
+    mock_inventory.get_item_image.assert_not_awaited()
     render_context = mock_render.call_args.args[0]
-    assert render_context["items"][0]["image_url"].startswith("data:image/jpeg;base64,")
+    assert render_context["items"][0]["image_url"] is None
+    mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_response(
+    mock_notify: AsyncMock,
+) -> None:
+    mock_inventory = AsyncMock()
+    mock_inventory.get_stock_bulk.return_value = [
+        {
+            "sku": "CHAIR-1",
+            "item_id": "123",
+            "rate": 150.0,
+            "stock_on_hand": 25,
+            "description": "A nice chair",
+            "name": "Chair",
+        }
+    ]
+    mock_inventory.create_sale_order.return_value = {
+        "salesorder_id": "so-flat-123",
+        "salesorder_number": "SA-REAL-001",
+        "status": "draft",
+    }
+    mock_inventory.find_customer_by_phone.return_value = {
+        "contact_id": "inventory-contact-001",
+        "contact_type": "customer",
+        "status": "active",
+    }
+
+    mock_conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name="Test Customer",
+        metadata_={},
+    )
+    mock_redis = AsyncMock()
+    mock_redis.setex = AsyncMock()
+    mock_db = AsyncMock()
+    mock_db.flush = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = execute_result
+
+    deps = MagicMock(spec=SalesDeps)
+    deps.zoho_inventory = mock_inventory
+    deps.messaging_client = AsyncMock()
+    deps.conversation = mock_conversation
+    deps.crm_context = None
+    deps.redis = mock_redis
+    deps.db = mock_db
+    deps.zoho_crm = AsyncMock()
+    deps.zoho_crm.find_contact_by_phone.return_value = {
+        "id": "crm-contact-001",
+        "First_Name": "Test",
+        "Last_Name": "Customer",
+        "Email": "test@example.com",
+        "Account_Name": {"name": "Treejar Trading"},
+    }
+
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf", new_callable=AsyncMock
+        ) as mock_pdf,
+        patch(
+            "src.services.pdf.generator.render_quotation_html", return_value="<html>"
+        ),
+    ):
+        mock_pdf.return_value = b"pdf_data"
+        result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "SA-REAL-001" in result
+    assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-flat-123"
+    assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-REAL-001"
+    mock_db.flush.assert_awaited_once()
+
+    redis_meta = json.loads(mock_redis.setex.await_args_list[1].args[2])
+    assert redis_meta["quote_number"] == "SA-REAL-001"
+    assert redis_meta["salesorder_number"] == "SA-REAL-001"
+    assert redis_meta["salesorder_id"] == "so-flat-123"
+    mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
+    mock_notify: AsyncMock,
+) -> None:
+    mock_inventory = AsyncMock()
+    mock_inventory.get_stock_bulk.return_value = [
+        {
+            "sku": "CHAIR-1",
+            "item_id": "123",
+            "rate": 150.0,
+            "stock_on_hand": 25,
+            "description": "A nice chair",
+            "name": "Chair",
+        }
+    ]
+    mock_inventory.create_sale_order.return_value = {
+        "salesorder": {"salesorder_id": "so-nonumber-123", "status": "draft"}
+    }
+    mock_inventory.find_customer_by_phone.return_value = {
+        "contact_id": "inventory-contact-001",
+        "contact_type": "customer",
+        "status": "active",
+    }
+
+    mock_conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name="Test Customer",
+        metadata_={},
+    )
+    mock_redis = AsyncMock()
+    mock_redis.setex = AsyncMock()
+    mock_db = AsyncMock()
+    mock_db.flush = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = execute_result
+
+    deps = MagicMock(spec=SalesDeps)
+    deps.zoho_inventory = mock_inventory
+    deps.messaging_client = AsyncMock()
+    deps.conversation = mock_conversation
+    deps.crm_context = None
+    deps.redis = mock_redis
+    deps.db = mock_db
+    deps.zoho_crm = AsyncMock()
+    deps.zoho_crm.find_contact_by_phone.return_value = {
+        "id": "crm-contact-001",
+        "First_Name": "Test",
+        "Last_Name": "Customer",
+        "Email": "test@example.com",
+        "Account_Name": {"name": "Treejar Trading"},
+    }
+
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf", new_callable=AsyncMock
+        ) as mock_pdf,
+        patch(
+            "src.services.pdf.generator.render_quotation_html", return_value="<html>"
+        ),
+    ):
+        mock_pdf.return_value = b"pdf_data"
+        result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "Quotation DRAFT" in result
+    assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-nonumber-123"
+    assert "zoho_sale_order_number" not in mock_conversation.metadata_
+
+    redis_meta = json.loads(mock_redis.setex.await_args_list[1].args[2])
+    assert redis_meta["quote_number"] == "DRAFT"
+    assert redis_meta["salesorder_number"] == ""
+    assert redis_meta["salesorder_id"] == "so-nonumber-123"
     mock_notify.assert_awaited_once()
 
 

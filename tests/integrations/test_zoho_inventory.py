@@ -16,7 +16,13 @@ async def test_create_draft_sale_order() -> None:
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.json = MagicMock(
-        return_value={"saleorder": {"salesorder_id": "123", "status": "draft"}}
+        return_value={
+            "salesorder": {
+                "salesorder_id": "123",
+                "salesorder_number": "SO-00003",
+                "status": "draft",
+            }
+        }
     )
 
     with patch("httpx.AsyncClient.request", return_value=mock_response) as mock_req:
@@ -28,6 +34,7 @@ async def test_create_draft_sale_order() -> None:
 
         assert result["saleorder"]["status"] == "draft"
         assert result["saleorder"]["salesorder_id"] == "123"
+        assert result["saleorder"]["salesorder_number"] == "SO-00003"
 
         # Verify request parameters
         mock_req.assert_called_once()
@@ -35,6 +42,35 @@ async def test_create_draft_sale_order() -> None:
         assert kwargs["json"]["customer_id"] == "customer123"
         assert kwargs["json"]["line_items"][0]["item_id"] == "item123"
         assert kwargs["json"]["status"] == "draft"
+
+
+@pytest.mark.asyncio
+async def test_create_draft_sale_order_normalizes_flat_response_shape() -> None:
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = b"test_token"
+
+    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
+
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.json = MagicMock(
+        return_value={
+            "salesorder_id": "flat-123",
+            "salesorder_number": "SO-FLAT-001",
+            "status": "draft",
+        }
+    )
+
+    with patch("httpx.AsyncClient.request", return_value=mock_response):
+        result = await zoho_client.create_sale_order(
+            customer_id="customer123",
+            items=[{"item_id": "item123", "quantity": 2}],
+            status="draft",
+        )
+
+    assert result["saleorder"]["salesorder_id"] == "flat-123"
+    assert result["saleorder"]["salesorder_number"] == "SO-FLAT-001"
+    assert result["saleorder"]["status"] == "draft"
 
 
 @pytest.mark.asyncio
@@ -76,6 +112,44 @@ async def test_get_sale_order_status_confirmed() -> None:
     assert result["delivery_method"] == "Standard"
     assert result["total"] == 1500.0
     assert result["customer_name"] == "John Doe"
+
+
+@pytest.mark.asyncio
+async def test_get_sale_order_status_supports_sales_order_alias_shape() -> None:
+    """get_sale_order_status handles alternate nested sales_order payloads."""
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = b"test_token"
+
+    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
+
+    mock_response = httpx.Response(
+        200,
+        json={
+            "sales_order": {
+                "salesorder_id": "SO002",
+                "salesorder_number": "SO-00004",
+                "status": "draft",
+                "shipment_date": "",
+                "delivery_method": "",
+                "total": "800.0",
+                "customer_name": "Jane Doe",
+            }
+        },
+        request=httpx.Request("GET", "https://example.com"),
+    )
+
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.return_value = mock_response
+        result = await zoho_client.get_sale_order_status("SO002")
+
+    assert result is not None
+    assert result["salesorder_id"] == "SO002"
+    assert result["salesorder_number"] == "SO-00004"
+    assert result["status"] == "draft"
+    assert result["total"] == 800.0
+    assert result["customer_name"] == "Jane Doe"
 
 
 @pytest.mark.asyncio
