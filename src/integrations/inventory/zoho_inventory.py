@@ -110,6 +110,38 @@ def _contact_email_values(contact: Mapping[str, Any]) -> list[str]:
     return values
 
 
+def _normalize_contact_name(value: str | None) -> str:
+    return " ".join((value or "").split()).casefold()
+
+
+def _contact_name_values(contact: Mapping[str, Any]) -> list[str]:
+    values: list[str] = []
+
+    for key in ("contact_name", "company_name", "first_name", "last_name"):
+        value = contact.get(key)
+        if isinstance(value, str) and value.strip():
+            values.append(value)
+
+    contact_persons = contact.get("contact_persons")
+    if isinstance(contact_persons, list):
+        for person in contact_persons:
+            if not isinstance(person, Mapping):
+                continue
+
+            for key in ("first_name", "last_name"):
+                value = person.get(key)
+                if isinstance(value, str) and value.strip():
+                    values.append(value)
+
+            first = str(person.get("first_name") or "").strip()
+            last = str(person.get("last_name") or "").strip()
+            full_name = " ".join(part for part in (first, last) if part)
+            if full_name:
+                values.append(full_name)
+
+    return values
+
+
 class ZohoInventoryClient(InventoryProvider):
     """Zoho Inventory API client implementing InventoryProvider protocol."""
 
@@ -416,6 +448,65 @@ class ZohoInventoryClient(InventoryProvider):
             )
         ]
         return await self._first_accessible_customer(exact_matches)
+
+    async def find_customer_by_name(self, name: str) -> dict[str, Any] | None:
+        """Find an accessible active customer by exact normalized name.
+
+        Zoho's name filters are not reliable enough for exact lookup in live data, so
+        we paginate active contacts and compare locally.
+        """
+        normalized_name = _normalize_contact_name(name)
+        if not normalized_name:
+            return None
+
+        page = 1
+        per_page = 200
+
+        while True:
+            response = await self._request(
+                "GET",
+                "/contacts",
+                params={
+                    "filter_by": "Status.Active",
+                    "page": page,
+                    "per_page": per_page,
+                },
+            )
+            data = response.json()
+            raw_contacts = data.get("contacts", [])
+            if not isinstance(raw_contacts, list):
+                return None
+
+            contacts = [
+                contact
+                for raw_contact in raw_contacts
+                if (contact := _coerce_inventory_contact(raw_contact)) is not None
+            ]
+            if not contacts:
+                return None
+
+            exact_matches = [
+                contact
+                for contact in contacts
+                if any(
+                    _normalize_contact_name(candidate_name) == normalized_name
+                    for candidate_name in _contact_name_values(contact)
+                )
+            ]
+            matched = await self._first_accessible_customer(exact_matches)
+            if matched is not None:
+                return matched
+
+            page_context = data.get("page_context")
+            has_more_page = (
+                bool(page_context.get("has_more_page"))
+                if isinstance(page_context, Mapping)
+                else False
+            )
+            if not has_more_page:
+                return None
+
+            page += 1
 
     async def create_contact(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a contact/customer in Zoho Inventory."""

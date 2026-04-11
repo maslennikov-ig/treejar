@@ -1,10 +1,16 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from pydantic_ai import RunContext
 
-from src.llm.engine import QuotationItem, SalesDeps, create_quotation
+from src.llm.engine import (
+    QuotationItem,
+    SalesDeps,
+    create_quotation,
+    resolve_inventory_customer_id,
+)
 from src.models.conversation import Conversation
 
 
@@ -254,6 +260,44 @@ async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
     assert "couldn't finalize the exact quotation automatically" in result.lower()
     mock_inventory.create_sale_order.assert_not_called()
     mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_inventory_customer_id_recovers_from_duplicate_name_conflict() -> (
+    None
+):
+    duplicate_response = httpx.Response(
+        400,
+        json={
+            "code": 3062,
+            "message": 'The customer "None Игорь" already exists. Please specify a different name.',
+        },
+        request=httpx.Request("POST", "https://example.com/contacts"),
+    )
+
+    mock_inventory = AsyncMock()
+    mock_inventory.find_customer_by_phone.return_value = None
+    mock_inventory.find_customer_by_email.return_value = None
+    mock_inventory.find_customer_by_name.return_value = {
+        "contact_id": "existing-inventory-contact",
+        "contact_type": "customer",
+        "status": "active",
+    }
+    mock_inventory.create_contact.side_effect = httpx.HTTPStatusError(
+        "duplicate name",
+        request=duplicate_response.request,
+        response=duplicate_response,
+    )
+
+    result = await resolve_inventory_customer_id(
+        phone="+79262810921",
+        customer_name="None Игорь",
+        customer_email="",
+        customer_company="None Игорь",
+        zoho_inventory=mock_inventory,
+    )
+
+    assert result == "existing-inventory-contact"
 
 
 @pytest.mark.asyncio

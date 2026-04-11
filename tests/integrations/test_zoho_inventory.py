@@ -261,3 +261,73 @@ async def test_find_customer_by_email_matches_contact_person_email() -> None:
     assert result is not None
     assert result["contact_id"] == "460000000026049"
     assert mock_request.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_find_customer_by_name_scans_pages_for_exact_match() -> None:
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = b"test_token"
+
+    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
+
+    page_1_response = httpx.Response(
+        200,
+        json={
+            "contacts": [
+                {
+                    "contact_id": "460000000000001",
+                    "contact_name": "Another Customer",
+                    "contact_type": "customer",
+                    "status": "active",
+                }
+            ],
+            "page_context": {"page": 1, "per_page": 200, "has_more_page": True},
+        },
+        request=httpx.Request("GET", "https://example.com/contacts?page=1"),
+    )
+    page_2_response = httpx.Response(
+        200,
+        json={
+            "contacts": [
+                {
+                    "contact_id": "460000000026049",
+                    "contact_name": "None Игорь",
+                    "contact_type": "customer",
+                    "status": "active",
+                }
+            ],
+            "page_context": {"page": 2, "per_page": 200, "has_more_page": False},
+        },
+        request=httpx.Request("GET", "https://example.com/contacts?page=2"),
+    )
+    get_response = httpx.Response(
+        200,
+        json={
+            "contact": {
+                "contact_id": "460000000026049",
+                "contact_name": "None Игорь",
+                "contact_type": "customer",
+                "status": "active",
+            }
+        },
+        request=httpx.Request("GET", "https://example.com/contacts/460000000026049"),
+    )
+
+    async def request_side_effect(*_: object, **kwargs: object) -> httpx.Response:
+        params = kwargs.get("params", {})
+        page = params.get("page")
+        if page == 1:
+            return page_1_response
+        if page == 2:
+            return page_2_response
+        return get_response
+
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.side_effect = request_side_effect
+        result = await zoho_client.find_customer_by_name("None Игорь")
+
+    assert result is not None
+    assert result["contact_id"] == "460000000026049"
+    assert mock_request.await_count == 3

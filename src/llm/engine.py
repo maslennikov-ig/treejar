@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 from uuid import UUID
 
+import httpx
 from pydantic import SkipValidation
 from pydantic_ai import Agent, RunContext, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -497,6 +498,26 @@ def _inventory_contact_id(contact: Mapping[str, Any] | None) -> str | None:
     return contact_id_str or None
 
 
+def _is_duplicate_inventory_contact_error(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    if exc.response.status_code != 400:
+        return False
+
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        payload = None
+
+    if isinstance(payload, Mapping):
+        code = payload.get("code")
+        message = str(payload.get("message") or "").casefold()
+        if code == 3062 or "already exists" in message:
+            return True
+
+    return "already exists" in exc.response.text.casefold()
+
+
 def _build_inventory_contact_payload(
     *,
     phone: str,
@@ -582,7 +603,36 @@ async def resolve_inventory_customer_id(
 
     try:
         created_contact = await zoho_inventory.create_contact(payload)
-    except Exception:
+    except Exception as exc:
+        if _is_duplicate_inventory_contact_error(exc):
+            seen_names: set[str] = set()
+            for candidate_name in (
+                _string_value(payload.get("contact_name")),
+                customer_company,
+                customer_name,
+            ):
+                normalized_candidate = _string_value(candidate_name)
+                if not normalized_candidate:
+                    continue
+                key = normalized_candidate.casefold()
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+                try:
+                    existing_by_name = await zoho_inventory.find_customer_by_name(
+                        normalized_candidate
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed duplicate-name fallback search in Zoho Inventory for %s",
+                        normalized_candidate,
+                    )
+                    continue
+
+                existing_by_name_id = _inventory_contact_id(existing_by_name)
+                if existing_by_name_id:
+                    return existing_by_name_id
+
         logger.exception(
             "Failed to create Zoho Inventory customer for phone %s",
             phone,
