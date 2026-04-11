@@ -1,12 +1,94 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
 
 from src.core.config import settings
 from src.integrations.inventory.base import InventoryProvider
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_phone(value: str | None) -> str | None:
+    digits = "".join(ch for ch in value or "" if ch.isdigit())
+    if not digits:
+        return None
+    return f"+{digits}"
+
+
+def _phone_digits(value: str | None) -> str:
+    return "".join(ch for ch in value or "" if ch.isdigit())
+
+
+def _phones_equivalent(left: str | None, right: str | None) -> bool:
+    left_digits = _phone_digits(left)
+    right_digits = _phone_digits(right)
+    if not left_digits or not right_digits:
+        return False
+    if left_digits == right_digits:
+        return True
+
+    shorter, longer = sorted((left_digits, right_digits), key=len)
+    return len(shorter) >= 7 and longer.endswith(shorter)
+
+
+def _coerce_inventory_contact(raw_contact: Any) -> dict[str, Any] | None:
+    if not isinstance(raw_contact, Mapping):
+        return None
+
+    contact = dict(raw_contact)
+    contact_id = contact.get("contact_id")
+    if contact_id is None:
+        return None
+
+    contact["contact_id"] = str(contact_id)
+
+    if "contact_type" in contact and contact["contact_type"] is not None:
+        contact["contact_type"] = str(contact["contact_type"])
+    if "status" in contact and contact["status"] is not None:
+        contact["status"] = str(contact["status"])
+
+    contact_persons = contact.get("contact_persons")
+    if isinstance(contact_persons, list):
+        contact["contact_persons"] = [
+            dict(person) for person in contact_persons if isinstance(person, Mapping)
+        ]
+
+    return contact
+
+
+def _is_active_customer(contact: Mapping[str, Any]) -> bool:
+    contact_type = str(contact.get("contact_type") or "").strip().lower()
+    if contact_type and contact_type != "customer":
+        return False
+
+    status = str(contact.get("status") or "").strip().lower()
+    return not (status and status != "active")
+
+
+def _contact_phone_values(contact: Mapping[str, Any]) -> list[str]:
+    values: list[str] = []
+
+    for key in ("phone", "mobile"):
+        value = contact.get(key)
+        if isinstance(value, str) and value.strip():
+            values.append(value)
+
+    contact_persons = contact.get("contact_persons")
+    if isinstance(contact_persons, list):
+        for person in contact_persons:
+            if not isinstance(person, Mapping):
+                continue
+            for key in ("phone", "mobile"):
+                value = person.get(key)
+                if isinstance(value, str) and value.strip():
+                    values.append(value)
+
+    return values
 
 
 class ZohoInventoryClient(InventoryProvider):
@@ -204,6 +286,126 @@ class ZohoInventoryClient(InventoryProvider):
         if isinstance(data, dict):
             return dict(data)
         return None
+
+    async def search_contacts(self, **filters: Any) -> list[dict[str, Any]]:
+        """Search contacts using Zoho Inventory list-contacts filters."""
+        params = {
+            key: value for key, value in filters.items() if value not in (None, "")
+        }
+        params.setdefault("per_page", 200)
+        response = await self._request("GET", "/contacts", params=params)
+        data = response.json()
+
+        contacts = data.get("contacts", [])
+        if not isinstance(contacts, list):
+            return []
+
+        return [
+            contact
+            for raw_contact in contacts
+            if (contact := _coerce_inventory_contact(raw_contact)) is not None
+        ]
+
+    async def get_contact(self, contact_id: str) -> dict[str, Any] | None:
+        """Get a specific contact by Zoho Inventory contact_id."""
+        try:
+            response = await self._request("GET", f"/contacts/{contact_id}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+        data = response.json()
+        contact = _coerce_inventory_contact(data.get("contact"))
+        if contact is not None:
+            return contact
+        if isinstance(data, Mapping):
+            return dict(data)
+        return None
+
+    async def _first_accessible_customer(
+        self, contacts: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        for candidate in contacts:
+            if not _is_active_customer(candidate):
+                continue
+
+            contact_id = str(candidate.get("contact_id") or "").strip()
+            if not contact_id:
+                continue
+
+            contact = await self.get_contact(contact_id)
+            if contact is None or not _is_active_customer(contact):
+                continue
+
+            return contact
+
+        return None
+
+    async def find_customer_by_phone(self, phone: str) -> dict[str, Any] | None:
+        """Find an accessible active customer using normalized phone matching."""
+        normalized_phone = _normalize_phone(phone)
+        digits = _phone_digits(phone)
+        if not normalized_phone or not digits:
+            return None
+
+        query_values: list[tuple[str, str]] = [("phone", normalized_phone)]
+        if digits != normalized_phone:
+            query_values.append(("phone", digits))
+        if len(digits) > 7:
+            query_values.append(("phone_contains", digits[-10:]))
+
+        seen_queries: set[tuple[str, str]] = set()
+        for field, value in query_values:
+            query = (field, value)
+            if query in seen_queries:
+                continue
+            seen_queries.add(query)
+
+            contacts = await self.search_contacts(
+                filter_by="Status.Active", **{field: value}
+            )
+            matched_contacts = [
+                contact
+                for contact in contacts
+                if any(
+                    _phones_equivalent(candidate_phone, normalized_phone)
+                    for candidate_phone in _contact_phone_values(contact)
+                )
+            ]
+            contact = await self._first_accessible_customer(matched_contacts)
+            if contact is not None:
+                return contact
+
+        return None
+
+    async def find_customer_by_email(self, email: str) -> dict[str, Any] | None:
+        """Find an accessible active customer by email address."""
+        normalized_email = email.strip().casefold()
+        if not normalized_email:
+            return None
+
+        contacts = await self.search_contacts(
+            filter_by="Status.Active", email=email.strip()
+        )
+        exact_matches = [
+            contact
+            for contact in contacts
+            if str(contact.get("email") or "").strip().casefold() == normalized_email
+        ]
+        return await self._first_accessible_customer(exact_matches)
+
+    async def create_contact(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Create a contact/customer in Zoho Inventory."""
+        response = await self._request("POST", "/contacts", json=data)
+        payload = response.json()
+
+        contact = _coerce_inventory_contact(payload.get("contact"))
+        if contact is not None:
+            return contact
+        if isinstance(payload, Mapping):
+            return dict(payload)
+        return {}
 
     async def create_sale_order(
         self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"

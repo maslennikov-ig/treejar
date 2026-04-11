@@ -466,6 +466,139 @@ def _exact_quote_fail_closed_message() -> str:
     )
 
 
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _extract_crm_company(value: Any) -> str:
+    if isinstance(value, Mapping):
+        return _string_value(value.get("name"))
+    return _string_value(value)
+
+
+def _split_contact_name(name: str) -> tuple[str, str]:
+    parts = [part for part in name.split() if part]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _inventory_contact_id(contact: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(contact, Mapping):
+        return None
+
+    contact_id = contact.get("contact_id")
+    if contact_id is None:
+        return None
+
+    contact_id_str = str(contact_id).strip()
+    return contact_id_str or None
+
+
+def _build_inventory_contact_payload(
+    *,
+    phone: str,
+    customer_name: str,
+    customer_email: str,
+    customer_company: str,
+) -> dict[str, Any]:
+    fallback_suffix = "".join(ch for ch in phone if ch.isdigit())[-4:] or "customer"
+    contact_name = (
+        customer_company or customer_name or f"WhatsApp Customer {fallback_suffix}"
+    )
+    contact_person_name = customer_name or contact_name
+    first_name, last_name = _split_contact_name(contact_person_name)
+    if not first_name:
+        first_name = contact_name
+
+    contact_person: dict[str, Any] = {
+        "first_name": first_name,
+        "phone": phone,
+        "mobile": phone,
+        "is_primary_contact": True,
+    }
+    if last_name:
+        contact_person["last_name"] = last_name
+    if customer_email:
+        contact_person["email"] = customer_email
+
+    payload: dict[str, Any] = {
+        "contact_name": contact_name,
+        "contact_type": "customer",
+        "contact_persons": [contact_person],
+    }
+    if customer_company:
+        payload["company_name"] = customer_company
+
+    return payload
+
+
+async def resolve_inventory_customer_id(
+    *,
+    phone: str,
+    customer_name: str,
+    customer_email: str,
+    customer_company: str,
+    zoho_inventory: ZohoInventoryClient,
+) -> str | None:
+    """Resolve or create a valid Zoho Inventory customer contact for quotations."""
+    try:
+        existing_contact = await zoho_inventory.find_customer_by_phone(phone)
+    except Exception:
+        logger.exception(
+            "Failed to search Zoho Inventory customer by phone for %s",
+            phone,
+        )
+        return None
+
+    existing_contact_id = _inventory_contact_id(existing_contact)
+    if existing_contact_id:
+        return existing_contact_id
+
+    if customer_email:
+        try:
+            existing_by_email = await zoho_inventory.find_customer_by_email(
+                customer_email
+            )
+        except Exception:
+            logger.exception(
+                "Failed to search Zoho Inventory customer by email for %s",
+                customer_email,
+            )
+            return None
+
+        existing_by_email_id = _inventory_contact_id(existing_by_email)
+        if existing_by_email_id:
+            return existing_by_email_id
+
+    payload = _build_inventory_contact_payload(
+        phone=phone,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_company=customer_company,
+    )
+
+    try:
+        created_contact = await zoho_inventory.create_contact(payload)
+    except Exception:
+        logger.exception(
+            "Failed to create Zoho Inventory customer for phone %s",
+            phone,
+        )
+        return None
+
+    contact_id = _inventory_contact_id(created_contact)
+    if contact_id is None:
+        logger.error(
+            "Zoho Inventory create_contact returned no contact_id for phone %s: %s",
+            phone,
+            created_contact,
+        )
+    return contact_id
+
+
 async def _notify_catalog_mismatch_and_escalate(
     ctx: RunContext[SalesDeps],
     *,
@@ -942,7 +1075,7 @@ async def create_quotation(
 ) -> str:
     """Generate a formal PDF quotation for the customer, save it to Zoho Inventory as a draft, and send it via WhatsApp.
     Call this when the customer has explicitly asked for a quote and confirmed the items and quantities.
-    Do not block on missing full name, company name, or email: use CRM/conversation fallback and the temporary draft customer path when needed.
+    Do not block on missing full name, company name, or email: use CRM/conversation fallback and resolve or create a valid Inventory customer first.
 
     Args:
         items: List of the SKUs and quantities to include in the quote.
@@ -1055,7 +1188,6 @@ async def create_quotation(
     customer_name = ctx.deps.conversation.customer_name or "Valued Customer"
     customer_email = ""
     customer_company = ""
-    zoho_customer_id = ""
 
     if ctx.deps.zoho_crm:
         contact = await ctx.deps.zoho_crm.find_contact_by_phone(
@@ -1067,15 +1199,33 @@ async def create_quotation(
             crm_full = f"{crm_first} {crm_last}".strip()
             if crm_full:
                 customer_name = crm_full
-            customer_email = contact.get("Email", "")
-            customer_company = contact.get("Account_Name", "")
-            zoho_customer_id = contact.get("id", "")
-    elif ctx.deps.crm_context:
-        customer_name = ctx.deps.crm_context.get("Name", customer_name)
+            customer_email = _string_value(contact.get("Email"))
+            customer_company = _extract_crm_company(contact.get("Account_Name"))
 
-    # For Zoho Inventory, use a placeholder if no real customer_id resolved.
-    # The draft will still be created; the customer link can be updated manually.
-    customer_id = zoho_customer_id or "temp_draft_customer_id"
+    if ctx.deps.crm_context:
+        customer_name = _string_value(
+            ctx.deps.crm_context.get("Name")
+            or ctx.deps.crm_context.get("Full_Name")
+            or customer_name
+        )
+        customer_email = _string_value(
+            ctx.deps.crm_context.get("Email") or customer_email
+        )
+        customer_company = _string_value(
+            ctx.deps.crm_context.get("Company")
+            or ctx.deps.crm_context.get("Account_Name")
+            or customer_company
+        )
+
+    customer_id = await resolve_inventory_customer_id(
+        phone=ctx.deps.conversation.phone,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_company=customer_company,
+        zoho_inventory=ctx.deps.zoho_inventory,
+    )
+    if customer_id is None:
+        return await _fail_closed_exact_quote_request(ctx.deps)
 
     # Create Draft Order in Zoho
     try:
@@ -1100,7 +1250,7 @@ async def create_quotation(
                 )
     except Exception as e:
         logger.error("Failed to create draft sale order: %s", e)
-        return "Failed to create draft sale order in Zoho Inventory."
+        return await _fail_closed_exact_quote_request(ctx.deps)
 
     # Generate PDF context
     import datetime as _dt

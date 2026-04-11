@@ -323,6 +323,11 @@ class TestScenario3QuotationFlow:
         mock_inv.create_sale_order.return_value = {
             "saleorder": {"salesorder_number": "SO-TEST-001"},
         }
+        mock_inv.find_customer_by_phone.return_value = {
+            "contact_id": "inventory-contact-scenario",
+            "contact_type": "customer",
+            "status": "active",
+        }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
 

@@ -22,6 +22,18 @@ class InventoryProvider(Protocol):
         """Get a specific Zoho item by item_id."""
         ...
 
+    async def find_customer_by_phone(self, phone: str) -> dict[str, Any] | None:
+        """Find an active customer contact by phone number."""
+        ...
+
+    async def find_customer_by_email(self, email: str) -> dict[str, Any] | None:
+        """Find an active customer contact by email address."""
+        ...
+
+    async def create_contact(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Create a customer contact."""
+        ...
+
     async def create_sale_order(
         self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"
     ) -> dict[str, Any]:

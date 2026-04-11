@@ -284,6 +284,11 @@ class TestCreateQuotation:
         mock_inv.create_sale_order.return_value = {
             "saleorder": {"salesorder_number": "SO-0001"},
         }
+        mock_inv.find_customer_by_phone.return_value = {
+            "contact_id": "inventory-contact-001",
+            "contact_type": "customer",
+            "status": "active",
+        }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
         mock_redis = AsyncMock()
@@ -356,6 +361,11 @@ class TestCreateQuotation:
         mock_inv.create_sale_order.return_value = {
             "saleorder": {"salesorder_number": "SO-0002"},
         }
+        mock_inv.find_customer_by_phone.return_value = {
+            "contact_id": "inventory-contact-redis",
+            "contact_type": "customer",
+            "status": "active",
+        }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
         mock_redis = AsyncMock()
@@ -409,6 +419,11 @@ class TestCreateQuotation:
         ]
         mock_inv.create_sale_order.return_value = {
             "saleorder": {"salesorder_number": "SO-0003"},
+        }
+        mock_inv.find_customer_by_phone.return_value = {
+            "contact_id": "inventory-contact-vat",
+            "contact_type": "customer",
+            "status": "active",
         }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)

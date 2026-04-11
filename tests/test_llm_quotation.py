@@ -29,6 +29,11 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     mock_inventory.create_sale_order.return_value = {
         "saleorder": {"salesorder_number": "SA-001", "status": "draft"}
     }
+    mock_inventory.find_customer_by_phone.return_value = {
+        "contact_id": "inventory-contact-001",
+        "contact_type": "customer",
+        "status": "active",
+    }
 
     mock_messaging = AsyncMock()
     mock_conversation = MagicMock(spec=Conversation)
@@ -51,7 +56,13 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     deps.db = mock_db
     # Provide a zoho_crm mock so CRM lookup works (returns no contact → uses conversation data)
     mock_crm = AsyncMock()
-    mock_crm.find_contact_by_phone.return_value = None
+    mock_crm.find_contact_by_phone.return_value = {
+        "id": "crm-contact-001",
+        "First_Name": "Test",
+        "Last_Name": "Customer",
+        "Email": "test@example.com",
+        "Account_Name": {"name": "Treejar Trading"},
+    }
     deps.zoho_crm = mock_crm
 
     ctx = MagicMock(spec=RunContext)
@@ -77,6 +88,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     mock_inventory.get_stock_bulk.assert_called_once_with(["CHAIR-1"])
     mock_inventory.create_sale_order.assert_called_once()
     _, kwargs = mock_inventory.create_sale_order.call_args
+    assert kwargs["customer_id"] == "inventory-contact-001"
     assert kwargs["status"] == "draft"
     assert kwargs["items"][0]["item_id"] == "123"
     assert kwargs["items"][0]["quantity"] == 2
@@ -135,6 +147,12 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     mock_inventory.create_sale_order.return_value = {
         "saleorder": {"salesorder_number": "SA-001", "status": "draft"}
     }
+    mock_inventory.find_customer_by_phone.return_value = None
+    mock_inventory.create_contact.return_value = {
+        "contact_id": "inventory-contact-created",
+        "contact_type": "customer",
+        "status": "active",
+    }
 
     mock_conversation = SimpleNamespace(
         id="conv-1",
@@ -174,7 +192,62 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
 
     assert "SA-001" in result
     _, kwargs = mock_inventory.create_sale_order.call_args
-    assert kwargs["customer_id"] == "temp_draft_customer_id"
+    assert kwargs["customer_id"] == "inventory-contact-created"
+    mock_inventory.create_contact.assert_awaited_once()
+    mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
+    mock_notify: AsyncMock,
+) -> None:
+    mock_inventory = AsyncMock()
+    mock_inventory.get_stock_bulk.return_value = [
+        {
+            "sku": "CHAIR-1",
+            "item_id": "123",
+            "rate": 150.0,
+            "stock_on_hand": 25,
+            "description": "A nice chair",
+            "name": "Chair",
+        }
+    ]
+    mock_inventory.find_customer_by_phone.return_value = None
+    mock_inventory.create_contact.side_effect = RuntimeError("inventory create failed")
+
+    mock_conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name=None,
+        escalation_status="none",
+        metadata_={},
+    )
+    mock_redis = AsyncMock()
+    mock_db = AsyncMock()
+
+    deps = MagicMock(spec=SalesDeps)
+    deps.zoho_inventory = mock_inventory
+    deps.messaging_client = AsyncMock()
+    deps.conversation = mock_conversation
+    deps.crm_context = None
+    deps.redis = mock_redis
+    deps.db = mock_db
+    deps.zoho_crm = AsyncMock()
+    deps.zoho_crm.find_contact_by_phone.return_value = {"id": "crm-contact-001"}
+    deps.recent_history = ["user: exact quote for CHAIR-1"]
+    deps.catalog_mismatch_alerted = False
+
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+
+    result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "couldn't finalize the exact quotation automatically" in result.lower()
+    mock_inventory.create_sale_order.assert_not_called()
     mock_notify.assert_awaited_once()
 
 
