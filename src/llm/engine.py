@@ -1146,7 +1146,6 @@ async def create_quotation(
                 "total_price": total_price,
                 "image_url": None,  # Resolved below via authenticated download
                 "_item_id": zoho_item.get("item_id"),  # For image fetch
-                "_has_image": bool(zoho_item.get("image_document_id")),
             }
         )
 
@@ -1160,7 +1159,7 @@ async def create_quotation(
     sem = asyncio.Semaphore(3)  # limit concurrent image downloads
 
     async def _fetch_image(tpl_item: dict[str, Any]) -> None:
-        if not tpl_item.get("_has_image") or not tpl_item.get("_item_id"):
+        if not tpl_item.get("_item_id"):
             return
         async with sem:
             try:
@@ -1181,7 +1180,6 @@ async def create_quotation(
     # Clean up internal keys before passing to template
     for ti in template_items:
         ti.pop("_item_id", None)
-        ti.pop("_has_image", None)
 
     # Resolve customer data from CRM or conversation context
     # Priority: CRM contact > crm_context > conversation fields > fallback

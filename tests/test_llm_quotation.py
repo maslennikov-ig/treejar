@@ -29,6 +29,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     mock_inventory.create_sale_order.return_value = {
         "saleorder": {"salesorder_number": "SA-001", "status": "draft"}
     }
+    mock_inventory.get_item_image.return_value = (b"img-bytes", "image/jpeg")
     mock_inventory.find_customer_by_phone.return_value = {
         "contact_id": "inventory-contact-001",
         "contact_type": "customer",
@@ -77,7 +78,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
         ) as mock_pdf,
         patch(
             "src.services.pdf.generator.render_quotation_html", return_value="<html>"
-        ),
+        ) as mock_render,
     ):
         mock_pdf.return_value = b"pdf_data"
         result = await create_quotation(ctx, items)
@@ -92,6 +93,10 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     assert kwargs["status"] == "draft"
     assert kwargs["items"][0]["item_id"] == "123"
     assert kwargs["items"][0]["quantity"] == 2
+
+    mock_inventory.get_item_image.assert_awaited_once_with("123")
+    render_context = mock_render.call_args.args[0]
+    assert render_context["items"][0]["image_url"].startswith("data:image/jpeg;base64,")
 
     # Verify PDF generation was called
     mock_pdf.assert_called_once()
