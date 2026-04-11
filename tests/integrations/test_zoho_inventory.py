@@ -204,3 +204,60 @@ async def test_create_contact_returns_created_customer() -> None:
     _, kwargs = mock_request.call_args
     assert kwargs["json"]["contact_type"] == "customer"
     assert kwargs["json"]["contact_persons"][0]["phone"] == "+971501234567"
+
+
+@pytest.mark.asyncio
+async def test_find_customer_by_email_matches_contact_person_email() -> None:
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = b"test_token"
+
+    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
+
+    list_response = httpx.Response(
+        200,
+        json={
+            "contacts": [
+                {
+                    "contact_id": "460000000026049",
+                    "contact_name": "Bowman and Co",
+                    "contact_type": "customer",
+                    "status": "active",
+                    "contact_persons": [
+                        {
+                            "email": "owner@bowmanfurniture.com",
+                            "is_primary_contact": True,
+                        }
+                    ],
+                }
+            ]
+        },
+        request=httpx.Request("GET", "https://example.com/contacts"),
+    )
+    get_response = httpx.Response(
+        200,
+        json={
+            "contact": {
+                "contact_id": "460000000026049",
+                "contact_name": "Bowman and Co",
+                "contact_type": "customer",
+                "status": "active",
+                "contact_persons": [
+                    {
+                        "email": "owner@bowmanfurniture.com",
+                        "is_primary_contact": True,
+                    }
+                ],
+            }
+        },
+        request=httpx.Request("GET", "https://example.com/contacts/460000000026049"),
+    )
+
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.side_effect = [list_response, get_response]
+        result = await zoho_client.find_customer_by_email("owner@bowmanfurniture.com")
+
+    assert result is not None
+    assert result["contact_id"] == "460000000026049"
+    assert mock_request.await_count == 2

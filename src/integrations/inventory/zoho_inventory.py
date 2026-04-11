@@ -91,6 +91,25 @@ def _contact_phone_values(contact: Mapping[str, Any]) -> list[str]:
     return values
 
 
+def _contact_email_values(contact: Mapping[str, Any]) -> list[str]:
+    values: list[str] = []
+
+    email = contact.get("email")
+    if isinstance(email, str) and email.strip():
+        values.append(email)
+
+    contact_persons = contact.get("contact_persons")
+    if isinstance(contact_persons, list):
+        for person in contact_persons:
+            if not isinstance(person, Mapping):
+                continue
+            value = person.get("email")
+            if isinstance(value, str) and value.strip():
+                values.append(value)
+
+    return values
+
+
 class ZohoInventoryClient(InventoryProvider):
     """Zoho Inventory API client implementing InventoryProvider protocol."""
 
@@ -391,7 +410,10 @@ class ZohoInventoryClient(InventoryProvider):
         exact_matches = [
             contact
             for contact in contacts
-            if str(contact.get("email") or "").strip().casefold() == normalized_email
+            if any(
+                candidate_email.strip().casefold() == normalized_email
+                for candidate_email in _contact_email_values(contact)
+            )
         ]
         return await self._first_accessible_customer(exact_matches)
 
