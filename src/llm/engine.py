@@ -352,6 +352,38 @@ async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None
     return product
 
 
+async def _download_catalog_image(
+    image_url: str | None,
+) -> tuple[bytes, str] | None:
+    if not image_url:
+        return None
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(20.0),
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(image_url)
+            response.raise_for_status()
+    except (httpx.HTTPError, httpx.TimeoutException) as exc:
+        logger.warning("Failed to download catalog image from %s: %s", image_url, exc)
+        return None
+
+    if not response.content:
+        return None
+
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
+    if not content_type.startswith("image/"):
+        logger.warning(
+            "Skipping non-image catalog response for %s with content-type %s",
+            image_url,
+            content_type or "<missing>",
+        )
+        return None
+
+    return response.content, content_type
+
+
 async def _resolve_exact_quote_candidate_sku(
     db: AsyncSession,
     candidate: ExactQuoteCandidate,
@@ -1155,6 +1187,7 @@ async def create_quotation(
 
     for item in items:
         zoho_item = stock_map.get(item.sku)
+        catalog_product = await _find_catalog_product_by_sku(ctx.deps.db, item.sku)
         if not zoho_item:
             resolved_item, catalog_product = await _resolve_inventory_item(
                 ctx, item.sku
@@ -1196,6 +1229,7 @@ async def create_quotation(
                 "total_price": total_price,
                 "image_url": None,  # Resolved below via authenticated download
                 "_item_id": zoho_item.get("item_id"),  # For image fetch
+                "_catalog_image_url": getattr(catalog_product, "image_url", None),
             }
         )
 
@@ -1209,13 +1243,19 @@ async def create_quotation(
     sem = asyncio.Semaphore(3)  # limit concurrent image downloads
 
     async def _fetch_image(tpl_item: dict[str, Any]) -> None:
-        if not tpl_item.get("_item_id"):
+        if not tpl_item.get("_item_id") and not tpl_item.get("_catalog_image_url"):
             return
         async with sem:
             try:
-                result = await ctx.deps.zoho_inventory.get_item_image(
-                    str(tpl_item["_item_id"])
-                )
+                result = None
+                if tpl_item.get("_item_id"):
+                    result = await ctx.deps.zoho_inventory.get_item_image(
+                        str(tpl_item["_item_id"])
+                    )
+                if not result and tpl_item.get("_catalog_image_url"):
+                    result = await _download_catalog_image(
+                        str(tpl_item["_catalog_image_url"])
+                    )
                 if result:
                     img_bytes, content_type = result
                     b64 = base64.b64encode(img_bytes).decode("ascii")
@@ -1230,6 +1270,7 @@ async def create_quotation(
     # Clean up internal keys before passing to template
     for ti in template_items:
         ti.pop("_item_id", None)
+        ti.pop("_catalog_image_url", None)
 
     # Resolve customer data from CRM or conversation context
     # Priority: CRM contact > crm_context > conversation fields > fallback
