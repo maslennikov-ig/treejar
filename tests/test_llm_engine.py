@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic_ai import RunContext, ToolReturn
-from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    SystemPromptPart,
+    TextPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
@@ -613,6 +619,58 @@ async def test_process_message_missing_low_risk_hands_off_without_agent_run(
     assert conv.escalation_status == "pending"
     assert "manager" in response.text.lower()
     assert "showroom" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+async def test_process_message_service_handoff_deduplicates_current_user_in_recent_history(
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Do you have a showroom?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Hello")]),
+        ModelResponse(parts=[TextPart(content="How can I help?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    recent_messages = mock_notify.await_args.kwargs["recent_messages"]
+    assert recent_messages == [
+        "user: Hello",
+        "assistant: How can I help?",
+        "user: Do you have a showroom?",
+    ]
+    assert recent_messages.count("user: Do you have a showroom?") == 1
 
 
 @pytest.mark.asyncio

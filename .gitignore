@@ -82,6 +82,9 @@ docs/**/*.pdf
 !.codex/handoff.md
 !.codex/orchestrator.toml
 !.codex/report-template.md
+!.codex/stage-artifact-template.md
+!.codex/stages/
+!.codex/stages/**
 
 .env*
 .worktrees/

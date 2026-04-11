@@ -1,144 +1,36 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-05
+Updated: 2026-04-06
 Current baseline branch: `main`
+Current baseline commit: `27783a4e4f97fcb66073f07f2989bdff8848b622`
 
-## Current repo state
+## Current state
 
-- Repo-local orchestration is intentionally minimal here: tracked contract files live in `.codex/`, while delegated agent reports are local-only under `.codex/agent-reports/`.
-- `.gitignore` tracks the repo-local contract files and keeps delegated agent reports under `.codex/agent-reports/` local-only.
-- Existing local `.codex/config.toml` in the primary worktree was reviewed for this setup and left untouched.
-- `tj-hd0n` is now closed on `main` as a reporting-quality cleanup:
-  - Telegram `Daily Summary` no longer reuses the broad dashboard payload and no longer shows `LLM Cost`
-  - daily summary now uses a dedicated calculator with honest `N/A` rendering for missing `Avg Quality` / `Conversion Rate (7d)` basis
-  - `Conversion Rate (7d)` is now defined as delivered deals over conversations with assistant activity in the last 7 days
-  - rolling quality evaluation is no longer tied only to `Conversation.status == "closed"`; worker now runs `evaluate_recent_conversations_quality()` and `save_review()` updates existing `quality_reviews` rows instead of insert-only behavior
-- The repository now operates in a main-only workflow: promote finished work directly into `main` instead of treating `develop` as a required intermediate branch.
-- Prefer dedicated worktrees for orchestration work when the primary worktree contains unrelated local-only changes.
-- Use `bd ready --json` for the current queue and `bd show <id>` for targeted task context.
-- `tj-15m.4` is now merged into `main` and hot-applied on canonical runtime `/opt/noor`: it adds persistent `ConversationSummary` storage + migration, an async ARQ refresh job on the fast model path, a shared hybrid context builder (`summary + raw recent tail`) for main/follow-up paths, and post-reply enqueue after assistant commit.
-- Two additional live-fix slices were merged into `main` on 2026-04-03 and verified locally:
-  - `0794240` `fix(prompt): harden concrete order escalation contract`
-  - `b913444` `fix: enforce product search loop cap`
-  - `c64d84c` `fix(prompt): preserve consultative bulk discovery`
-- Review follow-up fixes are also in `main`: raw tail no longer overlaps already-covered summary turns, and runtime message creation now stamps deterministic `created_at` values instead of relying on `server_default(now())` for batched ordering.
-- A late production blocker was fixed locally on 2026-04-03: Alembic revision `2026_04_03_conversation_summaries` exceeded the production `alembic_version.version_num varchar(32)` limit. It was shortened to `2026_04_03_conv_summary_001`, and `tests/test_migrations.py` now guards all Alembic revision lengths.
-- Verified-answer policy is now merged into `main` via `tj-hwls.1`:
-  - `src/llm/verified_answers.py` adds deterministic classification for `product`, `service_low_risk`, and `service_high_risk` questions plus FAQ support states `verified`, `partial`, and `missing`
-  - `src/llm/engine.py` now branches before the final answer so high-risk service questions do not rely on general model knowledge when FAQ support is weak
-  - external geography and payment-concession edge cases were explicitly tightened in follow-up commit `d63eb49`, so UAE-wide FAQ facts no longer incorrectly verify requests like delivery to Saudi Arabia/Qatar or `net 30` / deferred-payment concessions
-- Canonical runtime was refreshed from clean `origin/main` on 2026-04-05 before taking the next slice:
-  - `/opt/noor` was overlaid from a clean worktree and `docker compose up -d --build app worker` completed successfully; `app` and `worker` were recreated and canonical health returned to `200 OK` after a brief restart-time `502`
-  - the live `knowledge_base` on canonical currently contains only 5 test rows, so a clean `verified` or `partial` FAQ-backed service retest was not available without inventing data
-  - the exact-phone retest on `+79262810921` could therefore only confirm the high-risk `missing` fail-closed branch: `"Do you deliver to Saudi Arabia?"` on conversation `95668449-d1a5-4b51-9503-9cb51146b961` produced deterministic `verified-policy` handoff text, set `escalation_status=pending`, and persisted an escalation reason about missing verified FAQ support
-  - a follow-up exact-thread `"Can you do net 30?"` on the same conversation is not a clean verified-policy signal because it hit the active-escalation fallback branch, not a fresh payment-policy evaluation
-- `tj-hwls.2` is now landed on `main` as the separate FAQ-authoring policy slice:
-  - `src/services/auto_faq.py` returns structured `saved` / `duplicate` / `blocked_context_specific` results and applies a fail-closed guard before embedding/dedupe/write
-  - guarded classes currently include time-specific promises, one-off offers, customer-specific commitments, project/logistics-specific arrangements, and callback-style manager commitments
-  - `src/api/telegram_webhook.py` keeps client delivery unchanged but downgrades blocked `faq_global` saves to private-only with operator feedback instead of polluting the global KB
-  - local verification for this slice passed in a clean worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `TMPDIR=/home/me/code/treejar/.tmp timeout 900s uv run pytest tests/ -v --tb=short` (`498 passed, 19 skipped`)
-  - this slice was later hot-applied from current `origin/main` to `/opt/noor` on 2026-04-05; `app` + `worker` were rebuilt successfully, `blocked_context_specific` is now present on runtime, and canonical health returned to `200 OK` after a brief restart-time `502`
-  - there is still no canonical live retest yet for the Telegram manager FAQ-authoring flow itself
-- `tj-27v` is now landed on `main` and verified on canonical runtime as the separate media-delivery slice:
-  - product images from `search_products` no longer hand raw Zoho OAuth URLs or `tmpfiles.org` uploads to Wazzup; Zoho-backed images now use signed first-party URLs under `/api/v1/public-media/products/{zoho_item_id}`
-  - local verification passed in the delegated worktree: `git diff --check`, `uv run ruff check src/ tests/`, `uv run ruff format --check src/ tests/`, `uv run mypy src/`, and `uv run pytest tests/test_product_images.py tests/test_messaging_wazzup.py tests/test_public_media.py tests/test_llm_engine.py -v --tb=short` (`48 passed`)
-  - canonical `/opt/noor` was hot-applied from current `main`, rebuilt, and externally validated with a real signed media URL for Zoho item `378603000004698178`: `GET /api/v1/public-media/products/... -> 200 OK`, `content-type=image/jpeg`, `content-length=51132`
-  - direct canary via `WazzupProvider.send_media()` to live recipient `+79262810921` returned message id `5b54a1ba-32cb-4562-88f3-f7d9e11865aa`; app logs show Wazzup IP `172.241.70.100` did `HEAD 405` then `GET 200`, and the subsequent Wazzup webhook echo reported the image as `status=delivered`
-  - canonical runtime drift surfaced during this slice: `/opt/noor` still had `APP_ENV=development`, so `DOMAIN=https://noor.starec.ai` had to be written into runtime `.env` before the signed URL path was usable; treat this as more evidence for existing deploy/runtime drift issues rather than a new product bug
-- Operational follow-up `tj-5dbj` was filed from the canonical hot-apply:
-  - rebuilding `/opt/noor` currently backtracks on fresh `pydantic-ai` resolution, pulls `torch`/CUDA wheels on a CPU runtime, emits `9.61GB` `noor-app` / `noor-worker` images, and left about `124.9GB` of BuildKit cache on the VPS
+- This is a single-repo Treejar runtime repository with a main-only delivery flow.
+- `.codex/orchestrator.toml` is the machine-readable contract; `.codex/handoff.md` is current-state only.
+- Tracked stage history now lives under `.codex/stages/`; `.codex/agent-reports/` remains the legacy local-only archive.
+- `bd ready --json` works in this repository.
+- Canonical live runtime target remains `https://noor.starec.ai`; direct `/opt/noor` triage is still the practical runtime-debug path.
 
-## Open follow-ups / nearest ready tasks
+## Active stage
 
-- `tj-19ol` — P1 stage: canonical live testing re-entry on `https://noor.starec.ai`
-- `tj-19ol.3` — P2 task: blocker-driven triage for canonical live-testing findings
-- `tj-5ypi` — P1 bug: align prod VPS deploy contract (`/opt/treejar-prod` + docker access for `noor-dev`)
-- `tj-5dbj` — P2 bug: make canonical `/opt/noor` rebuild deterministic and CPU-only
-- `tj-19ol.3.5` — P2 bug: canonical deploy/runtime drift after repo-side CI port fix
-- `tj-12a` — P1 feature: wire `search_knowledge()` into the LLM pipeline
-- `tj-15m` — P1 task: reduce response latency via parallel tool execution and caching
-- `tj-15m.5` — P1 bug: quantify remaining latency after hybrid summary apply
+- Current active stage: `tj-19ol.3` — blocker-driven canonical live-testing triage.
+- Stage summary: [`.codex/stages/tj-19ol.3/summary.md`](./stages/tj-19ol.3/summary.md)
+- Latest tracked artifact: [`.codex/stages/tj-19ol.3/artifacts/tj-19ol.3.13.md`](./stages/tj-19ol.3/artifacts/tj-19ol.3.13.md)
+- Current truth: the first-turn concrete-order handoff fix is accepted and hot-applied; consultative bulk behavior is healthy; the acoustic/no-exact-match path is still only partial.
 
-## Rules for the next orchestrator
+## Next recommended
 
-- Read `AGENTS.md`, `README.md`, and `.codex/orchestrator.toml` first; read `.codex/config.toml` too if it exists locally.
-- Keep simple process-only tasks local; switch to orchestration when scope becomes multi-file, docs-sensitive, schema-sensitive, route-expanding, or parallel.
-- Use dedicated worktrees with strict write zones and avoid unrelated local changes in the primary worktree.
-- For delegated work, require a markdown report file and a short completion line with: task ID, report path, commit hash, git status clean yes/no.
-- Keep reviews findings-first and do not treat a stage as closed until fresh local verification is done.
-- Follow the session-completion rule from `AGENTS.md`: `git pull --rebase`, then apply the Beads 1.0.0 maintenance steps as needed (`bd bootstrap --yes`, `bd import`, `bd hooks install`, `bd export -o .beads/issues.jsonl`), then `git push`.
-- Keep operator-facing runtime assumptions aligned with the current production host `https://noor.starec.ai`.
-- Use the review artifact at `docs/reports/code-reviews/2026-04/CR-2026-04-02-main-only-workflow-review.md` as the latest completed cleanup baseline for the main-only transition.
-- The current active execution stage remains `tj-19ol.3`, but the truth changed materially on 2026-04-03:
-  - repo-side auth fail-open fix from `tj-19ol.3.1` is done and verified
-  - canonical env fixes for `tj-19ol.3.2` and `tj-19ol.3.4` were applied locally, hot-applied to `/opt/noor`, and verified on `https://noor.starec.ai`
-  - `tj-19ol.3.7` is closed: `notify_manager_escalation()` now persists an `Escalation` row, local tests are green, and direct in-container verification on canonical env confirmed `escalation_count=1` with `pending` status
-  - `tj-19ol.3.8` is closed as transient/non-reproducible: after canonical recheck, direct `process_message()` replay, webhook canary, and live smoke no longer hit the 120s timeout
-  - `tj-19ol.2` should no longer be treated as fully green: the earlier broad smoke passed except for the first-turn concrete-order case, and the targeted retest on 2026-04-03 confirmed that this regression still exists on the real-recipient runtime path
-  - `tj-19ol.3.12` is closed as an execution task: merged fixes were hot-applied to `/opt/noor`, `app` + `worker` were rebuilt, and the targeted retest completed on real recipient `+79262810921`
-  - targeted live retest truth after hot-apply:
-    - concrete order still FAILS: `I need 200 chairs delivered to Dubai Marina by next week` on conversation `4425381e-3ebc-4f78-8a1c-e6b120b5b0c9` produced a qualifying assistant reply in `16.02s`, `tokens_in=2020`, `escalation_status=none`, `escalations=0`; prompt-only hardening is insufficient on the hosted model/runtime path
-    - consultative bulk guard PASSES: `We need 20 chairs for next week, what options do you have?` on conversation `76e78300-3df5-47a3-ade1-59dfa5bb26ab` stayed non-escalation, returned useful chair options in `10.11s`, and executed exactly one real `search_products` call
-    - acoustic pods remains PARTIAL: `Tell me about your acoustic pods` on conversation `63d6283a-3672-40a4-89cb-9c966b930905` stayed non-escalation, took `34.03s`, used `tokens_in=9429`, executed exactly two real `search_products` calls, then removed `search_products` from the available toolset as intended, but the final answer quality was weak and `tmpfiles.org` image uploads still failed with repeated `422`
-  - `tj-19ol.3.13` is now merged into `main`, hot-applied to `/opt/noor`, and validated on canonical runtime:
-    - merge commit on `main`: `5cf6d30` (`fix: merge order handoff guard`)
-    - targeted live retest on real recipient `+79262810921` for `"I need 200 chairs delivered to Dubai Marina by next week"` now PASSES
-    - conversation `080af0e3-e27d-4f81-8805-ba1bc2d67c2d` was created on the exact phone, triggered `escalate_to_manager(order_confirmation)`, persisted an `Escalation` row, set `escalation_status=pending`, stored a handoff-style assistant reply, and sent via Wazzup with `POST /v3/message -> 201 Created`
-    - runtime duration for that fixed case was `19.66s`; stored assistant message had `tokens_in=1268`, `tokens_out=370`
-  - the later `tj-15m.5.2` engine-only slice is now landed on `main` as `e7f8ebb` and hot-applied to `/opt/noor`:
-    - consultative chairs path is materially improved on canonical runtime:
-      - `"We need 20 chairs for next week, what options do you have?"` on conversation `7253e445-9ade-435d-847e-c73fb137d762` stayed non-escalated and answered option-first with two concrete in-stock chair options plus one narrow follow-up
-      - runtime for that improved consultative case was about `22.32s`; stored assistant message had `tokens_in=6947`, `tokens_out=573`
-    - acoustic/no-exact-match path is still only PARTIAL after the same hot-apply:
-      - `"Tell me about your acoustic pods"` on conversation `95668449-d1a5-4b51-9503-9cb51146b961` stayed non-escalated and delivered successfully
-      - runtime was about `21.17s`; stored assistant message had `tokens_in=4346`, `tokens_out=575`
-      - the reply quality is still weak: after one `search_products('acoustic pods')` call and repeated `tmpfiles.org` image-upload `422`s, the bot said it could not see exact acoustic pods and fell back to a generic clarification instead of giving stronger nearby alternatives
-  - next realistic blockers are therefore narrower and evidence-based:
-    - `tj-5dbj` is the new operational follow-up for the slow/non-deterministic canonical rebuild path
-    - `tj-tauh` should not be reopened without fresh evidence: the no-exact-match product fallback work is already closed in Beads and the corresponding nearby/missing product-match policy is present on `main`
-  - additional canonical truth from the 2026-04-03 latency pass:
-  - `tj-15m` is still active after a real profiling round
-  - worker startup now warms `EmbeddingEngine`, which removes the first-message cold model load from the worker path
-  - the acoustic-pods product path had an unbounded `search_products` retry loop; repo and canonical env now cap real product searches to 2 per customer message
-  - direct isolated replay for `"Tell me about your acoustic pods"` dropped to about `15.25s` after the loop cap
-  - canonical webhook canary no longer crashes on duplicate conversations for `+971000000001`; `src/services/chat.py` now chooses the most recent non-empty conversation instead of crashing on `MultipleResultsFound`
-  - canonical webhook canary for the same acoustic-pods query still took `42.19s`, with logs showing remaining tail dominated by multiple OpenRouter turns, large accumulated context (`tokens_in=10353` on that run), and failing product-image uploads
-  - `tj-15m.4` is closed after canonical deploy/retest:
-    - `/opt/noor` was updated and rebuilt successfully
-    - worker logs confirm `refresh_conversation_summary` executed successfully and created/updated a `conversation_summaries` row for `+971000000001`
-    - controlled webhook retest on canonical env after deploy showed:
-      - warmup_1 `24.55s`, `tokens_in=2427`
-      - warmup_2 `17.48s`, `tokens_in=6527`
-      - warmup_3 `36.13s`, `tokens_in=6536`
-      - target `"Tell me about your acoustic pods"` `35.84s`, `tokens_in=10396`
-      - follow-up `"Do they work for 4-person meetings and private calls?"` `16.70s`, `tokens_in=3153`
-      - wholesale guard `20.11s`, `tokens_in=2972`
-      - `escalation_status` stayed `none` throughout
-    - summary persistence is therefore no longer the blocker; residual latency moved to `tj-15m.5`
-  - next realistic latency slices are narrower than a broad refactor:
-    - product-search/tool-context work under `tj-15m.5`
-- Operational truth for canonical host:
-  - live runtime is under `/opt/noor`, not `/opt/treejar-prod`
-  - `noor-dev` now has enough access for direct hotfix work in `/opt/noor` and Docker-based inspection/rebuilds
-  - repo-side CI/deploy contract drift (`tj-5ypi`, `tj-19ol.3.5`) still exists, but it is no longer the immediate blocker for runtime debugging because direct `/opt/noor` access is sufficient for canonical triage
-  - canonical runtime still carries env drift relative to the repo contract: during `tj-27v`, `/opt/noor` was running with `APP_ENV=development`; the live signed-media path only became usable after explicitly setting `DOMAIN=https://noor.starec.ai` in runtime `.env`
-  - canonical live-delivery test recipient changed on 2026-04-03: use `+79262810921` for future WhatsApp smoke and delivery verification
-  - previous `+971000000001` should now be treated only as a synthetic/non-deliverable runtime artifact for DB/log-path checks, not as a real delivery target
-  - full live smoke was rerun on `+79262810921` before the latest hot-apply:
-    - PASS: MOQ no escalation
-    - FAIL before new fixes: first-turn concrete order did not escalate as `order_confirmation`
-    - PASS: explicit manager request -> `human_requested`
-    - PASS with latency issue: acoustic pods -> no escalation, but about 31s and three live `search_products` calls
-    - PASS: complaint -> `general`
-    - PASS: wholesale pricing -> no escalation
-    - PASS: refund -> `general`
-  - targeted post-hot-apply retest is now complete in two rounds:
-    - round 1 hot-applied `0794240`, `b913444`, and `c64d84c` to `/opt/noor`, rebuilt `app` + `worker`, and proved that consultative bulk behavior stayed healthy while the first-turn concrete-order bug still persisted
-    - round 2 hot-applied the merged `tj-19ol.3.13` engine/order-handoff guard, rebuilt `app` + `worker`, and proved that the concrete-order bug is fixed on canonical runtime without introducing false-positive escalation on the consultative bulk guard-case
-  - `tj-27v` canonical media retest is now complete:
-    - a direct signed-media smoke on a real Zoho-backed product returned `200 OK` with JPEG bytes from `https://noor.starec.ai/api/v1/public-media/products/...`
-    - a direct Wazzup image canary to `+79262810921` succeeded end-to-end; logs show Wazzup probing the signed URL with `HEAD` and then fetching it with `GET`, and the resulting media webhook echo reported `status=delivered`
-  - next realistic step is:
-    - keep `tj-5dbj` queued as the separate operational follow-up for the canonical rebuild path
-    - treat a dedicated Telegram manager FAQ-authoring live retest as a separate operational check if canonical validation for `tj-hwls.2` becomes necessary
-    - use `tj-19ol` / `tj-19ol.3` only for new blocker-driven canonical live testing, not to reopen already-closed `tj-27v`
+- Next stage id: `tj-19ol.3`
+- Recommended action: use `tj-19ol.3` only for fresh evidence-driven canonical retests; keep `tj-5dbj` separate for deterministic CPU-only rebuild work on `/opt/noor` and `tj-5ypi` separate for repo/CI deploy-contract drift.
+
+## Starter prompt for next orchestrator
+
+```text
+Use $stage-orchestrator to continue with stage `tj-19ol.3` in this repository. Read AGENTS.md, .codex/orchestrator.toml, .codex/handoff.md, and the linked stage summary/artifact first. Then confirm current canonical runtime evidence, keep rebuild and deploy-contract follow-ups split, and prepare the next retest step without widening scope.
+```
+
+## Explicit defers
+
+- The acoustic/no-exact-match path is still only partially resolved; keep it explicit in `tj-19ol.3` retest work instead of quietly treating it as finished.
+- `tj-5dbj` rebuild work and `tj-5ypi` deploy-contract drift remain separate follow-ups, not debt hidden inside `tj-19ol.3`.

@@ -1131,7 +1131,10 @@ async def process_message(
             for response_part in message.parts:
                 if isinstance(response_part, TextPart):
                     recent_history.append(f"assistant: {response_part.content}")
-    recent_history = recent_history[-5:] + [f"user: {masked_text}"]
+    recent_history = recent_history[-5:]
+    current_user_entry = f"user: {masked_text}"
+    if not recent_history or recent_history[-1] != current_user_entry:
+        recent_history.append(current_user_entry)
 
     deps = SalesDeps(
         db=db,
