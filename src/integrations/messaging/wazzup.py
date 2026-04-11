@@ -166,10 +166,30 @@ class WazzupProvider(MessagingProvider):
             return str(data[0].get("messageId", "unknown"))
         return "unknown"
 
+    @staticmethod
+    def _outbound_chat_id(chat_id: str) -> str:
+        """Strip repo-owned smoke suffixes before calling Wazzup.
+
+        Our live smoke tooling may decorate the inbound chatId as
+        ``+7999...#smoke-tag`` to keep the test conversation isolated in app
+        storage. Wazzup only accepts the real WhatsApp chat id, so outbound
+        delivery must use the base part before ``#``.
+        """
+        base_chat_id, _, suffix = chat_id.partition("#")
+        if suffix and base_chat_id:
+            logger.info(
+                "Using base Wazzup chatId %s for synthetic profile suffix %s",
+                base_chat_id,
+                suffix,
+            )
+            return base_chat_id
+        return chat_id
+
     async def send_text(self, chat_id: str, text: str) -> str:
         """Send a text message. Returns message ID."""
+        outbound_chat_id = self._outbound_chat_id(chat_id)
         payload: dict[str, Any] = {
-            "chatId": chat_id,
+            "chatId": outbound_chat_id,
             "chatType": "whatsapp",
             "text": text,
         }
@@ -207,9 +227,11 @@ class WazzupProvider(MessagingProvider):
         if not content_uri:
             raise ValueError("send_media requires either url or content")
 
+        outbound_chat_id = self._outbound_chat_id(chat_id)
+
         # --- Send the file (contentUri only, no text) ---
         payload: dict[str, Any] = {
-            "chatId": chat_id,
+            "chatId": outbound_chat_id,
             "chatType": "whatsapp",
             "contentUri": content_uri,
         }
@@ -222,7 +244,7 @@ class WazzupProvider(MessagingProvider):
         # --- Send caption as a separate text message (if provided) ---
         if caption:
             try:
-                await self.send_text(chat_id, caption)
+                await self.send_text(outbound_chat_id, caption)
             except Exception:
                 logger.warning(
                     "File sent (msg_id=%s) but caption failed", msg_id, exc_info=True
@@ -239,8 +261,9 @@ class WazzupProvider(MessagingProvider):
             # For simpler templates, content could be just a string
             pass
 
+        outbound_chat_id = self._outbound_chat_id(chat_id)
         payload: dict[str, Any] = {
-            "chatId": chat_id,
+            "chatId": outbound_chat_id,
             "chatType": "whatsapp",
             "template": True,
             # For simplicity, assuming Wazzup format accepts a text mapped to template

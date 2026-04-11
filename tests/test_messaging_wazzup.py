@@ -48,6 +48,32 @@ async def test_send_text_success(
     "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
     new_callable=AsyncMock,
 )
+async def test_send_text_strips_smoke_profile_suffix_from_chat_id(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"messageId": "msg_123"}
+    mock_resp.raise_for_status.return_value = None
+    mock_request.return_value = mock_resp
+
+    msg_id = await wazzup_provider.send_text(
+        "+79262810921#smoke-tool-final-20260411T1552",
+        "Hello World",
+    )
+
+    assert msg_id == "msg_123"
+    payload = mock_request.call_args.kwargs["json"]
+    assert payload["chatId"] == "+79262810921"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
 async def test_send_text_http_error(
     mock_request: AsyncMock, wazzup_provider: WazzupProvider
 ) -> None:
@@ -121,6 +147,35 @@ async def test_send_media_url_only(
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_media_strips_smoke_profile_suffix_from_chat_id(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {"messageId": "msg_url"}
+    mock_request.return_value = mock_resp
+
+    msg_id = await wazzup_provider.send_media(
+        "+79262810921#smoke-tool-final-20260411T1552",
+        url="http://image.jpg",
+        caption="Look!",
+    )
+
+    assert msg_id == "msg_url"
+    first_payload = mock_request.call_args_list[0].kwargs["json"]
+    second_payload = mock_request.call_args_list[1].kwargs["json"]
+    assert first_payload["chatId"] == "+79262810921"
+    assert second_payload["chatId"] == "+79262810921"
+
+
+@pytest.mark.asyncio
 @patch("src.integrations.messaging.wazzup.WazzupProvider._upload_to_tmpfiles")
 @patch(
     "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
@@ -188,6 +243,33 @@ async def test_send_template_success(
 
     msg_id = await wazzup_provider.send_template("123", "tmpl_1", {})
     assert msg_id == "msg_tmpl"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_template_strips_smoke_profile_suffix_from_chat_id(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {"messageId": "msg_tmpl"}
+    mock_request.return_value = mock_resp
+
+    msg_id = await wazzup_provider.send_template(
+        "+79262810921#smoke-tool-final-20260411T1552",
+        "tmpl_1",
+        {},
+    )
+
+    assert msg_id == "msg_tmpl"
+    payload = mock_request.call_args.kwargs["json"]
+    assert payload["chatId"] == "+79262810921"
 
 
 @pytest.mark.asyncio

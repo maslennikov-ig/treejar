@@ -32,6 +32,8 @@ Current baseline branch: `main`
   - a second live bug was found and fixed on 2026-04-11: API user timestamps are only second-precision, so the helper now normalizes local `started_at` to second precision before correlation
   - local verification on the repaired helper passed: `uv run ruff check scripts/bot_test.py tests/test_scripts_bot_test.py`, `uv run ruff format --check scripts/bot_test.py tests/test_scripts_bot_test.py`, `uv run pytest tests/test_scripts_bot_test.py -v --tb=short -s` (`9 passed`)
   - final live smoke proof after the timestamp fix succeeded on synthetic chat `+79262810921#smoke-tool-final-20260411T1552`, conversation `5d3847a8-ba43-4b71-b1b8-062b9498cfb4`, with correlated assistant reply at `2026-04-11T15:51:36.797263Z`
+  - a follow-up live manager-reply failure on that same synthetic conversation was traced to outbound Wazzup using the decorated smoke chat id verbatim; app logs at `2026-04-11T16:22:59Z` showed `400 INVALID_MESSAGE_DATA` for `chatId`
+  - clean worktree branch `codex/landing-telegram-quotation-20260411` now contains a narrow fix in `src/integrations/messaging/wazzup.py` that strips repo-owned `#suffix` smoke tags for outbound `send_text`, `send_media`, and `send_template`, with regression coverage in `tests/test_messaging_wazzup.py`; this fix is not deployed yet
 
 - As of 2026-04-06, the canonical single source of truth for catalog data is `https://new.treejartrading.ae/api/catalog`.
 - Treat `bazara.ae`, `treejartrading.ae/ksa-en`, and Zoho Inventory catalog fields as non-canonical for customer-facing product truth.
