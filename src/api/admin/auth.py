@@ -7,6 +7,11 @@ from src.core.config import settings
 
 
 class AdminAuth(AuthenticationBackend):
+    def __init__(self, secret_key: str) -> None:
+        # The root FastAPI app owns the shared session boundary for
+        # /admin, /dashboard, and /api/v1/admin.
+        self.middlewares = []
+
     async def login(self, request: Request) -> bool:
         form = await request.form()
         username = str(form.get("username", ""))

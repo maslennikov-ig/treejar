@@ -108,7 +108,7 @@ async def test_search_products_error(
 
 
 @pytest.mark.asyncio
-async def test_sync_products_treejar_default(mock_db: AsyncMock) -> None:
+async def test_sync_products_requires_admin_session() -> None:
     mock_pool = AsyncMock()
     app.state.arq_pool = mock_pool
 
@@ -116,6 +116,19 @@ async def test_sync_products_treejar_default(mock_db: AsyncMock) -> None:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         response = await ac.post("/api/v1/products/sync", json={})
+
+    assert response.status_code == 401
+    mock_pool.enqueue_job.assert_not_awaited()
+
+    del app.state.arq_pool
+
+
+@pytest.mark.asyncio
+async def test_sync_products_treejar_default(admin_client: AsyncClient) -> None:
+    mock_pool = AsyncMock()
+    app.state.arq_pool = mock_pool
+
+    response = await admin_client.post("/api/v1/products/sync", json={})
 
     assert response.status_code == 200
     assert response.json()["synced"] == 0
@@ -125,15 +138,12 @@ async def test_sync_products_treejar_default(mock_db: AsyncMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_products_zoho(mock_db: AsyncMock) -> None:
+async def test_sync_products_zoho(admin_client: AsyncClient) -> None:
     # We need to mock the ARQ pool on the app state
     mock_pool = AsyncMock()
     app.state.arq_pool = mock_pool
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        response = await ac.post("/api/v1/products/sync", json={"source": "zoho"})
+    response = await admin_client.post("/api/v1/products/sync", json={"source": "zoho"})
 
     assert response.status_code == 200
     assert response.json()["synced"] == 0
@@ -144,11 +154,10 @@ async def test_sync_products_zoho(mock_db: AsyncMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_products_unsupported(mock_db: AsyncMock) -> None:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        response = await ac.post("/api/v1/products/sync", json={"source": "unknown"})
+async def test_sync_products_unsupported(admin_client: AsyncClient) -> None:
+    response = await admin_client.post(
+        "/api/v1/products/sync", json={"source": "unknown"}
+    )
 
     assert response.status_code == 400
     assert "treejar" in response.json()["detail"]

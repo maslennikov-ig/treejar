@@ -1,8 +1,17 @@
 import uuid
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
 
+from src.api.v1.reports import ReportResponse
+from src.core.config import settings
+from src.main import app
+from src.schemas.admin import DashboardMetricsResponse
+from src.schemas.common import PaginatedResponse
+from src.schemas.manager_review import ManagerReviewDetail, ManagerReviewRead
+from src.services.reports import ReportData
 from tests.conftest import integration
 
 
@@ -11,6 +20,41 @@ async def test_admin_requires_auth(client: AsyncClient) -> None:
     """All /api/v1/admin/ endpoints should return 401 without auth."""
     response = await client.get("/api/v1/admin/prompts/")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_login_grants_dashboard_and_api_access(client: AsyncClient) -> None:
+    """Real SQLAdmin login should authorize /dashboard and /api/v1/admin routes."""
+    dashboard_response = await client.get("/dashboard/")
+    assert dashboard_response.status_code == 401
+
+    api_response = await client.get("/api/v1/admin/dashboard/metrics/")
+    assert api_response.status_code == 401
+
+    login_response = await client.post(
+        "/admin/login",
+        data={
+            "username": settings.admin_username,
+            "password": settings.admin_password,
+        },
+    )
+    assert login_response.status_code in (200, 302, 303)
+
+    admin_response = await client.get("/admin/")
+    assert admin_response.status_code == 200
+
+    dashboard_response = await client.get("/dashboard/")
+    assert dashboard_response.status_code == 200
+
+    with patch(
+        "src.services.dashboard_metrics.calculate_dashboard_metrics",
+        new_callable=AsyncMock,
+    ) as mock_metrics:
+        mock_metrics.return_value = DashboardMetricsResponse(period="all_time")
+        api_response = await client.get("/api/v1/admin/dashboard/metrics/")
+
+    assert api_response.status_code == 200
+    assert api_response.json()["period"] == "all_time"
 
 
 @integration
@@ -70,14 +114,13 @@ async def test_admin_endpoints(admin_client: AsyncClient) -> None:
 
     # --- test_admin_mount_redirects_to_login ---
     response_rm = await admin_client.get("/admin/")
-    assert response_rm.status_code in (302, 303)
-    assert "/admin/login" in response_rm.headers["location"]
+    assert response_rm.status_code == 200
 
 
 @integration
 @pytest.mark.asyncio
 async def test_dashboard_metrics(admin_client: AsyncClient) -> None:
-    """Test the expanded dashboard metrics endpoint (17 KPIs, 6 categories)."""
+    """Test the current expanded dashboard metrics payload."""
     # Default period (all_time)
     response = await admin_client.get("/api/v1/admin/dashboard/metrics/")
     assert response.status_code == 200
@@ -268,6 +311,177 @@ async def test_admin_models_list(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_admin_dashboard_spa_route(client: AsyncClient) -> None:
-    """Test dashboard SPA route serves index.html."""
+    """Dashboard SPA route should require an authenticated admin session."""
     response = await client.get("/dashboard/")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_dashboard_spa_route_after_login(admin_client: AsyncClient) -> None:
+    """Dashboard SPA route should serve the app for authenticated admins."""
+    response = await admin_client.get("/dashboard/")
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_operator_endpoints_require_auth(client: AsyncClient) -> None:
+    """Operator action endpoints under /api/v1/admin should require admin auth."""
+    response = await client.get("/api/v1/admin/notifications/config")
+    assert response.status_code == 401
+
+    response = await client.post("/api/v1/admin/products/sync", json={})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_notifications_operator_endpoints(
+    admin_client: AsyncClient,
+) -> None:
+    """Dashboard operator wrappers should expose notification config/test via admin session."""
+    with (
+        patch(
+            "src.api.v1.notifications.get_notification_config",
+            new_callable=AsyncMock,
+        ) as mock_config,
+        patch(
+            "src.api.v1.notifications.send_test_notification",
+            new_callable=AsyncMock,
+        ) as mock_test,
+    ):
+        mock_config.return_value = {
+            "telegram_configured": True,
+            "telegram_bot_token": "***1234",
+            "telegram_chat_id": "***9876",
+        }
+        mock_test.return_value = {"status": "sent"}
+
+        config_response = await admin_client.get("/api/v1/admin/notifications/config")
+        test_response = await admin_client.post("/api/v1/admin/notifications/test")
+
+    assert config_response.status_code == 200
+    assert config_response.json()["telegram_configured"] is True
+    assert test_response.status_code == 200
+    assert test_response.json()["status"] == "sent"
+    mock_config.assert_awaited_once()
+    mock_test.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_product_sync_operator_endpoint(admin_client: AsyncClient) -> None:
+    """Dashboard operator wrapper should expose protected product sync via admin session."""
+    mock_pool = AsyncMock()
+    app.state.arq_pool = mock_pool
+
+    response = await admin_client.post("/api/v1/admin/products/sync", json={})
+
+    assert response.status_code == 200
+    assert response.json()["errors"] == 0
+    mock_pool.enqueue_job.assert_awaited_with("sync_products_from_treejar_catalog")
+
+    del app.state.arq_pool
+
+
+@pytest.mark.asyncio
+async def test_admin_manager_review_operator_endpoints(
+    admin_client: AsyncClient,
+) -> None:
+    """Dashboard operator wrappers should expose pending, recent, and evaluate flows."""
+    now = datetime.now(UTC)
+    recent_review = ManagerReviewRead(
+        id=uuid.uuid4(),
+        escalation_id=uuid.uuid4(),
+        conversation_id=uuid.uuid4(),
+        manager_name="Amina",
+        total_score=17.5,
+        max_score=20,
+        rating="excellent",
+        first_response_time_seconds=180,
+        message_count=4,
+        deal_converted=True,
+        deal_amount=1250.0,
+        reviewer="ai",
+        created_at=now,
+    )
+    review_detail = ManagerReviewDetail(
+        **recent_review.model_dump(),
+        criteria=[],
+        summary="Strong follow-up and clear close.",
+    )
+    pending_item = {
+        "escalation_id": str(uuid.uuid4()),
+        "conversation_id": str(uuid.uuid4()),
+        "phone": "+971501234567",
+        "manager_name": "Amina",
+        "reason": "Customer requested human manager",
+        "status": "resolved",
+        "updated_at": now.isoformat(),
+    }
+
+    with (
+        patch(
+            "src.api.v1.admin.list_manager_reviews",
+            new_callable=AsyncMock,
+        ) as mock_list,
+        patch(
+            "src.api.v1.admin.list_pending_manager_reviews",
+            new_callable=AsyncMock,
+        ) as mock_pending,
+        patch(
+            "src.api.v1.admin.evaluate_escalation",
+            new_callable=AsyncMock,
+        ) as mock_evaluate,
+    ):
+        mock_list.return_value = PaginatedResponse[ManagerReviewRead](
+            items=[recent_review],
+            total=1,
+            page=1,
+            page_size=5,
+            pages=1,
+        )
+        mock_pending.return_value = [pending_item]
+        mock_evaluate.return_value = review_detail
+
+        recent_response = await admin_client.get(
+            "/api/v1/admin/manager-reviews/?page_size=5"
+        )
+        pending_response = await admin_client.get(
+            "/api/v1/admin/manager-reviews/pending"
+        )
+        evaluate_response = await admin_client.post(
+            f"/api/v1/admin/manager-reviews/{pending_item['escalation_id']}/evaluate"
+        )
+
+    assert recent_response.status_code == 200
+    assert recent_response.json()["items"][0]["manager_name"] == "Amina"
+    assert pending_response.status_code == 200
+    assert pending_response.json()[0]["phone"] == "+971501234567"
+    assert evaluate_response.status_code == 200
+    assert evaluate_response.json()["summary"] == "Strong follow-up and clear close."
+    mock_list.assert_awaited_once()
+    mock_pending.assert_awaited_once()
+    mock_evaluate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_report_operator_endpoint(admin_client: AsyncClient) -> None:
+    """Dashboard operator wrapper should expose report generation via admin session."""
+    with patch(
+        "src.api.v1.admin.generate_report_endpoint",
+        new_callable=AsyncMock,
+    ) as mock_report:
+        mock_report.return_value = ReportResponse(
+            data=ReportData(
+                period_start=datetime(2026, 4, 7, tzinfo=UTC),
+                period_end=datetime(2026, 4, 14, tzinfo=UTC),
+                total_conversations=12,
+                conversion_rate=25.0,
+                manager_reviews_count=2,
+            ),
+            text="Weekly report",
+        )
+
+        response = await admin_client.post("/api/v1/admin/reports/generate", json={})
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Weekly report"
+    mock_report.assert_awaited_once()

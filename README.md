@@ -37,6 +37,7 @@ curl http://localhost:8000/api/v1/health
 
 - Swagger UI: http://localhost:8000/docs
 - Admin panel: http://localhost:8000/admin/
+- Admin dashboard: http://localhost:8000/dashboard/ (analytics + operator center)
 
 ## Development
 
@@ -59,7 +60,7 @@ uv run pytest tests/ -v
 src/
   api/v1/          # FastAPI routes (25 endpoints)
   core/            # Config, database, redis, security
-  models/          # SQLAlchemy models (6 tables)
+  models/          # SQLAlchemy models (13 runtime tables)
   schemas/         # Pydantic schemas (API contracts)
   llm/             # LLM engine + prompt templates
   rag/             # RAG pipeline (SQL + pgvector)
@@ -77,4 +78,5 @@ docs/              # Project documentation
 - [Development Guide](docs/dev-guide.md)
 - [Roadmap](docs/roadmap.md)
 - [**Manager Guide**](docs/manager-guide.md) — For sales managers: 18 escalation triggers, handover process
-- [**Admin Guide**](docs/admin-guide.md) — For administrators: prompts, config, monitoring, emergency procedures
+- [**Admin Guide**](docs/admin-guide.md) — For administrators: shared `/admin` + `/dashboard` access, prompts, operator center, monitoring, emergency procedures
+- [**Metrics Reference**](docs/metrics.md) — Current dashboard payload, including manager and feedback KPI sections

@@ -22,13 +22,12 @@ graph TB
     subgraph "VPS сервер"
         API[FastAPI Backend]
         LLM[LLM Engine]
-        RAG[RAG Pipeline]
+        RAG[RAG + pgvector Search]
         QC[Quality Control Bot]
-        ADMIN[Админ-панель]
+        ADMIN[SQLAdmin + Dashboard]
 
         subgraph "Хранилища"
-            PG[(PostgreSQL)]
-            QD[(Qdrant)]
+            PG[(PostgreSQL + pgvector)]
             REDIS[(Redis)]
         end
     end
@@ -43,7 +42,7 @@ graph TB
     API <--> LLM
     LLM <--> OR
     LLM <--> RAG
-    RAG <--> QD
+    RAG <--> PG
     API <--> PG
     API <--> REDIS
     API <-->|контакты, сделки| ZOHO_CRM
@@ -64,7 +63,7 @@ graph TB
 | **ORM** | SQLAlchemy | 2.0+ | Стандарт для Python |
 | **Миграции** | Alembic | 1.13+ | Версионирование схемы БД |
 | **БД** | PostgreSQL | 16 | Надёжная, бесплатная |
-| **Векторная БД** | Qdrant | 1.9+ | Self-hosted, быстрый поиск |
+| **Векторный поиск** | pgvector | PostgreSQL extension | Векторный поиск в той же БД, без отдельного сервиса |
 | **Кеш/очереди** | Redis | 7+ | Сессии, rate limiting, очереди |
 | **LLM** | OpenRouter / DeepSeek API | — | OpenRouter как маршрутизатор / DeepSeek прямой API |
 | **Голос** | Whisper (OpenAI) | — | Распознавание EN/AR |
@@ -94,18 +93,20 @@ VPS (4 CPU, 8 GB RAM, 80 GB SSD)
 ├── Docker Compose
 │   ├── app (FastAPI + SQLAdmin + Vite SPA) — порт 8000
 │   ├── postgres — порт 5432
-│   ├── qdrant — порт 6333
 │   ├── redis — порт 6379
 │   └── nginx (reverse proxy) — порт 80/443
 ```
 
 > **Примечание:** Админ-панель реализована как гибрид:
-> - **SQLAdmin** (встроен в FastAPI) — CRUD для всех таблиц, управление промптами и настройками
-> - **React/Vite дашборд** (`frontend/admin/`) — метрики, аналитика, отчёты (тот же стек, что и лендинг)
+> - **SQLAdmin** (встроен в FastAPI) — operator surface для 13 runtime models, конфигурации и read-only audit tables
+> - **React/Vite дашборд** (`frontend/admin/`) — аналитика, KPI и operator center поверх `/api/v1/admin/dashboard/*` и `/api/v1/admin/*`
+> - `/admin/` и `/dashboard/` используют одну и ту же admin session
 
 ---
 
 ## Схема базы данных (PostgreSQL)
+
+Ниже показан упрощённый core ERD для основных бизнес-сущностей. Полный текущий runtime/operator surface шире и включает также `ConversationSummary`, `ManagerReview`, `Feedback`, `MetricsSnapshot`, `SystemConfig`, `SystemPrompt` и `Referral`.
 
 ```mermaid
 erDiagram
@@ -184,15 +185,14 @@ erDiagram
 
 ---
 
-## Векторная база (Qdrant)
+## Векторный поиск (pgvector)
 
-| Коллекция | Содержимое | Размер вектора |
-|-----------|------------|----------------|
-| `products` | Описания товаров (EN + AR) | 1024 (Jina v3) |
-| `knowledge` | Правила диалогов, преимущества компании | 1024 |
-| `conversations` | История диалогов (для контекста) | 1024 |
+| Источник | Содержимое | Где хранится |
+|----------|------------|--------------|
+| `products.embedding` | Векторизованные описания товаров | PostgreSQL + pgvector |
+| `knowledge_base.embedding` | FAQ, правила диалога, факты о компании | PostgreSQL + pgvector |
 
-**Embedding-модель:** Jina Embeddings v3 (мультиязычная, EN/AR)
+**Embedding-модель:** BGE-M3 через локальный embedding pipeline.
 
 ---
 
@@ -204,7 +204,7 @@ erDiagram
 ├── /conversations/          # Управление диалогами
 ├── /products/               # Каталог товаров
 │   ├── /search              # Поиск по каталогу (RAG)
-│   └── /sync                # Синхронизация с Zoho Inventory
+│   └── /sync                # Protected operator endpoint for catalog sync
 ├── /crm/                    # Интеграция с Zoho CRM
 │   ├── /contacts            # Контакты
 │   └── /deals               # Сделки
@@ -212,11 +212,14 @@ erDiagram
 │   ├── /stock               # Остатки
 │   └── /sale-orders         # Создание SaleOrder
 ├── /quality/                # Контроль качества
-│   ├── /reviews             # Оценки диалогов
-│   └── /reports             # Отчёты
+│   └── /reviews             # Оценки диалогов
+├── /notifications/          # Protected operator notification endpoints
+├── /reports/                # Protected report generation endpoints
+├── /referrals/              # Protected referral operations
+├── /manager-reviews/        # Protected manager review API
 ├── /admin/                  # Админ-панель API
 │   ├── /prompts             # Управление промптами
-│   ├── /metrics             # Метрики
+│   ├── /dashboard           # Dashboard metrics + timeseries
 │   └── /settings            # Настройки
 └── /health                  # Состояние сервиса
 ```
@@ -233,8 +236,7 @@ sequenceDiagram
     participant W as Wazzup
     participant A as FastAPI
     participant R as Redis
-    participant P as PostgreSQL
-    participant Q as Qdrant
+    participant P as PostgreSQL + pgvector
     participant Z as Zoho CRM
     participant L as OpenRouter (LLM)
 
@@ -244,8 +246,8 @@ sequenceDiagram
     A->>P: Сохранить сообщение
     A->>Z: Проверить клиента по телефону
     Z-->>A: Контакт + история покупок
-    A->>Q: RAG-поиск по базе знаний
-    Q-->>A: Релевантные документы
+    A->>P: RAG-поиск по embeddings
+    P-->>A: Релевантные документы
     A->>L: Промпт + контекст + документы
     L-->>A: Ответ LLM
     A->>P: Сохранить ответ
@@ -326,4 +328,4 @@ treejar-ai-bot/
 |----------|---------|
 | До 200 диал/день | Текущий VPS (4 CPU, 8 GB) |
 | 200-1000 диал/день | Увеличить VPS до 8 CPU, 16 GB |
-| 1000+ диал/день | Вынести PostgreSQL и Qdrant на отдельные серверы |
+| 1000+ диал/день | Вынести PostgreSQL/pgvector и Redis на отдельные managed или выделенные ресурсы |

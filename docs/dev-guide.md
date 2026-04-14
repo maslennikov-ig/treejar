@@ -50,6 +50,7 @@ alembic upgrade head
 curl http://localhost:8000/api/v1/health
 open http://localhost:8000/docs      # Swagger UI
 open http://localhost:8000/admin/    # SQLAdmin панель
+open http://localhost:8000/dashboard/ # Admin dashboard + operator center (та же admin session)
 ```
 
 ### Локальная разработка без Docker
@@ -92,7 +93,11 @@ treejar-ai-bot/
 │   │       ├── crm.py            # Интеграция Zoho CRM (контакты, сделки)
 │   │       ├── inventory.py      # Zoho Inventory (остатки, SaleOrder)
 │   │       ├── quality.py        # Контроль качества
-│   │       └── admin.py          # Админ-функции (промпты, метрики)
+│   │       ├── notifications.py  # Protected notification endpoints
+│   │       ├── reports.py        # Protected report endpoints
+│   │       ├── referrals.py      # Protected referral endpoints
+│   │       ├── manager_reviews.py # API оценок менеджеров
+│   │       └── admin.py          # Админ-функции (dashboard, промпты, настройки)
 │   ├── core/                     # Ядро приложения
 │   │   ├── config.py             # Pydantic Settings (все env-переменные)
 │   │   ├── database.py           # SQLAlchemy async engine + session factory
@@ -100,12 +105,19 @@ treejar-ai-bot/
 │   │   └── security.py           # Аутентификация, webhook-верификация
 │   ├── models/                   # SQLAlchemy ORM-модели
 │   │   ├── base.py               # Базовая модель (UUID PK, timestamps)
-│   │   ├── conversation.py       # Диалоги (phone, language, status, FSM stage)
-│   │   ├── message.py            # Сообщения (role, content, tokens, cost)
-│   │   ├── product.py            # Товары (зеркало Zoho Inventory)
-│   │   ├── knowledge_base.py     # База знаний (source, content, category)
+│   │   ├── conversation.py       # Диалоги
+│   │   ├── conversation_summary.py # Сводки диалогов
+│   │   ├── message.py            # Сообщения
+│   │   ├── product.py            # Товары
+│   │   ├── knowledge_base.py     # База знаний
 │   │   ├── quality_review.py     # Оценки качества диалогов
-│   │   └── escalation.py         # Эскалации на менеджера
+│   │   ├── escalation.py         # Эскалации на менеджера
+│   │   ├── manager_review.py     # Оценки менеджеров
+│   │   ├── feedback.py           # Постпродажная обратная связь
+│   │   ├── metrics_snapshot.py   # Снимки агрегированных метрик
+│   │   ├── system_config.py      # Runtime key/value настройки
+│   │   ├── system_prompt.py      # Версионируемые промпты
+│   │   └── referral.py           # Реферальные записи
 │   ├── schemas/                  # Pydantic-схемы (request/response)
 │   │   ├── common.py             # Общие схемы (pagination, timestamps)
 │   │   ├── health.py             # HealthResponse
@@ -408,7 +420,7 @@ src/integrations/
 | **Поиск товаров** | SQL WHERE + pgvector fallback | LLM извлекает фильтры (цена, цвет, категория) -> SQL. Семантика — для нечётких запросов |
 | **БД** | Supabase Cloud | Managed PostgreSQL, auto backups, pgvector из коробки, dashboard |
 | **Embeddings** | BGE-M3 через FastEmbed (локально) | Бесплатно, мультиязычность (EN/AR), dense + sparse |
-| **Admin** | SQLAdmin | Встроен в FastAPI, zero-frontend, CRUD из коробки |
+| **Admin** | SQLAdmin + React/Vite dashboard | SQLAdmin для operator data/config surfaces, отдельный dashboard для KPI, weekly reports, sync/test actions и manager review queue |
 
 ### Критические паттерны
 

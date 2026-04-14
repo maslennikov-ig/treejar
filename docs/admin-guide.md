@@ -10,6 +10,7 @@
 | Environment | URL |
 |-------------|-----|
 | **Primary** | https://noor.starec.ai/admin/ |
+| **Dashboard** | https://noor.starec.ai/dashboard/ |
 
 **Credentials** are stored in the server's `.env` file:
 ```ini
@@ -18,7 +19,11 @@ ADMIN_PASSWORD=your_secure_password
 API_KEY=your_internal_endpoint_secret
 ```
 
-`API_KEY` is required for protected internal API routes on the canonical environment, including `/api/v1/crm/*`, `/api/v1/quality/*`, `/api/v1/reports/*`, `/api/v1/referrals/*`, `/api/v1/notifications/*`, and `/api/v1/manager-reviews/*`.
+`/admin/` and `/dashboard/` now share the same admin session cookie. Login through `/admin/login`, then use the dashboard and SQLAdmin in the same browser session.
+
+`/dashboard/` is the operator-facing surface: it combines KPI analytics with protected action panels for catalog sync, Telegram health checks, weekly report generation, and manager-review workflows.
+
+`API_KEY` is still required for protected internal API routes on the canonical environment, including `/api/v1/crm/*`, `/api/v1/quality/*`, `/api/v1/reports/*`, `/api/v1/referrals/*`, `/api/v1/notifications/*`, and `/api/v1/manager-reviews/*`.
 
 > ⚠️ The project currently uses a main-only workflow. Treat `https://noor.starec.ai` as the canonical environment and validate changes there in a controlled manner.
 
@@ -26,26 +31,33 @@ API_KEY=your_internal_endpoint_secret
 
 ## 2. Managing Tables
 
-The Admin Panel provides CRUD access to all 6 database tables:
+The current SQLAdmin surface exposes 13 runtime models. Read-heavy/generated tables are intentionally read-only; only operational configuration surfaces remain editable.
 
 | Table | Purpose | Key Filters |
 |-------|---------|-------------|
 | **Conversations** | All WhatsApp dialogues | Status, language, date range |
+| **Conversation Summaries** | Persistent compact summaries of older dialogue history | Model, version |
 | **Messages** | Individual messages per conversation | Role (user/assistant), date |
-| **Products** | Synced Zoho Inventory catalog | Category, is_active, stock |
+| **Products** | Synced canonical catalog records | Category, is_active, stock |
 | **Quality Reviews** | AI-evaluated dialogue scores | Score range, rating, date |
 | **Escalations** | Escalated conversations | Status (pending/in_progress/resolved) |
+| **Manager Reviews** | AI evaluation of manager follow-up after escalation | Manager, rating, date |
 | **Knowledge Base** | Indexed FAQ, rules, values | Source, category |
+| **System Config** | Runtime key/value settings | Key, updated_at |
+| **System Prompts** | Prompt rows currently stored in DB | Name, version, active flag |
+| **Metrics Snapshots** | Periodic aggregated metric snapshots | Period, updated_at |
+| **Referrals** | Referral code records | Status, phones, created_at |
+| **Feedback** | Post-sale feedback records | Ratings, recommend, created_at |
 
 ### Filtering and Search
 - Use the **search bar** at the top of each table for text search.
 - Use **column filters** (funnel icon) for status, date range, score.
 - Columns marked with a sort arrow can be sorted by clicking the header.
 
-### Exporting Data
-1. Navigate to any table (e.g., Conversations).
-2. Click the **"Export"** button in the top-right area.
-3. A CSV file will be downloaded with all visible records.
+### Editing Policy
+- **Read-only by design:** Conversations, Conversation Summaries, Messages, Products, Quality Reviews, Manager Reviews, Metrics Snapshots, Referrals, Feedback.
+- **Editable for operators:** Escalations, Knowledge Base, System Config, System Prompts.
+- Treat Products as synchronized external truth. Use sync actions instead of manual row edits.
 
 ---
 
@@ -53,20 +65,17 @@ The Admin Panel provides CRUD access to all 6 database tables:
 
 The bot's behavior is controlled by system prompts stored in the **System Prompts** table.
 
-### How to Update a Prompt
-1. Navigate to **Admin → System Prompts**.
-2. Click the prompt you want to edit (e.g., `sales_agent_main`).
-3. Edit the `content` field in the inline editor.
-4. Click **Save** — the version number increments automatically.
+### Current Truth
+- The versioned prompt workflow lives in the authenticated admin API (`/api/v1/admin/prompts/*`).
+- The SQLAdmin table view shows current prompt rows, but direct row edits are not the versioned workflow.
 
 ### Versioning
-- Every save creates a new version (`version` field auto-increments).
-- Previous versions are kept in the database for rollback.
-- To **roll back**: find the previous version record, copy its `content`, paste into the latest record, and save.
+- Versioned updates create a new row, increment `version`, and inactivate the previous row.
+- Previous versions remain in the table for rollback/reference.
 
 ### Best Practices
 - **Test carefully on the canonical environment**: deploy the updated prompt to `https://noor.starec.ai`, send controlled test messages, and verify behavior before broader use.
-- **Document changes**: add a comment in the `notes` field explaining what changed and why.
+- **Document changes externally**: there is no `notes` field on `system_prompts`; record prompt intent in the change log or stage notes.
 - **One change at a time**: avoid changing multiple prompts simultaneously.
 
 ---
@@ -106,16 +115,39 @@ There is no separate admin threshold key for bot quality alerts anymore. Telegra
 
 ---
 
-## 5. Syncing the Product Catalog
+## 5. Dashboard Operator Center
 
-Products are synced from Zoho Inventory automatically every hour.
+The dashboard is no longer metrics-only. It now includes the operator controls that map to the current admin/runtime workflow.
 
-### Manual Sync
-If you need to force an immediate sync (e.g., after a large catalog update):
-```bash
-curl -X POST https://noor.starec.ai/api/v1/products/sync
-```
-The sync runs in the background and typically completes in 2-5 minutes for ~856 SKUs.
+### Catalog Sync
+- Use **Dashboard → Operator Center → Catalog Sync**.
+- This workflow is implemented in the dashboard operator center, not as a SQLAdmin custom action.
+- **Run Treejar Sync** is the recommended path because Treejar Catalog API remains the canonical catalog source of truth.
+- **Run Zoho Sync** exists only as a legacy operational path.
+- Both actions queue the background job under the same shared admin session used for `/admin/`.
+
+### Telegram Notifications
+- Use **Dashboard → Operator Center → Telegram Notifications** to verify whether Telegram is configured.
+- The panel shows masked token/chat values and exposes **Send test message**.
+- This is the safe operator entrypoint for notification health; the raw internal notification API still exists behind `API_KEY`.
+
+### Weekly Operations Report
+- Use **Dashboard → Operator Center → Weekly Operations Report** to refresh the 7-day summary.
+- The panel surfaces:
+  - dialogues and conversion,
+  - escalation volume and tracked reasons,
+  - top mentioned products,
+  - manager-review KPIs and top managers,
+  - the Telegram-formatted report preview.
+
+### Manager Review Queue
+- Use **Dashboard → Operator Center → Manager Review Queue** to see resolved escalations still waiting for evaluation.
+- Each pending item can be evaluated directly from the dashboard.
+- The same panel also shows the latest completed manager reviews, including score, rating, and response time.
+
+### Direct API Note
+- `POST /api/v1/products/sync` remains protected and should be treated as an implementation detail behind the dashboard/admin session, not as an open maintenance shortcut.
+- Referral operations remain protected internal APIs for now. The extended referral admin/reporting surface from the original specification is still optional and is intentionally not exposed in the dashboard at this stage.
 
 ---
 

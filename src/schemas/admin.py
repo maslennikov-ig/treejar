@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -41,7 +42,7 @@ class SalesMetrics(BaseModel):
 
 
 class DashboardMetricsResponse(BaseModel):
-    """Full dashboard metrics — 17 KPIs in 6 categories (docs/metrics.md)."""
+    """Admin dashboard payload described in docs/metrics.md."""
 
     period: str  # "day", "week", "month", "all_time"
 
@@ -73,7 +74,7 @@ class DashboardMetricsResponse(BaseModel):
     # 6. Cost
     llm_cost_usd: float = 0.0
 
-    # 7. Manager Performance
+    # 7. Manager performance
     avg_manager_score: float = 0.0
     avg_manager_response_time_seconds: float = 0.0
     manager_deal_conversion_rate: float = 0.0
@@ -85,6 +86,27 @@ class DashboardMetricsResponse(BaseModel):
     avg_rating_delivery: float = 0.0
     nps_score: float = 0.0
     recommend_rate: float = 0.0
+
+
+class NotificationConfigRead(BaseModel):
+    telegram_configured: bool
+    telegram_bot_token: str
+    telegram_chat_id: str
+
+
+class NotificationTestResponse(BaseModel):
+    status: str
+    reason: str | None = None
+
+
+class PendingManagerReviewRead(BaseModel):
+    escalation_id: uuid.UUID
+    conversation_id: uuid.UUID
+    phone: str
+    manager_name: str | None = None
+    reason: str
+    status: str
+    updated_at: datetime
 
 
 class TimeseriesPoint(BaseModel):

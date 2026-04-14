@@ -1,7 +1,7 @@
 """Dashboard metrics calculation service.
 
-Calculates 17 KPIs across 6 categories (docs/metrics.md) directly from DB
-with period-based filtering (day/week/month/all_time).
+Calculates the current admin dashboard payload from docs/metrics.md directly
+from DB with period-based filtering (day/week/month/all_time).
 
 Performance: Uses 3 consolidated SQL queries instead of 12+ sequential ones.
 """
@@ -57,11 +57,11 @@ def _get_period_start(period: str) -> datetime | None:
 async def calculate_dashboard_metrics(
     db: AsyncSession, period: str = "all_time"
 ) -> DashboardMetricsResponse:
-    """Calculate all 17 dashboard metrics from DB with optional period filtering.
+    """Calculate the admin dashboard payload with optional period filtering.
 
     Optimized: 3 SQL queries instead of 12+ sequential ones.
       1. Batch conversation-level metrics (volume, classification, escalation, sales)
-      2. Batch message-level metrics (quality, cost)
+      2. Batch message-level metrics (quality, cost, manager, feedback)
       3. Avg response time (LATERAL JOIN, requires its own query)
     """
     period_start = _get_period_start(period)

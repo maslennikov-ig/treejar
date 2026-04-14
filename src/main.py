@@ -5,9 +5,11 @@ from contextlib import asynccontextmanager
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from sqladmin import Admin
+from starlette.middleware.sessions import SessionMiddleware
 
+from src.api.v1.admin import require_admin_session
 from src.core.config import settings
 from src.core.database import engine
 from src.core.redis import redis_client
@@ -35,6 +37,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+    app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key)
 
     # Register routes
     from src.api.v1.router import api_v1_router
@@ -80,7 +83,8 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/dashboard/{full_path:path}", include_in_schema=False)
-    async def serve_admin_spa(full_path: str) -> FileResponse:
+    async def serve_admin_spa(request: Request, full_path: str) -> FileResponse:
+        await require_admin_session(request)
         dist_dir = "frontend/admin/dist"
         file_path = os.path.join(dist_dir, full_path)
         if full_path and os.path.isfile(file_path):

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.admin import require_admin_session
 from src.core.config import settings
 from src.core.database import get_db
 from src.models.product import Product
@@ -88,6 +89,7 @@ async def search_products(
 async def sync_products(
     body: ProductSyncRequest,
     request: Request,
+    _: None = Depends(require_admin_session),
 ) -> ProductSyncResponse:
     """Queue product sync, defaulting to the canonical Treejar catalog path."""
     source = body.source.strip().lower()

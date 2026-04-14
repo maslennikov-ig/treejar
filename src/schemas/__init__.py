@@ -3,6 +3,9 @@ from __future__ import annotations
 from .admin import (
     DashboardMetricsResponse,
     MetricsResponse,
+    NotificationConfigRead,
+    NotificationTestResponse,
+    PendingManagerReviewRead,
     PromptRead,
     PromptUpdate,
     SalesMetrics,
@@ -120,6 +123,9 @@ __all__ = [
     # admin
     "DashboardMetricsResponse",
     "MetricsResponse",
+    "NotificationConfigRead",
+    "NotificationTestResponse",
+    "PendingManagerReviewRead",
     "PromptRead",
     "PromptUpdate",
     "SalesMetrics",

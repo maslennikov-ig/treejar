@@ -5,6 +5,12 @@ export interface SalesMetrics {
     amount: number;
 }
 
+export interface ManagerLeaderboardEntry {
+    name: string;
+    avg_score: number;
+    reviews_count: number;
+}
+
 export interface DashboardMetrics {
     period: string;
 
@@ -35,6 +41,19 @@ export interface DashboardMetrics {
 
     // Cost
     llm_cost_usd: number;
+
+    // Manager performance
+    avg_manager_score: number;
+    avg_manager_response_time_seconds: number;
+    manager_deal_conversion_rate: number;
+    manager_leaderboard: ManagerLeaderboardEntry[];
+
+    // Feedback
+    feedback_count: number;
+    avg_rating_overall: number;
+    avg_rating_delivery: number;
+    nps_score: number;
+    recommend_rate: number;
 }
 
 export type Period = 'day' | 'week' | 'month' | 'all_time';

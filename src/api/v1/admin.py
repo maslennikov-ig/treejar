@@ -3,19 +3,37 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from src.api.deps import get_redis
+from src.api.v1 import notifications as notifications_api
+from src.api.v1.manager_reviews import evaluate_escalation, list_manager_reviews
+from src.api.v1.reports import (
+    ReportRequest,
+    ReportResponse,
+    generate_report_endpoint,
+)
 from src.core.database import get_db
+from src.models.conversation import Conversation
+from src.models.escalation import Escalation
+from src.models.manager_review import ManagerReview
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
 from src.schemas import (
     DashboardMetricsResponse,
+    ManagerReviewDetail,
+    ManagerReviewRead,
     MetricsResponse,
+    NotificationConfigRead,
+    NotificationTestResponse,
+    PaginatedResponse,
+    PendingManagerReviewRead,
+    ProductSyncRequest,
+    ProductSyncResponse,
     PromptRead,
     PromptUpdate,
     SettingsRead,
@@ -135,7 +153,7 @@ async def get_dashboard_metrics(
     db: Annotated[AsyncSession, Depends(get_db)],
     period: PeriodType = "all_time",
 ) -> DashboardMetricsResponse:
-    """Get comprehensive dashboard metrics (17 KPIs, 6 categories).
+    """Get the current admin dashboard metrics payload.
 
     Query params:
         period: day | week | month | all_time (default: all_time)
@@ -158,6 +176,127 @@ async def get_dashboard_timeseries(
     from src.services.dashboard_metrics import calculate_timeseries
 
     return await calculate_timeseries(db, period)
+
+
+@router.get("/notifications/config", response_model=NotificationConfigRead)
+async def get_admin_notification_config() -> NotificationConfigRead:
+    """Expose masked Telegram configuration inside the admin session boundary."""
+    data = await notifications_api.get_notification_config()
+    return NotificationConfigRead.model_validate(data)
+
+
+@router.post("/notifications/test", response_model=NotificationTestResponse)
+async def send_admin_test_notification() -> NotificationTestResponse:
+    """Trigger a Telegram test notification from the dashboard."""
+    data = await notifications_api.send_test_notification()
+    return NotificationTestResponse.model_validate(data)
+
+
+@router.post("/products/sync", response_model=ProductSyncResponse)
+async def trigger_admin_product_sync(
+    request: Request,
+    body: Annotated[ProductSyncRequest, Body(default_factory=ProductSyncRequest)],
+) -> ProductSyncResponse:
+    """Queue a protected product sync via the shared admin session."""
+    from src.api.v1.products import sync_products as sync_products_endpoint
+
+    return await sync_products_endpoint(body=body, request=request, _=None)
+
+
+@router.get(
+    "/manager-reviews/",
+    response_model=PaginatedResponse[ManagerReviewRead],
+)
+async def get_admin_manager_reviews(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    manager_name: str | None = None,
+    rating: str | None = None,
+    period: Literal["day", "week", "month"] | None = None,
+) -> PaginatedResponse[ManagerReviewRead]:
+    """List recent manager reviews for the dashboard operator surface."""
+    return await list_manager_reviews(
+        db=db,
+        page=page,
+        page_size=page_size,
+        manager_name=manager_name,
+        rating=rating,
+        period=period,
+    )
+
+
+@router.get(
+    "/manager-reviews/pending",
+    response_model=list[PendingManagerReviewRead],
+)
+async def get_admin_pending_manager_reviews(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(10, ge=1, le=50),
+) -> list[PendingManagerReviewRead]:
+    """List resolved escalations that still need manual manager evaluation."""
+    return await list_pending_manager_reviews(db=db, limit=limit)
+
+
+async def list_pending_manager_reviews(
+    db: AsyncSession,
+    limit: int = 10,
+) -> list[PendingManagerReviewRead]:
+    """Fetch resolved escalations that still need manual manager evaluation."""
+    from sqlalchemy import exists as sa_exists
+
+    stmt = (
+        select(
+            Escalation.id.label("escalation_id"),
+            Escalation.conversation_id,
+            Conversation.phone,
+            Escalation.assigned_to.label("manager_name"),
+            Escalation.reason,
+            Escalation.status,
+            Escalation.updated_at,
+        )
+        .join(Conversation, Conversation.id == Escalation.conversation_id)
+        .where(
+            Escalation.status == "resolved",
+            ~sa_exists().where(ManagerReview.escalation_id == Escalation.id),
+        )
+        .order_by(Escalation.updated_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+
+    return [
+        PendingManagerReviewRead(
+            escalation_id=row.escalation_id,
+            conversation_id=row.conversation_id,
+            phone=row.phone,
+            manager_name=row.manager_name,
+            reason=row.reason,
+            status=row.status,
+            updated_at=row.updated_at,
+        )
+        for row in result.all()
+    ]
+
+
+@router.post(
+    "/manager-reviews/{escalation_id}/evaluate",
+    response_model=ManagerReviewDetail,
+)
+async def evaluate_admin_manager_review(
+    escalation_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ManagerReviewDetail:
+    """Run a manager review from the dashboard operator surface."""
+    return await evaluate_escalation(escalation_id=escalation_id, db=db)
+
+
+@router.post("/reports/generate", response_model=ReportResponse)
+async def generate_admin_report(
+    body: Annotated[ReportRequest, Body(default_factory=ReportRequest)],
+) -> ReportResponse:
+    """Generate the operator-facing weekly report inside the admin session."""
+    return await generate_report_endpoint(body)
 
 
 @router.get("/settings/", response_model=SettingsRead)

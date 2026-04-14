@@ -12,6 +12,7 @@ import {
     RefreshCw,
 } from 'lucide-react';
 import StatCard from '@/components/StatCard';
+import OperatorCenter from '@/components/OperatorCenter';
 import ConversationsChart from '@/components/charts/ConversationsChart';
 import SegmentPieChart from '@/components/charts/SegmentPieChart';
 import SalesBarChart from '@/components/charts/SalesBarChart';
@@ -28,6 +29,10 @@ const PERIODS: { label: string; value: Period }[] = [
 export default function App() {
     const [period, setPeriod] = useState<Period>('all_time');
     const { data, timeseries, loading, error, refetch } = useMetrics(period);
+    const hasManagerLeaderboard = Boolean(data?.manager_leaderboard.length);
+    const managerResponseLabel = data
+        ? `${Math.round(data.avg_manager_response_time_seconds)}s`
+        : '0s';
 
     return (
         <div className="min-h-screen bg-[#0f172a] px-4 py-6 sm:px-6 lg:px-8">
@@ -110,9 +115,10 @@ export default function App() {
                 </div>
             )}
 
-            {/* Dashboard content */}
-            {data && (
-                <div className="mx-auto max-w-7xl space-y-6">
+            <div className="mx-auto max-w-7xl space-y-6">
+                {/* Dashboard content */}
+                {data && (
+                    <>
                     {/* KPI row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <StatCard
@@ -197,8 +203,125 @@ export default function App() {
                             escalationCount={data.escalation_count}
                         />
                     </div>
-                </div>
-            )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard
+                            title="Avg Manager Score"
+                            value={`${data.avg_manager_score}/20`}
+                            subtitle={hasManagerLeaderboard ? `${data.manager_leaderboard.length} managers ranked` : 'No manager reviews yet'}
+                            icon={Star}
+                            color="violet"
+                            delay={0.05}
+                        />
+                        <StatCard
+                            title="Manager Conversion"
+                            value={`${data.manager_deal_conversion_rate}%`}
+                            subtitle="Resolved escalation -> deal"
+                            icon={TrendingUp}
+                            color="emerald"
+                            delay={0.1}
+                        />
+                        <StatCard
+                            title="Manager Response"
+                            value={managerResponseLabel}
+                            subtitle="Avg first reply after escalation"
+                            icon={Clock}
+                            color="amber"
+                            delay={0.15}
+                        />
+                        <StatCard
+                            title="Feedback Count"
+                            value={data.feedback_count}
+                            subtitle={`${data.recommend_rate}% recommend`}
+                            icon={MessageCircle}
+                            color="blue"
+                            delay={0.2}
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <motion.section
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.45, delay: 0.1 }}
+                            className="rounded-2xl border border-white/[0.08] bg-slate-900/70 p-6 backdrop-blur-xl"
+                        >
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-white">Manager Leaderboard</h2>
+                                    <p className="mt-1 text-sm text-slate-400">Top managers by average review score</p>
+                                </div>
+                                <div className="rounded-xl bg-violet-500/15 px-3 py-2 text-sm font-medium text-violet-300">
+                                    {data.manager_deal_conversion_rate}% conversion
+                                </div>
+                            </div>
+
+                            <div className="mt-5 space-y-3">
+                                {hasManagerLeaderboard ? (
+                                    data.manager_leaderboard.map((manager, index) => (
+                                        <div
+                                            key={`${manager.name}-${index}`}
+                                            className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3"
+                                        >
+                                            <div>
+                                                <p className="text-sm font-medium text-white">{manager.name}</p>
+                                                <p className="text-xs text-slate-500">{manager.reviews_count} reviews</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-lg font-semibold text-violet-300">{manager.avg_score}</p>
+                                                <p className="text-xs text-slate-500">avg / 20</p>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-sm text-slate-500">
+                                        Manager review data will appear after resolved escalations are evaluated.
+                                    </div>
+                                )}
+                            </div>
+                        </motion.section>
+
+                        <motion.section
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.45, delay: 0.15 }}
+                            className="rounded-2xl border border-white/[0.08] bg-slate-900/70 p-6 backdrop-blur-xl"
+                        >
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-white">Customer Feedback</h2>
+                                    <p className="mt-1 text-sm text-slate-400">Post-sale ratings and recommendation signals</p>
+                                </div>
+                                <div className="rounded-xl bg-emerald-500/15 px-3 py-2 text-sm font-medium text-emerald-300">
+                                    NPS {data.nps_score}
+                                </div>
+                            </div>
+
+                            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-4">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Overall rating</p>
+                                    <p className="mt-2 text-2xl font-semibold text-white">{data.avg_rating_overall.toFixed(1)} / 5</p>
+                                </div>
+                                <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-4">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Delivery rating</p>
+                                    <p className="mt-2 text-2xl font-semibold text-white">{data.avg_rating_delivery.toFixed(1)} / 5</p>
+                                </div>
+                                <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-4">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Recommend rate</p>
+                                    <p className="mt-2 text-2xl font-semibold text-white">{data.recommend_rate}%</p>
+                                </div>
+                                <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-4">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Responses</p>
+                                    <p className="mt-2 text-2xl font-semibold text-white">{data.feedback_count}</p>
+                                </div>
+                            </div>
+                        </motion.section>
+                    </div>
+                    </>
+                )}
+
+                <OperatorCenter onMetricsRefresh={refetch} />
+            </div>
         </div>
     );
 }
