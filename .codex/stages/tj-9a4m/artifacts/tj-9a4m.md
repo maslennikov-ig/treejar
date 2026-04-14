@@ -22,6 +22,7 @@ verification:
 changed_files:
   - .codex/orchestrator.toml
   - .codex/handoff.md
+  - .github/workflows/ci.yml
   - .codex/stages/tj-9a4m/artifacts/tj-9a4m.md
   - .codex/stages/tj-9a4m/summary.md
   - README.md

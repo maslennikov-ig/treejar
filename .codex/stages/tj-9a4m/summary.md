@@ -19,6 +19,7 @@ Implementation branch: `codex/tj-9a4m-audit-admin`
 - Added shared-session operator endpoints under `/api/v1/admin/*` for notification config/test, protected product sync, weekly report generation, recent manager reviews, pending manager-review queue, and manual manager-review evaluation.
 - Expanded `/dashboard` into an operator center with actionable panels for catalog sync, Telegram health checks, weekly operations report preview, and manager-review queue/recent reviews.
 - Documented the policy split that referrals remain protected internal-only for now because the extended referral admin/reporting surface is optional in `docs/tz.md`.
+- Updated the GitHub Actions `test` job to install `frontend/admin` npm dependencies before `pytest`, so the dashboard regression harness can import `esbuild` in CI as well as locally.
 
 ## Fresh verification
 
