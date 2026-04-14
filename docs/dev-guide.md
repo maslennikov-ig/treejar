@@ -56,14 +56,13 @@ open http://localhost:8000/admin/    # SQLAdmin панель
 
 ```bash
 # Создать виртуальное окружение и установить зависимости
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv sync --locked --all-extras --dev
 
 # Запустить сервер (hot-reload)
-uvicorn src.main:app --reload --port 8000
+uv run uvicorn src.main:app --reload --port 8000
 
 # Запустить ARQ-воркер (в отдельном терминале)
-arq src.worker.WorkerSettings
+uv run arq src.worker.WorkerSettings
 ```
 
 ### Docker-сервисы

@@ -4,7 +4,7 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend/landing
 COPY frontend/landing/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/landing/ ./
 RUN npm run build
 
@@ -14,7 +14,7 @@ RUN npm run build
 FROM node:22-alpine AS admin-builder
 WORKDIR /app/frontend/admin
 COPY frontend/admin/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/admin/ ./
 RUN npm run build
 
@@ -37,21 +37,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ============================================================
-# Stage 2: Install Python dependencies
+# Stage 2: Install uv
 # ============================================================
-FROM base AS deps
+FROM base AS uv
 
-COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir .
+COPY --from=ghcr.io/astral-sh/uv@sha256:b1e699368d24c57cda93c338a57a8c5a119009ba809305cc8e86986d4a006754 /uv /uvx /bin/
+
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
 
 # ============================================================
-# Stage 3: Final runtime image
+# Stage 3: Install Python dependencies
 # ============================================================
-FROM base AS runtime
+FROM uv AS deps
 
-# Copy installed packages from deps stage
-COPY --from=deps /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-COPY --from=deps /usr/local/bin /usr/local/bin
+COPY pyproject.toml uv.lock README.md ./
+RUN UV_NO_DEV=1 uv sync --locked --no-install-project
+
+# ============================================================
+# Stage 4: Final runtime image
+# ============================================================
+FROM uv AS runtime
+
+COPY --from=deps /app/.venv /app/.venv
+
+COPY pyproject.toml uv.lock README.md ./
 
 COPY src/ ./src/
 COPY migrations/ ./migrations/
@@ -63,6 +73,8 @@ COPY docs/ docs/
 COPY --from=frontend-builder /app/frontend/landing/dist /app/frontend/landing/dist
 COPY --from=admin-builder /app/frontend/admin/dist /app/frontend/admin/dist
 
+RUN UV_NO_DEV=1 uv sync --locked
+
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 8000
@@ -71,12 +83,11 @@ ENTRYPOINT ["/entrypoint.sh"]
 CMD ["web"]
 
 # ============================================================
-# Stage 4: Test runner (extends runtime with dev dependencies)
+# Stage 5: Test runner (extends runtime with dev dependencies)
 # ============================================================
 FROM runtime AS test
 
-COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir ".[dev]"
+RUN uv sync --locked --all-extras --dev
 
 COPY tests/ ./tests/
 

@@ -42,16 +42,15 @@ curl http://localhost:8000/api/v1/health
 
 ```bash
 # Setup
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv sync --locked --all-extras --dev
 
 # Run
-uvicorn src.main:app --reload --port 8000
+uv run uvicorn src.main:app --reload --port 8000
 
 # Quality
-ruff check src/ tests/
-mypy src/
-pytest tests/ -v
+uv run ruff check src/ tests/
+uv run mypy src/
+uv run pytest tests/ -v
 ```
 
 ## Project Structure

@@ -32,6 +32,8 @@ dependencies = [
     "openai>=1.60,<2.0",
     # Embeddings (local, multilingual)
     "sentence-transformers>=3.0.0",
+    # CPU-only torch for deterministic local inference and lock resolution
+    "torch>=2.10,<3.0",
     # Utilities
     "python-multipart>=0.0.18",
     "python-dotenv>=1.0,<2.0",
@@ -55,6 +57,14 @@ dev = [
     "pre-commit>=4.0,<5.0",
     "deptry>=0.23,<1.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

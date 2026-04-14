@@ -98,16 +98,16 @@ if [ ! -f "$ARCHIVE_PATH" ]; then
     exit 1
 fi
 
-for cmd in curl docker mktemp rsync tar; do
-    require_cmd "$cmd"
-done
-
 mkdir -p "$TARGET_DIR"
 
 if [ ! -f "$TARGET_DIR/.env" ]; then
     echo "Error: Missing $TARGET_DIR/.env. Seed runtime secrets before deploying." >&2
     exit 1
 fi
+
+for cmd in curl docker mktemp rsync tar; do
+    require_cmd "$cmd"
+done
 
 PROJECT_NAME="${PROJECT_NAME:-$(basename "$TARGET_DIR")}"
 STAGING_DIR="$(mktemp -d)"
@@ -143,7 +143,10 @@ if [ -f "$TARGET_DIR/$COMPOSE_FILE" ]; then
     echo "Saved rollback backup to $BACKUP_PATH"
 fi
 
-mapfile -t BACKUP_FILES < <(ls -1t "$BACKUP_DIR"/deploy-*.tar.gz 2>/dev/null || true)
+BACKUP_FILES=()
+while IFS= read -r backup_file; do
+    BACKUP_FILES+=("$backup_file")
+done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'deploy-*.tar.gz' -print 2>/dev/null | LC_ALL=C sort -r)
 if [ "${#BACKUP_FILES[@]}" -gt 5 ]; then
     printf '%s\0' "${BACKUP_FILES[@]:5}" | xargs -0r rm -f
 fi
