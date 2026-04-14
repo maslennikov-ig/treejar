@@ -6,6 +6,7 @@ cd "$REPO_ROOT"
 
 STAGE_ID=""
 ARTIFACTS=()
+PYTHON_CMD=(python3)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,7 +26,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-python3 - <<'PY'
+if ! python3 - <<'PY' >/dev/null 2>&1
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+then
+  if command -v uv >/dev/null 2>&1; then
+    PYTHON_CMD=(uv run --python 3.12 python)
+  else
+    echo "python3 < 3.11 detected and uv not found; use Python 3.11+ or install uv." >&2
+    exit 1
+  fi
+fi
+
+"${PYTHON_CMD[@]}" - <<'PY'
 import pathlib
 import re
 import tomllib
@@ -113,11 +128,11 @@ echo "git status --short"
 git status --short || true
 
 if [[ ${#ARTIFACTS[@]} -gt 0 ]]; then
-  python3 scripts/orchestration/validate_artifact.py "${ARTIFACTS[@]}"
+  "${PYTHON_CMD[@]}" scripts/orchestration/validate_artifact.py "${ARTIFACTS[@]}"
 fi
 
 if [[ -n "$STAGE_ID" ]]; then
-  python3 scripts/orchestration/check_stage_ready.py "$STAGE_ID"
+  "${PYTHON_CMD[@]}" scripts/orchestration/check_stage_ready.py "$STAGE_ID"
 fi
 
 echo "process verification OK"
