@@ -1,11 +1,11 @@
 # Stage Summary
 
 Stage ID: `tj-9a4m`
-Status: `in_progress`
+Status: `merged`
 Updated: 2026-04-14
 Baseline: `main@64fd98c2a7b2a5ff7abbfc761b1713654610e4a5`
-Implementation worktree: `/Users/igor/code/treejar-tj-9a4m/.worktrees/tj-9a4m-auth-align`
-Implementation branch: `codex/tj-9a4m-auth-align`
+Implementation worktree: `/Users/igor/code/treejar-tj-9a4m` (child worktree removed after merge)
+Implementation branch: `codex/tj-9a4m-audit-admin`
 
 ## Implemented in this slice
 
@@ -27,11 +27,15 @@ Implementation branch: `codex/tj-9a4m-auth-align`
 - `uv run mypy src/`
 - `npm run lint`
 - `npm run build`
-- `env DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib OPENROUTER_API_KEY=test-key WAZZUP_API_KEY=fake-wazzup-key WAZZUP_API_URL=http://fake-wazzup-url LOGFIRE_IGNORE_NO_CONFIG=1 uv run pytest tests/ -v --tb=short` -> `629 passed, 19 skipped`
+- `env DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib OPENROUTER_API_KEY=test-key WAZZUP_API_KEY=fake-wazzup-key WAZZUP_API_URL=http://fake-wazzup-url LOGFIRE_IGNORE_NO_CONFIG=1 uv run pytest tests/ -v --tb=short` -> `631 passed, 19 skipped`
 - `scripts/orchestration/run_process_verification.sh`
 
-## Remaining scope before close
+## Delivery state
 
-- Run a final findings-first review on `codex/tj-9a4m-auth-align`.
-- Merge only with explicit authorization.
+- Merged locally into `main@84f016614750ad0d3dd52c8cdbe4733c3c4d88e0`.
+- Stage child worktree `/Users/igor/code/treejar-tj-9a4m/.worktrees/tj-9a4m-auth-align` was removed after merge.
+- Canonical production delivery remains the `main` push -> GitHub Actions deploy workflow for `https://noor.starec.ai`.
+
+## Explicit defer
+
 - Keep referrals as internal-only unless the optional extended admin/reporting requirement is explicitly promoted into scope.
