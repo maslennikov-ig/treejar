@@ -161,6 +161,17 @@ def test_policy_keeps_product_questions_on_catalog_path() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_treats_plain_greeting_as_safe_non_handoff() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Добрый день",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "social"
+    assert decision.faq_support == "verified"
+    assert decision.requires_manager_handoff is False
+
+
 def test_product_match_marks_nearby_alternatives_when_exact_term_is_missing() -> None:
     match = classify_product_match(
         query="Tell me about your acoustic pods",

@@ -1924,10 +1924,10 @@ async def process_message(
                 fail_closed_text, f"{db_model_main}|exact-quote-fallback"
             )
 
-        if (
-            not policy_decision.is_order_status
-            and policy_decision.question_class != "product"
-        ):
+        if not policy_decision.is_order_status and policy_decision.question_class in {
+            "service_low_risk",
+            "service_high_risk",
+        }:
             if policy_decision.requires_manager_handoff:
                 from src.integrations.notifications.escalation import (
                     notify_manager_escalation,

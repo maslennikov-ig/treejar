@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-QuestionClass = Literal["product", "service_low_risk", "service_high_risk"]
+QuestionClass = Literal["product", "service_low_risk", "service_high_risk", "social"]
 FaqSupport = Literal["verified", "partial", "missing"]
 ProductMatch = Literal["exact", "nearby", "missing"]
 
@@ -107,6 +107,27 @@ _ORDER_STATUS_SIGNALS = (
     "status of my order",
     "حالة الطلب",
     "تتبع",
+)
+_SOCIAL_GREETING_PHRASES = frozenset(
+    {
+        "hello",
+        "hi",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "добрый день",
+        "доброе утро",
+        "добрый вечер",
+        "здравствуйте",
+        "привет",
+        "مرحبا",
+        "اهلا",
+        "أهلا",
+        "السلام عليكم",
+        "صباح الخير",
+        "مساء الخير",
+    }
 )
 _LOCATION_TERMS = (
     "abu dhabi",
@@ -224,6 +245,12 @@ def _normalize(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def _normalize_social_text(text: str) -> str:
+    normalized = _normalize(text).casefold()
+    normalized = re.sub(r"[^\w\s]+", "", normalized, flags=re.UNICODE)
+    return " ".join(normalized.split())
+
+
 def _tokenize(text: str) -> set[str]:
     return {
         token
@@ -251,7 +278,15 @@ def is_order_status_query(query: str) -> bool:
     return any(signal in normalized for signal in _ORDER_STATUS_SIGNALS)
 
 
+def is_social_greeting_query(query: str) -> bool:
+    normalized = _normalize_social_text(query)
+    return normalized in _SOCIAL_GREETING_PHRASES
+
+
 def classify_question(query: str) -> QuestionClass:
+    if is_social_greeting_query(query):
+        return "social"
+
     normalized = _normalize(query)
     has_product_signal = any(signal in normalized for signal in _PRODUCT_SIGNALS)
     has_product_discovery = any(
@@ -410,6 +445,8 @@ def evaluate_verified_answer_policy(
         )
 
     question_class = classify_question(query)
+    if question_class == "social":
+        return VerifiedAnswerDecision(question_class="social", faq_support="verified")
     if question_class == "product":
         return VerifiedAnswerDecision(question_class="product", faq_support="missing")
 
