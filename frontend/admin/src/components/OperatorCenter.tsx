@@ -21,6 +21,10 @@ import {
     sendTestNotification,
     syncProducts,
 } from '@/api/operators';
+import {
+    buildManagerReviewMessage,
+    type OperatorActionMessage,
+} from '@/components/operatorCenterMessages';
 import type {
     ManagerReviewRead,
     NotificationConfig,
@@ -31,11 +35,6 @@ import type {
 
 interface OperatorCenterProps {
     onMetricsRefresh: () => void | Promise<void>;
-}
-
-interface ActionMessage {
-    tone: 'success' | 'info' | 'error';
-    text: string;
 }
 
 function formatDateTime(value: string): string {
@@ -61,7 +60,7 @@ function stripHtml(text: string): string {
     return text.replace(/<[^>]+>/g, '').trim();
 }
 
-function messageClasses(tone: ActionMessage['tone']): string {
+function messageClasses(tone: OperatorActionMessage['tone']): string {
     switch (tone) {
         case 'success':
             return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
@@ -96,10 +95,10 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
     const [sendingTest, setSendingTest] = useState(false);
     const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
     const [generatingReport, setGeneratingReport] = useState(false);
-    const [syncMessage, setSyncMessage] = useState<ActionMessage | null>(null);
-    const [notificationMessage, setNotificationMessage] = useState<ActionMessage | null>(null);
-    const [reviewMessage, setReviewMessage] = useState<ActionMessage | null>(null);
-    const [reportMessage, setReportMessage] = useState<ActionMessage | null>(null);
+    const [syncMessage, setSyncMessage] = useState<OperatorActionMessage | null>(null);
+    const [notificationMessage, setNotificationMessage] = useState<OperatorActionMessage | null>(null);
+    const [reviewMessage, setReviewMessage] = useState<OperatorActionMessage | null>(null);
+    const [reportMessage, setReportMessage] = useState<OperatorActionMessage | null>(null);
 
     const loadOperatorData = useCallback(async () => {
         setLoading(true);
@@ -116,8 +115,11 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
             setPendingReviews(pendingResult);
             setRecentReviews(recentResult.items);
             setReport(reportResult);
+            return null;
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load operator controls.');
+            const message = err instanceof Error ? err.message : 'Failed to load operator controls.';
+            setError(message);
+            return message;
         } finally {
             setLoading(false);
         }
@@ -172,11 +174,13 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
         setReviewMessage(null);
         try {
             const detail = await evaluateManagerReview(item.escalation_id);
-            setReviewMessage({
-                tone: 'success',
-                text: `${item.manager_name ?? 'Manager'} scored ${detail.total_score}/${detail.max_score}.`,
-            });
-            await loadOperatorData();
+            setReviewMessage(buildManagerReviewMessage(item.manager_name, detail, null));
+            const refreshError = await loadOperatorData();
+            if (refreshError) {
+                setReviewMessage(
+                    buildManagerReviewMessage(item.manager_name, detail, refreshError),
+                );
+            }
             void onMetricsRefresh();
         } catch (err) {
             setReviewMessage({

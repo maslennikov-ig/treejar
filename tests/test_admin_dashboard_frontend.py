@@ -4,23 +4,27 @@ import subprocess
 from pathlib import Path
 
 
-def test_operator_center_renders_when_metrics_fail() -> None:
+def _run_frontend_regression(script_name: str) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
-    script_path = (
-        repo_root
-        / "frontend"
-        / "admin"
-        / "tests"
-        / "app_operator_center_regression.mjs"
-    )
+    script_path = repo_root / "frontend" / "admin" / "tests" / script_name
 
-    result = subprocess.run(
+    return subprocess.run(
         ["node", str(script_path)],
         cwd=repo_root,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def test_operator_center_renders_when_metrics_fail() -> None:
+    result = _run_frontend_regression("app_operator_center_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_operator_center_review_message_handles_refresh_failure_after_success() -> None:
+    result = _run_frontend_regression("operator_center_review_message_regression.mjs")
 
     assert result.returncode == 0, result.stderr or result.stdout
 
