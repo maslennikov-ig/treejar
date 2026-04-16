@@ -6,10 +6,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 QuestionClass = Literal["product", "service_low_risk", "service_high_risk", "social"]
+SocialIntent = Literal["greeting", "gratitude", "goodbye", "assist_opener"]
 FaqSupport = Literal["verified", "partial", "missing"]
+PolicyAction = Literal["allow", "clarify", "handoff"]
 ProductMatch = Literal["exact", "nearby", "missing"]
 
 _TOKEN_RE = re.compile(r"[a-z0-9']+")
+_UNICODE_TOKEN_RE = re.compile(r"[\w']+", re.UNICODE)
 _DATE_RE = re.compile(
     r"\b(?:today|tomorrow|tonight|next|monday|tuesday|wednesday|thursday|friday|"
     r"saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}[/-]\d{1,2})\b",
@@ -124,10 +127,107 @@ _SOCIAL_GREETING_PHRASES = frozenset(
         "مرحبا",
         "اهلا",
         "أهلا",
+        "سلام عليكم",
         "السلام عليكم",
+        "السلام عليكم ورحمة الله",
+        "سلام عليكم ورحمة الله",
         "صباح الخير",
         "مساء الخير",
     }
+)
+_SOCIAL_GRATITUDE_PHRASES = frozenset(
+    {
+        "thanks",
+        "thank you",
+        "thx",
+        "спасибо",
+        "благодарю",
+        "شكرا",
+        "شكراً",
+    }
+)
+_SOCIAL_GOODBYE_PHRASES = frozenset(
+    {
+        "bye",
+        "goodbye",
+        "see you",
+        "пока",
+        "до свидания",
+        "увидимся",
+        "مع السلامة",
+    }
+)
+_SOCIAL_ASSIST_OPENER_PHRASES = frozenset(
+    {
+        "help",
+        "i need help",
+        "need help",
+        "can you help",
+        "подскажите",
+        "помогите",
+        "нужна помощь",
+        "мне нужна помощь",
+        "مساعدة",
+        "اريد مساعدة",
+        "أريد مساعدة",
+        "احتاج مساعدة",
+        "أحتاج مساعدة",
+    }
+)
+_SOCIAL_FILLER_TOKENS = frozenset(
+    {
+        "bot",
+        "help",
+        "me",
+        "noor",
+        "please",
+        "pls",
+        "treejar",
+        "ассистент",
+        "бот",
+        "пожалуйста",
+        "подскажите",
+        "скажите",
+    }
+)
+_SOCIAL_ASSIST_TOKENS = frozenset(
+    {
+        "advice",
+        "assist",
+        "assistance",
+        "help",
+        "подскажите",
+        "помогите",
+        "помощь",
+        "مساعدة",
+    }
+)
+_LOW_RISK_FACT_QUESTION_TERMS = (
+    "do you",
+    "where",
+    "what",
+    "who",
+    "when",
+    "which",
+    "is there",
+    "are there",
+    "can you",
+    "could you",
+    "у вас",
+    "есть ли",
+    "где",
+    "что",
+    "кто",
+    "когда",
+    "какой",
+    "какая",
+    "какие",
+    "هل",
+    "أين",
+    "وين",
+    "ما",
+    "متى",
+    "كيف",
 )
 _LOCATION_TERMS = (
     "abu dhabi",
@@ -168,6 +268,9 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "delivered",
         "shipping",
         "ship",
+        "доставка",
+        "доставить",
+        "доставляете",
         "lead time",
         "timeline",
         "deadline",
@@ -181,10 +284,13 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "installed",
         "setup",
         "assembly",
+        "установка",
+        "монтаж",
+        "сборка",
         "logistics",
         "تركيب",
     ),
-    "warranty": ("warranty", "guarantee", "guaranty", "ضمان"),
+    "warranty": ("warranty", "guarantee", "guaranty", "гарантия", "ضمان"),
     "returns": (
         "return",
         "refund",
@@ -192,6 +298,9 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "cancel",
         "returns",
         "refunds",
+        "возврат",
+        "обмен",
+        "отмена",
         "إرجاع",
         "استرجاع",
     ),
@@ -203,6 +312,9 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "credit",
         "invoice",
         "installment",
+        "оплата",
+        "условия оплаты",
+        "рассрочка",
         "net 30",
         "net 60",
         "دفع",
@@ -233,6 +345,8 @@ _NEARBY_EQUIVALENTS = {
 class VerifiedAnswerDecision:
     question_class: QuestionClass
     faq_support: FaqSupport
+    social_intent: SocialIntent | None = None
+    policy_action: PolicyAction = "allow"
     matched_topics: tuple[str, ...] = ()
     matched_faq: tuple[dict[str, str], ...] = ()
     confirmed_fact: str | None = None
@@ -259,6 +373,12 @@ def _tokenize(text: str) -> set[str]:
     }
 
 
+def _unicode_tokens(text: str) -> tuple[str, ...]:
+    return tuple(
+        token for token in _UNICODE_TOKEN_RE.findall(_normalize_social_text(text))
+    )
+
+
 def _entry_text(item: Mapping[str, str]) -> str:
     title = item.get("title", "")
     content = item.get("content", "")
@@ -283,11 +403,87 @@ def is_social_greeting_query(query: str) -> bool:
     return normalized in _SOCIAL_GREETING_PHRASES
 
 
+def _split_social_greeting_prefix(query: str) -> tuple[str, str] | None:
+    normalized = _normalize_social_text(query)
+    for phrase in sorted(_SOCIAL_GREETING_PHRASES, key=len, reverse=True):
+        if normalized == phrase:
+            return phrase, ""
+        if normalized.startswith(f"{phrase} "):
+            return phrase, normalized[len(phrase) :].strip()
+    return None
+
+
+def _is_social_filler_text(text: str) -> bool:
+    if not text:
+        return True
+    tokens = tuple(token for token in text.split() if token)
+    return bool(tokens) and all(token in _SOCIAL_FILLER_TOKENS for token in tokens)
+
+
+def _is_assist_opener_text(text: str) -> bool:
+    normalized = _normalize_social_text(text)
+    if not normalized:
+        return False
+    if normalized in _SOCIAL_ASSIST_OPENER_PHRASES:
+        return True
+    tokens = tuple(token for token in normalized.split() if token)
+    return bool(tokens) and all(
+        token in (_SOCIAL_FILLER_TOKENS | _SOCIAL_ASSIST_TOKENS) for token in tokens
+    )
+
+
+def classify_social_intent(query: str) -> tuple[SocialIntent | None, str]:
+    normalized = _normalize_social_text(query)
+    social_prefix = _split_social_greeting_prefix(query)
+
+    if social_prefix is not None:
+        _, tail = social_prefix
+        if not tail:
+            return "greeting", ""
+        if _is_assist_opener_text(tail) or _is_social_filler_text(tail):
+            return "assist_opener", ""
+        return None, tail
+
+    if normalized in _SOCIAL_GRATITUDE_PHRASES:
+        return "gratitude", ""
+    if normalized in _SOCIAL_GOODBYE_PHRASES:
+        return "goodbye", ""
+    if _is_assist_opener_text(normalized):
+        return "assist_opener", ""
+    return None, query
+
+
+def _is_benign_no_match(query: str) -> bool:
+    normalized = _normalize(query).casefold()
+    if not normalized:
+        return True
+    if "?" in query:
+        return False
+    if any(signal in normalized for signal in _PRODUCT_SIGNALS):
+        return False
+    if any(signal in normalized for signal in _ORDER_STATUS_SIGNALS):
+        return False
+    if any(
+        keyword in normalized
+        for keywords in _TOPIC_KEYWORDS.values()
+        for keyword in keywords
+    ):
+        return False
+    if _asks_for_specific_commitment(normalized):
+        return False
+    if any(term in normalized for term in _LOW_RISK_FACT_QUESTION_TERMS):
+        return False
+
+    tokens = _unicode_tokens(query)
+    return 0 < len(tokens) <= 3
+
+
 def classify_question(query: str) -> QuestionClass:
-    if is_social_greeting_query(query):
+    social_intent, routed_query = classify_social_intent(query)
+    if social_intent is not None:
         return "social"
 
-    normalized = _normalize(query)
+    normalized = _normalize(routed_query).casefold()
     has_product_signal = any(signal in normalized for signal in _PRODUCT_SIGNALS)
     has_product_discovery = any(
         phrase in normalized for phrase in _PRODUCT_DISCOVERY_PHRASES
@@ -441,48 +637,71 @@ def evaluate_verified_answer_policy(
         return VerifiedAnswerDecision(
             question_class="service_low_risk",
             faq_support="missing",
+            policy_action="allow",
             is_order_status=True,
         )
 
+    social_intent, routed_query = classify_social_intent(query)
     question_class = classify_question(query)
     if question_class == "social":
-        return VerifiedAnswerDecision(question_class="social", faq_support="verified")
+        policy_action: PolicyAction = (
+            "clarify" if social_intent == "assist_opener" else "allow"
+        )
+        return VerifiedAnswerDecision(
+            question_class="social",
+            faq_support="verified",
+            social_intent=social_intent,
+            policy_action=policy_action,
+        )
     if question_class == "product":
-        return VerifiedAnswerDecision(question_class="product", faq_support="missing")
+        return VerifiedAnswerDecision(
+            question_class="product",
+            faq_support="missing",
+            policy_action="allow",
+        )
 
     matched_topics, matched_faq = _matching_faq_entries(
-        query, question_class, faq_context
+        routed_query, question_class, faq_context
     )
     if not matched_faq:
+        policy_action = (
+            "clarify"
+            if question_class == "service_low_risk"
+            and _is_benign_no_match(routed_query)
+            else "handoff"
+        )
         return VerifiedAnswerDecision(
             question_class=question_class,
             faq_support="missing",
             matched_topics=matched_topics,
-            requires_manager_handoff=True,
+            policy_action=policy_action,
+            requires_manager_handoff=policy_action == "handoff",
         )
 
-    asks_for_specific_commitment = _asks_for_specific_commitment(query)
+    asks_for_specific_commitment = _asks_for_specific_commitment(routed_query)
     faq_support: FaqSupport = "verified"
     if asks_for_specific_commitment and not any(
-        _entry_supports_specificity(query, _entry_text(item)) for item in matched_faq
+        _entry_supports_specificity(routed_query, _entry_text(item))
+        for item in matched_faq
     ):
         faq_support = "partial"
 
     confirmed_fact = _extract_answer_text(matched_faq[0]["content"])
-    requires_manager_handoff = faq_support == "missing" or (
+    final_policy_action: PolicyAction = "allow"
+    if faq_support == "missing" or (
         question_class == "service_high_risk" and faq_support == "partial"
-    )
-    if question_class == "service_low_risk" and faq_support == "missing":
-        requires_manager_handoff = True
+    ):
+        final_policy_action = "handoff"
 
     return VerifiedAnswerDecision(
         question_class=question_class,
         faq_support=faq_support,
+        policy_action=final_policy_action,
         matched_topics=matched_topics,
         matched_faq=matched_faq,
         confirmed_fact=confirmed_fact or None,
         asks_for_specific_commitment=asks_for_specific_commitment,
-        requires_manager_handoff=requires_manager_handoff,
+        requires_manager_handoff=final_policy_action == "handoff",
     )
 
 
@@ -539,6 +758,12 @@ def build_service_handoff_response(
     if is_arabic:
         return "أريد أن أكون دقيقًا، لذلك سيتواصل معك مديرنا لتأكيد هذه المعلومة."
     return "I want to be accurate, so our manager will confirm this for you."
+
+
+def build_clarification_response(language: str) -> str:
+    if language.lower() == "ar":
+        return "يمكنني المساعدة في المنتجات والأسعار والتوفر والتوصيل أو عروض الأسعار. ماذا تحتاج؟"
+    return "I can help with products, prices, stock, delivery, or quotations. What do you need?"
 
 
 def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatch:

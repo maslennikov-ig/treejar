@@ -31,6 +31,7 @@ from src.llm.order_status import format_order_status
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.verified_answers import (
+    build_clarification_response,
     build_service_handoff_reason,
     build_service_handoff_response,
     build_service_runtime_directives,
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
+VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 EXACT_QUOTE_ALLOWED_TOOLS = frozenset(
@@ -1718,6 +1720,34 @@ async def process_message(
     def _has_escalation(conversation: Conversation) -> bool:
         return is_active_human_handoff(conversation.escalation_status)
 
+    def _get_verified_policy_repair_state() -> dict[str, int | str] | None:
+        assert conv is not None
+        metadata = conv.metadata_ if isinstance(conv.metadata_, dict) else {}
+        state = metadata.get(VERIFIED_POLICY_REPAIR_KEY)
+        if not isinstance(state, dict):
+            return None
+        kind = state.get("kind")
+        count = state.get("count")
+        if not isinstance(kind, str) or not isinstance(count, int):
+            return None
+        return {"kind": kind, "count": count}
+
+    async def _set_verified_policy_repair_state(kind: str, count: int) -> None:
+        assert conv is not None
+        metadata = dict(conv.metadata_ or {})
+        metadata[VERIFIED_POLICY_REPAIR_KEY] = {"kind": kind, "count": count}
+        conv.metadata_ = metadata
+        await db.flush()
+
+    async def _clear_verified_policy_repair_state() -> None:
+        assert conv is not None
+        metadata = dict(conv.metadata_ or {})
+        if VERIFIED_POLICY_REPAIR_KEY not in metadata:
+            return
+        metadata.pop(VERIFIED_POLICY_REPAIR_KEY, None)
+        conv.metadata_ = metadata
+        await db.flush()
+
     def _build_llm_response(result: Any, model_name: str) -> LLMResponse:
         final_text = unmask_pii(result.output, pii_map)
         usage = result.usage()
@@ -1860,6 +1890,7 @@ async def process_message(
                 )
             )
             if _has_escalation(conv):
+                await _clear_verified_policy_repair_state()
                 return _build_llm_response(first_result, db_model_main)
 
             second_result = await _run_agent(
@@ -1869,6 +1900,7 @@ async def process_message(
                     runtime_directives=ORDER_HANDOFF_PASS_2_DIRECTIVES,
                 )
             )
+            await _clear_verified_policy_repair_state()
             return _build_llm_response(second_result, db_model_main)
 
         exact_quote_candidate = extract_exact_quote_candidate(masked_text)
@@ -1880,6 +1912,7 @@ async def process_message(
             )
             first_result = await _run_agent(first_exact_deps)
             if first_exact_deps.quotation_created or _has_escalation(conv):
+                await _clear_verified_policy_repair_state()
                 return _build_llm_response(first_result, db_model_main)
 
             second_exact_deps = replace(
@@ -1889,6 +1922,7 @@ async def process_message(
             )
             second_result = await _run_agent(second_exact_deps)
             if second_exact_deps.quotation_created or _has_escalation(conv):
+                await _clear_verified_policy_repair_state()
                 return _build_llm_response(second_result, db_model_main)
 
             resolved_exact_sku = await _resolve_exact_quote_candidate_sku(
@@ -1915,40 +1949,64 @@ async def process_message(
                     ],
                 )
                 if second_exact_deps.quotation_created or _has_escalation(conv):
+                    await _clear_verified_policy_repair_state()
                     return _build_static_response(
                         fallback_text, f"{db_model_main}|exact-quote-fallback"
                     )
 
             fail_closed_text = await _fail_closed_exact_quote_request(second_exact_deps)
+            await _clear_verified_policy_repair_state()
             return _build_static_response(
                 fail_closed_text, f"{db_model_main}|exact-quote-fallback"
+            )
+
+        policy_action = policy_decision.policy_action
+        if not policy_decision.is_order_status and policy_action == "clarify":
+            repair_state = _get_verified_policy_repair_state()
+            repair_count = (
+                repair_state.get("count") if repair_state is not None else None
+            )
+            if (
+                repair_state is not None
+                and repair_state.get("kind") == "benign_no_match"
+                and isinstance(repair_count, int)
+                and repair_count >= 1
+            ):
+                policy_action = "handoff"
+                await _clear_verified_policy_repair_state()
+            else:
+                await _set_verified_policy_repair_state("benign_no_match", 1)
+                return _build_static_response(
+                    build_clarification_response(str(deps.conversation.language)),
+                    f"{db_model_main}|verified-policy-clarify",
+                )
+
+        if not policy_decision.is_order_status and policy_action == "handoff":
+            from src.integrations.notifications.escalation import (
+                notify_manager_escalation,
+            )
+            from src.schemas.common import EscalationType
+
+            await notify_manager_escalation(
+                conversation=deps.conversation,
+                reason=build_service_handoff_reason(masked_text, policy_decision),
+                recent_messages=deps.recent_history or [],
+                db=deps.db,
+                escalation_type=EscalationType.GENERAL,
+            )
+            await _clear_verified_policy_repair_state()
+            return await _build_policy_handoff_response(
+                db_model_main,
+                str(deps.conversation.language),
+                build_service_handoff_response(
+                    policy_decision, str(deps.conversation.language)
+                ),
             )
 
         if not policy_decision.is_order_status and policy_decision.question_class in {
             "service_low_risk",
             "service_high_risk",
         }:
-            if policy_decision.requires_manager_handoff:
-                from src.integrations.notifications.escalation import (
-                    notify_manager_escalation,
-                )
-                from src.schemas.common import EscalationType
-
-                await notify_manager_escalation(
-                    conversation=deps.conversation,
-                    reason=build_service_handoff_reason(masked_text, policy_decision),
-                    recent_messages=deps.recent_history or [],
-                    db=deps.db,
-                    escalation_type=EscalationType.GENERAL,
-                )
-                return await _build_policy_handoff_response(
-                    db_model_main,
-                    str(deps.conversation.language),
-                    build_service_handoff_response(
-                        policy_decision, str(deps.conversation.language)
-                    ),
-                )
-
             result = await _run_agent(
                 replace(
                     deps,
@@ -1958,9 +2016,11 @@ async def process_message(
                     ),
                 )
             )
+            await _clear_verified_policy_repair_state()
             return _build_llm_response(result, db_model_main)
 
         result = await _run_agent(deps)
+        await _clear_verified_policy_repair_state()
         return _build_llm_response(result, db_model_main)
 
     except Exception:

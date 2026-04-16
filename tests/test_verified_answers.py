@@ -142,6 +142,7 @@ def test_policy_marks_low_risk_missing_without_inventing_support() -> None:
 
     assert decision.question_class == "service_low_risk"
     assert decision.faq_support == "missing"
+    assert decision.policy_action == "handoff"
     assert decision.requires_manager_handoff is True
 
 
@@ -168,8 +169,101 @@ def test_policy_treats_plain_greeting_as_safe_non_handoff() -> None:
     )
 
     assert decision.question_class == "social"
+    assert decision.social_intent == "greeting"
     assert decision.faq_support == "verified"
+    assert decision.policy_action == "allow"
     assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_greeting_with_filler_tail_as_assist_opener_clarify() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Добрый день, подскажите",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "social"
+    assert decision.social_intent == "assist_opener"
+    assert decision.faq_support == "verified"
+    assert decision.policy_action == "clarify"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_common_arabic_greeting_variant_as_safe_non_handoff() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="سلام عليكم",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "social"
+    assert decision.social_intent == "greeting"
+    assert decision.faq_support == "verified"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_gratitude_as_social_allow() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Спасибо",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "social"
+    assert decision.social_intent == "gratitude"
+    assert decision.faq_support == "verified"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_goodbye_as_social_allow() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="До свидания",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "social"
+    assert decision.social_intent == "goodbye"
+    assert decision.faq_support == "verified"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_assist_opener_as_social_clarify() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="I need help",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "social"
+    assert decision.social_intent == "assist_opener"
+    assert decision.faq_support == "verified"
+    assert decision.policy_action == "clarify"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_short_benign_no_match_as_clarify() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Need advice",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.social_intent is None
+    assert decision.faq_support == "missing"
+    assert decision.policy_action == "clarify"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_routes_greeting_with_real_question_into_service_policy() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Добрый день, есть доставка в Дубай?",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.social_intent is None
+    assert decision.faq_support == "missing"
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
 
 
 def test_product_match_marks_nearby_alternatives_when_exact_term_is_missing() -> None:
