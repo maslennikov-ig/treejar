@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.conversation import Conversation
@@ -32,6 +32,7 @@ class QualityConversationCandidate:
     sales_stage: str
     phone: str | None
     customer_name: str | None
+    activity_at: datetime | None = None
     metadata_: dict[str, Any] | None = None
 
 
@@ -219,6 +220,7 @@ async def get_recent_assistant_conversation_candidates(
             Conversation.phone,
             Conversation.customer_name,
             Conversation.metadata_,
+            assistant_activity.c.last_assistant_at,
         )
         .join(
             assistant_activity,
@@ -241,6 +243,7 @@ async def get_recent_assistant_conversation_candidates(
             sales_stage=row.sales_stage,
             phone=row.phone,
             customer_name=row.customer_name,
+            activity_at=row.last_assistant_at,
             metadata_=row.metadata_,
         )
         for row in result.all()
@@ -254,8 +257,16 @@ async def get_recent_updated_conversation_candidates(
     limit: int = 50,
     offset: int = 0,
 ) -> list[QualityConversationCandidate]:
-    """Fetch a stable page of updated conversations for mature final-review checks."""
+    """Fetch a stable page of recent conversations for mature final-review checks."""
     threshold = _normalize_naive_utc(since or (datetime.now(UTC) - timedelta(days=7)))
+    transcript_activity = (
+        select(
+            Message.conversation_id.label("conversation_id"),
+            func.max(Message.created_at).label("last_message_at"),
+        )
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
     stmt = (
         select(
             Conversation.id,
@@ -266,16 +277,30 @@ async def get_recent_updated_conversation_candidates(
             Conversation.phone,
             Conversation.customer_name,
             Conversation.metadata_,
+            transcript_activity.c.last_message_at,
+        )
+        .outerjoin(
+            transcript_activity,
+            transcript_activity.c.conversation_id == Conversation.id,
         )
         .where(
-            Conversation.updated_at >= threshold,
             Conversation.escalation_status.in_(("none", "resolved")),
             exists().where(
                 Message.conversation_id == Conversation.id,
                 Message.role == "assistant",
             ),
+            or_(
+                Conversation.updated_at >= threshold,
+                transcript_activity.c.last_message_at >= threshold,
+            ),
         )
-        .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+        .order_by(
+            func.coalesce(
+                transcript_activity.c.last_message_at,
+                Conversation.updated_at,
+            ).desc(),
+            Conversation.id.desc(),
+        )
         .limit(limit)
         .offset(offset)
     )
@@ -289,6 +314,11 @@ async def get_recent_updated_conversation_candidates(
             sales_stage=row.sales_stage,
             phone=row.phone,
             customer_name=row.customer_name,
+            activity_at=(
+                row.last_message_at
+                if row.last_message_at and row.last_message_at >= row.updated_at
+                else row.updated_at
+            ),
             metadata_=row.metadata_,
         )
         for row in result.all()

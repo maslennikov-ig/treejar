@@ -4,6 +4,7 @@ from src.models.conversation_summary import ConversationSummary
 from src.models.escalation import Escalation
 from src.models.feedback import Feedback
 from src.models.knowledge_base import KnowledgeBase
+from src.models.llm_attempt import LLMAttempt
 from src.models.manager_review import ManagerReview
 from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
@@ -20,6 +21,7 @@ __all__ = [
     "Escalation",
     "Feedback",
     "KnowledgeBase",
+    "LLMAttempt",
     "ManagerReview",
     "Message",
     "MetricsSnapshot",

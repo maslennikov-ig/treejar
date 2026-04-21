@@ -82,6 +82,7 @@ def _make_candidate(
     status: str = "active",
     created_at: datetime | None = None,
     updated_at: datetime | None = None,
+    activity_at: datetime | None = None,
     sales_stage: str = "greeting",
     phone: str = "+971501234567",
     customer_name: str | None = "Acme",
@@ -92,6 +93,7 @@ def _make_candidate(
         status=status,
         created_at=created_at or datetime.now(tz=UTC) - timedelta(hours=1),
         updated_at=updated_at or datetime.now(tz=UTC),
+        activity_at=activity_at,
         sales_stage=sales_stage,
         phone=phone,
         customer_name=customer_name,
@@ -108,6 +110,19 @@ def _make_session_ctx(mock_db: AsyncMock) -> AsyncMock:
     mock_session_ctx.__aenter__.return_value = mock_db
     mock_session_ctx.__aexit__.return_value = False
     return mock_session_ctx
+
+
+def _make_attempt_lease() -> SimpleNamespace:
+    return SimpleNamespace(
+        attempt=SimpleNamespace(status="pending", attempt_count=1),
+        lock_key="llm_attempt:lock:test",
+        lock_token="token",
+        backoff_key="llm_attempt:backoff:test",
+    )
+
+
+def _make_terminal_success_attempt(result_json: dict[str, object]) -> SimpleNamespace:
+    return SimpleNamespace(status="success", result_json=result_json)
 
 
 @pytest.mark.asyncio
@@ -153,6 +168,349 @@ async def test_red_flag_warning_fires_only_when_flags_exist() -> None:
 
     mock_notify.assert_awaited_once()
     mock_redis.setex.assert_awaited_once()
+    assert mock_redis.setex.await_args.args[0].startswith("quality:redflag:")
+
+
+@pytest.mark.asyncio
+async def test_red_flag_terminal_success_replays_notification_without_llm_call() -> (
+    None
+):
+    """Terminal red-flag success should replay delivery from cached result JSON."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    candidate = _make_candidate()
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    mock_crm = AsyncMock()
+    mock_notify = AsyncMock()
+    begin_attempt = AsyncMock(return_value=None)
+    terminal_attempt = _make_terminal_success_attempt(
+        {
+            "flags": [
+                {
+                    "code": "missing_identity",
+                    "title": "Missing identity",
+                    "explanation": "missing_identity explanation",
+                    "evidence": ["evidence"],
+                }
+            ],
+            "recommended_action": "Check the dialog.",
+        }
+    )
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch("src.quality.job.begin_llm_attempt", new=begin_attempt),
+        patch(
+            "src.quality.job._load_quality_attempt",
+            new=AsyncMock(return_value=terminal_attempt),
+        ),
+        patch(
+            "src.quality.job.should_send_telegram_alert_for_conversation_with_db",
+            new=AsyncMock(return_value=True),
+        ),
+        patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
+        patch(
+            "src.quality.job.evaluate_red_flags",
+            new=AsyncMock(side_effect=AssertionError("unexpected LLM call")),
+        ),
+    ):
+        await evaluate_realtime_red_flags({"redis": mock_redis, "crm_client": mock_crm})
+
+    begin_attempt.assert_awaited_once()
+    mock_notify.assert_awaited_once()
+    assert mock_redis.setex.await_count == 1
+    query_db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_red_flag_no_flags_records_no_action_attempt() -> None:
+    """No-flag red-flag scans should persist no_action to avoid cron rescans."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    candidate = _make_candidate()
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    lease = _make_attempt_lease()
+    record_no_action = AsyncMock()
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.begin_llm_attempt",
+            new=AsyncMock(return_value=lease),
+        ),
+        patch("src.quality.job.record_llm_attempt_no_action", new=record_no_action),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+        patch(
+            "src.quality.job.evaluate_red_flags",
+            new=AsyncMock(return_value=_make_red_flag_result([])),
+        ),
+    ):
+        await evaluate_realtime_red_flags({"redis": mock_redis})
+
+    record_no_action.assert_awaited_once()
+    assert record_no_action.await_args.kwargs["result_json"]["flags"] == []
+    worker_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_final_review_budget_block_records_attempt_error() -> None:
+    """Budget blocks from the safety layer should be written as attempt state."""
+    from src.llm.safety import LLMBudgetBlocked
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate = _make_candidate(status="closed", updated_at=datetime.now(tz=UTC))
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    lease = _make_attempt_lease()
+    record_error = AsyncMock()
+    budget_error = LLMBudgetBlocked("budget exhausted")
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.begin_llm_attempt",
+            new=AsyncMock(return_value=lease),
+        ),
+        patch("src.quality.job.record_llm_attempt_error", new=record_error),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(side_effect=budget_error),
+        ),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+    ):
+        await evaluate_mature_conversations_quality({"redis": mock_redis})
+
+    record_error.assert_awaited_once()
+    assert record_error.await_args.args[2] is budget_error
+    worker_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_final_review_save_failure_does_not_record_attempt_error() -> None:
+    """save_review failures should stay out of the failed_final attempt bucket."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate = _make_candidate(status="closed", updated_at=datetime.now(tz=UTC))
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    worker_db.rollback = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    lease = _make_attempt_lease()
+    record_error = AsyncMock()
+    record_success = AsyncMock()
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch("src.quality.job.begin_llm_attempt", new=AsyncMock(return_value=lease)),
+        patch("src.quality.job.record_llm_attempt_success", new=record_success),
+        patch("src.quality.job.record_llm_attempt_error", new=record_error),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(return_value=_make_evaluation_result(score=18.0)),
+        ),
+        patch(
+            "src.quality.job.save_review",
+            new=AsyncMock(side_effect=RuntimeError("save failed")),
+        ),
+    ):
+        await evaluate_mature_conversations_quality({"redis": mock_redis})
+
+    worker_db.rollback.assert_awaited_once()
+    record_error.assert_not_awaited()
+    record_success.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_final_review_replays_terminal_success_from_result_json() -> None:
+    """Terminal final-review success should replay review materialization and delivery."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate = _make_candidate(status="closed", updated_at=datetime.now(tz=UTC))
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    mock_crm = AsyncMock()
+    mock_notify = AsyncMock()
+    terminal_attempt = _make_terminal_success_attempt(
+        _make_evaluation_result(score=18.0).model_dump(mode="json")
+    )
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch(
+            "src.quality.job.begin_llm_attempt",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "src.quality.job._load_quality_attempt",
+            new=AsyncMock(return_value=terminal_attempt),
+        ),
+        patch(
+            "src.quality.job.get_review_for_conversation",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "src.quality.job.should_send_telegram_alert_for_conversation_with_db",
+            new=AsyncMock(return_value=True),
+        ),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch(
+            "src.services.notifications.notify_final_quality_review",
+            new=mock_notify,
+        ),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(side_effect=AssertionError("unexpected LLM call")),
+        ),
+    ):
+        await evaluate_mature_conversations_quality(
+            {"redis": mock_redis, "crm_client": mock_crm}
+        )
+
+    mock_notify.assert_awaited_once()
+    query_db.commit.assert_not_awaited()
+    assert mock_redis.setex.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_red_flag_attempt_key_uses_latest_assistant_activity() -> None:
+    """Red-flag no_action should not suppress later assistant turns."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    conversation_updated_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC)
+    latest_assistant_at = datetime(2026, 4, 21, 10, 30, tzinfo=UTC)
+    candidate = _make_candidate(
+        updated_at=conversation_updated_at,
+        activity_at=latest_assistant_at,
+    )
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    lease = _make_attempt_lease()
+    begin_attempt = AsyncMock(return_value=lease)
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch("src.quality.job.begin_llm_attempt", new=begin_attempt),
+        patch("src.quality.job.record_llm_attempt_no_action", new=AsyncMock()),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+        patch(
+            "src.quality.job.evaluate_red_flags",
+            new=AsyncMock(return_value=_make_red_flag_result([])),
+        ),
+    ):
+        await evaluate_realtime_red_flags({"redis": mock_redis})
+
+    assert begin_attempt.await_args.kwargs["entity_updated_at"] == latest_assistant_at
+
+
+@pytest.mark.asyncio
+async def test_final_review_attempt_key_uses_latest_transcript_activity() -> None:
+    """Final review should key off the latest transcript activity, not parent updated_at."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    parent_updated_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC)
+    transcript_activity_at = datetime(2026, 4, 21, 11, 15, tzinfo=UTC)
+    candidate = _make_candidate(
+        status="closed",
+        updated_at=parent_updated_at,
+        activity_at=transcript_activity_at,
+    )
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    lease = _make_attempt_lease()
+    begin_attempt = AsyncMock(return_value=lease)
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch("src.quality.job.begin_llm_attempt", new=begin_attempt),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+        patch(
+            "src.quality.job.evaluate_conversation",
+            new=AsyncMock(return_value=_make_evaluation_result(score=18.0)),
+        ),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch(
+            "src.quality.job.should_send_telegram_alert_for_conversation_with_db",
+            new=AsyncMock(return_value=False),
+        ),
+    ):
+        await evaluate_mature_conversations_quality({"redis": mock_redis})
+
+    assert (
+        begin_attempt.await_args.kwargs["entity_updated_at"] == transcript_activity_at
+    )
 
 
 @pytest.mark.asyncio
@@ -412,7 +770,7 @@ async def test_final_review_triggers_on_closed() -> None:
     mock_save.assert_awaited_once()
     mock_notify.assert_awaited_once()
     assert mock_notify.await_args.kwargs["trigger"] == "closed"
-    worker_db.commit.assert_awaited_once()
+    assert worker_db.commit.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -473,7 +831,7 @@ async def test_final_review_fetches_customer_name_from_crm_and_caches_it() -> No
     assert kwargs["conversation_created_at"] == created_at
     assert kwargs["last_activity_at"] == updated_at
     mock_crm.find_contact_by_phone.assert_awaited_once_with("+971501234567")
-    mock_redis.set.assert_awaited_once()
+    assert mock_redis.set.await_count == 2
 
 
 @pytest.mark.asyncio
