@@ -18,6 +18,33 @@ import pytest
 from src.schemas.common import EscalationStatus
 
 
+def _manager_quality_ctx(
+    redis: AsyncMock | None = None,
+    *,
+    mode: str = "scheduled",
+    max_calls_per_run: int = 10,
+    max_calls_per_day: int = 20,
+) -> dict[str, object]:
+    redis = redis or AsyncMock()
+    redis.incr = AsyncMock(return_value=1)
+    redis.expire = AsyncMock()
+    redis.decr = AsyncMock()
+    ctx: dict[str, object] = {
+        "redis": redis,
+        "ai_quality_controls": {
+            "bot_qa": {"mode": "disabled"},
+            "manager_qa": {
+                "mode": mode,
+                "daily_budget_cents": 100,
+                "max_calls_per_run": max_calls_per_run,
+                "max_calls_per_day": max_calls_per_day,
+            },
+            "red_flags": {"mode": "disabled"},
+        },
+    }
+    return ctx
+
+
 @pytest.mark.asyncio
 @patch("src.quality.manager_job.async_session_factory")
 @patch("src.quality.manager_job.get_unreviewed_resolved_escalations")
@@ -32,9 +59,32 @@ async def test_job_skips_when_no_pending(
     mock_session_factory.return_value.__aenter__.return_value = mock_db
     mock_get_unreviewed.return_value = []
 
-    await evaluate_escalated_conversations({})
+    await evaluate_escalated_conversations(_manager_quality_ctx())
 
     mock_get_unreviewed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_job_disabled_mode_returns_before_pending_query() -> None:
+    """Disabled manager-QA scope must perform no pending query or LLM work."""
+    from src.quality.manager_job import evaluate_escalated_conversations
+
+    get_unreviewed = AsyncMock(side_effect=AssertionError("unexpected pending query"))
+    evaluate_mock = AsyncMock(side_effect=AssertionError("unexpected LLM call"))
+
+    with (
+        patch(
+            "src.quality.manager_job.get_unreviewed_resolved_escalations",
+            new=get_unreviewed,
+        ),
+        patch(
+            "src.quality.manager_job.evaluate_manager_conversation", new=evaluate_mock
+        ),
+    ):
+        await evaluate_escalated_conversations(_manager_quality_ctx(mode="disabled"))
+
+    get_unreviewed.assert_not_awaited()
+    evaluate_mock.assert_not_awaited()
 
 
 def test_worker_has_manager_evaluation_registered() -> None:
@@ -112,7 +162,7 @@ async def test_job_skips_low_score_telegram_alert_for_other_inbound_phone(
         "src.services.inbound_channels.settings.telegram_allowed_inbound_phone",
         "+971551220665",
     ):
-        await evaluate_escalated_conversations({"redis": mock_redis})
+        await evaluate_escalated_conversations(_manager_quality_ctx(mock_redis))
 
     mock_save_review.assert_awaited_once()
     mock_send_telegram.assert_not_awaited()
@@ -181,7 +231,7 @@ async def test_job_formats_low_score_telegram_alert_in_russian(
     mock_redis.set = AsyncMock(return_value=True)
     mock_redis.delete = AsyncMock()
 
-    await evaluate_escalated_conversations({"redis": mock_redis})
+    await evaluate_escalated_conversations(_manager_quality_ctx(mock_redis))
 
     mock_save_review.assert_awaited_once()
     mock_send_telegram.assert_awaited_once()
@@ -269,7 +319,7 @@ async def test_job_rolls_back_on_commit_failure_without_recording_attempt_error(
     mock_redis.set = AsyncMock(return_value=True)
     mock_redis.delete = AsyncMock()
 
-    await evaluate_escalated_conversations({"redis": mock_redis})
+    await evaluate_escalated_conversations(_manager_quality_ctx(mock_redis))
 
     mock_save_review.assert_awaited_once()
     mock_record_success.assert_awaited_once()
@@ -348,7 +398,7 @@ async def test_job_save_manager_review_failure_does_not_record_attempt_error(
     mock_redis.set = AsyncMock(return_value=True)
     mock_redis.delete = AsyncMock()
 
-    await evaluate_escalated_conversations({"redis": mock_redis})
+    await evaluate_escalated_conversations(_manager_quality_ctx(mock_redis))
 
     mock_save_review.assert_awaited_once()
     mock_record_success.assert_awaited_once()
@@ -430,7 +480,7 @@ async def test_job_attempt_key_uses_latest_manager_activity(
     mock_redis.delete = AsyncMock()
 
     with patch("src.quality.manager_job.begin_llm_attempt", new=begin_attempt):
-        await evaluate_escalated_conversations({"redis": mock_redis})
+        await evaluate_escalated_conversations(_manager_quality_ctx(mock_redis))
 
     assert begin_attempt.await_args.kwargs["entity_updated_at"] == activity_at
     assert begin_attempt.await_args.kwargs["input_hash"] == _attempt_input_hash(

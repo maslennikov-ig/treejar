@@ -37,5 +37,4 @@ Do not reopen old quotation or Telegram hypotheses without fresh live/runtime ev
 Keep runtime/deploy work isolated from product logic.
 
 ## Explicit defers
-
 - Extended referrals admin/reporting remains intentionally deferred because `docs/tz.md` still treats that surface as optional and `tj-9a4m` did not uncover new evidence that promotes it into required scope.

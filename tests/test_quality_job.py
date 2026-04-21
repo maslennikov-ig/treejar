@@ -11,6 +11,46 @@ from uuid import uuid4
 import pytest
 
 
+def _ai_quality_ctx(
+    redis: AsyncMock,
+    *,
+    crm_client: AsyncMock | None = None,
+    bot_mode: str = "scheduled",
+    red_flags_mode: str = "scheduled",
+    red_flags_model: str | None = None,
+    max_calls_per_run: int = 10,
+    max_calls_per_day: int = 20,
+) -> dict[str, object]:
+    redis.incr = AsyncMock(return_value=1)
+    redis.expire = AsyncMock()
+    redis.decr = AsyncMock()
+    red_flags_config: dict[str, object] = {
+        "mode": red_flags_mode,
+        "daily_budget_cents": 100,
+        "max_calls_per_run": max_calls_per_run,
+        "max_calls_per_day": max_calls_per_day,
+    }
+    if red_flags_model is not None:
+        red_flags_config["model"] = red_flags_model
+
+    ctx: dict[str, object] = {
+        "redis": redis,
+        "ai_quality_controls": {
+            "bot_qa": {
+                "mode": bot_mode,
+                "daily_budget_cents": 100,
+                "max_calls_per_run": max_calls_per_run,
+                "max_calls_per_day": max_calls_per_day,
+            },
+            "manager_qa": {"mode": "disabled"},
+            "red_flags": red_flags_config,
+        },
+    }
+    if crm_client is not None:
+        ctx["crm_client"] = crm_client
+    return ctx
+
+
 def _make_evaluation_result(score: float = 30.0):
     from src.quality.schemas import BlockScore, CriterionScore, EvaluationResult
 
@@ -125,6 +165,195 @@ def _make_terminal_success_attempt(result_json: dict[str, object]) -> SimpleName
     return SimpleNamespace(status="success", result_json=result_json)
 
 
+def test_ai_quality_manual_mode_blocks_scheduled_runs_but_allows_manual() -> None:
+    """Manual mode should disable cron automation without disabling operator runs."""
+    from src.quality.config import (
+        AIQualityControlsConfig,
+        AIQualityScope,
+        evaluate_ai_quality_run_gate,
+    )
+
+    config = AIQualityControlsConfig.model_validate({"bot_qa": {"mode": "manual"}})
+
+    scheduled = evaluate_ai_quality_run_gate(
+        config,
+        scope=AIQualityScope.BOT_QA,
+        trigger="scheduled",
+    )
+    manual = evaluate_ai_quality_run_gate(
+        config,
+        scope=AIQualityScope.BOT_QA,
+        trigger="manual",
+    )
+
+    assert scheduled.allowed is False
+    assert scheduled.reason == "manual_only"
+    assert manual.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_ai_quality_daily_sample_reserves_one_scheduled_run_per_day() -> None:
+    """Daily sample mode should not execute on every cron tick."""
+    from src.quality.config import (
+        AIQualityControlsConfig,
+        AIQualityScope,
+        evaluate_ai_quality_run_gate,
+        reserve_ai_quality_daily_sample_from_ctx,
+    )
+
+    config = AIQualityControlsConfig.model_validate(
+        {"red_flags": {"mode": "daily_sample"}}
+    )
+    gate = evaluate_ai_quality_run_gate(
+        config,
+        scope=AIQualityScope.RED_FLAGS,
+        trigger="scheduled",
+    )
+    redis = AsyncMock()
+    redis.set = AsyncMock(side_effect=[True, False])
+
+    first = await reserve_ai_quality_daily_sample_from_ctx({"redis": redis}, gate)
+    second = await reserve_ai_quality_daily_sample_from_ctx({"redis": redis}, gate)
+
+    assert first.allowed is True
+    assert second.allowed is False
+    assert second.reason == "daily_sample_already_run"
+    assert redis.set.await_args_list[0].kwargs["nx"] is True
+    assert redis.set.await_args_list[0].kwargs["ex"] > 0
+
+
+@pytest.mark.asyncio
+async def test_ai_quality_invalid_ctx_config_falls_back_to_safe_defaults() -> None:
+    """Malformed injected config must disable QA work instead of crashing jobs."""
+    from src.quality.config import (
+        AIQualityScope,
+        get_ai_quality_run_gate_from_ctx,
+    )
+
+    gate = await get_ai_quality_run_gate_from_ctx(
+        {"ai_quality_controls": {"bot_qa": {"model": "z-ai/glm-5"}}},
+        scope=AIQualityScope.BOT_QA,
+        trigger="scheduled",
+    )
+
+    assert gate.allowed is False
+    assert gate.reason == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_ai_quality_daily_call_quota_blocks_after_daily_max() -> None:
+    """max_calls_per_day should be enforced across repeated cron runs."""
+    from src.quality.config import (
+        AIQualityControlsConfig,
+        AIQualityScope,
+        consume_ai_quality_daily_call_from_ctx,
+        evaluate_ai_quality_run_gate,
+    )
+
+    config = AIQualityControlsConfig.model_validate(
+        {"bot_qa": {"mode": "scheduled", "max_calls_per_day": 1}}
+    )
+    gate = evaluate_ai_quality_run_gate(
+        config,
+        scope=AIQualityScope.BOT_QA,
+        trigger="scheduled",
+    )
+    redis = AsyncMock()
+    redis.incr = AsyncMock(side_effect=[1, 2])
+    redis.expire = AsyncMock()
+    redis.decr = AsyncMock()
+
+    assert await consume_ai_quality_daily_call_from_ctx({"redis": redis}, gate) is True
+    assert await consume_ai_quality_daily_call_from_ctx({"redis": redis}, gate) is False
+    redis.expire.assert_awaited_once()
+    redis.decr.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_red_flag_disabled_mode_returns_before_candidate_fetch() -> None:
+    """Disabled red-flag scope must perform no candidate scan or LLM work."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    mock_redis = AsyncMock()
+    fetch_mock = AsyncMock(side_effect=AssertionError("unexpected candidate fetch"))
+    evaluate_mock = AsyncMock(side_effect=AssertionError("unexpected LLM call"))
+
+    with (
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=fetch_mock,
+        ),
+        patch("src.quality.job.evaluate_red_flags", new=evaluate_mock),
+    ):
+        await evaluate_realtime_red_flags(
+            _ai_quality_ctx(mock_redis, red_flags_mode="disabled")
+        )
+
+    fetch_mock.assert_not_awaited()
+    evaluate_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_final_review_disabled_mode_returns_before_candidate_fetch() -> None:
+    """Disabled bot-QA scope must perform no candidate scan or LLM work."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    mock_redis = AsyncMock()
+    fetch_mock = AsyncMock(side_effect=AssertionError("unexpected candidate fetch"))
+    evaluate_mock = AsyncMock(side_effect=AssertionError("unexpected LLM call"))
+
+    with (
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates", new=fetch_mock
+        ),
+        patch("src.quality.job.evaluate_conversation", new=evaluate_mock),
+    ):
+        await evaluate_mature_conversations_quality(
+            _ai_quality_ctx(mock_redis, bot_mode="disabled")
+        )
+
+    fetch_mock.assert_not_awaited()
+    evaluate_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_red_flag_job_respects_max_calls_per_run() -> None:
+    """Scheduled red-flag scope should cap LLM calls per job run."""
+    from src.quality.job import evaluate_realtime_red_flags
+
+    candidates = [_make_candidate(), _make_candidate(), _make_candidate()]
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    evaluate_mock = AsyncMock(return_value=_make_red_flag_result([]))
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_assistant_conversation_candidates",
+            new=AsyncMock(return_value=candidates),
+        ),
+        patch("src.quality.job.evaluate_red_flags", new=evaluate_mock),
+        patch("src.quality.job.record_llm_attempt_no_action", new=AsyncMock()),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+    ):
+        await evaluate_realtime_red_flags(
+            _ai_quality_ctx(
+                mock_redis,
+                red_flags_model="test/red-flag-model",
+                max_calls_per_run=1,
+            )
+        )
+
+    evaluate_mock.assert_awaited_once()
+    assert evaluate_mock.await_args.kwargs["model_name"] == "test/red-flag-model"
+
+
 @pytest.mark.asyncio
 async def test_red_flag_warning_fires_only_when_flags_exist() -> None:
     """Realtime warning job should notify only for actual red flags."""
@@ -164,7 +393,7 @@ async def test_red_flag_warning_fires_only_when_flags_exist() -> None:
         ),
         patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     mock_notify.assert_awaited_once()
     mock_redis.setex.assert_awaited_once()
@@ -225,7 +454,9 @@ async def test_red_flag_terminal_success_replays_notification_without_llm_call()
             new=AsyncMock(side_effect=AssertionError("unexpected LLM call")),
         ),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis, "crm_client": mock_crm})
+        await evaluate_realtime_red_flags(
+            _ai_quality_ctx(mock_redis, crm_client=mock_crm)
+        )
 
     begin_attempt.assert_awaited_once()
     mock_notify.assert_awaited_once()
@@ -267,7 +498,7 @@ async def test_red_flag_no_flags_records_no_action_attempt() -> None:
             new=AsyncMock(return_value=_make_red_flag_result([])),
         ),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     record_no_action.assert_awaited_once()
     assert record_no_action.await_args.kwargs["result_json"]["flags"] == []
@@ -311,7 +542,7 @@ async def test_final_review_budget_block_records_attempt_error() -> None:
         ),
         patch("src.quality.job.save_review", new=AsyncMock()),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     record_error.assert_awaited_once()
     assert record_error.await_args.args[2] is budget_error
@@ -356,7 +587,7 @@ async def test_final_review_save_failure_does_not_record_attempt_error() -> None
             new=AsyncMock(side_effect=RuntimeError("save failed")),
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     worker_db.rollback.assert_awaited_once()
     record_error.assert_not_awaited()
@@ -416,7 +647,7 @@ async def test_final_review_replays_terminal_success_from_result_json() -> None:
         ),
     ):
         await evaluate_mature_conversations_quality(
-            {"redis": mock_redis, "crm_client": mock_crm}
+            _ai_quality_ctx(mock_redis, crm_client=mock_crm)
         )
 
     mock_notify.assert_awaited_once()
@@ -460,7 +691,7 @@ async def test_red_flag_attempt_key_uses_latest_assistant_activity() -> None:
             new=AsyncMock(return_value=_make_red_flag_result([])),
         ),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     assert begin_attempt.await_args.kwargs["entity_updated_at"] == latest_assistant_at
 
@@ -506,7 +737,7 @@ async def test_final_review_attempt_key_uses_latest_transcript_activity() -> Non
             new=AsyncMock(return_value=False),
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     assert (
         begin_attempt.await_args.kwargs["entity_updated_at"] == transcript_activity_at
@@ -548,7 +779,9 @@ async def test_red_flag_warning_passes_identity_context_without_crm_lookup() -> 
         ),
         patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis, "crm_client": mock_crm})
+        await evaluate_realtime_red_flags(
+            _ai_quality_ctx(mock_redis, crm_client=mock_crm)
+        )
 
     mock_notify.assert_awaited_once()
     kwargs = mock_notify.await_args.kwargs
@@ -595,7 +828,7 @@ async def test_same_red_flag_signature_does_not_repeat() -> None:
         ),
         patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     mock_notify.assert_not_awaited()
     mock_redis.setex.assert_not_awaited()
@@ -641,7 +874,7 @@ async def test_changed_red_flag_signature_realerts() -> None:
         ),
         patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     mock_notify.assert_awaited_once()
     mock_redis.setex.assert_awaited_once()
@@ -679,7 +912,7 @@ async def test_red_flag_warning_skips_telegram_for_blocked_inbound_phone() -> No
             "+971551220665",
         ),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     mock_notify.assert_not_awaited()
     mock_redis.setex.assert_awaited_once()
@@ -725,7 +958,7 @@ async def test_red_flag_warning_paginates_full_candidate_set() -> None:
         ),
         patch("src.services.notifications.notify_red_flag_warning", new=mock_notify),
     ):
-        await evaluate_realtime_red_flags({"redis": mock_redis})
+        await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     assert fetch_mock.await_count == 2
     assert fetch_mock.await_args_list[0].kwargs["offset"] == 0
@@ -765,7 +998,7 @@ async def test_final_review_triggers_on_closed() -> None:
             "src.services.notifications.notify_final_quality_review", new=mock_notify
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     mock_save.assert_awaited_once()
     mock_notify.assert_awaited_once()
@@ -821,7 +1054,7 @@ async def test_final_review_fetches_customer_name_from_crm_and_caches_it() -> No
         ),
     ):
         await evaluate_mature_conversations_quality(
-            {"redis": mock_redis, "crm_client": mock_crm}
+            _ai_quality_ctx(mock_redis, crm_client=mock_crm)
         )
 
     mock_notify.assert_awaited_once()
@@ -872,7 +1105,7 @@ async def test_final_review_persists_marker_when_identity_enrichment_fails() -> 
         ),
     ):
         await evaluate_mature_conversations_quality(
-            {"redis": mock_redis, "crm_client": mock_crm}
+            _ai_quality_ctx(mock_redis, crm_client=mock_crm)
         )
 
     mock_notify.assert_awaited_once()
@@ -914,7 +1147,7 @@ async def test_final_review_triggers_on_idle_threshold() -> None:
             "src.services.notifications.notify_final_quality_review", new=mock_notify
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     mock_notify.assert_awaited_once()
     assert mock_notify.await_args.kwargs["trigger"] == "idle 3h"
@@ -947,7 +1180,7 @@ async def test_final_review_does_not_trigger_before_idle_threshold() -> None:
             "src.services.notifications.notify_final_quality_review", new=mock_notify
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     mock_evaluate.assert_not_awaited()
     mock_notify.assert_not_awaited()
@@ -1001,7 +1234,7 @@ async def test_final_review_paginates_full_candidate_set() -> None:
             "src.services.notifications.notify_final_quality_review", new=mock_notify
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     assert fetch_mock.await_count == 2
     assert fetch_mock.await_args_list[0].kwargs["offset"] == 0
@@ -1042,7 +1275,7 @@ async def test_final_review_retriggers_after_new_activity() -> None:
             "src.services.notifications.notify_final_quality_review", new=mock_notify
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     mock_notify.assert_awaited_once()
     mock_redis.setex.assert_awaited_once()
@@ -1088,7 +1321,7 @@ async def test_final_review_skips_telegram_for_missing_inbound_phone() -> None:
             "+971551220665",
         ),
     ):
-        await evaluate_mature_conversations_quality({"redis": mock_redis})
+        await evaluate_mature_conversations_quality(_ai_quality_ctx(mock_redis))
 
     mock_save.assert_awaited_once()
     mock_notify.assert_not_awaited()

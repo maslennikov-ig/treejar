@@ -48,6 +48,14 @@ _red_flag_model = OpenAIChatModel(
 )
 
 
+def _openrouter_model(model_name: str, path: str) -> OpenAIChatModel:
+    return OpenAIChatModel(
+        model_name,
+        provider=_provider,
+        settings=model_settings_for_path(path),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class FinalJudgeDeps:
     rule_applicability: dict[int, bool]
@@ -377,8 +385,10 @@ async def evaluate_conversation(
     conversation_id: UUID,
     db: AsyncSession,
     sales_stage: str | None = None,
+    model_name: str | None = None,
 ) -> EvaluationResult:
     """Evaluate a conversation for the owner-facing final quality review."""
+    selected_model = model_name or settings.openrouter_model_main
     messages = await _load_messages(conversation_id, db)
     stage = sales_stage or await _load_sales_stage(conversation_id, db) or "unknown"
     applicability_map = _build_rule_applicability(messages, stage)
@@ -400,7 +410,8 @@ async def evaluate_conversation(
         judge_agent,
         PATH_QUALITY_FINAL,
         user_prompt,
-        model_name=settings.openrouter_model_main,
+        model_name=selected_model,
+        model=_openrouter_model(selected_model, PATH_QUALITY_FINAL),
         deps=FinalJudgeDeps(rule_applicability=applicability_map),
         usage_limits=UsageLimits(
             output_tokens_limit=2500,
@@ -416,8 +427,10 @@ async def evaluate_conversation(
 async def evaluate_red_flags(
     conversation_id: UUID,
     db: AsyncSession,
+    model_name: str | None = None,
 ) -> RedFlagEvaluationResult:
     """Evaluate a conversation for rare realtime red flags."""
+    selected_model = model_name or settings.openrouter_model_fast
     messages = await _load_messages(conversation_id, db)
 
     logger.info(
@@ -430,7 +443,8 @@ async def evaluate_red_flags(
         red_flag_agent,
         PATH_QUALITY_RED_FLAGS,
         _build_dialogue_prompt(messages),
-        model_name=settings.openrouter_model_fast,
+        model_name=selected_model,
+        model=_openrouter_model(selected_model, PATH_QUALITY_RED_FLAGS),
         usage_limits=UsageLimits(
             output_tokens_limit=900,
             total_tokens_limit=4000,

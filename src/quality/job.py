@@ -13,7 +13,6 @@ from typing import Any, cast
 
 from sqlalchemy import select
 
-from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import get_redis_client
 from src.integrations.crm.zoho_crm import ZohoCRMClient
@@ -28,6 +27,12 @@ from src.llm.attempts import (
 )
 from src.llm.safety import PATH_QUALITY_FINAL, PATH_QUALITY_RED_FLAGS
 from src.models.llm_attempt import LLMAttempt
+from src.quality.config import (
+    AIQualityScope,
+    consume_ai_quality_daily_call_from_ctx,
+    get_ai_quality_run_gate_from_ctx,
+    reserve_ai_quality_daily_sample_from_ctx,
+)
 from src.quality.evaluator import evaluate_conversation, evaluate_red_flags
 from src.quality.schemas import (
     CriterionScore,
@@ -432,6 +437,7 @@ async def _load_candidates_in_batches(
     fetch_page: Callable[..., Awaitable[list[QualityConversationCandidate]]],
     *,
     since: datetime,
+    max_candidates: int | None = None,
 ) -> list[QualityConversationCandidate]:
     """Read the full eligible candidate set in deterministic pages."""
     candidates: list[QualityConversationCandidate] = []
@@ -439,20 +445,27 @@ async def _load_candidates_in_batches(
 
     async with async_session_factory() as db:
         while True:
+            if max_candidates is not None and len(candidates) >= max_candidates:
+                break
+            limit = _QUERY_BATCH_SIZE
+            if max_candidates is not None:
+                limit = min(limit, max_candidates - len(candidates))
             batch = await fetch_page(
                 db,
                 since=since,
-                limit=_QUERY_BATCH_SIZE,
+                limit=limit,
                 offset=offset,
             )
             if not batch:
                 break
             candidates.extend(batch)
-            if len(batch) < _QUERY_BATCH_SIZE:
+            if len(batch) < limit:
                 break
             offset += len(batch)
 
-    return candidates
+    if max_candidates is None:
+        return candidates
+    return candidates[:max_candidates]
 
 
 async def _begin_quality_attempt(
@@ -507,15 +520,36 @@ async def evaluate_recent_conversations_quality(ctx: dict[str, Any]) -> None:
 
 async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
     """ARQ job: send compact realtime warnings only for critical red flags."""
+    gate = await get_ai_quality_run_gate_from_ctx(
+        ctx,
+        scope=AIQualityScope.RED_FLAGS,
+        trigger="scheduled",
+    )
+    if not gate.allowed:
+        logger.info(
+            "Quality red-flag evaluator disabled by AI Quality Controls: %s",
+            gate.reason,
+        )
+        return
+
     now = datetime.now(UTC)
     redis = _resolve_redis(ctx)
     candidates = await _load_candidates_in_batches(
         get_recent_assistant_conversation_candidates,
         since=now - _RED_FLAG_LOOKBACK,
+        max_candidates=gate.max_calls,
     )
 
     if not candidates:
         logger.info("Quality red-flag evaluator: no recent assistant conversations")
+        return
+
+    gate = await reserve_ai_quality_daily_sample_from_ctx(ctx, gate)
+    if not gate.allowed:
+        logger.info(
+            "Quality red-flag evaluator skipped by AI Quality Controls: %s",
+            gate.reason,
+        )
         return
 
     sent = 0
@@ -523,6 +557,13 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
 
     async with _quality_crm_client(ctx, redis) as crm_client:
         for candidate in candidates:
+            if not await consume_ai_quality_daily_call_from_ctx(ctx, gate):
+                logger.info(
+                    "Quality red-flag evaluator stopped by daily call quota: %s",
+                    gate.scope.value,
+                )
+                break
+
             lease: LLMAttemptLease | None = None
             try:
                 async with async_session_factory() as db:
@@ -532,7 +573,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         candidate,
                         path=PATH_QUALITY_RED_FLAGS,
                         prompt_version=_PROMPT_VERSION_RED_FLAGS,
-                        model=settings.openrouter_model_fast,
+                        model=gate.model,
                     )
                     if lease is None:
                         if await _replay_terminal_red_flag_delivery(
@@ -546,7 +587,11 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         continue
 
                     try:
-                        result = await evaluate_red_flags(candidate.conversation_id, db)
+                        result = await evaluate_red_flags(
+                            candidate.conversation_id,
+                            db,
+                            model_name=gate.model,
+                        )
                     except Exception as exc:
                         await _record_attempt_error_after_rollback(
                             db,
@@ -569,7 +614,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         db,
                         lease,
                         result_json=_result_payload(result),
-                        model=settings.openrouter_model_fast,
+                        model=gate.model,
                         provider=_OPENROUTER_PROVIDER,
                     )
                     await _commit_or_rollback(db)
@@ -642,15 +687,36 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
 
 async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
     """ARQ job: persist and send owner-facing final reviews for mature dialogues."""
+    gate = await get_ai_quality_run_gate_from_ctx(
+        ctx,
+        scope=AIQualityScope.BOT_QA,
+        trigger="scheduled",
+    )
+    if not gate.allowed:
+        logger.info(
+            "Quality final-review evaluator disabled by AI Quality Controls: %s",
+            gate.reason,
+        )
+        return
+
     now = datetime.now(UTC)
     redis = _resolve_redis(ctx)
     candidates = await _load_candidates_in_batches(
         get_recent_updated_conversation_candidates,
         since=now - _FINAL_LOOKBACK,
+        max_candidates=gate.max_calls,
     )
 
     if not candidates:
         logger.info("Quality final-review evaluator: no recent conversations")
+        return
+
+    gate = await reserve_ai_quality_daily_sample_from_ctx(ctx, gate)
+    if not gate.allowed:
+        logger.info(
+            "Quality final-review evaluator skipped by AI Quality Controls: %s",
+            gate.reason,
+        )
         return
 
     reviewed = 0
@@ -668,6 +734,13 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
             if previous_updated_at == current_updated_at:
                 continue
 
+            if not await consume_ai_quality_daily_call_from_ctx(ctx, gate):
+                logger.info(
+                    "Quality final-review evaluator stopped by daily call quota: %s",
+                    gate.scope.value,
+                )
+                break
+
             lease: LLMAttemptLease | None = None
             try:
                 async with async_session_factory() as db:
@@ -677,7 +750,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                         candidate,
                         path=PATH_QUALITY_FINAL,
                         prompt_version=_PROMPT_VERSION_FINAL,
-                        model=settings.openrouter_model_main,
+                        model=gate.model,
                     )
                     if lease is None:
                         if await _replay_terminal_final_review(
@@ -695,6 +768,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                             candidate.conversation_id,
                             db,
                             candidate.sales_stage,
+                            model_name=gate.model,
                         )
                     except Exception as exc:
                         await _record_attempt_error_after_rollback(
@@ -709,7 +783,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                         db,
                         lease,
                         result_json=_result_payload(result),
-                        model=settings.openrouter_model_main,
+                        model=gate.model,
                         provider=_OPENROUTER_PROVIDER,
                     )
                     await _commit_or_rollback(db)

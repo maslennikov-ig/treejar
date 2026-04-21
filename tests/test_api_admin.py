@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +14,54 @@ from src.schemas.common import PaginatedResponse
 from src.schemas.manager_review import ManagerReviewDetail, ManagerReviewRead
 from src.services.reports import ReportData
 from tests.conftest import integration
+
+
+class _FakeScalarResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
+
+
+class _FakeAIQualityConfigDB:
+    def __init__(self, value: dict[str, Any] | None = None) -> None:
+        self.config = None
+        if value is not None:
+            from src.models.system_config import SystemConfig
+
+            self.config = SystemConfig(key="ai_quality_controls", value=value)
+        self.added: list[object] = []
+        self.committed = False
+
+    async def execute(self, _stmt: object) -> _FakeScalarResult:
+        return _FakeScalarResult(self.config)
+
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
+        self.config = obj
+
+    async def commit(self) -> None:
+        self.committed = True
+
+
+async def _with_fake_db(
+    admin_client: AsyncClient,
+    fake_db: _FakeAIQualityConfigDB,
+    method: str,
+    url: str,
+    **kwargs: object,
+):
+    from src.core.database import get_db
+
+    async def override_get_db():
+        yield fake_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        return await admin_client.request(method, url, **kwargs)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.asyncio
@@ -485,3 +534,146 @@ async def test_admin_report_operator_endpoint(admin_client: AsyncClient) -> None
     assert response.status_code == 200
     assert response.json()["text"] == "Weekly report"
     mock_report.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_quality_controls_default_config(
+    admin_client: AsyncClient,
+) -> None:
+    """AI Quality Controls should default to no automated QA work."""
+    response = await _with_fake_db(
+        admin_client,
+        _FakeAIQualityConfigDB(),
+        "GET",
+        "/api/v1/admin/ai-quality-controls",
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    config = data["config"]
+    assert config["bot_qa"]["mode"] == "disabled"
+    assert config["manager_qa"]["mode"] == "disabled"
+    assert config["red_flags"]["mode"] == "disabled"
+    assert config["bot_qa"]["transcript_mode"] == "summary"
+    assert config["manager_qa"]["model"] != "z-ai/glm-5"
+    assert config["bot_qa"]["daily_budget_cents"] <= 100
+    assert config["bot_qa"]["max_calls_per_run"] <= 2
+    assert config["bot_qa"]["max_calls_per_day"] <= 10
+    assert data["warnings"] == []
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_quality_controls_rejects_full_transcript_without_override(
+    admin_client: AsyncClient,
+) -> None:
+    """Full transcript mode must require explicit warning acknowledgement."""
+    response = await _with_fake_db(
+        admin_client,
+        _FakeAIQualityConfigDB(),
+        "PUT",
+        "/api/v1/admin/ai-quality-controls",
+        json={"bot_qa": {"transcript_mode": "full"}},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_quality_controls_rejects_glm5_without_override(
+    admin_client: AsyncClient,
+) -> None:
+    """QA scopes must not accept GLM-5 unless the warning override is explicit."""
+    response = await _with_fake_db(
+        admin_client,
+        _FakeAIQualityConfigDB(),
+        "PUT",
+        "/api/v1/admin/ai-quality-controls",
+        json={"manager_qa": {"mode": "scheduled", "model": "z-ai/glm-5"}},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_quality_controls_accepts_overrides_with_warnings(
+    admin_client: AsyncClient,
+) -> None:
+    """Risky overrides are allowed only when stored with warning metadata."""
+    fake_db = _FakeAIQualityConfigDB()
+    response = await _with_fake_db(
+        admin_client,
+        fake_db,
+        "PUT",
+        "/api/v1/admin/ai-quality-controls",
+        json={
+            "bot_qa": {
+                "mode": "scheduled",
+                "model": "z-ai/glm-5",
+                "glm5_warning_override": True,
+            },
+            "red_flags": {
+                "transcript_mode": "full",
+                "full_transcript_warning_override": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    warning_codes = {warning["code"] for warning in data["warnings"]}
+    assert {"glm5_qa", "full_transcript"} <= warning_codes
+    assert fake_db.committed is True
+    assert fake_db.config is not None
+    assert fake_db.config.value["bot_qa"]["model"] == "z-ai/glm-5"
+    assert fake_db.config.value["red_flags"]["transcript_mode"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_quality_controls_patch_preserves_unspecified_scopes(
+    admin_client: AsyncClient,
+) -> None:
+    """PATCH should merge updates instead of resetting other scopes to defaults."""
+    fake_db = _FakeAIQualityConfigDB(
+        {
+            "bot_qa": {"mode": "scheduled", "max_calls_per_run": 2},
+            "manager_qa": {"mode": "disabled"},
+            "red_flags": {"mode": "manual"},
+        }
+    )
+    response = await _with_fake_db(
+        admin_client,
+        fake_db,
+        "PATCH",
+        "/api/v1/admin/ai-quality-controls",
+        json={"manager_qa": {"mode": "manual", "max_calls_per_run": 3}},
+    )
+
+    assert response.status_code == 200
+    config = response.json()["config"]
+    assert config["bot_qa"]["mode"] == "scheduled"
+    assert config["bot_qa"]["max_calls_per_run"] == 2
+    assert config["manager_qa"]["mode"] == "manual"
+    assert config["manager_qa"]["max_calls_per_run"] == 3
+    assert config["red_flags"]["mode"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_quality_controls_validates_budget_calls_and_retry_bounds(
+    admin_client: AsyncClient,
+) -> None:
+    """Budget, max-call, and retry policy limits should fail before persistence."""
+    response = await _with_fake_db(
+        admin_client,
+        _FakeAIQualityConfigDB(),
+        "PUT",
+        "/api/v1/admin/ai-quality-controls",
+        json={
+            "bot_qa": {
+                "daily_budget_cents": -1,
+                "max_calls_per_run": 1000,
+                "retry": {"max_attempts": 5},
+            }
+        },
+    )
+
+    assert response.status_code == 422

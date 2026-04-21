@@ -37,6 +37,7 @@ from src.quality.manager_schemas import (
 )
 
 logger = logging.getLogger(__name__)
+_provider = OpenRouterProvider(api_key=settings.openrouter_api_key)
 
 # ---------------------------------------------------------------------------
 # Manager Evaluation Prompt (10 criteria from manager-evaluation-criteria.md)
@@ -87,7 +88,7 @@ MANAGER_EVALUATION_PROMPT = """Ты эксперт по оценке качес�
 
 _model = OpenAIChatModel(
     settings.openrouter_model_main,
-    provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+    provider=_provider,
     settings=model_settings_for_path(PATH_QUALITY_MANAGER),
 )
 
@@ -206,6 +207,7 @@ async def calculate_manager_metrics(
 async def evaluate_manager_conversation(
     escalation_id: UUID,
     db: AsyncSession,
+    model_name: str | None = None,
 ) -> tuple[ManagerEvaluationResult, ManagerMetrics]:
     """Evaluate a manager's post-escalation conversation.
 
@@ -223,6 +225,8 @@ async def evaluate_manager_conversation(
     Raises:
         ValueError: If escalation not found or no post-escalation messages.
     """
+    selected_model = model_name or settings.openrouter_model_main
+
     # Load escalation with conversation
     esc_stmt = select(Escalation).where(Escalation.id == escalation_id)
     esc_result = await db.execute(esc_stmt)
@@ -289,7 +293,12 @@ async def evaluate_manager_conversation(
         manager_judge_agent,
         PATH_QUALITY_MANAGER,
         user_prompt,
-        model_name=settings.openrouter_model_main,
+        model_name=selected_model,
+        model=OpenAIChatModel(
+            selected_model,
+            provider=_provider,
+            settings=model_settings_for_path(PATH_QUALITY_MANAGER),
+        ),
         usage_limits=UsageLimits(
             output_tokens_limit=2000,
             total_tokens_limit=8000,

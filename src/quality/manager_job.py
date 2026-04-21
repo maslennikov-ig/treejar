@@ -18,7 +18,6 @@ from typing import Any, cast
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import get_redis_client
 from src.llm.attempts import (
@@ -33,6 +32,12 @@ from src.llm.safety import PATH_QUALITY_MANAGER
 from src.models.escalation import Escalation
 from src.models.llm_attempt import LLMAttempt
 from src.models.message import Message
+from src.quality.config import (
+    AIQualityScope,
+    consume_ai_quality_daily_call_from_ctx,
+    get_ai_quality_run_gate_from_ctx,
+    reserve_ai_quality_daily_sample_from_ctx,
+)
 from src.quality.manager_evaluator import (
     ManagerMetrics,
     escalation_already_reviewed,
@@ -89,12 +94,12 @@ def _attempt_input_hash(escalation: Any, activity_at: datetime) -> str:
     )
 
 
-def _settings_hash() -> str:
+def _settings_hash(model: str) -> str:
     return _stable_hash(
         {
             "path": PATH_QUALITY_MANAGER,
             "prompt_version": _PROMPT_VERSION_MANAGER,
-            "model": settings.openrouter_model_main,
+            "model": model,
             "provider": _OPENROUTER_PROVIDER,
         }
     )
@@ -282,13 +287,36 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
     Args:
         ctx: ARQ job context (unused, but required by ARQ protocol).
     """
+    gate = await get_ai_quality_run_gate_from_ctx(
+        ctx,
+        scope=AIQualityScope.MANAGER_QA,
+        trigger="scheduled",
+    )
+    if not gate.allowed:
+        logger.info(
+            "Manager evaluator disabled by AI Quality Controls: %s",
+            gate.reason,
+        )
+        return
+
     redis = _resolve_redis(ctx)
 
     async with async_session_factory() as db:
-        pending_ids = await get_unreviewed_resolved_escalations(db, limit=50)
+        pending_ids = await get_unreviewed_resolved_escalations(
+            db,
+            limit=gate.max_calls,
+        )
 
     if not pending_ids:
         logger.info("Manager evaluator: no pending escalations to evaluate")
+        return
+
+    gate = await reserve_ai_quality_daily_sample_from_ctx(ctx, gate)
+    if not gate.allowed:
+        logger.info(
+            "Manager evaluator skipped by AI Quality Controls: %s",
+            gate.reason,
+        )
         return
 
     logger.info("Manager evaluator: found %d escalations to evaluate", len(pending_ids))
@@ -309,6 +337,13 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     )
                     continue
 
+                if not await consume_ai_quality_daily_call_from_ctx(ctx, gate):
+                    logger.info(
+                        "Manager evaluator stopped by daily call quota: %s",
+                        gate.scope.value,
+                    )
+                    break
+
                 escalation = await _load_escalation(db, esc_id)
                 activity_at = await _escalation_activity_at(db, escalation)
                 lease = await begin_llm_attempt(
@@ -320,8 +355,8 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     entity_updated_at=activity_at,
                     prompt_version=_PROMPT_VERSION_MANAGER,
                     input_hash=_attempt_input_hash(escalation, activity_at),
-                    settings_hash=_settings_hash(),
-                    model=settings.openrouter_model_main,
+                    settings_hash=_settings_hash(gate.model),
+                    model=gate.model,
                     provider=_OPENROUTER_PROVIDER,
                 )
                 if lease is None:
@@ -336,7 +371,9 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
 
                 try:
                     evaluation, metrics = await evaluate_manager_conversation(
-                        esc_id, db
+                        esc_id,
+                        db,
+                        model_name=gate.model,
                     )
                 except Exception as exc:
                     await _record_attempt_error_after_rollback(
@@ -351,7 +388,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     db,
                     lease,
                     result_json=_evaluation_payload(evaluation, metrics),
-                    model=settings.openrouter_model_main,
+                    model=gate.model,
                     provider=_OPENROUTER_PROVIDER,
                 )
                 await _commit_or_rollback(db)

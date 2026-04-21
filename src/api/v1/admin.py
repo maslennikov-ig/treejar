@@ -23,6 +23,15 @@ from src.models.escalation import Escalation
 from src.models.manager_review import ManagerReview
 from src.models.system_config import SystemConfig
 from src.models.system_prompt import SystemPrompt
+from src.quality.config import (
+    AIQualityControlsConfig,
+    AIQualityControlsResponse,
+    AIQualityControlsUpdate,
+    build_ai_quality_response,
+    get_ai_quality_controls_config,
+    merge_ai_quality_controls_update,
+    save_ai_quality_controls_config,
+)
 from src.schemas import (
     DashboardMetricsResponse,
     ManagerReviewDetail,
@@ -297,6 +306,36 @@ async def generate_admin_report(
 ) -> ReportResponse:
     """Generate the operator-facing weekly report inside the admin session."""
     return await generate_report_endpoint(body)
+
+
+@router.get("/ai-quality-controls", response_model=AIQualityControlsResponse)
+async def get_admin_ai_quality_controls(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AIQualityControlsResponse:
+    """Read SystemConfig-backed AI Quality Controls."""
+    return build_ai_quality_response(await get_ai_quality_controls_config(db))
+
+
+@router.put("/ai-quality-controls", response_model=AIQualityControlsResponse)
+async def put_admin_ai_quality_controls(
+    body: AIQualityControlsConfig,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AIQualityControlsResponse:
+    """Replace SystemConfig-backed AI Quality Controls."""
+    saved = await save_ai_quality_controls_config(db, body)
+    return build_ai_quality_response(saved)
+
+
+@router.patch("/ai-quality-controls", response_model=AIQualityControlsResponse)
+async def patch_admin_ai_quality_controls(
+    body: AIQualityControlsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AIQualityControlsResponse:
+    """Merge a partial SystemConfig-backed AI Quality Controls update."""
+    current = await get_ai_quality_controls_config(db)
+    merged = merge_ai_quality_controls_update(current, body)
+    saved = await save_ai_quality_controls_config(db, merged)
+    return build_ai_quality_response(saved)
 
 
 @router.get("/settings/", response_model=SettingsRead)
