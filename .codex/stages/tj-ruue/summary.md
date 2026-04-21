@@ -7,6 +7,7 @@ Baseline: `origin/main@9ef78006a6a6055fa4786f1a856b422cb916dabb`
 Orchestrator worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
 Orchestrator branch: `codex/live-triage-20260417`
 Integration commit: `0404bfc` (`feat(llm): add OpenRouter cost safety layer`)
+Latest integration commit: `b6dd171` (`feat(llm): add durable attempt state`)
 
 ## Scope
 
@@ -41,6 +42,7 @@ Implement OpenRouter cost controls and AI Quality Controls from the approved pla
 - Context7 docs check was performed for PydanticAI settings/usage limits and OpenRouter usage/cache telemetry.
 - This baseline does not contain `scripts/orchestration/report_child_completion.py`; child completion will be tracked by artifact files plus local orchestrator review until the repo contract is reconciled.
 - `tj-ruue.1` safety layer was accepted from manual worker branch `codex/tj-ruue-safety-layer-v2` in `/home/me/code/treejar/.worktrees/codex-tj-ruue-safety-layer-v2`. The accepted worker commit is `72cde7c`; runtime/test files were integrated into `codex/live-triage-20260417` and committed as `0404bfc`. Independent orchestrator review passed targeted safety/call-site tests, artifact validation, ruff check, ruff format check, mypy, and `git diff --check`.
+- `tj-ruue.2` DB+Redis LLM attempt/cache state was accepted from `codex/tj-ruue-llm-attempt-state` and integrated as `b6dd171`. Orchestrator follow-up review created/fixed `tj-ruue.2.4` through `tj-ruue.2.7`: terminal-success delivery replay, persistence failure classification, transcript-aware attempt keys, and Redis lock cleanup on begin failure. Verification passed focused QA/manager/attempt/migration tests, ruff, format, mypy, artifact validator, `git diff --check`, and full pytest after local `npm ci` in `frontend/admin` (`689 passed, 19 skipped`).
 
 ## Orchestration Plan
 
@@ -51,12 +53,12 @@ First wave:
 
 Second wave:
 
-- `tj-ruue.2`: DB+Redis attempt/cache state.
+- `tj-ruue.2`: accepted and integrated into `codex/live-triage-20260417`.
 - `tj-ruue.4`: summary-mode transcript builder.
 
 Third wave:
 
-- `tj-ruue.3`: admin backend controls.
+- `tj-ruue.3`: admin backend controls. This is the recommended next unit because it makes QA automation disabled by default and exposes backend config before frontend controls.
 - `tj-ruue.5`: model routing and cache telemetry.
 
 Final wave:
