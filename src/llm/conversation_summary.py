@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from typing import Any
@@ -14,6 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import async_session_factory
 from src.llm.pii import mask_pii, unmask_pii
+from src.llm.safety import (
+    PATH_CONVERSATION_SUMMARY,
+    model_settings_for_path,
+    run_agent_with_safety,
+)
 from src.models.conversation_summary import ConversationSummary
 from src.models.message import Message
 
@@ -46,11 +50,14 @@ Rules:
 summary_model = OpenAIChatModel(
     settings.openrouter_model_fast,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+    settings=model_settings_for_path(PATH_CONVERSATION_SUMMARY),
 )
 
 summary_agent: Agent[None, str] = Agent(
     model=summary_model,
     system_prompt=SUMMARY_SYSTEM_PROMPT,
+    retries=0,
+    model_settings=model_settings_for_path(PATH_CONVERSATION_SUMMARY),
 )
 
 
@@ -175,7 +182,12 @@ async def refresh_conversation_summary_record(
         summary.summary_text if summary else None,
         messages_to_merge,
     )
-    result = await asyncio.wait_for(summary_agent.run(prompt), timeout=45.0)
+    result = await run_agent_with_safety(
+        summary_agent,
+        PATH_CONVERSATION_SUMMARY,
+        prompt,
+        model_name=settings.openrouter_model_fast,
+    )
     refreshed_summary = unmask_pii(result.output.strip(), pii_map)
 
     if summary is None:

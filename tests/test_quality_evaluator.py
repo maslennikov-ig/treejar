@@ -609,10 +609,44 @@ async def test_usage_limits_passed_to_agent_run() -> None:
         await evaluate_conversation(uuid4(), mock_db, sales_stage="greeting")
 
     call_kwargs = mock_agent.run.call_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 2500
     assert "usage_limits" in call_kwargs, (
         "usage_limits must be passed to judge_agent.run()"
     )
     assert isinstance(call_kwargs["usage_limits"], UsageLimits)
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 2500
+    assert call_kwargs["usage_limits"].total_tokens_limit == 10000
+
+
+@pytest.mark.asyncio
+async def test_red_flag_evaluator_passes_expected_llm_safety_kwargs() -> None:
+    """red_flag_agent.run() must use provider-side max_tokens and bounded usage."""
+    from src.quality.evaluator import evaluate_red_flags
+    from src.quality.schemas import RedFlagEvaluationResult
+
+    mock_run_result = MagicMock()
+    mock_run_result.output = RedFlagEvaluationResult(flags=[], recommended_action="")
+
+    mock_db = AsyncMock()
+    mock_msg = MagicMock()
+    mock_msg.role = "user"
+    mock_msg.content = "Hello"
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [mock_msg]
+    mock_execute_result = MagicMock()
+    mock_execute_result.scalars.return_value = mock_scalars
+    mock_db.execute = AsyncMock(return_value=mock_execute_result)
+
+    with patch("src.quality.evaluator.red_flag_agent") as mock_agent:
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
+        await evaluate_red_flags(uuid4(), mock_db)
+
+    call_kwargs = mock_agent.run.call_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 900
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 900
+    assert call_kwargs["usage_limits"].total_tokens_limit == 4000
 
 
 # =============================================================================

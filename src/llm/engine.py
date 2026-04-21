@@ -30,6 +30,11 @@ from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.order_status import format_order_status
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
+from src.llm.safety import (
+    PATH_CORE_CHAT,
+    model_settings_for_path,
+    run_agent_with_safety,
+)
 from src.llm.verified_answers import (
     build_clarification_response,
     build_service_handoff_reason,
@@ -818,6 +823,7 @@ async def _prepare_sales_tools(
 model = OpenAIChatModel(
     settings.openrouter_model_main,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+    settings=model_settings_for_path(PATH_CORE_CHAT),
 )
 
 # Initialize Agent
@@ -826,6 +832,7 @@ sales_agent = Agent(
     deps_type=SalesDeps,
     prepare_tools=_prepare_sales_tools,
     retries=2,
+    model_settings=model_settings_for_path(PATH_CORE_CHAT),
 )
 
 
@@ -1871,14 +1878,18 @@ async def process_message(
         dynamic_model = OpenAIChatModel(
             db_model_main,
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+            settings=model_settings_for_path(PATH_CORE_CHAT),
         )
 
         async def _run_agent(run_deps: SalesDeps) -> Any:
-            return await sales_agent.run(
+            return await run_agent_with_safety(
+                sales_agent,
+                PATH_CORE_CHAT,
                 user_prompt=masked_text,
                 deps=run_deps,
                 message_history=history,
                 model=dynamic_model,
+                model_name=db_model_main,
             )
 
         if is_first_turn and is_high_confidence_first_turn_order(masked_text):

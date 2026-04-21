@@ -6,6 +6,7 @@ import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 from uuid import UUID
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
@@ -15,6 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.llm.safety import (
+    PATH_QUALITY_FINAL,
+    PATH_QUALITY_RED_FLAGS,
+    model_settings_for_path,
+    run_agent_with_safety,
+)
 from src.models.conversation import Conversation
 from src.models.message import Message
 from src.quality.schemas import (
@@ -32,10 +39,12 @@ _provider = OpenRouterProvider(api_key=settings.openrouter_api_key)
 _final_model = OpenAIChatModel(
     settings.openrouter_model_main,
     provider=_provider,
+    settings=model_settings_for_path(PATH_QUALITY_FINAL),
 )
 _red_flag_model = OpenAIChatModel(
     settings.openrouter_model_fast,
     provider=_provider,
+    settings=model_settings_for_path(PATH_QUALITY_RED_FLAGS),
 )
 
 
@@ -112,14 +121,16 @@ RED_FLAG_PROMPT = """Ты строгий монитор качества Treejar
 judge_agent: Agent[FinalJudgeDeps, EvaluationResult] = Agent(
     _final_model,
     output_type=EvaluationResult,
-    retries=2,
+    retries=0,
     instructions=EVALUATION_PROMPT,
+    model_settings=model_settings_for_path(PATH_QUALITY_FINAL),
 )
 red_flag_agent: Agent[None, RedFlagEvaluationResult] = Agent(
     _red_flag_model,
     output_type=RedFlagEvaluationResult,
-    retries=1,
+    retries=0,
     instructions=RED_FLAG_PROMPT,
+    model_settings=model_settings_for_path(PATH_QUALITY_RED_FLAGS),
 )
 
 _STAGE_RANK = {
@@ -385,11 +396,14 @@ async def evaluate_conversation(
         stage,
     )
 
-    run_result = await judge_agent.run(
+    run_result = await run_agent_with_safety(
+        judge_agent,
+        PATH_QUALITY_FINAL,
         user_prompt,
+        model_name=settings.openrouter_model_main,
         deps=FinalJudgeDeps(rule_applicability=applicability_map),
         usage_limits=UsageLimits(
-            response_tokens_limit=2500,
+            output_tokens_limit=2500,
             total_tokens_limit=10000,
         ),
     )
@@ -412,11 +426,14 @@ async def evaluate_red_flags(
         len(messages),
     )
 
-    run_result = await red_flag_agent.run(
+    run_result = await run_agent_with_safety(
+        red_flag_agent,
+        PATH_QUALITY_RED_FLAGS,
         _build_dialogue_prompt(messages),
+        model_name=settings.openrouter_model_fast,
         usage_limits=UsageLimits(
-            response_tokens_limit=900,
+            output_tokens_limit=900,
             total_tokens_limit=4000,
         ),
     )
-    return run_result.output
+    return cast("RedFlagEvaluationResult", run_result.output)

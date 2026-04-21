@@ -88,6 +88,76 @@ def test_manager_evaluator_prompt_requires_russian_human_readable_output() -> No
     assert "comment" in MANAGER_EVALUATION_PROMPT.lower()
 
 
+@pytest.mark.asyncio
+async def test_evaluate_manager_conversation_passes_expected_llm_safety_kwargs() -> (
+    None
+):
+    from src.quality.manager_evaluator import evaluate_manager_conversation
+
+    escalation_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    created_at = datetime(2026, 4, 21, 10, 0, 0, tzinfo=UTC)
+
+    escalation = MagicMock()
+    escalation.id = escalation_id
+    escalation.conversation_id = conversation_id
+    escalation.created_at = created_at
+    escalation.reason = "Customer asked for a manager"
+    escalation.notes = None
+    escalation.assigned_to = "Annabelle"
+
+    conversation = MagicMock()
+    conversation.id = conversation_id
+    conversation.zoho_deal_id = None
+    conversation.deal_amount = None
+
+    message = MagicMock()
+    message.role = "manager"
+    message.content = "I can help with this quotation."
+
+    esc_result = MagicMock()
+    esc_result.scalar_one_or_none.return_value = escalation
+    conv_result = MagicMock()
+    conv_result.scalar_one_or_none.return_value = conversation
+    msg_scalars = MagicMock()
+    msg_scalars.all.return_value = [message]
+    msg_result = MagicMock()
+    msg_result.scalars.return_value = msg_scalars
+
+    db = AsyncMock()
+    db.execute.side_effect = [esc_result, conv_result, msg_result]
+    db.scalar.side_effect = [None, 1]
+
+    criteria = [
+        ManagerCriterionScore(
+            rule_number=i,
+            rule_name=f"rule_{i}",
+            score=1,
+            comment="ok",
+        )
+        for i in range(1, 11)
+    ]
+    run_result = MagicMock()
+    run_result.output = ManagerEvaluationResult(
+        criteria=criteria,
+        summary="Кратко: ok",
+        total_score=10.0,
+        rating="satisfactory",
+    )
+
+    from unittest.mock import patch
+
+    with patch("src.quality.manager_evaluator.manager_judge_agent") as mock_agent:
+        mock_agent.run = AsyncMock(return_value=run_result)
+        await evaluate_manager_conversation(escalation_id, db)
+
+    call_kwargs = mock_agent.run.call_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 2000
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 2000
+    assert call_kwargs["usage_limits"].total_tokens_limit == 8000
+
+
 # ---------------------------------------------------------------------------
 # Quantitative metrics tests (Component 6)
 # ---------------------------------------------------------------------------

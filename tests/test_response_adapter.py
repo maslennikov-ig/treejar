@@ -1,5 +1,8 @@
 """Tests for the manager response adapter agent."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from pydantic_ai.models.test import TestModel
 
@@ -67,3 +70,23 @@ async def test_adapt_empty_draft() -> None:
             draft="",
         )
     assert isinstance(result, str)
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_adapt_manager_response_passes_expected_llm_safety_kwargs() -> None:
+    with patch(
+        "src.llm.response_adapter.response_adapter_agent.run",
+        new=AsyncMock(return_value=SimpleNamespace(output="Polished answer")),
+    ) as mock_run:
+        result = await adapt_manager_response(
+            question="Do you have CH-200?",
+            draft="yes, 599 AED",
+        )
+
+    assert result == "Polished answer"
+    call_kwargs = mock_run.await_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 700
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 700
+    assert call_kwargs["usage_limits"].total_tokens_limit == 3000

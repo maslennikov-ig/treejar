@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import Sequence
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,6 +27,30 @@ def mock_embedding_engine() -> MagicMock:
 async def _mock_normalize(question: str, answer: str) -> tuple[str, str]:
     """Passthrough mock — treats input as already English."""
     return question, answer
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_normalize_to_english_passes_expected_llm_safety_kwargs() -> None:
+    from src.services.auto_faq import _normalize_to_english
+
+    translated = "Q: What is delivery time?\nA: Delivery takes 3-5 days."
+    with patch(
+        "src.services.auto_faq._translate_agent.run",
+        new=AsyncMock(return_value=SimpleNamespace(output=translated)),
+    ) as mock_run:
+        question, answer = await _normalize_to_english(
+            "ما هي مدة التوصيل؟",
+            "3-5 أيام",
+        )
+
+    assert question == "What is delivery time?"
+    assert answer == "Delivery takes 3-5 days."
+    call_kwargs = mock_run.await_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 700
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 700
+    assert call_kwargs["usage_limits"].total_tokens_limit == 3000
 
 
 @pytest.mark.asyncio

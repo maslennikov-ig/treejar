@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -8,6 +9,13 @@ from pydantic_ai.models.test import TestModel
 from src.models.conversation import Conversation
 from src.schemas.common import EscalationStatus, SalesStage
 from src.services.followup import _process_followup_for_conversation
+
+
+class _FakeAgentResult:
+    output = "Just checking in, anything I can help with?"
+
+    def usage(self) -> SimpleNamespace:
+        return SimpleNamespace(input_tokens=12, output_tokens=8)
 
 
 @pytest.mark.asyncio
@@ -57,3 +65,41 @@ async def test_process_followup_for_conversation() -> None:
         # Verify db.add and commit were called for AI message
         mock_db.add.assert_called_once()
         mock_db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_followup_for_conversation_passes_expected_llm_safety_kwargs() -> (
+    None
+):
+    now = datetime.datetime.now(datetime.UTC)
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="12345",
+        updated_at=now - datetime.timedelta(hours=24, minutes=30),
+        escalation_status=EscalationStatus.NONE.value,
+        sales_stage=SalesStage.GREETING.value,
+    )
+
+    mock_db = AsyncMock()
+
+    with (
+        patch("src.services.followup.get_redis_client", return_value=AsyncMock()),
+        patch("src.services.followup.EmbeddingEngine", return_value=AsyncMock()),
+        patch("src.services.followup.ZohoCRMClient", return_value=AsyncMock()),
+        patch("src.services.followup.WazzupProvider", return_value=AsyncMock()),
+        patch(
+            "src.integrations.inventory.zoho_inventory.ZohoInventoryClient",
+            return_value=AsyncMock(),
+        ),
+        patch("src.llm.context.build_message_history", return_value=[]),
+        patch("src.core.cache.get_cached_crm_profile", return_value=None),
+        patch(
+            "src.llm.engine.sales_agent.run",
+            new=AsyncMock(return_value=_FakeAgentResult()),
+        ) as mock_run,
+    ):
+        await _process_followup_for_conversation(mock_db, conv)
+
+    call_kwargs = mock_run.await_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 500
+    assert "usage_limits" not in call_kwargs

@@ -22,6 +22,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.llm.safety import (
+    PATH_QUALITY_MANAGER,
+    model_settings_for_path,
+    run_agent_with_safety,
+)
 from src.models.conversation import Conversation
 from src.models.escalation import Escalation
 from src.models.manager_review import ManagerReview
@@ -83,13 +88,15 @@ MANAGER_EVALUATION_PROMPT = """Ты эксперт по оценке качес�
 _model = OpenAIChatModel(
     settings.openrouter_model_main,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+    settings=model_settings_for_path(PATH_QUALITY_MANAGER),
 )
 
 manager_judge_agent: Agent[None, ManagerEvaluationResult] = Agent(
     _model,
     output_type=ManagerEvaluationResult,
-    retries=2,
+    retries=0,
     instructions=MANAGER_EVALUATION_PROMPT,
+    model_settings=model_settings_for_path(PATH_QUALITY_MANAGER),
 )
 
 
@@ -278,10 +285,13 @@ async def evaluate_manager_conversation(
     )
 
     # Call LLM judge
-    run_result = await manager_judge_agent.run(
+    run_result = await run_agent_with_safety(
+        manager_judge_agent,
+        PATH_QUALITY_MANAGER,
         user_prompt,
+        model_name=settings.openrouter_model_main,
         usage_limits=UsageLimits(
-            response_tokens_limit=2000,
+            output_tokens_limit=2000,
             total_tokens_limit=8000,
         ),
     )

@@ -304,6 +304,10 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
     assert mock_run.await_count == 2
     first_call = mock_run.await_args_list[0].kwargs
     second_call = mock_run.await_args_list[1].kwargs
+    assert first_call["model_settings"]["max_tokens"] == 2200
+    assert second_call["model_settings"]["max_tokens"] == 2200
+    assert "usage_limits" not in first_call
+    assert "usage_limits" not in second_call
     assert first_call["deps"].tool_mode == "order_handoff"
     assert second_call["deps"].tool_mode == "order_handoff"
     assert any(

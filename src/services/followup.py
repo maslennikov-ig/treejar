@@ -4,6 +4,7 @@ from typing import Any
 from logfire import Logfire
 from sqlalchemy import select
 
+from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import get_redis_client
 from src.integrations.crm.zoho_crm import ZohoCRMClient
@@ -98,6 +99,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     from src.llm.context import build_message_history
     from src.llm.engine import SalesDeps, sales_agent
     from src.llm.pii import unmask_pii
+    from src.llm.safety import PATH_CORE_FOLLOWUP, run_agent_with_safety
     from src.models.message import Message, message_created_at_now
 
     # 1. Provide context
@@ -125,8 +127,11 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
 
     # 2. Call LLM with the instruction appended to history as a faux System requirement
     # Or simply run the agent with the internal message
-    result = await sales_agent.run(
+    result = await run_agent_with_safety(
+        sales_agent,
+        PATH_CORE_FOLLOWUP,
         system_instruction,
+        model_name=settings.openrouter_model_main,
         deps=deps,
         message_history=history,
     )

@@ -7,14 +7,19 @@ WhatsApp delivery to Treejar customers.
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from typing import cast
 
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from src.core.config import settings
+from src.llm.safety import (
+    PATH_RESPONSE_ADAPTER,
+    model_settings_for_path,
+    run_agent_with_safety,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +44,14 @@ INSTRUCTIONS:
 adapter_model = OpenAIChatModel(
     settings.openrouter_model_fast,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+    settings=model_settings_for_path(PATH_RESPONSE_ADAPTER),
 )
 
 response_adapter_agent: Agent[None, str] = Agent(
     model=adapter_model,
     system_prompt=ADAPTER_SYSTEM_PROMPT,
+    retries=0,
+    model_settings=model_settings_for_path(PATH_RESPONSE_ADAPTER),
 )
 
 
@@ -68,7 +76,10 @@ async def adapt_manager_response(
     )
 
     logger.info("Adapting manager response for question: %s", question[:80])
-    result = await asyncio.wait_for(
-        response_adapter_agent.run(user_prompt), timeout=30.0
+    result = await run_agent_with_safety(
+        response_adapter_agent,
+        PATH_RESPONSE_ADAPTER,
+        user_prompt,
+        model_name=settings.openrouter_model_fast,
     )
-    return result.output
+    return cast("str", result.output)

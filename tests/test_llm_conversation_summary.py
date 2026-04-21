@@ -90,6 +90,11 @@ async def test_refresh_conversation_summary_initial_build_for_long_dialog() -> N
     assert messages[5].content in prompt
     assert messages[6].content not in prompt
     assert messages[9].content not in prompt
+    call_kwargs = mock_run.await_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 900
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 900
+    assert call_kwargs["usage_limits"].total_tokens_limit == 5000
 
 
 @pytest.mark.asyncio

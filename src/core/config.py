@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model_fast: str = "xiaomi/mimo-v2-flash"
     openrouter_model_main: str = "z-ai/glm-5"
+    llm_non_core_budget_blocked: bool = False
     voxtral_model: str = "openai/gpt-audio-mini"
 
     # Wazzup (WhatsApp Gateway)
