@@ -6,6 +6,7 @@ Updated: 2026-04-21
 Baseline: `origin/main@9ef78006a6a6055fa4786f1a856b422cb916dabb`
 Orchestrator worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
 Orchestrator branch: `codex/live-triage-20260417`
+Integration commit: `0404bfc` (`feat(llm): add OpenRouter cost safety layer`)
 
 ## Scope
 
@@ -39,7 +40,7 @@ Implement OpenRouter cost controls and AI Quality Controls from the approved pla
 - Plan/rollout doc has been added at `docs/plans/2026-04-21-openrouter-cost-control-ai-quality-controls.md`.
 - Context7 docs check was performed for PydanticAI settings/usage limits and OpenRouter usage/cache telemetry.
 - This baseline does not contain `scripts/orchestration/report_child_completion.py`; child completion will be tracked by artifact files plus local orchestrator review until the repo contract is reconciled.
-- `tj-ruue.1` safety layer was accepted from manual worker branch `codex/tj-ruue-safety-layer-v2` in `/home/me/code/treejar/.worktrees/codex-tj-ruue-safety-layer-v2`. The accepted worker commit is `72cde7c`; runtime/test files were integrated into `codex/live-triage-20260417`. Independent orchestrator review passed targeted safety/call-site tests, artifact validation, ruff check, ruff format check, mypy, and `git diff --check`.
+- `tj-ruue.1` safety layer was accepted from manual worker branch `codex/tj-ruue-safety-layer-v2` in `/home/me/code/treejar/.worktrees/codex-tj-ruue-safety-layer-v2`. The accepted worker commit is `72cde7c`; runtime/test files were integrated into `codex/live-triage-20260417` and committed as `0404bfc`. Independent orchestrator review passed targeted safety/call-site tests, artifact validation, ruff check, ruff format check, mypy, and `git diff --check`.
 
 ## Orchestration Plan
 

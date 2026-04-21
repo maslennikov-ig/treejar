@@ -77,7 +77,7 @@ Orchestrator review verification:
 
 # Risks / Follow-ups / Explicit Defers
 
-- The accepted worker branch was committed as `72cde7c` (`feat(llm): add provider-side safety controls`) and the runtime/test files were integrated into `codex/live-triage-20260417`.
+- The accepted worker branch was committed as `72cde7c` (`feat(llm): add provider-side safety controls`). The runtime/test files were integrated into `codex/live-triage-20260417` and committed as `0404bfc` (`feat(llm): add OpenRouter cost safety layer`).
 - Standard pytest capture fails locally before executing tests with `_pytest/capture.py FileNotFoundError`; worker verified the same tests with `-s`.
 - Full pytest required `npm ci` in `frontend/admin` for missing `esbuild`; npm reported existing Node/audit warnings. No frontend code was changed.
 - Durable DB/Redis attempt state, real daily budget accounting, OpenRouter cache telemetry persistence, and admin controls remain deferred to follow-up tasks.
