@@ -31,6 +31,9 @@ PATH_QUALITY_MANAGER = "quality_manager"
 PATH_CONVERSATION_SUMMARY = "conversation_summary"
 PATH_RESPONSE_ADAPTER = "response_adapter"
 PATH_AUTO_FAQ_TRANSLATE = "auto_faq_translate"
+OPENROUTER_PROVIDER_NAME = "openrouter"
+LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
+_OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
 
 
 class LLMBudgetBlocked(RuntimeError):
@@ -142,9 +145,130 @@ def policy_for_path(path: str) -> LLMPathPolicy:
         raise ValueError(f"Unknown LLM path safety policy: {path}") from exc
 
 
-def model_settings_for_path(path: str) -> ModelSettings:
+@dataclass(frozen=True, slots=True)
+class LLMUsageTelemetry:
+    """Normalized usage fields from PydanticAI/OpenRouter run results."""
+
+    path: str
+    model: str
+    provider: str
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cached_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cost: float | None = None
+    total_tokens: int | None = None
+    requests: int | None = None
+
+    def as_log_extra(self) -> dict[str, int | float | str | None]:
+        return {
+            "path": self.path,
+            "model": self.model,
+            "provider": self.provider,
+            "input_tokens": self.prompt_tokens,
+            "prompt_tokens": self.prompt_tokens,
+            "output_tokens": self.completion_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "requests": self.requests,
+            "reasoning_tokens": self.reasoning_tokens,
+            "cached_tokens": self.cached_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
+            "cost": self.cost,
+        }
+
+    def as_attempt_kwargs(self) -> dict[str, Any]:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "cached_tokens": self.cached_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
+            "cost_usd": self.cost,
+        }
+
+
+def model_name_for_path(path: str, override: str | None = None) -> str:
+    """Return the default OpenRouter model for an LLM path.
+
+    GLM/main remains the default only for core client-facing paths. Non-core
+    background and helper paths default to the fast model unless an explicit
+    caller/admin override is supplied.
+    """
+    if override:
+        return override
     policy = policy_for_path(path)
-    return ModelSettings(max_tokens=policy.max_tokens, timeout=policy.timeout_seconds)
+    if policy.scope == "core":
+        return settings.openrouter_model_main
+    return settings.openrouter_model_fast
+
+
+def is_glm5_model_name(model_name: str) -> bool:
+    normalized = model_name.lower()
+    return "glm-5" in normalized or "glm5" in normalized
+
+
+def openrouter_supports_prompt_cache_control(model_name: str) -> bool:
+    normalized = model_name.strip().lower()
+    return normalized.startswith(_OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES)
+
+
+def _openrouter_extra_body(
+    *,
+    model_name: str | None,
+    cache_telemetry_enabled: bool,
+) -> dict[str, Any]:
+    if not cache_telemetry_enabled:
+        return {}
+
+    extra_body: dict[str, Any] = {"usage": {"include": True}}
+    if model_name and openrouter_supports_prompt_cache_control(model_name):
+        extra_body["cache_control"] = {"type": "ephemeral"}
+    return extra_body
+
+
+def _merge_extra_body(
+    current: object,
+    generated: Mapping[str, Any],
+    *,
+    model_name: str | None,
+    cache_telemetry_enabled: bool,
+) -> dict[str, Any] | None:
+    merged: dict[str, Any] = dict(current) if isinstance(current, Mapping) else {}
+    if generated:
+        merged.update(generated)
+
+    if (
+        not cache_telemetry_enabled
+        or model_name is None
+        or not openrouter_supports_prompt_cache_control(model_name)
+    ):
+        merged.pop("cache_control", None)
+
+    return merged or None
+
+
+def model_settings_for_path(
+    path: str,
+    *,
+    model_name: str | None = None,
+    provider: str = OPENROUTER_PROVIDER_NAME,
+    cache_telemetry_enabled: bool = True,
+) -> ModelSettings:
+    policy = policy_for_path(path)
+    settings_payload: dict[str, Any] = {
+        "max_tokens": policy.max_tokens,
+        "timeout": policy.timeout_seconds,
+    }
+    if provider == OPENROUTER_PROVIDER_NAME and model_name is not None:
+        extra_body = _openrouter_extra_body(
+            model_name=model_name,
+            cache_telemetry_enabled=cache_telemetry_enabled,
+        )
+        if extra_body:
+            settings_payload["extra_body"] = extra_body
+    return cast("ModelSettings", settings_payload)
 
 
 def usage_limits_for_path(path: str) -> UsageLimits | None:
@@ -169,6 +293,10 @@ def _minimum_limit(current: int | None, policy_value: int | None) -> int | None:
 def _merge_model_settings(
     path: str,
     current: ModelSettings | Mapping[str, Any] | None,
+    *,
+    model_name: str | None,
+    provider: str,
+    cache_telemetry_enabled: bool,
 ) -> ModelSettings:
     policy = policy_for_path(path)
     merged: dict[str, Any] = dict(current or {})
@@ -182,6 +310,22 @@ def _merge_model_settings(
     current_timeout = merged.get("timeout")
     if current_timeout is None:
         merged["timeout"] = policy.timeout_seconds
+
+    if provider == OPENROUTER_PROVIDER_NAME:
+        generated_extra_body = _openrouter_extra_body(
+            model_name=model_name,
+            cache_telemetry_enabled=cache_telemetry_enabled,
+        )
+        extra_body = _merge_extra_body(
+            merged.get("extra_body"),
+            generated_extra_body,
+            model_name=model_name,
+            cache_telemetry_enabled=cache_telemetry_enabled,
+        )
+        if extra_body is None:
+            merged.pop("extra_body", None)
+        else:
+            merged["extra_body"] = extra_body
 
     return cast("ModelSettings", merged)
 
@@ -214,17 +358,17 @@ def _should_block_for_budget(policy: LLMPathPolicy) -> bool:
     return policy.scope == "non_core" and settings.llm_non_core_budget_blocked
 
 
-def _usage_number(container: Any, *keys: str) -> int | float | None:
+def _usage_value(container: Any, key: str) -> Any:
     if container is None:
         return None
     if isinstance(container, Mapping):
-        for key in keys:
-            value = container.get(key)
-            if isinstance(value, int | float):
-                return value
-        return None
+        return container.get(key)
+    return getattr(container, key, None)
+
+
+def _usage_number(container: Any, *keys: str) -> int | float | None:
     for key in keys:
-        value = getattr(container, key, None)
+        value = _usage_value(container, key)
         if isinstance(value, int | float):
             return value
     return None
@@ -233,44 +377,111 @@ def _usage_number(container: Any, *keys: str) -> int | float | None:
 def _nested_usage_number(container: Any, *path: str) -> int | float | None:
     current = container
     for key in path:
-        if current is None:
-            return None
-        if isinstance(current, Mapping):
-            current = current.get(key)
-        else:
-            current = getattr(current, key, None)
+        current = _usage_value(current, key)
     return current if isinstance(current, int | float) else None
 
 
-def _usage_log_shape(
+def _coerce_int(value: int | float | None) -> int | None:
+    if value is None:
+        return None
+    return int(value)
+
+
+def _coerce_float(value: int | float | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _first_usage_number(*values: int | float | None) -> int | float | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def extract_llm_usage_telemetry(
     *,
     path: str,
     model_name: str,
+    provider: str = OPENROUTER_PROVIDER_NAME,
     result: Any,
-) -> dict[str, int | float | str | None]:
+) -> LLMUsageTelemetry:
     try:
         usage = result.usage()
     except Exception:
         usage = None
 
-    prompt_details = getattr(usage, "prompt_tokens_details", None)
-    completion_details = getattr(usage, "completion_tokens_details", None)
+    prompt_details = _usage_value(usage, "prompt_tokens_details")
+    completion_details = _usage_value(usage, "completion_tokens_details")
 
-    return {
-        "path": path,
-        "model": model_name,
-        "input_tokens": _usage_number(usage, "input_tokens", "prompt_tokens"),
-        "output_tokens": _usage_number(usage, "output_tokens", "completion_tokens"),
-        "total_tokens": _usage_number(usage, "total_tokens"),
-        "requests": _usage_number(usage, "requests"),
-        "cached_tokens": _usage_number(prompt_details, "cached_tokens")
-        or _nested_usage_number(usage, "details", "cached_tokens"),
-        "cache_write_tokens": _usage_number(prompt_details, "cache_write_tokens")
-        or _nested_usage_number(usage, "details", "cache_write_tokens"),
-        "reasoning_tokens": _usage_number(completion_details, "reasoning_tokens")
-        or _nested_usage_number(usage, "details", "reasoning_tokens"),
-        "cost": _usage_number(usage, "cost"),
-    }
+    prompt_tokens = _usage_number(usage, "input_tokens", "prompt_tokens")
+    completion_tokens = _usage_number(usage, "output_tokens", "completion_tokens")
+    cached_tokens = _first_usage_number(
+        _usage_number(prompt_details, "cached_tokens"),
+        _nested_usage_number(
+            usage, "details", "prompt_tokens_details", "cached_tokens"
+        ),
+        _nested_usage_number(usage, "details", "cached_tokens"),
+    )
+    cache_write_tokens = _first_usage_number(
+        _usage_number(prompt_details, "cache_write_tokens"),
+        _nested_usage_number(
+            usage,
+            "details",
+            "prompt_tokens_details",
+            "cache_write_tokens",
+        ),
+        _nested_usage_number(usage, "details", "cache_write_tokens"),
+    )
+    reasoning_tokens = _first_usage_number(
+        _usage_number(completion_details, "reasoning_tokens"),
+        _nested_usage_number(
+            usage,
+            "details",
+            "completion_tokens_details",
+            "reasoning_tokens",
+        ),
+        _nested_usage_number(usage, "details", "reasoning_tokens"),
+    )
+
+    return LLMUsageTelemetry(
+        path=path,
+        model=model_name,
+        provider=provider,
+        prompt_tokens=_coerce_int(prompt_tokens),
+        completion_tokens=_coerce_int(completion_tokens),
+        reasoning_tokens=_coerce_int(reasoning_tokens),
+        cached_tokens=_coerce_int(cached_tokens),
+        cache_write_tokens=_coerce_int(cache_write_tokens),
+        cost=_coerce_float(
+            _first_usage_number(
+                _usage_number(usage, "cost", "cost_usd"),
+                _nested_usage_number(usage, "details", "cost"),
+                _nested_usage_number(usage, "details", "cost_usd"),
+            )
+        ),
+        total_tokens=_coerce_int(_usage_number(usage, "total_tokens")),
+        requests=_coerce_int(_usage_number(usage, "requests")),
+    )
+
+
+def attach_llm_usage_telemetry(output: Any, usage: LLMUsageTelemetry) -> Any:
+    try:
+        setattr(output, LLM_USAGE_TELEMETRY_ATTR, usage)
+    except Exception:
+        logger.debug("Failed to attach LLM usage telemetry to output", exc_info=True)
+    return output
+
+
+def get_llm_usage_telemetry(output: Any) -> LLMUsageTelemetry | None:
+    usage = getattr(output, LLM_USAGE_TELEMETRY_ATTR, None)
+    return usage if isinstance(usage, LLMUsageTelemetry) else None
+
+
+def llm_usage_attempt_kwargs(output: Any) -> dict[str, Any]:
+    usage = get_llm_usage_telemetry(output)
+    return usage.as_attempt_kwargs() if usage is not None else {}
 
 
 async def notify_llm_safety_event(
@@ -329,13 +540,19 @@ async def run_agent_with_safety(
     user_prompt: Any = None,
     *,
     model_name: str,
+    provider: str = OPENROUTER_PROVIDER_NAME,
+    cache_telemetry_enabled: bool = True,
     **kwargs: Any,
 ) -> Any:
     """Run a PydanticAI agent through the repo LLM safety policy."""
     policy = policy_for_path(path)
     run_kwargs = dict(kwargs)
     run_kwargs["model_settings"] = _merge_model_settings(
-        path, run_kwargs.get("model_settings")
+        path,
+        run_kwargs.get("model_settings"),
+        model_name=model_name,
+        provider=provider,
+        cache_telemetry_enabled=cache_telemetry_enabled,
     )
 
     merged_usage_limits = _merge_usage_limits(path, run_kwargs.get("usage_limits"))
@@ -365,11 +582,12 @@ async def run_agent_with_safety(
             )
             logger.info(
                 "llm.safety.usage",
-                extra=_usage_log_shape(
+                extra=extract_llm_usage_telemetry(
                     path=policy.path,
                     model_name=model_name,
+                    provider=provider,
                     result=result,
-                ),
+                ).as_log_extra(),
             )
             return result
         except Exception as exc:

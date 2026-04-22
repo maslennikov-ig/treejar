@@ -382,12 +382,28 @@ async def record_llm_attempt_no_action(
     lease: LLMAttemptLease,
     *,
     result_json: dict[str, Any] | list[Any] | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    cached_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    cost_usd: float | None = None,
 ) -> None:
     attempt = lease.attempt
     attempt.status = LLMAttemptStatus.NO_ACTION.value
     attempt.next_retry_at = None
     attempt.last_error = None
     attempt.result_json = result_json
+    attempt.model = model or attempt.model
+    attempt.provider = provider or attempt.provider
+    attempt.prompt_tokens = prompt_tokens
+    attempt.completion_tokens = completion_tokens
+    attempt.reasoning_tokens = reasoning_tokens
+    attempt.cached_tokens = cached_tokens
+    attempt.cache_write_tokens = cache_write_tokens
+    attempt.cost_usd = cost_usd
     await db.flush()
 
 

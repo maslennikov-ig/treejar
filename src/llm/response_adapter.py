@@ -17,11 +17,13 @@ from pydantic_ai.providers.openrouter import OpenRouterProvider
 from src.core.config import settings
 from src.llm.safety import (
     PATH_RESPONSE_ADAPTER,
+    model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
 )
 
 logger = logging.getLogger(__name__)
+ADAPTER_MODEL_NAME = model_name_for_path(PATH_RESPONSE_ADAPTER)
 
 
 ADAPTER_SYSTEM_PROMPT = """\
@@ -42,16 +44,22 @@ INSTRUCTIONS:
 """
 
 adapter_model = OpenAIChatModel(
-    settings.openrouter_model_fast,
+    ADAPTER_MODEL_NAME,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-    settings=model_settings_for_path(PATH_RESPONSE_ADAPTER),
+    settings=model_settings_for_path(
+        PATH_RESPONSE_ADAPTER,
+        model_name=ADAPTER_MODEL_NAME,
+    ),
 )
 
 response_adapter_agent: Agent[None, str] = Agent(
     model=adapter_model,
     system_prompt=ADAPTER_SYSTEM_PROMPT,
     retries=0,
-    model_settings=model_settings_for_path(PATH_RESPONSE_ADAPTER),
+    model_settings=model_settings_for_path(
+        PATH_RESPONSE_ADAPTER,
+        model_name=ADAPTER_MODEL_NAME,
+    ),
 )
 
 
@@ -80,6 +88,6 @@ async def adapt_manager_response(
         response_adapter_agent,
         PATH_RESPONSE_ADAPTER,
         user_prompt,
-        model_name=settings.openrouter_model_fast,
+        model_name=ADAPTER_MODEL_NAME,
     )
     return cast("str", result.output)

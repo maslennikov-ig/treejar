@@ -581,6 +581,7 @@ async def test_usage_limits_passed_to_agent_run() -> None:
     """judge_agent.run() must be called with usage_limits kwarg."""
     from pydantic_ai import UsageLimits
 
+    from src.core.config import settings
     from src.quality.evaluator import evaluate_conversation
     from src.quality.schemas import CriterionScore, EvaluationResult
 
@@ -609,6 +610,7 @@ async def test_usage_limits_passed_to_agent_run() -> None:
         await evaluate_conversation(uuid4(), mock_db, sales_stage="greeting")
 
     call_kwargs = mock_agent.run.call_args.kwargs
+    assert call_kwargs["model"].model_name == settings.openrouter_model_fast
     assert call_kwargs["model_settings"]["max_tokens"] == 2500
     assert "usage_limits" in call_kwargs, (
         "usage_limits must be passed to judge_agent.run()"
@@ -622,6 +624,7 @@ async def test_usage_limits_passed_to_agent_run() -> None:
 @pytest.mark.asyncio
 async def test_red_flag_evaluator_passes_expected_llm_safety_kwargs() -> None:
     """red_flag_agent.run() must use provider-side max_tokens and bounded usage."""
+    from src.core.config import settings
     from src.quality.evaluator import evaluate_red_flags
     from src.quality.schemas import RedFlagEvaluationResult
 
@@ -643,6 +646,7 @@ async def test_red_flag_evaluator_passes_expected_llm_safety_kwargs() -> None:
         await evaluate_red_flags(uuid4(), mock_db)
 
     call_kwargs = mock_agent.run.call_args.kwargs
+    assert call_kwargs["model"].model_name == settings.openrouter_model_fast
     assert call_kwargs["model_settings"]["max_tokens"] == 900
     assert call_kwargs["usage_limits"].request_limit == 1
     assert call_kwargs["usage_limits"].output_tokens_limit == 900

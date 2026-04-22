@@ -24,6 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.llm.safety import (
     PATH_QUALITY_MANAGER,
+    attach_llm_usage_telemetry,
+    extract_llm_usage_telemetry,
+    model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
 )
@@ -45,6 +48,7 @@ from src.quality.transcript_context import (
 
 logger = logging.getLogger(__name__)
 _provider = OpenRouterProvider(api_key=settings.openrouter_api_key)
+_MANAGER_MODEL_NAME = model_name_for_path(PATH_QUALITY_MANAGER)
 
 # ---------------------------------------------------------------------------
 # Manager Evaluation Prompt (10 criteria from manager-evaluation-criteria.md)
@@ -94,9 +98,12 @@ MANAGER_EVALUATION_PROMPT = """Ты эксперт по оценке качес�
 # ---------------------------------------------------------------------------
 
 _model = OpenAIChatModel(
-    settings.openrouter_model_main,
+    _MANAGER_MODEL_NAME,
     provider=_provider,
-    settings=model_settings_for_path(PATH_QUALITY_MANAGER),
+    settings=model_settings_for_path(
+        PATH_QUALITY_MANAGER,
+        model_name=_MANAGER_MODEL_NAME,
+    ),
 )
 
 manager_judge_agent: Agent[None, ManagerEvaluationResult] = Agent(
@@ -104,7 +111,10 @@ manager_judge_agent: Agent[None, ManagerEvaluationResult] = Agent(
     output_type=ManagerEvaluationResult,
     retries=0,
     instructions=MANAGER_EVALUATION_PROMPT,
-    model_settings=model_settings_for_path(PATH_QUALITY_MANAGER),
+    model_settings=model_settings_for_path(
+        PATH_QUALITY_MANAGER,
+        model_name=_MANAGER_MODEL_NAME,
+    ),
 )
 
 INSUFFICIENT_MANAGER_SUMMARY = (
@@ -245,6 +255,7 @@ async def evaluate_manager_conversation(
     db: AsyncSession,
     model_name: str | None = None,
     transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
+    cache_telemetry_enabled: bool = True,
 ) -> tuple[ManagerEvaluationResult, ManagerMetrics]:
     """Evaluate a manager's post-escalation conversation.
 
@@ -262,7 +273,7 @@ async def evaluate_manager_conversation(
     Raises:
         ValueError: If escalation not found or no post-escalation messages.
     """
-    selected_model = model_name or settings.openrouter_model_main
+    selected_model = model_name_for_path(PATH_QUALITY_MANAGER, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
 
     # Load escalation with conversation
@@ -371,8 +382,12 @@ async def evaluate_manager_conversation(
         model=OpenAIChatModel(
             selected_model,
             provider=_provider,
-            settings=model_settings_for_path(PATH_QUALITY_MANAGER),
+            settings=model_settings_for_path(
+                PATH_QUALITY_MANAGER,
+                model_name=selected_model,
+            ),
         ),
+        cache_telemetry_enabled=cache_telemetry_enabled,
         usage_limits=UsageLimits(
             output_tokens_limit=2000,
             total_tokens_limit=8000,
@@ -388,6 +403,14 @@ async def evaluate_manager_conversation(
             update={"total_score": computed_total, "rating": computed_rating}
         )
 
+    attach_llm_usage_telemetry(
+        evaluation,
+        extract_llm_usage_telemetry(
+            path=PATH_QUALITY_MANAGER,
+            model_name=selected_model,
+            result=run_result,
+        ),
+    )
     return evaluation, metrics
 
 

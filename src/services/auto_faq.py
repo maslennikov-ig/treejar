@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.llm.safety import (
     PATH_AUTO_FAQ_TRANSLATE,
+    model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
 )
@@ -30,6 +31,7 @@ from src.models.knowledge_base import KnowledgeBase
 from src.rag.embeddings import EmbeddingEngine
 
 logger = logging.getLogger(__name__)
+AUTO_FAQ_TRANSLATE_MODEL_NAME = model_name_for_path(PATH_AUTO_FAQ_TRANSLATE)
 
 # Entries with cosine similarity above this threshold are considered duplicates
 DUPLICATE_THRESHOLD = 0.92
@@ -70,16 +72,22 @@ Return ONLY the translated text in the exact same "Q: ...\nA: ..." format.
 If the text is already in English, return it unchanged."""
 
 _translate_model = OpenAIChatModel(
-    settings.openrouter_model_fast,
+    AUTO_FAQ_TRANSLATE_MODEL_NAME,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-    settings=model_settings_for_path(PATH_AUTO_FAQ_TRANSLATE),
+    settings=model_settings_for_path(
+        PATH_AUTO_FAQ_TRANSLATE,
+        model_name=AUTO_FAQ_TRANSLATE_MODEL_NAME,
+    ),
 )
 
 _translate_agent: Agent[None, str] = Agent(
     model=_translate_model,
     system_prompt=_TRANSLATE_SYSTEM_PROMPT,
     retries=0,
-    model_settings=model_settings_for_path(PATH_AUTO_FAQ_TRANSLATE),
+    model_settings=model_settings_for_path(
+        PATH_AUTO_FAQ_TRANSLATE,
+        model_name=AUTO_FAQ_TRANSLATE_MODEL_NAME,
+    ),
 )
 
 
@@ -103,7 +111,7 @@ async def _normalize_to_english(question: str, answer: str) -> tuple[str, str]:
             _translate_agent,
             PATH_AUTO_FAQ_TRANSLATE,
             content,
-            model_name=settings.openrouter_model_fast,
+            model_name=AUTO_FAQ_TRANSLATE_MODEL_NAME,
         )
         translated = result.output.strip()
 

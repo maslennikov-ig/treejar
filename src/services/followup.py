@@ -4,7 +4,6 @@ from typing import Any
 from logfire import Logfire
 from sqlalchemy import select
 
-from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import get_redis_client
 from src.integrations.crm.zoho_crm import ZohoCRMClient
@@ -99,7 +98,11 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     from src.llm.context import build_message_history
     from src.llm.engine import SalesDeps, sales_agent
     from src.llm.pii import unmask_pii
-    from src.llm.safety import PATH_CORE_FOLLOWUP, run_agent_with_safety
+    from src.llm.safety import (
+        PATH_CORE_FOLLOWUP,
+        model_name_for_path,
+        run_agent_with_safety,
+    )
     from src.models.message import Message, message_created_at_now
 
     # 1. Provide context
@@ -131,7 +134,7 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
         sales_agent,
         PATH_CORE_FOLLOWUP,
         system_instruction,
-        model_name=settings.openrouter_model_main,
+        model_name=model_name_for_path(PATH_CORE_FOLLOWUP),
         deps=deps,
         message_history=history,
     )

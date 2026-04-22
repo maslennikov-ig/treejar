@@ -32,6 +32,7 @@ from src.llm.pii import mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.safety import (
     PATH_CORE_CHAT,
+    model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
 )
@@ -820,10 +821,11 @@ async def _prepare_sales_tools(
 
 
 # Initialize model with OpenRouter provider
+CORE_CHAT_MODEL_NAME = model_name_for_path(PATH_CORE_CHAT)
 model = OpenAIChatModel(
-    settings.openrouter_model_main,
+    CORE_CHAT_MODEL_NAME,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-    settings=model_settings_for_path(PATH_CORE_CHAT),
+    settings=model_settings_for_path(PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME),
 )
 
 # Initialize Agent
@@ -832,7 +834,9 @@ sales_agent = Agent(
     deps_type=SalesDeps,
     prepare_tools=_prepare_sales_tools,
     retries=2,
-    model_settings=model_settings_for_path(PATH_CORE_CHAT),
+    model_settings=model_settings_for_path(
+        PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME
+    ),
 )
 
 
@@ -1874,11 +1878,12 @@ async def process_message(
         db_model_main = await get_system_config(
             db, "openrouter_model_main", settings.openrouter_model_main
         )
+        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
 
         dynamic_model = OpenAIChatModel(
             db_model_main,
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-            settings=model_settings_for_path(PATH_CORE_CHAT),
+            settings=model_settings_for_path(PATH_CORE_CHAT, model_name=db_model_main),
         )
 
         async def _run_agent(run_deps: SalesDeps) -> Any:

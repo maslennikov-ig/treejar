@@ -25,7 +25,11 @@ from src.llm.attempts import (
     record_llm_attempt_success,
     release_llm_attempt_lock,
 )
-from src.llm.safety import PATH_QUALITY_FINAL, PATH_QUALITY_RED_FLAGS
+from src.llm.safety import (
+    PATH_QUALITY_FINAL,
+    PATH_QUALITY_RED_FLAGS,
+    llm_usage_attempt_kwargs,
+)
 from src.models.llm_attempt import LLMAttempt
 from src.quality.config import (
     AIQualityScope,
@@ -141,6 +145,7 @@ def _attempt_settings_hash(
     prompt_version: str,
     model: str,
     transcript_mode: AIQualityTranscriptMode,
+    cache_telemetry_enabled: bool = True,
     summary_prompt_version: str = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION,
 ) -> str:
     return _stable_hash(
@@ -150,6 +155,7 @@ def _attempt_settings_hash(
             "model": model,
             "provider": _OPENROUTER_PROVIDER,
             "transcript_mode": transcript_mode.value,
+            "cache_telemetry_enabled": cache_telemetry_enabled,
             "summary_prompt_version": summary_prompt_version,
         }
     )
@@ -491,6 +497,7 @@ async def _begin_quality_attempt(
     prompt_version: str,
     model: str,
     transcript_mode: AIQualityTranscriptMode,
+    cache_telemetry_enabled: bool = True,
 ) -> LLMAttemptLease | None:
     return await begin_llm_attempt(
         db,
@@ -510,6 +517,7 @@ async def _begin_quality_attempt(
             prompt_version=prompt_version,
             model=model,
             transcript_mode=transcript_mode,
+            cache_telemetry_enabled=cache_telemetry_enabled,
         ),
         model=model,
         provider=_OPENROUTER_PROVIDER,
@@ -598,6 +606,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         prompt_version=_PROMPT_VERSION_RED_FLAGS,
                         model=gate.model,
                         transcript_mode=gate.transcript_mode,
+                        cache_telemetry_enabled=gate.cache_telemetry_enabled,
                     )
                     if lease is None:
                         if await _replay_terminal_red_flag_delivery(
@@ -616,6 +625,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                             db,
                             model_name=gate.model,
                             transcript_mode=gate.transcript_mode,
+                            cache_telemetry_enabled=gate.cache_telemetry_enabled,
                         )
                     except Exception as exc:
                         await _record_attempt_error_after_rollback(
@@ -631,6 +641,9 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                             db,
                             lease,
                             result_json=_result_payload(result),
+                            model=gate.model,
+                            provider=_OPENROUTER_PROVIDER,
+                            **llm_usage_attempt_kwargs(result),
                         )
                         await _commit_or_rollback(db)
                         continue
@@ -641,6 +654,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         result_json=_result_payload(result),
                         model=gate.model,
                         provider=_OPENROUTER_PROVIDER,
+                        **llm_usage_attempt_kwargs(result),
                     )
                     await _commit_or_rollback(db)
 
@@ -780,6 +794,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                         prompt_version=_PROMPT_VERSION_FINAL,
                         model=gate.model,
                         transcript_mode=gate.transcript_mode,
+                        cache_telemetry_enabled=gate.cache_telemetry_enabled,
                     )
                     if lease is None:
                         if await _replay_terminal_final_review(
@@ -799,6 +814,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                             candidate.sales_stage,
                             model_name=gate.model,
                             transcript_mode=gate.transcript_mode,
+                            cache_telemetry_enabled=gate.cache_telemetry_enabled,
                         )
                     except Exception as exc:
                         await _record_attempt_error_after_rollback(
@@ -814,6 +830,9 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                             db,
                             lease,
                             result_json=_result_payload(result),
+                            model=gate.model,
+                            provider=_OPENROUTER_PROVIDER,
+                            **llm_usage_attempt_kwargs(result),
                         )
                         await _commit_or_rollback(db)
                         continue
@@ -824,6 +843,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                         result_json=_result_payload(result),
                         model=gate.model,
                         provider=_OPENROUTER_PROVIDER,
+                        **llm_usage_attempt_kwargs(result),
                     )
                     await _commit_or_rollback(db)
 

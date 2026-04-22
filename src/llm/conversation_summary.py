@@ -15,6 +15,7 @@ from src.core.database import async_session_factory
 from src.llm.pii import mask_pii, unmask_pii
 from src.llm.safety import (
     PATH_CONVERSATION_SUMMARY,
+    model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
 )
@@ -22,6 +23,7 @@ from src.models.conversation_summary import ConversationSummary
 from src.models.message import Message
 
 logger = logging.getLogger(__name__)
+SUMMARY_MODEL_NAME = model_name_for_path(PATH_CONVERSATION_SUMMARY)
 
 SUMMARY_VERSION = 1
 SUMMARY_TAIL_MESSAGES = 4
@@ -48,16 +50,22 @@ Rules:
 """
 
 summary_model = OpenAIChatModel(
-    settings.openrouter_model_fast,
+    SUMMARY_MODEL_NAME,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-    settings=model_settings_for_path(PATH_CONVERSATION_SUMMARY),
+    settings=model_settings_for_path(
+        PATH_CONVERSATION_SUMMARY,
+        model_name=SUMMARY_MODEL_NAME,
+    ),
 )
 
 summary_agent: Agent[None, str] = Agent(
     model=summary_model,
     system_prompt=SUMMARY_SYSTEM_PROMPT,
     retries=0,
-    model_settings=model_settings_for_path(PATH_CONVERSATION_SUMMARY),
+    model_settings=model_settings_for_path(
+        PATH_CONVERSATION_SUMMARY,
+        model_name=SUMMARY_MODEL_NAME,
+    ),
 )
 
 
@@ -186,7 +194,7 @@ async def refresh_conversation_summary_record(
         summary_agent,
         PATH_CONVERSATION_SUMMARY,
         prompt,
-        model_name=settings.openrouter_model_fast,
+        model_name=SUMMARY_MODEL_NAME,
     )
     refreshed_summary = unmask_pii(result.output.strip(), pii_map)
 
@@ -195,14 +203,14 @@ async def refresh_conversation_summary_record(
             conversation_id=conversation_id,
             summary_text=refreshed_summary,
             covered_through_message_id=messages_to_merge[-1].id,
-            model=settings.openrouter_model_fast,
+            model=SUMMARY_MODEL_NAME,
             version=SUMMARY_VERSION,
         )
         db.add(summary)
     else:
         summary.summary_text = refreshed_summary
         summary.covered_through_message_id = messages_to_merge[-1].id
-        summary.model = settings.openrouter_model_fast
+        summary.model = SUMMARY_MODEL_NAME
         summary.version = SUMMARY_VERSION
 
     await db.commit()

@@ -92,6 +92,7 @@ def test_manager_evaluator_prompt_requires_russian_human_readable_output() -> No
 async def test_evaluate_manager_conversation_passes_expected_llm_safety_kwargs() -> (
     None
 ):
+    from src.core.config import settings
     from src.quality.manager_evaluator import evaluate_manager_conversation
 
     escalation_id = uuid.uuid4()
@@ -158,6 +159,7 @@ async def test_evaluate_manager_conversation_passes_expected_llm_safety_kwargs()
         await evaluate_manager_conversation(escalation_id, db)
 
     call_kwargs = mock_agent.run.call_args.kwargs
+    assert call_kwargs["model"].model_name == settings.openrouter_model_fast
     assert call_kwargs["model_settings"]["max_tokens"] == 2000
     assert call_kwargs["usage_limits"].request_limit == 1
     assert call_kwargs["usage_limits"].output_tokens_limit == 2000

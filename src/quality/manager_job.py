@@ -29,7 +29,7 @@ from src.llm.attempts import (
     record_llm_attempt_success,
     release_llm_attempt_lock,
 )
-from src.llm.safety import PATH_QUALITY_MANAGER
+from src.llm.safety import PATH_QUALITY_MANAGER, llm_usage_attempt_kwargs
 from src.models.escalation import Escalation
 from src.models.llm_attempt import LLMAttempt
 from src.models.message import Message
@@ -110,6 +110,7 @@ def _settings_hash(
     model: str,
     *,
     transcript_mode: AIQualityTranscriptMode,
+    cache_telemetry_enabled: bool = True,
     summary_prompt_version: str = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION,
 ) -> str:
     return _stable_hash(
@@ -119,6 +120,7 @@ def _settings_hash(
             "model": model,
             "provider": _OPENROUTER_PROVIDER,
             "transcript_mode": transcript_mode.value,
+            "cache_telemetry_enabled": cache_telemetry_enabled,
             "summary_prompt_version": summary_prompt_version,
         }
     )
@@ -384,6 +386,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     settings_hash=_settings_hash(
                         gate.model,
                         transcript_mode=gate.transcript_mode,
+                        cache_telemetry_enabled=gate.cache_telemetry_enabled,
                     ),
                     model=gate.model,
                     provider=_OPENROUTER_PROVIDER,
@@ -404,6 +407,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                         db,
                         model_name=gate.model,
                         transcript_mode=gate.transcript_mode,
+                        cache_telemetry_enabled=gate.cache_telemetry_enabled,
                     )
                 except Exception as exc:
                     await _record_attempt_error_after_rollback(
@@ -419,6 +423,9 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                         db,
                         lease,
                         result_json=_evaluation_payload(evaluation, metrics),
+                        model=gate.model,
+                        provider=_OPENROUTER_PROVIDER,
+                        **llm_usage_attempt_kwargs(evaluation),
                     )
                     await _commit_or_rollback(db)
                     continue
@@ -429,6 +436,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     result_json=_evaluation_payload(evaluation, metrics),
                     model=gate.model,
                     provider=_OPENROUTER_PROVIDER,
+                    **llm_usage_attempt_kwargs(evaluation),
                 )
                 await _commit_or_rollback(db)
 

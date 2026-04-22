@@ -415,6 +415,88 @@ async def test_budget_blocked_is_persisted_as_terminal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_success_attempt_persists_openrouter_usage_fields() -> None:
+    from src.llm.attempts import LLMAttemptLease, record_llm_attempt_success
+    from src.models.llm_attempt import LLMAttempt
+
+    attempt = LLMAttempt(
+        **_attempt_key_kwargs(),
+        status="pending",
+        attempt_count=1,
+    )
+    lease = LLMAttemptLease(
+        attempt=attempt,
+        lock_key="llm_attempt:lock:test",
+        lock_token="token",
+        backoff_key="llm_attempt:backoff:test",
+    )
+
+    await record_llm_attempt_success(
+        _FakeDb(),  # type: ignore[arg-type]
+        lease,
+        result_json={"ok": True},
+        model="anthropic/claude-sonnet-4.6",
+        provider="openrouter",
+        prompt_tokens=100,
+        completion_tokens=25,
+        reasoning_tokens=7,
+        cached_tokens=60,
+        cache_write_tokens=40,
+        cost_usd=0.0123,
+    )
+
+    assert attempt.prompt_tokens == 100
+    assert attempt.completion_tokens == 25
+    assert attempt.reasoning_tokens == 7
+    assert attempt.cached_tokens == 60
+    assert attempt.cache_write_tokens == 40
+    assert attempt.cost_usd == 0.0123
+    assert attempt.model == "anthropic/claude-sonnet-4.6"
+    assert attempt.provider == "openrouter"
+
+
+@pytest.mark.asyncio
+async def test_no_action_attempt_persists_openrouter_usage_fields() -> None:
+    from src.llm.attempts import LLMAttemptLease, record_llm_attempt_no_action
+    from src.models.llm_attempt import LLMAttempt
+
+    attempt = LLMAttempt(
+        **_attempt_key_kwargs(),
+        status="pending",
+        attempt_count=1,
+    )
+    lease = LLMAttemptLease(
+        attempt=attempt,
+        lock_key="llm_attempt:lock:test",
+        lock_token="token",
+        backoff_key="llm_attempt:backoff:test",
+    )
+
+    await record_llm_attempt_no_action(
+        _FakeDb(),  # type: ignore[arg-type]
+        lease,
+        result_json={"flags": []},
+        model="anthropic/claude-sonnet-4.6",
+        provider="openrouter",
+        prompt_tokens=80,
+        completion_tokens=12,
+        reasoning_tokens=3,
+        cached_tokens=50,
+        cache_write_tokens=30,
+        cost_usd=0.0042,
+    )
+
+    assert attempt.prompt_tokens == 80
+    assert attempt.completion_tokens == 12
+    assert attempt.reasoning_tokens == 3
+    assert attempt.cached_tokens == 50
+    assert attempt.cache_write_tokens == 30
+    assert attempt.cost_usd == 0.0042
+    assert attempt.model == "anthropic/claude-sonnet-4.6"
+    assert attempt.provider == "openrouter"
+
+
+@pytest.mark.asyncio
 async def test_unreviewable_value_error_is_persisted_as_manual_review() -> None:
     from src.llm.attempts import (
         LLMAttemptLease,

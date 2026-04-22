@@ -11,9 +11,9 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 
-from src.core.config import settings
 from src.core.database import async_session_factory
 from src.core.redis import get_redis_client
+from src.llm.safety import PATH_QUALITY_FINAL, is_glm5_model_name, model_name_for_path
 from src.models.system_config import SystemConfig
 
 logger = logging.getLogger(__name__)
@@ -68,12 +68,11 @@ class AIQualityRetryPolicyUpdate(BaseModel):
 
 
 def _default_qa_model() -> str:
-    return settings.openrouter_model_fast
+    return model_name_for_path(PATH_QUALITY_FINAL)
 
 
 def is_glm5_model(model_name: str) -> bool:
-    normalized = model_name.lower()
-    return "glm-5" in normalized or "glm5" in normalized
+    return is_glm5_model_name(model_name)
 
 
 class AIQualityScopeConfig(BaseModel):
@@ -177,6 +176,7 @@ class AIQualityRunGate(BaseModel):
     model: str
     max_calls: int = 0
     max_calls_per_day: int = 0
+    cache_telemetry_enabled: bool = True
 
 
 def _scope_items(
@@ -261,6 +261,7 @@ def evaluate_ai_quality_run_gate(
             model=scope_settings.model,
             max_calls=0,
             max_calls_per_day=scope_settings.max_calls_per_day,
+            cache_telemetry_enabled=scope_settings.cache_telemetry_enabled,
         )
 
     if scope_settings.mode == AIQualityMode.DISABLED:
@@ -286,6 +287,7 @@ def evaluate_ai_quality_run_gate(
             scope_settings.max_calls_per_run, scope_settings.max_calls_per_day
         ),
         max_calls_per_day=scope_settings.max_calls_per_day,
+        cache_telemetry_enabled=scope_settings.cache_telemetry_enabled,
     )
 
 

@@ -573,6 +573,22 @@ async def test_red_flag_no_flags_records_no_action_attempt() -> None:
     mock_redis.setex = AsyncMock()
     lease = _make_attempt_lease()
     record_no_action = AsyncMock()
+    from src.llm.safety import LLMUsageTelemetry, attach_llm_usage_telemetry
+
+    red_flag_result = attach_llm_usage_telemetry(
+        _make_red_flag_result([]),
+        LLMUsageTelemetry(
+            path="quality_red_flags",
+            model="test-model",
+            provider="openrouter",
+            prompt_tokens=100,
+            completion_tokens=20,
+            reasoning_tokens=3,
+            cached_tokens=70,
+            cache_write_tokens=30,
+            cost=0.005,
+        ),
+    )
 
     with (
         patch(
@@ -591,13 +607,17 @@ async def test_red_flag_no_flags_records_no_action_attempt() -> None:
         patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
         patch(
             "src.quality.job.evaluate_red_flags",
-            new=AsyncMock(return_value=_make_red_flag_result([])),
+            new=AsyncMock(return_value=red_flag_result),
         ),
     ):
         await evaluate_realtime_red_flags(_ai_quality_ctx(mock_redis))
 
     record_no_action.assert_awaited_once()
     assert record_no_action.await_args.kwargs["result_json"]["flags"] == []
+    assert record_no_action.await_args.kwargs["cached_tokens"] == 70
+    assert record_no_action.await_args.kwargs["cache_write_tokens"] == 30
+    assert record_no_action.await_args.kwargs["reasoning_tokens"] == 3
+    assert record_no_action.await_args.kwargs["cost_usd"] == 0.005
     worker_db.commit.assert_awaited_once()
 
 

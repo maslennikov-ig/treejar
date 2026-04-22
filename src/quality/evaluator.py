@@ -20,6 +20,9 @@ from src.core.config import settings
 from src.llm.safety import (
     PATH_QUALITY_FINAL,
     PATH_QUALITY_RED_FLAGS,
+    attach_llm_usage_telemetry,
+    extract_llm_usage_telemetry,
+    model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
 )
@@ -44,16 +47,24 @@ from src.schemas.common import SalesStage
 logger = logging.getLogger(__name__)
 
 _provider = OpenRouterProvider(api_key=settings.openrouter_api_key)
+_FINAL_MODEL_NAME = model_name_for_path(PATH_QUALITY_FINAL)
+_RED_FLAG_MODEL_NAME = model_name_for_path(PATH_QUALITY_RED_FLAGS)
 
 _final_model = OpenAIChatModel(
-    settings.openrouter_model_main,
+    _FINAL_MODEL_NAME,
     provider=_provider,
-    settings=model_settings_for_path(PATH_QUALITY_FINAL),
+    settings=model_settings_for_path(
+        PATH_QUALITY_FINAL,
+        model_name=_FINAL_MODEL_NAME,
+    ),
 )
 _red_flag_model = OpenAIChatModel(
-    settings.openrouter_model_fast,
+    _RED_FLAG_MODEL_NAME,
     provider=_provider,
-    settings=model_settings_for_path(PATH_QUALITY_RED_FLAGS),
+    settings=model_settings_for_path(
+        PATH_QUALITY_RED_FLAGS,
+        model_name=_RED_FLAG_MODEL_NAME,
+    ),
 )
 
 
@@ -61,7 +72,7 @@ def _openrouter_model(model_name: str, path: str) -> OpenAIChatModel:
     return OpenAIChatModel(
         model_name,
         provider=_provider,
-        settings=model_settings_for_path(path),
+        settings=model_settings_for_path(path, model_name=model_name),
     )
 
 
@@ -140,14 +151,20 @@ judge_agent: Agent[FinalJudgeDeps, EvaluationResult] = Agent(
     output_type=EvaluationResult,
     retries=0,
     instructions=EVALUATION_PROMPT,
-    model_settings=model_settings_for_path(PATH_QUALITY_FINAL),
+    model_settings=model_settings_for_path(
+        PATH_QUALITY_FINAL,
+        model_name=_FINAL_MODEL_NAME,
+    ),
 )
 red_flag_agent: Agent[None, RedFlagEvaluationResult] = Agent(
     _red_flag_model,
     output_type=RedFlagEvaluationResult,
     retries=0,
     instructions=RED_FLAG_PROMPT,
-    model_settings=model_settings_for_path(PATH_QUALITY_RED_FLAGS),
+    model_settings=model_settings_for_path(
+        PATH_QUALITY_RED_FLAGS,
+        model_name=_RED_FLAG_MODEL_NAME,
+    ),
 )
 
 _STAGE_RANK = {
@@ -465,9 +482,10 @@ async def evaluate_conversation(
     sales_stage: str | None = None,
     model_name: str | None = None,
     transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
+    cache_telemetry_enabled: bool = True,
 ) -> EvaluationResult:
     """Evaluate a conversation for the owner-facing final quality review."""
-    selected_model = model_name or settings.openrouter_model_main
+    selected_model = model_name_for_path(PATH_QUALITY_FINAL, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
     stage = sales_stage or await _load_sales_stage(conversation_id, db) or "unknown"
@@ -508,15 +526,27 @@ async def evaluate_conversation(
         user_prompt,
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_FINAL),
+        cache_telemetry_enabled=cache_telemetry_enabled,
         deps=FinalJudgeDeps(rule_applicability=applicability_map),
         usage_limits=UsageLimits(
             output_tokens_limit=2500,
             total_tokens_limit=10000,
         ),
     )
-    return finalize_evaluation_result(
+    result = finalize_evaluation_result(
         run_result.output,
         applicability_map=applicability_map,
+    )
+    return cast(
+        "EvaluationResult",
+        attach_llm_usage_telemetry(
+            result,
+            extract_llm_usage_telemetry(
+                path=PATH_QUALITY_FINAL,
+                model_name=selected_model,
+                result=run_result,
+            ),
+        ),
     )
 
 
@@ -525,9 +555,10 @@ async def evaluate_red_flags(
     db: AsyncSession,
     model_name: str | None = None,
     transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
+    cache_telemetry_enabled: bool = True,
 ) -> RedFlagEvaluationResult:
     """Evaluate a conversation for rare realtime red flags."""
-    selected_model = model_name or settings.openrouter_model_fast
+    selected_model = model_name_for_path(PATH_QUALITY_RED_FLAGS, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
     summary_text = (
@@ -562,9 +593,21 @@ async def evaluate_red_flags(
         context.prompt,
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_RED_FLAGS),
+        cache_telemetry_enabled=cache_telemetry_enabled,
         usage_limits=UsageLimits(
             output_tokens_limit=900,
             total_tokens_limit=4000,
         ),
     )
-    return cast("RedFlagEvaluationResult", run_result.output)
+    result = cast("RedFlagEvaluationResult", run_result.output)
+    return cast(
+        "RedFlagEvaluationResult",
+        attach_llm_usage_telemetry(
+            result,
+            extract_llm_usage_telemetry(
+                path=PATH_QUALITY_RED_FLAGS,
+                model_name=selected_model,
+                result=run_result,
+            ),
+        ),
+    )
