@@ -7,7 +7,7 @@ Baseline: `origin/main@9ef78006a6a6055fa4786f1a856b422cb916dabb`
 Orchestrator worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
 Orchestrator branch: `codex/live-triage-20260417`
 Integration commit: `0404bfc` (`feat(llm): add OpenRouter cost safety layer`)
-Latest integration commit: `a48c8f7` (`feat(llm): add model routing cache telemetry`)
+Latest integration commit: `746230b` (`feat(manager): add confirmed auto faq flow`)
 
 ## Scope
 
@@ -46,6 +46,7 @@ Implement OpenRouter cost controls and AI Quality Controls from the approved pla
 - `tj-ruue.3` Admin AI Quality Controls backend was accepted from `codex/tj-ruue-ai-quality-controls-backend` and integrated as `949d335`. Orchestrator review found/fixed `tj-ruue.3.1`: `daily_sample` and `max_calls_per_day` were represented but initially only per-run bounded. The accepted code adds SystemConfig-backed admin GET/PUT/PATCH config, conservative disabled defaults, GLM/full-transcript override validation, QA model propagation, Redis UTC-day daily sample reservation, Redis daily call quotas, and safe invalid-config fallback. Verification passed focused admin/QA/evaluator tests, ruff, format, mypy, artifact validator, `git diff --check`, and full pytest after local `npm ci` in `frontend/admin` (`703 passed, 19 skipped`).
 - `tj-ruue.4` Summary-mode transcript builder was accepted from `codex/tj-ruue-summary-transcript-builder` and integrated as `705804b`. The accepted code adds bounded QA review contexts, summary/default transcript mode, disabled-mode local no-action results, full-mode explicit routing, transcript-mode propagation into jobs/evaluators, and prompt/version-aware attempt hashes. Orchestrator review found/fixed `tj-ruue.4.1`: terminal LLM attempts now only replay when input/settings hashes match, so admin policy/model changes can re-evaluate stale `no_action`/`success` rows. Verification passed targeted QA/manager/attempt/context tests (`113 passed`), ruff, format, mypy, artifact validator, `git diff --check`, and full pytest (`720 passed, 19 skipped`).
 - `tj-ruue.5` Model routing and OpenRouter cache telemetry was accepted from `codex/tj-ruue-model-routing-cache-telemetry` and integrated as `a48c8f7`. The accepted code centralizes model routing in `src/llm/safety.py`, keeps GLM/main defaults only for core chat/follow-up, routes non-core QA/helper paths to the fast model by default, adds conservative OpenRouter request telemetry/cache settings, and persists normalized usage/cache fields into `llm_attempts` for QA success and LLM-backed no-action outcomes. Orchestrator review found/fixed `tj-ruue.5.1`: importing AI Quality config no longer requires `OPENROUTER_API_KEY` because `src.llm` package exports are lazy. Verification passed targeted LLM/QA/chat import tests (`156 passed`), ruff, format, mypy, artifact validator, `git diff --check`, and full pytest (`727 passed, 19 skipped`).
+- `tj-ruue.6` Manager reply and Auto-FAQ candidate flow was accepted from `codex/tj-ruue-manager-reply-auto-faq-flow` and integrated as `746230b`. The accepted code keeps normal manager replies on one adapter call, uses one structured combined call only for explicit `faq_global`, adds a fast non-core `auto_faq_candidate` safety path, and changes Auto-FAQ persistence to confirmation-first with deterministic missing/low-confidence/unsafe/context-specific/duplicate checks. Orchestrator review found no blocking issues. Verification passed targeted manager/FAQ/safety tests (`56 passed`), ruff, format, mypy, artifact validator, `git diff --check`, and full pytest (`735 passed, 19 skipped`).
 
 ## Orchestration Plan
 
@@ -66,7 +67,7 @@ Third wave:
 
 Final wave:
 
-- `tj-ruue.6`: combined manager reply and Auto-FAQ candidate flow.
+- `tj-ruue.6`: accepted and integrated into `codex/live-triage-20260417`.
 - `tj-ruue.7`: frontend dashboard.
 
 ## Verification Policy
