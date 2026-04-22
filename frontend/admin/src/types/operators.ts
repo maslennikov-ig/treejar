@@ -94,3 +94,69 @@ export interface OperationsReportResponse {
     data: OperationsReportData;
     text: string;
 }
+
+export type AIQualityScopeKey = 'bot_qa' | 'manager_qa' | 'red_flags';
+
+export type AIQualityMode = 'disabled' | 'manual' | 'daily_sample' | 'scheduled';
+
+export type AIQualityTranscriptMode = 'disabled' | 'summary' | 'full';
+
+export interface AIQualityRetryPolicy {
+    max_attempts: number;
+    backoff_seconds: number;
+}
+
+export interface AIQualityScopeConfig {
+    mode: AIQualityMode;
+    transcript_mode: AIQualityTranscriptMode;
+    model: string;
+    daily_budget_cents: number;
+    max_calls_per_run: number;
+    max_calls_per_day: number;
+    retry: AIQualityRetryPolicy;
+    criteria: Record<string, boolean>;
+    cache_telemetry_enabled: boolean;
+    alert_on_failure: boolean;
+    full_transcript_warning_override: boolean;
+    glm5_warning_override: boolean;
+}
+
+export interface AIQualityControlsConfig {
+    bot_qa: AIQualityScopeConfig;
+    manager_qa: AIQualityScopeConfig;
+    red_flags: AIQualityScopeConfig;
+}
+
+export interface AIQualityWarning {
+    scope: AIQualityScopeKey;
+    code: 'full_transcript' | 'glm5_qa';
+    severity: 'warning';
+    message: string;
+}
+
+export interface AIQualityControlsResponse {
+    config: AIQualityControlsConfig;
+    warnings: AIQualityWarning[];
+}
+
+export interface AIQualityRetryPolicyUpdate {
+    max_attempts?: number;
+    backoff_seconds?: number;
+}
+
+export interface AIQualityScopeUpdate {
+    mode?: AIQualityMode;
+    transcript_mode?: AIQualityTranscriptMode;
+    model?: string;
+    daily_budget_cents?: number;
+    max_calls_per_run?: number;
+    max_calls_per_day?: number;
+    retry?: AIQualityRetryPolicyUpdate;
+    criteria?: Record<string, boolean>;
+    cache_telemetry_enabled?: boolean;
+    alert_on_failure?: boolean;
+    full_transcript_warning_override?: boolean;
+    glm5_warning_override?: boolean;
+}
+
+export type AIQualityControlsUpdate = Partial<Record<AIQualityScopeKey, AIQualityScopeUpdate>>;

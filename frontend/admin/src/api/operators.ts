@@ -1,4 +1,6 @@
 import type {
+    AIQualityControlsResponse,
+    AIQualityControlsUpdate,
     ManagerReviewDetail,
     ManagerReviewRead,
     NotificationConfig,
@@ -66,5 +68,18 @@ export function generateOperationsReport(): Promise<OperationsReportResponse> {
     return requestJson('/reports/generate', {
         method: 'POST',
         body: JSON.stringify({}),
+    });
+}
+
+export function fetchAIQualityControls(): Promise<AIQualityControlsResponse> {
+    return requestJson('/ai-quality-controls');
+}
+
+export function updateAIQualityControls(
+    update: AIQualityControlsUpdate,
+): Promise<AIQualityControlsResponse> {
+    return requestJson('/ai-quality-controls', {
+        method: 'PATCH',
+        body: JSON.stringify(update),
     });
 }

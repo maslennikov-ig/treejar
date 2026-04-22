@@ -29,6 +29,18 @@ def test_operator_center_review_message_handles_refresh_failure_after_success() 
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_ai_quality_controls_dashboard_renders_controls_and_warnings() -> None:
+    result = _run_frontend_regression("ai_quality_controls_dashboard_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_ai_quality_controls_api_uses_admin_patch_payload() -> None:
+    result = _run_frontend_regression("ai_quality_controls_api_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_operator_center_regression_script_uses_portable_frontend_root() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script_path = (

@@ -21,6 +21,7 @@ import {
     sendTestNotification,
     syncProducts,
 } from '@/api/operators';
+import AIQualityControlsPanel from '@/components/AIQualityControlsPanel';
 import {
     buildManagerReviewMessage,
     type OperatorActionMessage,
@@ -251,6 +252,8 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
             )}
 
             <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <AIQualityControlsPanel />
+
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5">
                     <div className="flex items-start justify-between gap-3">
                         <div>
