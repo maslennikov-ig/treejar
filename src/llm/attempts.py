@@ -201,6 +201,27 @@ def _error_text(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}"[:4000]
 
 
+def _hash_value_matches(current: str | None, incoming: str | None) -> bool:
+    if incoming is None:
+        return True
+    return current == incoming
+
+
+def _attempt_hashes_match(
+    attempt: LLMAttempt,
+    *,
+    input_hash: str | None,
+    settings_hash: str | None,
+) -> bool:
+    return _hash_value_matches(
+        attempt.input_hash,
+        input_hash,
+    ) and _hash_value_matches(
+        attempt.settings_hash,
+        settings_hash,
+    )
+
+
 async def begin_llm_attempt(
     db: AsyncSession,
     redis: Any,
@@ -242,13 +263,22 @@ async def begin_llm_attempt(
     )
     if attempt is not None:
         status = validate_llm_attempt_status(attempt.status)
-        if status in TERMINAL_STATUSES:
+        hashes_match = _attempt_hashes_match(
+            attempt,
+            input_hash=input_hash,
+            settings_hash=settings_hash,
+        )
+        if status in TERMINAL_STATUSES and hashes_match:
             return None
-        if status is LLMAttemptStatus.FAILED_RETRYABLE and await _backoff_is_active(
-            redis=redis,
-            key=backoff_key,
-            attempt=attempt,
-            now=current_time,
+        if (
+            status is LLMAttemptStatus.FAILED_RETRYABLE
+            and hashes_match
+            and await _backoff_is_active(
+                redis=redis,
+                key=backoff_key,
+                attempt=attempt,
+                now=current_time,
+            )
         ):
             return None
 
@@ -289,6 +319,8 @@ async def begin_llm_attempt(
             attempt.provider = provider or attempt.provider
             attempt.budget_cents = budget_cents
             attempt.cost_estimate = cost_estimate
+            attempt.result_json = None
+            attempt.last_error = None
 
         attempt.attempt_count += 1
         attempt.next_retry_at = None

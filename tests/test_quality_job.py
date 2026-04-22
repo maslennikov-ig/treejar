@@ -16,7 +16,9 @@ def _ai_quality_ctx(
     *,
     crm_client: AsyncMock | None = None,
     bot_mode: str = "scheduled",
+    bot_transcript_mode: str = "summary",
     red_flags_mode: str = "scheduled",
+    red_flags_transcript_mode: str = "summary",
     red_flags_model: str | None = None,
     max_calls_per_run: int = 10,
     max_calls_per_day: int = 20,
@@ -26,22 +28,30 @@ def _ai_quality_ctx(
     redis.decr = AsyncMock()
     red_flags_config: dict[str, object] = {
         "mode": red_flags_mode,
+        "transcript_mode": red_flags_transcript_mode,
         "daily_budget_cents": 100,
         "max_calls_per_run": max_calls_per_run,
         "max_calls_per_day": max_calls_per_day,
     }
+    if red_flags_transcript_mode == "full":
+        red_flags_config["full_transcript_warning_override"] = True
     if red_flags_model is not None:
         red_flags_config["model"] = red_flags_model
+
+    bot_config: dict[str, object] = {
+        "mode": bot_mode,
+        "transcript_mode": bot_transcript_mode,
+        "daily_budget_cents": 100,
+        "max_calls_per_run": max_calls_per_run,
+        "max_calls_per_day": max_calls_per_day,
+    }
+    if bot_transcript_mode == "full":
+        bot_config["full_transcript_warning_override"] = True
 
     ctx: dict[str, object] = {
         "redis": redis,
         "ai_quality_controls": {
-            "bot_qa": {
-                "mode": bot_mode,
-                "daily_budget_cents": 100,
-                "max_calls_per_run": max_calls_per_run,
-                "max_calls_per_day": max_calls_per_day,
-            },
+            "bot_qa": bot_config,
             "manager_qa": {"mode": "disabled"},
             "red_flags": red_flags_config,
         },
@@ -346,12 +356,98 @@ async def test_red_flag_job_respects_max_calls_per_run() -> None:
             _ai_quality_ctx(
                 mock_redis,
                 red_flags_model="test/red-flag-model",
+                red_flags_transcript_mode="full",
                 max_calls_per_run=1,
             )
         )
 
     evaluate_mock.assert_awaited_once()
     assert evaluate_mock.await_args.kwargs["model_name"] == "test/red-flag-model"
+    assert evaluate_mock.await_args.kwargs["transcript_mode"].value == "full"
+
+
+@pytest.mark.asyncio
+async def test_final_review_job_passes_transcript_mode_to_evaluator() -> None:
+    """Scheduled final review must use transcript mode from AI Quality Controls."""
+    from src.quality.job import evaluate_mature_conversations_quality
+
+    candidate = _make_candidate(status="closed", updated_at=datetime.now(tz=UTC))
+    query_db = AsyncMock()
+    worker_db = AsyncMock()
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.setex = AsyncMock()
+    evaluate_mock = AsyncMock(return_value=_make_evaluation_result(score=18.0))
+
+    with (
+        patch(
+            "src.quality.job.async_session_factory",
+            side_effect=[_make_session_ctx(query_db), _make_session_ctx(worker_db)],
+        ),
+        patch(
+            "src.quality.job.get_recent_updated_conversation_candidates",
+            new=AsyncMock(return_value=[candidate]),
+        ),
+        patch("src.quality.job.evaluate_conversation", new=evaluate_mock),
+        patch("src.quality.job.save_review", new=AsyncMock()),
+        patch(
+            "src.quality.job.should_send_telegram_alert_for_conversation_with_db",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("src.quality.job.release_llm_attempt_lock", new=AsyncMock()),
+    ):
+        await evaluate_mature_conversations_quality(
+            _ai_quality_ctx(mock_redis, bot_transcript_mode="full")
+        )
+
+    evaluate_mock.assert_awaited_once()
+    assert evaluate_mock.await_args.kwargs["transcript_mode"].value == "full"
+
+
+def test_quality_attempt_hashes_include_transcript_mode_and_summary_prompt_version() -> (
+    None
+):
+    """Attempt cache keys should change when transcript policy changes."""
+    from src.quality.config import AIQualityTranscriptMode
+    from src.quality.job import (
+        _PROMPT_VERSION_FINAL,
+        _attempt_settings_hash,
+        _candidate_input_hash,
+    )
+    from src.quality.transcript_context import REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION
+
+    candidate = _make_candidate(status="closed", updated_at=datetime.now(tz=UTC))
+    summary_prompt_version = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION
+
+    summary_hash = _candidate_input_hash(
+        candidate,
+        prompt_version=_PROMPT_VERSION_FINAL,
+        transcript_mode=AIQualityTranscriptMode.SUMMARY,
+        summary_prompt_version=summary_prompt_version,
+    )
+    full_hash = _candidate_input_hash(
+        candidate,
+        prompt_version=_PROMPT_VERSION_FINAL,
+        transcript_mode=AIQualityTranscriptMode.FULL,
+        summary_prompt_version=summary_prompt_version,
+    )
+    assert summary_hash != full_hash
+
+    settings_summary = _attempt_settings_hash(
+        path="quality_final",
+        prompt_version=_PROMPT_VERSION_FINAL,
+        model="fast-model",
+        transcript_mode=AIQualityTranscriptMode.SUMMARY,
+        summary_prompt_version=summary_prompt_version,
+    )
+    settings_full = _attempt_settings_hash(
+        path="quality_final",
+        prompt_version=_PROMPT_VERSION_FINAL,
+        model="fast-model",
+        transcript_mode=AIQualityTranscriptMode.FULL,
+        summary_prompt_version=summary_prompt_version,
+    )
+    assert settings_summary != settings_full
 
 
 @pytest.mark.asyncio

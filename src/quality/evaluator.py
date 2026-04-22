@@ -6,6 +6,7 @@ import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import cast
 from uuid import UUID
 
@@ -23,12 +24,20 @@ from src.llm.safety import (
     run_agent_with_safety,
 )
 from src.models.conversation import Conversation
+from src.models.conversation_summary import ConversationSummary
 from src.models.message import Message
+from src.quality.config import AIQualityTranscriptMode
 from src.quality.schemas import (
+    RULE_NAMES,
     RULE_TO_BLOCK,
+    CriterionScore,
     EvaluationResult,
     RedFlagEvaluationResult,
     finalize_evaluation_result,
+)
+from src.quality.transcript_context import (
+    ReviewContextPurpose,
+    build_review_transcript_context,
 )
 from src.schemas.common import SalesStage
 
@@ -201,6 +210,10 @@ _CONVERSION_HINTS = (
     "invoice",
     "payment",
 )
+INSUFFICIENT_EVIDENCE_NEXT_ACTION = (
+    "Недостаточно данных для AI-оценки: transcript content недоступен для этого режима."
+)
+INSUFFICIENT_REDFLAG_ACTION = "Недостаточно данных для red-flag оценки: transcript content недоступен для этого режима."
 
 
 @judge_agent.output_validator
@@ -368,6 +381,39 @@ async def _load_sales_stage(
     return None
 
 
+async def _load_summary_text(
+    conversation_id: UUID,
+    db: AsyncSession,
+) -> str | None:
+    try:
+        result = await db.execute(
+            select(ConversationSummary).where(
+                ConversationSummary.conversation_id == conversation_id
+            )
+        )
+    except Exception:
+        logger.debug(
+            "Conversation summary unavailable for quality context",
+            exc_info=True,
+        )
+        return None
+
+    summary = result.scalar_one_or_none()
+    if isinstance(summary, ConversationSummary):
+        return summary.summary_text
+
+    summary_text = getattr(summary, "summary_text", None)
+    return summary_text if isinstance(summary_text, str) else None
+
+
+def _latest_message_at(messages: Sequence[Message]) -> datetime | None:
+    for message in reversed(messages):
+        created_at = getattr(message, "created_at", None)
+        if isinstance(created_at, datetime):
+            return created_at
+    return None
+
+
 def _build_dialogue_prompt(messages: Sequence[Message]) -> str:
     dialogue_text = "\n---\n".join(
         f"[{message.role.upper()}]: {message.content}" for message in messages
@@ -381,22 +427,72 @@ def _build_dialogue_prompt(messages: Sequence[Message]) -> str:
     )
 
 
+def _insufficient_evidence_result() -> EvaluationResult:
+    criteria = [
+        CriterionScore(
+            rule_number=rule_number,
+            rule_name=RULE_NAMES[rule_number],
+            score=0,
+            applicable=False,
+            n_a=True,
+            comment="Недостаточно данных: transcript content недоступен для оценки.",
+            evidence=[],
+        )
+        for rule_number in range(1, 16)
+    ]
+    return finalize_evaluation_result(
+        EvaluationResult(
+            criteria=criteria,
+            summary="Недостаточно данных для оценки.",
+            total_score=0.0,
+            rating="poor",
+            strengths=[],
+            weaknesses=["Недостаточно данных для автоматической оценки."],
+            recommendations=["Проверить диалог вручную при необходимости."],
+            next_best_action=INSUFFICIENT_EVIDENCE_NEXT_ACTION,
+        )
+    )
+
+
+def is_insufficient_evidence_result(result: EvaluationResult) -> bool:
+    """Return True for local no-action final QA results."""
+    return result.next_best_action == INSUFFICIENT_EVIDENCE_NEXT_ACTION
+
+
 async def evaluate_conversation(
     conversation_id: UUID,
     db: AsyncSession,
     sales_stage: str | None = None,
     model_name: str | None = None,
+    transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
 ) -> EvaluationResult:
     """Evaluate a conversation for the owner-facing final quality review."""
     selected_model = model_name or settings.openrouter_model_main
+    mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
     stage = sales_stage or await _load_sales_stage(conversation_id, db) or "unknown"
     applicability_map = _build_rule_applicability(messages, stage)
+    summary_text = (
+        await _load_summary_text(conversation_id, db)
+        if mode != AIQualityTranscriptMode.FULL
+        else None
+    )
+    context = build_review_transcript_context(
+        messages,
+        purpose=ReviewContextPurpose.BOT_QA,
+        entity_type="conversation",
+        entity_id=conversation_id,
+        transcript_mode=mode,
+        activity_at=_latest_message_at(messages),
+        summary_text=summary_text,
+    )
+    if context.insufficient_evidence:
+        return _insufficient_evidence_result()
 
     user_prompt = (
         f"{_format_applicability_instructions(applicability_map)}\n\n"
         f"Текущий этап продаж: {stage}\n\n"
-        f"{_build_dialogue_prompt(messages)}"
+        f"{context.prompt}"
     )
 
     logger.info(
@@ -428,10 +524,31 @@ async def evaluate_red_flags(
     conversation_id: UUID,
     db: AsyncSession,
     model_name: str | None = None,
+    transcript_mode: AIQualityTranscriptMode | str = AIQualityTranscriptMode.SUMMARY,
 ) -> RedFlagEvaluationResult:
     """Evaluate a conversation for rare realtime red flags."""
     selected_model = model_name or settings.openrouter_model_fast
+    mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
+    summary_text = (
+        await _load_summary_text(conversation_id, db)
+        if mode != AIQualityTranscriptMode.FULL
+        else None
+    )
+    context = build_review_transcript_context(
+        messages,
+        purpose=ReviewContextPurpose.RED_FLAGS,
+        entity_type="conversation",
+        entity_id=conversation_id,
+        transcript_mode=mode,
+        activity_at=_latest_message_at(messages),
+        summary_text=summary_text,
+    )
+    if context.insufficient_evidence:
+        return RedFlagEvaluationResult(
+            flags=[],
+            recommended_action=INSUFFICIENT_REDFLAG_ACTION,
+        )
 
     logger.info(
         "Evaluating realtime red flags for conversation %s (%d messages)",
@@ -442,7 +559,7 @@ async def evaluate_red_flags(
     run_result = await run_agent_with_safety(
         red_flag_agent,
         PATH_QUALITY_RED_FLAGS,
-        _build_dialogue_prompt(messages),
+        context.prompt,
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_RED_FLAGS),
         usage_limits=UsageLimits(

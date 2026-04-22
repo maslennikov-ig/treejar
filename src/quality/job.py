@@ -29,11 +29,16 @@ from src.llm.safety import PATH_QUALITY_FINAL, PATH_QUALITY_RED_FLAGS
 from src.models.llm_attempt import LLMAttempt
 from src.quality.config import (
     AIQualityScope,
+    AIQualityTranscriptMode,
     consume_ai_quality_daily_call_from_ctx,
     get_ai_quality_run_gate_from_ctx,
     reserve_ai_quality_daily_sample_from_ctx,
 )
-from src.quality.evaluator import evaluate_conversation, evaluate_red_flags
+from src.quality.evaluator import (
+    evaluate_conversation,
+    evaluate_red_flags,
+    is_insufficient_evidence_result,
+)
 from src.quality.schemas import (
     CriterionScore,
     EvaluationResult,
@@ -48,6 +53,7 @@ from src.quality.service import (
     get_review_for_conversation,
     save_review,
 )
+from src.quality.transcript_context import REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION
 from src.services.customer_identity import resolve_owner_customer_name
 from src.services.inbound_channels import (
     get_conversation_inbound_channel_phone,
@@ -64,8 +70,8 @@ _FINAL_IDLE_THRESHOLD = timedelta(hours=3)
 _QUERY_BATCH_SIZE = 50
 _OPENROUTER_PROVIDER = "openrouter"
 _ENTITY_TYPE_CONVERSATION = "conversation"
-_PROMPT_VERSION_FINAL = "quality-final:v1"
-_PROMPT_VERSION_RED_FLAGS = "quality-red-flags:v1"
+_PROMPT_VERSION_FINAL = "quality-final:v2"
+_PROMPT_VERSION_RED_FLAGS = "quality-red-flags:v2"
 
 
 def _normalise_utc(value: datetime) -> datetime:
@@ -112,6 +118,8 @@ def _candidate_input_hash(
     candidate: QualityConversationCandidate,
     *,
     prompt_version: str,
+    transcript_mode: AIQualityTranscriptMode,
+    summary_prompt_version: str = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION,
 ) -> str:
     return _stable_hash(
         {
@@ -121,6 +129,8 @@ def _candidate_input_hash(
             "status": candidate.status,
             "sales_stage": candidate.sales_stage,
             "prompt_version": prompt_version,
+            "transcript_mode": transcript_mode.value,
+            "summary_prompt_version": summary_prompt_version,
         }
     )
 
@@ -130,6 +140,8 @@ def _attempt_settings_hash(
     path: str,
     prompt_version: str,
     model: str,
+    transcript_mode: AIQualityTranscriptMode,
+    summary_prompt_version: str = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION,
 ) -> str:
     return _stable_hash(
         {
@@ -137,6 +149,8 @@ def _attempt_settings_hash(
             "prompt_version": prompt_version,
             "model": model,
             "provider": _OPENROUTER_PROVIDER,
+            "transcript_mode": transcript_mode.value,
+            "summary_prompt_version": summary_prompt_version,
         }
     )
 
@@ -476,6 +490,7 @@ async def _begin_quality_attempt(
     path: str,
     prompt_version: str,
     model: str,
+    transcript_mode: AIQualityTranscriptMode,
 ) -> LLMAttemptLease | None:
     return await begin_llm_attempt(
         db,
@@ -485,11 +500,16 @@ async def _begin_quality_attempt(
         entity_id=candidate.conversation_id,
         entity_updated_at=_attempt_entity_updated_at(candidate, path=path),
         prompt_version=prompt_version,
-        input_hash=_candidate_input_hash(candidate, prompt_version=prompt_version),
+        input_hash=_candidate_input_hash(
+            candidate,
+            prompt_version=prompt_version,
+            transcript_mode=transcript_mode,
+        ),
         settings_hash=_attempt_settings_hash(
             path=path,
             prompt_version=prompt_version,
             model=model,
+            transcript_mode=transcript_mode,
         ),
         model=model,
         provider=_OPENROUTER_PROVIDER,
@@ -557,7 +577,10 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
 
     async with _quality_crm_client(ctx, redis) as crm_client:
         for candidate in candidates:
-            if not await consume_ai_quality_daily_call_from_ctx(ctx, gate):
+            if (
+                gate.transcript_mode != AIQualityTranscriptMode.DISABLED
+                and not await consume_ai_quality_daily_call_from_ctx(ctx, gate)
+            ):
                 logger.info(
                     "Quality red-flag evaluator stopped by daily call quota: %s",
                     gate.scope.value,
@@ -574,6 +597,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                         path=PATH_QUALITY_RED_FLAGS,
                         prompt_version=_PROMPT_VERSION_RED_FLAGS,
                         model=gate.model,
+                        transcript_mode=gate.transcript_mode,
                     )
                     if lease is None:
                         if await _replay_terminal_red_flag_delivery(
@@ -591,6 +615,7 @@ async def evaluate_realtime_red_flags(ctx: dict[str, Any]) -> None:
                             candidate.conversation_id,
                             db,
                             model_name=gate.model,
+                            transcript_mode=gate.transcript_mode,
                         )
                     except Exception as exc:
                         await _record_attempt_error_after_rollback(
@@ -734,7 +759,10 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
             if previous_updated_at == current_updated_at:
                 continue
 
-            if not await consume_ai_quality_daily_call_from_ctx(ctx, gate):
+            if (
+                gate.transcript_mode != AIQualityTranscriptMode.DISABLED
+                and not await consume_ai_quality_daily_call_from_ctx(ctx, gate)
+            ):
                 logger.info(
                     "Quality final-review evaluator stopped by daily call quota: %s",
                     gate.scope.value,
@@ -751,6 +779,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                         path=PATH_QUALITY_FINAL,
                         prompt_version=_PROMPT_VERSION_FINAL,
                         model=gate.model,
+                        transcript_mode=gate.transcript_mode,
                     )
                     if lease is None:
                         if await _replay_terminal_final_review(
@@ -769,6 +798,7 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                             db,
                             candidate.sales_stage,
                             model_name=gate.model,
+                            transcript_mode=gate.transcript_mode,
                         )
                     except Exception as exc:
                         await _record_attempt_error_after_rollback(
@@ -778,6 +808,15 @@ async def evaluate_mature_conversations_quality(ctx: dict[str, Any]) -> None:
                             redis=redis,
                         )
                         raise
+
+                    if is_insufficient_evidence_result(result):
+                        await record_llm_attempt_no_action(
+                            db,
+                            lease,
+                            result_json=_result_payload(result),
+                        )
+                        await _commit_or_rollback(db)
+                        continue
 
                     await record_llm_attempt_success(
                         db,

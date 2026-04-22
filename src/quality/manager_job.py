@@ -25,6 +25,7 @@ from src.llm.attempts import (
     LLMAttemptStatus,
     begin_llm_attempt,
     record_llm_attempt_error,
+    record_llm_attempt_no_action,
     record_llm_attempt_success,
     release_llm_attempt_lock,
 )
@@ -34,6 +35,7 @@ from src.models.llm_attempt import LLMAttempt
 from src.models.message import Message
 from src.quality.config import (
     AIQualityScope,
+    AIQualityTranscriptMode,
     consume_ai_quality_daily_call_from_ctx,
     get_ai_quality_run_gate_from_ctx,
     reserve_ai_quality_daily_sample_from_ctx,
@@ -43,9 +45,11 @@ from src.quality.manager_evaluator import (
     escalation_already_reviewed,
     evaluate_manager_conversation,
     get_unreviewed_resolved_escalations,
+    is_insufficient_manager_evaluation,
     save_manager_review,
 )
 from src.quality.manager_schemas import ManagerEvaluationResult
+from src.quality.transcript_context import REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION
 from src.services.inbound_channels import (
     should_send_telegram_alert_for_conversation_with_db,
 )
@@ -54,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 _OPENROUTER_PROVIDER = "openrouter"
 _ENTITY_TYPE_ESCALATION = "escalation"
-_PROMPT_VERSION_MANAGER = "quality-manager:v1"
+_PROMPT_VERSION_MANAGER = "quality-manager:v2"
 
 
 def _resolve_redis(ctx: dict[str, Any]) -> Any:
@@ -81,7 +85,13 @@ def _escalation_updated_at(escalation: Any) -> datetime:
     return datetime.now(UTC)
 
 
-def _attempt_input_hash(escalation: Any, activity_at: datetime) -> str:
+def _attempt_input_hash(
+    escalation: Any,
+    activity_at: datetime,
+    *,
+    transcript_mode: AIQualityTranscriptMode,
+    summary_prompt_version: str = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION,
+) -> str:
     return _stable_hash(
         {
             "escalation_id": str(escalation.id),
@@ -90,17 +100,26 @@ def _attempt_input_hash(escalation: Any, activity_at: datetime) -> str:
             "status": getattr(escalation, "status", None),
             "assigned_to": getattr(escalation, "assigned_to", None),
             "prompt_version": _PROMPT_VERSION_MANAGER,
+            "transcript_mode": transcript_mode.value,
+            "summary_prompt_version": summary_prompt_version,
         }
     )
 
 
-def _settings_hash(model: str) -> str:
+def _settings_hash(
+    model: str,
+    *,
+    transcript_mode: AIQualityTranscriptMode,
+    summary_prompt_version: str = REVIEW_CONTEXT_SUMMARY_PROMPT_VERSION,
+) -> str:
     return _stable_hash(
         {
             "path": PATH_QUALITY_MANAGER,
             "prompt_version": _PROMPT_VERSION_MANAGER,
             "model": model,
             "provider": _OPENROUTER_PROVIDER,
+            "transcript_mode": transcript_mode.value,
+            "summary_prompt_version": summary_prompt_version,
         }
     )
 
@@ -337,7 +356,10 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     )
                     continue
 
-                if not await consume_ai_quality_daily_call_from_ctx(ctx, gate):
+                if (
+                    gate.transcript_mode != AIQualityTranscriptMode.DISABLED
+                    and not await consume_ai_quality_daily_call_from_ctx(ctx, gate)
+                ):
                     logger.info(
                         "Manager evaluator stopped by daily call quota: %s",
                         gate.scope.value,
@@ -354,8 +376,15 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                     entity_id=esc_id,
                     entity_updated_at=activity_at,
                     prompt_version=_PROMPT_VERSION_MANAGER,
-                    input_hash=_attempt_input_hash(escalation, activity_at),
-                    settings_hash=_settings_hash(gate.model),
+                    input_hash=_attempt_input_hash(
+                        escalation,
+                        activity_at,
+                        transcript_mode=gate.transcript_mode,
+                    ),
+                    settings_hash=_settings_hash(
+                        gate.model,
+                        transcript_mode=gate.transcript_mode,
+                    ),
                     model=gate.model,
                     provider=_OPENROUTER_PROVIDER,
                 )
@@ -374,6 +403,7 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                         esc_id,
                         db,
                         model_name=gate.model,
+                        transcript_mode=gate.transcript_mode,
                     )
                 except Exception as exc:
                     await _record_attempt_error_after_rollback(
@@ -383,6 +413,15 @@ async def evaluate_escalated_conversations(ctx: dict[str, Any]) -> None:
                         redis=redis,
                     )
                     raise
+
+                if is_insufficient_manager_evaluation(evaluation):
+                    await record_llm_attempt_no_action(
+                        db,
+                        lease,
+                        result_json=_evaluation_payload(evaluation, metrics),
+                    )
+                    await _commit_or_rollback(db)
+                    continue
 
                 await record_llm_attempt_success(
                     db,

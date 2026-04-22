@@ -69,9 +69,10 @@ async def test_quality_evaluation_e2e_pipeline() -> None:
     assert len(result.criteria) == 15
     mock_agent.run.assert_called_once()
 
-    # Verify prompt wraps content in DIALOGUE tags
+    # Verify prompt wraps content in the bounded untrusted-context wrapper
     prompt = mock_agent.run.call_args[0][0]
-    assert "<DIALOGUE>" in prompt
+    assert "<BOUNDED_REVIEW_CONTEXT" in prompt
+    assert "</BOUNDED_REVIEW_CONTEXT>" in prompt
     assert "Siyyad" in prompt
 
 

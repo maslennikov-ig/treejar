@@ -649,6 +649,173 @@ async def test_red_flag_evaluator_passes_expected_llm_safety_kwargs() -> None:
     assert call_kwargs["usage_limits"].total_tokens_limit == 4000
 
 
+@pytest.mark.asyncio
+async def test_summary_mode_does_not_send_full_raw_transcript() -> None:
+    """Default final QA prompt should use bounded context, not full history."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.quality.evaluator import evaluate_conversation
+    from src.quality.schemas import CriterionScore, EvaluationResult
+
+    conv_id = uuid4()
+    messages = []
+    for idx in range(40):
+        message = MagicMock()
+        message.id = uuid4()
+        message.role = "assistant" if idx % 2 else "user"
+        message.content = (
+            "OVERSIZED_MIDDLE_TRANSCRIPT_MARKER " + ("raw " * 5000)
+            if idx == 20
+            else f"message {idx}"
+        )
+        message.created_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC) + timedelta(
+            minutes=idx
+        )
+        messages.append(message)
+
+    criteria = [
+        CriterionScore(rule_number=i, rule_name=f"Rule {i}", score=1, comment="ok")
+        for i in range(1, 16)
+    ]
+    run_result = MagicMock()
+    run_result.output = EvaluationResult(
+        criteria=criteria, summary="ok", total_score=15.0, rating="satisfactory"
+    )
+    scalars = MagicMock()
+    scalars.all.return_value = messages
+    execute_result = MagicMock()
+    execute_result.scalars.return_value = scalars
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=execute_result)
+
+    with patch("src.quality.evaluator.judge_agent") as mock_agent:
+        mock_agent.run = AsyncMock(return_value=run_result)
+        await evaluate_conversation(conv_id, db, sales_stage="feedback")
+
+    prompt = mock_agent.run.await_args.args[0]
+    assert "<BOUNDED_REVIEW_CONTEXT" in prompt
+    assert "message 0" in prompt
+    assert "message 39" in prompt
+    assert "OVERSIZED_MIDDLE_TRANSCRIPT_MARKER" not in prompt
+    assert len(prompt) < 32_000
+
+
+@pytest.mark.asyncio
+async def test_full_transcript_mode_routes_full_dialogue_when_explicit() -> None:
+    """Full transcript should be reachable only via explicit evaluator mode."""
+    from datetime import UTC, datetime, timedelta
+
+    from src.quality.config import AIQualityTranscriptMode
+    from src.quality.evaluator import evaluate_red_flags
+    from src.quality.schemas import RedFlagEvaluationResult
+
+    conv_id = uuid4()
+    messages = []
+    for idx, content in enumerate(
+        ["first", "FULL_MODE_ONLY_RAW_TRANSCRIPT_MARKER", "last"]
+    ):
+        message = MagicMock()
+        message.id = uuid4()
+        message.role = "assistant" if idx == 1 else "user"
+        message.content = content
+        message.created_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC) + timedelta(
+            minutes=idx
+        )
+        messages.append(message)
+
+    scalars = MagicMock()
+    scalars.all.return_value = messages
+    execute_result = MagicMock()
+    execute_result.scalars.return_value = scalars
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=execute_result)
+    run_result = MagicMock()
+    run_result.output = RedFlagEvaluationResult(flags=[], recommended_action="")
+
+    with patch("src.quality.evaluator.red_flag_agent") as mock_agent:
+        mock_agent.run = AsyncMock(return_value=run_result)
+        await evaluate_red_flags(
+            conv_id,
+            db,
+            transcript_mode=AIQualityTranscriptMode.FULL,
+        )
+
+    prompt = mock_agent.run.await_args.args[0]
+    assert "<DIALOGUE>" in prompt
+    assert "FULL_MODE_ONLY_RAW_TRANSCRIPT_MARKER" in prompt
+
+
+@pytest.mark.asyncio
+async def test_disabled_transcript_mode_skips_final_provider_call() -> None:
+    """Disabled transcript mode should return insufficient evidence locally."""
+    from datetime import UTC, datetime
+
+    from src.quality.config import AIQualityTranscriptMode
+    from src.quality.evaluator import evaluate_conversation
+
+    message = MagicMock()
+    message.id = uuid4()
+    message.role = "user"
+    message.content = "TRANSCRIPT_DISABLED_NO_LLM"
+    message.created_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC)
+
+    scalars = MagicMock()
+    scalars.all.return_value = [message]
+    execute_result = MagicMock()
+    execute_result.scalars.return_value = scalars
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=execute_result)
+
+    with patch("src.quality.evaluator.judge_agent") as mock_agent:
+        mock_agent.run = AsyncMock(side_effect=AssertionError("unexpected LLM call"))
+        result = await evaluate_conversation(
+            uuid4(),
+            db,
+            sales_stage="greeting",
+            transcript_mode=AIQualityTranscriptMode.DISABLED,
+        )
+
+    mock_agent.run.assert_not_awaited()
+    assert result.total_score == 0.0
+    assert result.rating == "poor"
+    assert all(criterion.n_a for criterion in result.criteria)
+    assert "Недостаточно данных" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_disabled_transcript_mode_skips_red_flag_provider_call() -> None:
+    """Disabled transcript mode should become compact no-action red-flag result."""
+    from datetime import UTC, datetime
+
+    from src.quality.config import AIQualityTranscriptMode
+    from src.quality.evaluator import evaluate_red_flags
+
+    message = MagicMock()
+    message.id = uuid4()
+    message.role = "user"
+    message.content = "TRANSCRIPT_DISABLED_NO_REDFLAG_LLM"
+    message.created_at = datetime(2026, 4, 21, 9, 0, tzinfo=UTC)
+
+    scalars = MagicMock()
+    scalars.all.return_value = [message]
+    execute_result = MagicMock()
+    execute_result.scalars.return_value = scalars
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=execute_result)
+
+    with patch("src.quality.evaluator.red_flag_agent") as mock_agent:
+        mock_agent.run = AsyncMock(side_effect=AssertionError("unexpected LLM call"))
+        result = await evaluate_red_flags(
+            uuid4(),
+            db,
+            transcript_mode=AIQualityTranscriptMode.DISABLED,
+        )
+
+    mock_agent.run.assert_not_awaited()
+    assert result.flags == []
+    assert "Недостаточно данных" in result.recommended_action
+
+
 # =============================================================================
 # CR-07: Prompt injection — DIALOGUE tags wrapping
 # =============================================================================
@@ -656,7 +823,7 @@ async def test_red_flag_evaluator_passes_expected_llm_safety_kwargs() -> None:
 
 @pytest.mark.asyncio
 async def test_prompt_injection_uses_dialogue_tags() -> None:
-    """User messages must be wrapped in <DIALOGUE> tags in the LLM prompt."""
+    """User messages must be wrapped in an untrusted-content container."""
     from src.quality.evaluator import evaluate_conversation
     from src.quality.schemas import CriterionScore, EvaluationResult
 
@@ -685,10 +852,8 @@ async def test_prompt_injection_uses_dialogue_tags() -> None:
 
     call_args = mock_agent.run.call_args
     prompt = call_args[0][0]
-    assert "<DIALOGUE>" in prompt, (
-        "Prompt must contain <DIALOGUE> tag for injection protection"
-    )
-    assert "</DIALOGUE>" in prompt, "Prompt must contain </DIALOGUE> closing tag"
+    assert "<BOUNDED_REVIEW_CONTEXT" in prompt
+    assert "</BOUNDED_REVIEW_CONTEXT>" in prompt
     assert "untrusted" in prompt.lower() or "ignore any" in prompt.lower(), (
         "Prompt must warn LLM about untrusted content"
     )

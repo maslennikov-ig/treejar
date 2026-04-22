@@ -177,6 +177,87 @@ async def test_terminal_attempt_status_skips_without_redis_lock(
 
 
 @pytest.mark.asyncio
+async def test_terminal_attempt_reopens_when_input_hash_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.llm import attempts
+    from src.llm.attempts import LLMAttemptStatus, begin_llm_attempt
+    from src.models.llm_attempt import LLMAttempt
+
+    existing = LLMAttempt(
+        **_attempt_key_kwargs(),
+        status=LLMAttemptStatus.NO_ACTION.value,
+        attempt_count=1,
+        input_hash="transcript-mode:disabled",
+        settings_hash="settings:v1",
+        result_json={"status": "no_action"},
+        last_error="old error",
+    )
+    monkeypatch.setattr(
+        attempts, "_get_attempt_by_key", AsyncMock(return_value=existing)
+    )
+    db = _FakeDb()
+    redis = _make_redis(set_result=True)
+
+    lease = await begin_llm_attempt(
+        db,  # type: ignore[arg-type]
+        redis,
+        **_attempt_key_kwargs(),
+        input_hash="transcript-mode:summary",
+        settings_hash="settings:v1",
+    )
+
+    assert lease is not None
+    assert existing.status == LLMAttemptStatus.PENDING.value
+    assert existing.attempt_count == 2
+    assert existing.input_hash == "transcript-mode:summary"
+    assert existing.settings_hash == "settings:v1"
+    assert existing.result_json is None
+    assert existing.last_error is None
+    redis.set.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_terminal_attempt_reopens_when_settings_hash_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.llm import attempts
+    from src.llm.attempts import LLMAttemptStatus, begin_llm_attempt
+    from src.models.llm_attempt import LLMAttempt
+
+    existing = LLMAttempt(
+        **_attempt_key_kwargs(),
+        status=LLMAttemptStatus.SUCCESS.value,
+        attempt_count=1,
+        input_hash="input:v1",
+        settings_hash="model:fast",
+        result_json={"status": "success"},
+    )
+    monkeypatch.setattr(
+        attempts, "_get_attempt_by_key", AsyncMock(return_value=existing)
+    )
+    db = _FakeDb()
+    redis = _make_redis(set_result=True)
+
+    lease = await begin_llm_attempt(
+        db,  # type: ignore[arg-type]
+        redis,
+        **_attempt_key_kwargs(),
+        input_hash="input:v1",
+        settings_hash="model:full-review",
+    )
+
+    assert lease is not None
+    assert existing.status == LLMAttemptStatus.PENDING.value
+    assert existing.attempt_count == 2
+    assert existing.input_hash == "input:v1"
+    assert existing.settings_hash == "model:full-review"
+    assert existing.result_json is None
+    redis.set.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_failed_retryable_writes_backoff_and_skips_until_due(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

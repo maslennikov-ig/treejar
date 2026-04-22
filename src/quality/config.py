@@ -171,6 +171,7 @@ class AIQualityRunGate(BaseModel):
     scope: AIQualityScope
     trigger: AIQualityRunTrigger
     mode: AIQualityMode
+    transcript_mode: AIQualityTranscriptMode = AIQualityTranscriptMode.SUMMARY
     allowed: bool
     reason: str | None = None
     model: str
@@ -254,6 +255,7 @@ def evaluate_ai_quality_run_gate(
             scope=scope,
             trigger=trigger,
             mode=scope_settings.mode,
+            transcript_mode=scope_settings.transcript_mode,
             allowed=False,
             reason=reason,
             model=scope_settings.model,
@@ -276,6 +278,7 @@ def evaluate_ai_quality_run_gate(
         scope=scope,
         trigger=trigger,
         mode=scope_settings.mode,
+        transcript_mode=scope_settings.transcript_mode,
         allowed=True,
         reason=None,
         model=scope_settings.model,
