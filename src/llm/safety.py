@@ -31,6 +31,7 @@ PATH_QUALITY_MANAGER = "quality_manager"
 PATH_CONVERSATION_SUMMARY = "conversation_summary"
 PATH_RESPONSE_ADAPTER = "response_adapter"
 PATH_AUTO_FAQ_TRANSLATE = "auto_faq_translate"
+PATH_AUTO_FAQ_CANDIDATE = "auto_faq_candidate"
 OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
 _OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
@@ -124,6 +125,16 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         timeout_seconds=30.0,
         output_tokens_limit=700,
         total_tokens_limit=3000,
+        request_limit=1,
+        max_attempts=2,
+    ),
+    PATH_AUTO_FAQ_CANDIDATE: LLMPathPolicy(
+        path=PATH_AUTO_FAQ_CANDIDATE,
+        scope="non_core",
+        max_tokens=900,
+        timeout_seconds=30.0,
+        output_tokens_limit=900,
+        total_tokens_limit=3500,
         request_limit=1,
         max_attempts=2,
     ),

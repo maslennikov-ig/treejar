@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from src.llm.response_adapter import adapt_manager_response, response_adapter_agent
+from src.llm.response_adapter import (
+    ManagerReplyWithAutoFAQResult,
+    adapt_manager_response,
+    adapt_manager_response_with_faq_candidate,
+    response_adapter_agent,
+)
+from src.services.auto_faq_types import AutoFAQCandidate
 
 
 @pytest.mark.asyncio
@@ -90,3 +96,59 @@ async def test_adapt_manager_response_passes_expected_llm_safety_kwargs() -> Non
     assert call_kwargs["usage_limits"].request_limit == 1
     assert call_kwargs["usage_limits"].output_tokens_limit == 700
     assert call_kwargs["usage_limits"].total_tokens_limit == 3000
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_normal_manager_reply_does_not_generate_kb_candidate() -> None:
+    with (
+        patch(
+            "src.llm.response_adapter.response_adapter_agent.run",
+            new=AsyncMock(return_value=SimpleNamespace(output="Polished answer")),
+        ) as mock_adapter_run,
+        patch(
+            "src.llm.response_adapter.auto_faq_manager_reply_agent.run",
+            new=AsyncMock(side_effect=AssertionError("unexpected FAQ candidate call")),
+        ) as mock_combined_run,
+    ):
+        result = await adapt_manager_response(
+            question="Do you have CH-200?",
+            draft="yes, 599 AED",
+        )
+
+    assert result == "Polished answer"
+    mock_adapter_run.assert_awaited_once()
+    mock_combined_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_adapt_manager_response_with_faq_candidate_uses_one_combined_call() -> (
+    None
+):
+    combined_output = ManagerReplyWithAutoFAQResult(
+        customer_message="Delivery takes 3-5 business days in the UAE.",
+        kb_candidate=AutoFAQCandidate(
+            question="What is the delivery time in the UAE?",
+            answer="Delivery takes 3-5 business days in the UAE.",
+            confidence=0.91,
+        ),
+    )
+    with patch(
+        "src.llm.response_adapter.auto_faq_manager_reply_agent.run",
+        new=AsyncMock(return_value=SimpleNamespace(output=combined_output)),
+    ) as mock_run:
+        result = await adapt_manager_response_with_faq_candidate(
+            question="When can you deliver?",
+            draft="3-5 business days UAE",
+            language="en",
+        )
+
+    assert result.customer_message == "Delivery takes 3-5 business days in the UAE."
+    assert result.kb_candidate == combined_output.kb_candidate
+    mock_run.assert_awaited_once()
+    call_kwargs = mock_run.await_args.kwargs
+    assert call_kwargs["model_settings"]["max_tokens"] == 900
+    assert call_kwargs["usage_limits"].request_limit == 1
+    assert call_kwargs["usage_limits"].output_tokens_limit == 900
+    assert call_kwargs["usage_limits"].total_tokens_limit == 3500

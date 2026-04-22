@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.auto_faq import save_to_faq
+from src.services.auto_faq import review_auto_faq_candidate, save_to_faq
+from src.services.auto_faq_types import AutoFAQCandidate
 
 
 @pytest.fixture
@@ -77,6 +78,7 @@ async def test_save_to_faq_success(
         adapted_answer="Delivery takes 3-5 business days within the UAE.",
         manager_draft="3-5 days UAE",
         embedding_engine=mock_embedding_engine,
+        admin_confirmed=True,
     )
 
     assert result.status == "saved"
@@ -87,8 +89,35 @@ async def test_save_to_faq_success(
     assert result.entry.original_question == "What is the delivery time?"
     assert result.entry.manager_draft == "3-5 days UAE"
     assert result.guard_reasons == ()
+    assert result.candidate is not None
     mock_db.add.assert_called_once()
     mock_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@patch("src.services.auto_faq._normalize_to_english", side_effect=_mock_normalize)
+async def test_save_to_faq_requires_admin_confirmation_before_save(
+    mock_normalize: AsyncMock, mock_db: AsyncMock, mock_embedding_engine: MagicMock
+) -> None:
+    """Auto-FAQ candidates must not be persisted without admin confirmation."""
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_db.execute.return_value = mock_result
+
+    result = await save_to_faq(
+        db=mock_db,
+        question="What is the delivery time?",
+        adapted_answer="Delivery takes 3-5 business days within the UAE.",
+        manager_draft="3-5 days UAE",
+        embedding_engine=mock_embedding_engine,
+    )
+
+    assert result.status == "needs_confirmation"
+    assert result.candidate is not None
+    assert result.entry is None
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -145,6 +174,7 @@ async def test_save_to_faq_similar_but_not_duplicate(
         adapted_answer="You can return any product within 14 days.",
         manager_draft="14 days return",
         embedding_engine=mock_embedding_engine,
+        admin_confirmed=True,
     )
 
     assert result.status == "saved"
@@ -152,6 +182,56 @@ async def test_save_to_faq_similar_but_not_duplicate(
     assert result.entry.source == "auto_faq"
     assert result.entry.language == "en"
     mock_db.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_review_auto_faq_candidate_rejects_low_confidence(
+    mock_db: AsyncMock, mock_embedding_engine: MagicMock
+) -> None:
+    candidate = AutoFAQCandidate(
+        question="What is the delivery time?",
+        answer="Delivery takes 3-5 business days.",
+        confidence=0.5,
+    )
+
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
+        manager_draft="3-5 days",
+        customer_message="Delivery takes 3-5 business days.",
+        embedding_engine=mock_embedding_engine,
+    )
+
+    assert result.status == "low_confidence"
+    assert result.guard_reasons == ("low_confidence",)
+    mock_embedding_engine.embed_async.assert_not_awaited()
+    mock_db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_review_auto_faq_candidate_rejects_unsafe_candidate(
+    mock_db: AsyncMock, mock_embedding_engine: MagicMock
+) -> None:
+    candidate = AutoFAQCandidate(
+        question="Can customers get guaranteed refunds?",
+        answer="Treejar always guarantees a full refund with no questions asked.",
+        confidence=0.95,
+    )
+
+    result = await review_auto_faq_candidate(
+        mock_db,
+        candidate,
+        manager_draft="always guaranteed refund",
+        customer_message="We always guarantee a refund.",
+        embedding_engine=mock_embedding_engine,
+    )
+
+    assert result.status == "blocked_unsafe"
+    assert "absolute_claim" in result.guard_reasons
+    mock_embedding_engine.embed_async.assert_not_awaited()
+    mock_db.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio

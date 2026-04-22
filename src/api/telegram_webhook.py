@@ -19,6 +19,7 @@ import base64
 import json
 import logging
 import uuid
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -165,10 +166,21 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
     try:
         phone, language = await _get_conversation_phone_and_lang(uuid.UUID(conv_id))
 
-        # 1. Adapt the response (before phone check — needed in both branches)
-        from src.llm.response_adapter import adapt_manager_response
+        faq_candidate = None
+        if mode == "faq_global":
+            from src.llm.response_adapter import (
+                adapt_manager_response_with_faq_candidate,
+            )
 
-        adapted = await adapt_manager_response(question, draft, language)
+            combined = await adapt_manager_response_with_faq_candidate(
+                question, draft, language
+            )
+            adapted = combined.customer_message
+            faq_candidate = combined.kb_candidate
+        else:
+            from src.llm.response_adapter import adapt_manager_response
+
+            adapted = await adapt_manager_response(question, draft, language)
 
         # 2. Send adapted response to the client via Wazzup
         if phone:
@@ -181,9 +193,7 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
                 await wazzup.close()
 
             # R3-2: HTML-escape adapted text before Telegram notification
-            safe_adapted = (
-                adapted.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            )
+            safe_adapted = escape(adapted)
             await client.send_message(
                 f"✅ Ответ отправлен клиенту:\n\n{safe_adapted}",
                 chat_id=str(chat_id),
@@ -213,26 +223,48 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
                 chat_id=str(chat_id),
             )
 
-        # 3. Save to FAQ if global mode
+        # 3. Prepare FAQ candidate if global mode. Saving requires admin confirmation.
         if mode == "faq_global":
             from src.rag.embeddings import EmbeddingEngine
-            from src.services.auto_faq import save_to_faq
+            from src.services.auto_faq import review_auto_faq_candidate
 
             async with async_session_factory() as db:
-                save_result = await save_to_faq(
+                save_result = await review_auto_faq_candidate(
                     db=db,
-                    question=question,
-                    adapted_answer=adapted,
-                    manager_draft=draft,
+                    candidate=faq_candidate,
                     embedding_engine=EmbeddingEngine(),
+                    customer_message=adapted,
+                    manager_draft=draft,
                 )
-            if save_result.status == "saved":
+            if save_result.status == "needs_confirmation" and save_result.candidate:
+                candidate = save_result.candidate
                 await client.send_message(
-                    "📚 Ответ добавлен в Базу Знаний.", chat_id=str(chat_id)
+                    "📚 Кандидат для Базы Знаний подготовлен, но не сохранён. "
+                    "Требуется подтверждение админа.\n\n"
+                    f"<b>Q:</b> {escape(candidate.question)}\n"
+                    f"<b>A:</b> {escape(candidate.answer)}",
+                    chat_id=str(chat_id),
                 )
             elif save_result.status == "duplicate":
                 await client.send_message(
                     "ℹ️ Похожий ответ уже есть в Базе Знаний (дубликат).",
+                    chat_id=str(chat_id),
+                )
+            elif save_result.status == "low_confidence":
+                await client.send_message(
+                    "⚠️ Ответ отправлен клиенту, но кандидат для Базы Знаний "
+                    "отклонён: низкая уверенность.",
+                    chat_id=str(chat_id),
+                )
+            elif save_result.status == "blocked_unsafe":
+                await client.send_message(
+                    "⚠️ Ответ отправлен клиенту, но кандидат для Базы Знаний "
+                    "отклонён safety-проверкой.",
+                    chat_id=str(chat_id),
+                )
+            elif save_result.status == "missing_candidate":
+                await client.send_message(
+                    "ℹ️ Ответ отправлен клиенту. Кандидат для Базы Знаний не создан.",
                     chat_id=str(chat_id),
                 )
             else:

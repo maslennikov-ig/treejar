@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import json
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.main import app
+from src.services.auto_faq import AutoFAQSaveResult
+from src.services.auto_faq_types import AutoFAQCandidate
 
 client = TestClient(app)
 EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
@@ -259,3 +263,127 @@ def test_missing_message_channel_id_skipped() -> None:
     assert response.json() == {"ok": True}
     mock_redis.rpush.assert_not_called()
     mock_arq.enqueue_job.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_private_manager_reply_uses_one_adapter_call_without_kb_candidate() -> (
+    None
+):
+    from src.api.telegram_webhook import _handle_manager_reply
+
+    conv_id = str(uuid.uuid4())
+    redis = AsyncMock()
+    redis.get.return_value = json.dumps(
+        {
+            "conversation_id": conv_id,
+            "mode": "faq_private",
+            "question": "When can you deliver?",
+        }
+    )
+    telegram = AsyncMock()
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch(
+            "src.api.telegram_webhook._get_conversation_phone_and_lang",
+            new=AsyncMock(return_value=(None, "en")),
+        ),
+        patch(
+            "src.llm.response_adapter.adapt_manager_response",
+            new=AsyncMock(return_value="Delivery takes 3-5 business days."),
+        ) as mock_adapter,
+        patch(
+            "src.llm.response_adapter.adapt_manager_response_with_faq_candidate",
+            new=AsyncMock(side_effect=AssertionError("unexpected combined call")),
+        ) as mock_combined,
+        patch(
+            "src.services.auto_faq.review_auto_faq_candidate",
+            new=AsyncMock(side_effect=AssertionError("unexpected FAQ review")),
+        ) as mock_review,
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "3-5 days"})
+
+    mock_adapter.assert_awaited_once_with(
+        "When can you deliver?",
+        "3-5 days",
+        "en",
+    )
+    mock_combined.assert_not_awaited()
+    mock_review.assert_not_awaited()
+    redis.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_faq_manager_reply_uses_combined_call_and_requires_confirmation() -> None:
+    from src.api.telegram_webhook import _handle_manager_reply
+    from src.llm.response_adapter import ManagerReplyWithAutoFAQResult
+
+    conv_id = str(uuid.uuid4())
+    redis = AsyncMock()
+    redis.get.return_value = json.dumps(
+        {
+            "conversation_id": conv_id,
+            "mode": "faq_global",
+            "question": "When can you deliver?",
+        }
+    )
+    telegram = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = AsyncMock()
+    db_cm.__aexit__.return_value = False
+    candidate = AutoFAQCandidate(
+        question="What is the delivery time in the UAE?",
+        answer="Delivery takes 3-5 business days in the UAE.",
+        confidence=0.93,
+    )
+    combined_output = ManagerReplyWithAutoFAQResult(
+        customer_message="Delivery takes 3-5 business days in the UAE.",
+        kb_candidate=candidate,
+    )
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch(
+            "src.api.telegram_webhook._get_conversation_phone_and_lang",
+            new=AsyncMock(return_value=(None, "en")),
+        ),
+        patch(
+            "src.api.telegram_webhook.async_session_factory",
+            MagicMock(return_value=db_cm),
+        ),
+        patch("src.rag.embeddings.EmbeddingEngine", MagicMock()),
+        patch(
+            "src.llm.response_adapter.adapt_manager_response",
+            new=AsyncMock(side_effect=AssertionError("unexpected normal adapter call")),
+        ) as mock_adapter,
+        patch(
+            "src.llm.response_adapter.adapt_manager_response_with_faq_candidate",
+            new=AsyncMock(return_value=combined_output),
+        ) as mock_combined,
+        patch(
+            "src.services.auto_faq.review_auto_faq_candidate",
+            new=AsyncMock(
+                return_value=AutoFAQSaveResult(
+                    status="needs_confirmation",
+                    candidate=candidate,
+                )
+            ),
+        ) as mock_review,
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "3-5 days"})
+
+    mock_adapter.assert_not_awaited()
+    mock_combined.assert_awaited_once_with(
+        "When can you deliver?",
+        "3-5 days",
+        "en",
+    )
+    mock_review.assert_awaited_once()
+    assert mock_review.await_args.kwargs["candidate"] == candidate
+    assert mock_review.await_args.kwargs["customer_message"] == (
+        "Delivery takes 3-5 business days in the UAE."
+    )
+    sent_texts = [call.args[0] for call in telegram.send_message.await_args_list]
+    assert any("Требуется подтверждение админа" in text for text in sent_texts)

@@ -28,6 +28,7 @@ class _FakeRunResult:
         ("conversation_summary", 900),
         ("response_adapter", 700),
         ("auto_faq_translate", 700),
+        ("auto_faq_candidate", 900),
     ],
 )
 def test_llm_path_policy_sets_expected_provider_max_tokens(
@@ -44,6 +45,7 @@ def test_default_model_routing_keeps_glm5_only_for_core_paths(
 ) -> None:
     from src.core.config import settings
     from src.llm.safety import (
+        PATH_AUTO_FAQ_CANDIDATE,
         PATH_AUTO_FAQ_TRANSLATE,
         PATH_CONVERSATION_SUMMARY,
         PATH_CORE_CHAT,
@@ -68,6 +70,7 @@ def test_default_model_routing_keeps_glm5_only_for_core_paths(
         PATH_CONVERSATION_SUMMARY,
         PATH_RESPONSE_ADAPTER,
         PATH_AUTO_FAQ_TRANSLATE,
+        PATH_AUTO_FAQ_CANDIDATE,
     ):
         assert model_name_for_path(path) == "xiaomi/mimo-v2-flash"
         assert not is_glm5_model_name(model_name_for_path(path))
