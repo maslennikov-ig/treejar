@@ -1,13 +1,14 @@
 # Stage Summary
 
 Stage ID: `tj-ruue`
-Status: `closed-local-ready-for-delivery`
-Updated: 2026-04-22
+Status: `delivered`
+Updated: 2026-04-24
 Baseline: `origin/main@9ef78006a6a6055fa4786f1a856b422cb916dabb`
 Orchestrator worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
 Orchestrator branch: `codex/live-triage-20260417`
 Integration commit: `0404bfc` (`feat(llm): add OpenRouter cost safety layer`)
 Latest integration commit: `4ffe0d8` (`feat(admin): add ai quality controls dashboard`)
+Delivery commit: `8101b2d` (`docs(orchestration): close tj-ruue stage locally`)
 
 ## Scope
 
@@ -49,6 +50,7 @@ Implement OpenRouter cost controls and AI Quality Controls from the approved pla
 - `tj-ruue.6` Manager reply and Auto-FAQ candidate flow was accepted from `codex/tj-ruue-manager-reply-auto-faq-flow` and integrated as `746230b`. The accepted code keeps normal manager replies on one adapter call, uses one structured combined call only for explicit `faq_global`, adds a fast non-core `auto_faq_candidate` safety path, and changes Auto-FAQ persistence to confirmation-first with deterministic missing/low-confidence/unsafe/context-specific/duplicate checks. Orchestrator review found no blocking issues. Verification passed targeted manager/FAQ/safety tests (`56 passed`), ruff, format, mypy, artifact validator, `git diff --check`, and full pytest (`735 passed, 19 skipped`).
 - `tj-ruue.7` Frontend AI Quality Controls dashboard was accepted from `codex/tj-ruue-frontend-ai-quality-controls` and integrated as `4ffe0d8`. The accepted code adds the admin Operator Center panel for AI Quality Controls, PATCHes scope-shaped backend config, renders disabled/manual/daily/scheduled modes, transcript modes, budgets, call caps, retry/cache/alert toggles, criteria toggles, warnings, and manual trigger surface guidance. Orchestrator review found/fixed `tj-azes`: frontend GLM-5 warning detection now matches both `glm-5` and `glm5`, aligned with backend validation. Verification passed frontend regression scripts, `npm run lint`, `npm run build`, targeted admin dashboard pytest (`5 passed`), ruff, format, mypy, artifact validator, and `git diff --check`.
 - Stage closeout verification passed locally on 2026-04-22. `uv run python scripts/orchestration/check_stage_ready.py tj-ruue` passed. `scripts/orchestration/run_process_verification.sh` passed after keeping `.codex/handoff.md` within the 40-line contract. `PYTEST_ADDOPTS=-s uv run python scripts/orchestration/run_stage_closeout.py --stage tj-ruue` passed: ruff, format check, mypy, full pytest (`737 passed, 19 skipped`), artifact validation, stage-ready check, and process verification. Plain `uv run pytest tests/ -v --tb=short` still fails before collection in this local environment with `_pytest/capture.py` `FileNotFoundError`; the stage closeout used `PYTEST_ADDOPTS=-s` to avoid the broken capture layer without changing tests.
+- Delivery completed on 2026-04-24. `codex/live-triage-20260417` was pushed as a backup remote branch and `main` was fast-forwarded from `9ef7800` to `8101b2d`. GitHub Actions CI run `24876930080` completed successfully for `lint`, `test`, `type-check`, and `deploy`; deploy reported `Deployment successful. Active release: 8101b2dfbc736d32e660538959c1e7f4d1bfbf6b`. Post-deploy smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> `7 passed, 0 failed`; `/dashboard/` anonymous -> `401`; `/admin/` -> `302` to `/admin/login`; `/api/v1/admin/ai-quality-controls` anonymous -> `401`; `/api/v1/health` -> `status=ok`, Redis ok.
 
 ## Orchestration Plan
 
@@ -91,6 +93,5 @@ Stage closeout requires:
 
 ## Explicit Defers
 
-- No production deploy or production mutation is included in this stage unless separately requested.
-- No push has been done for the stage branch; delivery remains local until explicitly approved.
+- Delivered to `main` and production after explicit approval on 2026-04-24; backup branch `origin/codex/live-triage-20260417` points at the delivered commit.
 - Full-transcript QA remains off by default in the target design; enabling it requires explicit admin override after implementation.
