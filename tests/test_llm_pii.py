@@ -20,6 +20,14 @@ def test_mask_pii_phones() -> None:
     assert len(pii_map) == 2
 
 
+def test_mask_pii_keeps_numeric_sku_when_labeled() -> None:
+    text = "Do you have SKU 00-07024023 in stock?"
+    masked, pii_map = mask_pii(text)
+
+    assert "00-07024023" in masked
+    assert not pii_map
+
+
 def test_mask_pii_mixed() -> None:
     text = "Contact 88005553535 or admin@treejar.com"
     masked, pii_map = mask_pii(text)

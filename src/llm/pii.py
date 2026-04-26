@@ -4,6 +4,15 @@ import uuid
 EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 # Matches an optional '+' and 1-4 digits, followed by 6-14 digits mixed with spaces, dashes, or parens
 PHONE_PATTERN = re.compile(r"\+?\d{1,4}(?:[\s\-()]*\d){6,14}")
+PRODUCT_CODE_LABEL_PATTERN = re.compile(
+    r"(?:\bsku\b|\bmodel\b|\bitem\b|\barticle\b|\bproduct\s+code\b)\s*[:#-]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_labeled_product_code(text: str, match: re.Match[str]) -> bool:
+    prefix = text[max(0, match.start() - 32) : match.start()]
+    return PRODUCT_CODE_LABEL_PATTERN.search(prefix) is not None
 
 
 def mask_pii(text: str) -> tuple[str, dict[str, str]]:
@@ -16,6 +25,8 @@ def mask_pii(text: str) -> tuple[str, dict[str, str]]:
 
     def repl(match: re.Match[str]) -> str:
         original = match.group(0)
+        if _is_labeled_product_code(masked_text, match):
+            return original
         placeholder = f"[PII-{uuid.uuid4().hex[:4]}]"
         pii_map[placeholder] = original
         return placeholder
