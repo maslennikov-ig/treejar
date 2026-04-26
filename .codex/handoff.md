@@ -21,20 +21,20 @@ Current baseline branch: `main`
 - OpenRouter key rotation for E2E was applied on 2026-04-26 without storing the raw secret in repo memory. The current key is available in production `/opt/noor/.env`, GitHub Actions secret `OPENROUTER_API_KEY`, and the ignored local stage-worktree `.env`; production `app` sees fingerprint `b4118c4887cc` length `73`. Post-rotation checks passed: `alembic current` -> `2026_04_21_llm_attempts`, `llm_attempts` table exists with `0` rows, `ai_quality_controls` config is missing so disabled defaults apply, health is ok, and a production OpenRouter fast-model canary returned `OK` with `44` total tokens and cost about `$0.00000256`.
 - Fresh 2026-04-26 production WhatsApp/Telegram E2E on `79262810921` produced and closed hardening stage `tj-e2e26`: order-status after approved/rejected quotation, Telegram private-reply persistence, outbound Wazzup audit/idempotency, conversation API auth/exact phone filtering, rejected quotation state, and media/caption audit visibility.
 - `tj-e2e26` is delivered on `2dc356e`: CI/deploy passed, smoke passed (`verify_api.py` 7/0, `/api/v1/health` ok, `/dashboard/` 401, `/api/v1/conversations/` 403, Alembic `2026_04_26_outbound_audit`). Narrow production recheck passed for approved `Fr3141` and rejected `Fr3142` order-status copy; `tj-e2e26` pending test conversations count is `0`.
-- Active stage `tj-prl26`: checklist/prompt and read-only checks are done; controlled E2E found blocker `tj-prl26.5`, then deployed/rechecked the fix. Narrow production recheck conversation `8ad66895-1caa-45df-9f03-8907cc96f21f` for SKU `00-07024023` returned stock `12` and price `685.00 AED`; pending recheck conversations count is `0`.
+- Stage `tj-prl26` is launch-ready with explicit defer after controlled pre-launch E2E. `tj-prl26.5` fixed/deployed/rechecked SKU masking; full rerun `20260426181300` passed customer chat/product/stock, quotation approve/reject (`Fr3143`/`Fr3144`), Telegram private manager reply, active escalation fallback, outbound audit readback, and pending count (`5` rerun conversations, `0` pending). Stage closeout passed with full local pytest `774 passed, 19 skipped`.
 
 ## Next recommended
 
 Next stage id: `tj-prl26`
-Recommended action: rerun `tj-prl26.2` from the remaining controlled acceptance branches, then close readiness with `tj-prl26.4`.
+Recommended action: proceed with controlled soft launch / owner-monitored start, or first reconcile catalog-vs-Zoho price copy if commercial consistency is more important than speed.
 
 ## Starter prompt for next orchestrator
 
 Use $stage-orchestrator / $orchestrator-stage. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `docs/plans/2026-04-26-prelaunch-readiness.md`, and `.codex/stages/tj-prl26/summary.md` first.
 Worktree: `/home/me/code/treejar/.worktrees/codex-tj-prl26-prelaunch-readiness`; branch: `codex/tj-prl26-prelaunch-readiness`; latest deployed runtime SHA: `d93b95480ec4ca53459f3a0bd527b1a27eb73358`.
-Treat `tj-ruue` and `tj-e2e26` as delivered. Keep `tj-prl26` evidence-first; product bugs become separate Beads.
+Treat `tj-ruue`, `tj-e2e26`, and `tj-prl26` as delivered/launch-ready unless new evidence appears. Keep future launch work evidence-first; product bugs become separate Beads.
 Do not run broad production suites, `verify_wazzup.py`, scheduled AI Quality Controls, or unsolicited media tests without explicit approval.
 
 ## Explicit defers
 - Extended referrals admin/reporting remains intentionally deferred; some worktrees hit a local pytest capture tmpfile `FileNotFoundError` before collection with plain `uv run pytest ...`, while equivalent full runs with `-s` have passed.
-- `tj-prl26.2` stopped after one live synthetic SKU blocker; `tj-prl26.5` is now deployed/rechecked, but quotation/manager/escalation branches remain unaccepted until the controlled E2E rerun.
+- Product price source difference remains visible: catalog discovery can show catalog price `264 AED` for SKU `00-07024023`, while exact stock/price returns Zoho rate `685.00 AED`. Current source-of-truth rule says Zoho is exact stock/price truth, so this is not a launch blocker, but it is a commercial-content risk to watch or reconcile.
