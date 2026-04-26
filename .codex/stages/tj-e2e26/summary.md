@@ -1,6 +1,6 @@
 # Stage tj-e2e26: 2026-04-26 Production E2E Hardening
 
-Status: deployed; scoped E2E passed with order-status copy patch pending redeploy
+Status: delivered; deployed and scoped E2E recheck passed
 Base worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
 Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp `79262810921` and synthetic suffixes.
 
@@ -37,8 +37,8 @@ Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp 
 - `tj-e2e26.4`: durable outbound Wazzup audit for text/media/captions/statuses. Closed after integration and local verification.
 - `tj-e2e26.5`: Wazzup `crmMessageId` idempotency. Closed after integration and local verification.
 - `tj-e2e26.6`: product media and outbound side effects visible in admin/audit. Closed after integration and local verification.
-- `tj-e2e26.7`: scoped post-fix E2E regression. In progress after deploy; required scope passed, then opened follow-up `tj-e2e26.8` for order-status copy consistency.
-- `tj-e2e26.8`: order-status copy after quotation approve/reject. Closed locally; pending redeploy and narrow recheck.
+- `tj-e2e26.7`: scoped post-fix E2E regression. Closed after production deploy/recheck.
+- `tj-e2e26.8`: order-status copy after quotation approve/reject. Closed after redeploy and narrow production recheck.
 
 ## Implemented
 
@@ -69,7 +69,9 @@ Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp 
 - `main@71f6b07c57fd7b075956d574f6ddf8efe6eca877` deployed through GitHub Actions run `24957702024`; jobs `lint`, `test`, `type-check`, and `deploy` succeeded.
 - Post-deploy smoke passed: `verify_api.py` -> `7 passed, 0 failed`; health `200`; `/dashboard/` anonymous `401`; `/api/v1/conversations/` anonymous `403`; release `.release-sha=71f6b07...`; Alembic `2026_04_26_outbound_audit`; table `outbound_message_audits` exists.
 - Scoped production E2E for `tj-e2e26.7` passed required checks: approve conversation `550ac918-d940-4d7d-af44-e48de4b4dfca` / `Fr3141`, reject conversation `9d28d1f2-c9a4-4f8d-bea7-1664807eba30` / `Fr3142`, private reply conversation `7781aa27-73b6-4f96-82c8-d3591f06737d`, anonymous conversations API `403`, exact/fuzzy phone filtering, outbound audit rows, synthetic status webhook update, zero pending created test conversations, health `200`.
-- The same E2E found the `tj-e2e26.8` copy caveat: approved/rejected order-status text still sounded like pending manager review. The local fix is implemented and must be redeployed/rechecked before closing `tj-e2e26.7`.
+- The same E2E found the `tj-e2e26.8` copy caveat: approved/rejected order-status text still sounded like pending manager review. The fix was deployed as `main@2dc356ef16496cb33f035198e5deeda733a04c1a` through GitHub Actions run `24958178545`; jobs `lint`, `test`, `type-check`, and `deploy` succeeded.
+- Final post-deploy smoke passed after `2dc356e`: `verify_api.py` -> `7 passed, 0 failed`; `/api/v1/health` -> `status=ok`, Redis ok; `/dashboard/` anonymous `401`; `/api/v1/conversations/` anonymous `403`; release `.release-sha=2dc356ef16496cb33f035198e5deeda733a04c1a`; Alembic `2026_04_26_outbound_audit (head)`.
+- Narrow production recheck after `2dc356e` passed: approved conversation `550ac918-d940-4d7d-af44-e48de4b4dfca` returned `Great News! Your Order Has Been Approved!`, `Quotation | Fr3141 Approved`, and `Shipment Status | Approved, order is being processed`; rejected conversation `9d28d1f2-c9a4-4f8d-bea7-1664807eba30` returned `Your quotation Fr3142 was rejected by the manager` and `there is no active order linked to your account`; `tj-e2e26` conversations total `3`, pending `0`.
 
 ## Guardrails
 
