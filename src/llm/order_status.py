@@ -23,6 +23,12 @@ INVENTORY_STATUS_MAP: dict[str, tuple[str, str]] = {
     "void": ("Cancelled", "ملغي"),
 }
 
+APPROVED_DECISION_DRAFT_STATUSES = {"draft", "sent", "open"}
+APPROVED_DECISION_STATUS_LABEL = (
+    "Approved, order is being processed",
+    "تمت الموافقة، الطلب قيد المعالجة",
+)
+
 
 def _lang_index(language: str) -> int:
     """Return 0 for EN, 1 for AR."""
@@ -40,9 +46,24 @@ def get_deal_stage_label(stage: str, language: str) -> str:
     return f"Order status: {stage}"
 
 
-def get_inventory_status_label(status: str, language: str) -> str:
+def _decision_status(value: str | None) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def get_inventory_status_label(
+    status: str,
+    language: str,
+    *,
+    quotation_decision_status: str | None = None,
+) -> str:
     """Map a Zoho Inventory sale order status to a customer-friendly label."""
     idx = _lang_index(language)
+    normalized_status = status.strip().lower()
+    if (
+        _decision_status(quotation_decision_status) == "approved"
+        and normalized_status in APPROVED_DECISION_DRAFT_STATUSES
+    ):
+        return APPROVED_DECISION_STATUS_LABEL[idx]
     if status in INVENTORY_STATUS_MAP:
         return INVENTORY_STATUS_MAP[status][idx]
     if idx == 1:
@@ -54,9 +75,13 @@ def format_order_status(
     deal_data: dict[str, Any] | None,
     order_data: dict[str, Any] | None,
     language: str,
+    *,
+    quotation_decision_status: str | None = None,
+    quotation_number: str | None = None,
 ) -> str:
     """Combine CRM deal and Inventory order data into a human-readable status message."""
     is_ar = _lang_index(language) == 1
+    decision_status = _decision_status(quotation_decision_status)
 
     if not deal_data and not order_data:
         if is_ar:
@@ -72,6 +97,8 @@ def format_order_status(
             "ship_status": "حالة الشحن",
             "ship_date": "تاريخ الشحن",
             "delivery": "طريقة التوصيل",
+            "quotation": "عرض السعر",
+            "approved": "تمت الموافقة",
         }
         if is_ar
         else {
@@ -81,10 +108,15 @@ def format_order_status(
             "ship_status": "Shipment status",
             "ship_date": "Shipment date",
             "delivery": "Delivery method",
+            "quotation": "Quotation",
+            "approved": "approved",
         }
     )
 
     parts: list[str] = []
+
+    if decision_status == "approved" and quotation_number:
+        parts.append(f"{labels['quotation']}: {quotation_number} {labels['approved']}")
 
     # CRM Deal info
     if deal_data:
@@ -101,7 +133,15 @@ def format_order_status(
     if order_data:
         so_number = order_data.get("salesorder_number", "")
         status = order_data.get("status", "")
-        label = get_inventory_status_label(status, language) if status else ""
+        label = (
+            get_inventory_status_label(
+                status,
+                language,
+                quotation_decision_status=quotation_decision_status,
+            )
+            if status
+            else ""
+        )
         shipment_date = order_data.get("shipment_date", "")
         delivery_method = order_data.get("delivery_method", "")
 

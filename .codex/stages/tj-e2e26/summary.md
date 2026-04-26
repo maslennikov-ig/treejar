@@ -1,6 +1,6 @@
 # Stage tj-e2e26: 2026-04-26 Production E2E Hardening
 
-Status: implementation integrated locally; post-fix E2E pending deploy/explicit approval
+Status: deployed; scoped E2E passed with order-status copy patch pending redeploy
 Base worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
 Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp `79262810921` and synthetic suffixes.
 
@@ -37,11 +37,13 @@ Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp 
 - `tj-e2e26.4`: durable outbound Wazzup audit for text/media/captions/statuses. Closed after integration and local verification.
 - `tj-e2e26.5`: Wazzup `crmMessageId` idempotency. Closed after integration and local verification.
 - `tj-e2e26.6`: product media and outbound side effects visible in admin/audit. Closed after integration and local verification.
-- `tj-e2e26.7`: scoped post-fix E2E regression. Open; should run only after this build is deployed to the intended runtime and production WhatsApp/Telegram mutations are explicitly approved.
+- `tj-e2e26.7`: scoped post-fix E2E regression. In progress after deploy; required scope passed, then opened follow-up `tj-e2e26.8` for order-status copy consistency.
+- `tj-e2e26.8`: order-status copy after quotation approve/reject. Closed locally; pending redeploy and narrow recheck.
 
 ## Implemented
 
 - `src/llm/engine.py` now checks active `metadata.zoho_sale_order_id` before returning no-order, ignores rejected/inactive sale-order metadata, and avoids concurrent audit writes from product-media side effects.
+- `src/llm/engine.py` / `src/llm/order_status.py` now make approved/rejected quotation decision copy explicit so draft Zoho sale orders no longer sound like pending manager review after Telegram decision.
 - `src/api/telegram_webhook.py` now persists private manager replies as conversation messages after successful Wazzup send and writes approve/reject quotation decision metadata.
 - `/api/v1/conversations/*` is mounted behind the API-key dependency; phone filtering is exact by default with explicit fuzzy mode.
 - Added `outbound_message_audits` migration/model/service for Wazzup outbound text/media/caption audit, status updates, local idempotency, provider duplicate tracking, normalized provider message IDs, and caption-only retry when media already succeeded.
@@ -60,6 +62,14 @@ Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp 
 - `bash scripts/orchestration/run_process_verification.sh` -> passed.
 - `PYTEST_ADDOPTS=-s uv run python scripts/orchestration/run_stage_closeout.py --stage tj-e2e26` -> stage closeout verification OK. Plain closeout without `-s` hit the known local pytest capture tmpfile issue before tests ran.
 - `git diff --check` -> passed.
+- `tj-e2e26.8` local patch: `uv run --extra dev python -m pytest -s tests/test_order_status.py tests/test_llm_engine.py tests/test_order_review_flow.py tests/test_webhook_manager.py -q` -> `96 passed`; ruff/format/mypy/process verification/git diff check -> passed.
+
+## Delivery / E2E
+
+- `main@71f6b07c57fd7b075956d574f6ddf8efe6eca877` deployed through GitHub Actions run `24957702024`; jobs `lint`, `test`, `type-check`, and `deploy` succeeded.
+- Post-deploy smoke passed: `verify_api.py` -> `7 passed, 0 failed`; health `200`; `/dashboard/` anonymous `401`; `/api/v1/conversations/` anonymous `403`; release `.release-sha=71f6b07...`; Alembic `2026_04_26_outbound_audit`; table `outbound_message_audits` exists.
+- Scoped production E2E for `tj-e2e26.7` passed required checks: approve conversation `550ac918-d940-4d7d-af44-e48de4b4dfca` / `Fr3141`, reject conversation `9d28d1f2-c9a4-4f8d-bea7-1664807eba30` / `Fr3142`, private reply conversation `7781aa27-73b6-4f96-82c8-d3591f06737d`, anonymous conversations API `403`, exact/fuzzy phone filtering, outbound audit rows, synthetic status webhook update, zero pending created test conversations, health `200`.
+- The same E2E found the `tj-e2e26.8` copy caveat: approved/rejected order-status text still sounded like pending manager review. The local fix is implemented and must be redeployed/rechecked before closing `tj-e2e26.7`.
 
 ## Guardrails
 

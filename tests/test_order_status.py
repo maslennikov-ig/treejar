@@ -67,6 +67,17 @@ class TestInventoryStatusMapping:
         assert get_inventory_status_label("draft", "en") == "Quotation stage"
 
     @pytest.mark.unit
+    def test_draft_en_after_manager_approval(self) -> None:
+        assert (
+            get_inventory_status_label(
+                "draft",
+                "en",
+                quotation_decision_status="approved",
+            )
+            == "Approved, order is being processed"
+        )
+
+    @pytest.mark.unit
     def test_confirmed_en(self) -> None:
         assert get_inventory_status_label("confirmed", "en") == "Confirmed, preparing"
 
@@ -133,6 +144,26 @@ class TestFormatOrderStatus:
 
         assert "Shipped / Delivered" in result
         assert "SO-00005" in result
+
+    @pytest.mark.unit
+    def test_approved_decision_relabels_draft_sale_order(self) -> None:
+        """Approved manager decision should not read like pending quotation review."""
+        order_data = {
+            "salesorder_number": "SO-00006",
+            "status": "draft",
+        }
+        result = format_order_status(
+            None,
+            order_data,
+            "en",
+            quotation_decision_status="approved",
+            quotation_number="Fr3141",
+        )
+
+        assert "Fr3141 approved" in result
+        assert "Approved, order is being processed" in result
+        assert "Quotation stage" not in result
+        assert "pending" not in result.lower()
 
     @pytest.mark.unit
     def test_arabic_combined(self) -> None:

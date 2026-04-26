@@ -533,6 +533,42 @@ def _metadata_sale_order_is_active(metadata: Mapping[str, Any]) -> bool:
     return decision_status != "rejected"
 
 
+def _metadata_quotation_decision_status(metadata: Mapping[str, Any]) -> str:
+    decision = metadata.get("quotation_decision")
+    if isinstance(decision, Mapping):
+        status = _string_value(decision.get("status")).lower()
+        if status:
+            return status
+    return _string_value(
+        metadata.get("quotation_decision_status") or metadata.get("quotation_status")
+    ).lower()
+
+
+def _metadata_quotation_number(metadata: Mapping[str, Any]) -> str:
+    decision = metadata.get("quotation_decision")
+    if isinstance(decision, Mapping):
+        quote_number = _string_value(decision.get("quote_number"))
+        if quote_number:
+            return quote_number
+    return _string_value(
+        metadata.get("quotation_quote_number") or metadata.get("quote_number")
+    )
+
+
+def _format_rejected_quotation_status(
+    metadata: Mapping[str, Any],
+    language: str,
+) -> str:
+    quote_number = _metadata_quotation_number(metadata)
+    if language.startswith("ar"):
+        if quote_number:
+            return f"تم رفض عرض السعر {quote_number}. لا يوجد طلب نشط مرتبط بهذه المحادثة حالياً."
+        return "تم رفض عرض السعر. لا يوجد طلب نشط مرتبط بهذه المحادثة حالياً."
+    if quote_number:
+        return f"Quotation {quote_number} was rejected. There is no active order linked to this conversation right now."
+    return "The quotation was rejected. There is no active order linked to this conversation right now."
+
+
 def _extract_crm_company(value: Any) -> str:
     if isinstance(value, Mapping):
         return _string_value(value.get("name"))
@@ -1645,12 +1681,17 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
     language = ctx.deps.conversation.language or "en"
     metadata = ctx.deps.conversation.metadata_ or {}
     sale_order_id = _string_value(metadata.get("zoho_sale_order_id"))
+    quotation_decision_status = _metadata_quotation_decision_status(metadata)
+    quotation_number = _metadata_quotation_number(metadata)
     active_sale_order_id = (
         sale_order_id
         if sale_order_id and _metadata_sale_order_is_active(metadata)
         else ""
     )
     deal_id = _string_value(ctx.deps.conversation.zoho_deal_id)
+
+    if not deal_id and quotation_decision_status == "rejected":
+        return _format_rejected_quotation_status(metadata, language)
 
     if not deal_id and not active_sale_order_id:
         if language.startswith("ar"):
@@ -1675,7 +1716,13 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
         except Exception as e:
             logger.warning("Failed to fetch CRM deal status: %s", e)
 
-    return format_order_status(deal_data, order_data, language)
+    return format_order_status(
+        deal_data,
+        order_data,
+        language,
+        quotation_decision_status=quotation_decision_status,
+        quotation_number=quotation_number,
+    )
 
 
 @sales_agent.tool
