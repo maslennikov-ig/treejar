@@ -4,7 +4,7 @@ Status: in progress
 Base worktree: `/home/me/code/treejar/.worktrees/codex-tj-prl26-prelaunch-readiness`
 Branch: `codex/tj-prl26-prelaunch-readiness`
 Base: `origin/main@f1136fc2a6d6c8c49535b4460c89f3486b2521c1`
-Latest deployed runtime SHA: `2dc356ef16496cb33f035198e5deeda733a04c1a`
+Latest deployed runtime SHA: `d93b95480ec4ca53459f3a0bd527b1a27eb73358`
 
 ## Scope
 
@@ -50,10 +50,10 @@ The stage covers:
 - Worktree created from current `origin/main`.
 - Beads `tj-prl26` and children `tj-prl26.1-.4` created.
 - `tj-prl26.1` is closed: plan, stage summary, controlled E2E prompt, and artifact were created and validated.
-- `tj-prl26.2` is blocked by `tj-prl26.5` after controlled live synthetic E2E found an exact SKU stock lookup blocker.
+- `tj-prl26.2` was blocked by `tj-prl26.5` after controlled live synthetic E2E found an exact SKU stock lookup blocker; the blocker is now deployed/rechecked, so `tj-prl26.2` is ready to rerun for the remaining branches.
 - `tj-prl26.3` is closed: read-only admin/operator and cost-control checks passed against production.
 - `tj-prl26.4` remains open for final launch/no-go closeout.
-- `tj-prl26.5` is locally fixed but not deployed: PII masking was converting labeled SKU `00-07024023` into `[PII-*]` before `get_stock`.
+- `tj-prl26.5` is fixed, deployed, and narrowly rechecked: PII masking no longer converts labeled SKU `00-07024023` into `[PII-*]` before `get_stock`.
 
 ## Blocker Evidence
 
@@ -62,6 +62,9 @@ The stage covers:
 - Read-only production checks confirmed the SKU exists in `products` with stock `12`, price `264.00`, `zoho_item_id=378603000001589001`, active, and embedding present.
 - Direct Zoho check confirmed `get_stock("00-07024023")` returns stock `12.0` and rate `685.0`.
 - Local fix preserves labeled product identifiers during PII masking. Verification: RED PII regression failed before fix; relevant PII/context/LLM slice passed `62`; ruff, format, and mypy passed.
+- Deployed fix SHA `d93b95480ec4ca53459f3a0bd527b1a27eb73358`; GitHub Actions run `24963241165` passed through deploy.
+- Post-deploy smoke passed: `verify_api.py` 7/0, health ok, anonymous `/dashboard/` -> `401`, anonymous `/api/v1/conversations/` -> `403`, Alembic `2026_04_26_outbound_audit (head)`.
+- Narrow production recheck conversation `8ad66895-1caa-45df-9f03-8907cc96f21f` for `79262810921#tj-prl26-sku-recheck-20260426180210` returned SKU `00-07024023`, stock `12`, price `685.00 AED`, pending recheck conversations `0`, and outbound audit `f3f63b53-5b98-4c96-9979-569b03544c16` with `status=sent`.
 
 ## Read-Only Readiness Evidence
 
@@ -73,5 +76,5 @@ The stage covers:
 
 ## Explicit Defers
 
-- No live synthetic messages have been sent in this stage yet.
+- Full `tj-prl26.2` acceptance remains pending for quotation approve/reject/order-status, Telegram private manager reply, escalation fallback, outbound audit/idempotency readback, and final no-pending check.
 - No production observation window is planned because the project has no real customer traffic yet.

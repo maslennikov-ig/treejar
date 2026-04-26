@@ -6,7 +6,7 @@ branch: codex/tj-prl26-prelaunch-readiness
 base_branch: origin/main
 base_commit: f1136fc2a6d6c8c49535b4460c89f3486b2521c1
 worktree: /home/me/code/treejar/.worktrees/codex-tj-prl26-prelaunch-readiness
-status: blocked
+status: unblocked-rerun-pending
 verification:
   - ssh noor-server 'cd /opt/noor && cat .release-sha && cat .release-run-id': passed
   - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed
@@ -15,6 +15,7 @@ verification:
   - scripts/bot_test.py stock/SKU synthetic message: failed
   - production read-only conversation/API/audit readback: passed
   - Context7 FastAPI docs lookup: passed
+  - post-fix production SKU recheck conversation 8ad66895-1caa-45df-9f03-8907cc96f21f: passed
 changed_files:
   - .codex/stages/tj-prl26/artifacts/tj-prl26.2.md
 ---
@@ -25,9 +26,21 @@ Bounded pre-launch E2E stopped early on a launch blocker in the product/stock pa
 
 Created blocker Beads task: `tj-prl26.5` (`BUG: production exact SKU stock lookup misses catalog SKU 00-07024023`).
 
+Post-fix update: `tj-prl26.5` was deployed and narrowly rechecked on production. The exact SKU path now returns stock and price for `00-07024023`; this unblocks rerunning the remaining `tj-prl26.2` acceptance branches.
+
 # Verification
 
 The run completed only the runtime/API smoke, the first successful customer stock/SKU scenario, and narrow readback. It intentionally did not continue into quotation or manager flows after the product/stock blocker appeared.
+
+Post-fix narrow recheck:
+
+- Deployed SHA: `d93b95480ec4ca53459f3a0bd527b1a27eb73358`.
+- GitHub Actions run id: `24963241165`, including deploy, passed.
+- Synthetic phone suffix: `79262810921#tj-prl26-sku-recheck-20260426180210`.
+- Conversation: `8ad66895-1caa-45df-9f03-8907cc96f21f`.
+- Bot reply returned SKU `00-07024023`, stock `12`, and price `685.00 AED`.
+- Read-only DB readback: `escalation_status='none'`, pending recheck conversations `0`, messages persisted, outbound audit `f3f63b53-5b98-4c96-9979-569b03544c16` persisted with `status='sent'`.
+- Remaining acceptance branches are not yet accepted; they should be rerun after this unblock.
 
 # Runtime / API Smoke
 
@@ -141,5 +154,6 @@ Quotation numbers:
 
 # Risks / Follow-ups / Explicit Defers
 
-- Launch blocker: active public catalog SKU `00-07024023` is not reachable by the bot exact stock/SKU path. Track and fix via `tj-prl26.5`.
-- `tj-prl26.2` should be rerun from the product/stock scenario after `tj-prl26.5` is fixed; do not treat quotation or manager flows as accepted from this run.
+- The exact SKU blocker is resolved by `tj-prl26.5`, but this artifact remains evidence of the stopped first run.
+- `tj-prl26.2` should now be rerun for the skipped branches: quotation approve/reject/order-status, Telegram private manager reply, active escalation fallback, outbound audit/idempotency readback, and final pending-count check.
+- Do not treat quotation or manager flows as accepted from the blocked first run.
