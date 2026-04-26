@@ -25,12 +25,12 @@ Current baseline branch: `main`
 ## Next recommended
 
 Next stage id: assign a new stage id from the next approved production or product follow-up.
-Recommended action: start from `origin/main@2dc356ef16496cb33f035198e5deeda733a04c1a` for new work unless deliberately continuing an older isolated stream.
+Recommended action: start new work from current `origin/main`; latest runtime release remains `2dc356ef16496cb33f035198e5deeda733a04c1a` because the final closeout push was docs-only.
 
 ## Starter prompt for next orchestrator
 
 Use $stage-orchestrator / $orchestrator-stage. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `.codex/stages/tj-ruue/summary.md`, and `.codex/stages/tj-e2e26/summary.md` first.
-Start new work from `origin/main@2dc356ef16496cb33f035198e5deeda733a04c1a` unless explicitly continuing an isolated branch.
+Start new work from current `origin/main` unless explicitly continuing an isolated branch; use `2dc356ef16496cb33f035198e5deeda733a04c1a` as the latest deployed runtime SHA.
 Treat `tj-ruue` and `tj-e2e26` as delivered. Keep runtime/deploy work isolated from product logic.
 Do not run broad production suites, `verify_wazzup.py`, scheduled AI Quality Controls, or unsolicited media tests without explicit approval.
 
