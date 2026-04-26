@@ -1,15 +1,30 @@
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.core.config import settings
 from src.core.database import get_db
 from src.main import app
 from src.models.conversation import Conversation
 from src.schemas.common import EscalationStatus
+
+API_KEY = "expected-key"
+AUTH_HEADERS = {"X-API-Key": API_KEY}
+
+
+@pytest.fixture(autouse=True)
+def require_conversation_api_key() -> Generator[None, None, None]:
+    original_env = settings.app_env
+    original_api_key = settings.api_key
+    settings.app_env = "production"
+    settings.api_key = API_KEY
+    yield
+    settings.app_env = original_env
+    settings.api_key = original_api_key
 
 
 @pytest.fixture
@@ -42,7 +57,10 @@ async def test_escalate_conversation(mock_db: AsyncMock) -> None:
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        resp = await ac.post(f"/api/v1/conversations/{conv_id}/escalate")
+        resp = await ac.post(
+            f"/api/v1/conversations/{conv_id}/escalate",
+            headers=AUTH_HEADERS,
+        )
 
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -61,6 +79,9 @@ async def test_escalate_conversation_not_found(mock_db: AsyncMock) -> None:
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        resp = await ac.post(f"/api/v1/conversations/{random_id}/escalate")
+        resp = await ac.post(
+            f"/api/v1/conversations/{random_id}/escalate",
+            headers=AUTH_HEADERS,
+        )
 
     assert resp.status_code == 404

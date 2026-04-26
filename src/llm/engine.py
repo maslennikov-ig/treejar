@@ -514,6 +514,25 @@ def _string_value(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _metadata_sale_order_is_active(metadata: Mapping[str, Any]) -> bool:
+    decision = metadata.get("quotation_decision")
+    if isinstance(decision, Mapping):
+        status = _string_value(decision.get("status")).lower()
+        if decision.get("active") is False or status == "rejected":
+            return False
+
+    if (
+        metadata.get("zoho_sale_order_active") is False
+        or metadata.get("order_active") is False
+    ):
+        return False
+
+    decision_status = _string_value(
+        metadata.get("quotation_decision_status") or metadata.get("quotation_status")
+    ).lower()
+    return decision_status != "rejected"
+
+
 def _extract_crm_company(value: Any) -> str:
     if isinstance(value, Mapping):
         return _string_value(value.get("name"))
@@ -948,25 +967,47 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
     )
 
     formatted_results = []
-    send_tasks = []
-
-    import asyncio
 
     async def _safe_send_media(
-        url: str, caption: str, zoho_item_id: str | None = None
+        url: str,
+        caption: str,
+        product_key: str,
+        zoho_item_id: str | None = None,
     ) -> None:
         try:
             send_url = url
             if zoho_item_id and "zoho-image" not in url and "zoho" in url:
                 send_url = build_signed_product_image_url(zoho_item_id)
 
-            await ctx.deps.messaging_client.send_media(
+            from src.services.outbound_audit import (
+                deterministic_crm_message_id,
+                send_wazzup_media_with_audit,
+            )
+
+            await send_wazzup_media_with_audit(
+                ctx.deps.db,
+                provider=ctx.deps.messaging_client,
+                conversation_id=UUID(str(ctx.deps.conversation.id)),
                 chat_id=ctx.deps.conversation.phone,
+                source="product_media",
+                crm_message_id=deterministic_crm_message_id(
+                    "product",
+                    ctx.deps.conversation.id,
+                    product_key,
+                    "media",
+                ),
+                caption_crm_message_id=deterministic_crm_message_id(
+                    "product",
+                    ctx.deps.conversation.id,
+                    product_key,
+                    "caption",
+                ),
                 url=send_url,
                 caption=caption,
                 content=None,
                 content_type=None,
             )
+            await ctx.deps.db.commit()
         except Exception as e:
             logger.warning("Failed to send product image: %s", e, exc_info=True)
 
@@ -976,18 +1017,14 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
 
         if r.image_url:
             desc += "\n[Note: Image of this product has been automatically sent to the customer's WhatsApp. Do not mention or include image URLs in your response.]"
-            send_tasks.append(
-                _safe_send_media(
-                    url=r.image_url,
-                    caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
-                    zoho_item_id=getattr(r, "zoho_item_id", None),
-                )
+            await _safe_send_media(
+                url=r.image_url,
+                caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
+                product_key=str(getattr(r, "id", None) or r.sku),
+                zoho_item_id=getattr(r, "zoho_item_id", None),
             )
 
         formatted_results.append(desc)
-
-    if send_tasks:
-        await asyncio.gather(*send_tasks)
 
     product_match = classify_product_match(
         query,
@@ -1606,33 +1643,37 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
     logger.info("LLM Tool called: check_order_status()")
 
     language = ctx.deps.conversation.language or "en"
+    metadata = ctx.deps.conversation.metadata_ or {}
+    sale_order_id = _string_value(metadata.get("zoho_sale_order_id"))
+    active_sale_order_id = (
+        sale_order_id
+        if sale_order_id and _metadata_sale_order_is_active(metadata)
+        else ""
+    )
+    deal_id = _string_value(ctx.deps.conversation.zoho_deal_id)
 
-    deal_id = ctx.deps.conversation.zoho_deal_id
-    if not deal_id:
+    if not deal_id and not active_sale_order_id:
         if language.startswith("ar"):
             return "لم يتم العثور على طلب مرتبط بهذه المحادثة. قد لا يكون لدى العميل صفقة مؤكدة بعد."
         return "No order found linked to this conversation. The customer may not have a confirmed deal yet."
 
+    # Fetch Inventory sale order status first so metadata-only orders still work.
+    order_data = None
+    if active_sale_order_id:
+        try:
+            order_data = await ctx.deps.zoho_inventory.get_sale_order_status(
+                active_sale_order_id
+            )
+        except Exception as e:
+            logger.warning("Failed to fetch Inventory order status: %s", e)
+
     # Fetch CRM deal status
     deal_data = None
-    if ctx.deps.zoho_crm:
+    if deal_id and ctx.deps.zoho_crm:
         try:
             deal_data = await ctx.deps.zoho_crm.get_deal_status(deal_id)
         except Exception as e:
             logger.warning("Failed to fetch CRM deal status: %s", e)
-
-    # Fetch Inventory sale order status (use deal_id as reference, or from metadata)
-    order_data = None
-    metadata = ctx.deps.conversation.metadata_ or {}
-    sale_order_id = metadata.get("zoho_sale_order_id")
-
-    if sale_order_id:
-        try:
-            order_data = await ctx.deps.zoho_inventory.get_sale_order_status(
-                sale_order_id
-            )
-        except Exception as e:
-            logger.warning("Failed to fetch Inventory order status: %s", e)
 
     return format_order_status(deal_data, order_data, language)
 

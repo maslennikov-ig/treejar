@@ -59,12 +59,15 @@ async def test_process_followup_for_conversation() -> None:
 
         # Verify message was sent
         mock_wazzup.send_text.assert_called_once_with(
-            "12345", "Just checking in, anything I can help with?"
+            "12345",
+            "Just checking in, anything I can help with?",
+            crm_message_id=f"followup:{conv.id}:inactive",
         )
 
-        # Verify db.add and commit were called for AI message
-        mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        # Verify db.add and commit cover the AI message plus outbound audit row.
+        assert mock_db.add.call_count == 2
+        assert mock_db.add.call_args_list[0].args[0].role == "assistant"
+        assert mock_db.commit.await_count == 2
 
 
 @pytest.mark.asyncio

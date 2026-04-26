@@ -49,13 +49,14 @@ async def test_escalation_fallback_sends_message_en() -> None:
 
     # Fallback sent to client
     mock_wazzup.send_text.assert_called_once()
-    call_kwargs = mock_wazzup.send_text.call_args[1]
-    assert call_kwargs["chat_id"] == "+971501234567"
-    assert "manager" in call_kwargs["text"].lower()
+    call_args = mock_wazzup.send_text.call_args
+    assert call_args.args[0] == "+971501234567"
+    assert "manager" in call_args.args[1].lower()
+    assert str(call_args.kwargs["crm_message_id"]).startswith(f"fallback:{conv.id}:")
 
     # Saved to DB
-    mock_db.add.assert_called_once()
-    saved_msg = mock_db.add.call_args[0][0]
+    assert mock_db.add.call_count == 2
+    saved_msg = mock_db.add.call_args_list[-1].args[0]
     assert saved_msg.role == "assistant"
     assert saved_msg.model == "fallback"
     mock_db.commit.assert_called_once()
@@ -92,8 +93,9 @@ async def test_escalation_fallback_sends_message_ar() -> None:
             db=mock_db,
         )
 
-    call_kwargs = mock_wazzup.send_text.call_args[1]
-    assert "المدير" in call_kwargs["text"]  # Arabic word for manager
+    call_args = mock_wazzup.send_text.call_args
+    assert "المدير" in call_args.args[1]  # Arabic word for manager
+    assert str(call_args.kwargs["crm_message_id"]).startswith(f"fallback:{conv.id}:")
 
 
 @pytest.mark.asyncio

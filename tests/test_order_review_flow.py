@@ -46,6 +46,7 @@ def _make_fake_conv(
     conv.escalation_status = escalation_status
     conv.language = language
     conv.customer_name = "Test Customer"
+    conv.zoho_deal_id = None
     conv.metadata_ = {"inbound_channel_phone": "+971551220665"}
     conv.escalations = []
     return conv
@@ -287,6 +288,61 @@ async def test_order_confirm_sends_pdf_to_client(
     mock_redis.delete.assert_awaited()
 
 
+@pytest.mark.asyncio
+@patch("src.api.telegram_webhook._get_conversation_phone_and_lang")
+@patch("src.api.telegram_webhook.async_session_factory")
+@patch("src.api.telegram_webhook.redis_client")
+async def test_order_confirm_persists_approved_decision_metadata(
+    mock_redis: AsyncMock,
+    mock_session_factory: MagicMock,
+    mock_phone_fn: AsyncMock,
+) -> None:
+    """Confirm should persist approved quotation/order state in metadata."""
+    from src.api.telegram_webhook import _handle_order_decision
+
+    meta_json = json.dumps(
+        {
+            "quote_number": "SO-APPROVED-001",
+            "filename": "quotation_SO-APPROVED-001.pdf",
+            "salesorder_number": "SO-APPROVED-001",
+            "salesorder_id": "so-approved-001",
+        }
+    )
+
+    mock_phone_fn.return_value = ("+971501234567", "en")
+    mock_tg_client, mock_wazzup, mock_conv = _setup_mocks_for_order_decision(
+        mock_redis,
+        mock_session_factory,
+        pdf_b64_raw=base64.b64encode(FAKE_PDF_BYTES),
+        meta_raw=meta_json.encode(),
+        escalation_row_statuses=("pending",),
+    )
+
+    with patch(
+        "src.integrations.messaging.wazzup.WazzupProvider",
+        return_value=mock_wazzup,
+    ):
+        await _handle_order_decision(
+            client=mock_tg_client,
+            callback_id="cb-approved",
+            chat_id=12345,
+            message_id=999,
+            mode="order_confirm",
+            conv_id_str=FAKE_CONV_ID,
+        )
+
+    decision = mock_conv.metadata_["quotation_decision"]
+    assert decision["status"] == "approved"
+    assert decision["active"] is True
+    assert decision["quote_number"] == "SO-APPROVED-001"
+    assert decision["zoho_sale_order_id"] == "so-approved-001"
+    assert decision["zoho_sale_order_number"] == "SO-APPROVED-001"
+    assert decision["source"] == "telegram_order_decision"
+    assert decision["decided_at"]
+    assert mock_conv.metadata_["zoho_sale_order_id"] == "so-approved-001"
+    assert mock_conv.metadata_["zoho_sale_order_active"] is True
+
+
 # =============================================================================
 # 4. Order confirm with expired PDF gracefully handles missing data
 # =============================================================================
@@ -380,6 +436,66 @@ async def test_order_reject_deletes_pdf(
 
     # Redis cleanup should happen
     mock_redis.delete.assert_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.api.telegram_webhook._get_conversation_phone_and_lang")
+@patch("src.api.telegram_webhook.async_session_factory")
+@patch("src.api.telegram_webhook.redis_client")
+async def test_order_reject_persists_rejected_inactive_decision_metadata(
+    mock_redis: AsyncMock,
+    mock_session_factory: MagicMock,
+    mock_phone_fn: AsyncMock,
+) -> None:
+    """Reject should mark sale-order metadata inactive so status views ignore it."""
+    from src.api.telegram_webhook import _handle_order_decision
+
+    meta_json = json.dumps(
+        {
+            "quote_number": "SO-REJECTED-001",
+            "filename": "quotation_SO-REJECTED-001.pdf",
+            "salesorder_number": "SO-REJECTED-001",
+            "salesorder_id": "so-rejected-001",
+        }
+    )
+
+    mock_phone_fn.return_value = ("+971501234567", "en")
+    mock_tg_client, mock_wazzup, mock_conv = _setup_mocks_for_order_decision(
+        mock_redis,
+        mock_session_factory,
+        pdf_b64_raw=base64.b64encode(FAKE_PDF_BYTES),
+        meta_raw=meta_json.encode(),
+        escalation_row_statuses=("pending",),
+    )
+    mock_conv.metadata_ = {
+        "inbound_channel_phone": "+971551220665",
+        "zoho_sale_order_id": "so-rejected-001",
+        "zoho_sale_order_number": "SO-REJECTED-001",
+    }
+
+    with patch(
+        "src.integrations.messaging.wazzup.WazzupProvider",
+        return_value=mock_wazzup,
+    ):
+        await _handle_order_decision(
+            client=mock_tg_client,
+            callback_id="cb-rejected",
+            chat_id=12345,
+            message_id=999,
+            mode="order_reject",
+            conv_id_str=FAKE_CONV_ID,
+        )
+
+    decision = mock_conv.metadata_["quotation_decision"]
+    assert decision["status"] == "rejected"
+    assert decision["active"] is False
+    assert decision["quote_number"] == "SO-REJECTED-001"
+    assert decision["zoho_sale_order_id"] == "so-rejected-001"
+    assert decision["zoho_sale_order_number"] == "SO-REJECTED-001"
+    assert decision["source"] == "telegram_order_decision"
+    assert decision["decided_at"]
+    assert mock_conv.metadata_["zoho_sale_order_active"] is False
+    assert mock_conv.metadata_["order_active"] is False
 
 
 # =============================================================================

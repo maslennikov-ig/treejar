@@ -8,6 +8,7 @@ from src.models.knowledge_base import KnowledgeBase
 from src.models.manager_review import ManagerReview
 from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
+from src.models.outbound_message import OutboundMessageAudit
 from src.models.product import Product
 from src.models.quality_review import QualityReview
 from src.models.referral import Referral
@@ -183,10 +184,26 @@ class ManagerReviewAdmin(ReadOnlyModelView, model=ManagerReview):
     icon = "fa-solid fa-user-check"
 
 
+class OutboundMessageAuditAdmin(ReadOnlyModelView, model=OutboundMessageAudit):
+    column_list = [
+        OutboundMessageAudit.conversation_id,
+        OutboundMessageAudit.message_type,
+        OutboundMessageAudit.source,
+        OutboundMessageAudit.status,
+        OutboundMessageAudit.provider_message_id,
+        OutboundMessageAudit.crm_message_id,
+        OutboundMessageAudit.created_at,
+    ]
+    name = "Исходящее сообщение"
+    name_plural = "Исходящие сообщения"
+    icon = "fa-solid fa-paper-plane"
+
+
 def setup_admin_views(admin_app: Admin) -> None:
     admin_app.add_view(ConversationAdmin)
     admin_app.add_view(ConversationSummaryAdmin)
     admin_app.add_view(MessageAdmin)
+    admin_app.add_view(OutboundMessageAuditAdmin)
     admin_app.add_view(ProductAdmin)
     admin_app.add_view(KnowledgeBaseAdmin)
     admin_app.add_view(QualityReviewAdmin)

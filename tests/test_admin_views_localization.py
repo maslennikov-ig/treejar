@@ -11,6 +11,7 @@ def test_admin_view_names_are_localized_for_owner_ui() -> None:
         ManagerReviewAdmin,
         MessageAdmin,
         MetricsSnapshotAdmin,
+        OutboundMessageAuditAdmin,
         ProductAdmin,
         QualityReviewAdmin,
         ReferralAdmin,
@@ -33,12 +34,15 @@ def test_admin_view_names_are_localized_for_owner_ui() -> None:
     assert SystemPromptAdmin.name == "Системный промпт"
     assert ReferralAdmin.name == "Реферал"
     assert FeedbackAdmin.name == "Обратная связь"
+    assert OutboundMessageAuditAdmin.name == "Исходящее сообщение"
+    assert OutboundMessageAuditAdmin.name_plural == "Исходящие сообщения"
 
 
 def test_admin_view_registry_includes_runtime_audit_models() -> None:
     from src.api.admin.views import (
         ConversationSummaryAdmin,
         ManagerReviewAdmin,
+        OutboundMessageAuditAdmin,
         setup_admin_views,
     )
 
@@ -54,6 +58,7 @@ def test_admin_view_registry_includes_runtime_audit_models() -> None:
 
     assert ConversationSummaryAdmin in admin.views
     assert ManagerReviewAdmin in admin.views
+    assert OutboundMessageAuditAdmin in admin.views
 
 
 def test_generated_and_audit_views_have_explicit_read_only_policy() -> None:
@@ -64,6 +69,7 @@ def test_generated_and_audit_views_have_explicit_read_only_policy() -> None:
         ManagerReviewAdmin,
         MessageAdmin,
         MetricsSnapshotAdmin,
+        OutboundMessageAuditAdmin,
         ProductAdmin,
         QualityReviewAdmin,
         ReferralAdmin,
@@ -79,6 +85,7 @@ def test_generated_and_audit_views_have_explicit_read_only_policy() -> None:
         MetricsSnapshotAdmin,
         ReferralAdmin,
         FeedbackAdmin,
+        OutboundMessageAuditAdmin,
     ):
         assert view.can_create is False
         assert view.can_edit is False

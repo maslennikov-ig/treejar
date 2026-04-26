@@ -2178,6 +2178,104 @@ async def test_tools_check_order_status_no_deal(
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_tools_check_order_status_uses_active_metadata_sale_order_without_deal(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """check_order_status should use sale-order metadata even without a CRM deal."""
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = None
+    conv.metadata_ = {
+        "zoho_sale_order_id": "so-meta-123",
+        "zoho_sale_order_number": "SO-META-123",
+        "zoho_sale_order_active": True,
+    }
+    zoho.get_sale_order_status = AsyncMock(
+        return_value={
+            "salesorder_number": "SO-META-123",
+            "status": "confirmed",
+        }
+    )
+    zoho_crm.get_deal_status = AsyncMock()
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import check_order_status
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await check_order_status(ctx)
+
+    assert "SO-META-123" in result
+    assert "Confirmed" in result
+    zoho.get_sale_order_status.assert_awaited_once_with("so-meta-123")
+    zoho_crm.get_deal_status.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_tools_check_order_status_ignores_rejected_metadata_sale_order(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """Rejected quotation metadata should not be treated as an active order."""
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = None
+    conv.metadata_ = {
+        "zoho_sale_order_id": "so-rejected-123",
+        "quotation_decision": {
+            "status": "rejected",
+            "active": False,
+        },
+    }
+    zoho.get_sale_order_status = AsyncMock()
+    zoho_crm.get_deal_status = AsyncMock()
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import check_order_status
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await check_order_status(ctx)
+
+    assert "no order" in result.lower() or "not found" in result.lower()
+    zoho.get_sale_order_status.assert_not_awaited()
+    zoho_crm.get_deal_status.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_tools_check_order_status_no_crm(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

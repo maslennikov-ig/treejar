@@ -114,6 +114,7 @@ async def test_resolved_escalation_resumes_bot(
         MockResult(None),
         MockResult(mock_conv),
         MockResult([]),
+        MockResult(None),  # outbound audit lookup
     ]
 
     mock_process_message.return_value = LLMResponse(

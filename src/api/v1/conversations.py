@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -24,6 +24,7 @@ from src.schemas import (
 router = APIRouter()
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+PhoneMatch = Literal["exact", "fuzzy"]
 
 
 @router.get("/", response_model=PaginatedResponse[ConversationRead])
@@ -33,6 +34,7 @@ async def list_conversations(
     page_size: int = Query(20, ge=1, le=100),
     status: ConversationStatus | None = None,
     phone: str | None = None,
+    phone_match: PhoneMatch = Query("exact"),
     language: Language | None = None,
 ) -> PaginatedResponse[ConversationRead]:
     """List conversations with optional filters."""
@@ -43,7 +45,10 @@ async def list_conversations(
     if language is not None:
         stmt = stmt.where(Conversation.language == language.value)
     if phone is not None:
-        stmt = stmt.where(Conversation.phone.ilike(f"%{phone}%"))
+        if phone_match == "fuzzy":
+            stmt = stmt.where(Conversation.phone.ilike(f"%{phone}%"))
+        else:
+            stmt = stmt.where(Conversation.phone == phone)
 
     # Count total
     count_stmt = select(func.count()).select_from(stmt.subquery())

@@ -8,6 +8,7 @@ from src.models.llm_attempt import LLMAttempt
 from src.models.manager_review import ManagerReview
 from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
+from src.models.outbound_message import OutboundMessageAudit
 from src.models.product import Product
 from src.models.quality_review import QualityReview
 from src.models.referral import Referral
@@ -25,6 +26,7 @@ __all__ = [
     "ManagerReview",
     "Message",
     "MetricsSnapshot",
+    "OutboundMessageAudit",
     "Product",
     "QualityReview",
     "Referral",

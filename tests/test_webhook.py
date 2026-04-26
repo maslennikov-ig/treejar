@@ -71,6 +71,46 @@ def test_wazzup_webhook_status_only(mock_networks: Any) -> None:
     assert response.json() == {"ok": True}
 
 
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_status_only_updates_outbound_audit(mock_networks: Any) -> None:
+    status_updater = AsyncMock(return_value=1)
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "statuses": [
+                    {
+                        "messageId": "provider-msg-1",
+                        "timestamp": "2026-04-26T12:00:00.000Z",
+                        "status": "delivered",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    status_updater.assert_awaited_once_with(
+        db,
+        [
+            {
+                "messageId": "provider-msg-1",
+                "timestamp": "2026-04-26T12:00:00.000Z",
+                "status": "delivered",
+            }
+        ],
+    )
+    db.commit.assert_awaited_once()
+
+
 def test_wazzup_webhook_rejects_disallowed_ip() -> None:
     """Test that webhook rejects requests from non-allowed IPs."""
     import ipaddress

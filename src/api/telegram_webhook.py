@@ -19,6 +19,7 @@ import base64
 import json
 import logging
 import uuid
+from datetime import UTC, datetime
 from html import escape
 from typing import Any
 
@@ -35,6 +36,11 @@ from src.integrations.notifications.telegram_webhook import (
 from src.models.conversation import Conversation
 from src.models.message import Message, message_created_at_now
 from src.services.escalation_state import resolve_conversation_pending_escalations
+from src.services.outbound_audit import (
+    deterministic_crm_message_id,
+    send_wazzup_media_with_audit,
+    send_wazzup_text_with_audit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,7 @@ router = APIRouter(tags=["telegram"])
 # Redis key prefix for pending manager responses; TTL = 5 minutes.
 _PENDING_KEY_PREFIX = "tg_pending:"
 _PENDING_TTL_SECONDS = 600
+_ORDER_DECISION_SOURCE = "telegram_order_decision"
 
 
 def _get_telegram_client() -> TelegramClient:
@@ -50,6 +57,62 @@ def _get_telegram_client() -> TelegramClient:
         bot_token=settings.telegram_bot_token,
         chat_id=settings.telegram_chat_id,
     )
+
+
+def _metadata_text(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _parse_quotation_meta(raw: bytes | str | None) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _apply_order_decision_metadata(
+    conversation: Conversation,
+    *,
+    is_confirm: bool,
+    quote_number: str,
+    sale_order_id: str,
+    sale_order_number: str,
+    decided_at: str,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    status = "approved" if is_confirm else "rejected"
+    is_active = is_confirm
+
+    sale_order_id = sale_order_id or _metadata_text(metadata.get("zoho_sale_order_id"))
+    sale_order_number = sale_order_number or _metadata_text(
+        metadata.get("zoho_sale_order_number")
+    )
+
+    decision: dict[str, Any] = {
+        "status": status,
+        "active": is_active,
+        "quote_number": quote_number,
+        "decided_at": decided_at,
+        "source": _ORDER_DECISION_SOURCE,
+    }
+    if sale_order_id:
+        decision["zoho_sale_order_id"] = sale_order_id
+        metadata["zoho_sale_order_id"] = sale_order_id
+    if sale_order_number:
+        decision["zoho_sale_order_number"] = sale_order_number
+        metadata["zoho_sale_order_number"] = sale_order_number
+
+    metadata["quotation_decision"] = decision
+    metadata["quotation_decision_status"] = status
+    metadata["quotation_decided_at"] = decided_at
+    metadata["quotation_decision_source"] = _ORDER_DECISION_SOURCE
+    metadata["quotation_quote_number"] = quote_number
+    metadata["zoho_sale_order_active"] = is_active
+    metadata["order_active"] = is_active
+    conversation.metadata_ = metadata
 
 
 @router.post("/webhook/telegram")
@@ -188,7 +251,48 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
 
             wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
             try:
-                await wazzup.send_text(phone, adapted)
+                async with async_session_factory() as resolve_db:
+                    send_result = await send_wazzup_text_with_audit(
+                        resolve_db,
+                        provider=wazzup,
+                        conversation_id=uuid.UUID(conv_id),
+                        chat_id=phone,
+                        text=adapted,
+                        source="manager_reply",
+                        crm_message_id=deterministic_crm_message_id(
+                            "manager",
+                            conv_id,
+                            message.get("message_id") or chat_id,
+                            "private",
+                        ),
+                    )
+                    msg = Message(
+                        conversation_id=uuid.UUID(conv_id),
+                        role="assistant",
+                        content=adapted,
+                        model="manager_reply",
+                        wazzup_message_id=send_result.provider_message_id,
+                        created_at=message_created_at_now(),
+                    )
+                    resolve_db.add(msg)
+
+                    try:
+                        resolved_rows = await resolve_conversation_pending_escalations(
+                            resolve_db, uuid.UUID(conv_id)
+                        )
+                    except Exception:
+                        resolved_rows = 0
+                        logger.exception(
+                            "Failed to resolve escalation for %s",
+                            conv_id,
+                        )
+
+                    await resolve_db.commit()
+                    logger.info(
+                        "Manager reply persisted for %s; pending_rows=%d",
+                        conv_id,
+                        resolved_rows,
+                    )
             finally:
                 await wazzup.close()
 
@@ -198,24 +302,6 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
                 f"✅ Ответ отправлен клиенту:\n\n{safe_adapted}",
                 chat_id=str(chat_id),
             )
-
-            # R3-3: Resolve escalation after successful manager reply
-            try:
-                async with async_session_factory() as resolve_db:
-                    resolved_rows = await resolve_conversation_pending_escalations(
-                        resolve_db, uuid.UUID(conv_id)
-                    )
-                    await resolve_db.commit()
-                    logger.info(
-                        "Escalation resolved for %s after manager reply; pending_rows=%d",
-                        conv_id,
-                        resolved_rows,
-                    )
-            except Exception:
-                logger.exception(
-                    "Failed to resolve escalation for %s",
-                    conv_id,
-                )
         else:
             await client.send_message(
                 "⚠️ Не удалось найти номер телефона клиента. "
@@ -397,15 +483,30 @@ async def _handle_order_decision(
     if phone:
         from src.integrations.messaging.wazzup import WazzupProvider
 
+        pdf_key = f"quotation_pdf:{conv_id_str}"
+        meta_key = f"quotation_meta:{conv_id_str}"
+        meta_raw = await redis_client.get(meta_key)
+        quote_meta = _parse_quotation_meta(meta_raw)
+        if meta_raw and not quote_meta:
+            logger.warning(
+                "Failed to parse quotation meta for conv %s",
+                conv_id_str,
+            )
+        quote_number = _metadata_text(quote_meta.get("quote_number")) or "DRAFT"
+        sale_order_id = _metadata_text(
+            quote_meta.get("salesorder_id") or quote_meta.get("zoho_sale_order_id")
+        )
+        sale_order_number = _metadata_text(
+            quote_meta.get("salesorder_number")
+            or quote_meta.get("zoho_sale_order_number")
+        )
+        text_message_id: str | None = None
+
         if is_confirm:
             # Retrieve PDF from Redis (stored by create_quotation tool)
-            pdf_key = f"quotation_pdf:{conv_id_str}"
-            meta_key = f"quotation_meta:{conv_id_str}"
             pdf_b64_raw = await redis_client.get(pdf_key)
-            meta_raw = await redis_client.get(meta_key)
 
             pdf_bytes: bytes | None = None
-            quote_number = "DRAFT"
 
             if pdf_b64_raw:
                 try:
@@ -416,27 +517,38 @@ async def _handle_order_decision(
                         conv_id_str,
                     )
 
-            if meta_raw:
-                try:
-                    meta = json.loads(meta_raw)
-                    quote_number = meta.get("quote_number", "DRAFT")
-                except Exception:
-                    logger.warning(
-                        "Failed to parse quotation meta for conv %s",
-                        conv_id_str,
-                    )
-
             # Send PDF to client via Wazzup if available
             wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
             try:
                 if pdf_bytes:
                     try:
-                        await wazzup.send_media(
-                            chat_id=phone,
-                            content=pdf_bytes,
-                            content_type="application/pdf",
-                            caption=f"Your quotation: {quote_number}",
-                        )
+                        async with async_session_factory() as audit_db:
+                            await send_wazzup_media_with_audit(
+                                audit_db,
+                                provider=wazzup,
+                                conversation_id=conv_uuid,
+                                chat_id=phone,
+                                source="order_confirm_pdf",
+                                crm_message_id=deterministic_crm_message_id(
+                                    "order",
+                                    conv_id_str,
+                                    "confirm",
+                                    "pdf",
+                                    quote_number,
+                                ),
+                                caption_crm_message_id=deterministic_crm_message_id(
+                                    "order",
+                                    conv_id_str,
+                                    "confirm",
+                                    "caption",
+                                    quote_number,
+                                ),
+                                content=pdf_bytes,
+                                content_type="application/pdf",
+                                caption=f"Your quotation: {quote_number}",
+                                file_name=f"quotation_{quote_number}.pdf",
+                            )
+                            await audit_db.commit()
                     except Exception:
                         logger.exception(
                             "Failed to send PDF to client for conv %s",
@@ -459,7 +571,24 @@ async def _handle_order_decision(
                     if language == "ar"
                     else "Your order has been confirmed! ✅\nA manager will contact you shortly to finalize details and payment. Thank you for choosing Treejar! 🌳"
                 )
-                await wazzup.send_text(phone, client_msg)
+                async with async_session_factory() as audit_db:
+                    text_result = await send_wazzup_text_with_audit(
+                        audit_db,
+                        provider=wazzup,
+                        conversation_id=conv_uuid,
+                        chat_id=phone,
+                        text=client_msg,
+                        source="order_confirm_text",
+                        crm_message_id=deterministic_crm_message_id(
+                            "order",
+                            conv_id_str,
+                            "confirm",
+                            "text",
+                            quote_number,
+                        ),
+                    )
+                    text_message_id = text_result.provider_message_id
+                    await audit_db.commit()
             except Exception:
                 logger.exception("Failed to send order decision to %s", phone)
                 await client.send_message(
@@ -489,7 +618,24 @@ async def _handle_order_decision(
             # CR-5: Send to client FIRST, only resolve if successful
             wazzup = WazzupProvider(channel_id=settings.wazzup_channel_id)
             try:
-                await wazzup.send_text(phone, client_msg)
+                async with async_session_factory() as audit_db:
+                    text_result = await send_wazzup_text_with_audit(
+                        audit_db,
+                        provider=wazzup,
+                        conversation_id=conv_uuid,
+                        chat_id=phone,
+                        text=client_msg,
+                        source="order_reject_text",
+                        crm_message_id=deterministic_crm_message_id(
+                            "order",
+                            conv_id_str,
+                            "reject",
+                            "text",
+                            quote_number,
+                        ),
+                    )
+                    text_message_id = text_result.provider_message_id
+                    await audit_db.commit()
             except Exception:
                 logger.exception("Failed to send order decision to %s", phone)
                 await client.send_message(
@@ -502,8 +648,6 @@ async def _handle_order_decision(
 
             # Clean up Redis PDF/meta keys (if any)
             try:
-                pdf_key = f"quotation_pdf:{conv_id_str}"
-                meta_key = f"quotation_meta:{conv_id_str}"
                 await redis_client.delete(pdf_key, meta_key)
             except Exception:
                 logger.warning(
@@ -513,11 +657,30 @@ async def _handle_order_decision(
 
         # Save message and resolve escalation AFTER successful send
         async with async_session_factory() as db:
+            stmt = select(Conversation).where(Conversation.id == conv_uuid)
+            result = await db.execute(stmt)
+            decision_conv = result.scalar_one_or_none()
+            if decision_conv:
+                _apply_order_decision_metadata(
+                    decision_conv,
+                    is_confirm=is_confirm,
+                    quote_number=quote_number,
+                    sale_order_id=sale_order_id,
+                    sale_order_number=sale_order_number,
+                    decided_at=datetime.now(UTC).isoformat(),
+                )
+            else:
+                logger.warning(
+                    "Conversation %s disappeared before order decision metadata write",
+                    conv_id_str,
+                )
+
             msg = Message(
                 conversation_id=conv_uuid,
                 role="assistant",
                 content=client_msg,
                 model="manager_decision",
+                wazzup_message_id=text_message_id,
                 created_at=message_created_at_now(),
             )
             db.add(msg)

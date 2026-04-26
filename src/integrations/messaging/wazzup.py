@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -16,6 +17,14 @@ logger = logging.getLogger(__name__)
 # Temporary file hosting for Wazzup contentUri (files expire after ~1h).
 # Wazzup v3 API requires a *public URL* for media — base64 is NOT supported.
 _TMPFILES_UPLOAD_URL = "https://tmpfiles.org/api/v1/upload"
+
+
+@dataclass(frozen=True)
+class WazzupMediaSendResult:
+    message_id: str
+    caption_message_id: str | None
+    content_uri: str
+    outbound_chat_id: str
 
 
 class WazzupProvider(MessagingProvider):
@@ -185,7 +194,15 @@ class WazzupProvider(MessagingProvider):
             return base_chat_id
         return chat_id
 
-    async def send_text(self, chat_id: str, text: str) -> str:
+    def outbound_chat_id(self, chat_id: str) -> str:
+        return self._outbound_chat_id(chat_id)
+
+    async def send_text(
+        self,
+        chat_id: str,
+        text: str,
+        crm_message_id: str | None = None,
+    ) -> str:
         """Send a text message. Returns message ID."""
         outbound_chat_id = self._outbound_chat_id(chat_id)
         payload: dict[str, Any] = {
@@ -195,19 +212,23 @@ class WazzupProvider(MessagingProvider):
         }
         if self.channel_id:
             payload["channelId"] = self.channel_id
+        if crm_message_id:
+            payload["crmMessageId"] = crm_message_id
 
         response = await self._request("POST", "/message", json=payload)
         return self._extract_message_id(response.json())
 
-    async def send_media(
+    async def send_media_detailed(
         self,
         chat_id: str,
         url: str | None = None,
         caption: str | None = None,
         content: bytes | None = None,
         content_type: str | None = None,
-    ) -> str:
-        """Send media (image/document/audio). Returns message ID.
+        crm_message_id: str | None = None,
+        caption_crm_message_id: str | None = None,
+    ) -> WazzupMediaSendResult:
+        """Send media and return both media and optional caption message IDs.
 
         Wazzup v3 constraints:
         - Files must be sent via ``contentUri`` (publicly accessible URL).
@@ -237,23 +258,62 @@ class WazzupProvider(MessagingProvider):
         }
         if self.channel_id:
             payload["channelId"] = self.channel_id
+        if crm_message_id:
+            payload["crmMessageId"] = crm_message_id
 
         response = await self._request("POST", "/message", json=payload)
         msg_id = self._extract_message_id(response.json())
 
         # --- Send caption as a separate text message (if provided) ---
+        caption_msg_id: str | None = None
         if caption:
             try:
-                await self.send_text(outbound_chat_id, caption)
+                caption_msg_id = await self.send_text(
+                    outbound_chat_id,
+                    caption,
+                    crm_message_id=caption_crm_message_id,
+                )
             except Exception:
                 logger.warning(
                     "File sent (msg_id=%s) but caption failed", msg_id, exc_info=True
                 )
 
+        return WazzupMediaSendResult(
+            message_id=msg_id,
+            caption_message_id=caption_msg_id,
+            content_uri=content_uri,
+            outbound_chat_id=outbound_chat_id,
+        )
+
+    async def send_media(
+        self,
+        chat_id: str,
+        url: str | None = None,
+        caption: str | None = None,
+        content: bytes | None = None,
+        content_type: str | None = None,
+        crm_message_id: str | None = None,
+        caption_crm_message_id: str | None = None,
+    ) -> str:
+        """Send media (image/document/audio). Returns media message ID."""
+        result = await self.send_media_detailed(
+            chat_id=chat_id,
+            url=url,
+            caption=caption,
+            content=content,
+            content_type=content_type,
+            crm_message_id=crm_message_id,
+            caption_crm_message_id=caption_crm_message_id,
+        )
+        msg_id = result.message_id
         return msg_id
 
     async def send_template(
-        self, chat_id: str, template_name: str, params: dict[str, str] | None = None
+        self,
+        chat_id: str,
+        template_name: str,
+        params: dict[str, str] | None = None,
+        crm_message_id: str | None = None,
     ) -> str:
         """Send a pre-approved template message (for >24h follow-ups). Returns message ID."""
         if params is not None:
@@ -272,6 +332,8 @@ class WazzupProvider(MessagingProvider):
         }
         if self.channel_id:
             payload["channelId"] = self.channel_id
+        if crm_message_id:
+            payload["crmMessageId"] = crm_message_id
 
         response = await self._request("POST", "/message", json=payload)
         return self._extract_message_id(response.json())

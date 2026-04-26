@@ -315,6 +315,139 @@ async def test_private_manager_reply_uses_one_adapter_call_without_kb_candidate(
 
 
 @pytest.mark.asyncio
+async def test_private_manager_reply_persists_message_after_successful_wazzup_send() -> (
+    None
+):
+    from src.api.telegram_webhook import _handle_manager_reply
+    from src.models.message import Message
+
+    conv_uuid = uuid.uuid4()
+    redis = AsyncMock()
+    redis.get.return_value = json.dumps(
+        {
+            "conversation_id": str(conv_uuid),
+            "mode": "faq_private",
+            "question": "When can you deliver?",
+        }
+    )
+    telegram = AsyncMock()
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.execute.return_value.scalar_one_or_none = MagicMock(return_value=None)
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+    wazzup = AsyncMock()
+    wazzup.send_text = AsyncMock(return_value="wazzup-message-123")
+    wazzup.close = AsyncMock()
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch(
+            "src.api.telegram_webhook._get_conversation_phone_and_lang",
+            new=AsyncMock(return_value=("+971501234567", "en")),
+        ),
+        patch(
+            "src.api.telegram_webhook.async_session_factory",
+            MagicMock(return_value=db_cm),
+        ),
+        patch(
+            "src.api.telegram_webhook.resolve_conversation_pending_escalations",
+            new=AsyncMock(return_value=1),
+        ) as mock_resolve,
+        patch("src.integrations.messaging.wazzup.WazzupProvider", return_value=wazzup),
+        patch(
+            "src.llm.response_adapter.adapt_manager_response",
+            new=AsyncMock(return_value="Delivery takes 3-5 business days."),
+        ),
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "3-5 days"})
+
+    wazzup.send_text.assert_awaited_once()
+    assert wazzup.send_text.await_args.args == (
+        "+971501234567",
+        "Delivery takes 3-5 business days.",
+    )
+    assert wazzup.send_text.await_args.kwargs["crm_message_id"] == (
+        f"manager:{conv_uuid}:42:private"
+    )
+    added_messages = [
+        call.args[0]
+        for call in db.add.call_args_list
+        if isinstance(call.args[0], Message)
+    ]
+    assert len(added_messages) == 1
+    msg = added_messages[0]
+    assert isinstance(msg, Message)
+    assert msg.conversation_id == conv_uuid
+    assert msg.role == "assistant"
+    assert msg.content == "Delivery takes 3-5 business days."
+    assert msg.model == "manager_reply"
+    assert msg.wazzup_message_id == "wazzup-message-123"
+    mock_resolve.assert_awaited_once_with(db, conv_uuid)
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_private_manager_reply_send_failure_does_not_persist_or_resolve() -> None:
+    from src.api.telegram_webhook import _handle_manager_reply
+    from src.models.message import Message
+
+    conv_uuid = uuid.uuid4()
+    redis = AsyncMock()
+    redis.get.return_value = json.dumps(
+        {
+            "conversation_id": str(conv_uuid),
+            "mode": "faq_private",
+            "question": "When can you deliver?",
+        }
+    )
+    telegram = AsyncMock()
+    session_factory = MagicMock()
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.execute.return_value.scalar_one_or_none = MagicMock(return_value=None)
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+    session_factory.return_value = db_cm
+    wazzup = AsyncMock()
+    wazzup.send_text = AsyncMock(side_effect=RuntimeError("Wazzup unavailable"))
+    wazzup.close = AsyncMock()
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch(
+            "src.api.telegram_webhook._get_conversation_phone_and_lang",
+            new=AsyncMock(return_value=("+971501234567", "en")),
+        ),
+        patch("src.api.telegram_webhook.async_session_factory", session_factory),
+        patch(
+            "src.api.telegram_webhook.resolve_conversation_pending_escalations",
+            new=AsyncMock(return_value=1),
+        ) as mock_resolve,
+        patch("src.integrations.messaging.wazzup.WazzupProvider", return_value=wazzup),
+        patch(
+            "src.llm.response_adapter.adapt_manager_response",
+            new=AsyncMock(return_value="Delivery takes 3-5 business days."),
+        ),
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "3-5 days"})
+
+    wazzup.send_text.assert_awaited_once()
+    wazzup.close.assert_awaited_once()
+    added_messages = [
+        call.args[0]
+        for call in db.add.call_args_list
+        if isinstance(call.args[0], Message)
+    ]
+    assert added_messages == []
+    mock_resolve.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_faq_manager_reply_uses_combined_call_and_requires_confirmation() -> None:
     from src.api.telegram_webhook import _handle_manager_reply
     from src.llm.response_adapter import ManagerReplyWithAutoFAQResult

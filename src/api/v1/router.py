@@ -24,7 +24,10 @@ api_v1_router = APIRouter()
 api_v1_router.include_router(health.router, tags=["Health"])
 api_v1_router.include_router(webhook.router, prefix="/webhook", tags=["Webhook"])
 api_v1_router.include_router(
-    conversations.router, prefix="/conversations", tags=["Conversations"]
+    conversations.router,
+    prefix="/conversations",
+    tags=["Conversations"],
+    dependencies=[Depends(require_api_key)],
 )
 api_v1_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_v1_router.include_router(

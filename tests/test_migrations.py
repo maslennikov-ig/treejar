@@ -18,3 +18,19 @@ def test_alembic_revision_ids_fit_version_column() -> None:
             f"{migration_file.name} revision '{revision}' exceeds "
             f"{ALEMBIC_VERSION_COLUMN_LIMIT} characters"
         )
+
+
+def test_outbound_audit_migration_defines_required_constraints() -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "2026_04_26_add_outbound_message_audit.py"
+    )
+    text = migration.read_text()
+
+    assert "op.create_table(" in text
+    assert '"outbound_message_audits"' in text
+    assert '"crm_message_id"' in text
+    assert "uq_outbound_message_audits_provider_crm_message_id" in text
+    assert "uq_outbound_message_audits_provider_message_id" in text

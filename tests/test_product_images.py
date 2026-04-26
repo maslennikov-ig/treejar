@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -111,7 +112,81 @@ async def test_search_products_sends_image_if_present(
         caption="Test Chair — 100.00 AED",
         content=None,
         content_type=None,
+        crm_message_id=(
+            "product:00000000-0000-0000-0000-000000000000:"
+            "11111111-1111-1111-1111-111111111111:media"
+        ),
+        caption_crm_message_id=(
+            "product:00000000-0000-0000-0000-000000000000:"
+            "11111111-1111-1111-1111-111111111111:caption"
+        ),
     )
+    run_context.deps.db.commit.assert_awaited_once()
+
+
+async def test_search_products_sends_multiple_images_sequentially(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
+    products = [
+        ProductRead(
+            id="11111111-1111-1111-1111-111111111111",
+            category_id="22222222-2222-2222-2222-222222222222",
+            name_en="Test Chair",
+            description_en="A great chair",
+            sku="CHAIR-01",
+            price="100.00",
+            currency="AED",
+            image_url="https://example.com/chair.jpg",
+            created_at="2024-01-01T00:00:00Z",
+            stock=10,
+            is_active=True,
+        ),
+        ProductRead(
+            id="33333333-3333-3333-3333-333333333333",
+            category_id="22222222-2222-2222-2222-222222222222",
+            name_en="Test Sofa",
+            description_en="A great sofa",
+            sku="SOFA-01",
+            price="300.00",
+            currency="AED",
+            image_url="https://example.com/sofa.jpg",
+            created_at="2024-01-01T00:00:00Z",
+            stock=3,
+            is_active=True,
+        ),
+    ]
+
+    class MockResults:
+        pass
+
+    MockResults.products = products
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    in_send = False
+    concurrent_entries = 0
+
+    async def send_media_side_effect(**kwargs: Any) -> str:
+        nonlocal in_send, concurrent_entries
+        if in_send:
+            concurrent_entries += 1
+        in_send = True
+        await asyncio.sleep(0)
+        in_send = False
+        return f"wz-msg-{mock_messaging_client.send_media.await_count}"
+
+    mock_messaging_client.send_media.side_effect = send_media_side_effect
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "furniture")
+
+    assert isinstance(result, ToolReturn)
+    assert mock_messaging_client.send_media.await_count == 2
+    assert concurrent_entries == 0
+    assert run_context.deps.db.commit.await_count == 2
 
 
 async def test_search_products_graceful_fallback(

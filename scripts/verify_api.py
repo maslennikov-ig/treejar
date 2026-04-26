@@ -32,6 +32,12 @@ def fail(msg: str) -> None:
     print(f"  ❌ {msg}")
 
 
+def build_api_headers(api_key: str) -> dict[str, str]:
+    if not api_key:
+        return {}
+    return {"X-API-Key": api_key}
+
+
 async def check_endpoint(
     client: httpx.AsyncClient,
     method: str,
@@ -39,12 +45,14 @@ async def check_endpoint(
     name: str,
     *,
     expect_status: int = 200,
+    headers: dict[str, str] | None = None,
 ) -> None:
+    request_headers = headers or {}
     try:
         if method == "GET":
-            resp = await client.get(path)
+            resp = await client.get(path, headers=request_headers)
         elif method == "POST":
-            resp = await client.post(path, json={})
+            resp = await client.post(path, json={}, headers=request_headers)
         else:
             fail(f"Unknown method {method}")
             return
@@ -59,10 +67,33 @@ async def check_endpoint(
         fail(f"{name}: {method} {path} → ERROR: {e}")
 
 
-async def main(base_url: str) -> None:
+async def check_conversations(client: httpx.AsyncClient, api_key: str) -> None:
+    headers = build_api_headers(api_key)
+    if headers:
+        await check_endpoint(
+            client,
+            "GET",
+            "/api/v1/conversations/",
+            "Conversation list",
+            headers=headers,
+        )
+        return
+
+    await check_endpoint(
+        client,
+        "GET",
+        "/api/v1/conversations/",
+        "Conversation list auth guard",
+        expect_status=403,
+        headers=headers,
+    )
+
+
+async def main(base_url: str, api_key: str) -> None:
     print("=" * 60)
     print("Script 11: Health & API Endpoints Verification")
     print(f"  Target: {base_url}")
+    print(f"  Internal API key: {'configured' if api_key else 'missing'}")
     print("=" * 60)
 
     async with httpx.AsyncClient(base_url=base_url, timeout=15.0) as client:
@@ -76,9 +107,7 @@ async def main(base_url: str) -> None:
 
         # 3. Conversation endpoints
         print("\n--- 11.3 Conversations ---")
-        await check_endpoint(
-            client, "GET", "/api/v1/conversations/", "Conversation list"
-        )
+        await check_conversations(client, api_key)
 
         # 4. Quality endpoints
         print("\n--- 11.4 Quality ---")
@@ -140,5 +169,10 @@ if __name__ == "__main__":
         default=os.getenv("API_BASE_URL", "http://localhost:8000"),
         help="Base URL of the API server",
     )
+    parser.add_argument(
+        "--api-key",
+        default=os.getenv("VERIFY_API_KEY", os.getenv("API_KEY", "")),
+        help="Internal API key for protected API routes",
+    )
     args = parser.parse_args()
-    asyncio.run(main(args.base_url))
+    asyncio.run(main(args.base_url, args.api_key.strip()))

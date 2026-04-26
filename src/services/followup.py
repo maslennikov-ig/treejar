@@ -13,6 +13,10 @@ from src.models.feedback import Feedback
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import DealStatus, SalesStage
 from src.services.escalation_state import allows_automatic_followup
+from src.services.outbound_audit import (
+    deterministic_crm_message_id,
+    send_wazzup_text_with_audit,
+)
 
 logfire = Logfire()
 
@@ -154,7 +158,20 @@ async def _process_followup_for_conversation(db: Any, conv: Conversation) -> Non
     await db.commit()
 
     # 4. Send message
-    await messaging.send_text(conv.phone, final_text)
+    await send_wazzup_text_with_audit(
+        db,
+        provider=messaging,
+        conversation_id=conv.id,
+        chat_id=conv.phone,
+        text=final_text,
+        source="automatic_followup",
+        crm_message_id=deterministic_crm_message_id(
+            "followup",
+            conv.id,
+            "inactive",
+        ),
+    )
+    await db.commit()
     logfire.info(f"Follow-up sent successfully to {conv.phone}")
 
 
@@ -223,7 +240,19 @@ async def _send_feedback_request(db: Any, conv: Conversation) -> None:
             "Could you share some feedback with us?"
         )
 
-    await messaging.send_text(conv.phone, text)
+    await send_wazzup_text_with_audit(
+        db,
+        provider=messaging,
+        conversation_id=conv.id,
+        chat_id=conv.phone,
+        text=text,
+        source="feedback_request",
+        crm_message_id=deterministic_crm_message_id(
+            "feedback",
+            conv.id,
+            "request",
+        ),
+    )
 
     # Only commit stage change AFTER successful message send
     conv.sales_stage = SalesStage.FEEDBACK.value

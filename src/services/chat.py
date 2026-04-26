@@ -32,6 +32,10 @@ from src.services.escalation_state import (
     should_send_escalation_fallback,
 )
 from src.services.inbound_channels import update_conversation_inbound_channel
+from src.services.outbound_audit import (
+    deterministic_crm_message_id,
+    send_wazzup_text_with_audit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +232,19 @@ async def _handle_escalation_fallback(
             "Please bear with us."
         )
 
-    await wazzup.send_text(chat_id=conv.phone, text=fallback)
+    await send_wazzup_text_with_audit(
+        db,
+        provider=wazzup,
+        conversation_id=conv.id,
+        chat_id=conv.phone,
+        text=fallback,
+        source="escalation_fallback",
+        crm_message_id=deterministic_crm_message_id(
+            "fallback",
+            conv.id,
+            hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
+        ),
+    )
 
     # Save fallback as assistant message
     fb_msg = Message(
@@ -676,10 +692,20 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                     if lang == "ar"
                     else "Sorry, I'm currently overloaded. Please try again in a minute."
                 )
-                await wazzup_provider.send_text(
+                await send_wazzup_text_with_audit(
+                    db,
+                    provider=wazzup_provider,
+                    conversation_id=conv.id,
                     chat_id=chat_id,
                     text=timeout_msg,
+                    source="llm_timeout",
+                    crm_message_id=deterministic_crm_message_id(
+                        "timeout",
+                        conv.id,
+                        hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
+                    ),
                 )
+                await db.commit()
                 return
 
             # 4. Save response to DB
@@ -694,14 +720,25 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 created_at=message_created_at_now(),
             )
             db.add(assistant_msg)
+            await db.flush()
             await db.commit()
             await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
 
             # 5. Send via Wazzup
             logger.info("Sending reply to %s via Wazzup", chat_id)
             whatsapp_text = _format_for_whatsapp(llm_response.text)
-            await wazzup_provider.send_text(
+            await send_wazzup_text_with_audit(
+                db,
+                provider=wazzup_provider,
+                conversation_id=conv.id,
                 chat_id=chat_id,
                 text=whatsapp_text,
+                source="bot_reply",
+                crm_message_id=deterministic_crm_message_id(
+                    "bot",
+                    conv.id,
+                    assistant_msg.id,
+                ),
             )
+            await db.commit()
             logger.info("Reply sent to %s successfully", chat_id)

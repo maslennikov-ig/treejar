@@ -33,6 +33,20 @@ class MockResult:
         return [self.val] if self.val is not None else []
 
 
+def _assert_bot_reply_sent(
+    mock_wazzup: AsyncMock,
+    *,
+    chat_id: str,
+    text: str,
+    conversation_id: str,
+) -> None:
+    mock_wazzup.send_text.assert_awaited_once()
+    assert mock_wazzup.send_text.await_args.args == (chat_id, text)
+    assert mock_wazzup.send_text.await_args.kwargs["crm_message_id"].startswith(
+        f"bot:{conversation_id}:"
+    )
+
+
 @pytest.mark.asyncio
 @patch("src.services.chat.async_session_factory")
 @patch("src.services.chat.process_message")
@@ -51,6 +65,18 @@ async def test_process_incoming_batch_new_conversation(
     # Set up mocks
     mock_session = AsyncMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
+    added_objects: list[object] = []
+    mock_session.add = MagicMock(side_effect=added_objects.append)
+
+    async def _assign_new_conversation_id() -> None:
+        for obj in added_objects:
+            if (
+                obj.__class__.__name__ == "Conversation"
+                and getattr(obj, "id", None) is None
+            ):
+                obj.id = "conv-uuid-123"
+
+    mock_session.flush.side_effect = _assign_new_conversation_id
 
     # Mock conversation to return from scalar_one_or_none on 2nd call
     mock_conv = MagicMock()
@@ -64,6 +90,7 @@ async def test_process_incoming_batch_new_conversation(
         MockResult([]),  # msg dedup check
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     # Simulate LLM response
@@ -120,8 +147,11 @@ async def test_process_incoming_batch_new_conversation(
     # Assertions
     mock_session.commit.assert_awaited()
     mock_process_message.assert_awaited_once()
-    mock_wazzup.send_text.assert_awaited_once_with(
-        chat_id=chat_id, text="Hello from AI"
+    _assert_bot_reply_sent(
+        mock_wazzup,
+        chat_id=chat_id,
+        text="Hello from AI",
+        conversation_id="conv-uuid-123",
     )
     mock_redis.enqueue_job.assert_not_called()
 
@@ -161,6 +191,7 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
         MockResult([]),  # msg dedup check
         MockResult(10),  # total messages after assistant commit
         MockResult(None),  # no existing summary yet
+        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse
@@ -204,8 +235,11 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
     assert mock_process_message.await_args.kwargs["conversation_id"] == "conv-live"
-    mock_wazzup.send_text.assert_awaited_once_with(
-        chat_id="1234567890", text="Hello from AI"
+    _assert_bot_reply_sent(
+        mock_wazzup,
+        chat_id="1234567890",
+        text="Hello from AI",
+        conversation_id="conv-live",
     )
     mock_redis.enqueue_job.assert_awaited_once_with(
         "refresh_conversation_summary",
@@ -242,6 +276,7 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
         MockResult([]),  # msg dedup check
         MockResult(4),  # still a short conversation
         MockResult("summary-row"),  # summary already exists
+        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse
@@ -320,6 +355,7 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
         MockResult([]),  # msg dedup check
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse
@@ -418,6 +454,7 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
         MockResult([]),  # msg dedup check
         MockResult(3),  # total messages after assistant commit
         MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse

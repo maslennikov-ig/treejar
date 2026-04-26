@@ -130,6 +130,7 @@ async def test_process_incoming_batch_success(
         MockResult([]),  # batch messages dedup check
         MockResult(4),  # total messages after assistant commit
         MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit lookup
     ]
 
     # 3. Setup LLM response mock

@@ -49,6 +49,12 @@ def build_conversation_detail_url(base_url: str, conversation_id: str) -> str:
     return f"{base_url.rstrip('/')}/api/v1/conversations/{conversation_id}"
 
 
+def build_api_headers(api_key: str) -> dict[str, str]:
+    if not api_key:
+        return {}
+    return {"X-API-Key": api_key}
+
+
 def parse_json_response(
     body: str, url: str, content_type: str | None
 ) -> dict[str, Any]:
@@ -148,16 +154,20 @@ def http_json(
     url: str,
     *,
     data: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
     timeout: float = 20.0,
 ) -> tuple[int, dict[str, Any]]:
     payload = None if data is None else json.dumps(data).encode("utf-8")
+    request_headers = dict(headers or {})
+    if payload is not None:
+        request_headers.setdefault("Content-Type", "application/json")
     last_incomplete_error: http.client.IncompleteRead | None = None
 
     for _ in range(3):
         request = urllib.request.Request(
             url,
             data=payload,
-            headers={"Content-Type": "application/json"} if payload is not None else {},
+            headers=request_headers,
             method="POST" if payload is not None else "GET",
         )
 
@@ -239,13 +249,18 @@ def poll_for_reply(
     marker: str,
     started_at: datetime,
     wait_secs: int,
+    api_key: str,
 ) -> tuple[str, dict[str, Any], dict[str, Any], dict[str, Any]]:
     last_seen_conversations: list[str] = []
     candidate_conversation_ids: list[str] = []
+    conversation_headers = build_api_headers(api_key)
 
     for _ in range(wait_secs):
         time.sleep(1)
-        _, conversations = http_json(build_conversations_url(base_url, phone))
+        _, conversations = http_json(
+            build_conversations_url(base_url, phone),
+            headers=conversation_headers,
+        )
         items = conversations.get("items", [])
 
         if not isinstance(items, list):
@@ -259,7 +274,8 @@ def poll_for_reply(
                 continue
 
             _, detail = http_json(
-                build_conversation_detail_url(base_url, str(conversation_id))
+                build_conversation_detail_url(base_url, str(conversation_id)),
+                headers=conversation_headers,
             )
             messages = detail.get("messages", [])
             if not isinstance(messages, list):
@@ -283,7 +299,8 @@ def poll_for_reply(
     for _ in range(3):
         for conversation_id in candidate_conversation_ids:
             _, detail = http_json(
-                build_conversation_detail_url(base_url, conversation_id)
+                build_conversation_detail_url(base_url, conversation_id),
+                headers=conversation_headers,
             )
             messages = detail.get("messages", [])
             if not isinstance(messages, list):
@@ -345,6 +362,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         ),
         help="Wazzup channelId used by the live runtime",
     )
+    parser.add_argument(
+        "--api-key",
+        default=env_default(
+            "BOT_TEST_API_KEY",
+            dotenv_values,
+            env_default("API_KEY", dotenv_values),
+        ),
+        help="Internal API key for protected conversation polling",
+    )
     return parser.parse_args(argv)
 
 
@@ -354,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
     message_id = f"smoke-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     started_at = normalize_started_at(datetime.now(UTC))
     sent_text = f"{args.message}\n{marker}"
+    api_key = args.api_key.strip()
 
     print("=" * 57)
     print(f"Bot Test | {started_at.strftime('%H:%M:%S UTC')}")
@@ -361,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Phone:    {args.phone}")
     print(f"Author:   {args.author}")
     print(f"Channel:  {args.channel_id or '(missing)'}")
+    print(f"API key:  {'configured' if api_key else '(missing)'}")
     print(f"Marker:   {marker}")
     print(f"Msg ID:   {message_id}")
     print(f"Message:  {args.message}")
@@ -369,6 +397,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.channel_id:
         print(
             "ERROR: channel id is required; set --channel-id or WAZZUP_CHANNEL_ID/BOT_TEST_CHANNEL_ID.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not api_key:
+        print(
+            "ERROR: API key is required for conversation polling; set --api-key, BOT_TEST_API_KEY, or API_KEY.",
             file=sys.stderr,
         )
         return 1
@@ -396,6 +431,7 @@ def main(argv: list[str] | None = None) -> int:
             marker=marker,
             started_at=started_at,
             wait_secs=args.wait,
+            api_key=api_key,
         )
     except (RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

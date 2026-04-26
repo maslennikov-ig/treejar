@@ -11,7 +11,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from src.core.config import settings
+from src.core.database import async_session_factory
 from src.schemas import WazzupWebhookPayload
+from src.services.outbound_audit import update_wazzup_statuses
 
 # Bind to uvicorn.error so info logs appear in docker logs
 logger = logging.getLogger("uvicorn.error")
@@ -96,6 +98,19 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
     if raw_body.get("test"):
         logger.info("Wazzup test ping — responding OK")
         return JSONResponse({"ok": True}, status_code=200)
+
+    statuses = raw_body.get("statuses", [])
+    if isinstance(statuses, list) and statuses:
+        try:
+            async with async_session_factory() as db:
+                updated_rows = await update_wazzup_statuses(db, statuses)
+                await db.commit()
+            logger.info(
+                "Wazzup webhook: updated %d outbound status rows",
+                updated_rows,
+            )
+        except Exception:
+            logger.exception("Wazzup webhook: failed to persist status updates")
 
     # Parse and process messages
     messages = raw_body.get("messages", [])

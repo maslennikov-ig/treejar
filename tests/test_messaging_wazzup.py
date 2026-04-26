@@ -74,6 +74,33 @@ async def test_send_text_strips_smoke_profile_suffix_from_chat_id(
     "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
     new_callable=AsyncMock,
 )
+async def test_send_text_includes_optional_crm_message_id(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {"messageId": "msg_123"}
+    mock_request.return_value = mock_resp
+
+    msg_id = await wazzup_provider.send_text(
+        "79998881122",
+        "Hello World",
+        crm_message_id="bot:conv-1:msg-1",
+    )
+
+    assert msg_id == "msg_123"
+    payload = mock_request.call_args.kwargs["json"]
+    assert payload["crmMessageId"] == "bot:conv-1:msg-1"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
 async def test_send_text_http_error(
     mock_request: AsyncMock, wazzup_provider: WazzupProvider
 ) -> None:
@@ -122,6 +149,48 @@ async def test_send_media_success(
     second_call_payload = mock_request.call_args_list[1].kwargs["json"]
     assert second_call_payload["text"] == "Look!"
     assert "contentUri" not in second_call_payload
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_media_detailed_returns_media_and_caption_ids_with_crm_ids(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    media_resp = MagicMock()
+    media_resp.status_code = 200
+    media_resp.raise_for_status.return_value = None
+    media_resp.json.return_value = {"messageId": "msg_media"}
+    caption_resp = MagicMock()
+    caption_resp.status_code = 200
+    caption_resp.raise_for_status.return_value = None
+    caption_resp.json.return_value = {"messageId": "msg_caption"}
+    mock_request.side_effect = [media_resp, caption_resp]
+
+    result = await wazzup_provider.send_media_detailed(
+        chat_id="123",
+        url="http://image.jpg",
+        caption="Look!",
+        crm_message_id="product:conv-1:media",
+        caption_crm_message_id="product:conv-1:caption",
+    )
+
+    assert result.message_id == "msg_media"
+    assert result.caption_message_id == "msg_caption"
+    assert result.content_uri == "http://image.jpg"
+    assert result.outbound_chat_id == "123"
+
+    first_call_payload = mock_request.call_args_list[0].kwargs["json"]
+    assert first_call_payload["crmMessageId"] == "product:conv-1:media"
+    assert "text" not in first_call_payload
+
+    second_call_payload = mock_request.call_args_list[1].kwargs["json"]
+    assert second_call_payload["crmMessageId"] == "product:conv-1:caption"
+    assert second_call_payload["text"] == "Look!"
 
 
 @pytest.mark.asyncio
@@ -243,6 +312,34 @@ async def test_send_template_success(
 
     msg_id = await wazzup_provider.send_template("123", "tmpl_1", {})
     assert msg_id == "msg_tmpl"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_template_includes_optional_crm_message_id(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {"messageId": "msg_tmpl"}
+    mock_request.return_value = mock_resp
+
+    msg_id = await wazzup_provider.send_template(
+        "123",
+        "tmpl_1",
+        {},
+        crm_message_id="followup:conv-1:feedback",
+    )
+
+    assert msg_id == "msg_tmpl"
+    payload = mock_request.call_args.kwargs["json"]
+    assert payload["crmMessageId"] == "followup:conv-1:feedback"
 
 
 @pytest.mark.asyncio

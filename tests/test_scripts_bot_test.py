@@ -38,6 +38,13 @@ def test_build_conversations_url_uses_trailing_slash_and_query_encoding() -> Non
     )
 
 
+def test_build_api_headers_uses_x_api_key_without_printable_secret() -> None:
+    bot_test = _load_bot_test_module()
+
+    assert bot_test.build_api_headers("") == {}
+    assert bot_test.build_api_headers("secret-key") == {"X-API-Key": "secret-key"}
+
+
 def test_parse_json_response_rejects_html_body() -> None:
     bot_test = _load_bot_test_module()
 
@@ -213,9 +220,10 @@ def test_poll_for_reply_runs_final_grace_check_for_recent_marker(
         url: str,
         *,
         data: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: float = 20.0,
     ) -> tuple[int, dict[str, object]]:
-        del url, data, timeout
+        del url, data, headers, timeout
         return next(responses)
 
     monkeypatch.setattr(bot_test, "http_json", fake_http_json)
@@ -227,6 +235,7 @@ def test_poll_for_reply_runs_final_grace_check_for_recent_marker(
         marker="[smoke:abc123]",
         started_at=started_at,
         wait_secs=1,
+        api_key="secret-key",
     )
 
     assert matched_conversation_id == conversation_id
@@ -278,9 +287,10 @@ def test_poll_for_reply_checks_phone_conversations_even_when_list_updated_at_is_
         url: str,
         *,
         data: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: float = 20.0,
     ) -> tuple[int, dict[str, object]]:
-        del url, data, timeout
+        del url, data, headers, timeout
         return next(responses)
 
     monkeypatch.setattr(bot_test, "http_json", fake_http_json)
@@ -292,10 +302,71 @@ def test_poll_for_reply_checks_phone_conversations_even_when_list_updated_at_is_
         marker="[smoke:stale]",
         started_at=started_at,
         wait_secs=1,
+        api_key="secret-key",
     )
 
     assert matched_conversation_id == conversation_id
     assert assistant_message["content"].startswith("Thank you for your message!")
+
+
+def test_poll_for_reply_sends_api_key_to_conversation_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_test = _load_bot_test_module()
+    started_at = dt.datetime(2026, 4, 11, 15, 14, 21, tzinfo=dt.UTC)
+    conversation_id = "conv-123"
+    seen_headers: list[dict[str, str] | None] = []
+
+    responses = iter(
+        [
+            (200, {"items": [{"id": conversation_id}]}),
+            (
+                200,
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Smoke path check\n[smoke:auth]",
+                            "created_at": "2026-04-11T15:14:29+00:00",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "Reply.",
+                            "created_at": "2026-04-11T15:14:30+00:00",
+                        },
+                    ]
+                },
+            ),
+        ]
+    )
+
+    def fake_http_json(
+        url: str,
+        *,
+        data: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float = 20.0,
+    ) -> tuple[int, dict[str, object]]:
+        del url, data, timeout
+        seen_headers.append(headers)
+        return next(responses)
+
+    monkeypatch.setattr(bot_test, "http_json", fake_http_json)
+    monkeypatch.setattr(bot_test.time, "sleep", lambda _: None)
+
+    bot_test.poll_for_reply(
+        base_url="https://noor.starec.ai",
+        phone="+79262810921",
+        marker="[smoke:auth]",
+        started_at=started_at,
+        wait_secs=1,
+        api_key="secret-key",
+    )
+
+    assert seen_headers == [
+        {"X-API-Key": "secret-key"},
+        {"X-API-Key": "secret-key"},
+    ]
 
 
 def test_http_json_retries_after_incomplete_read(
@@ -342,3 +413,39 @@ def test_http_json_retries_after_incomplete_read(
 
     assert status == 200
     assert payload == {"ok": True}
+
+
+def test_http_json_sends_extra_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot_test = _load_bot_test_module()
+    captured_headers: list[str | None] = []
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/json"}
+        status = 200
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+            return False
+
+    def fake_urlopen(request: Any, timeout: float = 20.0) -> FakeResponse:
+        del timeout
+        captured_headers.append(request.get_header("X-api-key"))
+        return FakeResponse()
+
+    monkeypatch.setattr(bot_test.urllib.request, "urlopen", fake_urlopen)
+
+    status, payload = bot_test.http_json(
+        "https://noor.starec.ai/api/v1/test",
+        headers={"X-API-Key": "secret-key"},
+    )
+
+    assert status == 200
+    assert payload == {"ok": True}
+    assert captured_headers == ["secret-key"]
