@@ -21,12 +21,12 @@ Current baseline branch: `main`
 - OpenRouter key rotation for E2E was applied on 2026-04-26 without storing the raw secret in repo memory. The current key is available in production `/opt/noor/.env`, GitHub Actions secret `OPENROUTER_API_KEY`, and the ignored local stage-worktree `.env`; production `app` sees fingerprint `b4118c4887cc` length `73`. Post-rotation checks passed: `alembic current` -> `2026_04_21_llm_attempts`, `llm_attempts` table exists with `0` rows, `ai_quality_controls` config is missing so disabled defaults apply, health is ok, and a production OpenRouter fast-model canary returned `OK` with `44` total tokens and cost about `$0.00000256`.
 - Fresh 2026-04-26 production WhatsApp/Telegram E2E on `79262810921` produced and closed hardening stage `tj-e2e26`: order-status after approved/rejected quotation, Telegram private-reply persistence, outbound Wazzup audit/idempotency, conversation API auth/exact phone filtering, rejected quotation state, and media/caption audit visibility.
 - `tj-e2e26` is delivered on `2dc356e`: CI/deploy passed, smoke passed (`verify_api.py` 7/0, `/api/v1/health` ok, `/dashboard/` 401, `/api/v1/conversations/` 403, Alembic `2026_04_26_outbound_audit`). Narrow production recheck passed for approved `Fr3141` and rejected `Fr3142` order-status copy; `tj-e2e26` pending test conversations count is `0`.
-- Active stage `tj-prl26` prepares pre-launch readiness evidence: acceptance checklist, bounded synthetic E2E prompt, read-only admin/operator and cost-control checks, and launch/no-go closeout.
+- Active stage `tj-prl26`: checklist/prompt and read-only admin/operator/cost checks are done; controlled synthetic E2E (`tj-prl26.2`) and launch/no-go closeout (`tj-prl26.4`) remain.
 
 ## Next recommended
 
 Next stage id: `tj-prl26`
-Recommended action: complete `tj-prl26.1` docs locally, then run `tj-prl26.3` read-only checks and run `tj-prl26.2` controlled live synthetic E2E only after explicit approval.
+Recommended action: run `tj-prl26.2` controlled live synthetic E2E only after explicit approval, then close with `tj-prl26.4`.
 
 ## Starter prompt for next orchestrator
 

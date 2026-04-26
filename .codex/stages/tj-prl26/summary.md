@@ -51,8 +51,16 @@ The stage covers:
 - Beads `tj-prl26` and children `tj-prl26.1-.4` created.
 - `tj-prl26.1` is closed: plan, stage summary, controlled E2E prompt, and artifact were created and validated.
 - `tj-prl26.2` remains open for controlled live synthetic E2E after explicit approval.
-- `tj-prl26.3` remains open for read-only admin/operator and cost-control launch checks.
+- `tj-prl26.3` is closed: read-only admin/operator and cost-control checks passed against production.
 - `tj-prl26.4` remains open for final launch/no-go closeout.
+
+## Read-Only Readiness Evidence
+
+- `verify_api.py --base-url https://noor.starec.ai` -> `7 passed, 0 failed`.
+- `/api/v1/health` -> `status=ok`, Redis ok.
+- Anonymous `/dashboard/` -> `401`; `/api/v1/conversations/` -> `403`; `/api/v1/admin/ai-quality-controls` -> `401`.
+- Runtime release SHA `2dc356ef16496cb33f035198e5deeda733a04c1a`; release run id `24958178545`; Alembic `2026_04_26_outbound_audit (head)`.
+- DB SELECT-only: `system_configs`, `llm_attempts`, and `outbound_message_audits` tables exist; `ai_quality_controls` rows `0`; `llm_attempts` rows `0`; outbound audit rows `19`; `tj-prl26` conversations `0`, pending `0`.
 
 ## Explicit Defers
 
