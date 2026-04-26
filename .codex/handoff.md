@@ -21,18 +21,20 @@ Current baseline branch: `main`
 - OpenRouter key rotation for E2E was applied on 2026-04-26 without storing the raw secret in repo memory. The current key is available in production `/opt/noor/.env`, GitHub Actions secret `OPENROUTER_API_KEY`, and the ignored local stage-worktree `.env`; production `app` sees fingerprint `b4118c4887cc` length `73`. Post-rotation checks passed: `alembic current` -> `2026_04_21_llm_attempts`, `llm_attempts` table exists with `0` rows, `ai_quality_controls` config is missing so disabled defaults apply, health is ok, and a production OpenRouter fast-model canary returned `OK` with `44` total tokens and cost about `$0.00000256`.
 - Fresh 2026-04-26 production WhatsApp/Telegram E2E on `79262810921` produced and closed hardening stage `tj-e2e26`: order-status after approved/rejected quotation, Telegram private-reply persistence, outbound Wazzup audit/idempotency, conversation API auth/exact phone filtering, rejected quotation state, and media/caption audit visibility.
 - `tj-e2e26` is delivered on `2dc356e`: CI/deploy passed, smoke passed (`verify_api.py` 7/0, `/api/v1/health` ok, `/dashboard/` 401, `/api/v1/conversations/` 403, Alembic `2026_04_26_outbound_audit`). Narrow production recheck passed for approved `Fr3141` and rejected `Fr3142` order-status copy; `tj-e2e26` pending test conversations count is `0`.
+- Active stage `tj-prl26` prepares pre-launch readiness evidence: acceptance checklist, bounded synthetic E2E prompt, read-only admin/operator and cost-control checks, and launch/no-go closeout.
 
 ## Next recommended
 
-Next stage id: assign a new stage id from the next approved production or product follow-up.
-Recommended action: start new work from current `origin/main`; latest runtime release remains `2dc356ef16496cb33f035198e5deeda733a04c1a` because the final closeout push was docs-only.
+Next stage id: `tj-prl26`
+Recommended action: complete `tj-prl26.1` docs locally, then run `tj-prl26.3` read-only checks and run `tj-prl26.2` controlled live synthetic E2E only after explicit approval.
 
 ## Starter prompt for next orchestrator
 
-Use $stage-orchestrator / $orchestrator-stage. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `.codex/stages/tj-ruue/summary.md`, and `.codex/stages/tj-e2e26/summary.md` first.
-Start new work from current `origin/main` unless explicitly continuing an isolated branch; use `2dc356ef16496cb33f035198e5deeda733a04c1a` as the latest deployed runtime SHA.
-Treat `tj-ruue` and `tj-e2e26` as delivered. Keep runtime/deploy work isolated from product logic.
+Use $stage-orchestrator / $orchestrator-stage. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `docs/plans/2026-04-26-prelaunch-readiness.md`, and `.codex/stages/tj-prl26/summary.md` first.
+Worktree: `/home/me/code/treejar/.worktrees/codex-tj-prl26-prelaunch-readiness`; branch: `codex/tj-prl26-prelaunch-readiness`; latest deployed runtime SHA: `2dc356ef16496cb33f035198e5deeda733a04c1a`.
+Treat `tj-ruue` and `tj-e2e26` as delivered. Keep `tj-prl26` evidence-first; product bugs become separate Beads.
 Do not run broad production suites, `verify_wazzup.py`, scheduled AI Quality Controls, or unsolicited media tests without explicit approval.
 
 ## Explicit defers
 - Extended referrals admin/reporting remains intentionally deferred; some worktrees hit a local pytest capture tmpfile `FileNotFoundError` before collection with plain `uv run pytest ...`, while equivalent full runs with `-s` have passed.
+- `tj-prl26` has not sent live synthetic messages yet; production traffic observation is intentionally skipped because the project has no real traffic.
