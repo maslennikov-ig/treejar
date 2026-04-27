@@ -89,13 +89,14 @@ ORDER_HANDOFF_PASS_2_DIRECTIVES = (
 EXACT_QUOTE_PASS_1_DIRECTIVES = (
     "the customer is asking for an exact quotation-ready commitment",
     "do not ask for full name, company, or email before the quote draft",
-    "if exact sku and quantity are already known, confirm via get_stock and then call create_quotation immediately",
+    "if exact sku and quantity are already known, confirm stock via get_stock and then call create_quotation immediately",
+    "Treejar catalog price is the customer-facing commercial truth by default; Zoho rate is operational and must not replace catalog price",
     "if Zoho cannot confirm the item, escalate to manager and do not promise exact price or availability",
 )
 EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "previous pass stayed consultative on an exact quotation-ready request",
     "do not ask for company details first",
-    "use Zoho-confirmed stock and price only",
+    "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price when catalog and Zoho differ",
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
 )
 _QUOTE_REQUEST_TERMS = ("quote", "quotation")
@@ -143,7 +144,9 @@ def _product_search_response_contract(
             "Lead with 2-3 closest alternatives from these results before any generic qualifying questions.",
             "Say honestly that the exact requested item is not confirmed from the catalog results.",
             "Do not claim that these are the exact item requested.",
-            "Use only facts already present in tool results, such as price or stock, and do not invent specs.",
+            "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
+            "Treejar Catalog price is the customer-facing commercial truth by default.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price.",
             "After presenting the closest alternatives, you may ask at most one targeted follow-up to narrow the recommendation.",
         ]
     elif match_kind == "missing":
@@ -152,12 +155,16 @@ def _product_search_response_contract(
             "Do not present these results as exact options.",
             "Ask at most one narrow clarification unless you can justify a clearly related alternative from the returned items.",
             "Use only facts already present in tool results and do not invent specs or prices.",
+            "Treejar Catalog price is the customer-facing commercial truth by default for any catalog option you do show.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price.",
         ]
     else:
         contract_parts = [
             "Relevant catalog results were found for this customer message.",
             "In your next reply, lead with 2-3 concrete options or closest alternatives from these results before any generic qualifying questions.",
-            "Use only facts already present in tool results, such as price or stock, and do not invent specs.",
+            "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
+            "Treejar Catalog price is the customer-facing commercial truth by default.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price.",
             "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
             "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
             "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
@@ -194,8 +201,10 @@ def _search_budget_fallback_contract(*, prior_results_seen: bool) -> str:
 
 def _stock_follow_up_contract() -> str:
     return (
-        "Use this Zoho-confirmed stock and price fact to strengthen the concrete options you already have. "
-        "Keep the answer option-first, mention the relevant availability and exact price facts, "
+        "Use this stock/price fact to strengthen the concrete options you already have. "
+        "Zoho confirms operational stock; Treejar Catalog price remains the customer-facing commercial truth when present. "
+        "Do not replace catalog price with Zoho rate in the customer reply. "
+        "Keep the answer option-first, mention the relevant availability and customer-facing catalog price facts, "
         "and ask at most one targeted follow-up only after presenting options. "
         "Do not switch back to generic qualifying questions before showing the options."
     )
@@ -253,6 +262,16 @@ class ExactQuoteCandidate:
     quantity: int
     item_candidate: str
     sku: str | None
+
+
+@dataclass(frozen=True)
+class CommercialPriceDecision:
+    unit_price: float
+    currency: str
+    source: Literal["catalog", "zoho"]
+    catalog_price: float | None
+    zoho_rate: float | None
+    mismatch_detail: str | None = None
 
 
 def _normalize_text(text: str) -> str:
@@ -510,6 +529,139 @@ def _coerce_inventory_item(
     return item
 
 
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _currency_for_price(
+    catalog_product: Any | None,
+    zoho_item: Mapping[str, Any],
+) -> str:
+    catalog_currency = getattr(catalog_product, "currency", None)
+    if isinstance(catalog_currency, str) and catalog_currency.strip():
+        return catalog_currency.strip()
+
+    for key in ("currency_code", "currency"):
+        value = zoho_item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return "AED"
+
+
+def _catalog_treejar_slug(catalog_product: Any | None, fallback_sku: str) -> str:
+    attributes = getattr(catalog_product, "attributes", None)
+    if isinstance(attributes, Mapping):
+        slug = attributes.get("treejar_slug")
+        if isinstance(slug, str) and slug.strip():
+            return slug.strip()
+    return fallback_sku
+
+
+def _commercial_price_decision(
+    *,
+    catalog_product: Any | None,
+    zoho_item: Mapping[str, Any],
+    segment: str,
+) -> CommercialPriceDecision:
+    from src.core.discounts import apply_discount
+
+    currency = _currency_for_price(catalog_product, zoho_item)
+    zoho_rate = _float_or_none(zoho_item.get("rate"))
+    catalog_raw_price = (
+        _float_or_none(getattr(catalog_product, "price", None))
+        if catalog_product is not None
+        else None
+    )
+    catalog_price = (
+        apply_discount(catalog_raw_price, segment)
+        if catalog_raw_price is not None
+        else None
+    )
+
+    if catalog_price is not None:
+        detail = None
+        if zoho_rate is not None and abs(catalog_price - zoho_rate) >= 0.01:
+            detail = (
+                f"Catalog customer-facing price {catalog_price:.2f} {currency}; "
+                f"Zoho operational rate {zoho_rate:.2f} {currency}. "
+                "Customer-facing price remains catalog price; Zoho rate must not replace it."
+            )
+        return CommercialPriceDecision(
+            unit_price=catalog_price,
+            currency=currency,
+            source="catalog",
+            catalog_price=catalog_price,
+            zoho_rate=zoho_rate,
+            mismatch_detail=detail,
+        )
+
+    return CommercialPriceDecision(
+        unit_price=zoho_rate or 0.0,
+        currency=currency,
+        source="zoho",
+        catalog_price=None,
+        zoho_rate=zoho_rate,
+    )
+
+
+async def _record_catalog_zoho_mismatch(
+    ctx: RunContext[SalesDeps],
+    *,
+    sku: str,
+    catalog_product: Any | None,
+    detail: str,
+    issue: str,
+) -> None:
+    metadata = dict(ctx.deps.conversation.metadata_ or {})
+    raw_events = metadata.get("catalog_zoho_mismatches")
+    events = raw_events if isinstance(raw_events, list) else []
+    event = {
+        "sku": sku,
+        "treejar_slug": _catalog_treejar_slug(catalog_product, sku),
+        "issue": issue,
+        "detail": detail,
+    }
+    metadata["catalog_zoho_mismatches"] = [*events, event][-10:]
+    ctx.deps.conversation.metadata_ = metadata
+    try:
+        await ctx.deps.db.flush()
+    except Exception as exc:
+        logger.warning("Failed to flush catalog/Zoho mismatch audit: %s", exc)
+
+
+async def _notify_catalog_price_mismatch(
+    ctx: RunContext[SalesDeps],
+    *,
+    sku: str,
+    catalog_product: Any | None,
+    detail: str,
+) -> None:
+    await _record_catalog_zoho_mismatch(
+        ctx,
+        sku=sku,
+        catalog_product=catalog_product,
+        detail=detail,
+        issue="Catalog price differs from Zoho operational rate.",
+    )
+    if ctx.deps.catalog_mismatch_alerted:
+        return
+
+    from src.services.notifications import notify_catalog_mismatch
+
+    await notify_catalog_mismatch(
+        sku=sku,
+        treejar_slug=_catalog_treejar_slug(catalog_product, sku),
+        product_name=getattr(catalog_product, "name_en", None),
+        issue="Catalog price differs from Zoho operational rate.",
+        detail=detail,
+    )
+    ctx.deps.catalog_mismatch_alerted = True
+
+
 def _exact_quote_fail_closed_message() -> str:
     return (
         "I couldn't finalize the exact quotation automatically. "
@@ -761,23 +913,31 @@ async def _notify_catalog_mismatch_and_escalate(
     catalog_product: Any,
     detail: str,
 ) -> None:
-    if ctx.deps.catalog_mismatch_alerted:
-        return
-
+    await _record_catalog_zoho_mismatch(
+        ctx,
+        sku=sku,
+        catalog_product=catalog_product,
+        detail=detail,
+        issue="Product exists in Treejar Catalog API but is missing in Zoho.",
+    )
     from src.integrations.notifications.escalation import notify_manager_escalation
     from src.schemas.common import EscalationType
-    from src.services.notifications import notify_catalog_mismatch
 
-    attributes = getattr(catalog_product, "attributes", None) or {}
-    treejar_slug = str(attributes.get("treejar_slug") or catalog_product.sku)
-    product_name = catalog_product.name_en
+    if not ctx.deps.catalog_mismatch_alerted:
+        from src.services.notifications import notify_catalog_mismatch
 
-    await notify_catalog_mismatch(
-        sku=getattr(catalog_product, "sku", sku),
-        treejar_slug=treejar_slug,
-        product_name=product_name,
-        detail=detail,
-    )
+        treejar_slug = _catalog_treejar_slug(catalog_product, str(catalog_product.sku))
+        product_name = catalog_product.name_en
+
+        await notify_catalog_mismatch(
+            sku=getattr(catalog_product, "sku", sku),
+            treejar_slug=treejar_slug,
+            product_name=product_name,
+            issue="Product exists in Treejar Catalog API but is missing in Zoho.",
+            detail=detail,
+        )
+        ctx.deps.catalog_mismatch_alerted = True
+
     await notify_manager_escalation(
         conversation=ctx.deps.conversation,
         reason=(
@@ -788,7 +948,6 @@ async def _notify_catalog_mismatch_and_escalate(
         db=ctx.deps.db,
         escalation_type=EscalationType.GENERAL,
     )
-    ctx.deps.catalog_mismatch_alerted = True
 
 
 async def _fail_closed_exact_quote_request(deps: SalesDeps) -> str:
@@ -1057,7 +1216,14 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
 
     for r in results.products:
         discounted_price = apply_discount(float(r.price), segment)
-        desc = f"Name: {r.name_en}\nSKU: {r.sku}\nPrice: {discounted_price:.2f} {r.currency} (Your segment price)\nDescription: {r.description_en}"
+        desc = (
+            f"Name: {r.name_en}\n"
+            f"SKU: {r.sku}\n"
+            f"Customer-facing catalog price: {discounted_price:.2f} {r.currency}"
+            " (segment-adjusted if applicable)\n"
+            f"Catalog stock: {r.stock}\n"
+            f"Description: {r.description_en}"
+        )
 
         if r.image_url:
             desc += "\n[Note: Image of this product has been automatically sent to the customer's WhatsApp. Do not mention or include image URLs in your response.]"
@@ -1117,15 +1283,39 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         return f"Product with SKU {sku} not found in inventory."
 
     available = stock_info.get("stock_on_hand", 0)
-    price = float(stock_info.get("rate", 0.0))
-    currency = str(
-        stock_info.get("currency_code") or stock_info.get("currency") or "AED"
+    segment = (
+        ctx.deps.crm_context.get("Segment", "Unknown")
+        if ctx.deps.crm_context
+        else "Unknown"
     )
+    price_decision = _commercial_price_decision(
+        catalog_product=catalog_product,
+        zoho_item=stock_info,
+        segment=segment,
+    )
+    if price_decision.mismatch_detail:
+        await _notify_catalog_price_mismatch(
+            ctx,
+            sku=sku,
+            catalog_product=catalog_product,
+            detail=price_decision.mismatch_detail,
+        )
+
+    if price_decision.source == "catalog":
+        price_text = (
+            "Customer-facing catalog price: "
+            f"{price_decision.unit_price:.2f} {price_decision.currency}."
+        )
+    else:
+        price_text = (
+            "Zoho-confirmed price: "
+            f"{price_decision.unit_price:.2f} {price_decision.currency}."
+        )
+
     stock_text = (
-        f"Zoho-confirmed stock for {sku}: {available} items available. "
-        f"Zoho-confirmed price: {price:.2f} {currency}."
+        f"Zoho-confirmed stock for {sku}: {available} items available. {price_text}"
     )
-    if ctx.deps.product_results_seen:
+    if ctx.deps.product_results_seen or price_decision.mismatch_detail:
         return ToolReturn(
             return_value=stock_text,
             content=_stock_follow_up_contract(),
@@ -1288,8 +1478,6 @@ async def create_quotation(
     template_items = []
     subtotal = 0.0
 
-    from src.core.discounts import apply_discount
-
     segment = (
         ctx.deps.crm_context.get("Segment", "Unknown")
         if ctx.deps.crm_context
@@ -1320,8 +1508,20 @@ async def create_quotation(
                 return f"Failed to create quotation: SKU {item.sku} not found."
             stock_map[item.sku] = zoho_item
 
-        base_price = float(zoho_item.get("rate", 0.0))
-        unit_price = apply_discount(base_price, segment)
+        price_decision = _commercial_price_decision(
+            catalog_product=catalog_product,
+            zoho_item=zoho_item,
+            segment=segment,
+        )
+        if price_decision.mismatch_detail:
+            await _notify_catalog_price_mismatch(
+                ctx,
+                sku=normalized_sku,
+                catalog_product=catalog_product,
+                detail=price_decision.mismatch_detail,
+            )
+
+        unit_price = price_decision.unit_price
         total_price = unit_price * item.quantity
         subtotal += total_price
 

@@ -135,6 +135,7 @@ def format_catalog_mismatch_message(
     sku: str | None,
     treejar_slug: str,
     product_name: str | None,
+    issue: str | None = None,
     detail: str | None = None,
 ) -> str:
     """Format an operational alert for Treejar-vs-Zoho catalog mismatches."""
@@ -148,14 +149,21 @@ def format_catalog_mismatch_message(
     detail_block = ""
     if detail and detail.strip():
         detail_block = f"\n<b>Детали:</b> {escape(detail.strip())}\n"
+    issue_text = (
+        escape(issue.strip())
+        if issue and issue.strip()
+        else (
+            "Product exists in Treejar Catalog API but is missing in Zoho. "
+            "Do not promise exact price or availability until the mismatch is resolved."
+        )
+    )
 
     return (
         "⚠️ <b>Catalog mismatch</b>\n\n"
         f"<b>Product:</b> {safe_name}\n"
         f"<b>SKU:</b> <code>{safe_sku}</code>\n"
         f"<b>Treejar slug:</b> <code>{safe_slug}</code>\n"
-        "<b>Issue:</b> Product exists in Treejar Catalog API but is missing in Zoho. "
-        "Do not promise exact price or availability until the mismatch is resolved."
+        f"<b>Issue:</b> {issue_text}"
         f"{detail_block}"
         "\nНужна проверка site/customer team."
     )
@@ -423,6 +431,7 @@ async def notify_catalog_mismatch(
     sku: str | None,
     treejar_slug: str,
     product_name: str | None,
+    issue: str | None = None,
     detail: str | None = None,
 ) -> None:
     """Send an operational Treejar-vs-Zoho mismatch alert to Telegram."""
@@ -433,6 +442,7 @@ async def notify_catalog_mismatch(
                 sku=sku,
                 treejar_slug=treejar_slug,
                 product_name=product_name,
+                issue=issue,
                 detail=detail,
             )
         )

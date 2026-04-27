@@ -50,16 +50,17 @@
 * **Каталог, фото, описания, категории, customer-facing price/availability:** только Treejar Catalog API.
 * **Операционные поля для внутренних процессов:** Zoho Inventory, если они нужны для quotation / SaleOrder / fulfilment.
 * **Фото:** дедуп по URL и pHash; хранить 1 primary \+ до 6 secondary.
-* **Конфликты данных:** если Treejar Catalog API и Zoho Inventory расходятся, для общего customer-facing каталога использовать Treejar Catalog API, но перед точным обещанием по цене/наличию Noor обязан подтвердить данные через Zoho.
+* **Конфликты данных:** если Treejar Catalog API и Zoho Inventory расходятся, customer-facing price остаётся ценой Treejar Catalog API. Zoho используется для operational stock/item/order execution; Zoho `rate` не заменяет catalog price в ответе клиенту.
 * **Описание:** брать из Treejar Catalog API; дополнительные структурированные параметры складывать в `spec_json` при наличии.
 
 ### **4.1\) Правила поведения Noor при catalog/Zoho split**
 
 * **Общий каталог:** Treejar Catalog API — единая truth для поиска, карточек, фото, категорий и первичного product discovery.
-* **Точный вопрос о цене/наличии:** если клиент спрашивает про конкретную цену или наличие, Noor делает финальную проверку через Zoho перед обещанием клиенту.
+* **Точный вопрос о цене/наличии:** если клиент спрашивает про конкретную цену или наличие, Noor делает финальную проверку через Zoho для operational stock/item confirmation, но customer-facing price берёт из Treejar Catalog API, если catalog record есть.
 * **Триггер на quotation:** КП создаётся только когда у клиента уже подтверждены точные `SKU + quantity`.
+* **Catalog/Zoho price mismatch:** если catalog price и Zoho `rate` расходятся, Noor не подменяет цену на Zoho `rate`; mismatch записывается во внутреннее состояние и отправляется operational alert. Если Zoho SaleOrder принимает line `rate`, КП создаётся по catalog price и остаётся на manager approval.
 * **Отправка quotation:** даже после успешной Zoho-проверки сохраняется текущий `manager approval` перед отправкой КП клиенту.
-* **Mismatch:** если товар есть в Treejar Catalog API, но отсутствует в Zoho, Noor может показать его как вариант, но не обещает цену/наличие, не создаёт КП, переводит разговор на менеджера и отправляет операционный bug alert в Telegram.
+* **Catalog-only item:** если товар есть в Treejar Catalog API, но отсутствует в Zoho, Noor может показать его как вариант, но не создаёт КП/SaleOrder автоматически, переводит разговор на менеджера и отправляет операционный bug alert в Telegram.
 * **Владелец качества каталога:** заказчик подтверждает, что команда сайта отвечает за актуальность данных в Treejar Catalog API и исправление багов источника.
 
 ---

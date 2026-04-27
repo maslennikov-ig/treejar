@@ -124,6 +124,44 @@ async def test_search_products_sends_image_if_present(
     run_context.deps.db.commit.assert_awaited_once()
 
 
+async def test_search_products_shows_catalog_only_customer_facing_option(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
+    product = ProductRead(
+        id="66666666-6666-6666-6666-666666666666",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Catalog Truth Chair",
+        description_en="Catalog item shown from the public catalog only",
+        sku="00-07024023",
+        price="264.00",
+        currency="AED",
+        image_url=None,
+        zoho_item_id=None,
+        created_at="2024-01-01T00:00:00Z",
+        stock=12,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product]
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "00-07024023")
+
+    assert isinstance(result, ToolReturn)
+    assert "00-07024023" in result.return_value
+    assert "264.00 AED" in result.return_value
+    assert "customer-facing catalog price" in result.return_value.lower()
+    assert "zoho" not in result.return_value.lower()
+    mock_messaging_client.send_media.assert_not_called()
+
+
 async def test_search_products_sends_multiple_images_sequentially(
     run_context: Any,
     monkeypatch: pytest.MonkeyPatch,

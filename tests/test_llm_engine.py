@@ -1209,7 +1209,7 @@ async def test_tools_search_products(
         assert isinstance(result, ToolReturn)
         assert "Office Chair" in result.return_value
         assert "CHAIR-01" in result.return_value
-        assert "100.00 USD (Your segment price)" in result.return_value
+        assert "Customer-facing catalog price: 100.00 USD" in result.return_value
         assert isinstance(result.content, str)
         assert "lead with 2-3 concrete options" in result.content.lower()
         assert "at most one targeted follow-up" in result.content.lower()
@@ -1505,7 +1505,7 @@ async def test_tools_get_stock(
     assert "25 items available" in result.return_value
     assert isinstance(result.content, str)
     assert (
-        "use this zoho-confirmed stock and price fact to strengthen the concrete options"
+        "treejar catalog price remains the customer-facing commercial truth"
         in result.content.lower()
     )
     zoho.get_stock.assert_awaited_once_with("CHAIR-01")
@@ -1662,6 +1662,367 @@ async def test_tools_get_stock_catalog_mismatch_notifies_and_escalates(
     result = await get_stock(ctx, "CHAIR-01")
 
     assert "couldn't confirm exact price and availability" in result.lower()
+    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_manager.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+async def test_tools_get_stock_catalog_price_remains_customer_truth_on_zoho_rate_mismatch(
+    mock_notify_mismatch: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: exact price for 00-07024023"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import get_stock
+
+    product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Chair",
+        price=264.0,
+        currency="AED",
+        attributes={"treejar_slug": "catalog-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock.return_value = {
+        "sku": "00-07024023",
+        "stock_on_hand": 12,
+        "rate": 685.0,
+        "currency_code": "AED",
+    }
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await get_stock(ctx, "00-07024023")
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "12 items available" in result_text
+    assert "264.00 AED" in result_text
+    assert "685" not in result_text
+    assert conv.metadata_["catalog_zoho_mismatches"][0]["sku"] == "00-07024023"
+    mock_notify_mismatch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+@patch("src.services.pdf.generator.render_quotation_html")
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_uses_catalog_line_rate_on_zoho_rate_mismatch(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_render_html: MagicMock,
+    mock_generate_pdf: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 00-07024023"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Chair",
+        price=264.0,
+        currency="AED",
+        image_url=None,
+        attributes={"treejar_slug": "catalog-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock_bulk.return_value = [
+        {
+            "sku": "00-07024023",
+            "item_id": "zoho-item-1",
+            "name": "Zoho Chair",
+            "description": "Operational Zoho item",
+            "stock_on_hand": 12,
+            "rate": 685.0,
+            "currency_code": "AED",
+        }
+    ]
+    zoho.find_customer_by_phone.return_value = {"contact_id": "contact-1"}
+    zoho.create_sale_order.return_value = {
+        "saleorder": {
+            "salesorder_id": "so-1",
+            "salesorder_number": "SO-1",
+            "status": "draft",
+        }
+    }
+    mock_render_html.return_value = "<html>quotation</html>"
+    mock_generate_pdf.return_value = b"%PDF catalog rate"
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+
+    assert "Quotation SO-1 has been prepared" in result
+    line_items = zoho.create_sale_order.await_args.kwargs["items"]
+    assert line_items[0]["rate"] == 264.0
+    assert line_items[0]["rate"] != 685.0
+    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_manager.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fails(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 00-07024023"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Chair",
+        price=264.0,
+        currency="AED",
+        image_url=None,
+        attributes={"treejar_slug": "catalog-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock_bulk.return_value = [
+        {
+            "sku": "00-07024023",
+            "item_id": "zoho-item-1",
+            "name": "Zoho Chair",
+            "description": "Operational Zoho item",
+            "stock_on_hand": 12,
+            "rate": 685.0,
+            "currency_code": "AED",
+        }
+    ]
+    zoho.find_customer_by_phone.return_value = {"contact_id": "contact-1"}
+    zoho.create_sale_order.side_effect = RuntimeError("line rate rejected")
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+
+    line_items = zoho.create_sale_order.await_args.kwargs["items"]
+    assert line_items[0]["rate"] == 264.0
+    assert "couldn't finalize the exact quotation automatically" in result.lower()
+    redis.setex.assert_not_awaited()
+    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_manager.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_mixed_price_mismatch_then_catalog_only_escalates(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 00-07024023 and 1 CATALOG-ONLY"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    price_mismatch_product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Chair",
+        price=264.0,
+        currency="AED",
+        image_url=None,
+        attributes={"treejar_slug": "catalog-chair"},
+        zoho_item_id=None,
+    )
+    catalog_only_product = SimpleNamespace(
+        sku="CATALOG-ONLY",
+        name_en="Catalog Only Chair",
+        price=199.0,
+        currency="AED",
+        image_url=None,
+        attributes={"treejar_slug": "catalog-only-chair"},
+        zoho_item_id=None,
+    )
+
+    result_a = MagicMock()
+    result_a.scalar_one_or_none.return_value = price_mismatch_product
+    result_b = MagicMock()
+    result_b.scalar_one_or_none.return_value = catalog_only_product
+    db.execute.side_effect = [result_a, result_b, result_b]
+    zoho.get_stock_bulk.return_value = [
+        {
+            "sku": "00-07024023",
+            "item_id": "zoho-item-1",
+            "name": "Zoho Chair",
+            "description": "Operational Zoho item",
+            "stock_on_hand": 12,
+            "rate": 685.0,
+            "currency_code": "AED",
+        }
+    ]
+    zoho.get_stock.return_value = None
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(
+        ctx,
+        [
+            QuotationItem(sku="00-07024023", quantity=1),
+            QuotationItem(sku="CATALOG-ONLY", quantity=1),
+        ],
+    )
+
+    assert "couldn't confirm exact price and availability" in result.lower()
+    zoho.create_sale_order.assert_not_awaited()
+    mismatch_events = conv.metadata_["catalog_zoho_mismatches"]
+    assert [event["sku"] for event in mismatch_events] == [
+        "00-07024023",
+        "CATALOG-ONLY",
+    ]
+    assert 1 <= mock_notify_mismatch.await_count <= 2
+    mock_notify_manager.assert_awaited_once()
+    assert (
+        "could not confirm exact price/availability"
+        in (mock_notify_manager.await_args.kwargs["reason"])
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_blocks_catalog_only_item_and_escalates(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 CATALOG-ONLY"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    product = SimpleNamespace(
+        sku="CATALOG-ONLY",
+        name_en="Catalog Only Chair",
+        price=264.0,
+        currency="AED",
+        attributes={"treejar_slug": "catalog-only-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock_bulk.return_value = []
+    zoho.get_stock.return_value = None
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(
+        ctx, [QuotationItem(sku="CATALOG-ONLY", quantity=1)]
+    )
+
+    assert "couldn't confirm exact price and availability" in result.lower()
+    zoho.create_sale_order.assert_not_awaited()
     mock_notify_mismatch.assert_awaited_once()
     mock_notify_manager.assert_awaited_once()
 
