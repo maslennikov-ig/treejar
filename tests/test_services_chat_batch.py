@@ -392,6 +392,9 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
         text="Hi there",
         channelId="chan-1",
         timestamp=1704067200,
+        source="instagram",
+        utm_source="instagram",
+        utm_campaign="retargeting",
     )
     mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
@@ -400,6 +403,22 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
 
     assert existing_conv.metadata_["inbound_channel_id"] == "chan-1"
     assert existing_conv.metadata_["inbound_channel_phone"] == "+971551220665"
+    assert existing_conv.metadata_["source_attribution"]["original"] == {
+        "source": "instagram",
+        "channel": "whatsapp",
+        "utm": {
+            "utm_source": "instagram",
+            "utm_campaign": "retargeting",
+        },
+    }
+    assert existing_conv.metadata_["source_attribution"]["latest"] == {
+        "source": "instagram",
+        "channel": "whatsapp",
+        "utm": {
+            "utm_source": "instagram",
+            "utm_campaign": "retargeting",
+        },
+    }
 
 
 @pytest.mark.asyncio

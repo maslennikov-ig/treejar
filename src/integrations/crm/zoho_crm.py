@@ -1,12 +1,53 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
 
 from src.core.config import settings
 from src.integrations.crm.base import CRMProvider
+
+
+def _attribution_path_value(
+    attribution: Mapping[str, Any],
+    source_path: str,
+) -> str | None:
+    value: Any = attribution
+    for part in source_path.split("."):
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(part)
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def apply_zoho_attribution_mapping(
+    payload: Mapping[str, Any],
+    attribution: Mapping[str, Any] | None,
+    field_mapping: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Apply only explicitly configured source/UTM fields to a Zoho payload.
+
+    Without a client-confirmed mapping policy this function intentionally returns
+    the original payload unchanged, avoiding guessed Zoho custom field names.
+    """
+    mapped_payload = dict(payload)
+    if not attribution or not field_mapping:
+        return mapped_payload
+
+    for source_path, zoho_field in field_mapping.items():
+        if not zoho_field:
+            continue
+        value = _attribution_path_value(attribution, source_path)
+        if value:
+            mapped_payload[zoho_field] = value
+
+    return mapped_payload
 
 
 class ZohoCRMClient(CRMProvider):

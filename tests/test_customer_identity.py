@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.models.conversation import Conversation
+
 
 @pytest.mark.asyncio
 async def test_resolve_owner_customer_name_prefers_conversation_value() -> None:
@@ -169,3 +171,66 @@ def test_format_owner_identity_block_converts_to_uae_and_uses_placeholders() -> 
     assert "<b>Последняя активность (UAE):</b> 09.04.2026 14:15" in msg
     assert "None" not in msg
     assert "2026-04-09T09:05:00" not in msg
+
+
+def test_apply_source_attribution_preserves_original_and_updates_latest() -> None:
+    from src.services.customer_identity import apply_source_attribution_metadata
+
+    conv = Conversation(
+        phone="+971501234567",
+        metadata_={
+            "source_attribution": {
+                "original": {
+                    "source": "google",
+                    "channel": "whatsapp",
+                    "utm": {"utm_source": "google", "utm_campaign": "spring"},
+                }
+            }
+        },
+    )
+
+    apply_source_attribution_metadata(
+        conv,
+        {
+            "source": "instagram",
+            "channel": "whatsapp",
+            "utm": {"utm_source": "instagram", "utm_campaign": "retargeting"},
+        },
+    )
+
+    attribution = conv.metadata_["source_attribution"]
+    assert attribution["original"] == {
+        "source": "google",
+        "channel": "whatsapp",
+        "utm": {"utm_source": "google", "utm_campaign": "spring"},
+    }
+    assert attribution["latest"] == {
+        "source": "instagram",
+        "channel": "whatsapp",
+        "utm": {"utm_source": "instagram", "utm_campaign": "retargeting"},
+    }
+    assert attribution["policy"]["original_preserved"] is True
+
+
+def test_build_bounded_returning_customer_context_keeps_only_compact_fields() -> None:
+    from src.services.customer_identity import build_bounded_returning_customer_context
+
+    contact = {
+        "First_Name": "Aisha",
+        "Last_Name": "Khan",
+        "Segment": ["Wholesale", "VIP"],
+        "Email": "aisha@example.com",
+        "Last_Deal_Status": "Last quotation rejected after manager review",
+        "Description": "FULL TRANSCRIPT: " + ("customer message " * 80),
+    }
+
+    context = build_bounded_returning_customer_context(contact)
+
+    assert context == {
+        "Name": "Aisha Khan",
+        "Segment": "Wholesale, VIP",
+        "Recent_Status": "Last quotation rejected after manager review",
+        "Returning_Customer": "yes",
+    }
+    assert "FULL TRANSCRIPT" not in str(context)
+    assert len(str(context)) < 300

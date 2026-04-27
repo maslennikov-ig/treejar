@@ -8,7 +8,10 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from src.integrations.crm.zoho_crm import ZohoCRMClient
+from src.integrations.crm.zoho_crm import (
+    ZohoCRMClient,
+    apply_zoho_attribution_mapping,
+)
 
 
 def _make_response(
@@ -123,6 +126,53 @@ async def test_create_contact() -> None:
     )
     assert result == {"code": "SUCCESS", "details": {"id": "456"}}
     await client.close()
+
+
+def test_apply_zoho_attribution_mapping_without_policy_adds_no_custom_fields() -> None:
+    payload = {"Last_Name": "Aisha", "Lead_Source": "Chatbot"}
+    attribution = {
+        "source": "instagram",
+        "channel": "whatsapp",
+        "utm": {
+            "utm_source": "instagram",
+            "utm_medium": "cpc",
+            "utm_campaign": "retargeting",
+        },
+    }
+
+    result = apply_zoho_attribution_mapping(payload, attribution)
+
+    assert result == {"Last_Name": "Aisha", "Lead_Source": "Chatbot"}
+    assert "UTM_Source" not in result
+    assert "Source_Channel" not in result
+
+
+def test_apply_zoho_attribution_mapping_uses_only_explicit_policy_fields() -> None:
+    payload = {"Last_Name": "Aisha", "Lead_Source": "Chatbot"}
+    attribution = {
+        "source": "instagram",
+        "channel": "whatsapp",
+        "utm": {
+            "utm_source": "instagram",
+            "utm_campaign": "retargeting",
+        },
+    }
+
+    result = apply_zoho_attribution_mapping(
+        payload,
+        attribution,
+        field_mapping={
+            "source": "Lead_Source",
+            "utm.utm_campaign": "Campaign_Name",
+        },
+    )
+
+    assert result == {
+        "Last_Name": "Aisha",
+        "Lead_Source": "instagram",
+        "Campaign_Name": "retargeting",
+    }
+    assert "utm_source" not in result
 
 
 @pytest.mark.unit

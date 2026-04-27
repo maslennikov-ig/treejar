@@ -207,6 +207,52 @@ async def test_inject_system_prompt_omits_search_requirement_in_order_handoff_mo
 
 
 @pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_inject_system_prompt_bounds_returning_customer_context(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    mock_prompt.return_value = "BASE PROMPT"
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        crm_context={
+            "Name": "Aisha Khan",
+            "Segment": "Wholesale",
+            "Recent_Status": "Last quotation rejected",
+            "Returning_Customer": "yes",
+            "Transcript": "FULL TRANSCRIPT " + ("old message " * 80),
+        },
+    )
+
+    from pydantic_ai.usage import RunUsage
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    prompt = await inject_system_prompt(ctx)
+
+    assert "[CRM CUSTOMER CONTEXT]" in prompt
+    assert "Name: Aisha Khan" in prompt
+    assert "Segment: Wholesale" in prompt
+    assert "Recent_Status: Last quotation rejected" in prompt
+    assert "Returning_Customer: yes" in prompt
+    assert "FULL TRANSCRIPT" not in prompt
+    assert prompt.count("[CRM CUSTOMER CONTEXT]") == 1
+
+
+@pytest.mark.asyncio
 async def test_engine_process_message_db_error(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

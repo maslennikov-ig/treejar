@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,6 +14,7 @@ class ContactCreate(BaseModel):
     email: str | None = None
     company: str | None = None
     position: str | None = None
+    source_attribution: dict[str, Any] | None = None
 
 
 class ContactRead(UUIDModel):
@@ -33,6 +35,7 @@ class DealCreate(BaseModel):
     amount: float | None = None
     currency: str = "AED"
     stage: str = "Qualification"
+    source_attribution: dict[str, Any] | None = None
 
 
 class DealRead(UUIDModel):

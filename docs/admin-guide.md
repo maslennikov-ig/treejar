@@ -131,6 +131,12 @@ The dashboard is no longer metrics-only. It now includes the operator controls t
 - The panel shows masked token/chat values and exposes **Send test message**.
 - This is the safe operator entrypoint for notification health; the raw internal notification API still exists behind `API_KEY`.
 
+### CRM Attribution And Returning Customers
+- Inbound source/UTM data is stored locally in conversation metadata under `source_attribution`.
+- The first captured attribution is preserved as `original`; repeat contacts update `latest` only.
+- Zoho CRM outbound source/UTM custom-field mapping is intentionally disabled until the client confirms exact Zoho field API names.
+- Returning-customer CRM context sent to the LLM/admin surfaces is bounded to name, segment, and one recent status; full transcripts are not injected.
+
 ### Weekly Operations Report
 - Use **Dashboard → Operator Center → Weekly Operations Report** to refresh the 7-day summary.
 - The panel surfaces:

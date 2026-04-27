@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from html import escape
 from typing import Any
@@ -20,6 +21,29 @@ _GENERIC_CUSTOMER_PLACEHOLDERS = frozenset(
         "unknown client",
     }
 )
+_ATTRIBUTION_METADATA_KEY = "source_attribution"
+_UTM_KEYS = frozenset(
+    {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "utm_id",
+    }
+)
+_SOURCE_KEYS = ("source", "lead_source", "referrer", "referral_source")
+_CHANNEL_KEYS = ("channel", "chatType", "chat_type")
+_RECENT_STATUS_KEYS = (
+    "Recent_Status",
+    "Last_Deal_Status",
+    "Last_Order_Status",
+    "Deal_Status",
+    "Latest_Status",
+    "Stage",
+)
+_MAX_CONTEXT_VALUE_CHARS = 96
+_MAX_LLM_CONTEXT_LINES = 4
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +86,31 @@ def _extract_name_from_profile(profile: dict[str, Any] | None) -> str | None:
     return full_name or None
 
 
+def _coerce_compact_text(
+    value: Any, *, max_chars: int = _MAX_CONTEXT_VALUE_CHARS
+) -> str:
+    if isinstance(value, (list, tuple, set)):
+        text = ", ".join(str(item).strip() for item in value if str(item).strip())
+    elif isinstance(value, Mapping):
+        name = value.get("name")
+        text = str(name).strip() if name is not None else ""
+    else:
+        text = str(value).strip() if value is not None else ""
+
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "…"
+
+
+def _first_text_value(payload: Mapping[str, Any], keys: Sequence[str]) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        text = _clean_text(value) if isinstance(value, str) else None
+        if text:
+            return text
+    return None
+
+
 def _build_cached_profile(contact: dict[str, Any]) -> dict[str, Any]:
     name = " ".join(
         part
@@ -82,6 +131,142 @@ def _build_cached_profile(contact: dict[str, Any]) -> dict[str, Any]:
         "Name": name,
         "Segment": contact.get("Segment", "Unknown"),
     }
+
+
+def _payload_from_message(message: Any) -> dict[str, Any]:
+    if isinstance(message, Mapping):
+        return dict(message)
+    if hasattr(message, "model_dump"):
+        payload = dict(message.model_dump())
+        extra = getattr(message, "model_extra", None)
+        if isinstance(extra, Mapping):
+            payload.update(extra)
+        return payload
+    return {}
+
+
+def extract_inbound_source_attribution(
+    messages: Sequence[Any],
+) -> dict[str, Any] | None:
+    """Extract safe source/UTM attribution from inbound message payloads."""
+    source: str | None = None
+    channel: str | None = None
+    utm: dict[str, str] = {}
+
+    for message in messages:
+        payload = _payload_from_message(message)
+        if not payload:
+            continue
+
+        source = source or _first_text_value(payload, _SOURCE_KEYS)
+        channel = channel or _first_text_value(payload, _CHANNEL_KEYS)
+
+        nested_utm = payload.get("utm")
+        if isinstance(nested_utm, Mapping):
+            for key, value in nested_utm.items():
+                if key in _UTM_KEYS and isinstance(value, str) and value.strip():
+                    utm[key] = value.strip()
+
+        for key in _UTM_KEYS:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                utm[key] = value.strip()
+
+    if not source and not channel and not utm:
+        return None
+
+    attribution: dict[str, Any] = {}
+    if source:
+        attribution["source"] = source
+    if channel:
+        attribution["channel"] = channel
+    if utm:
+        attribution["utm"] = utm
+    return attribution
+
+
+def apply_source_attribution_metadata(
+    conversation: Any,
+    attribution: Mapping[str, Any] | None,
+) -> None:
+    """Persist original/latest inbound attribution in conversation metadata."""
+    if not attribution:
+        return
+
+    cleaned: dict[str, Any] = {}
+    source = attribution.get("source")
+    channel = attribution.get("channel")
+    if isinstance(source, str) and source.strip():
+        cleaned["source"] = source.strip()
+    if isinstance(channel, str) and channel.strip():
+        cleaned["channel"] = channel.strip()
+
+    raw_utm = attribution.get("utm")
+    if isinstance(raw_utm, Mapping):
+        utm = {
+            str(key): str(value).strip()
+            for key, value in raw_utm.items()
+            if key in _UTM_KEYS and value is not None and str(value).strip()
+        }
+        if utm:
+            cleaned["utm"] = utm
+
+    if not cleaned:
+        return
+
+    metadata = dict(getattr(conversation, "metadata_", None) or {})
+    existing = metadata.get(_ATTRIBUTION_METADATA_KEY)
+    attribution_meta = dict(existing) if isinstance(existing, Mapping) else {}
+
+    if not isinstance(attribution_meta.get("original"), Mapping):
+        attribution_meta["original"] = cleaned
+    attribution_meta["latest"] = cleaned
+    attribution_meta["policy"] = {
+        "original_preserved": True,
+        "latest_updates_on_repeat_contact": True,
+        "zoho_outbound_mapping": "client_decision_required",
+    }
+
+    metadata[_ATTRIBUTION_METADATA_KEY] = attribution_meta
+    conversation.metadata_ = metadata
+
+
+def build_bounded_returning_customer_context(
+    contact: Mapping[str, Any] | None,
+) -> dict[str, str]:
+    """Build compact CRM context safe for owner/admin/LLM prompts."""
+    if not contact:
+        return {"Segment": "Unknown", "Returning_Customer": "no"}
+
+    context: dict[str, str] = {"Returning_Customer": "yes"}
+    name = _extract_name_from_profile(dict(contact))
+    if name:
+        context["Name"] = _coerce_compact_text(name)
+
+    segment = _coerce_compact_text(contact.get("Segment", "Unknown"))
+    context["Segment"] = segment or "Unknown"
+
+    for key in _RECENT_STATUS_KEYS:
+        status = _coerce_compact_text(contact.get(key))
+        if status:
+            context["Recent_Status"] = status
+            break
+
+    return context
+
+
+def format_llm_crm_context(context: Mapping[str, Any]) -> str:
+    """Format only allow-listed, bounded CRM context lines for the LLM prompt."""
+    allowed_keys = ("Name", "Segment", "Recent_Status", "Returning_Customer")
+    lines: list[str] = []
+    for key in allowed_keys:
+        value = context.get(key)
+        text = _coerce_compact_text(value)
+        if text:
+            lines.append(f"{key}: {text}")
+        if len(lines) >= _MAX_LLM_CONTEXT_LINES:
+            break
+    return "\n".join(lines)
 
 
 async def resolve_owner_customer_name(

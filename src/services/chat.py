@@ -27,6 +27,10 @@ from src.models.message import (
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
+from src.services.customer_identity import (
+    apply_source_attribution_metadata,
+    extract_inbound_source_attribution,
+)
 from src.services.escalation_state import (
     should_pause_bot_for_escalation,
     should_send_escalation_fallback,
@@ -554,6 +558,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             conv = Conversation(phone=chat_id)
             db.add(conv)
             await db.flush()
+
+        apply_source_attribution_metadata(
+            conv,
+            extract_inbound_source_attribution(messages),
+        )
 
         if isinstance(channel_id, str):
             try:

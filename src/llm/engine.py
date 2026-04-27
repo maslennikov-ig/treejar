@@ -19,7 +19,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.integrations.crm.zoho_crm import ZohoCRMClient
+from src.integrations.crm.zoho_crm import (
+    ZohoCRMClient,
+    apply_zoho_attribution_mapping,
+)
 from src.integrations.inventory.zoho_inventory import (
     ZohoInventoryClient,
     extract_sale_order_data,
@@ -49,6 +52,10 @@ from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery
+from src.services.customer_identity import (
+    build_bounded_returning_customer_context,
+    format_llm_crm_context,
+)
 from src.services.escalation_state import is_active_human_handoff
 from src.services.public_media import build_signed_product_image_url
 
@@ -930,8 +937,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         base_prompt += faq_block
 
     if ctx.deps.crm_context:
-        profile_str = "\n".join(f"{k}: {v}" for k, v in ctx.deps.crm_context.items())
-        base_prompt += f"\n\n[CRM CUSTOMER CONTEXT]\n{profile_str}\n"
+        profile_str = format_llm_crm_context(ctx.deps.crm_context)
+        if profile_str:
+            base_prompt += f"\n\n[CRM CUSTOMER CONTEXT]\n{profile_str}\n"
 
     if ctx.deps.runtime_directives:
         directives_block = "\n".join(
@@ -1196,6 +1204,11 @@ async def create_deal(
     # Look up the contact's CRM ID first, since we need to link it
     phone = ctx.deps.conversation.phone
     contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
+    source_attribution = (
+        ctx.deps.conversation.metadata_.get("source_attribution")
+        if isinstance(ctx.deps.conversation.metadata_, dict)
+        else None
+    )
 
     if not contact:
         # We must create the contact first
@@ -1205,6 +1218,10 @@ async def create_deal(
             "Last_Name": ctx.deps.conversation.customer_name or "Unknown Client",
             "Lead_Source": "Chatbot",
         }
+        new_contact_data = apply_zoho_attribution_mapping(
+            new_contact_data,
+            source_attribution if isinstance(source_attribution, Mapping) else None,
+        )
         resp = await ctx.deps.zoho_crm.create_contact(new_contact_data)
         if "details" not in resp or "id" not in resp["details"]:
             return "Failed to create customer in CRM. Cannot create deal."
@@ -1221,6 +1238,10 @@ async def create_deal(
     }
     if amount is not None:
         deal_data["Amount"] = amount
+    deal_data = apply_zoho_attribution_mapping(
+        deal_data,
+        source_attribution if isinstance(source_attribution, Mapping) else None,
+    )
 
     deal_resp = await ctx.deps.zoho_crm.create_deal(deal_data)
 
@@ -1894,14 +1915,10 @@ async def process_message(
         if not crm_context:
             contact = await crm_client.find_contact_by_phone(conv.phone)
             if contact:
-                name = f"{contact.get('First_Name', '')} {contact.get('Last_Name', '')}".strip()
-                crm_context = {
-                    "Name": name,
-                    "Segment": contact.get("Segment", "Unknown"),
-                }
+                crm_context = build_bounded_returning_customer_context(contact)
                 await set_cached_crm_profile(redis, conv.phone, crm_context)
             else:
-                crm_context = {"Segment": "Unknown"}
+                crm_context = build_bounded_returning_customer_context(None)
 
     # Optional shared dict for PII placeholders across history
     pii_map: dict[str, str] = {}

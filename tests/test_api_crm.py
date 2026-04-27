@@ -113,6 +113,41 @@ async def test_create_contact_success(
 
 
 @pytest.mark.asyncio
+async def test_create_contact_with_attribution_does_not_invent_zoho_fields(
+    override_get_crm_client: None, mock_crm: AsyncMock
+) -> None:
+    mock_crm.create_contact.return_value = {"code": "SUCCESS", "details": {"id": "456"}}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/v1/crm/contacts/",
+            json={
+                "phone": "987654321",
+                "name": "John Smith",
+                "source_attribution": {
+                    "source": "instagram",
+                    "channel": "whatsapp",
+                    "utm": {
+                        "utm_source": "instagram",
+                        "utm_campaign": "retargeting",
+                    },
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = mock_crm.create_contact.await_args.args[0]
+    assert payload == {
+        "Phone": "987654321",
+        "Last_Name": "John Smith",
+        "Email": "",
+        "Designation": "",
+        "Lead_Source": "Chatbot",
+    }
+
+
+@pytest.mark.asyncio
 async def test_create_contact_failure(
     override_get_crm_client: None, mock_crm: AsyncMock
 ) -> None:

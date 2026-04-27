@@ -10,7 +10,10 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.deps import get_redis
-from src.integrations.crm.zoho_crm import ZohoCRMClient
+from src.integrations.crm.zoho_crm import (
+    ZohoCRMClient,
+    apply_zoho_attribution_mapping,
+)
 from src.schemas import (
     ContactCreate,
     ContactRead,
@@ -81,6 +84,7 @@ async def create_contact(
     # Usually we can pass it as a field or we leave it. We'll add text to Description if missing Account link.
     if body.company:
         payload["Description"] = f"Company: {body.company}"
+    payload = apply_zoho_attribution_mapping(payload, body.source_attribution)
 
     resp = await crm.create_contact(payload)
     if resp.get("code") not in ("SUCCESS", "DUPLICATE_DATA"):
@@ -117,6 +121,7 @@ async def create_deal(
         "Stage": body.stage,
         "Pipeline": "Standard (Standard)",
     }
+    payload = apply_zoho_attribution_mapping(payload, body.source_attribution)
     resp = await crm.create_deal(payload)
     if resp.get("code") != "SUCCESS":
         logger.error("Zoho Create Deal Error: %s", resp)
