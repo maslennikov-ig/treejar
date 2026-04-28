@@ -966,7 +966,13 @@ class TestScenario7OrderHandoffGuard:
             for contract in observed_contracts
         )
         assert any(
-            "use this zoho-confirmed stock and price fact to strengthen the concrete options"
+            "use this stock/price fact to strengthen the concrete options"
+            in contract.lower()
+            for contract in observed_contracts
+        )
+        assert any(
+            "zoho confirms operational stock" in contract.lower()
+            and "treejar catalog price remains the customer-facing commercial truth"
             in contract.lower()
             for contract in observed_contracts
         )
