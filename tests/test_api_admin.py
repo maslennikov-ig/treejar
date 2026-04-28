@@ -45,9 +45,55 @@ class _FakeAIQualityConfigDB:
         self.committed = True
 
 
+class _FakeSystemConfigDB:
+    def __init__(self, values: dict[str, Any] | None = None) -> None:
+        from src.models.system_config import SystemConfig
+
+        self.rows = {
+            key: SystemConfig(key=key, value=value)
+            for key, value in (values or {}).items()
+        }
+        self.added: list[object] = []
+        self.committed = False
+
+    async def execute(self, stmt: object) -> _FakeScalarResult:
+        text = str(stmt)
+        for key, row in self.rows.items():
+            if key in text:
+                return _FakeScalarResult(row)
+        return _FakeScalarResult(None)
+
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
+        key = obj.key
+        self.rows[key] = obj
+
+    async def commit(self) -> None:
+        self.committed = True
+
+
 async def _with_fake_db(
     admin_client: AsyncClient,
     fake_db: _FakeAIQualityConfigDB,
+    method: str,
+    url: str,
+    **kwargs: object,
+):
+    from src.core.database import get_db
+
+    async def override_get_db():
+        yield fake_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        return await admin_client.request(method, url, **kwargs)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+async def _with_fake_system_db(
+    admin_client: AsyncClient,
+    fake_db: _FakeSystemConfigDB,
     method: str,
     url: str,
     **kwargs: object,
@@ -673,6 +719,71 @@ async def test_admin_ai_quality_controls_validates_budget_calls_and_retry_bounds
                 "max_calls_per_run": 1000,
                 "retry": {"max_attempts": 5},
             }
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_payment_reminder_controls_default_disabled(
+    admin_client: AsyncClient,
+) -> None:
+    response = await _with_fake_system_db(
+        admin_client,
+        _FakeSystemConfigDB(),
+        "GET",
+        "/api/v1/admin/payment-reminder-controls",
+    )
+
+    assert response.status_code == 200
+    config = response.json()["config"]
+    assert config["mode"] == "disabled"
+    assert config["within_24h_text_enabled"] is False
+    assert config["template_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_admin_payment_reminder_controls_update_persists_system_config(
+    admin_client: AsyncClient,
+) -> None:
+    fake_db = _FakeSystemConfigDB()
+
+    response = await _with_fake_system_db(
+        admin_client,
+        fake_db,
+        "PUT",
+        "/api/v1/admin/payment-reminder-controls",
+        json={
+            "mode": "scheduled",
+            "max_per_run": 3,
+            "daily_limit": 10,
+            "min_hours_after_approval": 24,
+            "template_name": "payment_reminder_approved_order_v1",
+            "within_24h_text_enabled": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_db.committed is True
+    row = fake_db.rows["payment_reminder_controls"]
+    assert row.value["mode"] == "scheduled"
+    assert row.value["template_name"] == "payment_reminder_approved_order_v1"
+
+
+@pytest.mark.asyncio
+async def test_admin_payment_reminder_controls_rejects_enabled_text_without_copy(
+    admin_client: AsyncClient,
+) -> None:
+    response = await _with_fake_system_db(
+        admin_client,
+        _FakeSystemConfigDB(),
+        "PUT",
+        "/api/v1/admin/payment-reminder-controls",
+        json={
+            "mode": "scheduled",
+            "within_24h_text_enabled": True,
+            "within_24h_text": "",
         },
     )
 

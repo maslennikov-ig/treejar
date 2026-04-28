@@ -204,6 +204,85 @@ async def send_wazzup_text_with_audit(
     return AuditedSendResult(audit=audit, provider_message_id=normalized_message_id)
 
 
+async def send_wazzup_template_with_audit(
+    db: AsyncSession,
+    *,
+    provider: Any,
+    conversation_id: uuid.UUID,
+    chat_id: str,
+    template_name: str,
+    params: dict[str, str] | None,
+    source: str,
+    crm_message_id: str,
+) -> AuditedSendResult:
+    existing = await _find_by_crm_message_id(db, crm_message_id)
+    if existing is not None and _is_active(existing):
+        return AuditedSendResult(
+            audit=existing,
+            provider_message_id=existing.provider_message_id,
+            skipped=True,
+        )
+
+    if existing is not None:
+        audit = existing
+        audit.conversation_id = conversation_id
+        audit.chat_id = chat_id
+        audit.outbound_chat_id = _outbound_chat_id(provider, chat_id)
+        audit.message_type = "template"
+        audit.content = template_name
+        audit.source = source
+        audit.provider_message_id = None
+        audit.error_details = None
+        audit.details = {"params": params or {}}
+        audit.status = "pending"
+        audit.status_updated_at = _now()
+    else:
+        audit = OutboundMessageAudit(
+            provider=_PROVIDER,
+            conversation_id=conversation_id,
+            chat_id=chat_id,
+            outbound_chat_id=_outbound_chat_id(provider, chat_id),
+            message_type="template",
+            content=template_name,
+            source=source,
+            crm_message_id=crm_message_id,
+            details={"params": params or {}},
+            status="pending",
+            status_updated_at=_now(),
+        )
+        db.add(audit)
+    await db.flush()
+
+    try:
+        message_id = await provider.send_template(
+            chat_id,
+            template_name,
+            params or {},
+            crm_message_id=crm_message_id,
+        )
+    except httpx.HTTPStatusError as exc:
+        audit.status = (
+            "provider_duplicate" if _is_repeated_crm_message_id(exc) else "error"
+        )
+        audit.status_updated_at = _now()
+        audit.error_details = _http_error_details(exc)
+        await _flush_and_commit_failed_attempt(db)
+        raise
+    except Exception as exc:
+        audit.status = "error"
+        audit.status_updated_at = _now()
+        audit.error_details = {"error": type(exc).__name__, "description": str(exc)}
+        await _flush_and_commit_failed_attempt(db)
+        raise
+
+    normalized_message_id = _provider_message_id(message_id)
+    audit.provider_message_id = normalized_message_id
+    audit.status = "sent"
+    audit.status_updated_at = _now()
+    await db.flush()
+    return AuditedSendResult(audit=audit, provider_message_id=normalized_message_id)
+
+
 async def send_wazzup_media_with_audit(
     db: AsyncSession,
     *,

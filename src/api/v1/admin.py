@@ -49,6 +49,15 @@ from src.schemas import (
     SettingsUpdate,
     TimeseriesResponse,
 )
+from src.services.followup import (
+    PaymentReminderControlsConfig,
+    PaymentReminderControlsResponse,
+    PaymentReminderControlsUpdate,
+    build_payment_reminder_response,
+    get_payment_reminder_controls_config,
+    merge_payment_reminder_controls_update,
+    save_payment_reminder_controls_config,
+)
 
 
 async def require_admin_session(request: Request) -> None:
@@ -336,6 +345,45 @@ async def patch_admin_ai_quality_controls(
     merged = merge_ai_quality_controls_update(current, body)
     saved = await save_ai_quality_controls_config(db, merged)
     return build_ai_quality_response(saved)
+
+
+@router.get(
+    "/payment-reminder-controls", response_model=PaymentReminderControlsResponse
+)
+async def get_admin_payment_reminder_controls(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PaymentReminderControlsResponse:
+    """Read SystemConfig-backed payment reminder controls."""
+    return build_payment_reminder_response(
+        await get_payment_reminder_controls_config(db)
+    )
+
+
+@router.put(
+    "/payment-reminder-controls", response_model=PaymentReminderControlsResponse
+)
+async def put_admin_payment_reminder_controls(
+    body: PaymentReminderControlsConfig,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PaymentReminderControlsResponse:
+    """Replace SystemConfig-backed payment reminder controls."""
+    saved = await save_payment_reminder_controls_config(db, body)
+    return build_payment_reminder_response(saved)
+
+
+@router.patch(
+    "/payment-reminder-controls",
+    response_model=PaymentReminderControlsResponse,
+)
+async def patch_admin_payment_reminder_controls(
+    body: PaymentReminderControlsUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PaymentReminderControlsResponse:
+    """Merge a partial SystemConfig-backed payment reminder controls update."""
+    current = await get_payment_reminder_controls_config(db)
+    merged = merge_payment_reminder_controls_update(current, body)
+    saved = await save_payment_reminder_controls_config(db, merged)
+    return build_payment_reminder_response(saved)
 
 
 @router.get("/settings/", response_model=SettingsRead)

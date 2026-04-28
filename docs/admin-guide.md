@@ -86,9 +86,21 @@ Key runtime settings are stored in **Admin → System Config** as key-value pair
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `followup_timeout_hours` | `24` | Hours of inactivity before the first follow-up message |
-| `followup_schedule_days` | `[1, 3, 7, 30, 90]` | Follow-up schedule in days after last contact |
+| `payment_reminder_controls` | `{"mode":"disabled"}` | Payment reminder policy. Disabled by default, so the worker sends zero payment reminders until the client-approved timing and Wazzup template are configured. |
+| `legacy_automatic_followup_enabled` | `false` | Opt-in switch for the old inactive-conversation LLM follow-up path. Keep disabled unless a separate approved policy exists. |
 | `max_context_messages` | `5` | Number of recent messages kept in LLM context |
+
+### Payment Reminder Controls
+
+Payment reminders are acceptance-safe by default:
+
+- `mode`: `disabled`, `manual`, or `scheduled`. Default is `disabled`; scheduled cron sends only when mode is `scheduled`.
+- `max_per_run` and `daily_limit`: hard caps for reminder sends.
+- `min_hours_after_approval`: minimum age after quotation/order approval before a reminder can be considered.
+- `template_name`: approved Wazzup template name/id for messages outside the WhatsApp 24-hour customer-service window.
+- `within_24h_text_enabled`: default `false`. If enabled, `within_24h_text` must be configured and is the only allowed free-form text; no LLM-generated reminder copy is used.
+
+If a customer's last inbound WhatsApp message is more than 24 hours old and `template_name` is empty, the reminder is blocked and recorded as a no-op reason instead of sending text. Candidate selection is limited to approved active order/quotation metadata and excludes rejected, inactive, delivered, paid, pending escalation, and manual takeover conversations.
 
 ### Quality Review Delivery
 
