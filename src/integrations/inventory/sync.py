@@ -100,7 +100,7 @@ def _normalize_treejar_product(item: dict[str, Any]) -> dict[str, Any] | None:
 
     list_price = _as_float(item.get("price"))
     sale_price = _as_float(item.get("salePrice"))
-    price = sale_price if sale_price is not None else (list_price or 0.0)
+    price = list_price if list_price is not None else (sale_price or 0.0)
 
     stock_quantity = _as_int(item.get("stockQuantity"))
     raw_in_stock = item.get("inStock")

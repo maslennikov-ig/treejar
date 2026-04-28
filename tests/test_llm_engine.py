@@ -1668,7 +1668,67 @@ async def test_tools_get_stock_catalog_mismatch_notifies_and_escalates(
 
 @pytest.mark.asyncio
 @patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
-async def test_tools_get_stock_catalog_price_remains_customer_truth_on_zoho_rate_mismatch(
+async def test_tools_get_stock_catalog_price_remains_customer_truth_when_zoho_rate_differs(
+    mock_notify_mismatch: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: exact price for 00-07024023"],
+    )
+    deps.product_results_seen = True
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import get_stock
+
+    product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Chair",
+        price=310.65,
+        currency="AED",
+        attributes={"treejar_slug": "catalog-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock.return_value = {
+        "sku": "00-07024023",
+        "stock_on_hand": 12,
+        "rate": 685.0,
+        "currency_code": "AED",
+    }
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await get_stock(ctx, "00-07024023")
+
+    assert isinstance(result, ToolReturn)
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "12 items available" in result_text
+    assert "310.65 AED" in result_text
+    assert "685" not in result_text
+    assert "treejar catalog price remains" in result.content.lower()
+    assert "catalog_zoho_mismatches" not in (conv.metadata_ or {})
+    mock_notify_mismatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+async def test_tools_get_stock_does_not_alert_when_zoho_rate_differs_from_catalog_price(
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -1693,10 +1753,10 @@ async def test_tools_get_stock_catalog_price_remains_customer_truth_on_zoho_rate
 
     product = SimpleNamespace(
         sku="00-07024023",
-        name_en="Catalog Chair",
-        price=264.0,
+        name_en="Catalog Table",
+        price=310.65,
         currency="AED",
-        attributes={"treejar_slug": "catalog-chair"},
+        attributes={"treejar_slug": "catalog-table"},
         zoho_item_id=None,
     )
     execute_result = MagicMock()
@@ -1717,10 +1777,10 @@ async def test_tools_get_stock_catalog_price_remains_customer_truth_on_zoho_rate
 
     result_text = result.return_value if isinstance(result, ToolReturn) else result
     assert "12 items available" in result_text
-    assert "264.00 AED" in result_text
+    assert "310.65 AED" in result_text
     assert "685" not in result_text
-    assert conv.metadata_["catalog_zoho_mismatches"][0]["sku"] == "00-07024023"
-    mock_notify_mismatch.assert_awaited_once()
+    assert "catalog_zoho_mismatches" not in (conv.metadata_ or {})
+    mock_notify_mismatch.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1731,7 +1791,7 @@ async def test_tools_get_stock_catalog_price_remains_customer_truth_on_zoho_rate
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_create_quotation_uses_catalog_line_rate_on_zoho_rate_mismatch(
+async def test_tools_create_quotation_uses_catalog_line_rate_when_zoho_rate_differs(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_render_html: MagicMock,
@@ -1760,7 +1820,7 @@ async def test_tools_create_quotation_uses_catalog_line_rate_on_zoho_rate_mismat
     product = SimpleNamespace(
         sku="00-07024023",
         name_en="Catalog Chair",
-        price=264.0,
+        price=310.65,
         currency="AED",
         image_url=None,
         attributes={"treejar_slug": "catalog-chair"},
@@ -1799,10 +1859,13 @@ async def test_tools_create_quotation_uses_catalog_line_rate_on_zoho_rate_mismat
 
     assert "Quotation SO-1 has been prepared" in result
     line_items = zoho.create_sale_order.await_args.kwargs["items"]
-    assert line_items[0]["rate"] == 264.0
+    assert line_items[0]["rate"] == 310.65
     assert line_items[0]["rate"] != 685.0
-    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_awaited_once()
+    assert (
+        "requires manager approval" in mock_notify_manager.await_args.kwargs["reason"]
+    )
 
 
 @pytest.mark.asyncio
@@ -1838,7 +1901,7 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     product = SimpleNamespace(
         sku="00-07024023",
         name_en="Catalog Chair",
-        price=264.0,
+        price=310.65,
         currency="AED",
         image_url=None,
         attributes={"treejar_slug": "catalog-chair"},
@@ -1868,10 +1931,10 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
 
     line_items = zoho.create_sale_order.await_args.kwargs["items"]
-    assert line_items[0]["rate"] == 264.0
+    assert line_items[0]["rate"] == 310.65
     assert "couldn't finalize the exact quotation automatically" in result.lower()
     redis.setex.assert_not_awaited()
-    mock_notify_mismatch.assert_awaited_once()
+    mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_awaited_once()
 
 
@@ -1881,7 +1944,7 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_create_quotation_mixed_price_mismatch_then_catalog_only_escalates(
+async def test_tools_create_quotation_ignores_zoho_rate_diff_and_catalog_only_escalates(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_deps: tuple[
@@ -1905,10 +1968,10 @@ async def test_tools_create_quotation_mixed_price_mismatch_then_catalog_only_esc
 
     from src.llm.engine import create_quotation
 
-    price_mismatch_product = SimpleNamespace(
+    zoho_rate_diff_product = SimpleNamespace(
         sku="00-07024023",
         name_en="Catalog Chair",
-        price=264.0,
+        price=310.65,
         currency="AED",
         image_url=None,
         attributes={"treejar_slug": "catalog-chair"},
@@ -1925,7 +1988,7 @@ async def test_tools_create_quotation_mixed_price_mismatch_then_catalog_only_esc
     )
 
     result_a = MagicMock()
-    result_a.scalar_one_or_none.return_value = price_mismatch_product
+    result_a.scalar_one_or_none.return_value = zoho_rate_diff_product
     result_b = MagicMock()
     result_b.scalar_one_or_none.return_value = catalog_only_product
     db.execute.side_effect = [result_a, result_b, result_b]
@@ -1957,11 +2020,8 @@ async def test_tools_create_quotation_mixed_price_mismatch_then_catalog_only_esc
     assert "couldn't confirm exact price and availability" in result.lower()
     zoho.create_sale_order.assert_not_awaited()
     mismatch_events = conv.metadata_["catalog_zoho_mismatches"]
-    assert [event["sku"] for event in mismatch_events] == [
-        "00-07024023",
-        "CATALOG-ONLY",
-    ]
-    assert 1 <= mock_notify_mismatch.await_count <= 2
+    assert [event["sku"] for event in mismatch_events] == ["CATALOG-ONLY"]
+    mock_notify_mismatch.assert_awaited_once()
     mock_notify_manager.assert_awaited_once()
     assert (
         "could not confirm exact price/availability"

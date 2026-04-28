@@ -90,13 +90,13 @@ EXACT_QUOTE_PASS_1_DIRECTIVES = (
     "the customer is asking for an exact quotation-ready commitment",
     "do not ask for full name, company, or email before the quote draft",
     "if exact sku and quantity are already known, confirm stock via get_stock and then call create_quotation immediately",
-    "Treejar catalog price is the customer-facing commercial truth by default; Zoho rate is operational and must not replace catalog price",
+    "Treejar catalog price is the customer-facing commercial truth; Zoho rate is operational and must not replace or invalidate catalog price",
     "if Zoho cannot confirm the item, escalate to manager and do not promise exact price or availability",
 )
 EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "previous pass stayed consultative on an exact quotation-ready request",
     "do not ask for company details first",
-    "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price when catalog and Zoho differ",
+    "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price",
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
 )
 _QUOTE_REQUEST_TERMS = ("quote", "quotation")
@@ -146,7 +146,7 @@ def _product_search_response_contract(
             "Do not claim that these are the exact item requested.",
             "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
-            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "After presenting the closest alternatives, you may ask at most one targeted follow-up to narrow the recommendation.",
         ]
     elif match_kind == "missing":
@@ -156,7 +156,7 @@ def _product_search_response_contract(
             "Ask at most one narrow clarification unless you can justify a clearly related alternative from the returned items.",
             "Use only facts already present in tool results and do not invent specs or prices.",
             "Treejar Catalog price is the customer-facing commercial truth by default for any catalog option you do show.",
-            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
         ]
     else:
         contract_parts = [
@@ -164,7 +164,7 @@ def _product_search_response_contract(
             "In your next reply, lead with 2-3 concrete options or closest alternatives from these results before any generic qualifying questions.",
             "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
-            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price.",
+            "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
             "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
             "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
@@ -203,7 +203,7 @@ def _stock_follow_up_contract() -> str:
     return (
         "Use this stock/price fact to strengthen the concrete options you already have. "
         "Zoho confirms operational stock; Treejar Catalog price remains the customer-facing commercial truth when present. "
-        "Do not replace catalog price with Zoho rate in the customer reply. "
+        "Do not replace or invalidate catalog price with Zoho rate in the customer reply. "
         "Keep the answer option-first, mention the relevant availability and customer-facing catalog price facts, "
         "and ask at most one targeted follow-up only after presenting options. "
         "Do not switch back to generic qualifying questions before showing the options."
@@ -271,7 +271,6 @@ class CommercialPriceDecision:
     source: Literal["catalog", "zoho"]
     catalog_price: float | None
     zoho_rate: float | None
-    mismatch_detail: str | None = None
 
 
 def _normalize_text(text: str) -> str:
@@ -583,20 +582,12 @@ def _commercial_price_decision(
     )
 
     if catalog_price is not None:
-        detail = None
-        if zoho_rate is not None and abs(catalog_price - zoho_rate) >= 0.01:
-            detail = (
-                f"Catalog customer-facing price {catalog_price:.2f} {currency}; "
-                f"Zoho operational rate {zoho_rate:.2f} {currency}. "
-                "Customer-facing price remains catalog price; Zoho rate must not replace it."
-            )
         return CommercialPriceDecision(
             unit_price=catalog_price,
             currency=currency,
             source="catalog",
             catalog_price=catalog_price,
             zoho_rate=zoho_rate,
-            mismatch_detail=detail,
         )
 
     return CommercialPriceDecision(
@@ -631,35 +622,6 @@ async def _record_catalog_zoho_mismatch(
         await ctx.deps.db.flush()
     except Exception as exc:
         logger.warning("Failed to flush catalog/Zoho mismatch audit: %s", exc)
-
-
-async def _notify_catalog_price_mismatch(
-    ctx: RunContext[SalesDeps],
-    *,
-    sku: str,
-    catalog_product: Any | None,
-    detail: str,
-) -> None:
-    await _record_catalog_zoho_mismatch(
-        ctx,
-        sku=sku,
-        catalog_product=catalog_product,
-        detail=detail,
-        issue="Catalog price differs from Zoho operational rate.",
-    )
-    if ctx.deps.catalog_mismatch_alerted:
-        return
-
-    from src.services.notifications import notify_catalog_mismatch
-
-    await notify_catalog_mismatch(
-        sku=sku,
-        treejar_slug=_catalog_treejar_slug(catalog_product, sku),
-        product_name=getattr(catalog_product, "name_en", None),
-        issue="Catalog price differs from Zoho operational rate.",
-        detail=detail,
-    )
-    ctx.deps.catalog_mismatch_alerted = True
 
 
 def _exact_quote_fail_closed_message() -> str:
@@ -1293,13 +1255,6 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         zoho_item=stock_info,
         segment=segment,
     )
-    if price_decision.mismatch_detail:
-        await _notify_catalog_price_mismatch(
-            ctx,
-            sku=sku,
-            catalog_product=catalog_product,
-            detail=price_decision.mismatch_detail,
-        )
 
     if price_decision.source == "catalog":
         price_text = (
@@ -1315,7 +1270,7 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
     stock_text = (
         f"Zoho-confirmed stock for {sku}: {available} items available. {price_text}"
     )
-    if ctx.deps.product_results_seen or price_decision.mismatch_detail:
+    if ctx.deps.product_results_seen:
         return ToolReturn(
             return_value=stock_text,
             content=_stock_follow_up_contract(),
@@ -1513,13 +1468,6 @@ async def create_quotation(
             zoho_item=zoho_item,
             segment=segment,
         )
-        if price_decision.mismatch_detail:
-            await _notify_catalog_price_mismatch(
-                ctx,
-                sku=normalized_sku,
-                catalog_product=catalog_product,
-                detail=price_decision.mismatch_detail,
-            )
 
         unit_price = price_decision.unit_price
         total_price = unit_price * item.quantity

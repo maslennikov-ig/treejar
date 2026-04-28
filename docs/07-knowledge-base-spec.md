@@ -50,15 +50,16 @@
 * **Каталог, фото, описания, категории, customer-facing price/availability:** только Treejar Catalog API.
 * **Операционные поля для внутренних процессов:** Zoho Inventory, если они нужны для quotation / SaleOrder / fulfilment.
 * **Фото:** дедуп по URL и pHash; хранить 1 primary \+ до 6 secondary.
-* **Конфликты данных:** если Treejar Catalog API и Zoho Inventory расходятся, customer-facing price остаётся ценой Treejar Catalog API. Zoho используется для operational stock/item/order execution; Zoho `rate` не заменяет catalog price в ответе клиенту.
+* **Цена:** Treejar Catalog API является единственным источником истины для customer-facing price. В public catalog API использовать поле `price`; `salePrice` не является основной B2C-ценой без отдельного утверждённого правила распродажи.
+* **Операционные данные:** Zoho Inventory используется для operational stock/item/order execution. Zoho `rate` не заменяет catalog `price` и не считается сигналом расхождения цены.
 * **Описание:** брать из Treejar Catalog API; дополнительные структурированные параметры складывать в `spec_json` при наличии.
 
 ### **4.1\) Правила поведения Noor при catalog/Zoho split**
 
 * **Общий каталог:** Treejar Catalog API — единая truth для поиска, карточек, фото, категорий и первичного product discovery.
-* **Точный вопрос о цене/наличии:** если клиент спрашивает про конкретную цену или наличие, Noor делает финальную проверку через Zoho для operational stock/item confirmation, но customer-facing price берёт из Treejar Catalog API, если catalog record есть.
+* **Точный вопрос о цене/наличии:** если клиент спрашивает про конкретную цену или наличие, Noor может проверить Zoho для operational stock/item confirmation, но customer-facing price берёт из Treejar Catalog API `price`, если catalog record есть.
 * **Триггер на quotation:** КП создаётся только когда у клиента уже подтверждены точные `SKU + quantity`.
-* **Catalog/Zoho price mismatch:** если catalog price и Zoho `rate` расходятся, Noor не подменяет цену на Zoho `rate`; mismatch записывается во внутреннее состояние и отправляется operational alert. Если Zoho SaleOrder принимает line `rate`, КП создаётся по catalog price и остаётся на manager approval.
+* **Zoho `rate`:** не использовать для customer-facing price и не сравнивать с catalog `price` как ошибку. Ответственность за корректность catalog `price` лежит на владельце каталога.
 * **Отправка quotation:** даже после успешной Zoho-проверки сохраняется текущий `manager approval` перед отправкой КП клиенту.
 * **Catalog-only item:** если товар есть в Treejar Catalog API, но отсутствует в Zoho, Noor может показать его как вариант, но не создаёт КП/SaleOrder автоматически, переводит разговор на менеджера и отправляет операционный bug alert в Telegram.
 * **Владелец качества каталога:** заказчик подтверждает, что команда сайта отвечает за актуальность данных в Treejar Catalog API и исправление багов источника.
@@ -118,7 +119,7 @@
 1. Определить клиента (по телефону/лиду → account\_id, segment).
 2. Разобрать запрос (ключевые слова, ограничения: цена, цвет, размер).
 3. Найти товары (`/kb/products`), отранжировать: наличие, цена, контент-скор.
-4. Для конкретных вопросов о цене/наличии подтвердить данные через Zoho перед обещанием клиенту.
+4. Для конкретных вопросов о цене/наличии брать цену из Treejar Catalog API `price`; Zoho можно использовать только для operational item/stock confirmation.
 5. Если подтверждены точные `SKU + quantity`, подготовить quotation flow и передать КП на manager approval.
 6. Если Treejar item не найден в Zoho, сообщить клиенту о необходимости подтверждения менеджером, создать эскалацию и отправить Telegram bug alert.
 7. Записать результат в crm\_history.
@@ -152,7 +153,7 @@
 
 * ≥95% SKU из Inventory доступны через API.
 * ≥90% SKU имеют ≥1 фото и описание.
-* Цены из Inventory расходятся с другими источниками \<1% SKU.
+* Customer-facing цены берутся из Treejar Catalog API `price`; корректность этого поля находится на стороне владельца каталога.
 * Персональные цены корректно учитывают сегменты CRM.
 * Время генерации оффера ≤2 сек. (для топ-3 позиций).
-* При Treejar/Zoho mismatch Noor не отправляет КП автоматически, создаёт manager escalation и Telegram alert об операционном баге.
+* Если Treejar item отсутствует в Zoho для quotation/SaleOrder, Noor не отправляет КП автоматически, создаёт manager escalation и Telegram alert об операционном баге.

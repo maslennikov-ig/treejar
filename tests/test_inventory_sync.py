@@ -5,6 +5,7 @@ import pytest
 
 from src.integrations.inventory.sync import (
     _deactivate_stale_products,
+    _normalize_treejar_product,
     _upsert_items_batch,
     _upsert_treejar_products_batch,
     sync_products_from_treejar_catalog,
@@ -199,6 +200,25 @@ def test_sync_response_has_new_fields() -> None:
     )
     assert resp.deactivated == 0
     assert resp.embeddings_generated == 0
+
+
+def test_normalize_treejar_product_uses_catalog_price_not_sale_price() -> None:
+    item = {
+        "slug": "rectangular-operative-table-imago-s",
+        "sku": "00-07024023",
+        "name": "Rectangular operative table",
+        "price": 310.65,
+        "salePrice": 264,
+        "currency": "AED",
+        "inStock": True,
+        "stockQuantity": 12,
+    }
+
+    normalized = _normalize_treejar_product(item)
+
+    assert normalized is not None
+    assert normalized["price"] == 310.65
+    assert normalized["attributes"]["raw_source"]["salePrice"] == 264
 
 
 @pytest.mark.asyncio
