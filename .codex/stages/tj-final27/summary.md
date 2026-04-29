@@ -1,7 +1,7 @@
 # Stage tj-final27: Final Delivery Completion
 
-Updated: 2026-04-27
-Status: planned
+Updated: 2026-04-29
+Status: active
 Branch: `codex/tj-final27-final-delivery-plan`
 Plan: `docs/plans/2026-04-27-final-delivery-completion.md`
 
@@ -30,4 +30,15 @@ Bring Treejar/Noor from launch-ready to final client-acceptance readiness by clo
 
 ## Current State
 
-This stage is planning-only. No runtime code, production config, staging, or production data was changed by this planning pass.
+`tj-final27.1`, `tj-final27.2`, and `tj-final27.3` have been implemented, reviewed, merged, and delivered through `main@090e318d06662eb4a4c4f2247eb01bd1ed317b94`.
+
+Delivered evidence:
+
+- Catalog price is the customer-facing source of truth; `salePrice` is raw-only, missing/invalid catalog price fails closed, discovery does not show `0.00`, exact quote/order creates manager escalation, and metadata markers are JSON-safe.
+- CRM/source attribution keeps original/latest source locally, keeps Zoho outbound custom-field mapping explicit-only, and bounds returning-customer context.
+- Payment reminders remain disabled by default; manual/scheduled controls are guarded, deterministic candidate scanning has a hard cap, and locally created Wazzup providers are closed.
+- CI/deploy run `25115695746` passed on `main@090e318`; production smoke passed (`verify_api.py` 7/0, health 200).
+
+Stale review findings against old feature worktrees are resolved on current deployed `main`.
+
+Remaining final-acceptance work is `tj-final27.4` through `tj-final27.9`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.
