@@ -60,6 +60,8 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = SimpleNamespace(
         sku="CHAIR-1",
+        price=150.0,
+        currency="AED",
         image_url="https://cdn.treejar.test/chair-1.jpg",
     )
     mock_db.execute.return_value = execute_result
@@ -177,6 +179,8 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = SimpleNamespace(
         sku="CHAIR-1",
+        price=150.0,
+        currency="AED",
         image_url=None,
     )
     mock_db.execute.return_value = execute_result

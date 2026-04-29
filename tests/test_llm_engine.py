@@ -1,4 +1,6 @@
+import json
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1219,6 +1221,81 @@ async def test_tools_search_products(
 
 
 @pytest.mark.asyncio
+async def test_tools_search_products_masks_missing_catalog_price_and_media_caption(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from datetime import UTC, datetime
+
+    import src.llm.engine as engine_module
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    mock_search = AsyncMock()
+    mock_search.return_value = ProductSearchResult(
+        products=[
+            ProductRead(
+                id=uuid.uuid4(),
+                sku="CHAIR-MISSING-PRICE",
+                name_en="Office Chair",
+                price=0.0,
+                currency="AED",
+                stock=5,
+                image_url="https://cdn.example/chair.jpg",
+                is_active=True,
+                description_en="A chair with catalog price under manager review",
+                created_at=datetime.now(UTC),
+            )
+        ],
+        total_found=1,
+    )
+
+    orig_search = getattr(engine_module, "rag_search_products", None)
+    engine_module.rag_search_products = mock_search
+
+    try:
+        from pydantic_ai.usage import RunUsage
+
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="chair",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+
+        with patch(
+            "src.services.outbound_audit.send_wazzup_media_with_audit",
+            new_callable=AsyncMock,
+        ) as mock_send_media:
+            result = await engine_module.search_products(ctx, "chair")
+
+        assert isinstance(result, ToolReturn)
+        assert "Office Chair" in result.return_value
+        assert "Price: requires manager verification" in result.return_value
+        assert "0.00" not in result.return_value
+        mock_send_media.assert_awaited_once()
+        caption = mock_send_media.await_args.kwargs["caption"]
+        assert "requires manager verification" in caption
+        assert "0.00" not in caption
+    finally:
+        if orig_search:
+            engine_module.rag_search_products = orig_search
+
+
+@pytest.mark.asyncio
 async def test_tools_search_products_caps_retries_per_run(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -1784,6 +1861,75 @@ async def test_tools_get_stock_does_not_alert_when_zoho_rate_differs_from_catalo
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_price", [None, 0.0, Decimal("0.00")])
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_get_stock_fails_closed_when_catalog_price_missing_or_zero(
+    mock_notify_manager: AsyncMock,
+    catalog_price: float | None,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: exact price for 00-07024023"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import get_stock
+
+    product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Table",
+        price=catalog_price,
+        currency="AED",
+        attributes={"treejar_slug": "catalog-table"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock.return_value = {
+        "sku": "00-07024023",
+        "stock_on_hand": 12,
+        "rate": 685.0,
+        "currency_code": "AED",
+    }
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await get_stock(ctx, "00-07024023")
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "couldn't confirm a customer-facing catalog price" in result_text.lower()
+    assert "685" not in result_text
+    price_events = conv.metadata_["catalog_price_fail_closed"]
+    assert price_events[-1]["sku"] == "00-07024023"
+    expected_raw_price = (
+        str(catalog_price) if isinstance(catalog_price, Decimal) else catalog_price
+    )
+    assert price_events[-1]["raw_catalog_price"] == expected_raw_price
+    assert price_events[-1]["issue"] == "missing_or_invalid_catalog_price"
+    assert price_events[-1]["source"] == "treejar_catalog_price"
+    json.dumps(conv.metadata_)
+    mock_notify_manager.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
 @patch("src.services.pdf.generator.render_quotation_html")
 @patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
@@ -2084,6 +2230,96 @@ async def test_tools_create_quotation_blocks_catalog_only_item_and_escalates(
     assert "couldn't confirm exact price and availability" in result.lower()
     zoho.create_sale_order.assert_not_awaited()
     mock_notify_mismatch.assert_awaited_once()
+    mock_notify_manager.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_price", [None, 0.0, Decimal("0.00")])
+@patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+@patch("src.services.pdf.generator.render_quotation_html")
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_fails_closed_when_catalog_price_missing_or_zero(
+    mock_notify_manager: AsyncMock,
+    mock_render_html: MagicMock,
+    mock_generate_pdf: AsyncMock,
+    catalog_price: float | None,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 00-07024023"],
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    product = SimpleNamespace(
+        sku="00-07024023",
+        name_en="Catalog Chair",
+        price=catalog_price,
+        currency="AED",
+        image_url=None,
+        attributes={"treejar_slug": "catalog-chair"},
+        zoho_item_id=None,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    db.execute.return_value = execute_result
+    zoho.get_stock_bulk.return_value = [
+        {
+            "sku": "00-07024023",
+            "item_id": "zoho-item-1",
+            "name": "Zoho Chair",
+            "description": "Operational Zoho item",
+            "stock_on_hand": 12,
+            "rate": 685.0,
+            "currency_code": "AED",
+        }
+    ]
+    zoho.find_customer_by_phone.return_value = {"contact_id": "contact-1"}
+    zoho.create_sale_order.return_value = {
+        "saleorder": {
+            "salesorder_id": "so-1",
+            "salesorder_number": "SO-1",
+            "status": "draft",
+        }
+    }
+    mock_render_html.return_value = "<html>quotation</html>"
+    mock_generate_pdf.return_value = b"%PDF catalog price missing"
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+
+    assert "couldn't confirm a customer-facing catalog price" in result.lower()
+    assert "685" not in result
+    zoho.create_sale_order.assert_not_awaited()
+    redis.setex.assert_not_awaited()
+    price_events = conv.metadata_["catalog_price_fail_closed"]
+    assert price_events[-1]["sku"] == "00-07024023"
+    expected_raw_price = (
+        str(catalog_price) if isinstance(catalog_price, Decimal) else catalog_price
+    )
+    assert price_events[-1]["raw_catalog_price"] == expected_raw_price
+    assert price_events[-1]["issue"] == "missing_or_invalid_catalog_price"
+    assert price_events[-1]["source"] == "treejar_catalog_price"
+    json.dumps(conv.metadata_)
     mock_notify_manager.assert_awaited_once()
 
 

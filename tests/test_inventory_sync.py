@@ -221,6 +221,26 @@ def test_normalize_treejar_product_uses_catalog_price_not_sale_price() -> None:
     assert normalized["attributes"]["raw_source"]["salePrice"] == 264
 
 
+def test_normalize_treejar_product_does_not_fallback_to_sale_price_when_price_missing() -> (
+    None
+):
+    item = {
+        "slug": "rectangular-operative-table-imago-s",
+        "sku": "00-07024023",
+        "name": "Rectangular operative table",
+        "salePrice": 264,
+        "currency": "AED",
+        "inStock": True,
+        "stockQuantity": 12,
+    }
+
+    normalized = _normalize_treejar_product(item)
+
+    assert normalized is not None
+    assert normalized["price"] == 0.0
+    assert normalized["attributes"]["raw_source"]["salePrice"] == 264
+
+
 @pytest.mark.asyncio
 @patch("src.integrations.inventory.sync.async_session_factory")
 async def test_upsert_treejar_products_batch_preserves_existing_zoho_item_id(

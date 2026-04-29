@@ -50,7 +50,7 @@
 * **Каталог, фото, описания, категории, customer-facing price/availability:** только Treejar Catalog API.
 * **Операционные поля для внутренних процессов:** Zoho Inventory, если они нужны для quotation / SaleOrder / fulfilment.
 * **Фото:** дедуп по URL и pHash; хранить 1 primary \+ до 6 secondary.
-* **Цена:** Treejar Catalog API является единственным источником истины для customer-facing price. В public catalog API использовать поле `price`; `salePrice` не является основной B2C-ценой без отдельного утверждённого правила распродажи.
+* **Цена:** Treejar Catalog API является единственным источником истины для customer-facing price. В public catalog API использовать только поле `price`; `salePrice` хранится только как raw-source поле для аудита и не является customer-facing ценой до отдельного утверждённого sale policy.
 * **Операционные данные:** Zoho Inventory используется для operational stock/item/order execution. Zoho `rate` не заменяет catalog `price` и не считается сигналом расхождения цены.
 * **Описание:** брать из Treejar Catalog API; дополнительные структурированные параметры складывать в `spec_json` при наличии.
 
@@ -60,6 +60,7 @@
 * **Точный вопрос о цене/наличии:** если клиент спрашивает про конкретную цену или наличие, Noor может проверить Zoho для operational stock/item confirmation, но customer-facing price берёт из Treejar Catalog API `price`, если catalog record есть.
 * **Триггер на quotation:** КП создаётся только когда у клиента уже подтверждены точные `SKU + quantity`.
 * **Zoho `rate`:** не использовать для customer-facing price и не сравнивать с catalog `price` как ошибку. Ответственность за корректность catalog `price` лежит на владельце каталога.
+* **Missing/invalid catalog `price`:** если catalog item найден, но `price` отсутствует, невалиден или `<=0`, discovery не показывает `0.00` и помечает цену как требующую manager verification. Exact price/stock/quotation/SaleOrder flow fail closed, не использует `salePrice` или Zoho `rate` как fallback и создаёт manager escalation с audit marker.
 * **Отправка quotation:** даже после успешной Zoho-проверки сохраняется текущий `manager approval` перед отправкой КП клиенту.
 * **Catalog-only item:** если товар есть в Treejar Catalog API, но отсутствует в Zoho, Noor может показать его как вариант, но не создаёт КП/SaleOrder автоматически, переводит разговор на менеджера и отправляет операционный bug alert в Telegram.
 * **Владелец качества каталога:** заказчик подтверждает, что команда сайта отвечает за актуальность данных в Treejar Catalog API и исправление багов источника.
@@ -97,7 +98,7 @@
 
 ## **8\) Схема полей (маппинг по источникам)**
 
-* **Treejar Catalog API → products/product\_content/media:** sku, slug, name, description, image\_urls, category, price, currency, stockQuantity/inStock.
+* **Treejar Catalog API → products/product\_content/media:** sku, slug, name, description, image\_urls, category, price, currency, stockQuantity/inStock. `salePrice` сохраняется только в raw_source и не маппится в customer-facing price без утверждённого sale policy.
 * **Zoho Inventory → operational inventory/pricing linkage:** sku, item\_id, service-level stock fields, quotation/SaleOrder linkage.
 * **Прайс-листы / спецусловия → pricing:** sku, price\_type (dealer, promo и др.), amount, currency, valid\_from/to.
 * **Zoho CRM → crm\_accounts/history/price\_rules:** account\_id, segment, contacts, addresses, vat, preferences, deals/orders.

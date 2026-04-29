@@ -38,6 +38,7 @@ WHATSAPP_FREEFORM_WINDOW_HOURS = 24
 MAX_PAYMENT_REMINDERS_PER_RUN = 100
 MAX_PAYMENT_REMINDERS_PER_DAY = 500
 MAX_APPROVAL_DELAY_HOURS = 24 * 90
+MIN_PAYMENT_REMINDER_SCAN_CAP = 500
 
 
 def _naive_utc_now() -> datetime.datetime:
@@ -562,10 +563,13 @@ async def _payment_reminder_candidate_rows(
         .subquery()
     )
     page_size = max(limit * 5, 50)
+    scan_cap = max(limit * 50, MIN_PAYMENT_REMINDER_SCAN_CAP)
     offset = 0
+    scanned_count = 0
     candidates: list[tuple[Conversation, datetime.datetime | None]] = []
 
-    while len(candidates) < limit:
+    while len(candidates) < limit and scanned_count < scan_cap:
+        current_page_size = min(page_size, scan_cap - scanned_count)
         stmt = (
             select(Conversation, last_customer_message.c.last_customer_inbound_at)
             .outerjoin(
@@ -575,7 +579,7 @@ async def _payment_reminder_candidate_rows(
             .where(Conversation.status == "active")
             .where(Conversation.escalation_status.in_(("none", "resolved")))
             .order_by(Conversation.updated_at.asc(), Conversation.id.asc())
-            .limit(page_size)
+            .limit(current_page_size)
             .offset(offset)
         )
         result = await db.execute(stmt)
@@ -584,6 +588,7 @@ async def _payment_reminder_candidate_rows(
             break
 
         for conv, last_customer_inbound_at in rows:
+            scanned_count += 1
             if build_payment_reminder_candidate(
                 conv,
                 controls=controls,
@@ -594,9 +599,22 @@ async def _payment_reminder_candidate_rows(
                 if len(candidates) >= limit:
                     break
 
-        if len(rows) < page_size:
+        if len(candidates) >= limit or scanned_count >= scan_cap:
+            break
+        if len(rows) < current_page_size:
             break
         offset += len(rows)
+
+    if scanned_count >= scan_cap and len(candidates) < limit:
+        logger.warning(
+            "Payment reminder scan hard cap reached",
+            extra={
+                "limit": limit,
+                "scanned_count": scanned_count,
+                "candidate_count": len(candidates),
+                "cap": scan_cap,
+            },
+        )
 
     return candidates
 

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -234,6 +235,83 @@ async def test_run_payment_reminders_scans_past_first_page_non_candidates() -> N
 
     mock_process.assert_awaited_once()
     assert mock_process.await_args.args[1].id == eligible.id
+
+
+@pytest.mark.asyncio
+async def test_run_payment_reminders_stops_at_scan_hard_cap_and_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    now = _naive_utc_now()
+    non_candidates = [
+        Conversation(
+            id=uuid.uuid4(),
+            phone=f"+971501111{i:03d}",
+            status="active",
+            deal_status="pending",
+            updated_at=now - datetime.timedelta(hours=30),
+            escalation_status=EscalationStatus.NONE.value,
+            metadata_={},
+        )
+        for i in range(500)
+    ]
+    eligible_after_cap = _approved_conversation()
+
+    class _CountResult:
+        def scalar(self) -> int:
+            return 0
+
+    class _RowsResult:
+        def __init__(self, rows: list[tuple[Conversation, datetime.datetime]]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[tuple[Conversation, datetime.datetime]]:
+            return self._rows
+
+    page_rows = [
+        _RowsResult(
+            [
+                (conv, now - datetime.timedelta(hours=25))
+                for conv in non_candidates[start : start + 50]
+            ]
+        )
+        for start in range(0, 500, 50)
+    ]
+    mock_db = AsyncMock()
+    mock_db.execute.side_effect = [
+        _CountResult(),
+        *page_rows,
+        _RowsResult([(eligible_after_cap, now - datetime.timedelta(hours=25))]),
+    ]
+
+    with (
+        caplog.at_level(logging.WARNING, logger="src.services.followup"),
+        patch(
+            "src.services.followup._process_payment_reminder_for_conversation",
+            new=AsyncMock(return_value=MagicMock(sent=True)),
+        ) as mock_process,
+    ):
+        await _run_payment_reminders_with_db(
+            mock_db,
+            controls=PaymentReminderControlsConfig(
+                mode="scheduled",
+                max_per_run=1,
+                daily_limit=1,
+                template_name="payment_reminder_approved_order_v1",
+            ),
+            now=now,
+            trigger="scheduled",
+        )
+
+    mock_process.assert_not_awaited()
+    warning = next(
+        record
+        for record in caplog.records
+        if record.message == "Payment reminder scan hard cap reached"
+    )
+    assert warning.limit == 1
+    assert warning.scanned_count == 500
+    assert warning.candidate_count == 0
+    assert warning.cap == 500
 
 
 def test_naive_utc_now_returns_naive_datetime() -> None:

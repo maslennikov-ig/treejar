@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -268,7 +270,7 @@ class ExactQuoteCandidate:
 class CommercialPriceDecision:
     unit_price: float
     currency: str
-    source: Literal["catalog", "zoho"]
+    source: Literal["catalog", "zoho", "unavailable"]
     catalog_price: float | None
     zoho_rate: float | None
 
@@ -496,6 +498,13 @@ def _catalog_mismatch_customer_message() -> str:
     )
 
 
+def _catalog_price_unavailable_customer_message() -> str:
+    return (
+        "I couldn't confirm a customer-facing catalog price for this item. "
+        "A manager has been asked to verify it before we make a commitment."
+    )
+
+
 def _coerce_inventory_item(
     raw_item: Any,
     *,
@@ -535,6 +544,39 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
+def _valid_catalog_price(catalog_product: Any | None) -> float | None:
+    if catalog_product is None:
+        return None
+    price = _float_or_none(getattr(catalog_product, "price", None))
+    if price is None or price <= 0:
+        return None
+    return price
+
+
+def _catalog_price_requires_verification_text() -> str:
+    return "Price: requires manager verification"
+
+
+def _json_safe_price_value(value: Any) -> float | int | str | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, str):
+        return value
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return numeric if math.isfinite(numeric) else str(value)
+
+
 def _currency_for_price(
     catalog_product: Any | None,
     zoho_item: Mapping[str, Any],
@@ -570,23 +612,28 @@ def _commercial_price_decision(
 
     currency = _currency_for_price(catalog_product, zoho_item)
     zoho_rate = _float_or_none(zoho_item.get("rate"))
-    catalog_raw_price = (
-        _float_or_none(getattr(catalog_product, "price", None))
-        if catalog_product is not None
-        else None
-    )
+    catalog_raw_price = _valid_catalog_price(catalog_product)
     catalog_price = (
         apply_discount(catalog_raw_price, segment)
         if catalog_raw_price is not None
         else None
     )
 
-    if catalog_price is not None:
+    if catalog_price is not None and catalog_price > 0:
         return CommercialPriceDecision(
             unit_price=catalog_price,
             currency=currency,
             source="catalog",
             catalog_price=catalog_price,
+            zoho_rate=zoho_rate,
+        )
+
+    if catalog_product is not None:
+        return CommercialPriceDecision(
+            unit_price=0.0,
+            currency=currency,
+            source="unavailable",
+            catalog_price=None,
             zoho_rate=zoho_rate,
         )
 
@@ -912,6 +959,51 @@ async def _notify_catalog_mismatch_and_escalate(
     )
 
 
+async def _notify_catalog_price_unavailable_and_escalate(
+    ctx: RunContext[SalesDeps],
+    *,
+    sku: str,
+    catalog_product: Any,
+) -> None:
+    from src.integrations.notifications.escalation import notify_manager_escalation
+    from src.schemas.common import EscalationType
+
+    metadata = dict(ctx.deps.conversation.metadata_ or {})
+    raw_events = metadata.get("catalog_price_fail_closed")
+    events = raw_events if isinstance(raw_events, list) else []
+    raw_price = _json_safe_price_value(getattr(catalog_product, "price", None))
+    metadata["catalog_price_fail_closed"] = [
+        *events,
+        {
+            "sku": str(getattr(catalog_product, "sku", sku)),
+            "treejar_slug": _catalog_treejar_slug(catalog_product, sku),
+            "issue": "missing_or_invalid_catalog_price",
+            "source": "treejar_catalog_price",
+            "raw_catalog_price": raw_price,
+            "detail": (
+                "Treejar catalog item has no valid customer-facing price; "
+                "Zoho rate was not used as fallback."
+            ),
+        },
+    ][-10:]
+    ctx.deps.conversation.metadata_ = metadata
+
+    if is_active_human_handoff(ctx.deps.conversation.escalation_status):
+        return
+
+    await notify_manager_escalation(
+        conversation=ctx.deps.conversation,
+        reason=(
+            "Catalog price missing or invalid for exact commitment: Treejar item "
+            f"{getattr(catalog_product, 'sku', sku)} has no valid customer-facing "
+            "catalog price, and Zoho rate must not be used as a fallback."
+        ),
+        recent_messages=ctx.deps.recent_history or [],
+        db=ctx.deps.db,
+        escalation_type=EscalationType.GENERAL,
+    )
+
+
 async def _fail_closed_exact_quote_request(deps: SalesDeps) -> str:
     from src.integrations.notifications.escalation import notify_manager_escalation
     from src.schemas.common import EscalationType
@@ -1177,12 +1269,27 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
             logger.warning("Failed to send product image: %s", e, exc_info=True)
 
     for r in results.products:
-        discounted_price = apply_discount(float(r.price), segment)
+        catalog_price = _valid_catalog_price(r)
+        if catalog_price is not None:
+            discounted_price = apply_discount(catalog_price, segment)
+            if discounted_price > 0:
+                price_line = (
+                    "Customer-facing catalog price: "
+                    f"{discounted_price:.2f} {r.currency}"
+                    " (segment-adjusted if applicable)"
+                )
+                media_caption = f"{r.name_en} — {discounted_price:.2f} {r.currency}"
+            else:
+                price_line = _catalog_price_requires_verification_text()
+                media_caption = f"{r.name_en} — price requires manager verification"
+        else:
+            price_line = _catalog_price_requires_verification_text()
+            media_caption = f"{r.name_en} — price requires manager verification"
+
         desc = (
             f"Name: {r.name_en}\n"
             f"SKU: {r.sku}\n"
-            f"Customer-facing catalog price: {discounted_price:.2f} {r.currency}"
-            " (segment-adjusted if applicable)\n"
+            f"{price_line}\n"
             f"Catalog stock: {r.stock}\n"
             f"Description: {r.description_en}"
         )
@@ -1191,7 +1298,7 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
             desc += "\n[Note: Image of this product has been automatically sent to the customer's WhatsApp. Do not mention or include image URLs in your response.]"
             await _safe_send_media(
                 url=r.image_url,
-                caption=f"{r.name_en} — {discounted_price:.2f} {r.currency}",
+                caption=media_caption,
                 product_key=str(getattr(r, "id", None) or r.sku),
                 zoho_item_id=getattr(r, "zoho_item_id", None),
             )
@@ -1255,6 +1362,13 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         zoho_item=stock_info,
         segment=segment,
     )
+    if price_decision.source == "unavailable" and catalog_product is not None:
+        await _notify_catalog_price_unavailable_and_escalate(
+            ctx,
+            sku=sku,
+            catalog_product=catalog_product,
+        )
+        return _catalog_price_unavailable_customer_message()
 
     if price_decision.source == "catalog":
         price_text = (
@@ -1468,6 +1582,13 @@ async def create_quotation(
             zoho_item=zoho_item,
             segment=segment,
         )
+        if price_decision.source == "unavailable" and catalog_product is not None:
+            await _notify_catalog_price_unavailable_and_escalate(
+                ctx,
+                sku=item.sku,
+                catalog_product=catalog_product,
+            )
+            return _catalog_price_unavailable_customer_message()
 
         unit_price = price_decision.unit_price
         total_price = unit_price * item.quantity
