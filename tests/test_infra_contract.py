@@ -36,3 +36,21 @@ def test_infra_build_contract_uses_locked_uv_and_cpu_torch() -> None:
 
     assert 'name = "cuda-' not in uv_lock
     assert 'name = "nvidia-' not in uv_lock
+
+
+def test_final_readiness_nonfunctional_doc_records_required_posture() -> None:
+    doc = REPO_ROOT / "docs" / "client" / "final-readiness-nonfunctional.md"
+    content = doc.read_text()
+
+    required_phrases = [
+        "Load and concurrency",
+        "Security and auth boundaries",
+        "Backup and restore posture",
+        "Rollback posture",
+        "Monitoring posture",
+        "SLA limitations",
+        "No tracked secrets",
+    ]
+
+    for phrase in required_phrases:
+        assert phrase in content
