@@ -257,6 +257,30 @@ async def test_run_agent_with_safety_final_failure_notifies_once(
 
 
 @pytest.mark.asyncio
+async def test_auto_faq_translate_final_failure_does_not_notify(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.llm import safety
+
+    notify = AsyncMock()
+    monkeypatch.setattr(safety, "notify_llm_safety_event", notify)
+    agent = SimpleNamespace(
+        run=AsyncMock(side_effect=httpx.ConnectError("provider unavailable"))
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        await safety.run_agent_with_safety(
+            agent,
+            "auto_faq_translate",
+            "prompt",
+            model_name="fast-model",
+        )
+
+    assert agent.run.await_count == 2
+    notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_budget_block_prevents_non_core_provider_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

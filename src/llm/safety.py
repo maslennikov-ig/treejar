@@ -127,6 +127,7 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         total_tokens_limit=3000,
         request_limit=1,
         max_attempts=2,
+        notify_on_failure=False,
     ),
     PATH_AUTO_FAQ_CANDIDATE: LLMPathPolicy(
         path=PATH_AUTO_FAQ_CANDIDATE,
