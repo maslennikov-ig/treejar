@@ -265,6 +265,21 @@ def test_policy_routes_price_objection_to_sales_fallback() -> None:
     assert decision.sales_fallback_intent == "price_objection"
 
 
+def test_policy_routes_product_price_objection_to_sales_fallback() -> None:
+    decision = evaluate_verified_answer_policy(
+        query=(
+            "The chairs feel too expensive, I found a cheaper option from "
+            "another supplier. Why should I buy from Treejar?"
+        ),
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+    assert decision.sales_fallback_intent == "price_objection"
+
+
 def test_policy_routes_retention_dropoff_to_sales_fallback() -> None:
     decision = evaluate_verified_answer_policy(
         query="Actually I don't think we need this anymore.",
@@ -272,6 +287,18 @@ def test_policy_routes_retention_dropoff_to_sales_fallback() -> None:
     )
 
     assert decision.question_class == "service_low_risk"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+    assert decision.sales_fallback_intent == "retention"
+
+
+def test_policy_routes_product_retention_dropoff_to_sales_fallback() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="We do not need the office furniture anymore for now. Maybe later.",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
     assert decision.policy_action == "allow"
     assert decision.requires_manager_handoff is False
     assert decision.sales_fallback_intent == "retention"

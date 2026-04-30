@@ -691,6 +691,15 @@ def evaluate_verified_answer_policy(
 
     social_intent, routed_query = classify_social_intent(query)
     question_class = classify_question(query)
+    sales_fallback_intent = detect_sales_fallback_intent(routed_query)
+    if question_class != "service_high_risk" and sales_fallback_intent is not None:
+        return VerifiedAnswerDecision(
+            question_class=question_class,
+            faq_support="missing",
+            social_intent=social_intent,
+            policy_action="allow",
+            sales_fallback_intent=sales_fallback_intent,
+        )
     if question_class == "social":
         policy_action: PolicyAction = (
             "clarify" if social_intent == "assist_opener" else "allow"
@@ -706,15 +715,6 @@ def evaluate_verified_answer_policy(
             question_class="product",
             faq_support="missing",
             policy_action="allow",
-        )
-
-    sales_fallback_intent = detect_sales_fallback_intent(routed_query)
-    if question_class == "service_low_risk" and sales_fallback_intent is not None:
-        return VerifiedAnswerDecision(
-            question_class=question_class,
-            faq_support="missing",
-            policy_action="allow",
-            sales_fallback_intent=sales_fallback_intent,
         )
 
     matched_topics, matched_faq = _matching_faq_entries(

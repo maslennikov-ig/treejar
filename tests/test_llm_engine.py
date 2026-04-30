@@ -644,7 +644,10 @@ async def test_process_message_price_objection_uses_compact_sales_fallback(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    text = "This is too expensive. A competitor says they can do cheaper."
+    text = (
+        "The chairs feel too expensive, I found a cheaper option from another "
+        "supplier. Why should I buy from Treejar?"
+    )
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -692,7 +695,7 @@ async def test_process_message_retention_uses_compact_sales_fallback(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    text = "Actually I don't think we need this anymore."
+    text = "We do not need the office furniture anymore for now. Maybe later."
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
