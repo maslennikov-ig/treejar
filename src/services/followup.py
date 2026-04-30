@@ -773,26 +773,31 @@ async def _run_payment_reminders_with_db(
         now=now,
         limit=max_attempts,
     )
+    if not rows:
+        return
+
     sent_count = 0
-    for conv, last_customer_inbound_at in rows:
-        if sent_count >= max_attempts:
-            break
-        try:
-            result = await _process_payment_reminder_for_conversation(
-                db,
-                conv,
-                controls=controls,
-                last_customer_inbound_at=last_customer_inbound_at,
-                now=now,
-            )
-            if result.sent:
-                sent_count += 1
-        except Exception as e:
-            logfire.error(
-                "Failed to process payment reminder for {conv_id}: {error}",
-                conv_id=conv.id,
-                error=str(e),
-            )
+    async with WazzupProvider() as provider:
+        for conv, last_customer_inbound_at in rows:
+            if sent_count >= max_attempts:
+                break
+            try:
+                result = await _process_payment_reminder_for_conversation(
+                    db,
+                    conv,
+                    controls=controls,
+                    last_customer_inbound_at=last_customer_inbound_at,
+                    now=now,
+                    provider=provider,
+                )
+                if result.sent:
+                    sent_count += 1
+            except Exception as e:
+                logfire.error(
+                    "Failed to process payment reminder for {conv_id}: {error}",
+                    conv_id=conv.id,
+                    error=str(e),
+                )
 
 
 async def run_payment_reminders(ctx: dict[str, Any]) -> None:

@@ -314,6 +314,57 @@ async def test_run_payment_reminders_stops_at_scan_hard_cap_and_logs_warning(
     assert warning.cap == 500
 
 
+@pytest.mark.asyncio
+async def test_run_payment_reminders_reuses_one_provider_for_run() -> None:
+    now = _naive_utc_now()
+    eligible_one = _approved_conversation()
+    eligible_two = _approved_conversation()
+
+    class _CountResult:
+        def scalar(self) -> int:
+            return 0
+
+    mock_db = AsyncMock()
+    mock_db.execute.return_value = _CountResult()
+    provider_cm = AsyncMock()
+    provider = AsyncMock()
+    provider_cm.__aenter__.return_value = provider
+
+    with (
+        patch("src.services.followup.WazzupProvider", return_value=provider_cm),
+        patch(
+            "src.services.followup._payment_reminder_candidate_rows",
+            new=AsyncMock(
+                return_value=[
+                    (eligible_one, now - datetime.timedelta(hours=25)),
+                    (eligible_two, now - datetime.timedelta(hours=25)),
+                ]
+            ),
+        ),
+        patch(
+            "src.services.followup._process_payment_reminder_for_conversation",
+            new=AsyncMock(return_value=MagicMock(sent=True)),
+        ) as mock_process,
+    ):
+        await _run_payment_reminders_with_db(
+            mock_db,
+            controls=PaymentReminderControlsConfig(
+                mode="scheduled",
+                max_per_run=2,
+                daily_limit=2,
+                template_name="payment_reminder_approved_order_v1",
+            ),
+            now=now,
+            trigger="scheduled",
+        )
+
+    assert mock_process.await_count == 2
+    for call in mock_process.await_args_list:
+        assert call.kwargs["provider"] is provider
+    provider_cm.__aenter__.assert_awaited_once()
+    provider_cm.__aexit__.assert_awaited_once()
+
+
 def test_naive_utc_now_returns_naive_datetime() -> None:
     now = _naive_utc_now()
 
