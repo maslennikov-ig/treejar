@@ -26,6 +26,7 @@ class _FakeRunResult:
         ("quality_red_flags", 900),
         ("quality_manager", 2000),
         ("conversation_summary", 900),
+        ("voice_transcription", 700),
         ("response_adapter", 700),
         ("auto_faq_translate", 700),
         ("auto_faq_candidate", 900),
@@ -101,6 +102,25 @@ def test_openrouter_cache_control_requires_enabled_supported_model() -> None:
     )
     assert unsupported["extra_body"]["usage"] == {"include": True}
     assert "cache_control" not in unsupported["extra_body"]
+
+
+def test_voice_transcription_policy_is_non_core_and_bounded() -> None:
+    from src.llm.safety import (
+        PATH_VOICE_TRANSCRIPTION,
+        policy_for_path,
+        usage_limits_for_path,
+    )
+
+    policy = policy_for_path(PATH_VOICE_TRANSCRIPTION)
+    limits = usage_limits_for_path(PATH_VOICE_TRANSCRIPTION)
+
+    assert policy.scope == "non_core"
+    assert policy.max_tokens == 700
+    assert policy.timeout_seconds == 45.0
+    assert limits is not None
+    assert limits.request_limit == 1
+    assert limits.output_tokens_limit == 700
+    assert limits.total_tokens_limit == 4000
 
 
 def test_ai_quality_config_import_does_not_require_openrouter_api_key() -> None:

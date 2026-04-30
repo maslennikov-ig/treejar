@@ -30,9 +30,13 @@
 
 ## Тест 3: Голосовые сообщения
 
+> Live voice/media checks require separate written approval for phone, channel, suffixes, and exact scenarios. Do not run this branch as part of a generic smoke test.
+
 - [ ] Отправить **голосовое сообщение на английском** → бот понял и ответил текстом
 - [ ] Отправить **голосовое сообщение на арабском** → бот понял и ответил текстом
 - [ ] Проверить что ответ отношится к содержимому аудио, а не к факту его получения
+- [ ] Проверить в `/admin/` → `Сообщения`, что у входящего voice/audio сообщения заполнены `message_type`, `audio_url`, `transcription`, `model`, `tokens_in`, `tokens_out`, `cost` когда провайдер вернул usage/cost
+- [ ] Для нечитаемого аудио проверить безопасный текстовый fallback без обращения к основному LLM; oversized/unreadable branches покрываются локальными unit tests, а не live production загрузкой больших файлов
 
 **Ожидаемый результат:** Транскрипция точна, ответ релевантен.
 
