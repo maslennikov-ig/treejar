@@ -112,6 +112,9 @@ _QUOTE_REQUEST_TERMS = (
     "business proposal",
     "formal offer",
     "formal quotation",
+    "proforma invoice",
+    "pro forma invoice",
+    "invoice",
 )
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
 _EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
@@ -139,6 +142,11 @@ _EXACT_QUOTE_HIGH_RISK_BLOCKERS = (
     "on credit",
     "postpaid",
     "delayed payment",
+    "discount",
+    "discounts",
+    "% off",
+    "percent off",
+    "special price",
 )
 _QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
 _SKU_SIGNAL_RE = re.compile(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b")

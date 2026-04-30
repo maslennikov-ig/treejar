@@ -36,6 +36,33 @@ from src.services.report_localization import (
 )
 
 logger = logging.getLogger(__name__)
+_ESCALATION_CONTEXT_LIMIT = 500
+_ESCALATION_CONTEXT_OMISSION = "… Ранний контекст скрыт …"
+
+
+def _format_escalation_context_tail(context: str) -> str:
+    """Return a bounded context snippet that preserves the latest dialogue lines."""
+    if len(context) <= _ESCALATION_CONTEXT_LIMIT:
+        return context
+
+    prefix = f"{_ESCALATION_CONTEXT_OMISSION}\n"
+    budget = max(_ESCALATION_CONTEXT_LIMIT - len(prefix), 0)
+    lines = context.splitlines()
+    kept_reversed: list[str] = []
+    used = 0
+
+    for line in reversed(lines):
+        extra = len(line) + (1 if kept_reversed else 0)
+        if kept_reversed and used + extra > budget:
+            break
+        if not kept_reversed and extra > budget:
+            kept_reversed.append(line[-budget:] if budget else "")
+            break
+        kept_reversed.append(line)
+        used += extra
+
+    tail = "\n".join(reversed(kept_reversed)).strip()
+    return f"{prefix}{tail}" if tail else prefix.rstrip()
 
 
 def _get_telegram_client() -> TelegramClient:
@@ -117,13 +144,8 @@ def format_escalation_message(
     )
 
     if context:
-        # Truncate and escape HTML chars in context
-        safe_context = (
-            context[:500]
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        # Preserve the latest actionable lines before escaping for Telegram HTML.
+        safe_context = escape(_format_escalation_context_tail(context))
         msg += f"\n<b>Контекст:</b>\n<i>{safe_context}</i>\n"
 
     msg += "\nМенеджер уведомлён и должен проверить этот диалог."

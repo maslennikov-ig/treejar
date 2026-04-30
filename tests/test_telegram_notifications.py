@@ -260,6 +260,48 @@ async def test_notify_escalation_unknown_reason_uses_russian_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_notify_escalation_long_context_preserves_last_user_message() -> None:
+    """Long contexts should keep the actionable latest client message visible."""
+    from src.services.notifications import format_escalation_message
+
+    conv_id = uuid4()
+    long_assistant = "assistant: " + ("Earlier product table. " * 80)
+    latest_user = "user: Please issue a proforma invoice for these items."
+
+    msg = format_escalation_message(
+        "+971501234567",
+        conv_id,
+        "Customer asked for a manager",
+        context=f"{long_assistant}\n{latest_user}",
+    )
+
+    assert latest_user in msg
+    assert "Earlier product table" not in msg
+    assert "Ранний контекст скрыт" in msg
+
+
+@pytest.mark.asyncio
+async def test_notify_escalation_context_truncation_keeps_html_escaped_tail() -> None:
+    """Tail-preserving truncation must still HTML-escape client text."""
+    from src.services.notifications import format_escalation_message
+
+    conv_id = uuid4()
+    msg = format_escalation_message(
+        "+971501234567",
+        conv_id,
+        "Customer asked for a manager",
+        context=(
+            "assistant: "
+            + ("Long safe text. " * 80)
+            + "\nuser: Need invoice for <desk & chair>"
+        ),
+    )
+
+    assert "Need invoice for &lt;desk &amp; chair&gt;" in msg
+    assert "<desk & chair>" not in msg
+
+
+@pytest.mark.asyncio
 async def test_notify_quality_alert_formats_html() -> None:
     """notify_quality_alert should render the detailed quality review in Russian."""
     from src.quality.schemas import CriterionScore

@@ -262,12 +262,22 @@ _PAYMENT_SPECIFIC_TERMS = (
     "postpaid",
     "delayed payment",
 )
+_DISCOUNT_SPECIFIC_TERMS = (
+    "discount",
+    "discounts",
+    "% off",
+    "percent off",
+    "special price",
+)
 _QUOTE_PROPOSAL_PHRASES = (
     "commercial offer",
     "commercial proposal",
     "business proposal",
     "formal offer",
     "formal quotation",
+    "proforma invoice",
+    "pro forma invoice",
+    "invoice",
 )
 _PROPOSAL_CONTEXT_TERMS = (
     "business",
@@ -541,6 +551,11 @@ def classify_question(query: str) -> QuestionClass:
     if has_product_signal and has_product_discovery:
         return "product"
 
+    if is_quote_or_proposal_request(normalized) and not _has_commercial_terms_risk(
+        normalized
+    ):
+        return "service_low_risk"
+
     if any(
         keyword in normalized
         for topic in _HIGH_RISK_TOPICS
@@ -572,11 +587,18 @@ def _asks_for_specific_commitment(query: str) -> bool:
         return True
     if any(location in normalized for location in _LOCATION_TERMS):
         return True
-    if any(term in normalized for term in _PAYMENT_SPECIFIC_TERMS):
+    if _has_commercial_terms_risk(normalized):
         return True
     return any(
         phrase in normalized
         for phrase in ("specific", "exact", "slot", "available", "by ", " on ")
+    )
+
+
+def _has_commercial_terms_risk(query: str) -> bool:
+    normalized = _normalize(query).casefold()
+    return any(term in normalized for term in _PAYMENT_SPECIFIC_TERMS) or any(
+        term in normalized for term in _DISCOUNT_SPECIFIC_TERMS
     )
 
 
@@ -898,9 +920,9 @@ def build_clarification_response(language: str) -> str:
 
 def build_quote_or_proposal_clarification_response(language: str) -> str:
     if language.lower() == "ar":
-        return "يمكنني تجهيز عرض سعر. يرجى تأكيد المنتجات والكمية لكل منتج تريد إدراجه."
+        return "يمكنني تجهيز عرض سعر أو فاتورة أولية. يرجى تأكيد المنتجات والكمية لكل منتج تريد إدراجه."
     return (
-        "I can prepare a commercial offer. Please confirm the item(s) "
+        "I can prepare a quotation or proforma invoice. Please confirm the item(s) "
         "and quantity for each item you want included."
     )
 

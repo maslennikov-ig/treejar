@@ -158,6 +158,18 @@ def test_policy_does_not_handoff_commercial_offer_request() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_does_not_handoff_invoice_request_without_payment_terms() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Please issue a proforma invoice for these items.",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.faq_support == "missing"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
 def test_policy_does_not_handoff_business_proposal_request() -> None:
     decision = evaluate_verified_answer_policy(
         query=(
@@ -358,6 +370,18 @@ def test_policy_keeps_payment_terms_on_manager_handoff() -> None:
 def test_policy_keeps_payment_terms_in_proposal_on_manager_handoff() -> None:
     decision = evaluate_verified_answer_policy(
         query="Please include net 30 payment terms in the business proposal.",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
+    assert decision.sales_fallback_intent is None
+
+
+def test_policy_keeps_payment_terms_in_invoice_on_manager_handoff() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Please include net 30 payment terms in the proforma invoice.",
         faq_context=[],
     )
 
