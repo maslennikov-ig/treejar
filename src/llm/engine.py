@@ -355,11 +355,11 @@ def _looks_like_exact_item_candidate(candidate: str) -> bool:
     ):
         return False
 
-    if not re.search(r"[a-z]", normalized):
-        return False
-
     if _SKU_SIGNAL_RE.search(normalized):
         return True
+
+    if not re.search(r"[a-z]", normalized):
+        return False
 
     tokens = [token for token in normalized.split() if token]
     has_digit = bool(re.search(r"\d", normalized))

@@ -2766,6 +2766,17 @@ def test_extract_exact_quote_candidate_accepts_proforma_invoice_terms() -> None:
     assert candidate.sku == "CHAIR-01"
 
 
+def test_extract_exact_quote_candidate_accepts_numeric_hyphenated_sku() -> None:
+    candidate = extract_exact_quote_candidate(
+        "Please issue a proforma invoice for 1 00-07024023."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 1
+    assert candidate.item_candidate == "00-07024023"
+    assert candidate.sku == "00-07024023"
+
+
 def test_extract_exact_quote_candidate_does_not_accept_bare_offer_word() -> None:
     candidate = extract_exact_quote_candidate("Do you offer chairs?")
 
