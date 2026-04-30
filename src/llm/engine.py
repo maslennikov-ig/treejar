@@ -2328,6 +2328,11 @@ async def process_message(
             return _build_llm_response(second_result, db_model_main)
 
         exact_quote_candidate = extract_exact_quote_candidate(masked_text)
+        if exact_quote_candidate is None:
+            # Numeric SKUs such as 00-07024023 can look like phone numbers to
+            # the PII masker. Keep the LLM prompt masked, but use the original
+            # customer text for deterministic exact-quote routing.
+            exact_quote_candidate = extract_exact_quote_candidate(combined_text)
         if exact_quote_candidate:
             first_exact_deps = replace(
                 deps,
