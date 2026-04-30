@@ -25,6 +25,7 @@ from src.schemas import (
     TimeseriesPoint,
     TimeseriesResponse,
 )
+from src.schemas.admin import RecentFeedbackRead
 
 
 def _get_period_days(period: str) -> int:
@@ -300,6 +301,8 @@ async def calculate_dashboard_metrics(
         nps_score = round((promoters - detractors) / feedback_count * 100, 1)
         recommend_rate = round(promoters / feedback_count * 100, 1)
 
+    recent_feedback = await list_recent_feedback(db, period=period, limit=5)
+
     return DashboardMetricsResponse(
         period=period,
         total_conversations=total_conversations,
@@ -327,7 +330,50 @@ async def calculate_dashboard_metrics(
         avg_rating_delivery=round(avg_rating_delivery, 1),
         nps_score=nps_score,
         recommend_rate=recommend_rate,
+        recent_feedback=recent_feedback,
     )
+
+
+async def list_recent_feedback(
+    db: AsyncSession,
+    *,
+    period: str = "all_time",
+    limit: int = 5,
+) -> list[RecentFeedbackRead]:
+    """Return recent feedback rows for the admin/operator acceptance readout."""
+    period_start = _get_period_start(period)
+    stmt = (
+        select(
+            Feedback.conversation_id,
+            Conversation.phone,
+            Conversation.customer_name,
+            Feedback.rating_overall,
+            Feedback.rating_delivery,
+            Feedback.recommend,
+            Feedback.comment,
+            Feedback.created_at,
+        )
+        .join(Conversation, Conversation.id == Feedback.conversation_id)
+        .order_by(Feedback.created_at.desc())
+        .limit(limit)
+    )
+    if period_start:
+        stmt = stmt.where(Feedback.created_at >= period_start)
+
+    result = await db.execute(stmt)
+    return [
+        RecentFeedbackRead(
+            conversation_id=row.conversation_id,
+            phone=row.phone,
+            customer_name=row.customer_name,
+            rating_overall=row.rating_overall,
+            rating_delivery=row.rating_delivery,
+            recommend=row.recommend,
+            comment=row.comment,
+            created_at=row.created_at,
+        )
+        for row in result.all()
+    ]
 
 
 async def calculate_timeseries(

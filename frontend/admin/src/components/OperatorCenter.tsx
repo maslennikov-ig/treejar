@@ -7,9 +7,11 @@ import {
     ClipboardList,
     Clock,
     FileText,
+    MessageCircle,
     Package,
     RefreshCw,
     Send,
+    Share2,
     TrendingUp,
 } from 'lucide-react';
 import {
@@ -17,6 +19,8 @@ import {
     fetchNotificationConfig,
     fetchPendingManagerReviews,
     fetchRecentManagerReviews,
+    fetchRecentFeedback,
+    fetchReferralPolicy,
     generateOperationsReport,
     sendTestNotification,
     syncProducts,
@@ -32,6 +36,8 @@ import type {
     OperationsReportResponse,
     PendingManagerReview,
     ProductSyncSource,
+    RecentFeedbackRead,
+    ReferralPolicyResponse,
 } from '@/types/operators';
 
 interface OperatorCenterProps {
@@ -89,6 +95,8 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
     const [notificationConfig, setNotificationConfig] = useState<NotificationConfig | null>(null);
     const [pendingReviews, setPendingReviews] = useState<PendingManagerReview[]>([]);
     const [recentReviews, setRecentReviews] = useState<ManagerReviewRead[]>([]);
+    const [recentFeedback, setRecentFeedback] = useState<RecentFeedbackRead[]>([]);
+    const [referralPolicy, setReferralPolicy] = useState<ReferralPolicyResponse | null>(null);
     const [report, setReport] = useState<OperationsReportResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -101,33 +109,56 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
     const [reviewMessage, setReviewMessage] = useState<OperatorActionMessage | null>(null);
     const [reportMessage, setReportMessage] = useState<OperatorActionMessage | null>(null);
 
-    const loadOperatorData = useCallback(async () => {
+    const loadOperatorData = useCallback(async (isCurrent: () => boolean = () => true) => {
         setLoading(true);
         setError(null);
         try {
-            const [configResult, pendingResult, recentResult, reportResult] = await Promise.all([
+            const [
+                configResult,
+                pendingResult,
+                recentResult,
+                reportResult,
+                feedbackResult,
+                referralPolicyResult,
+            ] = await Promise.all([
                 fetchNotificationConfig(),
                 fetchPendingManagerReviews(),
                 fetchRecentManagerReviews(),
                 generateOperationsReport(),
+                fetchRecentFeedback(),
+                fetchReferralPolicy(),
             ]);
 
+            if (!isCurrent()) {
+                return null;
+            }
             setNotificationConfig(configResult);
             setPendingReviews(pendingResult);
             setRecentReviews(recentResult.items);
             setReport(reportResult);
+            setRecentFeedback(feedbackResult);
+            setReferralPolicy(referralPolicyResult);
             return null;
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to load operator controls.';
+            if (!isCurrent()) {
+                return null;
+            }
             setError(message);
             return message;
         } finally {
-            setLoading(false);
+            if (isCurrent()) {
+                setLoading(false);
+            }
         }
     }, []);
 
     useEffect(() => {
-        void loadOperatorData();
+        let ignore = false;
+        void loadOperatorData(() => !ignore);
+        return () => {
+            ignore = true;
+        };
     }, [loadOperatorData]);
 
     async function handleSync(source: ProductSyncSource): Promise<void> {
@@ -337,6 +368,94 @@ export default function OperatorCenter({ onMetricsRefresh }: OperatorCenterProps
                             {notificationMessage.text}
                         </div>
                     )}
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <div className="flex items-center gap-2 text-white">
+                                <MessageCircle size={18} className="text-emerald-300" />
+                                <h3 className="text-lg font-semibold">Recent Feedback</h3>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-400">
+                                Latest post-delivery responses with delivery and recommendation signals.
+                            </p>
+                        </div>
+                        <div className="rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">
+                            {recentFeedback.length} shown
+                        </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                        {recentFeedback.length > 0 ? recentFeedback.map((item) => (
+                            <div key={item.conversation_id} className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-medium text-white">{item.customer_name ?? item.phone}</p>
+                                        <p className="mt-1 text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
+                                    </div>
+                                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${item.recommend ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'}`}>
+                                        {item.recommend ? 'Recommends' : 'Needs follow-up'}
+                                    </span>
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300">
+                                    <div>
+                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Overall</p>
+                                        <p className="mt-1 font-medium text-white">{item.rating_overall}/5</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Delivery</p>
+                                        <p className="mt-1 font-medium text-white">{item.rating_delivery}/5</p>
+                                    </div>
+                                </div>
+                                {item.comment && (
+                                    <p className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-sm text-slate-300">
+                                        {item.comment}
+                                    </p>
+                                )}
+                            </div>
+                        )) : (
+                            <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-sm text-slate-500">
+                                Recent post-delivery feedback will appear after customers respond.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <div className="flex items-center gap-2 text-white">
+                                <Share2 size={18} className="text-amber-200" />
+                                <h3 className="text-lg font-semibold">Referral Policy</h3>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-400">
+                                Launch status for referral code generation and discount application.
+                            </p>
+                        </div>
+                        <div className={`rounded-xl px-3 py-2 text-xs font-medium ${referralPolicy?.allows_launch ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-200'}`}>
+                            {referralPolicy?.allows_launch ? 'Approved' : 'Client decision'}
+                        </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Status</p>
+                            <p className="mt-2 text-sm font-medium text-white">
+                                {referralPolicy?.config.status.replace(/_/g, ' ') ?? 'Loading...'}
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Confirmation</p>
+                            <p className="mt-2 text-sm font-medium text-white">
+                                {referralPolicy?.config.confirmation_required ? 'Required' : 'Not required'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                        {referralPolicy?.message ?? 'Referral policy status is loading.'}
+                    </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5 xl:col-span-2">
