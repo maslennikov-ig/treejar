@@ -26,7 +26,7 @@ Recommended action: continue final acceptance work with `tj-final27.4` through `
 
 ## Starter prompt for next orchestrator
 
-Use $stage-orchestrator / $orchestrator-stage. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `docs/plans/2026-04-27-final-delivery-completion.md`, and `.codex/stages/tj-final27/summary.md` first.
+Use $orchestrator-stage / $stage-orchestrator. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `docs/plans/2026-04-27-final-delivery-completion.md`, and `.codex/stages/tj-final27/summary.md` first.
 Worktree: create a fresh isolated worktree from current `origin/main` for the next task.
 Treat `tj-ruue`, `tj-e2e26`, `tj-prl26`, `tj-final27.1-.3`, `tj-final27.9`, `tj-final27.11`, `tj-final27.13`, and `tj-jy5i` as delivered unless new evidence appears. Execute remaining `tj-final27` work as final-acceptance hardening, not as a broad rewrite.
 Do not deploy, mutate production config, run broad production suites, run `scripts/verify_wazzup.py`, enable scheduled AI Quality Controls, or send unsolicited WhatsApp/media/voice tests without explicit approval.
