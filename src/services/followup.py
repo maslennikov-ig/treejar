@@ -156,6 +156,13 @@ class PaymentReminderSendResult:
     provider_message_id: str | None = None
 
 
+@dataclass(frozen=True)
+class FeedbackRequestCandidate:
+    conversation_id: uuid.UUID
+    crm_message_id: str
+    delivered_at: datetime.datetime
+
+
 def _deep_merge(base: dict[str, Any], patch: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in patch.items():
@@ -356,6 +363,137 @@ def _metadata_payment_state(
         return {}
     window_state = order_state.get(window_key)
     return window_state if isinstance(window_state, Mapping) else {}
+
+
+def _metadata_feedback_request_state(
+    metadata: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    state = metadata.get("feedback_request")
+    return state if isinstance(state, Mapping) else {}
+
+
+def _has_order_evidence(
+    conversation: Conversation, metadata: Mapping[str, Any]
+) -> bool:
+    return bool(
+        _text_value(getattr(conversation, "zoho_deal_id", None)) or _order_key(metadata)
+    )
+
+
+def _has_rejected_or_inactive_order(metadata: Mapping[str, Any]) -> bool:
+    if _is_false(metadata.get("zoho_sale_order_active")):
+        return True
+    if _is_false(metadata.get("order_active")):
+        return True
+    return _lower_text(metadata.get("quotation_decision_status")) == "rejected"
+
+
+def _feedback_request_already_sent(metadata: Mapping[str, Any]) -> bool:
+    state = _metadata_feedback_request_state(metadata)
+    return _lower_text(state.get("status")) in {
+        "pending",
+        "sent",
+        "delivered",
+        "read",
+        "provider_duplicate",
+    }
+
+
+def build_feedback_request_candidate(
+    conversation: Conversation,
+    *,
+    now: datetime.datetime | None = None,
+) -> FeedbackRequestCandidate | None:
+    """Return a deterministic candidate for exactly one post-delivery request."""
+    current = now or _naive_utc_now()
+    if current.tzinfo is not None:
+        current = current.astimezone(datetime.UTC).replace(tzinfo=None)
+
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    delivered_at = _conversation_datetime(
+        getattr(conversation, "deal_delivered_at", None)
+    )
+
+    if _lower_text(getattr(conversation, "status", None)) != "active":
+        return None
+    if (
+        _lower_text(getattr(conversation, "deal_status", None))
+        != DealStatus.DELIVERED.value
+    ):
+        return None
+    if delivered_at is None:
+        return None
+    if delivered_at > current:
+        return None
+    if not _has_order_evidence(conversation, metadata):
+        return None
+    if _has_rejected_or_inactive_order(metadata):
+        return None
+    if _feedback_request_already_sent(metadata):
+        return None
+
+    hours_after_delivery = (current - delivered_at).total_seconds() / 3600
+    if not (24 <= hours_after_delivery < 48):
+        return None
+
+    return FeedbackRequestCandidate(
+        conversation_id=conversation.id,
+        crm_message_id=deterministic_crm_message_id(
+            "feedback",
+            conversation.id,
+            "request",
+        ),
+        delivered_at=delivered_at,
+    )
+
+
+def feedback_context_allows_save(conversation: Conversation) -> bool:
+    """Allow feedback only in the explicit delivered-order feedback context."""
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    if _lower_text(getattr(conversation, "status", None)) not in {"", "active"}:
+        return False
+    if (
+        _lower_text(getattr(conversation, "deal_status", None))
+        != DealStatus.DELIVERED.value
+    ):
+        return False
+    if not _has_order_evidence(conversation, metadata):
+        return False
+    if _has_rejected_or_inactive_order(metadata):
+        return False
+    if (
+        _lower_text(getattr(conversation, "sales_stage", None))
+        == SalesStage.FEEDBACK.value
+    ):
+        return True
+    return _feedback_request_already_sent(metadata)
+
+
+def _record_feedback_request_state(
+    conv: Conversation,
+    *,
+    crm_message_id: str,
+    now: datetime.datetime,
+    status: Literal["sent", "skipped"],
+    provider_message_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    metadata = dict(conv.metadata_ or {})
+    state: dict[str, Any] = {
+        "status": status,
+        "crm_message_id": crm_message_id,
+        "updated_at": now.isoformat(),
+    }
+    if provider_message_id:
+        state["provider_message_id"] = provider_message_id
+    if reason:
+        state["reason"] = reason
+    metadata["feedback_request"] = state
+    conv.metadata_ = metadata
 
 
 def _record_payment_state(
@@ -957,6 +1095,7 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
             select(Conversation)
             .outerjoin(Feedback, Feedback.conversation_id == Conversation.id)
             .where(
+                Conversation.status == "active",
                 Conversation.deal_status == DealStatus.DELIVERED.value,
                 Conversation.deal_delivered_at >= min_time,
                 Conversation.deal_delivered_at < max_time,
@@ -974,6 +1113,8 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
 
         for conv in conversations:
             try:
+                if build_feedback_request_candidate(conv, now=now) is None:
+                    continue
                 await _send_feedback_request(db, conv)
             except Exception as e:
                 logfire.error(
@@ -983,11 +1124,19 @@ async def run_feedback_requests(ctx: dict[str, Any]) -> None:
                 )
 
 
-async def _send_feedback_request(db: Any, conv: Conversation) -> None:
+async def _send_feedback_request(
+    db: Any,
+    conv: Conversation,
+    *,
+    now: datetime.datetime | None = None,
+) -> None:
     """Send a feedback request message and set stage to feedback."""
     logfire.info(f"Sending feedback request for conversation {conv.id}")
 
-    messaging = WazzupProvider()
+    current = now or _naive_utc_now()
+    candidate = build_feedback_request_candidate(conv, now=current)
+    if candidate is None:
+        return
 
     # Send initial feedback request FIRST (before committing stage change)
     if conv.language == "ar":
@@ -1003,21 +1152,26 @@ async def _send_feedback_request(db: Any, conv: Conversation) -> None:
             "Could you share some feedback with us?"
         )
 
-    await send_wazzup_text_with_audit(
-        db,
-        provider=messaging,
-        conversation_id=conv.id,
-        chat_id=conv.phone,
-        text=text,
-        source="feedback_request",
-        crm_message_id=deterministic_crm_message_id(
-            "feedback",
-            conv.id,
-            "request",
-        ),
-    )
+    async with WazzupProvider() as messaging:
+        send_result = await send_wazzup_text_with_audit(
+            db,
+            provider=messaging,
+            conversation_id=conv.id,
+            chat_id=conv.phone,
+            text=text,
+            source="feedback_request",
+            crm_message_id=candidate.crm_message_id,
+        )
 
     # Only commit stage change AFTER successful message send
+    _record_feedback_request_state(
+        conv,
+        crm_message_id=candidate.crm_message_id,
+        now=current,
+        status="skipped" if send_result.skipped else "sent",
+        provider_message_id=send_result.provider_message_id,
+        reason="duplicate" if send_result.skipped else None,
+    )
     conv.sales_stage = SalesStage.FEEDBACK.value
     await db.commit()
 

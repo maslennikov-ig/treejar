@@ -21,9 +21,12 @@ async def test_feedback_cron_triggers_for_delivered_deals() -> None:
         phone="+971501234567",
         sales_stage=SalesStage.CLOSING.value,
         language="en",
+        status="active",
         escalation_status="none",
+        zoho_deal_id="DEAL-001",
         deal_status="delivered",
         deal_delivered_at=now - timedelta(hours=30),
+        metadata_={"zoho_sale_order_id": "SO-001"},
     )
 
     mock_db = AsyncMock()
@@ -228,3 +231,47 @@ async def test_deal_delivered_at_not_overwritten_on_subsequent_update() -> None:
 
     # deal_delivered_at must remain unchanged
     assert conv.deal_delivered_at == original_ts
+
+
+@pytest.mark.asyncio
+async def test_send_feedback_request_records_request_metadata_and_stage() -> None:
+    """Successful feedback sends are audited and stored as the dedupe marker."""
+    from src.services.followup import _send_feedback_request
+
+    now = datetime.now(UTC)
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501234567",
+        sales_stage=SalesStage.CLOSING.value,
+        language="en",
+        status="active",
+        escalation_status="none",
+        zoho_deal_id="DEAL-001",
+        deal_status="delivered",
+        deal_delivered_at=now - timedelta(hours=30),
+        metadata_={"zoho_sale_order_id": "SO-001"},
+    )
+    mock_db = AsyncMock()
+    send_result = MagicMock(provider_message_id="wz-msg-1", skipped=False)
+
+    with (
+        patch("src.services.followup.WazzupProvider") as provider_cls,
+        patch(
+            "src.services.followup.send_wazzup_text_with_audit",
+            new=AsyncMock(return_value=send_result),
+        ) as send_mock,
+    ):
+        provider = AsyncMock()
+        provider_cls.return_value.__aenter__.return_value = provider
+
+        await _send_feedback_request(mock_db, conv)
+
+    crm_message_id = f"feedback:{conv.id}:request"
+    send_mock.assert_awaited_once()
+    assert send_mock.await_args.kwargs["crm_message_id"] == crm_message_id
+    assert send_mock.await_args.kwargs["source"] == "feedback_request"
+    assert conv.sales_stage == SalesStage.FEEDBACK.value
+    assert conv.metadata_["feedback_request"]["status"] == "sent"
+    assert conv.metadata_["feedback_request"]["crm_message_id"] == crm_message_id
+    assert conv.metadata_["feedback_request"]["provider_message_id"] == "wz-msg-1"
+    mock_db.commit.assert_awaited_once()

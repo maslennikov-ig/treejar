@@ -10,6 +10,8 @@ import type {
     PendingManagerReview,
     ProductSyncResponse,
     ProductSyncSource,
+    RecentFeedbackRead,
+    ReferralPolicyResponse,
 } from '@/types/operators';
 
 const API_BASE = '/api/v1/admin';
@@ -69,6 +71,14 @@ export function generateOperationsReport(): Promise<OperationsReportResponse> {
         method: 'POST',
         body: JSON.stringify({}),
     });
+}
+
+export function fetchRecentFeedback(limit = 5): Promise<RecentFeedbackRead[]> {
+    return requestJson(`/feedback/recent?limit=${limit}`);
+}
+
+export function fetchReferralPolicy(): Promise<ReferralPolicyResponse> {
+    return requestJson('/referrals/policy');
 }
 
 export function fetchAIQualityControls(): Promise<AIQualityControlsResponse> {
