@@ -29,6 +29,7 @@ PATH_QUALITY_FINAL = "quality_final"
 PATH_QUALITY_RED_FLAGS = "quality_red_flags"
 PATH_QUALITY_MANAGER = "quality_manager"
 PATH_CONVERSATION_SUMMARY = "conversation_summary"
+PATH_VOICE_TRANSCRIPTION = "voice_transcription"
 PATH_RESPONSE_ADAPTER = "response_adapter"
 PATH_AUTO_FAQ_TRANSLATE = "auto_faq_translate"
 PATH_AUTO_FAQ_CANDIDATE = "auto_faq_candidate"
@@ -107,6 +108,16 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         total_tokens_limit=5000,
         request_limit=1,
         max_attempts=2,
+    ),
+    PATH_VOICE_TRANSCRIPTION: LLMPathPolicy(
+        path=PATH_VOICE_TRANSCRIPTION,
+        scope="non_core",
+        max_tokens=700,
+        timeout_seconds=45.0,
+        output_tokens_limit=700,
+        total_tokens_limit=4000,
+        request_limit=1,
+        max_attempts=1,
     ),
     PATH_RESPONSE_ADAPTER: LLMPathPolicy(
         path=PATH_RESPONSE_ADAPTER,

@@ -34,6 +34,28 @@ class MessageAdmin(ReadOnlyModelView, model=Message):
         Message.id,
         Message.conversation_id,
         Message.role,
+        Message.message_type,
+        Message.audio_url,
+        Message.transcription,
+        Message.tokens_in,
+        Message.tokens_out,
+        Message.cost,
+        Message.model,
+        Message.created_at,
+    ]
+    column_details_list = [
+        Message.id,
+        Message.conversation_id,
+        Message.role,
+        Message.content,
+        Message.message_type,
+        Message.wazzup_message_id,
+        Message.audio_url,
+        Message.transcription,
+        Message.tokens_in,
+        Message.tokens_out,
+        Message.cost,
+        Message.model,
         Message.created_at,
     ]
     name = "Сообщение"

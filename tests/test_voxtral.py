@@ -11,6 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import base64
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,7 +20,12 @@ import pytest
 from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
 
 
-def _make_mock_response(content: str | None) -> MagicMock:
+def _make_mock_response(
+    content: str | None,
+    *,
+    usage: object | None = None,
+    model: str = "openai/gpt-audio-mini",
+) -> MagicMock:
     """Create a mock OpenAI ChatCompletion response."""
     mock_msg = MagicMock()
     mock_msg.content = content
@@ -29,7 +35,8 @@ def _make_mock_response(content: str | None) -> MagicMock:
 
     mock_resp = MagicMock()
     mock_resp.choices = [mock_choice]
-    mock_resp.model = "openai/gpt-audio-mini"
+    mock_resp.model = model
+    mock_resp.usage = usage
     return mock_resp
 
 
@@ -42,6 +49,7 @@ def _patch_openai_client(mock_response: MagicMock) -> tuple[Any, MagicMock]:
     mock_client.chat = MagicMock()
     mock_client.chat.completions = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_client.with_options = MagicMock(return_value=mock_client)
 
     return patch(
         "src.integrations.voice.voxtral._get_client",
@@ -148,3 +156,59 @@ class TestTranscribeAudio:
         mock_client.chat.completions.create.assert_awaited_once()
         # External client should NOT have been called
         external_client.post.assert_not_called()
+
+    async def test_applies_provider_side_limits_timeout_and_usage_request(
+        self,
+    ) -> None:
+        """Voice transcription uses bounded non-core provider request settings."""
+        from src.llm.safety import PATH_VOICE_TRANSCRIPTION, policy_for_path
+
+        resp = _make_mock_response("bounded transcription")
+        patcher, mock_client = _patch_openai_client(resp)
+
+        with patcher:
+            result = await transcribe_audio(b"audio", audio_format="ogg")
+
+        assert result == "bounded transcription"
+        policy = policy_for_path(PATH_VOICE_TRANSCRIPTION)
+        mock_client.with_options.assert_called_once_with(
+            timeout=policy.timeout_seconds,
+            max_retries=0,
+        )
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["model"] == "openai/gpt-audio-mini"
+        assert call_kwargs["max_tokens"] == policy.max_tokens
+        assert call_kwargs["temperature"] == 0.0
+        assert call_kwargs["extra_body"] == {"usage": {"include": True}}
+
+    async def test_transcribe_audio_with_metadata_returns_usage_and_cost(
+        self,
+    ) -> None:
+        """OpenRouter/OpenAI-compatible usage is normalized for DB audit fields."""
+        from src.integrations.voice.voxtral import transcribe_audio_with_metadata
+
+        usage = SimpleNamespace(
+            prompt_tokens=120,
+            completion_tokens=8,
+            total_tokens=128,
+            cost=0.00042,
+        )
+        resp = _make_mock_response(
+            "I need two office chairs",
+            usage=usage,
+            model="openai/gpt-audio-mini",
+        )
+        patcher, _ = _patch_openai_client(resp)
+
+        with patcher:
+            result = await transcribe_audio_with_metadata(
+                b"audio",
+                audio_format="ogg",
+            )
+
+        assert result.text == "I need two office chairs"
+        assert result.model == "openai/gpt-audio-mini"
+        assert result.tokens_in == 120
+        assert result.tokens_out == 8
+        assert result.total_tokens == 128
+        assert result.cost == 0.00042
