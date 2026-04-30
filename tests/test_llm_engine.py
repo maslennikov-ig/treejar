@@ -812,6 +812,53 @@ async def test_process_message_payment_terms_still_use_manager_handoff(
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_payment_terms_in_proposal_still_use_manager_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Please include net 30 payment terms in the business proposal."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_awaited_once()
+    assert conv.escalation_status == "pending"
+    assert response.model == "mock-model|verified-policy"
+    assert "manager" in response.text.lower()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -990,6 +1037,86 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
         "verified_policy_repair": {"kind": "benign_no_match", "count": 1}
     }
     assert conv.escalation_status == "none"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_commercial_offer_request_does_not_escalate_after_selection(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Make a commercial offer for me."
+    conv.metadata_ = {"verified_policy_repair": {"kind": "benign_no_match", "count": 1}}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content=(
+                        "I would like to purchase an executive office chair and "
+                        "an L-shaped corner desk."
+                    )
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "CH 620 black and SKYLAND NOVO 1400 are available options."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="620 black")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "I can help with products, prices, stock, delivery, or "
+                        "quotations. What do you need?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I can prepare a commercial offer. Please confirm the item(s) and "
+        "quantity for each item you want included."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert "manager" not in response.text.lower()
+    assert "quantity" in response.text.lower()
+    assert conv.metadata_ == {}
 
 
 @pytest.mark.asyncio
@@ -2572,6 +2699,33 @@ def test_extract_exact_quote_candidate_accepts_exact_named_item_without_quote_te
     assert candidate is not None
     assert candidate.quantity == 1
     assert "skyland luma" in candidate.item_candidate.casefold()
+
+
+def test_extract_exact_quote_candidate_accepts_commercial_offer_terms() -> None:
+    candidate = extract_exact_quote_candidate(
+        "Please make a commercial offer for 1 CHAIR-01."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 1
+    assert candidate.item_candidate == "CHAIR-01"
+    assert candidate.sku == "CHAIR-01"
+
+
+def test_extract_exact_quote_candidate_does_not_accept_bare_offer_word() -> None:
+    candidate = extract_exact_quote_candidate("Do you offer chairs?")
+
+    assert candidate is None
+
+
+def test_extract_exact_quote_candidate_rejects_payment_terms_in_business_proposal() -> (
+    None
+):
+    candidate = extract_exact_quote_candidate(
+        "Please include net 30 payment terms in the business proposal."
+    )
+
+    assert candidate is None
 
 
 @pytest.mark.asyncio

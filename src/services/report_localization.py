@@ -221,6 +221,10 @@ def translate_report_trigger(
     module: str = "report_localization",
 ) -> str:
     """Translate escalation trigger/reason for owner-facing report output."""
+    raw = value.strip() if value is not None else ""
+    if "verified-answer policy requires manager confirmation" in raw.lower():
+        return "требуется подтверждение менеджера"
+
     return _translate_mapped_value(
         value,
         _REPORT_TRIGGER_LABELS,

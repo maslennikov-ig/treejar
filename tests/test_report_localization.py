@@ -21,6 +21,21 @@ def test_translate_report_trigger_for_owner_facing_views() -> None:
     assert translate_report_trigger("complex_order") == "сложный заказ"
 
 
+def test_translate_report_trigger_for_verified_policy_handoff() -> None:
+    from src.services.report_localization import translate_report_trigger
+
+    result = translate_report_trigger(
+        (
+            "Verified-answer policy requires manager confirmation because no "
+            "verified FAQ support was found for 'Do you have a showroom?'."
+        ),
+        surface="escalation_alert",
+        module="notifications",
+    )
+
+    assert result == "требуется подтверждение менеджера"
+
+
 def test_translate_sales_stage_for_owner_facing_views() -> None:
     from src.services.report_localization import translate_sales_stage
 

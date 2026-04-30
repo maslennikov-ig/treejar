@@ -43,12 +43,14 @@ from src.llm.safety import (
 )
 from src.llm.verified_answers import (
     build_clarification_response,
+    build_quote_or_proposal_clarification_response,
     build_sales_fallback_response,
     build_service_handoff_reason,
     build_service_handoff_response,
     build_service_runtime_directives,
     classify_product_match,
     evaluate_verified_answer_policy,
+    is_quote_or_proposal_request,
 )
 from src.models.conversation import Conversation
 from src.rag.embeddings import EmbeddingEngine
@@ -102,7 +104,15 @@ EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price",
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
 )
-_QUOTE_REQUEST_TERMS = ("quote", "quotation")
+_QUOTE_REQUEST_TERMS = (
+    "quote",
+    "quotation",
+    "commercial offer",
+    "commercial proposal",
+    "business proposal",
+    "formal offer",
+    "formal quotation",
+)
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
 _EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
 _CONSULTATIVE_QUOTE_BLOCKERS = (
@@ -116,6 +126,19 @@ _CONSULTATIVE_QUOTE_BLOCKERS = (
     "show me",
     "bulk pricing",
     "wholesale pricing",
+)
+_EXACT_QUOTE_HIGH_RISK_BLOCKERS = (
+    "net 30",
+    "net30",
+    "net 60",
+    "net60",
+    "deferred payment",
+    "payment terms",
+    "credit terms",
+    "credit term",
+    "on credit",
+    "postpaid",
+    "delayed payment",
 )
 _QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
 _SKU_SIGNAL_RE = re.compile(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b")
@@ -290,6 +313,8 @@ def _tokenize_exact_match_text(text: str) -> list[str]:
 
 def _has_exact_commitment_intent(normalized: str) -> bool:
     if any(blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS):
+        return False
+    if any(blocker in normalized for blocker in _EXACT_QUOTE_HIGH_RISK_BLOCKERS):
         return False
 
     if any(term in normalized for term in _QUOTE_REQUEST_TERMS):
@@ -2349,6 +2374,20 @@ async def process_message(
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 fail_closed_text, f"{db_model_main}|exact-quote-fallback"
+            )
+
+        if (
+            not policy_decision.is_order_status
+            and policy_decision.question_class == "service_low_risk"
+            and policy_decision.policy_action == "allow"
+            and is_quote_or_proposal_request(masked_text)
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                build_quote_or_proposal_clarification_response(
+                    str(deps.conversation.language)
+                ),
+                f"{db_model_main}|proposal-clarify",
             )
 
         policy_action = policy_decision.policy_action

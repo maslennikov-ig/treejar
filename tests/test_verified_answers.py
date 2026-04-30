@@ -146,6 +146,33 @@ def test_policy_marks_low_risk_missing_without_inventing_support() -> None:
     assert decision.requires_manager_handoff is True
 
 
+def test_policy_does_not_handoff_commercial_offer_request() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Make a commercial offer for me.",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.faq_support == "missing"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_does_not_handoff_business_proposal_request() -> None:
+    decision = evaluate_verified_answer_policy(
+        query=(
+            "What other questions do I need to answer for you to create "
+            "a business proposal for me?"
+        ),
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.faq_support == "missing"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
 def test_policy_keeps_product_questions_on_catalog_path() -> None:
     decision = evaluate_verified_answer_policy(
         query="Tell me about your acoustic pods",
@@ -319,6 +346,18 @@ def test_policy_routes_known_off_catalog_request_to_sales_fallback() -> None:
 def test_policy_keeps_payment_terms_on_manager_handoff() -> None:
     decision = evaluate_verified_answer_policy(
         query="Can you do net 30 payment terms and a 20% discount?",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
+    assert decision.sales_fallback_intent is None
+
+
+def test_policy_keeps_payment_terms_in_proposal_on_manager_handoff() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Please include net 30 payment terms in the business proposal.",
         faq_context=[],
     )
 

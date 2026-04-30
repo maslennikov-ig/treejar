@@ -262,6 +262,21 @@ _PAYMENT_SPECIFIC_TERMS = (
     "postpaid",
     "delayed payment",
 )
+_QUOTE_PROPOSAL_PHRASES = (
+    "commercial offer",
+    "commercial proposal",
+    "business proposal",
+    "formal offer",
+    "formal quotation",
+)
+_PROPOSAL_CONTEXT_TERMS = (
+    "business",
+    "commercial",
+    "formal",
+    "quotation",
+    "quote",
+    "for me",
+)
 _PRICE_OBJECTION_TERMS = (
     "too expensive",
     "price is high",
@@ -565,6 +580,17 @@ def _asks_for_specific_commitment(query: str) -> bool:
     )
 
 
+def is_quote_or_proposal_request(query: str) -> bool:
+    normalized = _normalize(query).casefold()
+    if any(phrase in normalized for phrase in _QUOTE_PROPOSAL_PHRASES):
+        return True
+    if "quotation" in normalized or "quote" in normalized:
+        return True
+    return "proposal" in normalized and any(
+        term in normalized for term in _PROPOSAL_CONTEXT_TERMS
+    )
+
+
 def detect_sales_fallback_intent(query: str) -> SalesFallbackIntent | None:
     normalized = _normalize(query).casefold()
 
@@ -721,12 +747,17 @@ def evaluate_verified_answer_policy(
         routed_query, question_class, faq_context
     )
     if not matched_faq:
-        policy_action = (
-            "clarify"
-            if question_class == "service_low_risk"
-            and _is_benign_no_match(routed_query)
-            else "handoff"
-        )
+        if question_class == "service_low_risk" and is_quote_or_proposal_request(
+            routed_query
+        ):
+            policy_action = "allow"
+        else:
+            policy_action = (
+                "clarify"
+                if question_class == "service_low_risk"
+                and _is_benign_no_match(routed_query)
+                else "handoff"
+            )
         return VerifiedAnswerDecision(
             question_class=question_class,
             faq_support="missing",
@@ -863,6 +894,15 @@ def build_clarification_response(language: str) -> str:
     if language.lower() == "ar":
         return "يمكنني المساعدة في المنتجات والأسعار والتوفر والتوصيل أو عروض الأسعار. ماذا تحتاج؟"
     return "I can help with products, prices, stock, delivery, or quotations. What do you need?"
+
+
+def build_quote_or_proposal_clarification_response(language: str) -> str:
+    if language.lower() == "ar":
+        return "يمكنني تجهيز عرض سعر. يرجى تأكيد المنتجات والكمية لكل منتج تريد إدراجه."
+    return (
+        "I can prepare a commercial offer. Please confirm the item(s) "
+        "and quantity for each item you want included."
+    )
 
 
 def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatch:
