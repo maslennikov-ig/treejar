@@ -43,6 +43,7 @@ from src.llm.safety import (
 )
 from src.llm.verified_answers import (
     build_clarification_response,
+    build_sales_fallback_response,
     build_service_handoff_reason,
     build_service_handoff_response,
     build_service_runtime_directives,
@@ -2370,6 +2371,19 @@ async def process_message(
                     build_clarification_response(str(deps.conversation.language)),
                     f"{db_model_main}|verified-policy-clarify",
                 )
+
+        if (
+            not policy_decision.is_order_status
+            and policy_decision.sales_fallback_intent is not None
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                build_sales_fallback_response(
+                    policy_decision.sales_fallback_intent,
+                    str(deps.conversation.language),
+                ),
+                f"{db_model_main}|sales-fallback",
+            )
 
         if not policy_decision.is_order_status and policy_action == "handoff":
             from src.integrations.notifications.escalation import (

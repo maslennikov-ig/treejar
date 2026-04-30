@@ -41,4 +41,6 @@ Delivered evidence:
 
 Stale review findings against old feature worktrees are resolved on current deployed `main`.
 
+`tj-final27.11` is implemented and closed locally in branch `codex/tj-final27-11-sales-fallback`. It adds compact deterministic sales fallbacks for price objection, retention/drop-off, and known off-catalog requests without expanding the base system prompt. DeepSeek sandbox task `tj-final27.12` was deleted per user decision. Verification passed: targeted RED/GREEN tests, `tests/test_verified_answers.py tests/test_llm_engine.py` (`92 passed`), ruff, mypy, artifact validation, process verification, and full pytest with capture disabled (`826 passed`, `19 skipped`). No prod config/deploy/live WhatsApp/Wazzup/Zoho mutation was run.
+
 Remaining final-acceptance work is `tj-final27.4` through `tj-final27.9`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.

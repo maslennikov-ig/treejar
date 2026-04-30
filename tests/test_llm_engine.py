@@ -625,6 +625,190 @@ async def test_process_message_high_risk_partial_bypasses_agent_with_handoff(
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_price_objection_uses_compact_sales_fallback(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "This is too expensive. A competitor says they can do cheaper."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert response.model == "mock-model|sales-fallback"
+    assert "competitor" in response.text.lower()
+    assert "model" in response.text.lower() or "spec" in response.text.lower()
+    assert "discount" not in response.text.lower()
+    assert (
+        response.text
+        != "I want to be accurate, so our manager will confirm this for you."
+    )
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_retention_uses_compact_sales_fallback(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Actually I don't think we need this anymore."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert response.model == "mock-model|sales-fallback"
+    assert "no problem" in response.text.lower()
+    assert "quantity" in response.text.lower()
+    assert "manager" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_off_catalog_uses_compact_sales_fallback(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Do you sell helicopter spare parts or gaming laptops?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert response.model == "mock-model|sales-fallback"
+    assert "office furniture" in response.text.lower()
+    assert "helicopter" in response.text.lower()
+    assert "gaming laptops" in response.text.lower()
+    assert "manager" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_payment_terms_still_use_manager_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Can you do net 30 payment terms and a 20% discount?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_awaited_once()
+    assert conv.escalation_status == "pending"
+    assert response.model == "mock-model|verified-policy"
+    assert "manager" in response.text.lower()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)

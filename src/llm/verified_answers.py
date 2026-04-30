@@ -10,6 +10,7 @@ SocialIntent = Literal["greeting", "gratitude", "goodbye", "assist_opener"]
 FaqSupport = Literal["verified", "partial", "missing"]
 PolicyAction = Literal["allow", "clarify", "handoff"]
 ProductMatch = Literal["exact", "nearby", "missing"]
+SalesFallbackIntent = Literal["price_objection", "retention", "off_catalog"]
 
 _TOKEN_RE = re.compile(r"[a-z0-9']+")
 _UNICODE_TOKEN_RE = re.compile(r"[\w']+", re.UNICODE)
@@ -261,6 +262,38 @@ _PAYMENT_SPECIFIC_TERMS = (
     "postpaid",
     "delayed payment",
 )
+_PRICE_OBJECTION_TERMS = (
+    "too expensive",
+    "price is high",
+    "prices are high",
+    "price is too high",
+    "cost is high",
+    "costs too much",
+    "cheaper",
+    "competitor",
+    "better price",
+)
+_RETENTION_TERMS = (
+    "don't think we need this anymore",
+    "do not think we need this anymore",
+    "don't need this anymore",
+    "do not need this anymore",
+    "no longer need this",
+    "not interested anymore",
+    "changed my mind",
+    "maybe later",
+)
+_OFF_CATALOG_TERMS = (
+    "helicopter",
+    "spare parts",
+    "gaming laptop",
+    "gaming laptops",
+    "laptop",
+    "laptops",
+    "mobile phone",
+    "smartphone",
+    "computer",
+)
 _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "delivery": (
         "delivery",
@@ -353,6 +386,7 @@ class VerifiedAnswerDecision:
     asks_for_specific_commitment: bool = False
     requires_manager_handoff: bool = False
     is_order_status: bool = False
+    sales_fallback_intent: SalesFallbackIntent | None = None
 
 
 def _normalize(text: str) -> str:
@@ -531,6 +565,20 @@ def _asks_for_specific_commitment(query: str) -> bool:
     )
 
 
+def detect_sales_fallback_intent(query: str) -> SalesFallbackIntent | None:
+    normalized = _normalize(query).casefold()
+
+    if any(term in normalized for term in _RETENTION_TERMS):
+        return "retention"
+    if any(term in normalized for term in _PRICE_OBJECTION_TERMS):
+        return "price_objection"
+    if any(term in normalized for term in _OFF_CATALOG_TERMS) and not any(
+        signal in normalized for signal in _PRODUCT_SIGNALS
+    ):
+        return "off_catalog"
+    return None
+
+
 def _entry_topics(entry_text: str) -> set[str]:
     normalized = _normalize(entry_text)
     return {
@@ -660,6 +708,15 @@ def evaluate_verified_answer_policy(
             policy_action="allow",
         )
 
+    sales_fallback_intent = detect_sales_fallback_intent(routed_query)
+    if question_class == "service_low_risk" and sales_fallback_intent is not None:
+        return VerifiedAnswerDecision(
+            question_class=question_class,
+            faq_support="missing",
+            policy_action="allow",
+            sales_fallback_intent=sales_fallback_intent,
+        )
+
     matched_topics, matched_faq = _matching_faq_entries(
         routed_query, question_class, faq_context
     )
@@ -758,6 +815,48 @@ def build_service_handoff_response(
     if is_arabic:
         return "أريد أن أكون دقيقًا، لذلك سيتواصل معك مديرنا لتأكيد هذه المعلومة."
     return "I want to be accurate, so our manager will confirm this for you."
+
+
+def build_sales_fallback_response(intent: SalesFallbackIntent, language: str) -> str:
+    is_arabic = language.lower() == "ar"
+
+    if intent == "price_objection":
+        if is_arabic:
+            return (
+                "أتفهم أن السعر مهم. للمقارنة بشكل عادل، أرسل لي موديل المنافس "
+                "والمواصفات والسعر، وسأساعدك في مقارنته بخيارات Treejar المتاحة "
+                "بدون تأكيد أي خصم غير معتمد."
+            )
+        return (
+            "I understand price matters. To compare fairly, please share the "
+            "competitor's model, specs, and price. I can then compare it with "
+            "Treejar's available office furniture options without promising "
+            "unapproved pricing."
+        )
+
+    if intent == "retention":
+        if is_arabic:
+            return (
+                "لا مشكلة، وشكرًا لإخباري. إذا عاد مشروع تجهيز المكتب لاحقًا، "
+                "أرسل لي الكمية والميزانية والموعد المطلوب وسأكمل معك من هناك."
+            )
+        return (
+            "No problem, thanks for letting me know. If the office setup comes "
+            "back later, send me the quantity, budget, and timeline, and I can "
+            "pick it up from there."
+        )
+
+    if is_arabic:
+        return (
+            "لا، Treejar تركز على أثاث المكاتب ومنتجات بيئة العمل، وليس على "
+            "قطع غيار الطائرات أو أجهزة اللابتوب المخصصة للألعاب. يمكنني مساعدتك "
+            "في المكاتب والكراسي المريحة والتخزين وأثاث غرف الاجتماعات."
+        )
+    return (
+        "No, Treejar focuses on office furniture and workplace products, not "
+        "helicopter spare parts or gaming laptops. I can help with desks, "
+        "ergonomic chairs, storage, or meeting-room furniture."
+    )
 
 
 def build_clarification_response(language: str) -> str:

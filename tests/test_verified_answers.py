@@ -253,6 +253,54 @@ def test_policy_treats_short_benign_no_match_as_clarify() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_routes_price_objection_to_sales_fallback() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="This is too expensive. A competitor says they can do cheaper.",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+    assert decision.sales_fallback_intent == "price_objection"
+
+
+def test_policy_routes_retention_dropoff_to_sales_fallback() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Actually I don't think we need this anymore.",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+    assert decision.sales_fallback_intent == "retention"
+
+
+def test_policy_routes_known_off_catalog_request_to_sales_fallback() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Do you sell helicopter spare parts or gaming laptops?",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+    assert decision.sales_fallback_intent == "off_catalog"
+
+
+def test_policy_keeps_payment_terms_on_manager_handoff() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Can you do net 30 payment terms and a 20% discount?",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
+    assert decision.sales_fallback_intent is None
+
+
 def test_policy_routes_greeting_with_real_question_into_service_policy() -> None:
     decision = evaluate_verified_answer_policy(
         query="Добрый день, есть доставка в Дубай?",
