@@ -18,21 +18,23 @@ Current baseline branch: `main`
 - `tj-e2e26` is delivered on `2dc356e`: CI/deploy passed, smoke passed (`verify_api.py` 7/0, `/api/v1/health` ok, `/dashboard/` 401, `/api/v1/conversations/` 403, Alembic `2026_04_26_outbound_audit`). Narrow production recheck passed for approved `Fr3141` and rejected `Fr3142` order-status copy; `tj-e2e26` pending test conversations count is `0`.
 - Stage `tj-prl26` is launch-ready with explicit defer after controlled pre-launch E2E. `tj-prl26.5` fixed/deployed/rechecked SKU masking; full rerun `20260426181300` passed customer chat/product/stock, quotation approve/reject (`Fr3143`/`Fr3144`), Telegram private manager reply, active escalation fallback, outbound audit readback, and pending count (`5` rerun conversations, `0` pending). Stage closeout passed with full local pytest `774 passed, 19 skipped`.
 - Stage `tj-final27` is active in `docs/plans/2026-04-27-final-delivery-completion.md` to close the remaining gap between the technical specification, commercial offer, and final client acceptance. Delivered items: `tj-final27.1` catalog/Zoho truth plus strict catalog price fail-closed follow-up, `tj-final27.2` CRM/source attribution completeness, `tj-final27.3` guarded payment reminders with disabled defaults, and `tj-final27.9` acceptance pack/runbook evidence now tracked in repo. Stale review findings against old worktrees are resolved on deployed `main`: `tj-final27.11` sales fallback is deployed, `tj-final27.13` payment-reminder run-level provider reuse is deployed, and `tj-jy5i` commercial-offer/proposal escalation routing is deployed. DeepSeek sandbox task `tj-final27.12` was deleted per user decision.
+- Final-acceptance integration branch `codex/tj-final27-acceptance-integration` merges the returned `tj-final27.4`, `.5`, `.6`, `.7`, and `.8` streams from base `main@10e128fab6958186dcfed079fa2e360129e5d43f`. Evidence now covers voice/audio limits and audit fields, feedback dedupe/admin visibility, disabled-safe referral policy readout, weekly QA/reporting acceptance fields, bounded local nonfunctional load/security evidence, and admin/readiness documentation. No deploy, production config mutation, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/media/payment/referral test, or real customer conversation was run in this integration.
 
 ## Next recommended
 
 Next stage id: `tj-final27`
-Recommended action: continue final acceptance work with `tj-final27.4` through `tj-final27.8` or record explicit client exclusions before formal final acceptance. Do not send new live WhatsApp/media/voice tests until the exact scenario set is approved.
+Recommended action: review/merge `codex/tj-final27-acceptance-integration` to `main`, run CI, then request explicit client decision for referrals and any live E2E/nonfunctional drills before formal final acceptance. Do not deploy or send new live WhatsApp/media/voice/payment/referral tests until the exact scenario set is approved.
 
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage / $stage-orchestrator. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `docs/plans/2026-04-27-final-delivery-completion.md`, and `.codex/stages/tj-final27/summary.md` first.
-Worktree: create a fresh isolated worktree from current `origin/main` for the next task.
-Treat `tj-ruue`, `tj-e2e26`, `tj-prl26`, `tj-final27.1-.3`, `tj-final27.9`, `tj-final27.11`, `tj-final27.13`, and `tj-jy5i` as delivered unless new evidence appears. Execute remaining `tj-final27` work as final-acceptance hardening, not as a broad rewrite.
-Do not deploy, mutate production config, run broad production suites, run `scripts/verify_wazzup.py`, enable scheduled AI Quality Controls, or send unsolicited WhatsApp/media/voice tests without explicit approval.
+Worktree: use or review `codex/tj-final27-acceptance-integration` before creating new final-acceptance branches.
+Treat `tj-ruue`, `tj-e2e26`, `tj-prl26`, `tj-final27.1-.5`, `tj-final27.7-.9`, `tj-final27.11`, `tj-final27.13`, and `tj-jy5i` as implementation-ready unless review/CI finds a regression. Treat `tj-final27.6` as blocked on written client referral policy or explicit exclusion.
+Do not deploy, mutate production config, run broad production suites, run `scripts/verify_wazzup.py`, enable scheduled AI Quality Controls, or send unsolicited WhatsApp/media/voice/payment/referral tests without explicit approval.
 
 ## Explicit defers
-- Extended referrals admin/reporting remains intentionally deferred; some worktrees hit a local pytest capture tmpfile `FileNotFoundError` before collection with plain `uv run pytest ...`, while equivalent full runs with `-s` have passed.
 - `salePrice` remains raw-only until a separate approved sale policy exists; missing/invalid catalog `price` now fails closed with manager escalation instead of using Zoho rate as customer-facing fallback.
 - DeepSeek V4 Pro is intentionally not being pursued as a production model switch after A/B; the sandbox Bead was deleted.
 - Final acceptance still needs client decisions for UTM/source outbound Zoho field mapping, payment reminder templates/policy before enabling sends, referral rules or written exclusion, voice/media E2E permission, and final live E2E scenario approval.
+- Referrals are disabled-safe in code and visible in Operator Center as `client_decision_required`; launch remains deferred until the client approves discount, eligibility, expiry, abuse, reporting, and live E2E rules, or signs a written exclusion.
+- Voice/media live E2E and stronger production load/restore drills are deferred pending explicit approval for test channel/suffixes/samples/readback/stop conditions, traffic limits, maintenance window, and rollback owner.

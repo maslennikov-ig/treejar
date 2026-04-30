@@ -73,9 +73,15 @@ def validate_file(path: pathlib.Path) -> list[str]:
     if missing:
         errors.append(f"{path}: missing frontmatter keys: {', '.join(missing)}")
 
-    placeholders = [key for key, value in keys.items() if value.startswith("<") and value.endswith(">")]
+    placeholders = [
+        key
+        for key, value in keys.items()
+        if value.startswith("<") and value.endswith(">")
+    ]
     if placeholders:
-        errors.append(f"{path}: unresolved placeholder values: {', '.join(placeholders)}")
+        errors.append(
+            f"{path}: unresolved placeholder values: {', '.join(placeholders)}"
+        )
 
     for heading in REQUIRED_HEADINGS:
         if heading not in body:
@@ -90,7 +96,10 @@ def validate_file(path: pathlib.Path) -> list[str]:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("Usage: validate_artifact.py <artifact.md> [artifact.md ...]", file=sys.stderr)
+        print(
+            "Usage: validate_artifact.py <artifact.md> [artifact.md ...]",
+            file=sys.stderr,
+        )
         return 2
 
     all_errors: list[str] = []

@@ -20,6 +20,8 @@ verification:
   - uv run ruff format --check changed files: passed
   - uv run ruff check src/ tests/ scripts/: failed outside write zone
   - uv run ruff format --check src/ tests/ scripts/: failed outside write zone
+  - integration follow-up uv run ruff check src/ tests/ scripts/: passed after orchestrator fixed existing scripts/orchestration lint blockers
+  - integration follow-up uv run ruff format --check src/ tests/ scripts/: passed after orchestrator formatted existing scripts/orchestration files
   - uv run mypy src/: passed
   - git diff --check: passed
 changed_files:
@@ -115,24 +117,20 @@ Quality gates:
 - `uv run mypy src/` -> passed.
 - `git diff --check` -> passed.
 
-Repo-wide requested gates with known outside-zone blocker:
+Repo-wide requested gates:
 
-- `uv run ruff check src/ tests/ scripts/` -> failed only on existing
-  `scripts/orchestration/cleanup_stage_workspace.py` and
-  `scripts/orchestration/run_stage_closeout.py` lint findings.
-- `uv run ruff format --check src/ tests/ scripts/` -> failed only on existing
-  `scripts/orchestration/check_stage_ready.py`,
-  `scripts/orchestration/cleanup_stage_workspace.py`,
-  `scripts/orchestration/run_stage_closeout.py`, and
-  `scripts/orchestration/validate_artifact.py` formatting findings.
+- Worker run identified an outside-zone blocker in existing
+  `scripts/orchestration/*` lint/format state.
+- Integration follow-up fixed the bootstrap lint/format blockers without
+  changing the `runtime_support.ensure_tomllib_runtime()` ordering semantics.
+- `uv run ruff check src/ tests/ scripts/` -> passed.
+- `uv run ruff format --check src/ tests/ scripts/` -> passed.
 
 # Risks / Follow-ups / Explicit Defers
 
-- Full repo-wide `ruff check src/ tests/ scripts/` and
-  `ruff format --check src/ tests/ scripts/` remain blocked by
-  `scripts/orchestration/*` files outside this worker write zone. I did not
-  edit them because orchestration files are owned by the orchestrator/shared
-  stream.
+- The worker-level repo-wide ruff blockers were existing orchestration files
+  outside the worker write zone; the orchestrator resolved them during
+  integration.
 - Load evidence is local and mocked. It proves a bounded concurrency envelope,
   not live Wazzup/OpenRouter/Zoho/PostgreSQL end-to-end latency.
 - No production release SHA or Alembic head was fetched in this pass because

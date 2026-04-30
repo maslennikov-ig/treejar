@@ -1,8 +1,9 @@
 # Stage tj-final27: Final Delivery Completion
 
 Updated: 2026-04-30
-Status: active
+Status: active; implementation-ready integration pending main review/merge, CI, and client decisions
 Branch: `codex/tj-final27-final-delivery-plan`
+Integration branch: `codex/tj-final27-acceptance-integration`
 Plan: `docs/plans/2026-04-27-final-delivery-completion.md`
 
 ## Goal
@@ -47,4 +48,29 @@ The `tj-final27.9` final acceptance pack and controlled E2E runbook are now trac
 
 Commercial offer/proposal escalation routing fix `tj-jy5i` is also deployed on `main@1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`. Controlled text-only E2E on `79262810921` passed for proposal clarification and high-risk payment terms routing, and the synthetic test data was cleaned from production.
 
-Remaining final-acceptance work is `tj-final27.4` through `tj-final27.8`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.
+On 2026-04-30 the remaining final-acceptance streams were executed in isolated branches and merged into integration branch `codex/tj-final27-acceptance-integration` from base `main@10e128fab6958186dcfed079fa2e360129e5d43f`:
+
+- `tj-final27.4` (`codex/tj-final27-4-voice-audio-acceptance`, `35b84c0`) hardens voice/audio transcription with request timeout, zero SDK retries, max-token cap, usage/cost metadata, non-core safety path, deterministic oversized/unreadable fallback, persisted audio/transcription audit fields, and SQLAdmin Message visibility. Live voice E2E remains deferred pending explicit approval.
+- `tj-final27.5` (`codex/tj-final27-5-6-feedback-referrals`, `93a0b51`) adds deterministic feedback request candidate selection, dedupe metadata, audited feedback sends, delivery-context guard, dashboard metrics, protected admin API, and Operator Center recent feedback readout. No live feedback branch was run.
+- `tj-final27.6` (`codex/tj-final27-5-6-feedback-referrals`, `93a0b51`) keeps referrals disabled-safe because no approved business rules were found. API/LLM paths are policy-gated, Operator Center exposes `client_decision_required`, and launch remains blocked pending written client referral policy or explicit exclusion.
+- `tj-final27.7` (`codex/tj-final27-7-qa-reporting`, `a23e9e8`) adds refusal, feedback, and LLM cost-control fields to report data/text plus a safe QA/reporting runbook. Scheduled AI Quality Controls remain disabled by default and were not enabled.
+- `tj-final27.8` (`codex/tj-final27-8-nonfunctional-readiness`, `c44ee71`) adds bounded local/mocked load harness, admin/auth guard checks in `verify_api.py`, security/infra tests, tracked-secret evidence, and client nonfunctional readiness documentation. Stronger production load or restore drills require explicit approval.
+
+Initial admin inventory found three admin surfaces: SQLAdmin `/admin`, React `/dashboard`, and guarded `/api/v1/admin/*` APIs. The session guard is the shared SQLAdmin session token checked by `require_admin_session`; API-key headers alone do not pass admin guards. Existing panels covered metrics, notifications, product sync, reports, manager review queue, payment reminder controls, and AI Quality Controls with disabled defaults. Acceptance gaps were voice/audio audit fields, recent feedback/operator lifecycle readout, referral policy visibility, final report fields, and nonfunctional evidence; the integration branch closes those gaps except for client decisions and live E2E defers. Parallel frontend/admin write-conflict zones were `frontend/admin/src/components/OperatorCenter.tsx`, `frontend/admin/src/api/operators.ts`, `frontend/admin/src/types/operators.ts`, `src/api/v1/admin.py`, `src/api/admin/views.py`, and shared docs/handoff/summary files.
+
+Integration verification passed:
+
+- Combined targeted pytest: `171 passed`.
+- `uv run ruff check src/ tests/`: passed.
+- `uv run ruff format --check src/ tests/`: passed.
+- `uv run ruff check src/ tests/ scripts/`: passed after orchestrator fixed existing `scripts/orchestration/*` lint/format blockers without changing bootstrap semantics.
+- `uv run ruff format --check src/ tests/ scripts/`: passed.
+- `uv run mypy src/`: passed.
+- `npm --prefix frontend/admin run lint`: passed.
+- `npm --prefix frontend/admin run build`: passed after installing ignored local frontend dependencies and ignored Tailwind native optional package; npm emitted Node 18 engine warnings for packages requiring Node 20.
+- Artifact validation for `tj-final27.4` through `.8`: passed.
+- `git diff --check main...HEAD`: passed.
+
+No deploy, production config mutation, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/media/payment/referral test, or real customer conversation was run.
+
+Formal final acceptance still requires main merge/CI, deployment approval if desired, and explicit client decision for referrals plus any requested live voice/media/final E2E or production nonfunctional drill.

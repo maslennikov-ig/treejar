@@ -55,7 +55,9 @@ def main(argv: list[str]) -> int:
             print(error, file=sys.stderr)
         return 1
 
-    subprocess.run([sys.executable, str(validator), *[str(path) for path in artifacts]], check=True)
+    subprocess.run(
+        [sys.executable, str(validator), *[str(path) for path in artifacts]], check=True
+    )
     print(f"stage {stage_id} ready")
     return 0
 

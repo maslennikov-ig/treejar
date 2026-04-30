@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402,I001
 """Run stage close verification based on the repo-local orchestration contract."""
 
 from __future__ import annotations
@@ -59,7 +60,9 @@ def parse_artifact(path: pathlib.Path) -> dict[str, object]:
     return data
 
 
-def load_stage_artifacts(repo_root: pathlib.Path, stage_id: str) -> list[dict[str, object]]:
+def load_stage_artifacts(
+    repo_root: pathlib.Path, stage_id: str
+) -> list[dict[str, object]]:
     artifacts_dir = repo_root / ".codex" / "stages" / stage_id / "artifacts"
     if not artifacts_dir.exists():
         raise SystemExit(f"Missing artifacts directory: {artifacts_dir}")
@@ -70,14 +73,20 @@ def load_stage_artifacts(repo_root: pathlib.Path, stage_id: str) -> list[dict[st
     return artifacts
 
 
-def infer_groups(contract: dict[str, object], artifacts: list[dict[str, object]], include_optional: bool) -> list[str]:
+def infer_groups(
+    contract: dict[str, object],
+    artifacts: list[dict[str, object]],
+    include_optional: bool,
+) -> list[str]:
     verification = contract.get("verification", {})
     if not isinstance(verification, dict):
         return []
 
     groups: list[str] = []
     workspace = contract.get("workspace", {})
-    multi_repo = bool(workspace.get("multi_repo")) if isinstance(workspace, dict) else False
+    multi_repo = (
+        bool(workspace.get("multi_repo")) if isinstance(workspace, dict) else False
+    )
     touched_repos: set[str] = set()
     has_changed_files = False
 
@@ -87,7 +96,9 @@ def infer_groups(contract: dict[str, object], artifacts: list[dict[str, object]]
             touched_repos.add(repo)
 
         changed_files = artifact.get("changed_files")
-        if isinstance(changed_files, list) and any(item and not str(item).startswith("<") for item in changed_files):
+        if isinstance(changed_files, list) and any(
+            item and not str(item).startswith("<") for item in changed_files
+        ):
             has_changed_files = True
 
     if multi_repo:
@@ -127,7 +138,11 @@ def main(argv: list[str]) -> int:
     if not isinstance(verification, dict):
         verification = {}
 
-    groups = list(args.verify_group) if args.verify_group else infer_groups(contract, artifacts, args.include_optional)
+    groups = (
+        list(args.verify_group)
+        if args.verify_group
+        else infer_groups(contract, artifacts, args.include_optional)
+    )
 
     for group in groups:
         commands = verification.get(group)
@@ -141,7 +156,10 @@ def main(argv: list[str]) -> int:
         enforcement = contract.get("enforcement", {})
         if not isinstance(enforcement, dict):
             enforcement = {}
-        entrypoint = enforcement.get("process_verification_entrypoint", "scripts/orchestration/run_process_verification.sh")
+        entrypoint = enforcement.get(
+            "process_verification_entrypoint",
+            "scripts/orchestration/run_process_verification.sh",
+        )
         if not isinstance(entrypoint, str) or not entrypoint:
             raise SystemExit("Missing process_verification_entrypoint")
         cmd = [str(repo_root / entrypoint), "--stage", args.stage_id]
