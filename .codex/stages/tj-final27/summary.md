@@ -39,8 +39,12 @@ Delivered evidence:
 - Payment reminders remain disabled by default; manual/scheduled controls are guarded, deterministic candidate scanning has a hard cap, and locally created Wazzup providers are closed.
 - CI/deploy run `25115695746` passed on `main@090e318`; production smoke passed (`verify_api.py` 7/0, health 200).
 
-Stale review findings against old feature worktrees are resolved on current deployed `main`.
+The `tj-final27.9` final acceptance pack and controlled E2E runbook are now tracked in repo from the 2026-04-29 approved final E2E work. The task remains blocked for formal acceptance until `tj-final27.4` through `tj-final27.8` are closed with evidence or explicitly excluded by client decision.
 
 `tj-final27.11` is deployed on `main@ab897878e2f0ee339bd7626b63d5c6f3a9497042`. It adds compact deterministic sales fallbacks for price objection, retention/drop-off, and known off-catalog requests without expanding the base system prompt. DeepSeek sandbox task `tj-final27.12` was deleted per user decision. Verification passed: targeted RED/GREEN tests, `tests/test_verified_answers.py tests/test_llm_engine.py` (`94 passed` after hotfix), ruff, mypy, artifact validation, process verification, and full pytest with capture disabled (`828 passed`, `19 skipped`). CI/deploy passed in GitHub Actions run `25150153084` with deploy job `73718851402`; production runtime `.release-sha` matches, prod smoke passed (`verify_api.py` 7/0, health 200), and controlled live WhatsApp text E2E on `79262810921` passed for price objection, retention, and off-catalog with `z-ai/glm-5|sales-fallback`, `escalation_status=none`, and `0` pending conversations.
 
-Remaining final-acceptance work is `tj-final27.4` through `tj-final27.9`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.
+`tj-final27.13` is deployed on `main@354015280c8f8d39b538bbaba769e70d29d1c6b2`. It preserves the existing payment-reminder scan loop and hard-cap warning while reusing one `WazzupProvider` per reminder run after non-empty candidate rows are found. GitHub Actions run `25156910086` and deploy job `73741233988` passed; runtime `.release-sha` matches, health is OK, Redis is OK, and production payment reminder controls still resolve to disabled defaults.
+
+Commercial offer/proposal escalation routing fix `tj-jy5i` is also deployed on `main@1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`. Controlled text-only E2E on `79262810921` passed for proposal clarification and high-risk payment terms routing, and the synthetic test data was cleaned from production.
+
+Remaining final-acceptance work is `tj-final27.4` through `tj-final27.8`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.
