@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,6 +22,13 @@ def test_report_data_defaults() -> None:
     assert report.conversion_rate == 0.0
     assert report.escalation_reasons == {}
     assert report.top_products == []
+    assert report.refusal_count == 0
+    assert report.refusal_rate == 0.0
+    assert report.feedback_count == 0
+    assert report.llm_cost_usd == 0.0
+    assert report.qa_llm_cost_usd == 0.0
+    assert report.qa_llm_attempts_count == 0
+    assert report.qa_cached_tokens == 0
 
 
 def test_format_report_text_contains_key_fields() -> None:
@@ -75,6 +83,120 @@ def test_format_report_text_localizes_manager_metrics() -> None:
     assert "Средний балл" in text
     assert "Среднее время ответа" in text
     assert "Лучшие" in text
+
+
+def test_format_report_text_contains_final_acceptance_fields() -> None:
+    """Weekly report text should include refusal, feedback, and cost controls."""
+    from src.services.reports import ReportData, format_report_text
+
+    now = datetime.now(tz=UTC)
+    report = ReportData(
+        period_start=now,
+        period_end=now,
+        total_conversations=20,
+        total_deals=5,
+        conversion_rate=25.0,
+        refusal_count=3,
+        refusal_rate=15.0,
+        feedback_count=4,
+        avg_feedback_rating=4.5,
+        avg_delivery_rating=4.0,
+        feedback_recommend_rate=75.0,
+        feedback_nps_score=50.0,
+        llm_cost_usd=0.1234,
+        qa_llm_cost_usd=0.0123,
+        qa_llm_attempts_count=6,
+        qa_budget_blocked_count=1,
+        qa_prompt_tokens=1200,
+        qa_completion_tokens=300,
+        qa_reasoning_tokens=20,
+        qa_cached_tokens=900,
+        qa_cache_write_tokens=40,
+    )
+
+    text = format_report_text(report)
+
+    assert "Отказы" in text
+    assert "3 (15.0%)" in text
+    assert "Обратная связь" in text
+    assert "4.5/5" in text
+    assert "75.0%" in text
+    assert "Контроль LLM расходов" in text
+    assert "$0.1234" in text
+    assert "$0.0123" in text
+    assert "cache" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_generate_report_populates_final_acceptance_fields() -> None:
+    """generate_report should aggregate feedback, refusal, and LLM cost fields."""
+    from src.services.reports import generate_report
+
+    mock_db = AsyncMock()
+
+    conv_result = MagicMock()
+    conv_result.one.return_value = (20, 15)
+
+    deals_result = MagicMock()
+    deals_result.one.return_value = (5, 1200.0)
+
+    esc_reasons_result = MagicMock()
+    esc_reasons_result.all.return_value = []
+
+    top_prod_result = MagicMock()
+    top_prod_result.all.return_value = []
+
+    manager_result = MagicMock()
+    manager_result.one.return_value = (16.0, 600.0, 3, 2)
+
+    top_manager_result = MagicMock()
+    top_manager_result.all.return_value = []
+
+    feedback_result = MagicMock()
+    feedback_result.one.return_value = (4, 4.5, 4.0, 3, 1)
+
+    qa_cost_result = MagicMock()
+    qa_cost_result.one.return_value = (6, 0.0123, 1200, 300, 20, 900, 40, 1)
+
+    mock_db.execute.side_effect = [
+        conv_result,
+        deals_result,
+        esc_reasons_result,
+        top_prod_result,
+        manager_result,
+        top_manager_result,
+        feedback_result,
+        qa_cost_result,
+    ]
+    mock_db.scalar.side_effect = [
+        24.0,
+        2,
+        3,
+        0.1234,
+    ]
+
+    start = datetime(2026, 4, 1, tzinfo=UTC)
+    end = datetime(2026, 4, 8, tzinfo=UTC)
+    report = await generate_report(mock_db, start_date=start, end_date=end)
+
+    assert report.avg_quality_score == 24.0
+    assert report.escalation_count == 2
+    assert report.refusal_count == 3
+    assert report.refusal_rate == 15.0
+    assert report.feedback_count == 4
+    assert report.avg_feedback_rating == 4.5
+    assert report.avg_delivery_rating == 4.0
+    assert report.feedback_recommend_rate == 75.0
+    assert report.feedback_nps_score == 50.0
+    assert report.llm_cost_usd == 0.1234
+    assert report.qa_llm_cost_usd == 0.0123
+    assert report.qa_llm_attempts_count == 6
+    assert report.qa_budget_blocked_count == 1
+    assert report.qa_prompt_tokens == 1200
+    assert report.qa_completion_tokens == 300
+    assert report.qa_reasoning_tokens == 20
+    assert report.qa_cached_tokens == 900
+    assert report.qa_cache_write_tokens == 40
 
 
 def test_format_report_text_empty_report() -> None:
