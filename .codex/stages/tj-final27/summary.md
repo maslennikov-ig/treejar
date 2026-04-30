@@ -1,6 +1,6 @@
 # Stage tj-final27: Final Delivery Completion
 
-Updated: 2026-04-29
+Updated: 2026-04-30
 Status: active
 Branch: `codex/tj-final27-final-delivery-plan`
 Plan: `docs/plans/2026-04-27-final-delivery-completion.md`
@@ -41,6 +41,6 @@ Delivered evidence:
 
 Stale review findings against old feature worktrees are resolved on current deployed `main`.
 
-`tj-final27.11` is implemented and closed locally in branch `codex/tj-final27-11-sales-fallback`. It adds compact deterministic sales fallbacks for price objection, retention/drop-off, and known off-catalog requests without expanding the base system prompt. DeepSeek sandbox task `tj-final27.12` was deleted per user decision. Verification passed: targeted RED/GREEN tests, `tests/test_verified_answers.py tests/test_llm_engine.py` (`92 passed`), ruff, mypy, artifact validation, process verification, and full pytest with capture disabled (`826 passed`, `19 skipped`). No prod config/deploy/live WhatsApp/Wazzup/Zoho mutation was run.
+`tj-final27.11` is deployed on `main@ab897878e2f0ee339bd7626b63d5c6f3a9497042`. It adds compact deterministic sales fallbacks for price objection, retention/drop-off, and known off-catalog requests without expanding the base system prompt. DeepSeek sandbox task `tj-final27.12` was deleted per user decision. Verification passed: targeted RED/GREEN tests, `tests/test_verified_answers.py tests/test_llm_engine.py` (`94 passed` after hotfix), ruff, mypy, artifact validation, process verification, and full pytest with capture disabled (`828 passed`, `19 skipped`). CI/deploy passed in GitHub Actions run `25150153084` with deploy job `73718851402`; production runtime `.release-sha` matches, prod smoke passed (`verify_api.py` 7/0, health 200), and controlled live WhatsApp text E2E on `79262810921` passed for price objection, retention, and off-catalog with `z-ai/glm-5|sales-fallback`, `escalation_status=none`, and `0` pending conversations.
 
 Remaining final-acceptance work is `tj-final27.4` through `tj-final27.9`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.
