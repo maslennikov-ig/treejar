@@ -9,6 +9,26 @@ export interface NotificationTestResponse {
     reason?: string | null;
 }
 
+export type ClientSelfTestStatus = 'passed' | 'failed' | 'skipped' | 'not_tested';
+
+export interface ClientSelfTestSubmitItem {
+    id: string;
+    title: string;
+    status: ClientSelfTestStatus;
+    note: string;
+}
+
+export interface ClientSelfTestSubmitRequest {
+    tester_name?: string | null;
+    overall_comment?: string | null;
+    items: ClientSelfTestSubmitItem[];
+}
+
+export interface ClientSelfTestSubmitResponse {
+    ok: boolean;
+    submitted_count: number;
+}
+
 export type ProductSyncSource = 'treejar' | 'zoho';
 
 export interface ProductSyncResponse {

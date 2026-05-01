@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from .admin import (
+    ClientSelfTestItem,
+    ClientSelfTestStatus,
+    ClientSelfTestSubmitRequest,
+    ClientSelfTestSubmitResponse,
     DashboardMetricsResponse,
     MetricsResponse,
     NotificationConfigRead,
@@ -121,6 +125,10 @@ __all__ = [
     "QualityReviewCreate",
     "QualityReviewRead",
     # admin
+    "ClientSelfTestItem",
+    "ClientSelfTestStatus",
+    "ClientSelfTestSubmitRequest",
+    "ClientSelfTestSubmitResponse",
     "DashboardMetricsResponse",
     "MetricsResponse",
     "NotificationConfigRead",

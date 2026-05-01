@@ -10,9 +10,12 @@ import {
     Clock,
     AlertTriangle,
     RefreshCw,
+    ClipboardCheck,
+    LayoutDashboard,
 } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import OperatorCenter from '@/components/OperatorCenter';
+import AcceptanceDemo from '@/components/AcceptanceDemo';
 import ConversationsChart from '@/components/charts/ConversationsChart';
 import SegmentPieChart from '@/components/charts/SegmentPieChart';
 import SalesBarChart from '@/components/charts/SalesBarChart';
@@ -26,8 +29,11 @@ const PERIODS: { label: string; value: Period }[] = [
     { label: 'All Time', value: 'all_time' },
 ];
 
+type ViewMode = 'dashboard' | 'acceptance';
+
 export default function App() {
     const [period, setPeriod] = useState<Period>('all_time');
+    const [activeView, setActiveView] = useState<ViewMode>('dashboard');
     const { data, timeseries, loading, error, refetch } = useMetrics(period);
     const hasManagerLeaderboard = Boolean(data?.manager_leaderboard.length);
     const managerResponseLabel = data
@@ -50,9 +56,38 @@ export default function App() {
                         <p className="text-sm text-slate-500 mt-1">AI Sales Performance Analytics</p>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Period selector */}
+                    <div className="flex flex-wrap items-center gap-3">
                         <div className="flex bg-slate-800/60 rounded-xl p-1 border border-white/[0.06]">
+                            <button
+                                onClick={() => setActiveView('dashboard')}
+                                className={`
+                    inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                    ${activeView === 'dashboard'
+                                            ? 'bg-emerald-500/20 text-emerald-300 shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-300 hover:bg-white/[0.04]'
+                                        }
+                  `}
+                            >
+                                <LayoutDashboard size={16} />
+                                Dashboard
+                            </button>
+                            <button
+                                onClick={() => setActiveView('acceptance')}
+                                className={`
+                    inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200
+                    ${activeView === 'acceptance'
+                                            ? 'bg-emerald-500/20 text-emerald-300 shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-300 hover:bg-white/[0.04]'
+                                        }
+                  `}
+                            >
+                                <ClipboardCheck size={16} />
+                                Acceptance Demo
+                            </button>
+                        </div>
+
+                        {/* Period selector */}
+                        {activeView === 'dashboard' && <div className="flex bg-slate-800/60 rounded-xl p-1 border border-white/[0.06]">
                             {PERIODS.map((p) => (
                                 <button
                                     key={p.value}
@@ -68,23 +103,23 @@ export default function App() {
                                     {p.label}
                                 </button>
                             ))}
-                        </div>
+                        </div>}
 
                         {/* Refresh button */}
-                        <button
+                        {activeView === 'dashboard' && <button
                             onClick={refetch}
                             disabled={loading}
                             className="p-2.5 rounded-xl bg-slate-800/60 border border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.08] transition-all disabled:opacity-50"
                         >
                             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                        </button>
+                        </button>}
                     </div>
                 </div>
             </motion.header>
 
             {/* Error state */}
             <AnimatePresence>
-                {error && (
+                {activeView === 'dashboard' && error && (
                     <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
@@ -100,7 +135,7 @@ export default function App() {
             </AnimatePresence>
 
             {/* Loading skeleton */}
-            {loading && !data && (
+            {activeView === 'dashboard' && loading && !data && (
                 <div className="mx-auto max-w-7xl">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                         {Array.from({ length: 4 }).map((_, i) => (
@@ -117,7 +152,9 @@ export default function App() {
 
             <div className="mx-auto max-w-7xl space-y-6">
                 {/* Dashboard content */}
-                {data && (
+                {activeView === 'acceptance' && <AcceptanceDemo />}
+
+                {activeView === 'dashboard' && data && (
                     <>
                     {/* KPI row */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -320,7 +357,7 @@ export default function App() {
                     </>
                 )}
 
-                <OperatorCenter onMetricsRefresh={refetch} />
+                {activeView === 'dashboard' && <OperatorCenter onMetricsRefresh={refetch} />}
             </div>
         </div>
     );

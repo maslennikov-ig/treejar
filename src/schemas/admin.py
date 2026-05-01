@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import Language, UUIDModel
 from .manager_review import ManagerLeaderboardEntry
@@ -97,6 +98,27 @@ class NotificationConfigRead(BaseModel):
 class NotificationTestResponse(BaseModel):
     status: str
     reason: str | None = None
+
+
+ClientSelfTestStatus = Literal["passed", "failed", "skipped", "not_tested"]
+
+
+class ClientSelfTestItem(BaseModel):
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    title: str = Field(min_length=1, max_length=160)
+    status: ClientSelfTestStatus
+    note: str = Field(default="", max_length=800)
+
+
+class ClientSelfTestSubmitRequest(BaseModel):
+    tester_name: str | None = Field(default=None, max_length=80)
+    overall_comment: str | None = Field(default=None, max_length=1000)
+    items: list[ClientSelfTestItem] = Field(min_length=1, max_length=30)
+
+
+class ClientSelfTestSubmitResponse(BaseModel):
+    ok: bool
+    submitted_count: int
 
 
 class PendingManagerReviewRead(BaseModel):

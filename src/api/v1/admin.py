@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
+from html import escape
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -33,6 +35,9 @@ from src.quality.config import (
     save_ai_quality_controls_config,
 )
 from src.schemas import (
+    ClientSelfTestStatus,
+    ClientSelfTestSubmitRequest,
+    ClientSelfTestSubmitResponse,
     DashboardMetricsResponse,
     ManagerReviewDetail,
     ManagerReviewRead,
@@ -58,6 +63,7 @@ from src.services.followup import (
     merge_payment_reminder_controls_update,
     save_payment_reminder_controls_config,
 )
+from src.services.notifications import send_telegram_message
 
 
 async def require_admin_session(request: Request) -> None:
@@ -208,6 +214,62 @@ async def send_admin_test_notification() -> NotificationTestResponse:
     """Trigger a Telegram test notification from the dashboard."""
     data = await notifications_api.send_test_notification()
     return NotificationTestResponse.model_validate(data)
+
+
+_CLIENT_SELF_TEST_STATUS_LABELS: dict[ClientSelfTestStatus, str] = {
+    "passed": "Пройдено",
+    "failed": "Неверно",
+    "skipped": "Пропущено",
+    "not_tested": "Не проверено",
+}
+
+
+def _clean_optional_text(value: str | None, *, fallback: str = "не указано") -> str:
+    cleaned = value.strip() if value else ""
+    return cleaned or fallback
+
+
+def _format_client_self_test_summary(body: ClientSelfTestSubmitRequest) -> str:
+    counts: Counter[ClientSelfTestStatus] = Counter(item.status for item in body.items)
+    tester = escape(_clean_optional_text(body.tester_name))
+    comment = escape(
+        _clean_optional_text(body.overall_comment, fallback="без комментария")
+    )
+
+    status_lines = "\n".join(
+        f"{label}: {counts.get(status, 0)}"
+        for status, label in _CLIENT_SELF_TEST_STATUS_LABELS.items()
+    )
+    failed_items = [item for item in body.items if item.status == "failed"]
+
+    message = (
+        "🧪 <b>Клиент завершил self-test TreeJar</b>\n\n"
+        f"<b>Тестировщик:</b> {tester}\n"
+        f"<b>Сценариев отправлено:</b> {len(body.items)}\n\n"
+        f"<b>Итог:</b>\n{status_lines}\n\n"
+    )
+
+    if failed_items:
+        failed_lines = []
+        for item in failed_items[:10]:
+            note = _clean_optional_text(item.note, fallback="без заметки")
+            failed_lines.append(f"• {escape(item.title)} — {escape(note)}")
+        message += "<b>Что получилось неверно:</b>\n" + "\n".join(failed_lines) + "\n\n"
+
+    message += f"<b>Комментарий:</b> {comment}"
+    return message
+
+
+@router.post(
+    "/client-self-test/submit",
+    response_model=ClientSelfTestSubmitResponse,
+)
+async def submit_client_self_test(
+    body: ClientSelfTestSubmitRequest,
+) -> ClientSelfTestSubmitResponse:
+    """Receive a client acceptance checklist and forward the summary to Telegram."""
+    await send_telegram_message(_format_client_self_test_summary(body))
+    return ClientSelfTestSubmitResponse(ok=True, submitted_count=len(body.items))
 
 
 @router.post("/products/sync", response_model=ProductSyncResponse)

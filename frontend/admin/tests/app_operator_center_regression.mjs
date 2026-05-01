@@ -28,6 +28,12 @@ const STUBS = new Map([
             return React.createElement('div', { id: 'operator-center-marker' }, 'operator center');
         }
     `],
+    ['@/components/AcceptanceDemo', `
+        import React from 'react';
+        export default function AcceptanceDemo() {
+            return React.createElement('div', { id: 'acceptance-demo-marker' }, 'acceptance demo');
+        }
+    `],
     ['@/components/StatCard', `
         export default function StatCard() {
             return null;
@@ -83,6 +89,8 @@ const STUBS = new Map([
         export const Clock = Icon;
         export const AlertTriangle = Icon;
         export const RefreshCw = Icon;
+        export const ClipboardCheck = Icon;
+        export const LayoutDashboard = Icon;
     `],
 ]);
 

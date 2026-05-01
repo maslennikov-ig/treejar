@@ -1,6 +1,8 @@
 import type {
     AIQualityControlsResponse,
     AIQualityControlsUpdate,
+    ClientSelfTestSubmitRequest,
+    ClientSelfTestSubmitResponse,
     ManagerReviewDetail,
     ManagerReviewRead,
     NotificationConfig,
@@ -39,6 +41,15 @@ export function sendTestNotification(): Promise<NotificationTestResponse> {
     return requestJson('/notifications/test', {
         method: 'POST',
         body: JSON.stringify({}),
+    });
+}
+
+export function submitClientSelfTest(
+    payload: ClientSelfTestSubmitRequest,
+): Promise<ClientSelfTestSubmitResponse> {
+    return requestJson('/client-self-test/submit', {
+        method: 'POST',
+        body: JSON.stringify(payload),
     });
 }
 
