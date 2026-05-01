@@ -37,6 +37,11 @@ try {
     const moduleUrl = pathToFileURL(bundlePath).href;
     const { submitClientSelfTest } = await import(moduleUrl);
 
+    Object.defineProperty(globalThis, 'location', {
+        value: { pathname: '/client-self-test/' },
+        configurable: true,
+    });
+
     const response = await submitClientSelfTest({
         tester_name: 'Customer owner',
         overall_comment: 'Done',
@@ -57,7 +62,7 @@ try {
     });
 
     assert.deepEqual(response, { ok: true, submitted_count: 2 });
-    assert.equal(calls[0].url, '/api/v1/admin/client-self-test/submit');
+    assert.equal(calls[0].url, '/api/v1/client-self-test/submit');
     assert.equal(calls[0].init.method, 'POST');
     assert.deepEqual(JSON.parse(calls[0].init.body), {
         tester_name: 'Customer owner',
@@ -77,6 +82,26 @@ try {
             },
         ],
     });
+
+    Object.defineProperty(globalThis, 'location', {
+        value: { pathname: '/dashboard/' },
+        configurable: true,
+    });
+
+    await submitClientSelfTest({
+        tester_name: 'Admin',
+        overall_comment: null,
+        items: [
+            {
+                id: 'catalog',
+                title: 'Каталог',
+                status: 'passed',
+                note: '',
+            },
+        ],
+    });
+
+    assert.equal(calls[1].url, '/api/v1/admin/client-self-test/submit');
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

@@ -15,6 +15,7 @@ import type {
 } from '@/types/operators';
 
 const API_BASE = '/api/v1/admin';
+const PUBLIC_CLIENT_SELF_TEST_API_BASE = '/api/v1/client-self-test';
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
@@ -33,6 +34,29 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     return response.json();
 }
 
+async function requestAbsoluteJson<T>(url: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(url, {
+        headers: {
+            'Content-Type': 'application/json',
+            ...(init?.headers ?? {}),
+        },
+        ...init,
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Request failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+}
+
+function getClientSelfTestApiBase(): string {
+    return globalThis.location?.pathname.startsWith('/client-self-test')
+        ? PUBLIC_CLIENT_SELF_TEST_API_BASE
+        : `${API_BASE}/client-self-test`;
+}
+
 export function fetchNotificationConfig(): Promise<NotificationConfig> {
     return requestJson('/notifications/config');
 }
@@ -47,7 +71,7 @@ export function sendTestNotification(): Promise<NotificationTestResponse> {
 export function submitClientSelfTest(
     payload: ClientSelfTestSubmitRequest,
 ): Promise<ClientSelfTestSubmitResponse> {
-    return requestJson('/client-self-test/submit', {
+    return requestAbsoluteJson(`${getClientSelfTestApiBase()}/submit`, {
         method: 'POST',
         body: JSON.stringify(payload),
     });

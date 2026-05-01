@@ -91,6 +91,15 @@ def create_app() -> FastAPI:
             return FileResponse(file_path)
         return FileResponse(os.path.join(dist_dir, "index.html"))
 
+    @app.get("/client-self-test", include_in_schema=False)
+    @app.get("/client-self-test/{full_path:path}", include_in_schema=False)
+    async def serve_client_self_test_spa(full_path: str = "") -> FileResponse:
+        dist_dir = "frontend/admin/dist"
+        file_path = os.path.join(dist_dir, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(dist_dir, "index.html"))
+
     # --- Landing Page SPA ---
     # Ensure dist and assets directories exist for local development to avoid startup crash
     os.makedirs("frontend/landing/dist/assets", exist_ok=True)

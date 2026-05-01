@@ -20,6 +20,7 @@ import ConversationsChart from '@/components/charts/ConversationsChart';
 import SegmentPieChart from '@/components/charts/SegmentPieChart';
 import SalesBarChart from '@/components/charts/SalesBarChart';
 import { useMetrics } from '@/hooks/useMetrics';
+import { getAppRouteMode } from '@/routes';
 import type { Period } from '@/types/metrics';
 
 const PERIODS: { label: string; value: Period }[] = [
@@ -32,6 +33,37 @@ const PERIODS: { label: string; value: Period }[] = [
 type ViewMode = 'dashboard' | 'acceptance';
 
 export default function App() {
+    const routeMode = getAppRouteMode();
+
+    if (routeMode === 'acceptance-public') {
+        return <PublicAcceptanceApp />;
+    }
+
+    return <DashboardApp />;
+}
+
+function PublicAcceptanceApp() {
+    return (
+        <div className="min-h-screen bg-[#0f172a] px-4 py-6 sm:px-6 lg:px-8">
+            <header className="mx-auto mb-8 max-w-7xl">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-white">
+                        <span className="text-emerald-400">TreeJar</span> Acceptance Demo
+                    </h1>
+                    <p className="mt-1 text-sm text-slate-500">
+                        Прямая self-test страница для клиентской проверки WhatsApp, Telegram и backend-сценариев.
+                    </p>
+                </div>
+            </header>
+
+            <main className="mx-auto max-w-7xl">
+                <AcceptanceDemo />
+            </main>
+        </div>
+    );
+}
+
+function DashboardApp() {
     const [period, setPeriod] = useState<Period>('all_time');
     const [activeView, setActiveView] = useState<ViewMode>('dashboard');
     const { data, timeseries, loading, error, refetch } = useMetrics(period);

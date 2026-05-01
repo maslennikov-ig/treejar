@@ -412,6 +412,21 @@ async def test_admin_dashboard_spa_route(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_public_client_self_test_spa_route_without_login(
+    client: AsyncClient,
+) -> None:
+    """Client acceptance demo should be available by direct public link."""
+    root_response = await client.get("/client-self-test")
+    assert root_response.status_code == 200
+
+    response = await client.get("/client-self-test/")
+    assert response.status_code == 200
+
+    nested_response = await client.get("/client-self-test/review")
+    assert nested_response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_admin_dashboard_spa_route_after_login(admin_client: AsyncClient) -> None:
     """Dashboard SPA route should serve the app for authenticated admins."""
     response = await admin_client.get("/dashboard/")

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from src.api.deps import require_api_key
 from src.api.v1 import (
     admin,
+    client_self_test,
     conversations,
     crm,
     health,
@@ -34,6 +35,11 @@ api_v1_router.include_router(
     public_media.router,
     prefix="/public-media",
     tags=["Public Media"],
+)
+api_v1_router.include_router(
+    client_self_test.router,
+    prefix="/client-self-test",
+    tags=["Client Self Test"],
 )
 api_v1_router.include_router(
     crm.router,
