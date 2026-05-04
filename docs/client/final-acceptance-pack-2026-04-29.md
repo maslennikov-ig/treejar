@@ -27,7 +27,7 @@ Commercial and operational promises include:
 - Treejar Catalog API as the customer-facing product source of truth.
 - Zoho CRM contact/deal handling, source attribution, and returning-customer context.
 - Zoho Inventory operational checks for quotation/SaleOrder and related business process state.
-- PDF quotation flow after exact `SKU + quantity` confirmation and manager approval.
+- PDF quotation flow after exact `SKU + quantity` confirmation, with direct customer delivery.
 - Order status answers for approval/rejection/payment/delivery state.
 - Manager handoff and Telegram operational notifications.
 - Admin dashboard, prompt/config controls, metrics, QA/reporting, and operator visibility.

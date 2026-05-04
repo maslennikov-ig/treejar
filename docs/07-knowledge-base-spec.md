@@ -61,7 +61,7 @@
 * **Триггер на quotation:** КП создаётся только когда у клиента уже подтверждены точные `SKU + quantity`.
 * **Zoho `rate`:** не использовать для customer-facing price и не сравнивать с catalog `price` как ошибку. Ответственность за корректность catalog `price` лежит на владельце каталога.
 * **Missing/invalid catalog `price`:** если catalog item найден, но `price` отсутствует, невалиден или `<=0`, discovery не показывает `0.00` и помечает цену как требующую manager verification. Exact price/stock/quotation/SaleOrder flow fail closed, не использует `salePrice` или Zoho `rate` как fallback и создаёт manager escalation с audit marker.
-* **Отправка quotation:** даже после успешной Zoho-проверки сохраняется текущий `manager approval` перед отправкой КП клиенту.
+* **Отправка quotation:** после успешной Zoho-проверки и PDF generation КП отправляется клиенту напрямую; не заменять готовое КП ожиданием manager approval.
 * **Catalog-only item:** если товар есть в Treejar Catalog API, но отсутствует в Zoho, Noor может показать его как вариант, но не создаёт КП/SaleOrder автоматически, переводит разговор на менеджера и отправляет операционный bug alert в Telegram.
 * **Владелец качества каталога:** заказчик подтверждает, что команда сайта отвечает за актуальность данных в Treejar Catalog API и исправление багов источника.
 
@@ -121,7 +121,7 @@
 2. Разобрать запрос (ключевые слова, ограничения: цена, цвет, размер).
 3. Найти товары (`/kb/products`), отранжировать: наличие, цена, контент-скор.
 4. Для конкретных вопросов о цене/наличии брать цену из Treejar Catalog API `price`; Zoho можно использовать только для operational item/stock confirmation.
-5. Если подтверждены точные `SKU + quantity`, подготовить quotation flow и передать КП на manager approval.
+5. Если подтверждены точные `SKU + quantity`, подготовить quotation flow и отправить КП клиенту.
 6. Если Treejar item не найден в Zoho, сообщить клиенту о необходимости подтверждения менеджером, создать эскалацию и отправить Telegram bug alert.
 7. Записать результат в crm\_history.
 

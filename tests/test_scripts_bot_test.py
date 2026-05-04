@@ -103,7 +103,7 @@ def test_find_matching_assistant_reply_returns_user_and_assistant_after_marker()
             },
             {
                 "role": "assistant",
-                "content": "Quotation sent to the manager for review.",
+                "content": "Quotation has been prepared and sent to you.",
                 "created_at": "2026-04-11T15:08:15+00:00",
             },
         ],
@@ -116,7 +116,9 @@ def test_find_matching_assistant_reply_returns_user_and_assistant_after_marker()
     assert user_message["role"] == "user"
     assert "[smoke:abc123]" in user_message["content"]
     assert assistant_message["role"] == "assistant"
-    assert assistant_message["content"] == "Quotation sent to the manager for review."
+    assert (
+        assistant_message["content"] == "Quotation has been prepared and sent to you."
+    )
 
 
 def test_find_matching_user_message_tolerates_second_precision_api_timestamps() -> None:

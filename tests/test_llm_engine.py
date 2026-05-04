@@ -102,6 +102,12 @@ class _FakeAgentResult:
         return self._usage
 
 
+def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
+    assert text.startswith("Hello, I'm Siyyad from Treejar.")
+    assert "May I know your name so I can address you properly?" in text
+    assert text.endswith(expected_tail)
+
+
 @pytest.mark.asyncio
 async def test_engine_process_message_success(
     mock_deps: tuple[
@@ -348,7 +354,9 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
         messaging_client=messaging,
     )
 
-    assert response.text == "Our manager will confirm the order shortly."
+    _assert_first_turn_opening(
+        response.text, "Our manager will confirm the order shortly."
+    )
     assert mock_run.await_count == 2
     first_call = mock_run.await_args_list[0].kwargs
     second_call = mock_run.await_args_list[1].kwargs
@@ -405,7 +413,9 @@ async def test_process_message_split_first_turn_still_uses_guarded_path(
         messaging_client=messaging,
     )
 
-    assert response.text == "Our manager will confirm the order shortly."
+    _assert_first_turn_opening(
+        response.text, "Our manager will confirm the order shortly."
+    )
     assert mock_run.await_count == 2
     assert mock_run.await_args_list[0].kwargs["deps"].tool_mode == "order_handoff"
     assert mock_run.await_args_list[1].kwargs["deps"].tool_mode == "order_handoff"
@@ -447,7 +457,7 @@ async def test_process_message_resolved_status_does_not_short_circuit_guarded_pa
     )
 
     assert mock_run.await_count == 2
-    assert response.text == "Please share the exact floor."
+    _assert_first_turn_opening(response.text, "Please share the exact floor.")
 
 
 @pytest.mark.asyncio
@@ -486,7 +496,7 @@ async def test_process_message_retries_guarded_path_once_without_hard_escalation
 
     assert mock_run.await_count == 2
     assert conv.escalation_status == "none"
-    assert response.text == "Please share the exact floor."
+    _assert_first_turn_opening(response.text, "Please share the exact floor.")
 
 
 @pytest.mark.asyncio
@@ -530,7 +540,9 @@ async def test_process_message_second_guarded_pass_can_succeed_with_escalation(
 
     assert mock_run.await_count == 2
     assert conv.escalation_status == "pending"
-    assert response.text == "Our manager will confirm your order now."
+    _assert_first_turn_opening(
+        response.text, "Our manager will confirm your order now."
+    )
 
 
 @pytest.mark.asyncio
@@ -564,7 +576,7 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
         messaging_client=messaging,
     )
 
-    assert response.text == "Here are a few chair options."
+    _assert_first_turn_opening(response.text, "Here are a few chair options.")
     assert mock_run.await_count == 1
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "full"
@@ -896,7 +908,9 @@ async def test_process_message_high_risk_verified_uses_service_policy_mode(
         messaging_client=messaging,
     )
 
-    assert response.text == "Standard delivery takes 3-5 business days in Dubai."
+    _assert_first_turn_opening(
+        response.text, "Standard delivery takes 3-5 business days in Dubai."
+    )
     assert mock_run.await_count == 1
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "service_policy"
@@ -962,6 +976,53 @@ async def test_process_message_missing_low_risk_hands_off_without_agent_run(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_first_turn_service_handoff_gets_opening(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Do you have a showroom?"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_awaited_once()
+    assert response.text.startswith("Hello, I'm Siyyad from Treejar.")
+    assert "May I know your name so I can address you properly?" in response.text
+    assert "manager" in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_plain_greeting_bypasses_verified_handoff(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -995,6 +1056,42 @@ async def test_process_message_plain_greeting_bypasses_verified_handoff(
     assert deps.tool_mode == "full"
     assert "добрый день" in response.text.lower()
     assert conv.escalation_status == "none"
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_first_turn_llm_response_gets_contractual_opening(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Hello"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("I can help with office furniture.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text.startswith("Hello, I'm Siyyad from Treejar.")
+    assert "May I know your name so I can address you properly?" in response.text
+    assert response.text.endswith("I can help with office furniture.")
 
 
 @pytest.mark.asyncio
@@ -1037,6 +1134,46 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
         "verified_policy_repair": {"kind": "benign_no_match", "count": 1}
     }
     assert conv.escalation_status == "none"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+async def test_process_message_first_turn_static_clarification_gets_opening(
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Добрый день, подскажите"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_notify.await_count == 0
+    assert response.text.startswith("Hello, I'm Siyyad from Treejar.")
+    assert "May I know your name so I can address you properly?" in response.text
+    assert "products" in response.text.lower()
+    assert "delivery" in response.text.lower()
 
 
 @pytest.mark.asyncio
@@ -1243,7 +1380,7 @@ async def test_process_message_successful_normal_path_clears_repair_state(
     )
 
     assert mock_run.await_count == 1
-    assert response.text == "You're welcome!"
+    _assert_first_turn_opening(response.text, "You're welcome!")
     assert conv.metadata_ == {}
 
 
@@ -1376,7 +1513,7 @@ async def test_process_message_order_status_bypasses_faq_service_policy(
         messaging_client=messaging,
     )
 
-    assert response.text == "Let me check your order status."
+    _assert_first_turn_opening(response.text, "Let me check your order status.")
     assert mock_run.await_count == 1
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "full"
@@ -2294,7 +2431,7 @@ async def test_tools_get_stock_fails_closed_when_catalog_price_missing_or_zero(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
-async def test_tools_create_quotation_uses_catalog_line_rate_when_zoho_rate_differs(
+async def test_tools_create_quotation_sends_pdf_to_customer_when_price_is_safe(
     mock_notify_manager: AsyncMock,
     mock_notify_mismatch: AsyncMock,
     mock_render_html: MagicMock,
@@ -2361,13 +2498,21 @@ async def test_tools_create_quotation_uses_catalog_line_rate_when_zoho_rate_diff
     result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
 
     assert "Quotation SO-1 has been prepared" in result
+    assert "sent" in result.lower()
+    assert "manager" not in result.lower()
     line_items = zoho.create_sale_order.await_args.kwargs["items"]
     assert line_items[0]["rate"] == 310.65
     assert line_items[0]["rate"] != 685.0
     mock_notify_mismatch.assert_not_awaited()
-    mock_notify_manager.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
+    redis.setex.assert_not_awaited()
+    messaging.send_media.assert_awaited_once()
+    assert messaging.send_media.await_args.kwargs["chat_id"] == conv.phone
+    assert messaging.send_media.await_args.kwargs["content"] == b"%PDF catalog rate"
+    assert messaging.send_media.await_args.kwargs["content_type"] == "application/pdf"
     assert (
-        "requires manager approval" in mock_notify_manager.await_args.kwargs["reason"]
+        messaging.send_media.await_args.kwargs["caption"]
+        == "Your Treejar quotation: SO-1"
     )
 
 
@@ -2705,9 +2850,7 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
         if mock_run.await_count == 1:
             return _FakeAgentResult("Please share your company email.")
         deps.quotation_created = True
-        return _FakeAgentResult(
-            "Quotation SA-001 has been prepared and sent to the manager for review."
-        )
+        return _FakeAgentResult("Quotation SA-001 has been prepared and sent to you.")
 
     mock_run.side_effect = run_side_effect
 
@@ -2721,9 +2864,9 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
         messaging_client=messaging,
     )
 
-    assert (
-        response.text
-        == "Quotation SA-001 has been prepared and sent to the manager for review."
+    _assert_first_turn_opening(
+        response.text,
+        "Quotation SA-001 has been prepared and sent to you.",
     )
     assert mock_run.await_count == 2
     first_call = mock_run.await_args_list[0].kwargs
@@ -2821,7 +2964,7 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
 
     async def create_quotation_side_effect(ctx: object, items: object) -> str:
         ctx.deps.quotation_created = True
-        return "Quotation SA-001 has been prepared and sent to the manager for review."
+        return "Quotation SA-001 has been prepared and sent to you."
 
     mock_create_quotation.side_effect = create_quotation_side_effect
 
@@ -2835,9 +2978,9 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
         messaging_client=messaging,
     )
 
-    assert (
-        response.text
-        == "Quotation SA-001 has been prepared and sent to the manager for review."
+    _assert_first_turn_opening(
+        response.text,
+        "Quotation SA-001 has been prepared and sent to you.",
     )
     assert mock_run.await_count == 2
     mock_create_quotation.assert_awaited_once()
@@ -2873,7 +3016,7 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
 
     async def create_quotation_side_effect(ctx: object, items: object) -> str:
         ctx.deps.quotation_created = True
-        return "Quotation SA-002 has been prepared and sent to the manager for review."
+        return "Quotation SA-002 has been prepared and sent to you."
 
     mock_create_quotation.side_effect = create_quotation_side_effect
 
@@ -2887,9 +3030,9 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
         messaging_client=messaging,
     )
 
-    assert (
-        response.text
-        == "Quotation SA-002 has been prepared and sent to the manager for review."
+    _assert_first_turn_opening(
+        response.text,
+        "Quotation SA-002 has been prepared and sent to you.",
     )
     assert mock_run.await_count == 2
     mock_create_quotation.assert_awaited_once()
@@ -2939,7 +3082,7 @@ async def test_process_message_exact_named_item_second_consultative_pass_resolve
 
     async def create_quotation_side_effect(ctx: object, items: object) -> str:
         ctx.deps.quotation_created = True
-        return "Quotation SA-009 has been prepared and sent to the manager for review."
+        return "Quotation SA-009 has been prepared and sent to you."
 
     mock_create_quotation.side_effect = create_quotation_side_effect
 
@@ -2953,9 +3096,9 @@ async def test_process_message_exact_named_item_second_consultative_pass_resolve
         messaging_client=messaging,
     )
 
-    assert (
-        response.text
-        == "Quotation SA-009 has been prepared and sent to the manager for review."
+    _assert_first_turn_opening(
+        response.text,
+        "Quotation SA-009 has been prepared and sent to you.",
     )
     assert mock_run.await_count == 2
     mock_create_quotation.assert_awaited_once()
@@ -3047,9 +3190,7 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
         if mock_run.await_count == 1:
             return _FakeAgentResult("Please share your full name, company, and email.")
         deps.quotation_created = True
-        return _FakeAgentResult(
-            "Quotation SA-001 has been prepared and sent to the manager for review."
-        )
+        return _FakeAgentResult("Quotation SA-001 has been prepared and sent to you.")
 
     mock_run.side_effect = run_side_effect
 
@@ -3063,9 +3204,9 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
         messaging_client=messaging,
     )
 
-    assert (
-        response.text
-        == "Quotation SA-001 has been prepared and sent to the manager for review."
+    _assert_first_turn_opening(
+        response.text,
+        "Quotation SA-001 has been prepared and sent to you.",
     )
     assert mock_run.await_count == 2
     first_call = mock_run.await_args_list[0].kwargs
@@ -3105,7 +3246,7 @@ async def test_process_message_consultative_query_stays_in_full_mode(
         messaging_client=messaging,
     )
 
-    assert response.text == "Here are some chair options for you."
+    _assert_first_turn_opening(response.text, "Here are some chair options for you.")
     assert mock_run.await_count == 1
     call = mock_run.await_args_list[0].kwargs
     assert call["deps"].tool_mode == "full"

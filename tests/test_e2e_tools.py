@@ -266,7 +266,7 @@ class TestCreateQuotation:
         mock_render: AsyncMock,
         mock_notify: AsyncMock,
     ) -> None:
-        """Full quotation flow: fetch items, build PDF, store in Redis, escalate."""
+        """Full quotation flow: fetch items, build PDF, and send it to customer."""
         mock_gen_pdf.return_value = b"%PDF-fake-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
@@ -310,8 +310,20 @@ class TestCreateQuotation:
         assert "SO-0001" in result
         mock_inv.get_stock_bulk.assert_awaited_once()
         mock_inv.create_sale_order.assert_awaited_once()
-        mock_redis.setex.assert_awaited()
-        mock_notify.assert_awaited_once()
+        mock_redis.setex.assert_not_awaited()
+        mock_notify.assert_not_awaited()
+        mock_messaging.send_media.assert_awaited_once()
+        assert (
+            mock_messaging.send_media.await_args.kwargs["content"] == b"%PDF-fake-bytes"
+        )
+        assert (
+            mock_messaging.send_media.await_args.kwargs["content_type"]
+            == "application/pdf"
+        )
+        assert (
+            mock_messaging.send_media.await_args.kwargs["caption"]
+            == "Your Treejar quotation: SO-0001"
+        )
 
         # Verify PDF was generated with bytes
         mock_gen_pdf.assert_awaited_once()
@@ -335,15 +347,20 @@ class TestCreateQuotation:
 
     @pytest.mark.asyncio
     @patch(
+        "src.integrations.notifications.escalation.notify_manager_escalation",
+        new_callable=AsyncMock,
+    )
+    @patch(
         "src.services.pdf.generator.render_quotation_html", return_value="<html></html>"
     )
     @patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
-    async def test_quotation_redis_failure(
+    async def test_quotation_send_failure_fails_closed(
         self,
         mock_gen_pdf: AsyncMock,
         mock_render: AsyncMock,
+        mock_notify: AsyncMock,
     ) -> None:
-        """When Redis store fails, report the error but PDF was generated."""
+        """When customer PDF delivery fails, fail closed and notify a manager."""
         mock_gen_pdf.return_value = b"%PDF-bytes"
 
         mock_inv = AsyncMock(spec=ZohoInventoryClient)
@@ -368,8 +385,9 @@ class TestCreateQuotation:
         }
 
         mock_messaging = AsyncMock(spec=MessagingProvider)
+        mock_messaging.send_media.side_effect = Exception("Wazzup upload failed")
         mock_redis = AsyncMock()
-        mock_redis.setex = AsyncMock(side_effect=Exception("Redis connection lost"))
+        mock_redis.setex = AsyncMock()
 
         conv = _make_conversation()
         deps = _make_deps(
@@ -384,7 +402,9 @@ class TestCreateQuotation:
         items = [QuotationItem(sku="DESK-01", quantity=1)]
         result = await create_quotation(ctx, items)  # type: ignore[arg-type]
 
-        assert "failed" in result.lower()
+        assert "couldn't finalize the exact quotation automatically" in result.lower()
+        mock_redis.setex.assert_not_awaited()
+        mock_notify.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch(

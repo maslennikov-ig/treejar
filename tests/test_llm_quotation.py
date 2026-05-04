@@ -1,4 +1,3 @@
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -134,9 +133,18 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     # Verify PDF generation was called
     mock_pdf.assert_called_once()
 
-    # New flow: PDF stored in Redis + escalation notification
-    mock_redis.setex.assert_awaited()
-    mock_notify.assert_awaited_once()
+    mock_redis.setex.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    mock_messaging.send_media.assert_awaited_once()
+    assert mock_messaging.send_media.await_args.kwargs["chat_id"] == "+1234567890"
+    assert mock_messaging.send_media.await_args.kwargs["content"] == b"pdf_data"
+    assert (
+        mock_messaging.send_media.await_args.kwargs["content_type"] == "application/pdf"
+    )
+    assert (
+        mock_messaging.send_media.await_args.kwargs["caption"]
+        == "Your Treejar quotation: SA-001"
+    )
 
 
 @pytest.mark.asyncio
@@ -187,7 +195,8 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
-    deps.messaging_client = AsyncMock()
+    mock_messaging = AsyncMock()
+    deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
     deps.crm_context = None
     deps.redis = mock_redis
@@ -220,7 +229,9 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     mock_inventory.get_item_image.assert_not_awaited()
     render_context = mock_render.call_args.args[0]
     assert render_context["items"][0]["image_url"] is None
-    mock_notify.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+    mock_redis.setex.assert_not_awaited()
+    mock_messaging.send_media.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -269,7 +280,8 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
-    deps.messaging_client = AsyncMock()
+    mock_messaging = AsyncMock()
+    deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
     deps.crm_context = None
     deps.redis = mock_redis
@@ -302,11 +314,13 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-REAL-001"
     mock_db.flush.assert_awaited_once()
 
-    redis_meta = json.loads(mock_redis.setex.await_args_list[1].args[2])
-    assert redis_meta["quote_number"] == "SA-REAL-001"
-    assert redis_meta["salesorder_number"] == "SA-REAL-001"
-    assert redis_meta["salesorder_id"] == "so-flat-123"
-    mock_notify.assert_awaited_once()
+    mock_redis.setex.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    mock_messaging.send_media.assert_awaited_once()
+    assert (
+        mock_messaging.send_media.await_args.kwargs["caption"]
+        == "Your Treejar quotation: SA-REAL-001"
+    )
 
 
 @pytest.mark.asyncio
@@ -353,7 +367,8 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
-    deps.messaging_client = AsyncMock()
+    mock_messaging = AsyncMock()
+    deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
     deps.crm_context = None
     deps.redis = mock_redis
@@ -385,11 +400,13 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
     assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-nonumber-123"
     assert "zoho_sale_order_number" not in mock_conversation.metadata_
 
-    redis_meta = json.loads(mock_redis.setex.await_args_list[1].args[2])
-    assert redis_meta["quote_number"] == "DRAFT"
-    assert redis_meta["salesorder_number"] == ""
-    assert redis_meta["salesorder_id"] == "so-nonumber-123"
-    mock_notify.assert_awaited_once()
+    mock_redis.setex.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    mock_messaging.send_media.assert_awaited_once()
+    assert (
+        mock_messaging.send_media.await_args.kwargs["caption"]
+        == "Your Treejar quotation: DRAFT"
+    )
 
 
 @pytest.mark.asyncio
@@ -458,7 +475,8 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
-    deps.messaging_client = AsyncMock()
+    mock_messaging = AsyncMock()
+    deps.messaging_client = mock_messaging
     deps.conversation = mock_conversation
     deps.crm_context = None
     deps.redis = mock_redis
@@ -485,7 +503,8 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     _, kwargs = mock_inventory.create_sale_order.call_args
     assert kwargs["customer_id"] == "inventory-contact-created"
     mock_inventory.create_contact.assert_awaited_once()
-    mock_notify.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+    mock_messaging.send_media.assert_awaited_once()
 
 
 @pytest.mark.asyncio

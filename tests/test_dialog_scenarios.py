@@ -61,6 +61,12 @@ def _mock_conversation(
     return conv
 
 
+def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
+    assert text.startswith("Hello, I'm Siyyad from Treejar.")
+    assert "May I know your name so I can address you properly?" in text
+    assert text.endswith(expected_tail)
+
+
 def _mock_deps(
     conv: Any,
     *,
@@ -376,9 +382,22 @@ class TestScenario3QuotationFlow:
         mock_inv.get_stock_bulk.assert_awaited_once()
         mock_inv.create_sale_order.assert_awaited_once()
         mock_gen_pdf.assert_awaited_once()
-        # New flow: PDF stored in Redis + escalation, not direct send_media
-        mock_redis.setex.assert_awaited()
-        mock_notify.assert_awaited_once()
+        mock_redis.setex.assert_not_awaited()
+        mock_notify.assert_not_awaited()
+        mock_messaging.send_media.assert_awaited_once()
+        assert mock_messaging.send_media.await_args.kwargs["chat_id"] == "+971509876543"
+        assert (
+            mock_messaging.send_media.await_args.kwargs["content"]
+            == b"%PDF-fake-content"
+        )
+        assert (
+            mock_messaging.send_media.await_args.kwargs["content_type"]
+            == "application/pdf"
+        )
+        assert (
+            mock_messaging.send_media.await_args.kwargs["caption"]
+            == "Your Treejar quotation: SO-TEST-001"
+        )
 
         assert "SO-TEST-001" in result.output
 
@@ -737,9 +756,9 @@ class TestScenario7OrderHandoffGuard:
             messaging_client=messaging,
         )
 
-        assert (
-            response.text
-            == "I've notified our manager to confirm your order details shortly."
+        _assert_first_turn_opening(
+            response.text,
+            "I've notified our manager to confirm your order details shortly.",
         )
         assert conv.escalation_status == "pending"
         assert mock_notify.await_count == 1
@@ -824,9 +843,9 @@ class TestScenario7OrderHandoffGuard:
             messaging_client=messaging,
         )
 
-        assert (
-            response.text
-            == "Here are a few chair options that could work for next week."
+        _assert_first_turn_opening(
+            response.text,
+            "Here are a few chair options that could work for next week.",
         )
         assert mock_notify.await_count == 0
         assert mock_search.await_count == 1

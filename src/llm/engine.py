@@ -31,6 +31,7 @@ from src.integrations.inventory.zoho_inventory import (
 )
 from src.integrations.messaging.base import MessagingProvider
 from src.llm.context import build_message_history
+from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.order_status import format_order_status
 from src.llm.pii import mask_pii, unmask_pii
@@ -1657,7 +1658,6 @@ async def create_quotation(
     # falling back to Zoho's operational media.
     import asyncio
     import base64
-    import json as json_mod
 
     sem = asyncio.Semaphore(3)  # limit concurrent image downloads
 
@@ -1789,54 +1789,20 @@ async def create_quotation(
     html_content = render_quotation_html(pdf_context)
     pdf_bytes = await generate_pdf(html_content)
 
-    # Store PDF in Redis for manager review (instead of sending directly to client)
-    conv_id_str = str(ctx.deps.conversation.id)
     pdf_filename = f"quotation_{quote_number}.pdf"
     try:
-        await ctx.deps.redis.setex(
-            f"quotation_pdf:{conv_id_str}",
-            86400,
-            base64.b64encode(pdf_bytes),
-        )
-        await ctx.deps.redis.setex(
-            f"quotation_meta:{conv_id_str}",
-            86400,
-            json_mod.dumps(
-                {
-                    "quote_number": quote_number,
-                    "filename": pdf_filename,
-                    "salesorder_number": sale_order_number,
-                    "salesorder_id": sale_order_id,
-                }
-            ),
+        await ctx.deps.messaging_client.send_media(
+            chat_id=ctx.deps.conversation.phone,
+            content=pdf_bytes,
+            content_type="application/pdf",
+            caption=f"Your Treejar quotation: {quote_number}",
         )
     except Exception as e:
-        logger.error("Failed to store PDF in Redis: %s", e)
-        return "Generated quotation but failed to save it for review."
-
-    # Trigger manager escalation with PDF attachment
-    from src.integrations.notifications.escalation import notify_manager_escalation
-    from src.schemas.common import EscalationType
-
-    recent_context = f"Customer confirmed order. Quotation {quote_number} generated."
-    try:
-        await notify_manager_escalation(
-            conversation=ctx.deps.conversation,
-            reason=f"Order quotation {quote_number} requires manager approval",
-            recent_messages=[recent_context],
-            db=ctx.deps.db,
-            escalation_type=EscalationType.ORDER_CONFIRMATION,
-            pdf_bytes=pdf_bytes,
-            pdf_filename=pdf_filename,
-        )
-    except Exception as e:
-        logger.error("Failed to send escalation with PDF: %s", e)
+        logger.error("Failed to send quotation PDF %s to customer: %s", pdf_filename, e)
+        return await _fail_closed_exact_quote_request(ctx.deps)
 
     ctx.deps.quotation_created = True
-    return (
-        f"Quotation {quote_number} has been prepared and sent to the manager for review. "
-        "The customer will receive the quotation once the manager approves it."
-    )
+    return f"Quotation {quote_number} has been prepared and sent to you."
 
 
 @sales_agent.tool
@@ -2171,8 +2137,18 @@ async def process_message(
         conv.metadata_ = metadata
         await db.flush()
 
+    def _apply_first_turn_opening_guard(text: str) -> str:
+        assert conv is not None
+        return apply_opening_guard(
+            text,
+            language=str(conv.language),
+            is_first_turn=is_first_turn,
+            customer_name=conv.customer_name,
+        )
+
     def _build_llm_response(result: Any, model_name: str) -> LLMResponse:
         final_text = unmask_pii(result.output, pii_map)
+        final_text = _apply_first_turn_opening_guard(final_text)
         usage = result.usage()
         return LLMResponse(
             text=final_text,
@@ -2183,8 +2159,10 @@ async def process_message(
         )
 
     def _build_static_response(text: str, model_name: str) -> LLMResponse:
+        final_text = unmask_pii(text, pii_map)
+        final_text = _apply_first_turn_opening_guard(final_text)
         return LLMResponse(
-            text=unmask_pii(text, pii_map),
+            text=final_text,
             tokens_in=0,
             tokens_out=0,
             cost=None,
@@ -2194,10 +2172,14 @@ async def process_message(
     async def _build_policy_handoff_response(
         model_name: str, decision_language: str, decision_text: str
     ) -> LLMResponse:
-        return LLMResponse(
-            text=decision_text
+        final_text = (
+            decision_text
             if decision_text
-            else build_service_handoff_response(policy_decision, decision_language),
+            else build_service_handoff_response(policy_decision, decision_language)
+        )
+        final_text = _apply_first_turn_opening_guard(final_text)
+        return LLMResponse(
+            text=final_text,
             tokens_in=0,
             tokens_out=0,
             cost=None,

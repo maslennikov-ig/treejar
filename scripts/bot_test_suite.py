@@ -324,6 +324,13 @@ class TestSuite:
             )
             assert response, "Empty response"
             assert len(response) > 20, "Response too short"
+            response_lower = response.lower()
+            assert "siyyad" in response_lower, "Response must introduce Siyyad"
+            assert "treejar" in response_lower, "Response must mention Treejar"
+            assert any(
+                signal in response_lower
+                for signal in ("your name", "address you", "call you")
+            ), "Response must ask how to address the customer"
             state = await get_conversation_state(phone)
             assert state.get("id"), "Conversation not created in DB"
             return {"response": response, "state": state}
