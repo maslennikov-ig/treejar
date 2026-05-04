@@ -5,6 +5,7 @@ import hashlib
 import logging
 import re
 import traceback
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -16,7 +17,7 @@ from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.wazzup import WazzupProvider
 from src.llm.conversation_summary import should_enqueue_conversation_summary_refresh
-from src.llm.engine import process_message
+from src.llm.engine import ProductMediaPayload, process_message
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
 from src.models.message import (
@@ -38,8 +39,10 @@ from src.services.escalation_state import (
 from src.services.inbound_channels import update_conversation_inbound_channel
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
+    send_wazzup_media_with_audit,
     send_wazzup_text_with_audit,
 )
+from src.services.public_media import build_signed_product_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +294,58 @@ async def _handle_escalation_fallback(
             )
         except Exception:
             logger.exception("Failed to re-notify manager for %s", conv.phone)
+
+
+async def _send_deferred_product_media(
+    db: Any,
+    *,
+    provider: Any,
+    conversation_id: Any,
+    chat_id: str,
+    media_items: Sequence[ProductMediaPayload],
+) -> None:
+    """Send queued product images after the customer-facing text reply."""
+    for item in media_items:
+        try:
+            send_url = item.url
+            if (
+                item.zoho_item_id
+                and "zoho-image" not in item.url
+                and "zoho" in item.url
+            ):
+                send_url = build_signed_product_image_url(item.zoho_item_id)
+
+            await send_wazzup_media_with_audit(
+                db,
+                provider=provider,
+                conversation_id=conversation_id,
+                chat_id=chat_id,
+                source="product_media",
+                crm_message_id=deterministic_crm_message_id(
+                    "product",
+                    conversation_id,
+                    item.product_key,
+                    "media",
+                ),
+                caption_crm_message_id=deterministic_crm_message_id(
+                    "product",
+                    conversation_id,
+                    item.product_key,
+                    "caption",
+                ),
+                url=send_url,
+                caption=item.caption,
+                content=None,
+                content_type=None,
+            )
+            await db.commit()
+        except Exception as exc:
+            logger.warning(
+                "Failed to send deferred product image for conversation %s: %s",
+                conversation_id,
+                exc,
+                exc_info=True,
+            )
 
 
 def _determine_role(msg: WazzupIncomingMessage) -> str:
@@ -750,4 +805,12 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 ),
             )
             await db.commit()
+            if llm_response.deferred_product_media:
+                await _send_deferred_product_media(
+                    db,
+                    provider=wazzup_provider,
+                    conversation_id=conv.id,
+                    chat_id=chat_id,
+                    media_items=llm_response.deferred_product_media,
+                )
             logger.info("Reply sent to %s successfully", chat_id)

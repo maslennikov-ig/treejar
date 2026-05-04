@@ -4,7 +4,7 @@ import logging
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -67,7 +67,7 @@ from src.services.public_media import build_signed_product_image_url
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["rag_search_products"]
+__all__ = ["ProductMediaPayload", "rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
@@ -259,6 +259,8 @@ class SalesDeps:
     user_query: str = ""
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
     recent_history: list[str] | None = None  # Last N messages for escalation context
+    defer_product_media: bool = False
+    pending_product_media: list[ProductMediaPayload] = field(default_factory=list)
     product_search_calls: int = 0
     product_results_seen: bool = False
     tool_mode: Literal["full", "order_handoff", "service_policy", "exact_quote"] = (
@@ -290,6 +292,15 @@ class LLMResponse:
     tokens_out: int | None
     cost: float | None
     model: str
+    deferred_product_media: tuple[ProductMediaPayload, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProductMediaPayload:
+    url: str
+    caption: str
+    product_key: str
+    zoho_item_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1266,6 +1277,17 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
         product_key: str,
         zoho_item_id: str | None = None,
     ) -> None:
+        if ctx.deps.defer_product_media:
+            ctx.deps.pending_product_media.append(
+                ProductMediaPayload(
+                    url=url,
+                    caption=caption,
+                    product_key=product_key,
+                    zoho_item_id=zoho_item_id,
+                )
+            )
+            return
+
         try:
             send_url = url
             if zoho_item_id and "zoho-image" not in url and "zoho" in url:
@@ -1330,7 +1352,16 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
         )
 
         if r.image_url:
-            desc += "\n[Note: Image of this product has been automatically sent to the customer's WhatsApp. Do not mention or include image URLs in your response.]"
+            image_delivery_text = (
+                "will be sent to the customer's WhatsApp after the text reply"
+                if ctx.deps.defer_product_media
+                else "has been automatically sent to the customer's WhatsApp"
+            )
+            desc += (
+                "\n[Note: Image of this product "
+                f"{image_delivery_text}. Do not mention or include image URLs "
+                "in your response.]"
+            )
             await _safe_send_media(
                 url=r.image_url,
                 caption=media_caption,
@@ -2156,6 +2187,7 @@ async def process_message(
             tokens_out=usage.output_tokens if usage else None,
             cost=None,
             model=model_name,
+            deferred_product_media=tuple(deps.pending_product_media),
         )
 
     def _build_static_response(text: str, model_name: str) -> LLMResponse:
@@ -2167,6 +2199,7 @@ async def process_message(
             tokens_out=0,
             cost=None,
             model=model_name,
+            deferred_product_media=tuple(deps.pending_product_media),
         )
 
     async def _build_policy_handoff_response(
@@ -2184,6 +2217,7 @@ async def process_message(
             tokens_out=0,
             cost=None,
             model=f"{model_name}|verified-policy",
+            deferred_product_media=tuple(deps.pending_product_media),
         )
 
     # Load conversation (already loaded by caller typically, but we fetch to be safe/fresh)
@@ -2246,6 +2280,7 @@ async def process_message(
         crm_context=crm_context,
         user_query=masked_text,
         recent_history=recent_history,
+        defer_product_media=True,
     )
 
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)

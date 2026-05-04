@@ -124,6 +124,50 @@ async def test_search_products_sends_image_if_present(
     run_context.deps.db.commit.assert_awaited_once()
 
 
+async def test_search_products_defers_image_when_runtime_requests_deferred_media(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
+    product = ProductRead(
+        id="11111111-1111-1111-1111-111111111111",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Test Chair",
+        description_en="A great chair",
+        sku="CHAIR-01",
+        price="100.00",
+        currency="AED",
+        image_url="https://example.com/chair.jpg",
+        created_at="2024-01-01T00:00:00Z",
+        stock=10,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [product]
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    run_context.deps.defer_product_media = True
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "furniture")
+
+    assert isinstance(result, ToolReturn)
+    assert "will be sent to the customer's WhatsApp after the text reply" in (
+        result.return_value
+    )
+    assert "https://example.com/chair.jpg" not in result.return_value
+    mock_messaging_client.send_media.assert_not_called()
+    run_context.deps.db.commit.assert_not_awaited()
+    assert len(run_context.deps.pending_product_media) == 1
+    pending = run_context.deps.pending_product_media[0]
+    assert pending.url == "https://example.com/chair.jpg"
+    assert pending.caption == "Test Chair — 100.00 AED"
+    assert pending.product_key == "11111111-1111-1111-1111-111111111111"
+
+
 async def test_search_products_shows_catalog_only_customer_facing_option(
     run_context: Any,
     monkeypatch: pytest.MonkeyPatch,

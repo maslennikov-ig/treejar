@@ -163,6 +163,104 @@ async def test_process_incoming_batch_new_conversation(
 @patch("src.services.chat.ZohoCRMClient")
 @patch("src.services.chat.ZohoInventoryClient")
 @patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_sends_deferred_product_media_after_bot_reply(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    from src.llm import LLMResponse
+    from src.llm.engine import ProductMediaPayload
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-deferred-media"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+        MockResult(None),  # bot_reply audit idempotency lookup
+        MockResult(None),  # product media audit idempotency lookup
+        MockResult(None),  # product caption audit idempotency lookup
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="Hello, here are table options.",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+        deferred_product_media=(
+            ProductMediaPayload(
+                url="https://example.com/table.jpg",
+                caption="Operative table — 179.00 AED",
+                product_key="table-1",
+                zoho_item_id=None,
+            ),
+        ),
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-text"
+    mock_wazzup.send_media.return_value = "msg-media"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-1",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi! I need 15 table",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    provider_calls = [call[0] for call in mock_wazzup.method_calls]
+    assert provider_calls.index("send_text") < provider_calls.index("send_media")
+    mock_wazzup.send_text.assert_awaited_once()
+    mock_wazzup.send_media.assert_awaited_once()
+    assert mock_wazzup.send_media.await_args.kwargs["url"] == (
+        "https://example.com/table.jpg"
+    )
+    assert mock_wazzup.send_media.await_args.kwargs["caption"] == (
+        "Operative table — 179.00 AED"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
 async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplicates_exist(
     mock_embedding_cls: MagicMock,
     mock_zoho_inv_cls: MagicMock,

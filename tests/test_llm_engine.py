@@ -17,6 +17,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from src.llm.engine import (
+    ProductMediaPayload,
     QuotationItem,
     SalesDeps,
     extract_exact_quote_candidate,
@@ -581,6 +582,56 @@ async def test_process_message_non_candidate_uses_full_tool_mode(
     deps = mock_run.await_args.kwargs["deps"]
     assert deps.tool_mode == "full"
     assert deps.runtime_directives == ()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_returns_deferred_product_media_after_first_turn_opening(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Hi! I need 15 table"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    pending_payload = ProductMediaPayload(
+        url="https://example.com/table.jpg",
+        caption="Operative table — 179.00 AED",
+        product_key="table-1",
+        zoho_item_id=None,
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        assert deps.defer_product_media is True
+        deps.pending_product_media.append(pending_payload)
+        return _FakeAgentResult("Here are table options for 15 units.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    _assert_first_turn_opening(response.text, "Here are table options for 15 units.")
+    assert response.deferred_product_media == (pending_payload,)
+    messaging.send_media.assert_not_called()
 
 
 @pytest.mark.asyncio
