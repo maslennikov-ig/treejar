@@ -18,6 +18,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
+import secrets
 import uuid
 from datetime import UTC, datetime
 from html import escape
@@ -35,6 +37,11 @@ from src.integrations.notifications.telegram_webhook import (
 )
 from src.models.conversation import Conversation
 from src.models.message import Message, message_created_at_now
+from src.services.conversation_reset import (
+    build_reset_preview,
+    execute_conversation_reset,
+    normalize_reset_phone,
+)
 from src.services.escalation_state import resolve_conversation_pending_escalations
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
@@ -49,7 +56,10 @@ router = APIRouter(tags=["telegram"])
 # Redis key prefix for pending manager responses; TTL = 5 minutes.
 _PENDING_KEY_PREFIX = "tg_pending:"
 _PENDING_TTL_SECONDS = 600
+_RESET_PENDING_KEY_PREFIX = "tg_reset_pending:"
+_RESET_TTL_SECONDS = 300
 _ORDER_DECISION_SOURCE = "telegram_order_decision"
+_RESET_COMMAND_RE = re.compile(r"^/reset(?:@[A-Za-z0-9_]+)?(?:\s+(?P<phone>.+))?$")
 
 
 def _get_telegram_client() -> TelegramClient:
@@ -137,6 +147,8 @@ async def telegram_webhook(
     # Handle text message (manager's reply after clicking a button)
     message = data.get("message")
     if message and message.get("text"):
+        if await _handle_reset_command_if_present(message):
+            return {"status": "ok"}
         await _handle_manager_reply(message)
         return {"status": "ok"}
 
@@ -158,8 +170,27 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
 
     mode, conv_id_str = callback_data.split(":", 1)
 
-    if mode not in ("faq_global", "faq_private", "order_confirm", "order_reject"):
+    if mode not in (
+        "faq_global",
+        "faq_private",
+        "order_confirm",
+        "order_reject",
+        "reset_confirm",
+        "reset_cancel",
+    ):
         await client.answer_callback_query(callback_id, "❌ Unknown action")
+        return
+
+    if mode in ("reset_confirm", "reset_cancel"):
+        await _handle_reset_callback(
+            client,
+            callback_query,
+            callback_id,
+            chat_id,
+            message_id,
+            mode,
+            conv_id_str,
+        )
         return
 
     # Handle order confirmation/rejection immediately (no text input needed)
@@ -202,6 +233,171 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
         f"📝 <b>Введите ваш ответ</b> ({mode_label}):\n\n"
         f"<i>Вопрос клиента:</i> {question or 'не найден'}\n\n"
         "Напишите ваш ответ, и я отправлю его клиенту.",
+        chat_id=str(chat_id),
+    )
+
+
+def _is_configured_admin_chat(chat_id: Any) -> bool:
+    configured = str(settings.telegram_chat_id).strip()
+    return bool(configured) and str(chat_id) == configured
+
+
+async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
+    """Handle admin-only Telegram /reset commands.
+
+    Returns True when the text was a reset command, even if ignored due to chat
+    authorization. This prevents reset commands from being interpreted as
+    manager replies.
+    """
+    text = str(message.get("text") or "").strip()
+    match = _RESET_COMMAND_RE.match(text)
+    if not match:
+        return False
+
+    chat_id = message.get("chat", {}).get("id")
+    if not _is_configured_admin_chat(chat_id):
+        return True
+
+    client = _get_telegram_client()
+    raw_phone = match.group("phone")
+    phone = normalize_reset_phone(raw_phone)
+    if phone is None:
+        await client.send_message(
+            "Использование: <code>/reset +79262810921</code>",
+            chat_id=str(chat_id),
+        )
+        return True
+
+    from_user = message.get("from") or {}
+    requester_id = from_user.get("id")
+    if not isinstance(requester_id, int):
+        await client.send_message(
+            "Не удалось определить Telegram user id. Reset не выполнен.",
+            chat_id=str(chat_id),
+        )
+        return True
+
+    async with async_session_factory() as db:
+        preview = await build_reset_preview(db, phone)
+
+    if preview.conversation_count == 0:
+        await client.send_message(
+            f"Диалогов для <code>{escape(phone)}</code> не найдено, сбрасывать нечего.",
+            chat_id=str(chat_id),
+        )
+        return True
+
+    token = secrets.token_urlsafe(9)
+    redis_key = f"{_RESET_PENDING_KEY_PREFIX}{token}"
+    await redis_client.setex(
+        redis_key,
+        _RESET_TTL_SECONDS,
+        json.dumps(
+            {
+                "phone": phone,
+                "requested_by_telegram_user_id": requester_id,
+                "chat_id": chat_id,
+            }
+        ),
+    )
+
+    latest_id = str(preview.latest_conversation_id or "n/a")
+    text = (
+        "Подтвердите reset диалога.\n\n"
+        f"Телефон: <code>{escape(phone)}</code>\n"
+        f"Диалогов к архивированию: <b>{preview.conversation_count}</b>\n"
+        f"Сообщений в истории: <b>{preview.message_count}</b>\n"
+        f"Pending escalations: <b>{preview.pending_escalation_count}</b>\n"
+        f"Latest conversation: <code>{escape(latest_id)}</code>\n\n"
+        "Клиенту ничего не отправится."
+    )
+    await client.send_message_with_inline_keyboard(
+        text,
+        [
+            [
+                {"text": "Confirm reset", "callback_data": f"reset_confirm:{token}"},
+                {"text": "Cancel", "callback_data": f"reset_cancel:{token}"},
+            ]
+        ],
+        chat_id=str(chat_id),
+    )
+    return True
+
+
+async def _handle_reset_callback(
+    client: TelegramClient,
+    callback_query: dict[str, Any],
+    callback_id: str,
+    chat_id: int | str,
+    message_id: int | None,
+    mode: str,
+    token: str,
+) -> None:
+    if not _is_configured_admin_chat(chat_id):
+        await client.answer_callback_query(callback_id, "❌ Forbidden")
+        return
+
+    redis_key = f"{_RESET_PENDING_KEY_PREFIX}{token}"
+    pending_raw = await redis_client.get(redis_key)
+    if not pending_raw:
+        await client.answer_callback_query(callback_id, "⚠️ Reset request expired")
+        if message_id:
+            await client.edit_message_reply_markup(chat_id, message_id)
+        return
+
+    try:
+        pending = json.loads(pending_raw)
+    except Exception:
+        await redis_client.delete(redis_key)
+        await client.answer_callback_query(callback_id, "⚠️ Reset request expired")
+        if message_id:
+            await client.edit_message_reply_markup(chat_id, message_id)
+        return
+
+    requester_id = pending.get("requested_by_telegram_user_id")
+    actual_user_id = (callback_query.get("from") or {}).get("id")
+    if actual_user_id != requester_id:
+        await client.answer_callback_query(
+            callback_id,
+            "❌ Only the admin who requested reset can confirm it",
+        )
+        return
+
+    if mode == "reset_cancel":
+        await redis_client.delete(redis_key)
+        await client.answer_callback_query(callback_id, "✅ Reset cancelled")
+        if message_id:
+            await client.edit_message_reply_markup(chat_id, message_id)
+        await client.send_message("Reset отменён.", chat_id=str(chat_id))
+        return
+
+    phone = str(pending.get("phone") or "")
+    async with async_session_factory() as db:
+        result = await execute_conversation_reset(
+            db,
+            phone,
+            requested_by_telegram_user_id=int(requester_id),
+        )
+        if result.archived_count > 0:
+            await db.commit()
+
+    await redis_client.delete(redis_key)
+    await client.answer_callback_query(callback_id, "✅ Reset done")
+    if message_id:
+        await client.edit_message_reply_markup(chat_id, message_id)
+
+    if result.new_conversation is None:
+        await client.send_message(
+            f"Диалогов для <code>{escape(phone)}</code> не найдено, сбрасывать нечего.",
+            chat_id=str(chat_id),
+        )
+        return
+
+    await client.send_message(
+        "Готово: архивировано "
+        f"{result.archived_count}, создан новый диалог "
+        f"<code>{escape(str(result.new_conversation.id))}</code>. "
+        "Следующее сообщение клиента начнётся с нуля.",
         chat_id=str(chat_id),
     )
 
