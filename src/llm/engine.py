@@ -188,6 +188,18 @@ _SELECTION_SKU_RE = re.compile(
     r"\b[a-z0-9]+(?:[-.][a-z0-9]+)+\b",
     re.IGNORECASE,
 )
+_PRICE_SIGNAL_RE = re.compile(
+    r"(?P<amount>\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)\s*(?P<currency>[A-Z]{3})\b",
+    re.IGNORECASE,
+)
+_ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES = (
+    "pending",
+    "sent",
+    "delivered",
+    "read",
+    "edited",
+    "provider_duplicate",
+)
 
 
 def _search_products_limit_message(*, include_no_results: bool = False) -> str:
@@ -352,11 +364,30 @@ class PurchaseSelectionItem:
     quantity: int
     item_candidate: str
     sku: str
+    stated_unit_price: float | None = None
+    stated_currency: str | None = None
 
 
 @dataclass(frozen=True)
 class PurchaseSelection:
     items: tuple[PurchaseSelectionItem, ...]
+
+
+@dataclass(frozen=True)
+class ResolvedPurchaseSelectionItem:
+    requested: PurchaseSelectionItem
+    product: Any
+    availability: int | None
+    unit_price: float | None
+    currency: str
+    availability_source: Literal["zoho", "catalog", "unconfirmed"]
+    source_caption: str | None = None
+
+
+@dataclass(frozen=True)
+class PurchaseSelectionResolution:
+    resolved: tuple[ResolvedPurchaseSelectionItem, ...]
+    unresolved: tuple[PurchaseSelectionItem, ...]
 
 
 @dataclass(frozen=True)
@@ -469,6 +500,19 @@ def _best_selection_sku(fragment: str) -> str | None:
     return candidates[-1].upper()
 
 
+def _extract_stated_price(fragment: str) -> tuple[float | None, str | None]:
+    matches = list(_PRICE_SIGNAL_RE.finditer(fragment))
+    if not matches:
+        return None, None
+    match = matches[-1]
+    amount = match.group("amount").replace(",", "")
+    try:
+        price = float(amount)
+    except ValueError:
+        return None, None
+    return price, match.group("currency").upper()
+
+
 def _extract_purchase_selection(text: str) -> PurchaseSelection | None:
     """Parse explicit customer-selected SKU/quantity lines without product discovery."""
     normalized = _normalize_text(text)
@@ -503,11 +547,14 @@ def _extract_purchase_selection(text: str) -> PurchaseSelection | None:
             item_candidate,
             flags=re.IGNORECASE,
         ).strip()
+        stated_unit_price, stated_currency = _extract_stated_price(fragment)
         items.append(
             PurchaseSelectionItem(
                 quantity=quantity,
                 item_candidate=item_candidate,
                 sku=sku,
+                stated_unit_price=stated_unit_price,
+                stated_currency=stated_currency,
             )
         )
 
@@ -656,6 +703,417 @@ async def _resolve_exact_quote_candidate_sku(
         return None
 
     return str(best_product.sku)
+
+
+def _extract_product_key_from_media_caption(
+    row: Any,
+    conversation_id: UUID,
+) -> str | None:
+    crm_message_id = getattr(row, "crm_message_id", None)
+    if not isinstance(crm_message_id, str) or not crm_message_id.strip():
+        return None
+
+    prefix = f"product:{conversation_id}:"
+    suffix = ":caption"
+    if not crm_message_id.startswith(prefix) or not crm_message_id.endswith(suffix):
+        return None
+
+    product_key = crm_message_id[len(prefix) : -len(suffix)]
+    return product_key.strip() or None
+
+
+async def _find_catalog_product_by_product_key(
+    db: AsyncSession,
+    product_key: str,
+) -> Any | None:
+    from src.models.product import Product
+
+    try:
+        product_id = UUID(product_key)
+    except ValueError:
+        product_id = None
+
+    if product_id is not None:
+        product = await db.get(Product, product_id)
+        if product is not None and getattr(product, "is_active", True) is not False:
+            return product
+
+    return await _find_catalog_product_by_sku(db, product_key)
+
+
+async def _load_product_media_caption_rows(
+    db: AsyncSession,
+    conversation_id: UUID,
+) -> list[Any]:
+    from src.models.outbound_message import OutboundMessageAudit
+
+    result = await db.execute(
+        select(OutboundMessageAudit)
+        .where(
+            OutboundMessageAudit.conversation_id == conversation_id,
+            OutboundMessageAudit.source == "product_media",
+            OutboundMessageAudit.message_type == "caption",
+            OutboundMessageAudit.status.in_(_ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES),
+        )
+        .order_by(OutboundMessageAudit.created_at.desc())
+        .limit(25)
+    )
+    return list(result.scalars().all())
+
+
+def _text_price_matches(expected: float | None, text: str) -> bool:
+    if expected is None:
+        return False
+    for match in _PRICE_SIGNAL_RE.finditer(text):
+        try:
+            candidate = float(match.group("amount").replace(",", ""))
+        except ValueError:
+            continue
+        if abs(candidate - expected) <= 0.01:
+            return True
+    return False
+
+
+def _purchase_caption_match_score(
+    item: PurchaseSelectionItem,
+    caption: str,
+) -> tuple[int, int, int] | None:
+    caption_norm = _normalize_text(caption)
+    item_norm = _normalize_text(item.item_candidate)
+    sku_norm = _normalize_text(item.sku)
+    caption_tokens = set(_tokenize_exact_match_text(caption))
+    item_tokens = set(_tokenize_exact_match_text(item.item_candidate))
+    sku_tokens = set(_tokenize_exact_match_text(item.sku))
+
+    has_sku_match = bool(
+        sku_norm
+        and (sku_norm in caption_norm or (sku_tokens and sku_tokens <= caption_tokens))
+    )
+    if not has_sku_match:
+        return None
+
+    overlap = item_tokens & caption_tokens
+    if len(overlap) < 3:
+        return None
+
+    exact_text_match = int(bool(item_norm and item_norm in caption_norm))
+    price_match = int(_text_price_matches(item.stated_unit_price, caption))
+    digit_overlap = sum(1 for token in overlap if any(char.isdigit() for char in token))
+    return (
+        100 * exact_text_match + 50 * price_match + 10 * digit_overlap,
+        len(overlap),
+        len(caption_norm),
+    )
+
+
+async def _resolve_purchase_selection_item_from_captions(
+    db: AsyncSession,
+    conversation_id: UUID,
+    item: PurchaseSelectionItem,
+    caption_rows: list[Any],
+) -> tuple[Any, str] | None:
+    best_row: Any | None = None
+    best_score: tuple[int, int, int] | None = None
+    second_best_score: tuple[int, int, int] | None = None
+
+    for row in caption_rows:
+        caption = getattr(row, "caption", None) or getattr(row, "content", None)
+        if not isinstance(caption, str) or not caption.strip():
+            continue
+        score = _purchase_caption_match_score(item, caption)
+        if score is None:
+            continue
+        if best_score is None or score > best_score:
+            second_best_score = best_score
+            best_score = score
+            best_row = row
+        elif second_best_score is None or score > second_best_score:
+            second_best_score = score
+
+    if best_row is None or best_score is None:
+        return None
+    if second_best_score is not None and best_score == second_best_score:
+        return None
+
+    product_key = _extract_product_key_from_media_caption(best_row, conversation_id)
+    if not product_key:
+        return None
+
+    product = await _find_catalog_product_by_product_key(db, product_key)
+    if product is None:
+        return None
+
+    caption = getattr(best_row, "caption", None) or getattr(best_row, "content", None)
+    return product, str(caption or "")
+
+
+async def _resolve_purchase_selection_item_from_catalog_text(
+    db: AsyncSession,
+    item: PurchaseSelectionItem,
+) -> Any | None:
+    from src.models.product import Product
+
+    candidate_tokens = _tokenize_exact_match_text(item.item_candidate)
+    sku_tokens = set(_tokenize_exact_match_text(item.sku))
+    if not candidate_tokens or not sku_tokens:
+        return None
+
+    anchor_terms = [token for token in candidate_tokens if token in sku_tokens]
+    if not anchor_terms:
+        anchor_terms = [
+            token
+            for token in candidate_tokens
+            if len(token) >= 3 and any(char.isdigit() for char in token)
+        ]
+    if not anchor_terms:
+        return None
+    anchor = max(
+        anchor_terms, key=lambda token: (any(ch.isdigit() for ch in token), len(token))
+    )
+
+    result = await db.execute(
+        select(Product).where(
+            Product.is_active.is_(True),
+            or_(
+                func.lower(Product.name_en).contains(anchor),
+                func.lower(func.coalesce(Product.description_en, "")).contains(anchor),
+                func.lower(Product.sku).contains(anchor),
+            ),
+        )
+    )
+    products = list(result.scalars().all())
+    if not products:
+        return None
+
+    candidate_token_set = set(candidate_tokens)
+    best_product: Any | None = None
+    best_score = (-1, -1, -1)
+    second_best_score = (-1, -1, -1)
+    for product in products:
+        product_text = _catalog_product_match_text(product)
+        score = _purchase_caption_match_score(item, product_text)
+        if score is None:
+            continue
+        product_tokens = set(_tokenize_exact_match_text(product_text))
+        overlap = candidate_token_set & product_tokens
+        score_with_overlap = (score[0], score[1], len(overlap))
+        if score_with_overlap > best_score:
+            second_best_score = best_score
+            best_score = score_with_overlap
+            best_product = product
+        elif score_with_overlap > second_best_score:
+            second_best_score = score_with_overlap
+
+    if best_product is None or best_score == second_best_score:
+        return None
+    return best_product
+
+
+async def _resolve_purchase_selection_inventory(
+    zoho_client: ZohoInventoryClient,
+    product: Any,
+) -> tuple[dict[str, Any] | None, Literal["zoho", "catalog", "unconfirmed"]]:
+    zoho_item: dict[str, Any] | None = None
+    zoho_item_id = getattr(product, "zoho_item_id", None)
+    if isinstance(zoho_item_id, str) and zoho_item_id.strip():
+        raw_item = await zoho_client.get_item(zoho_item_id)
+        zoho_item = _coerce_inventory_item(raw_item, require_item_id=False)
+
+    if zoho_item is None:
+        sku = getattr(product, "sku", None)
+        if isinstance(sku, str) and sku.strip():
+            raw_item = await zoho_client.get_stock(sku)
+            zoho_item = _coerce_inventory_item(raw_item, require_item_id=False)
+
+    if zoho_item is not None:
+        return zoho_item, "zoho"
+
+    catalog_stock = getattr(product, "stock", None)
+    if catalog_stock is None:
+        return None, "unconfirmed"
+    try:
+        catalog_stock_int = int(catalog_stock)
+    except (TypeError, ValueError):
+        return None, "unconfirmed"
+
+    return (
+        {
+            "sku": str(getattr(product, "sku", "") or "catalog"),
+            "stock_on_hand": catalog_stock_int,
+            "rate": _valid_catalog_price(product) or 0.0,
+            "currency_code": getattr(product, "currency", None) or "AED",
+        },
+        "catalog",
+    )
+
+
+async def _resolve_purchase_selection(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    selection: PurchaseSelection,
+    zoho_client: ZohoInventoryClient,
+    crm_context: dict[str, Any] | None,
+) -> PurchaseSelectionResolution:
+    caption_rows = await _load_product_media_caption_rows(db, conversation_id)
+    segment = crm_context.get("Segment", "Unknown") if crm_context else "Unknown"
+
+    resolved: list[ResolvedPurchaseSelectionItem] = []
+    unresolved: list[PurchaseSelectionItem] = []
+
+    for item in selection.items:
+        product = await _find_catalog_product_by_sku(db, item.sku)
+        source_caption: str | None = None
+        if product is None:
+            caption_match = await _resolve_purchase_selection_item_from_captions(
+                db,
+                conversation_id,
+                item,
+                caption_rows,
+            )
+            if caption_match is not None:
+                product, source_caption = caption_match
+        if product is None:
+            product = await _resolve_purchase_selection_item_from_catalog_text(db, item)
+        if product is None:
+            unresolved.append(item)
+            continue
+
+        (
+            inventory_item,
+            availability_source,
+        ) = await _resolve_purchase_selection_inventory(
+            zoho_client,
+            product,
+        )
+        price_decision = _commercial_price_decision(
+            catalog_product=product,
+            zoho_item=inventory_item or {},
+            segment=str(segment),
+        )
+        availability: int | None = None
+        if inventory_item is not None:
+            stock_on_hand = inventory_item.get("stock_on_hand")
+            if stock_on_hand is None:
+                availability = None
+            else:
+                try:
+                    availability = int(stock_on_hand)
+                except (TypeError, ValueError):
+                    availability = None
+
+        resolved.append(
+            ResolvedPurchaseSelectionItem(
+                requested=item,
+                product=product,
+                availability=availability,
+                unit_price=(
+                    price_decision.unit_price
+                    if price_decision.source != "unavailable"
+                    else None
+                ),
+                currency=price_decision.currency,
+                availability_source=availability_source,
+                source_caption=source_caption,
+            )
+        )
+
+    return PurchaseSelectionResolution(
+        resolved=tuple(resolved),
+        unresolved=tuple(unresolved),
+    )
+
+
+def _format_commercial_amount(amount: float, currency: str) -> str:
+    return f"{amount:,.2f} {currency}"
+
+
+def _product_display_name(product: Any) -> str:
+    name = getattr(product, "name_en", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    sku = getattr(product, "sku", None)
+    return str(sku or "Selected item")
+
+
+def _build_purchase_selection_confirmation_text(
+    resolution: PurchaseSelectionResolution,
+) -> str:
+    lines: list[str] = []
+    total = 0.0
+    has_total = bool(resolution.resolved)
+    has_limited_stock = False
+
+    if resolution.resolved:
+        lines.append("Great, I can confirm the selected items from our catalog:")
+        lines.append("")
+
+    for index, item in enumerate(resolution.resolved, start=1):
+        product_name = _product_display_name(item.product)
+        quantity = item.requested.quantity
+        lines.append(f"{index}. {product_name}")
+        lines.append(f"   Quantity: {quantity}")
+
+        if item.availability is None:
+            has_total = False
+            lines.append("   Availability: needs manager verification")
+        else:
+            availability_label = (
+                "Zoho-confirmed" if item.availability_source == "zoho" else "Catalog"
+            )
+            lines.append(
+                f"   Availability: {item.availability} available ({availability_label})"
+            )
+            if item.availability < quantity:
+                has_limited_stock = True
+
+        if item.unit_price is None:
+            has_total = False
+            lines.append("   Unit price: needs manager verification")
+        else:
+            line_total = item.unit_price * quantity
+            total += line_total
+            lines.append(
+                f"   Unit price: {_format_commercial_amount(item.unit_price, item.currency)}"
+            )
+            lines.append(
+                f"   Line total: {_format_commercial_amount(line_total, item.currency)}"
+            )
+        lines.append("")
+
+    if has_total:
+        currency = resolution.resolved[0].currency
+        lines.append(f"Total: {_format_commercial_amount(total, currency)}")
+        lines.append("")
+
+    if resolution.unresolved:
+        lines.append("I also captured these selected items for manager verification:")
+        for unresolved_item in resolution.unresolved:
+            lines.append(
+                f"- {unresolved_item.quantity} x "
+                f"{unresolved_item.item_candidate or unresolved_item.sku}"
+            )
+        lines.append("")
+
+    if has_limited_stock:
+        lines.append(
+            "Some requested quantities are above the confirmed available stock. "
+            "Please confirm whether to adjust the quantities or wait for manager "
+            "restock confirmation."
+        )
+    elif resolution.resolved:
+        lines.append(
+            "Would you like me to prepare a formal quotation for these selected "
+            "items? If yes, please share your full name, company name, and phone "
+            "number."
+        )
+    else:
+        lines.append(
+            "I have captured the selected items and will need manager verification "
+            "before confirming price and availability."
+        )
+
+    return "\n".join(lines).strip()
 
 
 def _catalog_mismatch_customer_message() -> str:
@@ -2579,11 +3037,18 @@ async def process_message(
                 tool_mode="selection_confirmation",
                 runtime_directives=_selection_runtime_directives(purchase_selection),
             )
-            result = await _run_agent(selection_deps)
+            resolution = await _resolve_purchase_selection(
+                selection_deps.db,
+                conversation_id=UUID(str(conv.id)),
+                selection=purchase_selection,
+                zoho_client=zoho_client,
+                crm_context=crm_context,
+            )
+            confirmation_text = _build_purchase_selection_confirmation_text(resolution)
             await _clear_verified_policy_repair_state()
-            return _build_llm_response(
-                result,
-                db_model_main,
+            return _build_static_response(
+                confirmation_text,
+                f"{db_model_main}|selection-confirmation",
                 response_deps=selection_deps,
                 allow_product_media=False,
             )

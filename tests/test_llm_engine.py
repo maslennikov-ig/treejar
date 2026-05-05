@@ -3077,7 +3077,7 @@ async def test_prepare_tools_selection_confirmation_removes_product_search(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_purchase_selection_uses_no_media_confirmation_mode(
+async def test_process_message_purchase_selection_uses_static_no_media_confirmation(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -3100,19 +3100,6 @@ async def test_process_message_purchase_selection_uses_no_media_confirmation_mod
     ]
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    leaked_payload = ProductMediaPayload(
-        url="https://example.com/extra-table.jpg",
-        caption="Extra table option",
-        product_key="extra-table",
-        zoho_item_id=None,
-    )
-
-    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
-        deps = kwargs["deps"]
-        deps.pending_product_media.append(leaked_payload)
-        return _FakeAgentResult("Both selected tables are available.")
-
-    mock_run.side_effect = run_side_effect
 
     response = await process_message(
         conversation_id=conv.id,
@@ -3124,12 +3111,147 @@ async def test_process_message_purchase_selection_uses_no_media_confirmation_mod
         messaging_client=messaging,
     )
 
-    assert response.text == "Both selected tables are available."
+    assert "manager verification" in response.text
+    assert "similar" not in response.text.lower()
     assert response.deferred_product_media == ()
-    assert mock_run.await_count == 1
-    call = mock_run.await_args_list[0].kwargs
-    assert call["deps"].tool_mode == "selection_confirmation"
-    assert "do not search" in " ".join(call["deps"].runtime_directives)
+    assert response.model == "mock-model|selection-confirmation"
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_confirms_selection_from_prior_product_media_captions(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.language = "en"
+    text = (
+        "I would like buy 10 Operative table, IMAGO-S, CP-2.1S, "
+        "1200х600х755, White/Aluminum — 179.00 AED and 5 Operative table, "
+        "IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED"
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Hi! I need 15 tables")]),
+        ModelResponse(parts=[TextPart(content="Here are your table options.")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    cp_product_id = uuid.uuid4()
+    sp_product_id = uuid.uuid4()
+    cp_caption = (
+        "Operative table, IMAGO-S, CP-2.1S, 1200х600х755, White/Aluminum — 179.00 AED"
+    )
+    sp_caption = (
+        "Operative table, IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED"
+    )
+    caption_rows = [
+        SimpleNamespace(
+            caption=cp_caption,
+            content=cp_caption,
+            crm_message_id=f"product:{conv.id}:{cp_product_id}:caption",
+        ),
+        SimpleNamespace(
+            caption=(
+                "Operative table, IMAGO-S, SP-2.1S, 1200х600х755, "
+                "Maple/Aluminum — 211.00 AED"
+            ),
+            content=(
+                "Operative table, IMAGO-S, SP-2.1S, 1200х600х755, "
+                "Maple/Aluminum — 211.00 AED"
+            ),
+            crm_message_id=f"product:{conv.id}:{uuid.uuid4()}:caption",
+        ),
+        SimpleNamespace(
+            caption=sp_caption,
+            content=sp_caption,
+            crm_message_id=f"product:{conv.id}:{sp_product_id}:caption",
+        ),
+    ]
+    cp_product = SimpleNamespace(
+        id=cp_product_id,
+        sku="00-07024022",
+        zoho_item_id="378603000001660637",
+        name_en="Operative table, IMAGO-S, CP-2.1S, 1200х600х755, White/Aluminum",
+        price=179.0,
+        currency="AED",
+        stock=21,
+        attributes={},
+    )
+    sp_product = SimpleNamespace(
+        id=sp_product_id,
+        sku="00-07023896",
+        zoho_item_id="378603000001587745",
+        name_en="Operative table, IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum",
+        price=246.0,
+        currency="AED",
+        stock=5,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == cp_product_id:
+            return cp_product
+        if model is Product and key == sp_product_id:
+            return sp_product
+        return None
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    execute_result.scalars.return_value.all.return_value = caption_rows
+    db.get.side_effect = get_side_effect
+    db.execute.return_value = execute_result
+    zoho.get_item.side_effect = [
+        {
+            "sku": "00-07024022",
+            "stock_on_hand": 21,
+            "rate": 179.0,
+            "currency_code": "AED",
+        },
+        {
+            "sku": "00-07023896",
+            "stock_on_hand": 5,
+            "rate": 246.0,
+            "currency_code": "AED",
+        },
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "CP-2.1S" in response.text
+    assert "10" in response.text
+    assert "1,790.00 AED" in response.text
+    assert "SP-2.1SD" in response.text
+    assert "5" in response.text
+    assert "1,230.00 AED" in response.text
+    assert "3,020.00 AED" in response.text
+    assert "cannot find" not in response.text.lower()
+    assert "could not locate" not in response.text.lower()
+    assert "similar" not in response.text.lower()
+    assert response.deferred_product_media == ()
+    mock_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio
