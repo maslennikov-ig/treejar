@@ -278,6 +278,11 @@ _QUOTE_PROPOSAL_PHRASES = (
     "proforma invoice",
     "pro forma invoice",
     "invoice",
+    "коммерческое предложение",
+    "счет",
+    "счёт",
+    "проформа",
+    "инвойс",
 )
 _PROPOSAL_CONTEXT_TERMS = (
     "business",
@@ -607,6 +612,8 @@ def is_quote_or_proposal_request(query: str) -> bool:
     if any(phrase in normalized for phrase in _QUOTE_PROPOSAL_PHRASES):
         return True
     if "quotation" in normalized or "quote" in normalized:
+        return True
+    if re.search(r"(?<![а-яa-z0-9])кп(?![а-яa-z0-9])", normalized):
         return True
     return "proposal" in normalized and any(
         term in normalized for term in _PROPOSAL_CONTEXT_TERMS

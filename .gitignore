@@ -58,6 +58,7 @@ docs/estimate.md
 # Generated artifacts (PDFs regenerated from .md sources)
 docs/*.pdf
 docs/**/*.pdf
+!docs/client/telegram-reset-instruction-ru.pdf
 *.csv
 
 # Claude Code local config

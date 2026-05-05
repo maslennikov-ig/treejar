@@ -142,6 +142,8 @@ The dashboard is no longer metrics-only. It now includes the operator controls t
 - Use **Dashboard → Operator Center → Telegram Notifications** to verify whether Telegram is configured.
 - The panel shows masked token/chat values and exposes **Send test message**.
 - This is the safe operator entrypoint for notification health; the raw internal notification API still exists behind `API_KEY`.
+- For resetting a stuck WhatsApp dialogue via Telegram, use the Russian quick guide:
+  [telegram-reset-instruction-ru.pdf](client/telegram-reset-instruction-ru.pdf).
 
 ### CRM Attribution And Returning Customers
 - Inbound source/UTM data is stored locally in conversation metadata under `source_attribution`.

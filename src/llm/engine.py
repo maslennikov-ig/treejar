@@ -34,7 +34,7 @@ from src.llm.context import build_message_history
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.order_status import format_order_status
-from src.llm.pii import mask_pii, unmask_pii
+from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.safety import (
     PATH_CORE_CHAT,
@@ -70,6 +70,8 @@ logger = logging.getLogger(__name__)
 __all__ = ["ProductMediaPayload", "rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
+PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
+QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SELECTION_CONFIRMATION_ALLOWED_TOOLS = frozenset(
@@ -128,6 +130,12 @@ _QUOTE_REQUEST_TERMS = (
     "proforma invoice",
     "pro forma invoice",
     "invoice",
+    "кп",
+    "коммерческое предложение",
+    "счет",
+    "счёт",
+    "проформа",
+    "инвойс",
 )
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
 _EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
@@ -1114,6 +1122,275 @@ def _build_purchase_selection_confirmation_text(
         )
 
     return "\n".join(lines).strip()
+
+
+def _pending_quote_item_from_resolved(
+    item: ResolvedPurchaseSelectionItem,
+) -> dict[str, Any]:
+    product = item.product
+    product_id = getattr(product, "id", None)
+    return {
+        "sku": str(getattr(product, "sku", "") or item.requested.sku).strip(),
+        "quantity": item.requested.quantity,
+        "product_id": str(product_id) if product_id else None,
+        "display_name": _product_display_name(product),
+        "unit_price": item.unit_price,
+        "currency": item.currency,
+    }
+
+
+async def _store_pending_quote_selection(
+    db: AsyncSession,
+    conversation: Conversation,
+    resolution: PurchaseSelectionResolution,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    if not resolution.resolved and not resolution.unresolved:
+        metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
+        conversation.metadata_ = metadata
+        return
+
+    metadata[PENDING_QUOTE_SELECTION_KEY] = {
+        "source": "selection_confirmation",
+        "items": [
+            item
+            for item in (
+                _pending_quote_item_from_resolved(resolved_item)
+                for resolved_item in resolution.resolved
+            )
+            if item["sku"] and item["quantity"] > 0
+        ],
+        "unresolved_items": [
+            {
+                "sku": item.sku,
+                "quantity": item.quantity,
+                "item_candidate": item.item_candidate,
+            }
+            for item in resolution.unresolved
+        ],
+    }
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush pending quote selection for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+def _quote_customer_details_from_metadata(
+    conversation: Conversation,
+) -> dict[str, str]:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    raw_details = metadata.get(QUOTE_CUSTOMER_DETAILS_KEY)
+    if not isinstance(raw_details, Mapping):
+        return {}
+    details: dict[str, str] = {}
+    for key in ("name", "company", "email", "phone"):
+        value = raw_details.get(key)
+        if isinstance(value, str) and value.strip():
+            details[key] = value.strip()
+    return details
+
+
+def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
+    label_pattern = "|".join(re.escape(label) for label in labels)
+    pattern = re.compile(
+        rf"(?im)^\s*(?:{label_pattern})\s*[:：=-]\s*(?P<value>.+?)\s*$",
+    )
+    match = pattern.search(text)
+    if not match:
+        return ""
+    return match.group("value").strip(" \t,;")
+
+
+def _extract_quote_customer_details(text: str) -> dict[str, str]:
+    details: dict[str, str] = {}
+
+    email_match = EMAIL_PATTERN.search(text)
+    if email_match:
+        details["email"] = email_match.group(0).strip()
+
+    phone_match = PHONE_PATTERN.search(text)
+    if phone_match:
+        details["phone"] = phone_match.group(0).strip()
+
+    name = _labeled_detail_value(
+        text,
+        (
+            "full name",
+            "name",
+            "customer name",
+            "имя",
+            "фио",
+        ),
+    )
+    if name:
+        details["name"] = name
+
+    company = _labeled_detail_value(
+        text,
+        (
+            "company name",
+            "company",
+            "organization",
+            "organisation",
+            "компания",
+            "название компании",
+            "организация",
+        ),
+    )
+    if company:
+        details["company"] = company
+
+    return details
+
+
+async def _store_quote_customer_details(
+    db: AsyncSession,
+    conversation: Conversation,
+    text: str,
+) -> dict[str, str]:
+    extracted = _extract_quote_customer_details(text)
+    if not extracted:
+        return _quote_customer_details_from_metadata(conversation)
+
+    metadata = dict(conversation.metadata_ or {})
+    existing = _quote_customer_details_from_metadata(conversation)
+    details = {**existing, **extracted}
+    metadata[QUOTE_CUSTOMER_DETAILS_KEY] = details
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush quote customer details for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+    return details
+
+
+def _pending_quote_selection_from_metadata(
+    conversation: Conversation,
+) -> Mapping[str, Any] | None:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    selection = metadata.get(PENDING_QUOTE_SELECTION_KEY)
+    return selection if isinstance(selection, Mapping) else None
+
+
+def _pending_quote_items_from_metadata(
+    selection: Mapping[str, Any],
+) -> tuple[QuotationItem, ...]:
+    raw_items = selection.get("items")
+    if not isinstance(raw_items, list):
+        return ()
+
+    items: list[QuotationItem] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            continue
+        sku = raw_item.get("sku")
+        quantity = raw_item.get("quantity")
+        if not isinstance(sku, str) or not sku.strip():
+            continue
+        if quantity is None:
+            continue
+        try:
+            quantity_int = int(quantity)
+        except (TypeError, ValueError):
+            continue
+        if quantity_int <= 0:
+            continue
+        items.append(QuotationItem(sku=sku.strip(), quantity=quantity_int))
+
+    return tuple(items)
+
+
+def _pending_quote_has_unresolved_items(selection: Mapping[str, Any]) -> bool:
+    raw_items = selection.get("unresolved_items")
+    return isinstance(raw_items, list) and len(raw_items) > 0
+
+
+def _has_affirmative_quote_resume_intent(text: str) -> bool:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+    return any(
+        phrase in normalized
+        for phrase in (
+            "yes",
+            "ok",
+            "okay",
+            "proceed",
+            "go ahead",
+            "please send",
+            "send it",
+            "send quotation",
+            "prepare quotation",
+            "prepare the quotation",
+            "да",
+            "ок",
+            "хорошо",
+            "отправьте",
+            "пришлите",
+            "вышлите",
+            "подготовьте",
+            "сделайте",
+        )
+    )
+
+
+def _should_resume_pending_quote_selection(
+    *,
+    combined_text: str,
+    masked_text: str,
+    customer_details: Mapping[str, str],
+) -> bool:
+    return (
+        bool(customer_details)
+        or is_quote_or_proposal_request(combined_text)
+        or is_quote_or_proposal_request(masked_text)
+        or _has_affirmative_quote_resume_intent(combined_text)
+    )
+
+
+def _pending_quote_missing_items_message(language: str) -> str:
+    normalized_language = language.casefold()
+    if normalized_language.startswith("ru") or "russian" in normalized_language:
+        return (
+            "Я получил ваши данные, но для КП нужно уточнить точные позиции и "
+            "количество по каждой позиции."
+        )
+    return (
+        "I have your details, but I still need the exact item(s) and quantity "
+        "for each item before I can prepare the quotation."
+    )
+
+
+async def _clear_pending_quote_selection(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    if PENDING_QUOTE_SELECTION_KEY not in metadata:
+        return
+    metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to clear pending quote selection for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
 
 
 def _catalog_mismatch_customer_message() -> str:
@@ -2334,6 +2611,13 @@ async def create_quotation(
             or customer_company
         )
 
+    quote_customer_details = _quote_customer_details_from_metadata(
+        ctx.deps.conversation
+    )
+    customer_name = quote_customer_details.get("name") or customer_name
+    customer_email = quote_customer_details.get("email") or customer_email
+    customer_company = quote_customer_details.get("company") or customer_company
+
     customer_id = await resolve_inventory_customer_id(
         phone=ctx.deps.conversation.phone,
         customer_name=customer_name,
@@ -3044,6 +3328,7 @@ async def process_message(
                 zoho_client=zoho_client,
                 crm_context=crm_context,
             )
+            await _store_pending_quote_selection(db, conv, resolution)
             confirmation_text = _build_purchase_selection_confirmation_text(resolution)
             await _clear_verified_policy_repair_state()
             return _build_static_response(
@@ -3052,6 +3337,62 @@ async def process_message(
                 response_deps=selection_deps,
                 allow_product_media=False,
             )
+
+        pending_quote_selection = _pending_quote_selection_from_metadata(conv)
+        if pending_quote_selection is not None:
+            current_quote_customer_details = _extract_quote_customer_details(
+                combined_text
+            )
+            await _store_quote_customer_details(
+                db,
+                conv,
+                combined_text,
+            )
+            if _should_resume_pending_quote_selection(
+                combined_text=combined_text,
+                masked_text=masked_text,
+                customer_details=current_quote_customer_details,
+            ):
+                quote_items = _pending_quote_items_from_metadata(
+                    pending_quote_selection
+                )
+                if not quote_items or _pending_quote_has_unresolved_items(
+                    pending_quote_selection
+                ):
+                    await _clear_verified_policy_repair_state()
+                    return _build_static_response(
+                        _pending_quote_missing_items_message(str(conv.language)),
+                        f"{db_model_main}|quote-resume-missing-items",
+                    )
+
+                from pydantic_ai.usage import RunUsage
+
+                quote_resume_deps = replace(
+                    deps,
+                    tool_mode="exact_quote",
+                    runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
+                )
+                quote_resume_ctx = RunContext(
+                    deps=quote_resume_deps,
+                    retry=0,
+                    messages=[],
+                    prompt=masked_text,
+                    model=dynamic_model,
+                    usage=RunUsage(),
+                )
+                quote_text = await create_quotation(
+                    quote_resume_ctx,
+                    list(quote_items),
+                )
+                if quote_resume_deps.quotation_created:
+                    await _clear_pending_quote_selection(db, conv)
+                await _clear_verified_policy_repair_state()
+                return _build_static_response(
+                    quote_text,
+                    f"{db_model_main}|quote-resume",
+                    response_deps=quote_resume_deps,
+                    allow_product_media=False,
+                )
 
         if (
             not policy_decision.is_order_status
