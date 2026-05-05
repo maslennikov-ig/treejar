@@ -15,7 +15,9 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import ToolDefinition
 
+from src.llm import engine as engine_module
 from src.llm.engine import (
     ProductMediaPayload,
     QuotationItem,
@@ -2985,6 +2987,149 @@ def test_extract_exact_quote_candidate_rejects_payment_terms_in_business_proposa
     )
 
     assert candidate is None
+
+
+def test_extract_purchase_selection_accepts_multiple_selected_items() -> None:
+    selection = engine_module._extract_purchase_selection(
+        "I would like buy 10 Operative table, IMAGO-S, CP-2.1S, "
+        "1200х600х755, White/Aluminum — 179.00 AED and 5 Operative table, "
+        "IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED"
+    )
+
+    assert selection is not None
+    assert [(item.quantity, item.sku) for item in selection.items] == [
+        (10, "CP-2.1S"),
+        (5, "SP-2.1SD"),
+    ]
+
+
+def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
+    selection = engine_module._extract_purchase_selection(
+        "I want to order 1 00-07024023."
+    )
+
+    assert selection is not None
+    assert [(item.quantity, item.sku) for item in selection.items] == [
+        (1, "00-07024023")
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hi! I need 15 tables",
+        "show me table options",
+        "Can you recommend tables for 15 people?",
+        "What options do you have for operative tables?",
+    ],
+)
+def test_extract_purchase_selection_rejects_discovery_requests(text: str) -> None:
+    assert engine_module._extract_purchase_selection(text) is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_tools_selection_confirmation_removes_product_search(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        tool_mode="selection_confirmation",
+    )
+    from pydantic_ai.usage import RunUsage
+
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+    tool_defs = [
+        ToolDefinition(name="search_products"),
+        ToolDefinition(name="get_stock"),
+        ToolDefinition(name="create_quotation"),
+        ToolDefinition(name="escalate_to_manager"),
+        ToolDefinition(name="update_language"),
+    ]
+
+    filtered = await engine_module._prepare_sales_tools(ctx, tool_defs)
+
+    assert [tool.name for tool in filtered] == [
+        "get_stock",
+        "escalate_to_manager",
+        "update_language",
+    ]
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_purchase_selection_uses_no_media_confirmation_mode(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "I would like buy 10 Operative table, IMAGO-S, CP-2.1S, "
+        "1200х600х755, White/Aluminum — 179.00 AED and 5 Operative table, "
+        "IMAGO-S, SP-2.1SD, 1200х600х755, Maple/Aluminum — 246.00 AED"
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Hi! I need 15 tables")]),
+        ModelResponse(parts=[TextPart(content="Here are your table options.")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    leaked_payload = ProductMediaPayload(
+        url="https://example.com/extra-table.jpg",
+        caption="Extra table option",
+        product_key="extra-table",
+        zoho_item_id=None,
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.pending_product_media.append(leaked_payload)
+        return _FakeAgentResult("Both selected tables are available.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Both selected tables are available."
+    assert response.deferred_product_media == ()
+    assert mock_run.await_count == 1
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "selection_confirmation"
+    assert "do not search" in " ".join(call["deps"].runtime_directives)
 
 
 @pytest.mark.asyncio

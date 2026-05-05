@@ -72,6 +72,9 @@ MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
+SELECTION_CONFIRMATION_ALLOWED_TOOLS = frozenset(
+    {"get_stock", "escalate_to_manager", "update_language"}
+)
 EXACT_QUOTE_ALLOWED_TOOLS = frozenset(
     {
         "search_products",
@@ -104,6 +107,15 @@ EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "do not ask for company details first",
     "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price",
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
+)
+SELECTION_CONFIRMATION_DIRECTIVES = (
+    "the customer has selected specific product(s) and quantities",
+    "do not search or recommend alternatives",
+    "do not call search_products",
+    "confirm only the selected items from the customer's message",
+    "use get_stock for each SKU before stating current availability",
+    "do not create a quotation unless the customer explicitly asked for a quotation, proforma invoice, or commercial offer",
+    "ask for the missing details needed for a formal quotation or the next concrete step",
 )
 _QUOTE_REQUEST_TERMS = (
     "quote",
@@ -153,6 +165,27 @@ _QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
 _SKU_SIGNAL_RE = re.compile(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b")
 _QUANTITY_ITEM_SIGNAL_RE = re.compile(
     r"\b(?P<quantity>\d{1,4})\b\s+(?P<item>[^?.!,;\n]+)",
+    re.IGNORECASE,
+)
+_PURCHASE_SELECTION_TRIGGER_RE = re.compile(
+    r"\b(?:buy|purchase|order|proceed|take|confirm)\b",
+    re.IGNORECASE,
+)
+_PURCHASE_SELECTION_BLOCKERS = (
+    "what options",
+    "show me",
+    "recommend",
+    "recommendation",
+    "ideas",
+    "similar",
+    "catalog",
+    "order status",
+    "track order",
+    "tracking",
+)
+_SELECTION_QUANTITY_START_RE = re.compile(r"(?<![\w.-])(?P<quantity>\d{1,4})(?=\s+)")
+_SELECTION_SKU_RE = re.compile(
+    r"\b[a-z0-9]+(?:[-.][a-z0-9]+)+\b",
     re.IGNORECASE,
 )
 
@@ -263,9 +296,13 @@ class SalesDeps:
     pending_product_media: list[ProductMediaPayload] = field(default_factory=list)
     product_search_calls: int = 0
     product_results_seen: bool = False
-    tool_mode: Literal["full", "order_handoff", "service_policy", "exact_quote"] = (
-        "full"
-    )
+    tool_mode: Literal[
+        "full",
+        "order_handoff",
+        "service_policy",
+        "exact_quote",
+        "selection_confirmation",
+    ] = "full"
     runtime_directives: tuple[str, ...] = ()
     inventory_confirmed: bool = False
     quotation_created: bool = False
@@ -308,6 +345,18 @@ class ExactQuoteCandidate:
     quantity: int
     item_candidate: str
     sku: str | None
+
+
+@dataclass(frozen=True)
+class PurchaseSelectionItem:
+    quantity: int
+    item_candidate: str
+    sku: str
+
+
+@dataclass(frozen=True)
+class PurchaseSelection:
+    items: tuple[PurchaseSelectionItem, ...]
 
 
 @dataclass(frozen=True)
@@ -404,6 +453,78 @@ def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
 def is_exact_quote_request(text: str) -> bool:
     """Return True for narrow exact quotation requests that should not stay consultative."""
     return extract_exact_quote_candidate(text) is not None
+
+
+def _best_selection_sku(fragment: str) -> str | None:
+    candidates = [
+        match.group(0)
+        for match in _SELECTION_SKU_RE.finditer(fragment)
+        if any(char.isalpha() for char in match.group(0)) or "-" in match.group(0)
+    ]
+    if not candidates:
+        return None
+    for candidate in candidates:
+        if any(char.isdigit() for char in candidate):
+            return candidate.upper()
+    return candidates[-1].upper()
+
+
+def _extract_purchase_selection(text: str) -> PurchaseSelection | None:
+    """Parse explicit customer-selected SKU/quantity lines without product discovery."""
+    normalized = _normalize_text(text)
+    if not normalized:
+        return None
+    if not _PURCHASE_SELECTION_TRIGGER_RE.search(text):
+        return None
+    if any(blocker in normalized for blocker in _PURCHASE_SELECTION_BLOCKERS):
+        return None
+
+    quantity_matches = list(_SELECTION_QUANTITY_START_RE.finditer(text))
+    if not quantity_matches:
+        return None
+
+    items: list[PurchaseSelectionItem] = []
+    for index, match in enumerate(quantity_matches):
+        start = match.start()
+        end = (
+            quantity_matches[index + 1].start()
+            if index + 1 < len(quantity_matches)
+            else len(text)
+        )
+        fragment = text[start:end].strip(" ,.;:-")
+        sku = _best_selection_sku(fragment)
+        if not sku:
+            continue
+        quantity = int(match.group("quantity"))
+        item_candidate = fragment[len(match.group("quantity")) :].strip(" ,.;:-")
+        item_candidate = re.sub(
+            r"\s+(?:and|or)\s*$",
+            "",
+            item_candidate,
+            flags=re.IGNORECASE,
+        ).strip()
+        items.append(
+            PurchaseSelectionItem(
+                quantity=quantity,
+                item_candidate=item_candidate,
+                sku=sku,
+            )
+        )
+
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
+def _selection_runtime_directives(
+    selection: PurchaseSelection,
+) -> tuple[str, ...]:
+    selected_items = ", ".join(
+        f"{item.quantity} x {item.sku}" for item in selection.items
+    )
+    return SELECTION_CONFIRMATION_DIRECTIVES + (
+        f"selected items from customer message: {selected_items}",
+    )
 
 
 def _catalog_product_match_text(product: Any) -> str:
@@ -1115,6 +1236,12 @@ async def _prepare_sales_tools(
             tool_def
             for tool_def in tool_defs
             if tool_def.name in SERVICE_POLICY_ALLOWED_TOOLS
+        ]
+    if ctx.deps.tool_mode == "selection_confirmation":
+        return [
+            tool_def
+            for tool_def in tool_defs
+            if tool_def.name in SELECTION_CONFIRMATION_ALLOWED_TOOLS
         ]
     if ctx.deps.tool_mode == "exact_quote":
         return [
@@ -2177,7 +2304,31 @@ async def process_message(
             customer_name=conv.customer_name,
         )
 
-    def _build_llm_response(result: Any, model_name: str) -> LLMResponse:
+    def _deferred_product_media_for_response(
+        response_deps: SalesDeps,
+        *,
+        allow_product_media: bool,
+    ) -> tuple[ProductMediaPayload, ...]:
+        if allow_product_media:
+            return tuple(response_deps.pending_product_media)
+        if response_deps.pending_product_media:
+            logger.warning(
+                "Suppressed %d deferred product media item(s) for conversation %s "
+                "in %s mode",
+                len(response_deps.pending_product_media),
+                response_deps.conversation.id,
+                response_deps.tool_mode,
+            )
+        return ()
+
+    def _build_llm_response(
+        result: Any,
+        model_name: str,
+        *,
+        response_deps: SalesDeps | None = None,
+        allow_product_media: bool = True,
+    ) -> LLMResponse:
+        response_deps = response_deps or deps
         final_text = unmask_pii(result.output, pii_map)
         final_text = _apply_first_turn_opening_guard(final_text)
         usage = result.usage()
@@ -2187,10 +2338,20 @@ async def process_message(
             tokens_out=usage.output_tokens if usage else None,
             cost=None,
             model=model_name,
-            deferred_product_media=tuple(deps.pending_product_media),
+            deferred_product_media=_deferred_product_media_for_response(
+                response_deps,
+                allow_product_media=allow_product_media,
+            ),
         )
 
-    def _build_static_response(text: str, model_name: str) -> LLMResponse:
+    def _build_static_response(
+        text: str,
+        model_name: str,
+        *,
+        response_deps: SalesDeps | None = None,
+        allow_product_media: bool = True,
+    ) -> LLMResponse:
+        response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
         final_text = _apply_first_turn_opening_guard(final_text)
         return LLMResponse(
@@ -2199,7 +2360,10 @@ async def process_message(
             tokens_out=0,
             cost=None,
             model=model_name,
-            deferred_product_media=tuple(deps.pending_product_media),
+            deferred_product_media=_deferred_product_media_for_response(
+                response_deps,
+                allow_product_media=allow_product_media,
+            ),
         )
 
     async def _build_policy_handoff_response(
@@ -2404,6 +2568,24 @@ async def process_message(
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 fail_closed_text, f"{db_model_main}|exact-quote-fallback"
+            )
+
+        purchase_selection = _extract_purchase_selection(masked_text)
+        if purchase_selection is None:
+            purchase_selection = _extract_purchase_selection(combined_text)
+        if purchase_selection is not None:
+            selection_deps = replace(
+                deps,
+                tool_mode="selection_confirmation",
+                runtime_directives=_selection_runtime_directives(purchase_selection),
+            )
+            result = await _run_agent(selection_deps)
+            await _clear_verified_policy_repair_state()
+            return _build_llm_response(
+                result,
+                db_model_main,
+                response_deps=selection_deps,
+                allow_product_media=False,
             )
 
         if (
