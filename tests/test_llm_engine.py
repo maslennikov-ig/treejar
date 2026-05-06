@@ -2594,6 +2594,7 @@ async def test_tools_create_quotation_prefers_customer_details_metadata(
             "company": "Test Clinic LLC",
             "email": "lilia@example.com",
             "phone": "+971501234567",
+            "address": "Dubai, UAE",
         }
     }
     deps = SalesDeps(
@@ -2658,7 +2659,8 @@ async def test_tools_create_quotation_prefers_customer_details_metadata(
         "name": "Lilia Kustova",
         "company": "Test Clinic LLC",
         "email": "lilia@example.com",
-        "address": "UAE",
+        "phone": "+971501234567",
+        "address": "Dubai, UAE",
     }
     mock_notify_mismatch.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
@@ -3591,6 +3593,76 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_stores_customer_details_before_quotation(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "Please issue a quotation for 1 CHAIR-01.\n"
+        "Full name: Lilia Kustova\n"
+        "Company: Test Clinic LLC\n"
+        "Email: lilia@example.com\n"
+        "Phone: +971501234567\n"
+        "Delivery address: Dubai, UAE"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your company email."),
+    ]
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        assert ctx.deps.conversation.metadata_["quote_customer_details"] == {
+            "name": "Lilia Kustova",
+            "company": "Test Clinic LLC",
+            "email": "lilia@example.com",
+            "phone": "+971501234567",
+            "address": "Dubai, UAE",
+        }
+        return "Quotation SA-DETAILS has been prepared and sent to you."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    _assert_first_turn_opening(
+        response.text,
+        "Quotation SA-DETAILS has been prepared and sent to you.",
+    )
+    mock_create_quotation.assert_awaited_once()
+    assert conv.metadata_["quote_customer_details"] == {
+        "name": "Lilia Kustova",
+        "company": "Test Clinic LLC",
+        "email": "lilia@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai, UAE",
+    }
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_exact_quote_uses_original_text_when_pii_masks_numeric_sku(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
@@ -3635,6 +3707,7 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="00-07024023", quantity=1)]
+    assert not (conv.metadata_ or {}).get("quote_customer_details")
 
 
 @pytest.mark.asyncio

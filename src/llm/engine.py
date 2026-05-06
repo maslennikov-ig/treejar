@@ -1112,8 +1112,10 @@ def _build_purchase_selection_confirmation_text(
     elif resolution.resolved:
         lines.append(
             "Would you like me to prepare a formal quotation for these selected "
-            "items? If yes, please share your full name, company name, and phone "
-            "number."
+            "items? I can use this WhatsApp number for the draft. To make the PDF "
+            "complete, please share any details you want shown on it: full name, "
+            "company name, email, delivery address, and a different phone number "
+            "if needed."
         )
     else:
         lines.append(
@@ -1190,7 +1192,7 @@ def _quote_customer_details_from_metadata(
     if not isinstance(raw_details, Mapping):
         return {}
     details: dict[str, str] = {}
-    for key in ("name", "company", "email", "phone"):
+    for key in ("name", "company", "email", "phone", "address"):
         value = raw_details.get(key)
         if isinstance(value, str) and value.strip():
             details[key] = value.strip()
@@ -1208,6 +1210,19 @@ def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
     return match.group("value").strip(" \t,;")
 
 
+def _is_customer_phone_detail(text: str, match: re.Match[str]) -> bool:
+    raw_phone = match.group(0).strip()
+    if raw_phone.startswith("+"):
+        return True
+    prefix = text[max(0, match.start() - 40) : match.start()].casefold()
+    return bool(
+        re.search(
+            r"(?:phone|mobile|tel|whatsapp|номер|телефон|моб\.?)\s*[:：=-]?\s*$",
+            prefix,
+        )
+    )
+
+
 def _extract_quote_customer_details(text: str) -> dict[str, str]:
     details: dict[str, str] = {}
 
@@ -1215,9 +1230,10 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     if email_match:
         details["email"] = email_match.group(0).strip()
 
-    phone_match = PHONE_PATTERN.search(text)
-    if phone_match:
-        details["phone"] = phone_match.group(0).strip()
+    for phone_match in PHONE_PATTERN.finditer(text):
+        if _is_customer_phone_detail(text, phone_match):
+            details["phone"] = phone_match.group(0).strip()
+            break
 
     name = _labeled_detail_value(
         text,
@@ -1246,6 +1262,20 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     )
     if company:
         details["company"] = company
+
+    address = _labeled_detail_value(
+        text,
+        (
+            "delivery address",
+            "address",
+            "location",
+            "адрес доставки",
+            "адрес",
+            "локация",
+        ),
+    )
+    if address:
+        details["address"] = address
 
     return details
 
@@ -2617,6 +2647,8 @@ async def create_quotation(
     customer_name = quote_customer_details.get("name") or customer_name
     customer_email = quote_customer_details.get("email") or customer_email
     customer_company = quote_customer_details.get("company") or customer_company
+    customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
+    customer_address = quote_customer_details.get("address") or "UAE"
 
     customer_id = await resolve_inventory_customer_id(
         phone=ctx.deps.conversation.phone,
@@ -2670,7 +2702,8 @@ async def create_quotation(
             "name": customer_name,
             "company": customer_company,
             "email": customer_email,
-            "address": "UAE",
+            "phone": customer_phone,
+            "address": customer_address,
         },
         "items": template_items,
         "subtotal": subtotal,
@@ -3188,6 +3221,13 @@ async def process_message(
         recent_history=recent_history,
         defer_product_media=True,
     )
+
+    # Store customer details from the original, unmasked text before any route
+    # can call create_quotation. Phone is enough to create a draft, while the
+    # other fields are optional PDF details when the customer provides them.
+    current_quote_customer_details = _extract_quote_customer_details(combined_text)
+    if current_quote_customer_details:
+        await _store_quote_customer_details(db, conv, combined_text)
 
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)
     try:

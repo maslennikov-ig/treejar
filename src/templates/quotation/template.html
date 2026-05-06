@@ -13,9 +13,9 @@
         <div class="logo-container">
             <!-- In production, we can pass base64 logo or accessible URL -->
             {% if logo_url %}
-            <img src="{{ logo_url }}" class="logo" alt="Skyland / Treejar">
+            <img src="{{ logo_url }}" class="logo" alt="Treejar Trading">
             {% else %}
-            <h1>Skyland / Treejar Trading FZC LLC</h1>
+            <h1>Treejar Trading FZC LLC</h1>
             {% endif %}
         </div>
         <div class="quote-meta">
@@ -27,10 +27,21 @@
 
     <div class="customer-info">
         <h3>Quotation To:</h3>
+        {% if customer.name %}
         <p><strong>Name:</strong> {{ customer.name }}</p>
+        {% endif %}
+        {% if customer.company %}
         <p><strong>Company:</strong> {{ customer.company }}</p>
+        {% endif %}
+        {% if customer.phone %}
+        <p><strong>Phone:</strong> {{ customer.phone }}</p>
+        {% endif %}
+        {% if customer.email %}
         <p><strong>Email:</strong> {{ customer.email }}</p>
+        {% endif %}
+        {% if customer.address %}
         <p><strong>Address:</strong> {{ customer.address }}</p>
+        {% endif %}
     </div>
 
     <table class="items-table">
@@ -85,7 +96,7 @@
     <div class="footer-bottom">
         <h4>Terms & Conditions</h4>
         <ul>
-            <li><strong>Brand:</strong> Skyland</li>
+            <li><strong>Supplier:</strong> Treejar Trading FZC LLC</li>
             <li><strong>Delivery:</strong> 02-08 working days from order confirmation</li>
             <li><strong>Payment Terms:</strong> 50% advance, 50% after installation</li>
             <li><strong>Validity:</strong> 15 days from date of quotation and/or till stock last</li>

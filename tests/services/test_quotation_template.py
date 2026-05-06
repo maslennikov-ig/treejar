@@ -40,3 +40,47 @@ def test_render_quotation_template() -> None:
     assert "Test Table" in html
     assert "1050.00" in html
     assert "@page {" in html  # Checking if CSS is injected
+    assert "Skyland" not in html
+
+
+def test_render_quotation_template_omits_empty_optional_customer_fields() -> None:
+    context = {
+        "quote_number": "SA 270226 - R2",
+        "trn": "100418386400003",
+        "date": "27-02-2026",
+        "customer": {
+            "name": "Лилия",
+            "company": "",
+            "email": "",
+            "phone": "+971501234567",
+            "address": "UAE",
+        },
+        "items": [
+            {
+                "sku": "ITEM-1",
+                "name": "Test Table",
+                "description": "A very nice table",
+                "quantity": 2,
+                "unit_price": 500.0,
+                "total_price": 1000.0,
+            }
+        ],
+        "subtotal": 1000.0,
+        "vat_amount": 50.0,
+        "grand_total": 1050.0,
+        "manager": {
+            "name": "Syed Amanullah",
+            "phone": "+971545467851",
+            "email": "syed.h@treejartrading.ae",
+        },
+    }
+
+    html = render_quotation_html(context=context)
+
+    assert "Treejar Trading FZC LLC" in html
+    assert "Skyland" not in html
+    assert "<strong>Name:</strong> Лилия" in html
+    assert "<strong>Phone:</strong> +971501234567" in html
+    assert "<strong>Address:</strong> UAE" in html
+    assert "<strong>Company:</strong>" not in html
+    assert "<strong>Email:</strong>" not in html
