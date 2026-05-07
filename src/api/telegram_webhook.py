@@ -426,16 +426,27 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
         phone, language = await _get_conversation_phone_and_lang(uuid.UUID(conv_id))
 
         faq_candidate = None
+        faq_candidate_generation_failed = False
         if mode == "faq_global":
             from src.llm.response_adapter import (
+                adapt_manager_response,
                 adapt_manager_response_with_faq_candidate,
             )
 
-            combined = await adapt_manager_response_with_faq_candidate(
-                question, draft, language
-            )
-            adapted = combined.customer_message
-            faq_candidate = combined.kb_candidate
+            try:
+                combined = await adapt_manager_response_with_faq_candidate(
+                    question, draft, language
+                )
+                adapted = combined.customer_message
+                faq_candidate = combined.kb_candidate
+            except Exception:
+                faq_candidate_generation_failed = True
+                logger.exception(
+                    "Auto-FAQ candidate generation failed; falling back to "
+                    "private manager response adapter for %s",
+                    conv_id,
+                )
+                adapted = await adapt_manager_response(question, draft, language)
         else:
             from src.llm.response_adapter import adapt_manager_response
 
@@ -507,6 +518,15 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
 
         # 3. Prepare FAQ candidate if global mode. Saving requires admin confirmation.
         if mode == "faq_global":
+            if faq_candidate_generation_failed:
+                await client.send_message(
+                    "⚠️ Ответ клиенту обработан, но кандидат для Базы Знаний "
+                    "не создан: LLM не вернул валидный structured output после "
+                    "retry/fallback.",
+                    chat_id=str(chat_id),
+                )
+                return
+
             from src.rag.embeddings import EmbeddingEngine
             from src.services.auto_faq import review_auto_faq_candidate
 

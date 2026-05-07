@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai import UnexpectedModelBehavior
 
 from src.main import app
 from src.services.auto_faq import AutoFAQSaveResult
@@ -520,3 +521,61 @@ async def test_faq_manager_reply_uses_combined_call_and_requires_confirmation() 
     )
     sent_texts = [call.args[0] for call in telegram.send_message.await_args_list]
     assert any("Требуется подтверждение админа" in text for text in sent_texts)
+
+
+@pytest.mark.asyncio
+async def test_faq_manager_reply_falls_back_to_private_reply_when_candidate_llm_fails() -> (
+    None
+):
+    from src.api.telegram_webhook import _handle_manager_reply
+
+    conv_id = str(uuid.uuid4())
+    redis = AsyncMock()
+    redis.get.return_value = json.dumps(
+        {
+            "conversation_id": conv_id,
+            "mode": "faq_global",
+            "question": "When can you deliver?",
+        }
+    )
+    telegram = AsyncMock()
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch(
+            "src.api.telegram_webhook._get_conversation_phone_and_lang",
+            new=AsyncMock(return_value=(None, "en")),
+        ),
+        patch(
+            "src.llm.response_adapter.adapt_manager_response_with_faq_candidate",
+            new=AsyncMock(
+                side_effect=UnexpectedModelBehavior("output validation failed")
+            ),
+        ) as mock_combined,
+        patch(
+            "src.llm.response_adapter.adapt_manager_response",
+            new=AsyncMock(return_value="Delivery takes 3-5 business days."),
+        ) as mock_adapter,
+        patch(
+            "src.services.auto_faq.review_auto_faq_candidate",
+            new=AsyncMock(side_effect=AssertionError("unexpected FAQ review")),
+        ) as mock_review,
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "3-5 days"})
+
+    mock_combined.assert_awaited_once_with(
+        "When can you deliver?",
+        "3-5 days",
+        "en",
+    )
+    mock_adapter.assert_awaited_once_with(
+        "When can you deliver?",
+        "3-5 days",
+        "en",
+    )
+    mock_review.assert_not_awaited()
+    sent_texts = [call.args[0] for call in telegram.send_message.await_args_list]
+    assert any("Delivery takes 3-5 business days." in text for text in sent_texts)
+    assert any("кандидат для Базы Знаний не создан" in text for text in sent_texts)
+    assert not any("Ошибка при обработке ответа" in text for text in sent_texts)

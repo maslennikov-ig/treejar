@@ -4,12 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic_ai import UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
 
 from src.llm.response_adapter import (
     ManagerReplyWithAutoFAQResult,
     adapt_manager_response,
     adapt_manager_response_with_faq_candidate,
+    auto_faq_manager_reply_fallback_agent,
     response_adapter_agent,
 )
 from src.services.auto_faq_types import AutoFAQCandidate
@@ -152,3 +154,41 @@ async def test_adapt_manager_response_with_faq_candidate_uses_one_combined_call(
     assert call_kwargs["usage_limits"].request_limit == 1
     assert call_kwargs["usage_limits"].output_tokens_limit == 900
     assert call_kwargs["usage_limits"].total_tokens_limit == 3500
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_auto_faq_candidate_falls_back_to_glm_after_fast_model_failures() -> None:
+    fallback_output = ManagerReplyWithAutoFAQResult(
+        customer_message="Delivery takes 3-5 business days in the UAE.",
+        kb_candidate=AutoFAQCandidate(
+            question="What is the delivery time in the UAE?",
+            answer="Delivery takes 3-5 business days in the UAE.",
+            confidence=0.91,
+        ),
+    )
+    with (
+        patch(
+            "src.llm.response_adapter.auto_faq_manager_reply_agent.run",
+            new=AsyncMock(
+                side_effect=UnexpectedModelBehavior("output validation failed")
+            ),
+        ) as mock_fast_run,
+        patch(
+            "src.llm.response_adapter.auto_faq_manager_reply_fallback_agent.run",
+            new=AsyncMock(return_value=SimpleNamespace(output=fallback_output)),
+        ) as mock_fallback_run,
+    ):
+        result = await adapt_manager_response_with_faq_candidate(
+            question="When can you deliver?",
+            draft="3-5 business days UAE",
+            language="en",
+        )
+
+    assert result == fallback_output
+    assert mock_fast_run.await_count == 2
+    mock_fallback_run.assert_awaited_once()
+    fallback_kwargs = mock_fallback_run.await_args.kwargs
+    assert fallback_kwargs["model_settings"]["max_tokens"] == 900
+    assert fallback_kwargs["usage_limits"].request_limit == 1
+    assert auto_faq_manager_reply_fallback_agent is not None

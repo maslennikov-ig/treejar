@@ -138,6 +138,7 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         total_tokens_limit=3500,
         request_limit=1,
         max_attempts=2,
+        notify_on_failure=False,
     ),
 }
 
@@ -554,6 +555,8 @@ async def run_agent_with_safety(
     model_name: str,
     provider: str = OPENROUTER_PROVIDER_NAME,
     cache_telemetry_enabled: bool = True,
+    max_attempts_override: int | None = None,
+    notify_on_failure_override: bool | None = None,
     **kwargs: Any,
 ) -> Any:
     """Run a PydanticAI agent through the repo LLM safety policy."""
@@ -584,7 +587,12 @@ async def run_agent_with_safety(
             )
         raise error
 
-    attempts = max(policy.max_attempts, 1)
+    attempts = max(max_attempts_override or policy.max_attempts, 1)
+    notify_on_failure = (
+        policy.notify_on_failure
+        if notify_on_failure_override is None
+        else notify_on_failure_override
+    )
     last_error: BaseException | None = None
     for attempt_number in range(1, attempts + 1):
         try:
@@ -618,7 +626,7 @@ async def run_agent_with_safety(
             )
             if can_retry:
                 continue
-            if policy.notify_on_failure:
+            if notify_on_failure:
                 await _notify_safely(
                     event="final_failure",
                     policy=policy,

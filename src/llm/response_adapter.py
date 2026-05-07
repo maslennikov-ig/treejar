@@ -19,6 +19,7 @@ from src.core.config import settings
 from src.llm.safety import (
     PATH_AUTO_FAQ_CANDIDATE,
     PATH_RESPONSE_ADAPTER,
+    LLMBudgetBlocked,
     model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
@@ -28,6 +29,7 @@ from src.services.auto_faq_types import AutoFAQCandidate
 logger = logging.getLogger(__name__)
 ADAPTER_MODEL_NAME = model_name_for_path(PATH_RESPONSE_ADAPTER)
 AUTO_FAQ_CANDIDATE_MODEL_NAME = model_name_for_path(PATH_AUTO_FAQ_CANDIDATE)
+AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME = settings.openrouter_model_main
 
 
 ADAPTER_SYSTEM_PROMPT = """\
@@ -121,6 +123,28 @@ auto_faq_manager_reply_agent: Agent[None, ManagerReplyWithAutoFAQResult] = Agent
     ),
 )
 
+auto_faq_manager_reply_fallback_model = OpenAIChatModel(
+    AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME,
+    provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+    settings=model_settings_for_path(
+        PATH_AUTO_FAQ_CANDIDATE,
+        model_name=AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME,
+    ),
+)
+
+auto_faq_manager_reply_fallback_agent: Agent[None, ManagerReplyWithAutoFAQResult] = (
+    Agent(
+        model=auto_faq_manager_reply_fallback_model,
+        output_type=ManagerReplyWithAutoFAQResult,
+        system_prompt=COMBINED_AUTO_FAQ_SYSTEM_PROMPT,
+        retries=0,
+        model_settings=model_settings_for_path(
+            PATH_AUTO_FAQ_CANDIDATE,
+            model_name=AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME,
+        ),
+    )
+)
+
 
 async def adapt_manager_response(
     question: str, draft: str, language: str = "en"
@@ -169,10 +193,30 @@ async def adapt_manager_response_with_faq_candidate(
     )
 
     logger.info("Adapting manager response with Auto-FAQ candidate: %s", question[:80])
-    result = await run_agent_with_safety(
-        auto_faq_manager_reply_agent,
-        PATH_AUTO_FAQ_CANDIDATE,
-        user_prompt,
-        model_name=AUTO_FAQ_CANDIDATE_MODEL_NAME,
-    )
+    try:
+        result = await run_agent_with_safety(
+            auto_faq_manager_reply_agent,
+            PATH_AUTO_FAQ_CANDIDATE,
+            user_prompt,
+            model_name=AUTO_FAQ_CANDIDATE_MODEL_NAME,
+        )
+    except LLMBudgetBlocked:
+        raise
+    except Exception:
+        logger.warning(
+            "Auto-FAQ candidate fast model failed; retrying once with fallback model",
+            exc_info=True,
+            extra={
+                "fast_model": AUTO_FAQ_CANDIDATE_MODEL_NAME,
+                "fallback_model": AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME,
+            },
+        )
+        result = await run_agent_with_safety(
+            auto_faq_manager_reply_fallback_agent,
+            PATH_AUTO_FAQ_CANDIDATE,
+            user_prompt,
+            model_name=AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME,
+            max_attempts_override=1,
+            notify_on_failure_override=False,
+        )
     return cast("ManagerReplyWithAutoFAQResult", result.output)
