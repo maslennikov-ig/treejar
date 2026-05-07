@@ -229,6 +229,22 @@ _MIXED_SERVICE_TERMS = (
     "assemble",
     "setup",
 )
+_SHORT_AFFIRMATION_RE = re.compile(
+    r"^\s*(?:yes|yes please|yeah|yep|sure|ok|okay|proceed|go ahead|"
+    r"да|давайте|хорошо|ок|окей|конечно)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_SERVICE_CONFIRMATION_TERMS = (
+    "assembly",
+    "assemble",
+    "installation",
+    "install",
+    "setup",
+    "service",
+    "сборк",
+    "монтаж",
+    "установ",
+)
 _MIXED_PRODUCT_TERMS = (
     "workstation",
     "work station",
@@ -558,6 +574,38 @@ def _is_mixed_product_service_request(text: str) -> bool:
     has_product_need = any(term in normalized for term in _MIXED_PRODUCT_TERMS)
     has_service_question = any(term in normalized for term in _MIXED_SERVICE_TERMS)
     return has_product_need and has_service_question
+
+
+def _is_short_affirmation(text: str) -> bool:
+    return bool(_SHORT_AFFIRMATION_RE.match(text))
+
+
+def _last_assistant_message(recent_history: list[str] | None) -> str:
+    for entry in reversed(recent_history or []):
+        if entry.startswith("assistant: "):
+            return entry.removeprefix("assistant: ").strip()
+    return ""
+
+
+def _is_service_confirmation_reply(
+    text: str,
+    recent_history: list[str] | None,
+) -> bool:
+    if not _is_short_affirmation(text):
+        return False
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    if not last_assistant:
+        return False
+    if "?" not in last_assistant and "would you like" not in last_assistant:
+        return False
+    return any(term in last_assistant for term in _SERVICE_CONFIRMATION_TERMS)
+
+
+def _service_confirmation_handoff_text() -> str:
+    return (
+        "Got it, I will note that you want assembly service included. "
+        "Our manager will confirm the assembly conditions with you shortly."
+    )
 
 
 def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
@@ -3189,6 +3237,16 @@ async def process_message(
         *,
         allow_product_media: bool,
     ) -> tuple[ProductMediaPayload, ...]:
+        if response_deps.quotation_created:
+            if response_deps.pending_product_media:
+                logger.warning(
+                    "Suppressed %d deferred product media item(s) after quotation "
+                    "creation for conversation %s in %s mode",
+                    len(response_deps.pending_product_media),
+                    response_deps.conversation.id,
+                    response_deps.tool_mode,
+                )
+            return ()
         if allow_product_media:
             return tuple(response_deps.pending_product_media)
         if response_deps.pending_product_media:
@@ -3460,7 +3518,11 @@ async def process_message(
             first_result = await _run_agent(first_exact_deps)
             if first_exact_deps.quotation_created or _has_escalation(conv):
                 await _clear_verified_policy_repair_state()
-                return _build_llm_response(first_result, db_model_main)
+                return _build_llm_response(
+                    first_result,
+                    db_model_main,
+                    response_deps=first_exact_deps,
+                )
 
             second_exact_deps = replace(
                 deps,
@@ -3470,7 +3532,11 @@ async def process_message(
             second_result = await _run_agent(second_exact_deps)
             if second_exact_deps.quotation_created or _has_escalation(conv):
                 await _clear_verified_policy_repair_state()
-                return _build_llm_response(second_result, db_model_main)
+                return _build_llm_response(
+                    second_result,
+                    db_model_main,
+                    response_deps=second_exact_deps,
+                )
 
             resolved_exact_sku = await _resolve_exact_quote_candidate_sku(
                 deps.db, exact_quote_candidate
@@ -3498,7 +3564,10 @@ async def process_message(
                 if second_exact_deps.quotation_created or _has_escalation(conv):
                     await _clear_verified_policy_repair_state()
                     return _build_static_response(
-                        fallback_text, f"{db_model_main}|exact-quote-fallback"
+                        fallback_text,
+                        f"{db_model_main}|exact-quote-fallback",
+                        response_deps=second_exact_deps,
+                        allow_product_media=False,
                     )
 
             fail_closed_text = await _fail_closed_exact_quote_request(second_exact_deps)
@@ -3616,6 +3685,34 @@ async def process_message(
             )
             await _clear_verified_policy_repair_state()
             return _build_llm_response(result, db_model_main)
+
+        if not policy_decision.is_order_status and _is_service_confirmation_reply(
+            combined_text,
+            deps.recent_history,
+        ):
+            from src.integrations.notifications.escalation import (
+                notify_manager_escalation,
+            )
+            from src.schemas.common import EscalationType
+
+            if not is_active_human_handoff(deps.conversation.escalation_status):
+                await notify_manager_escalation(
+                    conversation=deps.conversation,
+                    reason=(
+                        "Customer confirmed they want assembly/installation service "
+                        "after the assistant asked a service confirmation question. "
+                        "Manager should confirm service conditions and next steps."
+                    ),
+                    recent_messages=deps.recent_history or [],
+                    db=deps.db,
+                    escalation_type=EscalationType.GENERAL,
+                )
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _service_confirmation_handoff_text(),
+                f"{db_model_main}|service-confirmation-handoff",
+                allow_product_media=False,
+            )
 
         policy_action = policy_decision.policy_action
         if not policy_decision.is_order_status and policy_action == "clarify":

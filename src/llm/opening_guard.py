@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 _EN_IDENTITY = "Hello, I'm Siyyad from Treejar."
 _EN_NAME_QUESTION = "May I know your name so I can address you properly?"
 _AR_IDENTITY = "مرحبًا، أنا Siyyad من Treejar."
@@ -46,6 +48,19 @@ def _has_customer_name(customer_name: str | None) -> bool:
     return bool(str(customer_name or "").strip())
 
 
+def _strip_generic_english_opening(text: str) -> str:
+    body = text.lstrip()
+    body = re.sub(r"\A(?:hello|hi|hey)\b[\s!,.:-]*", "", body, count=1, flags=re.I)
+    body = re.sub(
+        r"\A(?:welcome\s+to\s+treejar)\b[\s!,.:-]*(?:[^\w\s]+\s*)?",
+        "",
+        body,
+        count=1,
+        flags=re.I,
+    )
+    return body.lstrip() or text.lstrip()
+
+
 def apply_opening_guard(
     text: str,
     *,
@@ -75,6 +90,9 @@ def apply_opening_guard(
 
     if not needs_identity:
         return f"{body}\n\n{name_question}" if needs_name_question else body
+
+    if not is_arabic:
+        body = _strip_generic_english_opening(body)
 
     opening_parts = [identity]
     if needs_name_question:

@@ -3880,11 +3880,18 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    pending_payload = ProductMediaPayload(
+        url="https://example.com/quote-side-effect.jpg",
+        caption="Catalog photo that must not follow a quotation",
+        product_key="chair-1",
+        zoho_item_id=None,
+    )
 
     async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
         deps = kwargs["deps"]
         if mock_run.await_count == 1:
             return _FakeAgentResult("Please share your full name, company, and email.")
+        deps.pending_product_media.append(pending_payload)
         deps.quotation_created = True
         return _FakeAgentResult("Quotation SA-001 has been prepared and sent to you.")
 
@@ -3909,6 +3916,7 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
     second_call = mock_run.await_args_list[1].kwargs
     assert first_call["deps"].tool_mode == "exact_quote"
     assert second_call["deps"].tool_mode == "exact_quote"
+    assert response.deferred_product_media == ()
 
 
 @pytest.mark.asyncio
@@ -4016,6 +4024,7 @@ async def test_process_message_mixed_product_service_request_stays_in_full_mode(
         }
     ]
     mock_run.return_value = _FakeAgentResult(
+        "Hello! Welcome to Treejar! 👋\n\n"
         "Yes, we provide professional delivery and installation services. "
         "Here are suitable workstation options."
     )
@@ -4035,6 +4044,9 @@ async def test_process_message_mixed_product_service_request_stays_in_full_mode(
         "Yes, we provide professional delivery and installation services. "
         "Here are suitable workstation options.",
     )
+    assert response.text.count("Hello") == 1
+    assert response.text.count("Treejar") == 1
+    assert "Welcome to Treejar" not in response.text
     mock_run.assert_awaited_once()
     call = mock_run.await_args_list[0].kwargs
     assert call["deps"].tool_mode == "full"
@@ -4043,6 +4055,64 @@ async def test_process_message_mixed_product_service_request_stays_in_full_mode(
         for directive in call["deps"].runtime_directives
     )
     mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_short_yes_after_assembly_question_escalates_without_generic_fallback(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Yes"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[UserPromptPart(content="Please prepare the quotation.")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Would you like to add furniture assembly service as well?"
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "I can help with products" not in response.text
+    assert "assembly" in response.text.lower()
+    assert "manager" in response.text.lower() or "team" in response.text.lower()
+    mock_notify.assert_awaited_once()
+    mock_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio

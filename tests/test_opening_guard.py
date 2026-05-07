@@ -47,6 +47,24 @@ def test_first_turn_response_does_not_duplicate_compliant_opening() -> None:
     assert response.count("Treejar") == 1
 
 
+def test_first_turn_response_strips_generic_greeting_before_canonical_opening() -> None:
+    response = apply_opening_guard(
+        (
+            "Hello! Welcome to Treejar! 👋\n\n"
+            "I'm here to help you find workstation options."
+        ),
+        language="en",
+        is_first_turn=True,
+        customer_name=None,
+    )
+
+    assert response.startswith("Hello, I'm Siyyad from Treejar.")
+    assert response.count("Hello") == 1
+    assert response.count("Treejar") == 1
+    assert "Welcome to Treejar" not in response
+    assert response.endswith("I'm here to help you find workstation options.")
+
+
 def test_known_customer_gets_identity_without_name_question() -> None:
     response = apply_opening_guard(
         "Here are a few chair options.",
