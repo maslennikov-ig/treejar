@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.llm.verified_answers import (
     classify_product_match,
     evaluate_verified_answer_policy,
+    is_quote_or_proposal_request,
 )
 
 
@@ -168,6 +169,12 @@ def test_policy_does_not_handoff_invoice_request_without_payment_terms() -> None
     assert decision.faq_support == "missing"
     assert decision.policy_action == "allow"
     assert decision.requires_manager_handoff is False
+
+
+def test_sales_order_is_quotation_like_request() -> None:
+    assert is_quote_or_proposal_request(
+        "give me please sales order on SKYLAND NOVO 1800 - 1 pcs"
+    )
 
 
 def test_policy_does_not_handoff_business_proposal_request() -> None:

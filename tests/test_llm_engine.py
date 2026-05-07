@@ -3076,6 +3076,32 @@ def test_extract_exact_quote_candidate_does_not_accept_bare_offer_word() -> None
     assert candidate is None
 
 
+def test_extract_sales_order_items_accepts_item_before_quantity_list() -> None:
+    items = engine_module._extract_sales_order_quote_items(
+        "give me please sales order on SKYLAND NOVO 1800 - 1 pcs and "
+        "CH 620 black - 2 pcs and executive Office Chair CH 410 black - 1 pcs"
+    )
+
+    assert items is not None
+    assert [(item.item_candidate, item.quantity) for item in items] == [
+        ("SKYLAND NOVO 1800", 1),
+        ("CH 620 black", 2),
+        ("executive Office Chair CH 410 black", 1),
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hi! I need 15 tables",
+        "show me table options",
+        "Can you recommend tables for 15 people?",
+    ],
+)
+def test_extract_sales_order_items_rejects_product_discovery(text: str) -> None:
+    assert engine_module._extract_sales_order_quote_items(text) is None
+
+
 def test_extract_exact_quote_candidate_rejects_payment_terms_in_business_proposal() -> (
     None
 ):
@@ -3883,6 +3909,140 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
     second_call = mock_run.await_args_list[1].kwargs
     assert first_call["deps"].tool_mode == "exact_quote"
     assert second_call["deps"].tool_mode == "exact_quote"
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_sales_order_request_creates_multi_item_quotation(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "give me please sales order on SKYLAND NOVO 1800 - 1 pcs and "
+        "CH 620 black - 2 pcs and executive Office Chair CH 410 black - 1 pcs"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        mapping = {
+            "SKYLAND NOVO 1800": "NOVO-1800",
+            "CH 620 black": "CH-620-BLACK",
+            "executive Office Chair CH 410 black": "CH-410-BLACK",
+        }
+        return mapping.get(candidate.item_candidate)
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Your Treejar quotation: SO-123"
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ) as mock_resolve:
+        mock_create_quotation.side_effect = create_quotation_side_effect
+
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-123")
+    assert response.deferred_product_media == ()
+    assert response.model == "mock-model|sales-order-quote"
+    assert mock_resolve.await_count == 3
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert [(item.sku, item.quantity) for item in quote_items] == [
+        ("NOVO-1800", 1),
+        ("CH-620-BLACK", 2),
+        ("CH-410-BLACK", 1),
+    ]
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_mixed_product_service_request_stays_in_full_mode(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "Hello, I am interested in ordering work station for 2 people and some "
+        "mobile drawers. I appreciate fast delivery within 2-3 days. I wanted "
+        "to ask if you will also assembly the desk upon delivery?"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = [
+        {
+            "title": "Delivery and installation",
+            "content": (
+                "Q: Do you provide installation services?\n"
+                "A: Yes, we provide professional delivery and installation services."
+            ),
+        }
+    ]
+    mock_run.return_value = _FakeAgentResult(
+        "Yes, we provide professional delivery and installation services. "
+        "Here are suitable workstation options."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    _assert_first_turn_opening(
+        response.text,
+        "Yes, we provide professional delivery and installation services. "
+        "Here are suitable workstation options.",
+    )
+    mock_run.assert_awaited_once()
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "full"
+    assert any(
+        "mixed product and service request" in directive
+        for directive in call["deps"].runtime_directives
+    )
+    mock_notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio

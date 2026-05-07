@@ -270,6 +270,8 @@ _DISCOUNT_SPECIFIC_TERMS = (
     "special price",
 )
 _QUOTE_PROPOSAL_PHRASES = (
+    "sales order",
+    "sale order",
     "commercial offer",
     "commercial proposal",
     "business proposal",

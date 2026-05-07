@@ -110,6 +110,14 @@ EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price",
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
 )
+MIXED_PRODUCT_SERVICE_DIRECTIVES = (
+    "mixed product and service request: answer service facts only from FAQ context, then continue product discovery",
+    "if this is the first assistant reply, keep the required Treejar introduction brief, then help with the stated product need",
+    "do not promise the customer's requested delivery date or timeframe unless FAQ context explicitly confirms it",
+    "use search_products before recommending workstation, desk, drawer, chair, table, or other catalog products",
+    "after product options are clear, ask only for missing details needed for a formal quotation",
+    "do not escalate only because the same message mentions delivery, installation, or assembly",
+)
 SELECTION_CONFIRMATION_DIRECTIVES = (
     "the customer has selected specific product(s) and quantities",
     "do not search or recommend alternatives",
@@ -120,6 +128,8 @@ SELECTION_CONFIRMATION_DIRECTIVES = (
     "ask for the missing details needed for a formal quotation or the next concrete step",
 )
 _QUOTE_REQUEST_TERMS = (
+    "sales order",
+    "sale order",
     "quote",
     "quotation",
     "commercial offer",
@@ -199,6 +209,42 @@ _SELECTION_SKU_RE = re.compile(
 _PRICE_SIGNAL_RE = re.compile(
     r"(?P<amount>\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)\s*(?P<currency>[A-Z]{3})\b",
     re.IGNORECASE,
+)
+_SALES_ORDER_TERM_RE = re.compile(r"\b(?:sales order|sale order)\b", re.IGNORECASE)
+_ITEM_BEFORE_QUANTITY_RE = re.compile(
+    r"(?P<item>.*?)(?:\s*[-–—:]\s*|\s+)"
+    r"(?P<quantity>\d{1,4})\s*"
+    r"(?:pcs?|pieces?|piece|units?|unit|qty)?\b"
+    r"(?=\s*(?:and\b|,|$))",
+    re.IGNORECASE,
+)
+_MIXED_SERVICE_TERMS = (
+    "delivery",
+    "deliver",
+    "delivered",
+    "installation",
+    "install",
+    "installed",
+    "assembly",
+    "assemble",
+    "setup",
+)
+_MIXED_PRODUCT_TERMS = (
+    "workstation",
+    "work station",
+    "desk",
+    "desks",
+    "drawer",
+    "drawers",
+    "chair",
+    "chairs",
+    "table",
+    "tables",
+    "pod",
+    "pods",
+    "booth",
+    "booths",
+    "furniture",
 )
 _ACTIVE_PRODUCT_MEDIA_AUDIT_STATUSES = (
     "pending",
@@ -464,6 +510,54 @@ def _looks_like_exact_item_candidate(candidate: str) -> bool:
     tokens = [token for token in normalized.split() if token]
     has_digit = bool(re.search(r"\d", normalized))
     return (has_digit and len(tokens) >= 2) or len(tokens) >= 4
+
+
+def _clean_sales_order_item_candidate(candidate: str) -> str:
+    cleaned = " ".join(candidate.split()).strip(" ,.;:-–—")
+    cleaned = re.sub(r"^(?:and|or|with|for|on)\s+", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip(" ,.;:-–—")
+
+
+def _extract_sales_order_body(text: str) -> str | None:
+    match = _SALES_ORDER_TERM_RE.search(text)
+    if not match:
+        return None
+    body = text[match.end() :]
+    return re.sub(r"^\s*(?:on|for|with|:)\s*", "", body, flags=re.IGNORECASE)
+
+
+def _extract_sales_order_quote_items(
+    text: str,
+) -> tuple[ExactQuoteCandidate, ...] | None:
+    """Parse sales-order item lists where the quantity follows the item name."""
+    body = _extract_sales_order_body(text)
+    if not body:
+        return None
+
+    items: list[ExactQuoteCandidate] = []
+    for match in _ITEM_BEFORE_QUANTITY_RE.finditer(body):
+        item_candidate = _clean_sales_order_item_candidate(match.group("item"))
+        if not _looks_like_exact_item_candidate(item_candidate):
+            continue
+        sku_match = re.search(_SKU_SIGNAL_RE.pattern, item_candidate, re.IGNORECASE)
+        items.append(
+            ExactQuoteCandidate(
+                quantity=int(match.group("quantity")),
+                item_candidate=item_candidate,
+                sku=sku_match.group(0).upper() if sku_match else None,
+            )
+        )
+
+    return tuple(items) or None
+
+
+def _is_mixed_product_service_request(text: str) -> bool:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+    has_product_need = any(term in normalized for term in _MIXED_PRODUCT_TERMS)
+    has_service_question = any(term in normalized for term in _MIXED_SERVICE_TERMS)
+    return has_product_need and has_service_question
 
 
 def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
@@ -1607,6 +1701,17 @@ def _exact_quote_fail_closed_message() -> str:
     return (
         "I couldn't finalize the exact quotation automatically. "
         "A manager has been asked to verify exact price and availability before we make a commitment."
+    )
+
+
+def _sales_order_unresolved_items_message(
+    items: tuple[ExactQuoteCandidate, ...],
+) -> str:
+    item_list = ", ".join(f"{item.quantity} x {item.item_candidate}" for item in items)
+    return (
+        "I can prepare a sales order, but I need to confirm the exact catalog "
+        f"item(s) for: {item_list}. Please share the SKU or choose the exact "
+        "catalog option for each unresolved item."
     )
 
 
@@ -3268,6 +3373,56 @@ async def process_message(
                 model_name=db_model_main,
             )
 
+        sales_order_items = _extract_sales_order_quote_items(masked_text)
+        if sales_order_items is None:
+            sales_order_items = _extract_sales_order_quote_items(combined_text)
+        if sales_order_items is not None:
+            resolved_quote_items: list[QuotationItem] = []
+            unresolved_items: list[ExactQuoteCandidate] = []
+            for item in sales_order_items:
+                resolved_sku = await _resolve_exact_quote_candidate_sku(deps.db, item)
+                if resolved_sku:
+                    resolved_quote_items.append(
+                        QuotationItem(sku=resolved_sku, quantity=item.quantity)
+                    )
+                else:
+                    unresolved_items.append(item)
+
+            if unresolved_items or not resolved_quote_items:
+                await _clear_verified_policy_repair_state()
+                return _build_static_response(
+                    _sales_order_unresolved_items_message(tuple(unresolved_items)),
+                    f"{db_model_main}|sales-order-clarify",
+                    allow_product_media=False,
+                )
+
+            from pydantic_ai.usage import RunUsage
+
+            sales_order_deps = replace(
+                deps,
+                tool_mode="exact_quote",
+                runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
+            )
+            sales_order_ctx = RunContext(
+                deps=sales_order_deps,
+                retry=0,
+                messages=[],
+                prompt=masked_text,
+                model=dynamic_model,
+                usage=RunUsage(),
+            )
+            quote_text = await create_quotation(
+                sales_order_ctx,
+                resolved_quote_items,
+            )
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                quote_text,
+                f"{db_model_main}|sales-order-quote",
+                response_deps=sales_order_deps,
+                allow_product_media=False,
+            )
+
         if is_first_turn and is_high_confidence_first_turn_order(masked_text):
             first_result = await _run_agent(
                 replace(
@@ -3447,6 +3602,20 @@ async def process_message(
                 ),
                 f"{db_model_main}|proposal-clarify",
             )
+
+        if not policy_decision.is_order_status and (
+            _is_mixed_product_service_request(masked_text)
+            or _is_mixed_product_service_request(combined_text)
+        ):
+            result = await _run_agent(
+                replace(
+                    deps,
+                    tool_mode="full",
+                    runtime_directives=MIXED_PRODUCT_SERVICE_DIRECTIVES,
+                )
+            )
+            await _clear_verified_policy_repair_state()
+            return _build_llm_response(result, db_model_main)
 
         policy_action = policy_decision.policy_action
         if not policy_decision.is_order_status and policy_action == "clarify":
