@@ -3090,6 +3090,20 @@ def test_extract_sales_order_items_accepts_item_before_quantity_list() -> None:
     ]
 
 
+def test_extract_sales_order_items_normalizes_cyrillic_homoglyph_prefix() -> None:
+    items = engine_module._extract_sales_order_quote_items(
+        "give me please sales order -SKYLAND NOVO 1800 - 1pcs and "
+        "СН 190 black- 2 pcs and CH 410 black 1 pcs"
+    )
+
+    assert items is not None
+    assert [(item.item_candidate, item.quantity) for item in items] == [
+        ("SKYLAND NOVO 1800", 1),
+        ("CH 190 black", 2),
+        ("CH 410 black", 1),
+    ]
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -3987,6 +4001,279 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
         ("CH-410-BLACK", 1),
     ]
     mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_sales_order_normalizes_cyrillic_sku_prefix(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "give me please sales order -SKYLAND NOVO 1800 - 1pcs and "
+        "СН 190 black- 2 pcs and CH 410 black 1 pcs"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        mapping = {
+            "SKYLAND NOVO 1800": "NOVO-1800",
+            "CH 190 black": "CH-190-BLACK",
+            "CH 410 black": "CH-410-BLACK",
+        }
+        return mapping.get(candidate.item_candidate)
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Your Treejar quotation: SO-CH190"
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ):
+        mock_create_quotation.side_effect = create_quotation_side_effect
+
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-CH190")
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert [(item.sku, item.quantity) for item in quote_items] == [
+        ("NOVO-1800", 1),
+        ("CH-190-BLACK", 2),
+        ("CH-410-BLACK", 1),
+    ]
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_sales_order_unresolved_stores_pending_context(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "give me please sales order -SKYLAND NOVO 1800 - 1pcs and "
+        "СН 190 black- 2 pcs and CH 410 black 1 pcs"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        mapping = {
+            "SKYLAND NOVO 1800": "NOVO-1800",
+            "CH 410 black": "CH-410-BLACK",
+        }
+        return mapping.get(candidate.item_candidate)
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    _assert_first_turn_opening(
+        response.text,
+        "I can prepare a sales order, but I need to confirm the exact catalog "
+        "item(s) for: 2 x CH 190 black. Please share the SKU or choose the exact "
+        "catalog option for each unresolved item.",
+    )
+    assert response.model == "mock-model|sales-order-clarify"
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "sales_order_quote"
+    assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
+        ("NOVO-1800", 1),
+        ("CH-410-BLACK", 1),
+    ]
+    assert pending_quote["unresolved_items"] == [
+        {"sku": None, "quantity": 2, "item_candidate": "CH 190 black"}
+    ]
+    mock_create_quotation.assert_not_awaited()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_sales_order_unresolved_followup_resumes_quote(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "sales_order_quote",
+            "items": [
+                {"sku": "NOVO-1800", "quantity": 1},
+                {"sku": "CH-410-BLACK", "quantity": 1},
+            ],
+            "unresolved_items": [
+                {"sku": None, "quantity": 2, "item_candidate": "CH 190 black"}
+            ],
+        }
+    }
+    text = "СН 190 black"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "I can prepare a sales order, but I need to confirm the "
+                        "exact catalog item(s) for: 2 x CH 190 black."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        if candidate.item_candidate == "CH 190 black" and candidate.quantity == 2:
+            return "CH-190-BLACK"
+        return None
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Your Treejar quotation: SO-CH190-FOLLOWUP"
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ):
+        mock_create_quotation.side_effect = create_quotation_side_effect
+
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert response.text == "Your Treejar quotation: SO-CH190-FOLLOWUP"
+    assert "I can help with products" not in response.text
+    assert response.model == "mock-model|sales-order-quote-resume"
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert [(item.sku, item.quantity) for item in quote_items] == [
+        ("NOVO-1800", 1),
+        ("CH-410-BLACK", 1),
+        ("CH-190-BLACK", 2),
+    ]
+    assert "pending_quote_selection" not in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_office_workspace_need_stays_on_product_path(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I need few work stations for my new office space in business bay dubai"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I can help you with workstation options for your new office space."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    _assert_first_turn_opening(
+        response.text,
+        "I can help you with workstation options for your new office space.",
+    )
+    assert "manager will confirm" not in response.text.lower()
+    assert mock_run.await_count == 1
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "full"
     mock_notify.assert_not_awaited()
 
 

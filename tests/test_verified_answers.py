@@ -208,6 +208,28 @@ def test_policy_keeps_product_questions_on_catalog_path() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_routes_office_workspace_need_to_product_path() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="I need few work stations for my new office space in business bay dubai",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_keeps_company_office_location_question_on_service_path() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Where is your office in Dubai?",
+        faq_context=[],
+    )
+
+    assert decision.question_class != "product"
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
+
+
 def test_policy_treats_plain_greeting_as_safe_non_handoff() -> None:
     decision = evaluate_verified_answer_policy(
         query="Добрый день",

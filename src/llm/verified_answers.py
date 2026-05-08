@@ -89,6 +89,11 @@ _PRODUCT_SIGNALS = (
     "مكتب",
     "طاولة",
 )
+_COMPACT_PRODUCT_SIGNALS = tuple(
+    re.sub(r"[\s-]+", "", signal)
+    for signal in _PRODUCT_SIGNALS
+    if re.search(r"[a-z]", signal)
+)
 _PRODUCT_DISCOVERY_PHRASES = (
     "what options",
     "show me",
@@ -439,6 +444,13 @@ def _tokenize(text: str) -> set[str]:
     }
 
 
+def _has_product_signal(normalized: str) -> bool:
+    if any(signal in normalized for signal in _PRODUCT_SIGNALS):
+        return True
+    compact = re.sub(r"[\s-]+", "", normalized)
+    return any(signal in compact for signal in _COMPACT_PRODUCT_SIGNALS)
+
+
 def _unicode_tokens(text: str) -> tuple[str, ...]:
     return tuple(
         token for token in _UNICODE_TOKEN_RE.findall(_normalize_social_text(text))
@@ -525,7 +537,7 @@ def _is_benign_no_match(query: str) -> bool:
         return True
     if "?" in query:
         return False
-    if any(signal in normalized for signal in _PRODUCT_SIGNALS):
+    if _has_product_signal(normalized):
         return False
     if any(signal in normalized for signal in _ORDER_STATUS_SIGNALS):
         return False
@@ -550,9 +562,14 @@ def classify_question(query: str) -> QuestionClass:
         return "social"
 
     normalized = _normalize(routed_query).casefold()
-    has_product_signal = any(signal in normalized for signal in _PRODUCT_SIGNALS)
+    has_product_signal = _has_product_signal(normalized)
     has_product_discovery = any(
         phrase in normalized for phrase in _PRODUCT_DISCOVERY_PHRASES
+    )
+    has_high_risk_service_topic = any(
+        keyword in normalized
+        for topic in _HIGH_RISK_TOPICS
+        for keyword in _TOPIC_KEYWORDS[topic]
     )
 
     if has_product_signal and has_product_discovery:
@@ -563,11 +580,10 @@ def classify_question(query: str) -> QuestionClass:
     ):
         return "service_low_risk"
 
-    if any(
-        keyword in normalized
-        for topic in _HIGH_RISK_TOPICS
-        for keyword in _TOPIC_KEYWORDS[topic]
-    ) or _asks_for_specific_commitment(normalized):
+    if has_product_signal and not has_high_risk_service_topic:
+        return "product"
+
+    if has_high_risk_service_topic or _asks_for_specific_commitment(normalized):
         return "service_high_risk"
 
     if has_product_signal:
@@ -629,9 +645,9 @@ def detect_sales_fallback_intent(query: str) -> SalesFallbackIntent | None:
         return "retention"
     if any(term in normalized for term in _PRICE_OBJECTION_TERMS):
         return "price_objection"
-    if any(term in normalized for term in _OFF_CATALOG_TERMS) and not any(
-        signal in normalized for signal in _PRODUCT_SIGNALS
-    ):
+    if any(
+        term in normalized for term in _OFF_CATALOG_TERMS
+    ) and not _has_product_signal(normalized):
         return "off_catalog"
     return None
 
