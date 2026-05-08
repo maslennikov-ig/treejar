@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -48,6 +48,14 @@ def create_app() -> FastAPI:
     from src.api.telegram_webhook import router as telegram_router
 
     app.include_router(telegram_router, prefix="/api/v1")
+
+    @app.api_route(
+        "/api/{full_path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        include_in_schema=False,
+    )
+    async def api_not_found(full_path: str) -> None:
+        raise HTTPException(status_code=404, detail="Not Found")
 
     # Mount SQLAdmin
     from src.api.admin.auth import authentication_backend
