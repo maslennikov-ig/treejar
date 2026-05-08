@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>База знаний - Noor AI CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-dim": "#cbdbf5",
+                        "primary-container": "#131b2e",
+                        "on-surface-variant": "#45464d",
+                        "secondary-container": "#2170e4",
+                        "on-tertiary-fixed": "#002113",
+                        "surface-tint": "#565e74",
+                        "on-surface": "#0b1c30",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "tertiary-container": "#002113",
+                        "surface-container-highest": "#d3e4fe",
+                        "surface": "#f8f9ff",
+                        "surface-container-high": "#dce9ff",
+                        "on-tertiary-container": "#009668",
+                        "surface-container": "#e5eeff",
+                        "error-container": "#ffdad6",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#eff4ff",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed": "#dae2fd",
+                        "on-error-container": "#93000a",
+                        "on-background": "#0b1c30",
+                        "tertiary-fixed": "#6ffbbe",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "outline-variant": "#c6c6cd",
+                        "on-primary-container": "#7c839b",
+                        "secondary-fixed": "#d8e2ff",
+                        "background": "#f8f9ff",
+                        "primary-fixed-dim": "#bec6e0",
+                        "on-secondary-fixed": "#001a42",
+                        "inverse-primary": "#bec6e0",
+                        "inverse-on-surface": "#eaf1ff",
+                        "primary": "#000000",
+                        "on-tertiary": "#ffffff",
+                        "tertiary": "#000000",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#d3e4fe",
+                        "outline": "#76777d",
+                        "on-secondary-fixed-variant": "#004395",
+                        "on-error": "#ffffff",
+                        "secondary": "#0058be",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "surface-bright": "#f8f9ff",
+                        "on-primary-fixed": "#131b2e",
+                        "on-secondary-container": "#fefcff",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "inverse-surface": "#213145"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-compact": "8px",
+                        "gutter": "16px",
+                        "sidebar-width": "260px",
+                        "stack-default": "16px",
+                        "container-margin": "24px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "body-base": ["Inter"],
+                        "h1": ["Inter"],
+                        "data-tabular": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "h2": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "body-base": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "data-tabular": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-base antialiased flex min-h-screen overflow-hidden">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-[260px] border-r border-outline-variant bg-primary-container text-on-primary-fixed flex flex-col p-4 gap-y-1 z-50">
+<!-- Header/Logo -->
+<div class="flex items-center gap-3 px-3 py-4 mb-4">
+<div class="w-8 h-8 rounded bg-secondary flex items-center justify-center text-on-secondary shrink-0">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+</div>
+<div>
+<h2 class="font-h2 text-h2 text-on-secondary-container tracking-tight">Noor AI</h2>
+<div class="font-label-caps text-label-caps text-on-primary-container opacity-80 uppercase">Панель управления</div>
+</div>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 flex flex-col gap-y-1 font-body-base text-body-base">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Обзор
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">groups</span>
+                Клиенты
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+                Переписки
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">priority_high</span>
+                Эскалации
+            </a>
+<!-- Active State -->
+<a class="flex items-center gap-3 px-3 py-2.5 bg-secondary-container text-on-secondary-container rounded-xl font-bold active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined fill">menu_book</span>
+                База знаний
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+                Каталог
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">bar_chart</span>
+                Отчеты
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Настройки
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">history</span>
+                Логи аудита
+            </a>
+</nav>
+<!-- CTA & Footer -->
+<div class="mt-auto flex flex-col gap-4">
+<button class="w-full py-2.5 rounded-lg bg-secondary text-on-secondary font-data-tabular text-data-tabular hover:bg-opacity-90 transition-colors">
+                Создать рассылку
+            </button>
+<div class="h-px bg-outline-variant opacity-20 w-full"></div>
+<nav class="flex flex-col gap-y-1 font-body-base text-body-base">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">help</span>
+                    Поддержка
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">logout</span>
+                    Выйти
+                </a>
+</nav>
+</div>
+</aside>
+<!-- Main Content Wrapper -->
+<div class="flex-1 flex flex-col ml-[260px] h-screen bg-background relative">
+<!-- TopAppBar -->
+<header class="sticky top-0 w-full z-40 border-b border-outline-variant bg-surface text-on-surface flex justify-between items-center h-16 px-container-margin">
+<div class="flex items-center gap-4">
+<span class="font-h1 text-h1 text-primary">Noor CRM</span>
+<div class="h-6 w-px bg-outline-variant mx-2"></div>
+<div class="relative focus-within:ring-2 focus-within:ring-secondary rounded-lg overflow-hidden bg-surface-container-low flex items-center px-3 py-1.5 w-[300px]">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] mr-2">search</span>
+<input class="bg-transparent border-none outline-none text-body-sm font-body-sm w-full p-0 text-on-surface placeholder-on-surface-variant focus:ring-0" placeholder="Поиск по CRM..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">settings_suggest</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-secondary-fixed flex items-center justify-center overflow-hidden border border-outline-variant ml-2">
+<!-- Placeholder for Profile Image -->
+<span class="material-symbols-outlined text-on-secondary-fixed-variant">person</span>
+</div>
+</div>
+</header>
+<!-- Page Content Canvas -->
+<main class="flex-1 overflow-hidden p-container-margin flex flex-col gap-6">
+<!-- Page Header -->
+<div class="flex justify-between items-center shrink-0">
+<div>
+<h1 class="font-h1 text-h1 text-on-surface">База знаний</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Управление ответами ИИ и сценариями диалогов.</p>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 px-4 py-2 border border-outline-variant bg-surface text-on-surface font-data-tabular text-data-tabular rounded-lg hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[18px]">download</span>
+                        Экспорт
+                    </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-secondary text-on-secondary font-data-tabular text-data-tabular rounded-lg shadow-sm hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                        Добавить статью
+                    </button>
+</div>
+</div>
+<!-- Two Column Layout Grid -->
+<div class="grid grid-cols-12 gap-gutter flex-1 min-h-0 overflow-hidden">
+<!-- Left Sidebar: Article List -->
+<div class="col-span-4 bg-surface rounded-xl border border-outline-variant flex flex-col overflow-hidden">
+<!-- List Header/Filters -->
+<div class="p-3 border-b border-outline-variant bg-surface-container-lowest flex flex-col gap-3 shrink-0">
+<div class="relative focus-within:ring-2 focus-within:ring-secondary rounded bg-background border border-outline-variant flex items-center px-2 py-1.5">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px] mr-2">search</span>
+<input class="bg-transparent border-none outline-none font-data-tabular text-data-tabular w-full p-0 text-on-surface placeholder-on-surface-variant focus:ring-0" placeholder="Искать в статьях..." type="text"/>
+</div>
+<div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+<button class="px-3 py-1 bg-secondary-fixed text-on-secondary-fixed-variant font-label-caps text-label-caps rounded-full whitespace-nowrap">Все</button>
+<button class="px-3 py-1 bg-surface-variant text-on-surface-variant border border-outline-variant font-label-caps text-label-caps rounded-full whitespace-nowrap hover:bg-surface-container transition-colors">Оплата</button>
+<button class="px-3 py-1 bg-surface-variant text-on-surface-variant border border-outline-variant font-label-caps text-label-caps rounded-full whitespace-nowrap hover:bg-surface-container transition-colors">Доставка</button>
+</div>
+</div>
+<!-- List Items -->
+<div class="flex-1 overflow-y-auto bg-surface">
+<!-- Active Item -->
+<div class="p-3 border-b border-outline-variant bg-surface-container-low cursor-pointer flex flex-col gap-2 relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary"></div>
+<div class="flex justify-between items-start">
+<span class="font-data-tabular text-data-tabular text-on-surface font-semibold leading-tight line-clamp-2 pr-4">Как оформить возврат товара надлежащего качества?</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[16px] shrink-0">more_vert</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="px-2 py-0.5 bg-tertiary-fixed-dim text-on-tertiary-fixed font-label-caps text-label-caps rounded uppercase">Опубликовано</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Гарантия</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant ml-auto">12 Окт, 14:30</span>
+</div>
+</div>
+<!-- Inactive Item 1 -->
+<div class="p-3 border-b border-outline-variant bg-surface hover:bg-surface-container-lowest cursor-pointer flex flex-col gap-2 transition-colors">
+<div class="flex justify-between items-start">
+<span class="font-data-tabular text-data-tabular text-on-surface leading-tight line-clamp-2 pr-4">Способы оплаты для юридических лиц по безналичному расчету</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="px-2 py-0.5 bg-surface-variant text-on-surface-variant font-label-caps text-label-caps rounded uppercase border border-outline-variant">Черновик</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Оплата</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant ml-auto">Вчера, 09:15</span>
+</div>
+</div>
+<!-- Inactive Item 2 -->
+<div class="p-3 border-b border-outline-variant bg-surface hover:bg-surface-container-lowest cursor-pointer flex flex-col gap-2 transition-colors">
+<div class="flex justify-between items-start">
+<span class="font-data-tabular text-data-tabular text-on-surface leading-tight line-clamp-2 pr-4">Сроки доставки в удаленные регионы (Сибирь, Дальний Восток)</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="px-2 py-0.5 bg-tertiary-fixed-dim text-on-tertiary-fixed font-label-caps text-label-caps rounded uppercase">Опубликовано</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Доставка</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant ml-auto">10 Окт, 11:00</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Area: Editor & Candidates -->
+<div class="col-span-8 flex flex-col gap-4 overflow-hidden h-full">
+<!-- Editor Card -->
+<div class="flex-1 bg-surface rounded-xl border border-outline-variant shadow-sm flex flex-col overflow-hidden">
+<!-- Editor Header -->
+<div class="p-4 border-b border-outline-variant flex justify-between items-center shrink-0 bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center border border-outline-variant">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">edit_document</span>
+</div>
+<h2 class="font-h2 text-h2 text-on-surface">Редактирование статьи ID-492</h2>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 text-error hover:bg-error-container hover:text-on-error-container font-data-tabular text-data-tabular rounded transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">archive</span>
+                                    В архив
+                                </button>
+<button class="px-4 py-1.5 bg-secondary text-on-secondary font-data-tabular text-data-tabular rounded shadow-sm hover:opacity-90 transition-opacity">
+                                    Сохранить и индексировать
+                                </button>
+</div>
+</div>
+<!-- Editor Form Area -->
+<div class="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
+<!-- Warnings Panel -->
+<div class="flex flex-col gap-2 shrink-0">
+<div class="bg-surface-container-high border border-outline-variant rounded-lg p-3 flex gap-3 items-start">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] mt-0.5">warning</span>
+<div>
+<h4 class="font-data-tabular text-data-tabular text-on-surface font-semibold">Вероятный дубликат</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Похожая статья уже существует: <a class="text-secondary hover:underline" href="#">ID-105: Процедура возврата</a>. Проверьте перед публикацией.</p>
+</div>
+</div>
+<div class="bg-error-container border border-error opacity-90 rounded-lg p-3 flex gap-3 items-start">
+<span class="material-symbols-outlined text-on-error-container text-[20px] mt-0.5">gpp_maybe</span>
+<div>
+<h4 class="font-data-tabular text-data-tabular text-on-error-container font-semibold">Риск безопасности: персональные данные</h4>
+<p class="font-body-sm text-body-sm text-on-error-container mt-0.5">Система обнаружила потенциальный запрос паспортных данных в тексте ответа. Это нарушает политику обработки ПДн ИИ-агентом.</p>
+</div>
+</div>
+</div>
+<!-- Input Fields -->
+<div class="flex flex-col gap-stack-compact">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Вопрос (Триггер)</label>
+<input class="w-full bg-background border border-outline-variant rounded px-3 py-2 text-data-tabular font-data-tabular text-on-surface focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-shadow" type="text" value="Как оформить возврат товара надлежащего качества?"/>
+</div>
+<div class="grid grid-cols-3 gap-4">
+<div class="flex flex-col gap-stack-compact">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Категория</label>
+<div class="relative">
+<select class="w-full bg-background border border-outline-variant rounded px-3 py-2 text-data-tabular font-data-tabular text-on-surface appearance-none focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-shadow">
+<option selected="" value="warranty">Гарантия</option>
+<option value="payment">Оплата</option>
+<option value="delivery">Доставка</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none text-[18px]">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-stack-compact">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Язык</label>
+<div class="relative">
+<select class="w-full bg-background border border-outline-variant rounded px-3 py-2 text-data-tabular font-data-tabular text-on-surface appearance-none focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-shadow">
+<option selected="" value="ru">Русский</option>
+<option value="en">English</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none text-[18px]">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-stack-compact">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Источник / Канал</label>
+<div class="relative">
+<select class="w-full bg-background border border-outline-variant rounded px-3 py-2 text-data-tabular font-data-tabular text-on-surface appearance-none focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-shadow">
+<option selected="" value="whatsapp">WhatsApp</option>
+<option value="telegram">Telegram</option>
+<option value="manual">Manual Entry</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none text-[18px]">expand_more</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-stack-compact flex-1 min-h-[250px]">
+<div class="flex justify-between items-end">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Ответ ИИ (Форматированный текст)</label>
+<div class="flex gap-1 bg-surface-container border border-outline-variant rounded p-0.5">
+<button class="p-1 hover:bg-surface-variant rounded text-on-surface"><span class="material-symbols-outlined text-[16px]">format_bold</span></button>
+<button class="p-1 hover:bg-surface-variant rounded text-on-surface"><span class="material-symbols-outlined text-[16px]">format_italic</span></button>
+<button class="p-1 hover:bg-surface-variant rounded text-on-surface"><span class="material-symbols-outlined text-[16px]">link</span></button>
+<button class="p-1 hover:bg-surface-variant rounded text-on-surface"><span class="material-symbols-outlined text-[16px]">format_list_bulleted</span></button>
+</div>
+</div>
+<textarea class="w-full flex-1 bg-background border border-outline-variant rounded p-3 text-data-tabular font-data-tabular text-on-surface focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-shadow resize-none">Для оформления возврата товара надлежащего качества, пожалуйста, убедитесь, что сохранен товарный вид и упаковка.
+
+Процесс возврата:
+1. Заполните заявление по ссылке [Ссылка].
+2. Отправьте товар через ПВЗ СДЭК.
+3. Ожидайте поступления средств в течение 3-5 рабочих дней после проверки на складе.
+
+⚠️ Обратите внимание: стоимость обратной доставки удерживается из суммы возврата.</textarea>
+</div>
+</div>
+</div>
+<!-- AI Candidates Section (Bottom Panel) -->
+<div class="bg-surface-container-highest rounded-xl border border-outline-variant p-4 shrink-0 flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-[#8B5CF6]">auto_awesome</span>
+<h3 class="font-data-tabular text-data-tabular font-semibold text-on-surface">Кандидаты в FAQ от ИИ</h3>
+</div>
+<span class="px-2 py-0.5 bg-background border border-outline-variant text-on-surface-variant font-label-caps text-label-caps rounded-full">3 новых</span>
+</div>
+<div class="flex gap-4 overflow-x-auto pb-2 snap-x">
+<!-- Candidate Card 1 -->
+<div class="min-w-[300px] w-[300px] bg-surface border border-outline-variant rounded-lg p-3 snap-start flex flex-col gap-2">
+<p class="font-body-sm text-body-sm text-on-surface font-medium line-clamp-2">"А можно ли оплатить курьеру картой при получении?"</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2 text-xs">Авто-ответ: Да, у всех курьеров есть терминалы...</p>
+<div class="mt-auto pt-2 flex gap-2">
+<button class="flex-1 py-1 bg-secondary-fixed text-on-secondary-fixed-variant font-data-tabular text-[12px] rounded hover:bg-secondary hover:text-on-secondary transition-colors">Одобрить</button>
+<button class="flex-1 py-1 bg-surface-variant text-on-surface-variant font-data-tabular text-[12px] rounded hover:bg-error-container hover:text-on-error-container transition-colors">Отклонить</button>
+</div>
+</div>
+<!-- Candidate Card 2 -->
+<div class="min-w-[300px] w-[300px] bg-surface border border-outline-variant rounded-lg p-3 snap-start flex flex-col gap-2">
+<p class="font-body-sm text-body-sm text-on-surface font-medium line-clamp-2">"Работаете ли вы в выходные дни?"</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2 text-xs">Авто-ответ: Служба поддержки работает 24/7...</p>
+<div class="mt-auto pt-2 flex gap-2">
+<button class="flex-1 py-1 bg-secondary-fixed text-on-secondary-fixed-variant font-data-tabular text-[12px] rounded hover:bg-secondary hover:text-on-secondary transition-colors">Одобрить</button>
+<button class="flex-1 py-1 bg-surface-variant text-on-surface-variant font-data-tabular text-[12px] rounded hover:bg-error-container hover:text-on-error-container transition-colors">Отклонить</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

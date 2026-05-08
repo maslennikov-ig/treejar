@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Очереди - Noor CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#6ffbbe",
+                        "surface-dim": "#cbdbf5",
+                        "inverse-primary": "#bec6e0",
+                        "on-error-container": "#93000a",
+                        "secondary-container": "#2170e4",
+                        "on-surface": "#0b1c30",
+                        "on-secondary-container": "#fefcff",
+                        "on-primary-fixed": "#131b2e",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-tertiary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "primary": "#000000",
+                        "surface-container-highest": "#d3e4fe",
+                        "tertiary": "#000000",
+                        "surface-container-low": "#eff4ff",
+                        "surface-bright": "#f8f9ff",
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "on-secondary": "#ffffff",
+                        "surface-variant": "#d3e4fe",
+                        "on-secondary-fixed-variant": "#004395",
+                        "on-surface-variant": "#45464d",
+                        "on-tertiary-fixed": "#002113",
+                        "secondary": "#0058be",
+                        "surface-tint": "#565e74",
+                        "secondary-fixed": "#d8e2ff",
+                        "background": "#f8f9ff",
+                        "surface": "#f8f9ff",
+                        "surface-container-high": "#dce9ff",
+                        "primary-fixed": "#dae2fd",
+                        "tertiary-container": "#002113",
+                        "primary-container": "#131b2e",
+                        "on-tertiary-container": "#009668",
+                        "error-container": "#ffdad6",
+                        "outline": "#76777d",
+                        "on-secondary-fixed": "#001a42",
+                        "on-background": "#0b1c30",
+                        "error": "#ba1a1a",
+                        "inverse-surface": "#213145",
+                        "outline-variant": "#c6c6cd",
+                        "primary-fixed-dim": "#bec6e0",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#7c839b",
+                        "surface-container": "#e5eeff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-margin": "24px",
+                        "stack-default": "16px",
+                        "stack-compact": "8px",
+                        "unit": "4px",
+                        "gutter": "16px",
+                        "sidebar-width": "260px"
+                    },
+                    "fontFamily": {
+                        "body-base": ["Inter", "sans-serif"],
+                        "h2": ["Inter", "sans-serif"],
+                        "data-tabular": ["Inter", "sans-serif"],
+                        "body-sm": ["Inter", "sans-serif"],
+                        "h1": ["Inter", "sans-serif"],
+                        "label-caps": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "body-base": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-tabular": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-base min-h-screen flex">
+<!-- SideNavBar Component -->
+<nav class="fixed left-0 top-0 h-full w-[260px] flex flex-col p-4 gap-y-1 bg-primary-container dark:bg-primary-container border-r border-outline-variant z-50">
+<!-- Brand Header -->
+<div class="px-3 py-4 mb-4 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-secondary-container" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<div>
+<h2 class="text-h2 font-h2 text-on-secondary-container tracking-tight">Noor AI</h2>
+<p class="font-body-sm text-body-sm text-on-primary-container opacity-80">Панель управления</p>
+</div>
+</div>
+<!-- Main Navigation -->
+<div class="flex-1 flex flex-col gap-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-base text-body-base">Обзор</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-body-base text-body-base">Клиенты</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+<span class="font-body-base text-body-base">Переписки</span>
+</a>
+<!-- Active Tab -->
+<a class="flex items-center gap-3 px-3 py-2.5 bg-secondary-container text-on-secondary-container rounded-xl font-bold active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined">priority_high</span>
+<span class="font-body-base text-body-base">Эскалации</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="font-body-base text-body-base">База знаний</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-body-base text-body-base">Каталог</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">bar_chart</span>
+<span class="font-body-base text-body-base">Отчеты</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-base text-body-base">Настройки</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-body-base text-body-base">Логи аудита</span>
+</a>
+</div>
+<!-- CTA Button -->
+<button class="mt-4 w-full py-2.5 px-4 bg-secondary text-on-secondary rounded-lg font-body-base text-body-base hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[20px]">add</span>
+            Создать рассылку
+        </button>
+<!-- Footer Nav -->
+<div class="mt-4 pt-4 border-t border-outline-variant/30 flex flex-col gap-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-body-base text-body-base">Поддержка</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-primary-container opacity-80 hover:bg-surface-container-low hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-base text-body-base">Выйти</span>
+</a>
+</div>
+</nav>
+<!-- Main Wrapper -->
+<div class="ml-[260px] flex-1 flex flex-col w-full min-h-screen">
+<!-- TopAppBar Component -->
+<header class="sticky top-0 w-full z-40 flex justify-between items-center h-16 px-container-margin bg-surface dark:bg-surface border-b border-outline-variant">
+<div class="flex items-center gap-4">
+<h1 class="font-h1 text-h1 text-primary dark:text-primary-fixed">Noor CRM</h1>
+</div>
+<div class="flex items-center gap-6">
+<!-- Search -->
+<div class="relative w-64 focus-within:ring-2 focus-within:ring-secondary rounded-lg">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+<input class="w-full h-10 pl-10 pr-4 bg-surface-container-low border border-outline-variant rounded-lg font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:outline-none" placeholder="Поиск..." type="text"/>
+</div>
+<!-- Actions -->
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">settings_suggest</span>
+</button>
+<button class="flex items-center gap-2 p-1 pl-2 pr-3 rounded-full hover:bg-surface-container-low border border-outline-variant transition-colors ml-2">
+<div class="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-data-tabular text-[12px]">АД</div>
+<span class="font-body-sm text-body-sm text-on-surface">Администратор</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 p-container-margin flex flex-col gap-stack-default overflow-x-hidden">
+<!-- Page Header -->
+<div class="flex justify-between items-end mb-2">
+<div>
+<h2 class="font-h2 text-h2 text-on-surface">Центр Очередей</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Управление эскалациями, проверка качества и обучение ИИ.</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 bg-surface-container-lowest border border-outline-variant rounded-lg font-body-sm text-body-sm text-on-surface hover:bg-surface-container-low transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+                        Фильтры
+                    </button>
+<button class="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-body-sm text-body-sm hover:opacity-90 transition-opacity flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+                        Начать разбор
+                    </button>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-6 items-start">
+<!-- Full Width: Escalations Table -->
+<section class="col-span-12 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm flex flex-col">
+<div class="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-error text-[20px]">priority_high</span>
+<h3 class="font-data-tabular text-data-tabular text-on-surface uppercase tracking-wider">Критические Эскалации</h3>
+<span class="ml-2 bg-error-container text-on-error-container px-2 py-0.5 rounded-full font-label-caps text-label-caps">12 Активных</span>
+</div>
+<button class="text-secondary hover:underline font-body-sm text-body-sm">Смотреть все</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-outline-variant">
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant font-medium">ID Диалога</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant font-medium">Клиент / Сумма</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant font-medium">Причина перевода</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant font-medium">Приоритет</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant font-medium">Время в очереди</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant font-medium text-right">Действия</th>
+</tr>
+</thead>
+<tbody class="font-data-tabular text-data-tabular divide-y divide-outline-variant">
+<tr class="hover:bg-surface-bright transition-colors group">
+<td class="py-3 px-4 text-on-surface">#DLG-9021</td>
+<td class="py-3 px-4">
+<div class="text-on-surface font-medium">ООО "ТехПром"</div>
+<div class="text-on-surface-variant text-[11px] mt-0.5">Сделка: 1.2M ₽</div>
+</td>
+<td class="py-3 px-4 text-on-surface">Сложный технический вопрос по интеграции API</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-error bg-error-container/30 px-2 py-1 rounded border border-error-container/50">
+<span class="material-symbols-outlined text-[14px]">local_fire_department</span> Высокий
+                                        </span>
+</td>
+<td class="py-3 px-4 text-error font-medium">14 мин</td>
+<td class="py-3 px-4 text-right">
+<button class="px-3 py-1.5 bg-surface border border-outline-variant rounded text-on-surface hover:bg-surface-container-low transition-colors text-[12px] font-medium mr-2">Назначить</button>
+<button class="px-3 py-1.5 bg-secondary text-on-secondary rounded hover:opacity-90 transition-opacity text-[12px] font-medium">Принять</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-bright transition-colors group">
+<td class="py-3 px-4 text-on-surface">#DLG-8842</td>
+<td class="py-3 px-4">
+<div class="text-on-surface font-medium">ИП Смирнов</div>
+<div class="text-on-surface-variant text-[11px] mt-0.5">Новый лид</div>
+</td>
+<td class="py-3 px-4 text-on-surface">Запрос индивидуальной скидки (вне лимита ИИ)</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-on-surface-variant bg-surface-container px-2 py-1 rounded border border-outline-variant">
+<span class="material-symbols-outlined text-[14px]">schedule</span> Средний
+                                        </span>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">08 мин</td>
+<td class="py-3 px-4 text-right">
+<button class="px-3 py-1.5 bg-surface border border-outline-variant rounded text-on-surface hover:bg-surface-container-low transition-colors text-[12px] font-medium mr-2">Назначить</button>
+<button class="px-3 py-1.5 bg-secondary text-on-secondary rounded hover:opacity-90 transition-opacity text-[12px] font-medium">Принять</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-bright transition-colors group">
+<td class="py-3 px-4 text-on-surface">#DLG-8710</td>
+<td class="py-3 px-4">
+<div class="text-on-surface font-medium">Альфа Ритейл</div>
+<div class="text-on-surface-variant text-[11px] mt-0.5">Постоянный клиент</div>
+</td>
+<td class="py-3 px-4 text-on-surface">Непонимание формулировки бота (цикл ответов)</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-on-surface-variant bg-surface-container px-2 py-1 rounded border border-outline-variant">
+<span class="material-symbols-outlined text-[14px]">arrow_drop_down</span> Низкий
+                                        </span>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">22 мин</td>
+<td class="py-3 px-4 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 bg-surface border border-outline-variant rounded text-on-surface hover:bg-surface-container-low transition-colors text-[12px] font-medium mr-2">Назначить</button>
+<button class="px-3 py-1.5 bg-secondary text-on-secondary rounded hover:opacity-90 transition-opacity text-[12px] font-medium">Принять</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- Half Width: Manager Reviews -->
+<section class="col-span-12 lg:col-span-6 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm flex flex-col h-[400px]">
+<div class="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">rule_folder</span>
+<h3 class="font-data-tabular text-data-tabular text-on-surface uppercase tracking-wider">Проверка Менеджером</h3>
+</div>
+<span class="bg-surface-container-high text-on-surface px-2 py-0.5 rounded-full font-label-caps text-label-caps">5 Ожидают</span>
+</div>
+<div class="p-3 flex-1 overflow-y-auto flex flex-col gap-2">
+<!-- Review Card 1 -->
+<div class="border border-outline-variant rounded-lg p-3 bg-surface hover:border-secondary transition-colors cursor-pointer group relative">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded bg-primary-fixed flex items-center justify-center text-on-primary-fixed font-data-tabular text-[10px] font-bold">AI</div>
+<span class="font-data-tabular text-data-tabular text-on-surface font-medium">Генерация КП</span>
+</div>
+<span class="text-on-surface-variant text-[11px]">2 мин назад</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2 mb-3">ИИ подготовил коммерческое предложение для "Вектор Плюс" с нестандартными условиями поставки.</p>
+<div class="flex gap-2">
+<button class="flex-1 py-1.5 bg-tertiary-fixed-dim/20 text-on-tertiary-fixed-variant rounded text-[12px] font-medium hover:bg-tertiary-fixed-dim/30 transition-colors border border-tertiary-fixed-dim/30">Одобрить</button>
+<button class="flex-1 py-1.5 bg-surface border border-outline-variant text-on-surface rounded text-[12px] font-medium hover:bg-surface-container-low transition-colors">Редактировать</button>
+</div>
+</div>
+<!-- Review Card 2 -->
+<div class="border border-outline-variant rounded-lg p-3 bg-surface hover:border-secondary transition-colors cursor-pointer group relative">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[14px]">mail</span>
+</div>
+<span class="font-data-tabular text-data-tabular text-on-surface font-medium">Массовая рассылка</span>
+</div>
+<span class="text-on-surface-variant text-[11px]">15 мин назад</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2 mb-3">Черновик email-кампании "Осенняя акция" для сегмента B2B (340 контактов).</p>
+<div class="flex gap-2">
+<button class="flex-1 py-1.5 bg-tertiary-fixed-dim/20 text-on-tertiary-fixed-variant rounded text-[12px] font-medium hover:bg-tertiary-fixed-dim/30 transition-colors border border-tertiary-fixed-dim/30">Одобрить</button>
+<button class="flex-1 py-1.5 bg-surface border border-outline-variant text-on-surface rounded text-[12px] font-medium hover:bg-surface-container-low transition-colors">Отклонить</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Half Width: Auto-FAQ Candidates -->
+<section class="col-span-12 lg:col-span-6 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm flex flex-col h-[400px]">
+<div class="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary-container text-[20px]">smart_toy</span>
+<h3 class="font-data-tabular text-data-tabular text-on-surface uppercase tracking-wider">Кандидаты в FAQ</h3>
+</div>
+<button class="p-1 rounded hover:bg-surface-container-low text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+<div class="p-3 flex-1 overflow-y-auto flex flex-col gap-3">
+<div class="p-3 bg-surface-container-low rounded-lg border border-outline-variant border-dashed">
+<div class="flex gap-3 mb-2">
+<div class="mt-1 text-secondary">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+</div>
+<div>
+<h4 class="font-data-tabular text-data-tabular text-on-surface font-medium">Сроки доставки в Сибирь</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Встречается в 14% диалогов за неделю. ИИ постоянно переводит на оператора.</p>
+</div>
+</div>
+<div class="ml-8 p-2 bg-surface rounded border border-outline-variant/50 relative">
+<span class="absolute -left-2 -top-2 bg-primary-fixed text-on-primary-fixed text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">Сгенерированный ответ</span>
+<p class="font-body-sm text-body-sm text-on-surface italic text-[12px]">"Стандартный срок доставки в Сибирский ФО составляет от 5 до 8 рабочих дней логистической компанией СДЭК..."</p>
+</div>
+<div class="ml-8 mt-3 flex gap-2">
+<button class="px-3 py-1.5 bg-secondary text-on-secondary rounded text-[12px] font-medium hover:opacity-90 transition-opacity">Добавить в Базу</button>
+<button class="px-3 py-1.5 bg-surface text-on-surface border border-outline-variant rounded text-[12px] font-medium hover:bg-surface-container-lowest transition-colors">Игнорировать</button>
+</div>
+</div>
+<div class="p-3 bg-surface-container-low rounded-lg border border-outline-variant border-dashed">
+<div class="flex gap-3 mb-2">
+<div class="mt-1 text-secondary">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+</div>
+<div>
+<h4 class="font-data-tabular text-data-tabular text-on-surface font-medium">Условия возврата по 44-ФЗ</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Выявлен новый паттерн вопросов от гос. заказчиков.</p>
+</div>
+</div>
+<div class="ml-8 mt-2 flex gap-2">
+<button class="px-3 py-1.5 bg-secondary text-on-secondary rounded text-[12px] font-medium hover:opacity-90 transition-opacity">Создать черновик ответа</button>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</body></html>

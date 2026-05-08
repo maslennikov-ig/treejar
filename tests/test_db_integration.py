@@ -169,6 +169,53 @@ async def test_generate_report_quality_uses_active_conversation_window() -> None
 
 
 @pytest.mark.asyncio
+async def test_generate_report_normalizes_aware_dates_for_naive_db_columns() -> None:
+    """Report filters should bind naive UTC datetimes for current DB timestamp columns."""
+    from src.services.reports import generate_report
+
+    mock_db = AsyncMock()
+
+    mock_conv_result = MagicMock()
+    mock_conv_result.one.return_value = (1, 1)
+
+    mock_deals_result = MagicMock()
+    mock_deals_result.one.return_value = (0, None)
+
+    mock_esc_reasons_result = MagicMock()
+    mock_esc_reasons_result.all.return_value = []
+
+    mock_top_prod_result = MagicMock()
+    mock_top_prod_result.all.return_value = []
+
+    mock_db.execute.side_effect = [
+        mock_conv_result,
+        mock_deals_result,
+        mock_esc_reasons_result,
+        mock_top_prod_result,
+    ]
+    mock_db.scalar.side_effect = [None, 0]
+
+    start = datetime(2026, 5, 1, 8, 30, tzinfo=UTC)
+    end = datetime(2026, 5, 8, 8, 30, tzinfo=UTC)
+    report = await generate_report(mock_db, start_date=start, end_date=end)
+
+    assert report.period_start.tzinfo is None
+    assert report.period_end.tzinfo is None
+
+    for call in mock_db.execute.call_args_list[:3]:
+        compiled = call.args[0].compile(dialect=postgresql.dialect())
+        datetimes = [
+            value for value in compiled.params.values() if isinstance(value, datetime)
+        ]
+        assert datetimes
+        assert all(value.tzinfo is None for value in datetimes)
+
+    top_products_params = mock_db.execute.call_args_list[3].args[1]
+    assert top_products_params["start_date"].tzinfo is None
+    assert top_products_params["end_date"].tzinfo is None
+
+
+@pytest.mark.asyncio
 async def test_dashboard_metrics_quality_uses_active_conversation_window() -> None:
     """Dashboard quality should follow assistant activity, not review created_at."""
     from src.services.dashboard_metrics import calculate_dashboard_metrics

@@ -23,6 +23,12 @@ def test_operator_center_renders_when_metrics_fail() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_crm_admin_static_contract() -> None:
+    result = _run_frontend_regression("crm_admin_static_regression.mjs")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_operator_center_review_message_handles_refresh_failure_after_success() -> None:
     result = _run_frontend_regression("operator_center_review_message_regression.mjs")
 

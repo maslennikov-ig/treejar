@@ -1,10 +1,12 @@
 from sqladmin import Admin, ModelView
 
+from src.models.admin_action_audit import AdminActionAudit
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
 from src.models.escalation import Escalation
 from src.models.feedback import Feedback
 from src.models.knowledge_base import KnowledgeBase
+from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
 from src.models.manager_review import ManagerReview
 from src.models.message import Message
 from src.models.metrics_snapshot import MetricsSnapshot
@@ -20,6 +22,19 @@ class ReadOnlyModelView(ModelView):
     can_create = False
     can_edit = False
     can_delete = False
+
+
+class AdminActionAuditAdmin(ReadOnlyModelView, model=AdminActionAudit):
+    column_list = [
+        AdminActionAudit.actor,
+        AdminActionAudit.action,
+        AdminActionAudit.entity_type,
+        AdminActionAudit.entity_id,
+        AdminActionAudit.created_at,
+    ]
+    name = "Аудит действия"
+    name_plural = "Аудит действий"
+    icon = "fa-solid fa-clipboard-list"
 
 
 class ConversationAdmin(ReadOnlyModelView, model=Conversation):
@@ -66,6 +81,18 @@ class KnowledgeBaseAdmin(ModelView, model=KnowledgeBase):
     name = "База знаний"
     name_plural = "База знаний"
     icon = "fa-solid fa-book"
+
+
+class KnowledgeBaseCandidateAdmin(ReadOnlyModelView, model=KnowledgeBaseCandidate):
+    column_list = [
+        KnowledgeBaseCandidate.question,
+        KnowledgeBaseCandidate.status,
+        KnowledgeBaseCandidate.confidence,
+        KnowledgeBaseCandidate.created_at,
+    ]
+    name = "Кандидат базы знаний"
+    name_plural = "Кандидаты базы знаний"
+    icon = "fa-solid fa-book-open"
 
 
 class QualityReviewAdmin(ReadOnlyModelView, model=QualityReview):
@@ -200,12 +227,14 @@ class OutboundMessageAuditAdmin(ReadOnlyModelView, model=OutboundMessageAudit):
 
 
 def setup_admin_views(admin_app: Admin) -> None:
+    admin_app.add_view(AdminActionAuditAdmin)
     admin_app.add_view(ConversationAdmin)
     admin_app.add_view(ConversationSummaryAdmin)
     admin_app.add_view(MessageAdmin)
     admin_app.add_view(OutboundMessageAuditAdmin)
     admin_app.add_view(ProductAdmin)
     admin_app.add_view(KnowledgeBaseAdmin)
+    admin_app.add_view(KnowledgeBaseCandidateAdmin)
     admin_app.add_view(QualityReviewAdmin)
     admin_app.add_view(EscalationAdmin)
     admin_app.add_view(ManagerReviewAdmin)

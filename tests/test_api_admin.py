@@ -355,7 +355,19 @@ async def test_admin_models_list(client: AsyncClient) -> None:
             f"Failed on {link} with status {resp.status_code}"
         )
 
-    # Also test details and edit pages for the mock items
+    # Also test details and write pages for the mock items. Some SQLAdmin views are
+    # intentionally read-only because the CRM dashboard owns operational actions.
+    model_permissions = {
+        "conversation": {"can_create": False, "can_edit": False},
+        "message": {"can_create": False, "can_edit": False},
+        "escalation": {"can_create": False, "can_edit": True},
+        "quality-review": {"can_create": False, "can_edit": False},
+        "product": {"can_create": False, "can_edit": False},
+        "knowledge-base": {"can_create": True, "can_edit": True},
+        "system-config": {"can_create": True, "can_edit": True},
+        "system-prompt": {"can_create": False, "can_edit": True},
+        "metrics-snapshot": {"can_create": False, "can_edit": False},
+    }
     for model_name, item_id in [
         ("conversation", conv_id),
         ("message", msg.id),
@@ -393,7 +405,8 @@ async def test_admin_models_list(client: AsyncClient) -> None:
         if resp_edit.status_code == 500:
             print(f"500 ERROR ON {edit_url}")
             print(resp_edit.text)
-        assert resp_edit.status_code == 200, f"Failed on {edit_url}"
+        expected_edit_status = 200 if model_permissions[model_name]["can_edit"] else 403
+        assert resp_edit.status_code == expected_edit_status, f"Failed on {edit_url}"
 
         # create
         create_url = f"/admin/{model_name}/create"
@@ -401,7 +414,10 @@ async def test_admin_models_list(client: AsyncClient) -> None:
         if resp_c.status_code == 500:
             print(f"500 ERROR ON {create_url}")
             print(resp_c.text)
-        assert resp_c.status_code == 200, f"Failed on {create_url}"
+        expected_create_status = (
+            200 if model_permissions[model_name]["can_create"] else 403
+        )
+        assert resp_c.status_code == expected_create_status, f"Failed on {create_url}"
 
 
 @pytest.mark.asyncio

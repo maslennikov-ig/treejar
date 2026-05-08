@@ -14,10 +14,24 @@ export default defineConfig({
     build: {
         rollupOptions: {
             output: {
-                manualChunks: {
-                    vendor: ['react', 'react-dom'],
-                    charts: ['recharts'],
-                    motion: ['framer-motion'],
+                manualChunks(id) {
+                    const normalizedId = id.replaceAll(path.sep, '/');
+                    if (!normalizedId.includes('/node_modules/')) {
+                        return undefined;
+                    }
+                    if (
+                        normalizedId.includes('/node_modules/react/') ||
+                        normalizedId.includes('/node_modules/react-dom/')
+                    ) {
+                        return 'vendor';
+                    }
+                    if (normalizedId.includes('/node_modules/recharts/')) {
+                        return 'charts';
+                    }
+                    if (normalizedId.includes('/node_modules/framer-motion/')) {
+                        return 'motion';
+                    }
+                    return undefined;
                 },
             },
         },

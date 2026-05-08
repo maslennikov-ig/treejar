@@ -126,7 +126,10 @@ async def index_knowledge_base(db: AsyncSession) -> int:
     """
     engine = EmbeddingEngine()
 
-    stmt = select(KnowledgeBase).where(KnowledgeBase.embedding.is_(None))
+    stmt = select(KnowledgeBase).where(
+        KnowledgeBase.embedding.is_(None),
+        KnowledgeBase.deleted_at.is_(None),
+    )
     result = await db.execute(stmt)
     records = result.scalars().all()
 

@@ -80,17 +80,36 @@ const STUBS = new Map([
             return null;
         }
 
-        export const MessageCircle = Icon;
-        export const Users = Icon;
-        export const TrendingUp = Icon;
-        export const DollarSign = Icon;
-        export const Activity = Icon;
         export const Star = Icon;
-        export const Clock = Icon;
         export const AlertTriangle = Icon;
-        export const RefreshCw = Icon;
+        export const BarChart3 = Icon;
+        export const Bell = Icon;
+        export const BookOpen = Icon;
+        export const Bot = Icon;
+        export const Boxes = Icon;
+        export const CheckCircle2 = Icon;
         export const ClipboardCheck = Icon;
-        export const LayoutDashboard = Icon;
+        export const ClipboardList = Icon;
+        export const Clock = Icon;
+        export const DollarSign = Icon;
+        export const FileText = Icon;
+        export const Gauge = Icon;
+        export const HelpCircle = Icon;
+        export const History = Icon;
+        export const Inbox = Icon;
+        export const MessageCircle = Icon;
+        export const Package = Icon;
+        export const RefreshCw = Icon;
+        export const RotateCcw = Icon;
+        export const Save = Icon;
+        export const Search = Icon;
+        export const Send = Icon;
+        export const Settings = Icon;
+        export const ShieldAlert = Icon;
+        export const ShieldCheck = Icon;
+        export const SlidersHorizontal = Icon;
+        export const Trash2 = Icon;
+        export const TrendingUp = Icon;
     `],
 ]);
 
@@ -133,11 +152,10 @@ try {
     const { default: App } = await import(moduleUrl);
     const html = renderToStaticMarkup(React.createElement(App));
 
-    assert.match(
-        html,
-        /operator-center-marker/,
-        'OperatorCenter should render even when metrics data is unavailable',
-    );
+    assert.match(html, /Noor CRM/);
+    assert.match(html, /Клиенты и диалоги/);
+    assert.match(html, /Телефон, имя, Zoho, SO/);
+    assert.match(html, /Выберите клиента, чтобы открыть полный timeline/);
 } finally {
     await rm(tempDir, { recursive: true, force: true });
 }

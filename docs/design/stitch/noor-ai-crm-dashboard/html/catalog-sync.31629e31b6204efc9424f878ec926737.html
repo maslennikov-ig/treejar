@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Каталог - Noor CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline-variant": "#c6c6cd",
+                        "surface-container": "#e5eeff",
+                        "on-secondary-fixed-variant": "#004395",
+                        "outline": "#76777d",
+                        "tertiary-container": "#002113",
+                        "on-primary-container": "#7c839b",
+                        "surface-bright": "#f8f9ff",
+                        "inverse-on-surface": "#eaf1ff",
+                        "on-surface-variant": "#45464d",
+                        "on-secondary-fixed": "#001a42",
+                        "inverse-surface": "#213145",
+                        "surface-variant": "#d3e4fe",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "on-error-container": "#93000a",
+                        "surface-dim": "#cbdbf5",
+                        "on-surface": "#0b1c30",
+                        "surface": "#f8f9ff",
+                        "on-background": "#0b1c30",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "surface-container-lowest": "#ffffff",
+                        "primary": "#000000",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#eff4ff",
+                        "on-secondary-container": "#fefcff",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#dce9ff",
+                        "error": "#ba1a1a",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "surface-tint": "#565e74",
+                        "on-error": "#ffffff",
+                        "primary-container": "#131b2e",
+                        "on-tertiary-container": "#009668",
+                        "primary-fixed-dim": "#bec6e0",
+                        "background": "#f8f9ff",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "tertiary": "#000000",
+                        "secondary-container": "#2170e4",
+                        "secondary": "#0058be",
+                        "on-primary-fixed": "#131b2e",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-tertiary-fixed": "#002113",
+                        "inverse-primary": "#bec6e0",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#dae2fd",
+                        "tertiary-fixed": "#6ffbbe"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "stack-default": "16px",
+                        "gutter": "16px",
+                        "sidebar-width": "260px",
+                        "container-margin": "24px",
+                        "stack-compact": "8px"
+                    },
+                    "fontFamily": {
+                        "body-base": ["Inter", "sans-serif"],
+                        "data-tabular": ["Inter", "sans-serif"],
+                        "h1": ["Inter", "sans-serif"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "body-sm": ["Inter", "sans-serif"],
+                        "h2": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "body-base": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-tabular": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background min-h-screen text-on-background font-body-base antialiased">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full w-[260px] bg-primary-container text-on-primary-fixed border-r border-outline-variant flex flex-col p-4 gap-y-1 z-50">
+<!-- Header -->
+<div class="flex items-center gap-3 px-3 py-4 mb-4">
+<div class="w-8 h-8 rounded bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold">N</div>
+<div>
+<div class="text-h2 font-h2 text-on-secondary-container tracking-tight">Noor AI</div>
+<div class="font-body-sm text-body-sm text-on-primary-container opacity-80">Панель управления</div>
+</div>
+</div>
+<!-- CTA -->
+<button class="mb-6 w-full bg-[#8B5CF6] text-white py-2 px-4 rounded-xl font-data-tabular text-data-tabular flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined" style="font-size: 18px;">add</span>
+            Создать рассылку
+        </button>
+<!-- Navigation Links -->
+<div class="flex-1 flex flex-col gap-y-1 overflow-y-auto">
+<!-- Inactive -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Обзор
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">groups</span>
+                Клиенты
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+                Переписки
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">priority_high</span>
+                Эскалации
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+                База знаний
+            </a>
+<!-- Active -->
+<a class="flex items-center gap-3 px-3 py-2.5 bg-secondary-container text-on-secondary-container rounded-xl font-bold font-body-base text-body-base active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+                Каталог
+            </a>
+<!-- Inactive -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">bar_chart</span>
+                Отчеты
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Настройки
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">history</span>
+                Логи аудита
+            </a>
+</div>
+<!-- Footer Links -->
+<div class="mt-auto flex flex-col gap-y-1 pt-4 border-t border-on-primary-container/20">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">help</span>
+                Поддержка
+            </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-body-base text-body-base text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">logout</span>
+                Выйти
+            </a>
+</div>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="ml-[260px] flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="sticky top-0 w-full z-40 bg-surface text-on-surface border-b border-outline-variant flex justify-between items-center h-16 px-container-margin">
+<!-- Left: Brand / Search -->
+<div class="flex items-center gap-6 flex-1">
+<span class="font-h1 text-h1 text-primary">Noor CRM</span>
+<!-- Search Box -->
+<div class="relative w-96 max-w-md focus-within:ring-2 focus-within:ring-secondary rounded-lg bg-surface-container-low border border-outline-variant flex items-center px-3 py-1.5 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] mr-2">search</span>
+<input class="w-full bg-transparent border-none p-0 font-body-base text-body-base text-on-surface placeholder:text-outline focus:ring-0" placeholder="Поиск по каталогу..." type="text"/>
+</div>
+</div>
+<!-- Right: Actions -->
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">settings_suggest</span>
+</button>
+<button class="ml-2 flex items-center justify-center w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container hover:bg-secondary transition-colors" title="Администратор">
+<span class="material-symbols-outlined" style="font-size: 20px;">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-1 p-container-margin">
+<div class="max-w-[1400px] mx-auto flex flex-col gap-6">
+<!-- Page Header & Actions -->
+<div class="flex justify-between items-end">
+<div>
+<div class="font-body-sm text-body-sm text-on-surface-variant mb-1 flex items-center gap-1">
+<span>Интеграции</span> <span class="material-symbols-outlined text-[14px]">chevron_right</span> <span>WhatsApp API</span>
+</div>
+<h1 class="font-h1 text-h1 text-on-surface">Каталог</h1>
+</div>
+<button class="bg-secondary text-on-secondary font-data-tabular text-data-tabular px-5 py-2.5 rounded flex items-center gap-2 hover:bg-on-secondary-fixed transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[18px]">sync</span>
+                        Синхронизировать
+                    </button>
+</div>
+<!-- Bento Grid Top Row: Status & Metrics -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Integration Status Card -->
+<div class="col-span-12 lg:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl p-5 flex flex-col justify-between shadow-sm">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-[#25D366]/10 flex items-center justify-center text-[#25D366]">
+<svg class="w-6 h-6" fill="currentColor" viewbox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"></path></svg>
+</div>
+<div>
+<div class="font-data-tabular text-data-tabular text-on-surface">WhatsApp Business</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">ID: WABA-847291</div>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-1 rounded bg-tertiary-container/10 text-on-tertiary-container font-label-caps text-label-caps">АКТИВНО</span>
+</div>
+<div class="pt-4 border-t border-outline-variant/50">
+<div class="flex justify-between items-center font-body-sm text-body-sm">
+<span class="text-on-surface-variant">Последняя синхронизация</span>
+<span class="text-on-surface font-medium flex items-center gap-1"><span class="material-symbols-outlined text-[14px] text-tertiary-fixed-dim">check_circle</span> 14:32 Сегодня</span>
+</div>
+</div>
+</div>
+<!-- Metrics Cards -->
+<div class="col-span-12 lg:col-span-8 grid grid-cols-3 gap-4">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm flex flex-col justify-center">
+<div class="font-body-sm text-body-sm text-on-surface-variant mb-2">Всего товаров</div>
+<div class="font-h1 text-h1 text-on-surface">1,248</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm flex flex-col justify-center">
+<div class="font-body-sm text-body-sm text-on-surface-variant mb-2">Обновлено сегодня</div>
+<div class="font-h1 text-h1 text-on-surface text-secondary">342</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm flex flex-col justify-center relative overflow-hidden">
+<div class="absolute right-0 top-0 w-16 h-16 bg-error-container rounded-bl-full opacity-20"></div>
+<div class="font-body-sm text-body-sm text-on-surface-variant mb-2">Ошибки синхронизации</div>
+<div class="font-h1 text-h1 text-error">3</div>
+</div>
+</div>
+</div>
+<!-- Main Grid: Table & Logs -->
+<div class="grid grid-cols-12 gap-6 items-start">
+<!-- Products Data Table -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
+<div class="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<h2 class="font-data-tabular text-data-tabular text-on-surface">Синхронизированные товары</h2>
+<button class="text-secondary text-body-sm font-data-tabular hover:underline">Фильтры</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low/50 border-b border-outline-variant">
+<th class="px-4 py-2.5 font-label-caps text-label-caps text-on-surface-variant w-12"></th>
+<th class="px-4 py-2.5 font-label-caps text-label-caps text-on-surface-variant">НАИМЕНОВАНИЕ / SKU</th>
+<th class="px-4 py-2.5 font-label-caps text-label-caps text-on-surface-variant">ЦЕНА</th>
+<th class="px-4 py-2.5 font-label-caps text-label-caps text-on-surface-variant">НАЛИЧИЕ</th>
+<th class="px-4 py-2.5 font-label-caps text-label-caps text-on-surface-variant text-right">СТАТУС AI</th>
+</tr>
+</thead>
+<tbody class="font-data-tabular text-data-tabular divide-y divide-outline-variant/40">
+<tr class="hover:bg-surface transition-colors group">
+<td class="px-4 py-2">
+<div class="w-10 h-10 rounded border border-outline-variant overflow-hidden bg-surface-container">
+<img alt="Продукт" class="w-full h-full object-cover" data-alt="A sleek, modern smart watch resting on a clean, light-grey marble surface. The lighting is studio-quality, creating soft highlights on the watch's glass face and matte black band. The aesthetic is premium, high-tech, and minimalist, perfectly aligned with a sophisticated corporate e-commerce catalog. The background is a crisp, off-white #F8FAFC." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9e8Ntxvu8GE0XXBQ6EBFm695q0ESjUSG2M6dzv2KlvgzQ68ZUCdrPuRwiNvI_fdvbcSMAUpaLLjTTQoqhFEFOll3dt_tTrIaVLPkuL8jOUna56n7yBlYc6WpPxspDwxy0k9y1DQ-hGaJ8NPsla-m1YZcMXWb4peZY9OvcpJtBivxwsITk5DG-0Bs3KlA0WN3d_UU2XJl1r_uHXzjwBz_UreBCMC7d37sTGb3CAVP56wcqnuZNPHxrHCLHw42ID0n0Ejz4t-6fzMcd"/>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="text-on-surface font-medium">SmartWatch Pro Series 8</div>
+<div class="text-on-surface-variant text-[11px] mt-0.5">SKU: SW-P8-BLK</div>
+</td>
+<td class="px-4 py-2 text-on-surface">₽ 34,990</td>
+<td class="px-4 py-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-sm bg-tertiary-container/10 text-on-tertiary-container text-[11px] font-medium border border-tertiary-container/20">В наличии (45)</span>
+</td>
+<td class="px-4 py-2 text-right">
+<span class="inline-flex items-center gap-1 text-[#8B5CF6] text-[12px] bg-[#8B5CF6]/10 px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">auto_awesome</span> Активен
+                                            </span>
+</td>
+</tr>
+<tr class="hover:bg-surface transition-colors group">
+<td class="px-4 py-2">
+<div class="w-10 h-10 rounded border border-outline-variant overflow-hidden bg-surface-container">
+<img alt="Продукт" class="w-full h-full object-cover" data-alt="A pair of premium over-ear wireless headphones in matte black, positioned elegantly on a pristine white surface. Soft, diffused lighting emphasizes the metallic accents and plush ear cushions. The overall composition is highly structured and clean, evoking an enterprise-grade product showcase typical of modern light-mode applications." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBvnsnxw37ipVvNwh9AiOPibPrcW1dAKx8NOWPwtZX8hEgjZVIaOKPnBOKv9wNGvbXwIJ_CXGjY218Tc8FN3AFwrFgXEFqkBfSJ_wYGUjqxH06XpyhZsbLb_wg-1N7I2a6VlIsLh86Jn9j8FLU0MAswRlfi2VJncFHN9xN00OcdLB7CIThO6yGZzYPvmYupYztWkj64ih7EAo8B3dFvuAjs4jNGRbBysVtYkkHxOt9j6O7M8tGBvE5tuB2jRp1tZxv25TGgNWKABw1N"/>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="text-on-surface font-medium">NoiseCancelling Headphones X</div>
+<div class="text-on-surface-variant text-[11px] mt-0.5">SKU: NC-HPX-01</div>
+</td>
+<td class="px-4 py-2 text-on-surface">₽ 22,500</td>
+<td class="px-4 py-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-sm bg-error-container/20 text-on-error-container text-[11px] font-medium border border-error-container/30">Нет в наличии</span>
+</td>
+<td class="px-4 py-2 text-right">
+<span class="inline-flex items-center gap-1 text-on-surface-variant text-[12px] bg-surface-container px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">pause_circle</span> Пауза
+                                            </span>
+</td>
+</tr>
+<tr class="hover:bg-surface transition-colors group">
+<td class="px-4 py-2">
+<div class="w-10 h-10 rounded border border-outline-variant overflow-hidden bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-outline-variant">image</span>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="text-on-surface font-medium">Wireless Charger Pad 15W</div>
+<div class="text-on-surface-variant text-[11px] mt-0.5">SKU: WC-PAD-15</div>
+</td>
+<td class="px-4 py-2 text-on-surface">₽ 3,200</td>
+<td class="px-4 py-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-sm bg-tertiary-container/10 text-on-tertiary-container text-[11px] font-medium border border-tertiary-container/20">В наличии (112)</span>
+</td>
+<td class="px-4 py-2 text-right">
+<span class="inline-flex items-center gap-1 text-[#8B5CF6] text-[12px] bg-[#8B5CF6]/10 px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">auto_awesome</span> Активен
+                                            </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-3 border-t border-outline-variant bg-surface-bright flex justify-between items-center font-body-sm text-body-sm text-on-surface-variant">
+<span>Показано 1-3 из 1248</span>
+<div class="flex gap-2">
+<button class="px-2 py-1 rounded hover:bg-surface-container border border-transparent">Пред.</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container border border-transparent">След.</button>
+</div>
+</div>
+</div>
+<!-- Error Logs Panel -->
+<div class="col-span-12 lg:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm flex flex-col h-full">
+<div class="px-4 py-3 border-b border-outline-variant bg-surface-bright flex justify-between items-center">
+<h2 class="font-data-tabular text-data-tabular text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-error text-[18px]">warning</span>
+                                Журнал ошибок
+                            </h2>
+</div>
+<div class="p-4 flex flex-col gap-3 flex-1 overflow-y-auto bg-surface-bright/30">
+<!-- Log Item -->
+<div class="bg-surface-container-lowest border border-error-container/50 rounded-lg p-3 shadow-sm relative pl-4">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-error rounded-l-lg"></div>
+<div class="flex justify-between items-start mb-1">
+<span class="font-data-tabular text-[12px] font-semibold text-on-surface">SKU: WC-PAD-15</span>
+<span class="text-[11px] text-on-surface-variant font-data-tabular">14:31</span>
+</div>
+<p class="font-body-sm text-[12px] text-on-surface-variant leading-tight">
+                                    Отсутствует обязательное поле 'Изображение товара' (WA_ERR_1004). Товар пропущен.
+                                </p>
+</div>
+<!-- Log Item -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-3 shadow-sm pl-4 relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-amber-400 rounded-l-lg"></div>
+<div class="flex justify-between items-start mb-1">
+<span class="font-data-tabular text-[12px] font-semibold text-on-surface">API Rate Limit</span>
+<span class="text-[11px] text-on-surface-variant font-data-tabular">14:15</span>
+</div>
+<p class="font-body-sm text-[12px] text-on-surface-variant leading-tight">
+                                    Превышен лимит запросов к Meta API. Синхронизация замедлена (WA_WARN_429).
+                                </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

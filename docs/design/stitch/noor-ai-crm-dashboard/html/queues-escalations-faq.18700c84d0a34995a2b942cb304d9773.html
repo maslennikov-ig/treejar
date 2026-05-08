@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Очереди - Noor CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "outline": "#76777d",
+                      "on-tertiary-container": "#009668",
+                      "error-container": "#ffdad6",
+                      "on-secondary-fixed": "#001a42",
+                      "surface-container-high": "#dce9ff",
+                      "surface": "#f8f9ff",
+                      "tertiary-container": "#002113",
+                      "primary-container": "#131b2e",
+                      "primary-fixed": "#dae2fd",
+                      "surface-container-lowest": "#ffffff",
+                      "on-primary-container": "#7c839b",
+                      "surface-container": "#e5eeff",
+                      "on-background": "#0b1c30",
+                      "outline-variant": "#c6c6cd",
+                      "primary-fixed-dim": "#bec6e0",
+                      "error": "#ba1a1a",
+                      "inverse-surface": "#213145",
+                      "tertiary-fixed-dim": "#4edea3",
+                      "on-tertiary-fixed-variant": "#005236",
+                      "on-secondary-container": "#fefcff",
+                      "on-primary-fixed": "#131b2e",
+                      "primary": "#000000",
+                      "surface-container-highest": "#d3e4fe",
+                      "inverse-on-surface": "#eaf1ff",
+                      "on-tertiary": "#ffffff",
+                      "on-primary": "#ffffff",
+                      "tertiary-fixed": "#6ffbbe",
+                      "surface-dim": "#cbdbf5",
+                      "inverse-primary": "#bec6e0",
+                      "secondary-container": "#2170e4",
+                      "on-surface": "#0b1c30",
+                      "on-error-container": "#93000a",
+                      "surface-variant": "#d3e4fe",
+                      "on-secondary-fixed-variant": "#004395",
+                      "on-surface-variant": "#45464d",
+                      "on-secondary": "#ffffff",
+                      "surface-tint": "#565e74",
+                      "secondary-fixed": "#d8e2ff",
+                      "background": "#f8f9ff",
+                      "on-tertiary-fixed": "#002113",
+                      "secondary": "#0058be",
+                      "surface-container-low": "#eff4ff",
+                      "surface-bright": "#f8f9ff",
+                      "tertiary": "#000000",
+                      "on-error": "#ffffff",
+                      "secondary-fixed-dim": "#adc6ff",
+                      "on-primary-fixed-variant": "#3f465c"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "sidebar-width": "260px",
+                      "container-margin": "24px",
+                      "stack-default": "16px",
+                      "stack-compact": "8px"
+              },
+              "fontFamily": {
+                      "h2": [
+                              "Inter"
+                      ],
+                      "data-tabular": [
+                              "Inter"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "body-base": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "h2": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-tabular": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-sm": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h1": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-base": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+</head>
+<body class="bg-background text-on-background font-body-base min-h-screen flex antialiased">
+<!-- SideNavBar Component -->
+<nav class="fixed left-0 top-0 h-full w-[260px] bg-primary-container dark:bg-primary-container border-r border-outline-variant flex flex-col p-4 gap-y-1 z-50">
+<div class="px-2 pb-6 pt-2 flex items-center gap-3">
+<div class="w-8 h-8 bg-secondary-container rounded flex items-center justify-center text-on-secondary-container font-bold text-lg">
+                N
+            </div>
+<div>
+<div class="font-h2 text-h2 text-on-secondary-container tracking-tight">Noor AI</div>
+<div class="font-body-sm text-body-sm text-on-primary-container opacity-80">Панель управления</div>
+</div>
+</div>
+<button class="w-full bg-secondary-container text-on-secondary-container hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] rounded-xl font-h2 text-body-base py-3 px-4 flex items-center justify-center gap-2 mb-4">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add</span>
+            Создать рассылку
+        </button>
+<div class="flex-1 flex flex-col gap-y-1 overflow-y-auto">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-base text-body-base">Обзор</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-body-base text-body-base">Клиенты</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+<span class="font-body-base text-body-base">Переписки</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-secondary-container text-on-secondary-container font-bold active:scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">priority_high</span>
+<span class="font-body-base text-body-base">Эскалации</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="font-body-base text-body-base">База знаний</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-body-base text-body-base">Каталог</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">bar_chart</span>
+<span class="font-body-base text-body-base">Отчеты</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-base text-body-base">Настройки</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-body-base text-body-base">Логи аудита</span>
+</a>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant/30 flex flex-col gap-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-body-base text-body-base">Поддержка</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98]" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-base text-body-base">Выйти</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col ml-[260px] min-h-screen">
+<!-- TopAppBar Component -->
+<header class="sticky top-0 w-full z-40 bg-surface dark:bg-surface border-b border-outline-variant flex justify-between items-center h-16 px-container-margin">
+<div class="flex items-center gap-4">
+<span class="font-h1 text-h1 text-primary dark:text-primary-fixed">Noor CRM</span>
+<div class="relative focus-within:ring-2 focus-within:ring-secondary rounded-lg ml-8 hidden md:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="bg-surface-container-low border border-outline-variant rounded-lg pl-10 pr-4 py-1.5 font-body-sm text-body-sm text-on-surface w-64 focus:outline-none placeholder:text-on-surface-variant" placeholder="Поиск по эскалациям..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">settings_suggest</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors ml-2">
+<img alt="Администратор" class="w-8 h-8 rounded-full border border-outline-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPyEyY1lr87TOVhzrWFPrMLUSrz8hhvQVyC5_bhiKro-0Cx3UGRt612msJMajkgb_PZVL2ZkT6dNM5kQxccOD64OQ_26h1UXvaZ6ZOl9ret_I6AenAv-zcRFlb9KwGLZ1xY4vmj7XVugc0L_saNId4FWGzQOUWI3OFRd1NIKgMzIgywoLOpYm5gMeuPF-T5kyBaMCi7YFL7QoTXiPPf57kVZ3yELAXEPu4T1u9PRqKUwZYuaShQOrdOY6MM-uSBUDl-hpB-bv5Et0a"/>
+</button>
+</div>
+</header>
+<!-- Page Canvas -->
+<main class="flex-1 p-container-margin overflow-y-auto bg-background">
+<div class="flex items-end justify-between mb-stack-default">
+<div>
+<h1 class="font-h1 text-h1 text-on-background mb-1">Очереди и Эскалации</h1>
+<p class="font-body-base text-body-base text-on-surface-variant">Управление критическими запросами и пополнением базы знаний.</p>
+</div>
+<div class="flex gap-2">
+<button class="px-4 py-2 bg-surface-container-highest text-on-surface font-data-tabular text-data-tabular rounded border border-outline-variant hover:bg-surface-dim transition-colors">Экспорт</button>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-stack-default">
+<!-- High Priority Queue Table (Span 8) -->
+<div class="col-span-12 xl:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col">
+<div class="p-4 border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-error">warning</span>
+<h2 class="font-h2 text-h2 text-on-surface">Требуют внимания (Human-Required)</h2>
+</div>
+<span class="bg-error-container text-on-error-container px-2.5 py-0.5 rounded-full font-label-caps text-label-caps">12 ОЖИДАЮТ</span>
+</div>
+<div class="overflow-x-auto flex-1">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-outline-variant">
+<th class="py-2.5 px-4 font-label-caps text-label-caps text-on-surface-variant w-12">ID</th>
+<th class="py-2.5 px-4 font-label-caps text-label-caps text-on-surface-variant">Клиент / Контекст</th>
+<th class="py-2.5 px-4 font-label-caps text-label-caps text-on-surface-variant">Приоритет</th>
+<th class="py-2.5 px-4 font-label-caps text-label-caps text-on-surface-variant">В очереди</th>
+<th class="py-2.5 px-4 font-label-caps text-label-caps text-on-surface-variant text-right">Действие</th>
+</tr>
+</thead>
+<tbody class="font-data-tabular text-data-tabular">
+<tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors group">
+<td class="py-3 px-4 text-on-surface-variant">#4092</td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">ООО ТехПром</div>
+<div class="text-on-surface-variant text-xs truncate w-48" title="Несоответствие данных в счете фактуре №882">Несоответствие данных в счете...</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 bg-error-container/50 text-on-error-container px-2 py-1 rounded-md text-xs font-semibold">
+<div class="w-1.5 h-1.5 rounded-full bg-error"></div> Высший
+                                        </span>
+</td>
+<td class="py-3 px-4 text-error font-medium">1ч 42м</td>
+<td class="py-3 px-4 text-right">
+<button class="bg-secondary text-on-secondary px-3 py-1.5 rounded text-xs hover:bg-secondary-container transition-colors">Взять в работу</button>
+</td>
+</tr>
+<tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors group">
+<td class="py-3 px-4 text-on-surface-variant">#4088</td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">ИП Смирнов А.В.</div>
+<div class="text-on-surface-variant text-xs truncate w-48" title="AI не смог классифицировать запрос о возврате">AI не смог классифицировать...</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 bg-surface-container-highest text-on-surface px-2 py-1 rounded-md text-xs font-semibold">
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim"></div> Средний
+                                        </span>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">45м</td>
+<td class="py-3 px-4 text-right">
+<button class="bg-surface text-on-surface border border-outline-variant px-3 py-1.5 rounded text-xs hover:bg-surface-container transition-colors">Взять в работу</button>
+</td>
+</tr>
+<tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors group">
+<td class="py-3 px-4 text-on-surface-variant">#4085</td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">Retail Group</div>
+<div class="text-on-surface-variant text-xs truncate w-48" title="Сложный вопрос по интеграции API">Сложный вопрос по интеграци...</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 bg-surface-container-highest text-on-surface px-2 py-1 rounded-md text-xs font-semibold">
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim"></div> Средний
+                                        </span>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">12м</td>
+<td class="py-3 px-4 text-right">
+<button class="bg-surface text-on-surface border border-outline-variant px-3 py-1.5 rounded text-xs hover:bg-surface-container transition-colors">Взять в работу</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Candidates to FAQ (Span 4) -->
+<div class="col-span-12 xl:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl flex flex-col overflow-hidden">
+<div class="p-4 border-b border-outline-variant bg-surface-container-highest flex justify-between items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<h2 class="font-h2 text-h2 text-on-surface">Кандидаты в FAQ</h2>
+</div>
+<span class="bg-secondary-container text-on-secondary-container px-2.5 py-0.5 rounded-full font-label-caps text-label-caps">Новые</span>
+</div>
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-surface-bright">
+<!-- AI Suggestion Card 1 -->
+<div class="border border-outline-variant rounded-lg p-3 bg-surface shadow-sm">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant">AI ПРЕДЛОЖЕНИЕ (Уверенность: 94%)</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">auto_awesome</span>
+</div>
+<h3 class="font-data-tabular text-data-tabular text-on-surface font-semibold mb-1">Вопрос: Сроки доставки в регион ДВФО</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-3 line-clamp-3">
+                                Автоматически сгенерированный ответ: "Стандартные сроки доставки в Дальневосточный федеральный округ составляют от 14 до 21 рабочего дня в зависимости от выбранной транспортной компании..."
+                            </p>
+<div class="flex gap-2">
+<button class="flex-1 bg-secondary text-on-secondary py-1.5 rounded text-xs font-medium hover:bg-secondary-container transition-colors flex justify-center items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">check</span> Одобрить
+                                </button>
+<button class="px-3 py-1.5 border border-outline-variant rounded text-on-surface text-xs font-medium hover:bg-surface-container-low transition-colors">
+                                    Отклонить
+                                </button>
+</div>
+</div>
+<!-- AI Suggestion Card 2 -->
+<div class="border border-outline-variant rounded-lg p-3 bg-surface shadow-sm">
+<div class="flex items-center justify-between mb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant">AI ПРЕДЛОЖЕНИЕ (Уверенность: 88%)</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">auto_awesome</span>
+</div>
+<h3 class="font-data-tabular text-data-tabular text-on-surface font-semibold mb-1">Вопрос: Условия возврата по гарантии</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-3 line-clamp-3">
+                                Автоматически сгенерированный ответ: "Возврат товара по гарантии осуществляется в течение 12 месяцев при сохранении заводской упаковки и полной комплектации..."
+                            </p>
+<div class="flex gap-2">
+<button class="flex-1 bg-secondary text-on-secondary py-1.5 rounded text-xs font-medium hover:bg-secondary-container transition-colors flex justify-center items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">check</span> Одобрить
+                                </button>
+<button class="px-3 py-1.5 border border-outline-variant rounded text-on-surface text-xs font-medium hover:bg-surface-container-low transition-colors">
+                                    Отклонить
+                                </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>
