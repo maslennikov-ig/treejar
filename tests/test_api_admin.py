@@ -118,6 +118,18 @@ async def test_admin_requires_auth(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_unknown_api_routes_do_not_fall_through_to_spa(
+    client: AsyncClient,
+) -> None:
+    """Unknown API paths must fail as API errors, not landing-page HTML."""
+    response = await client.get("/api/v1/admin/bot-rules")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["detail"] == "Not Found"
+
+
+@pytest.mark.asyncio
 async def test_admin_login_grants_dashboard_and_api_access(client: AsyncClient) -> None:
     """Real SQLAdmin login should authorize /dashboard and /api/v1/admin routes."""
     dashboard_response = await client.get("/dashboard/")
