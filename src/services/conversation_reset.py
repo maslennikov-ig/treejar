@@ -123,7 +123,8 @@ async def execute_conversation_reset(
     db: AsyncSession,
     phone: str,
     *,
-    requested_by_telegram_user_id: int,
+    requested_by_telegram_user_id: int | None,
+    source: str = "telegram",
 ) -> ResetResult:
     normalized = normalize_reset_phone(phone)
     if normalized is None:
@@ -148,13 +149,14 @@ async def execute_conversation_reset(
         metadata = dict(conversation.metadata_ or {})
         metadata.update(
             {
-                "reset_source": "telegram",
+                "reset_source": source,
                 "reset_at": reset_at_text,
-                "reset_by_telegram_user_id": requested_by_telegram_user_id,
                 "original_phone": original_phone,
                 "reset_replacement_phone": replacement_phone,
             }
         )
+        if requested_by_telegram_user_id is not None:
+            metadata["reset_by_telegram_user_id"] = requested_by_telegram_user_id
         conversation.metadata_ = metadata
 
     escalation_result = await db.execute(
@@ -173,6 +175,15 @@ async def execute_conversation_reset(
     for escalation in escalation_result.scalars().all():
         escalation.status = EscalationStatus.RESOLVED.value
 
+    new_metadata: dict[str, object] = {
+        "reset_source": source,
+        "reset_at": reset_at_text,
+        "reset_from_conversation_ids": archived_ids,
+        "archived_conversation_count": len(conversations),
+    }
+    if requested_by_telegram_user_id is not None:
+        new_metadata["reset_by_telegram_user_id"] = requested_by_telegram_user_id
+
     new_conversation = Conversation(
         id=uuid.uuid4(),
         phone=replacement_phone,
@@ -183,13 +194,7 @@ async def execute_conversation_reset(
         customer_name=None,
         zoho_contact_id=None,
         zoho_deal_id=None,
-        metadata_={
-            "reset_source": "telegram",
-            "reset_at": reset_at_text,
-            "reset_by_telegram_user_id": requested_by_telegram_user_id,
-            "reset_from_conversation_ids": archived_ids,
-            "archived_conversation_count": len(conversations),
-        },
+        metadata_=new_metadata,
     )
     db.add(new_conversation)
 

@@ -127,7 +127,7 @@ python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
-addopts = "-v --strict-markers --strict-config"
+addopts = "-v --strict-markers --strict-config -p tests.pytest_posix_temp"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests (require DB/Redis)",

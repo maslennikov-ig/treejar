@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends
 from src.api.deps import require_api_key
 from src.api.v1 import (
     admin,
+    admin_bot_rules,
+    admin_crm,
+    admin_knowledge_base,
     client_self_test,
     conversations,
     crm,
@@ -79,3 +82,18 @@ api_v1_router.include_router(
     dependencies=[Depends(require_api_key)],
 )
 api_v1_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
+api_v1_router.include_router(
+    admin_crm.router,
+    prefix="/admin/crm",
+    tags=["Admin CRM"],
+)
+api_v1_router.include_router(
+    admin_knowledge_base.router,
+    prefix="/admin/knowledge-base",
+    tags=["Admin Knowledge Base"],
+)
+api_v1_router.include_router(
+    admin_bot_rules.router,
+    prefix="/admin/bot-rules",
+    tags=["Admin Bot Rules"],
+)

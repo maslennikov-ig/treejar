@@ -1,9 +1,12 @@
+from src.models.admin_action_audit import AdminActionAudit
 from src.models.base import Base
+from src.models.bot_behavior_rule import BotBehaviorRule
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
 from src.models.escalation import Escalation
 from src.models.feedback import Feedback
 from src.models.knowledge_base import KnowledgeBase
+from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
 from src.models.llm_attempt import LLMAttempt
 from src.models.manager_review import ManagerReview
 from src.models.message import Message
@@ -17,11 +20,14 @@ from src.models.system_prompt import SystemPrompt
 
 __all__ = [
     "Base",
+    "AdminActionAudit",
+    "BotBehaviorRule",
     "Conversation",
     "ConversationSummary",
     "Escalation",
     "Feedback",
     "KnowledgeBase",
+    "KnowledgeBaseCandidate",
     "LLMAttempt",
     "ManagerReview",
     "Message",

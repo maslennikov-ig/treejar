@@ -66,8 +66,8 @@ const SCOPE_META: {
         shortLabel: 'Bot QA',
         description: 'Final assistant quality review for customer conversations.',
         icon: Bot,
-        accentClass: 'text-emerald-300',
-        badgeClass: 'bg-emerald-500/10 text-emerald-300',
+        accentClass: 'text-[#009668]',
+        badgeClass: 'bg-emerald-500/10 text-[#009668]',
     },
     {
         key: 'manager_qa',
@@ -75,8 +75,8 @@ const SCOPE_META: {
         shortLabel: 'Manager QA',
         description: 'Resolved escalation review and manager coaching scores.',
         icon: CheckCircle2,
-        accentClass: 'text-blue-300',
-        badgeClass: 'bg-blue-500/10 text-blue-300',
+        accentClass: 'text-[#0058be]',
+        badgeClass: 'bg-blue-500/10 text-[#0058be]',
     },
     {
         key: 'red_flags',
@@ -84,8 +84,8 @@ const SCOPE_META: {
         shortLabel: 'Red flags',
         description: 'Realtime scan for complaints, risk language, and missed escalation signals.',
         icon: ShieldAlert,
-        accentClass: 'text-amber-200',
-        badgeClass: 'bg-amber-500/10 text-amber-200',
+        accentClass: 'text-[#92400e]',
+        badgeClass: 'bg-amber-500/10 text-[#92400e]',
     },
 ];
 
@@ -96,11 +96,11 @@ interface AIQualityControlsPanelProps {
 function messageClasses(tone: MessageTone): string {
     switch (tone) {
         case 'success':
-            return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+            return 'border-emerald-500/20 bg-emerald-500/10 text-[#009668]';
         case 'error':
-            return 'border-red-500/20 bg-red-500/10 text-red-300';
+            return 'border-red-500/20 bg-red-500/10 text-[#be123c]';
         default:
-            return 'border-amber-500/20 bg-amber-500/10 text-amber-200';
+            return 'border-amber-500/20 bg-amber-500/10 text-[#92400e]';
     }
 }
 
@@ -139,13 +139,13 @@ function automationLabel(scopeConfig: AIQualityScopeConfig): string {
 function automationBadgeClass(scopeConfig: AIQualityScopeConfig): string {
     switch (scopeConfig.mode) {
         case 'disabled':
-            return 'bg-emerald-500/10 text-emerald-300';
+            return 'bg-emerald-500/10 text-[#009668]';
         case 'manual':
-            return 'bg-blue-500/10 text-blue-300';
+            return 'bg-blue-500/10 text-[#0058be]';
         case 'daily_sample':
-            return 'bg-amber-500/10 text-amber-200';
+            return 'bg-amber-500/10 text-[#92400e]';
         case 'scheduled':
-            return 'bg-red-500/10 text-red-300';
+            return 'bg-red-500/10 text-[#be123c]';
     }
 }
 
@@ -164,14 +164,14 @@ function TooltippedLabel({
                 title={tooltip}
                 className="inline-flex"
             >
-                <HelpCircle size={14} className="text-slate-500" />
+                <HelpCircle size={14} className="text-[#7c839b]" />
             </span>
         </span>
     );
 }
 
 function baseInputClass(): string {
-    return 'mt-2 w-full rounded-xl border border-white/[0.08] bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-emerald-400/60 disabled:opacity-50';
+    return 'mt-2 w-full rounded-md border border-[#c6c6cd] bg-white px-3 py-2 text-sm text-[#0b1c30] outline-none transition focus:border-emerald-400/60 disabled:opacity-50';
 }
 
 function scopeFieldId(scope: AIQualityScopeKey, field: string): string {
@@ -365,21 +365,21 @@ export default function AIQualityControlsPanel({
         : false;
 
     return (
-        <section className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5 xl:col-span-2">
+        <section className="rounded-md border border-[#e5eeff] bg-white p-5 xl:col-span-2">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                    <div className="flex items-center gap-2 text-white">
-                        <SlidersHorizontal size={18} className="text-emerald-300" />
+                    <div className="flex items-center gap-2 text-[#0b1c30]">
+                        <SlidersHorizontal size={18} className="text-[#009668]" />
                         <h3 className="text-lg font-semibold">AI Quality Controls</h3>
                     </div>
-                    <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                    <p className="mt-2 max-w-3xl text-sm text-[#45464d]">
                         Admin-owned controls for bot QA, manager QA, and red-flag review cost.
                     </p>
                 </div>
                 <button
                     onClick={() => void loadControls()}
                     disabled={loading || savingScope !== null}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08] disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 py-2 text-sm font-medium text-[#3f465c] transition hover:bg-[#f2f4f7] disabled:opacity-50"
                 >
                     <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     Reload controls
@@ -387,18 +387,18 @@ export default function AIQualityControlsPanel({
             </div>
 
             {loading && (
-                <div className="mt-5 rounded-xl border border-white/[0.06] bg-slate-900/60 px-4 py-4 text-sm text-slate-400">
+                <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] px-4 py-4 text-sm text-[#45464d]">
                     Loading AI Quality Controls...
                 </div>
             )}
 
             {effectiveConfig && allAutomationDisabled && (
-                <div className="mt-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-200">
+                <div className="mt-5 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-sm text-[#166534]">
                     <div className="flex items-start gap-3">
-                        <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-300" />
+                        <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-[#009668]" />
                         <div>
-                            <p className="font-medium text-emerald-100">Zero automation safe default</p>
-                            <p className="mt-1 text-emerald-200/80">
+                            <p className="font-medium text-[#166534]">Zero automation safe default</p>
+                            <p className="mt-1 text-[#166534]">
                                 All scopes are disabled, so scheduled AI quality jobs open 0 LLM calls until an admin saves another mode.
                             </p>
                         </div>
@@ -411,9 +411,9 @@ export default function AIQualityControlsPanel({
                     {controls.warnings.map((warning) => (
                         <div
                             key={`${warning.scope}-${warning.code}`}
-                            className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+                            className="rounded-md border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-[#92400e]"
                         >
-                            <AlertTriangle size={16} className="mr-2 inline text-amber-200" />
+                            <AlertTriangle size={16} className="mr-2 inline text-[#92400e]" />
                             <span className="font-medium">{scopeName(warning.scope)}:</span> {warning.message}
                         </div>
                     ))}
@@ -421,7 +421,7 @@ export default function AIQualityControlsPanel({
             )}
 
             {message && (
-                <div className={`mt-5 rounded-xl border px-4 py-3 text-sm ${messageClasses(message.tone)}`}>
+                <div className={`mt-5 rounded-md border px-4 py-3 text-sm ${messageClasses(message.tone)}`}>
                     {message.text}
                 </div>
             )}
@@ -437,22 +437,22 @@ export default function AIQualityControlsPanel({
                             const showGlmWarning = isGlm5Model(scopeConfig.model);
 
                             return (
-                                <div key={meta.key} className="rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
+                                <div key={meta.key} className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4">
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
-                                            <div className="flex items-center gap-2 text-white">
+                                            <div className="flex items-center gap-2 text-[#0b1c30]">
                                                 <Icon size={17} className={meta.accentClass} />
                                                 <h4 className="text-base font-semibold">{meta.label}</h4>
                                             </div>
-                                            <p className="mt-2 text-sm text-slate-400">{meta.description}</p>
+                                            <p className="mt-2 text-sm text-[#45464d]">{meta.description}</p>
                                         </div>
-                                        <span className={`rounded-xl px-3 py-2 text-xs font-medium ${automationBadgeClass(scopeConfig)}`}>
+                                        <span className={`rounded-md px-3 py-2 text-xs font-medium ${automationBadgeClass(scopeConfig)}`}>
                                             {automationLabel(scopeConfig)}
                                         </span>
                                     </div>
 
                                     <div className="mt-4 grid grid-cols-1 gap-3">
-                                        <label htmlFor={scopeFieldId(meta.key, 'mode')} className="text-sm font-medium text-slate-300">
+                                        <label htmlFor={scopeFieldId(meta.key, 'mode')} className="text-sm font-medium text-[#3f465c]">
                                             <TooltippedLabel tooltip={MODE_HELP}>Mode</TooltippedLabel>
                                             <select
                                                 id={scopeFieldId(meta.key, 'mode')}
@@ -466,7 +466,7 @@ export default function AIQualityControlsPanel({
                                             </select>
                                         </label>
 
-                                        <label htmlFor={scopeFieldId(meta.key, 'transcript')} className="text-sm font-medium text-slate-300">
+                                        <label htmlFor={scopeFieldId(meta.key, 'transcript')} className="text-sm font-medium text-[#3f465c]">
                                             <TooltippedLabel tooltip={TRANSCRIPT_HELP}>Transcript mode</TooltippedLabel>
                                             <select
                                                 id={scopeFieldId(meta.key, 'transcript')}
@@ -481,7 +481,7 @@ export default function AIQualityControlsPanel({
                                         </label>
 
                                         {showFullTranscriptWarning && (
-                                            <label className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-sm text-amber-100">
+                                            <label className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-sm text-[#92400e]">
                                                 <span className="flex items-start gap-2">
                                                     <input
                                                         type="checkbox"
@@ -491,7 +491,7 @@ export default function AIQualityControlsPanel({
                                                     />
                                                     <span>
                                                         <span className="font-medium">Full transcript override warning</span>
-                                                        <span className="mt-1 block text-amber-100/80">
+                                                        <span className="mt-1 block text-[#92400e]">
                                                             Full transcript mode can send large conversations to the LLM and should stay exceptional.
                                                         </span>
                                                     </span>
@@ -499,7 +499,7 @@ export default function AIQualityControlsPanel({
                                             </label>
                                         )}
 
-                                        <label htmlFor={scopeFieldId(meta.key, 'model')} className="text-sm font-medium text-slate-300">
+                                        <label htmlFor={scopeFieldId(meta.key, 'model')} className="text-sm font-medium text-[#3f465c]">
                                             <TooltippedLabel tooltip={MODEL_HELP}>Model</TooltippedLabel>
                                             <input
                                                 id={scopeFieldId(meta.key, 'model')}
@@ -511,7 +511,7 @@ export default function AIQualityControlsPanel({
                                         </label>
 
                                         {showGlmWarning && (
-                                            <label className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-100">
+                                            <label className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-[#be123c]">
                                                 <span className="flex items-start gap-2">
                                                     <input
                                                         type="checkbox"
@@ -521,7 +521,7 @@ export default function AIQualityControlsPanel({
                                                     />
                                                     <span>
                                                         <span className="font-medium">GLM-5 override warning</span>
-                                                        <span className="mt-1 block text-red-100/80">
+                                                        <span className="mt-1 block text-[#be123c]">
                                                             GLM-5 is expensive for QA automation and requires explicit admin acknowledgement.
                                                         </span>
                                                     </span>
@@ -530,7 +530,7 @@ export default function AIQualityControlsPanel({
                                         )}
 
                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
-                                            <label htmlFor={scopeFieldId(meta.key, 'budget')} className="text-sm font-medium text-slate-300">
+                                            <label htmlFor={scopeFieldId(meta.key, 'budget')} className="text-sm font-medium text-[#3f465c]">
                                                 <TooltippedLabel tooltip={BUDGET_HELP}>Daily budget</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'budget')}
@@ -540,10 +540,10 @@ export default function AIQualityControlsPanel({
                                                     onChange={(event) => handleNumberChange(meta.key, 'daily_budget_cents', event)}
                                                     className={baseInputClass()}
                                                 />
-                                                <span className="mt-1 block text-xs text-slate-500">{formatBudget(scopeConfig.daily_budget_cents)}</span>
+                                                <span className="mt-1 block text-xs text-[#7c839b]">{formatBudget(scopeConfig.daily_budget_cents)}</span>
                                             </label>
 
-                                            <label htmlFor={scopeFieldId(meta.key, 'per-run')} className="text-sm font-medium text-slate-300">
+                                            <label htmlFor={scopeFieldId(meta.key, 'per-run')} className="text-sm font-medium text-[#3f465c]">
                                                 <TooltippedLabel tooltip={CALL_CAP_HELP}>Max/run</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'per-run')}
@@ -555,7 +555,7 @@ export default function AIQualityControlsPanel({
                                                 />
                                             </label>
 
-                                            <label htmlFor={scopeFieldId(meta.key, 'per-day')} className="text-sm font-medium text-slate-300">
+                                            <label htmlFor={scopeFieldId(meta.key, 'per-day')} className="text-sm font-medium text-[#3f465c]">
                                                 <TooltippedLabel tooltip={CALL_CAP_HELP}>Max/day</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'per-day')}
@@ -569,7 +569,7 @@ export default function AIQualityControlsPanel({
                                         </div>
 
                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                            <label htmlFor={scopeFieldId(meta.key, 'retry-attempts')} className="text-sm font-medium text-slate-300">
+                                            <label htmlFor={scopeFieldId(meta.key, 'retry-attempts')} className="text-sm font-medium text-[#3f465c]">
                                                 <TooltippedLabel tooltip={RETRY_HELP}>Retry attempts</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'retry-attempts')}
@@ -582,7 +582,7 @@ export default function AIQualityControlsPanel({
                                                 />
                                             </label>
 
-                                            <label htmlFor={scopeFieldId(meta.key, 'retry-backoff')} className="text-sm font-medium text-slate-300">
+                                            <label htmlFor={scopeFieldId(meta.key, 'retry-backoff')} className="text-sm font-medium text-[#3f465c]">
                                                 <TooltippedLabel tooltip={RETRY_HELP}>Backoff seconds</TooltippedLabel>
                                                 <input
                                                     id={scopeFieldId(meta.key, 'retry-backoff')}
@@ -596,7 +596,7 @@ export default function AIQualityControlsPanel({
                                         </div>
 
                                         <div className="grid grid-cols-1 gap-2">
-                                            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3 text-sm text-slate-300">
+                                            <label className="flex items-center justify-between gap-3 rounded-md border border-[#e5eeff] bg-white px-3 py-3 text-sm text-[#3f465c]">
                                                 <TooltippedLabel tooltip={CACHE_HELP}>Cache telemetry</TooltippedLabel>
                                                 <input
                                                     type="checkbox"
@@ -605,7 +605,7 @@ export default function AIQualityControlsPanel({
                                                 />
                                             </label>
 
-                                            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3 text-sm text-slate-300">
+                                            <label className="flex items-center justify-between gap-3 rounded-md border border-[#e5eeff] bg-white px-3 py-3 text-sm text-[#3f465c]">
                                                 <TooltippedLabel tooltip={ALERT_HELP}>Alert on failure</TooltippedLabel>
                                                 <input
                                                     type="checkbox"
@@ -615,16 +615,16 @@ export default function AIQualityControlsPanel({
                                             </label>
                                         </div>
 
-                                        <div className="rounded-xl border border-white/[0.06] bg-slate-950/50 px-3 py-3">
+                                        <div className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] px-3 py-3">
                                             <div className="flex items-center justify-between gap-3">
-                                                <p className="text-sm font-medium text-white">Criteria toggles</p>
+                                                <p className="text-sm font-medium text-[#0b1c30]">Criteria toggles</p>
                                                 <span className={`rounded-lg px-2.5 py-1 text-xs font-medium ${meta.badgeClass}`}>
                                                     {criteriaEntries.length}
                                                 </span>
                                             </div>
                                             <div className="mt-3 space-y-2">
                                                 {criteriaEntries.length > 0 ? criteriaEntries.map(([criterion, enabled]) => (
-                                                    <label key={criterion} className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-sm text-slate-300">
+                                                    <label key={criterion} className="flex items-center justify-between gap-3 rounded-lg border border-[#e5eeff] bg-white px-3 py-2 text-sm text-[#3f465c]">
                                                         <span>{formatCriteriaLabel(criterion)}</span>
                                                         <input
                                                             type="checkbox"
@@ -633,7 +633,7 @@ export default function AIQualityControlsPanel({
                                                         />
                                                     </label>
                                                 )) : (
-                                                    <div className="rounded-lg border border-dashed border-white/[0.08] px-3 py-4 text-sm text-slate-500">
+                                                    <div className="rounded-lg border border-dashed border-[#c6c6cd] px-3 py-4 text-sm text-[#7c839b]">
                                                         No criteria JSON exposed for this scope.
                                                     </div>
                                                 )}
@@ -643,7 +643,7 @@ export default function AIQualityControlsPanel({
                                         <button
                                             onClick={() => void handleSaveScope(meta.key)}
                                             disabled={savingScope !== null}
-                                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/15 disabled:opacity-50"
+                                            className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-[#166534] transition hover:bg-emerald-500/15 disabled:opacity-50"
                                         >
                                             {savingScope === meta.key ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
                                             Save {meta.shortLabel}
@@ -654,36 +654,36 @@ export default function AIQualityControlsPanel({
                         })}
                     </div>
 
-                    <div className="mt-5 rounded-2xl border border-white/[0.06] bg-slate-900/50 p-4">
-                        <div className="flex items-center gap-2 text-white">
-                            <Gauge size={17} className="text-blue-300" />
+                    <div className="mt-5 rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4">
+                        <div className="flex items-center gap-2 text-[#0b1c30]">
+                            <Gauge size={17} className="text-[#0058be]" />
                             <h4 className="text-base font-semibold">Manual trigger surfaces</h4>
                         </div>
                         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                    <DollarSign size={15} className="text-emerald-300" />
+                            <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
+                                    <DollarSign size={15} className="text-[#009668]" />
                                     Bot QA
                                 </div>
-                                <p className="mt-2 text-sm text-slate-400">
+                                <p className="mt-2 text-sm text-[#45464d]">
                                     Existing internal endpoint: POST /api/v1/quality/reviews/ with an explicit conversation_id.
                                 </p>
                             </div>
-                            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                    <Bell size={15} className="text-blue-300" />
+                            <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
+                                    <Bell size={15} className="text-[#0058be]" />
                                     Manager QA
                                 </div>
-                                <p className="mt-2 text-sm text-slate-400">
+                                <p className="mt-2 text-sm text-[#45464d]">
                                     Use the Manager Review Queue Evaluate actions below; they call the existing admin evaluate endpoint.
                                 </p>
                             </div>
-                            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                    <AlertTriangle size={15} className="text-amber-200" />
+                            <div className="rounded-md border border-[#e5eeff] bg-white px-4 py-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-[#0b1c30]">
+                                    <AlertTriangle size={15} className="text-[#92400e]" />
                                     Red flags
                                 </div>
-                                <p className="mt-2 text-sm text-slate-400">
+                                <p className="mt-2 text-sm text-[#45464d]">
                                     No existing admin manual trigger endpoint is exposed, so this dashboard does not add one.
                                 </p>
                             </div>

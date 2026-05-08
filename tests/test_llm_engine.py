@@ -181,6 +181,55 @@ async def test_inject_system_prompt_appends_runtime_directives(
 
 @pytest.mark.asyncio
 @patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
+async def test_inject_system_prompt_appends_bot_operating_rules(
+    mock_prompt: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    mock_prompt.return_value = "BASE PROMPT"
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        behavior_rules=[
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "title": "Ask name",
+                "type": "hard_rule",
+                "priority": 10,
+                "scope": "stage",
+                "instruction": "If customer_name is unknown, ask how to address them.",
+            }
+        ],
+        faq_context=[{"title": "Delivery", "content": "Delivery takes 3-5 days."}],
+    )
+
+    from pydantic_ai.usage import RunUsage
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    prompt = await inject_system_prompt(ctx)
+
+    assert "[BOT OPERATING RULES]" in prompt
+    assert "Ask name" in prompt
+    assert "[KNOWLEDGE BASE (FAQ)]" in prompt
+    assert prompt.index("[BOT OPERATING RULES]") < prompt.index(
+        "[KNOWLEDGE BASE (FAQ)]"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.build_system_prompt", new_callable=AsyncMock)
 async def test_inject_system_prompt_omits_search_requirement_in_order_handoff_mode(
     mock_prompt: AsyncMock,
     mock_deps: tuple[

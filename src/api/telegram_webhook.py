@@ -517,6 +517,12 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
                     embedding_engine=EmbeddingEngine(),
                     customer_message=adapted,
                     manager_draft=draft,
+                    persist_candidate=True,
+                    source_metadata={
+                        "source": "telegram_manager_reply",
+                        "conversation_id": conv_id,
+                        "chat_id": str(chat_id),
+                    },
                 )
             if save_result.status == "needs_confirmation" and save_result.candidate:
                 candidate = save_result.candidate

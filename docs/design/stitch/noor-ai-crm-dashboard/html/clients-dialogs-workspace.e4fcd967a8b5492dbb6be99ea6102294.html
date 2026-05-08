@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Клиенты - Noor CRM</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#f8f9ff",
+                        "secondary-container": "#2170e4",
+                        "tertiary-fixed": "#6ffbbe",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "on-tertiary-container": "#009668",
+                        "primary-fixed": "#dae2fd",
+                        "on-primary-container": "#7c839b",
+                        "surface-container-highest": "#d3e4fe",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "on-secondary-fixed": "#001a42",
+                        "on-background": "#0b1c30",
+                        "surface-bright": "#f8f9ff",
+                        "on-error": "#ffffff",
+                        "tertiary-container": "#002113",
+                        "on-tertiary-fixed": "#002113",
+                        "on-secondary-container": "#fefcff",
+                        "secondary": "#0058be",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-tint": "#565e74",
+                        "background": "#f8f9ff",
+                        "on-primary-fixed": "#131b2e",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface-container-low": "#eff4ff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-surface": "#0b1c30",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#45464d",
+                        "surface-container": "#e5eeff",
+                        "outline": "#76777d",
+                        "tertiary": "#000000",
+                        "primary-container": "#131b2e",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed": "#d8e2ff",
+                        "inverse-surface": "#213145",
+                        "on-secondary-fixed-variant": "#004395",
+                        "primary": "#000000",
+                        "outline-variant": "#c6c6cd",
+                        "surface-variant": "#d3e4fe",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed-dim": "#bec6e0",
+                        "surface-dim": "#cbdbf5",
+                        "surface-container-high": "#dce9ff",
+                        "error": "#ba1a1a",
+                        "inverse-primary": "#bec6e0"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "stack-default": "16px",
+                        "sidebar-width": "260px",
+                        "stack-compact": "8px",
+                        "gutter": "16px",
+                        "container-margin": "24px"
+                    },
+                    "fontFamily": {
+                        "h2": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-base": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-tabular": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-base": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "data-tabular": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface font-body-base h-screen overflow-hidden flex">
+<!-- SideNavBar -->
+<nav class="bg-primary-container dark:bg-primary-container text-on-primary-fixed dark:text-primary-fixed font-body-base text-body-base fixed left-0 top-0 h-full w-[260px] border-r border-outline-variant flat no shadows flex flex-col p-4 gap-y-1 z-50">
+<div class="mb-8 px-2 flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-secondary flex items-center justify-center text-on-secondary font-bold">N</div>
+<div>
+<div class="text-h2 font-h2 text-on-secondary-container tracking-tight">Noor AI</div>
+<div class="text-body-sm font-body-sm text-on-primary-container opacity-80">Панель управления</div>
+</div>
+</div>
+<button class="w-full bg-secondary text-on-secondary hover:bg-secondary-container transition-colors duration-200 active:scale-[0.98] transition-transform py-2 px-4 rounded-lg font-body-base mb-6 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+            Создать рассылку
+        </button>
+<div class="flex flex-col gap-1 flex-1 overflow-y-auto">
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Обзор
+            </a>
+<a class="bg-secondary-container text-on-secondary-container rounded-xl font-bold hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">groups</span>
+                Клиенты
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+                Переписки
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">priority_high</span>
+                Эскалации
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+                База знаний
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+                Каталог
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">bar_chart</span>
+                Отчеты
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Настройки
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">history</span>
+                Логи аудита
+            </a>
+</div>
+<div class="mt-auto flex flex-col gap-1 border-t border-outline-variant pt-4">
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">help</span>
+                Поддержка
+            </a>
+<a class="text-on-primary-container opacity-80 hover:bg-secondary hover:text-on-secondary transition-colors duration-200 active:scale-[0.98] transition-transform flex items-center gap-3 px-3 py-2 rounded-xl" href="#">
+<span class="material-symbols-outlined">logout</span>
+                Выйти
+            </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="ml-[260px] flex-1 flex flex-col h-full bg-surface-container-lowest">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface text-on-surface dark:text-on-surface font-body-base text-body-base sticky top-0 w-full z-40 border-b border-outline-variant flat no shadows flex justify-between items-center h-16 px-container-margin">
+<div class="font-h1 text-h1 text-primary dark:text-primary-fixed flex items-center gap-4">
+                Noor CRM
+            </div>
+<div class="flex items-center gap-4">
+<div class="relative focus-within:ring-2 focus-within:ring-secondary rounded-lg">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
+<input class="pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-body-sm font-body-sm focus:outline-none w-64 placeholder:text-on-surface-variant" placeholder="Поиск клиентов..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded-full focus-within:ring-2 focus-within:ring-secondary active:scale-[0.98]">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded-full focus-within:ring-2 focus-within:ring-secondary active:scale-[0.98]">
+<span class="material-symbols-outlined">settings_suggest</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded-full focus-within:ring-2 focus-within:ring-secondary active:scale-[0.98]">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- 3-Column Workspace -->
+<div class="flex-1 flex overflow-hidden">
+<!-- Column 1: Customer List -->
+<div class="w-80 flex flex-col border-r border-outline-variant bg-surface-container-lowest flex-shrink-0">
+<div class="p-4 border-b border-outline-variant flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<h2 class="font-h2 text-h2 text-on-surface">Список диалогов</h2>
+<button class="text-secondary"><span class="material-symbols-outlined text-[20px]">filter_list</span></button>
+</div>
+<div class="flex gap-2 text-label-caps font-label-caps">
+<button class="px-3 py-1 bg-surface-container-high text-on-surface rounded-full">Все</button>
+<button class="px-3 py-1 bg-error-container text-on-error-container rounded-full flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">error</span> Эскалация</button>
+<button class="px-3 py-1 bg-surface-container text-on-surface-variant rounded-full border border-outline-variant">Активные</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto">
+<!-- List Item 1 - Active -->
+<div class="p-4 border-b border-outline-variant bg-surface-container-low cursor-pointer hover:bg-surface-variant transition-colors">
+<div class="flex justify-between items-start mb-1">
+<span class="font-data-tabular text-data-tabular text-on-surface">+7 (999) 123-45-67</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">10:42</span>
+</div>
+<div class="text-body-sm font-body-sm text-on-surface truncate mb-2">Алексей Смирнов</div>
+<div class="flex justify-between items-center">
+<div class="text-body-sm font-body-sm text-on-surface-variant truncate w-48">Да, меня интересует тариф "Бизнес"</div>
+<div class="w-2 h-2 rounded-full bg-[#10B981]"></div>
+</div>
+</div>
+<!-- List Item 2 - Escalated -->
+<div class="p-4 border-b border-outline-variant cursor-pointer hover:bg-surface-variant transition-colors border-l-4 border-l-error">
+<div class="flex justify-between items-start mb-1">
+<span class="font-data-tabular text-data-tabular text-on-surface">+7 (903) 765-43-21</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">09:15</span>
+</div>
+<div class="text-body-sm font-body-sm text-on-surface truncate mb-2">Елена Иванова</div>
+<div class="flex justify-between items-center">
+<div class="text-body-sm font-body-sm text-error truncate w-48 font-medium">Требуется менеджер: сложный вопрос</div>
+<div class="w-2 h-2 rounded-full bg-error"></div>
+</div>
+</div>
+<!-- List Item 3 - AI Handled -->
+<div class="p-4 border-b border-outline-variant cursor-pointer hover:bg-surface-variant transition-colors">
+<div class="flex justify-between items-start mb-1">
+<span class="font-data-tabular text-data-tabular text-on-surface">+7 (916) 555-00-11</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">Вчера</span>
+</div>
+<div class="text-body-sm font-body-sm text-on-surface truncate mb-2">Михаил Козлов</div>
+<div class="flex justify-between items-center">
+<div class="text-body-sm font-body-sm text-on-surface-variant truncate w-48 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-[#8B5CF6]">smart_toy</span>
+                                Заказ оформлен
+                            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Column 2: Conversation Timeline -->
+<div class="flex-1 flex flex-col border-r border-outline-variant bg-surface">
+<!-- Chat Header -->
+<div class="p-4 border-b border-outline-variant bg-surface-container-lowest flex justify-between items-center h-[73px]">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface font-bold text-lg">
+                            ЕС
+                        </div>
+<div>
+<div class="font-data-tabular text-data-tabular text-on-surface font-semibold">Елена Иванова <span class="text-on-surface-variant font-normal ml-2">+7 (903) 765-43-21</span></div>
+<div class="text-label-caps font-label-caps text-on-surface-variant flex items-center gap-1 mt-0.5">
+<span class="w-2 h-2 rounded-full bg-error inline-block"></span> Ожидает ответа менеджера
+                            </div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 border border-outline-variant rounded-lg text-body-sm font-body-sm hover:bg-surface-container-low transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[18px]">history</span> История
+                        </button>
+</div>
+</div>
+<!-- Chat Messages -->
+<div class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+<!-- Date Separator -->
+<div class="flex justify-center">
+<span class="px-3 py-1 bg-surface-container rounded-full text-label-caps font-label-caps text-on-surface-variant">Сегодня</span>
+</div>
+<!-- AI Message -->
+<div class="flex gap-3 max-w-[80%]">
+<div class="w-8 h-8 rounded bg-[#8B5CF6]/10 flex items-center justify-center flex-shrink-0 mt-1 border border-[#8B5CF6]/20">
+<span class="material-symbols-outlined text-[18px] text-[#8B5CF6]">smart_toy</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-data-tabular text-data-tabular font-semibold text-on-surface">Noor AI</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">09:10</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg rounded-tl-none p-3 text-body-sm font-body-sm text-on-surface shadow-sm">
+                                Здравствуйте, Елена! Я вижу, что вы интересовались нашим новым каталогом оборудования. Могу я помочь вам подобрать оптимальное решение для вашего бизнеса?
+                            </div>
+</div>
+</div>
+<!-- Customer Message -->
+<div class="flex gap-3 max-w-[80%] self-end flex-row-reverse">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold flex-shrink-0 mt-1">
+                            Е
+                        </div>
+<div class="flex flex-col gap-1 items-end">
+<div class="flex items-center gap-2">
+<span class="text-label-caps font-label-caps text-on-surface-variant">09:12</span>
+<span class="font-data-tabular text-data-tabular font-semibold text-on-surface">Клиент</span>
+</div>
+<div class="bg-secondary-container text-on-secondary-container rounded-lg rounded-tr-none p-3 text-body-sm font-body-sm shadow-sm">
+                                Добрый день. Да, я смотрела промышленные насосы серии X. Но у меня нестандартные требования по давлению. В каталоге нет точных спецификаций для агрессивных сред.
+                            </div>
+</div>
+</div>
+<!-- System Event: Escalation -->
+<div class="flex justify-center my-2">
+<div class="bg-error-container text-on-error-container px-4 py-2 rounded-lg text-body-sm font-body-sm flex items-center gap-2 border border-error/20">
+<span class="material-symbols-outlined text-[18px]">priority_high</span>
+                            AI триггер: Запрос нестандартной спецификации. Эскалация на менеджера.
+                        </div>
+</div>
+<!-- Internal Note -->
+<div class="flex gap-3 max-w-[80%]">
+<div class="w-8 h-8 rounded bg-surface-variant flex items-center justify-center flex-shrink-0 mt-1 border border-outline-variant">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">notes</span>
+</div>
+<div class="flex flex-col gap-1 w-full">
+<div class="flex items-center gap-2">
+<span class="font-data-tabular text-data-tabular font-semibold text-on-surface-variant">Системная заметка</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">09:15</span>
+</div>
+<div class="bg-surface-variant border border-outline-variant rounded-lg rounded-tl-none p-3 text-body-sm font-body-sm text-on-surface-variant italic">
+                                Контекст передан в отдел продаж. Ожидание подключения оператора.
+                            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Column 3: CRM Data Inspector -->
+<div class="w-[380px] bg-surface-container-lowest flex flex-col flex-shrink-0 overflow-y-auto">
+<div class="p-4 border-b border-outline-variant sticky top-0 bg-surface-container-lowest z-10">
+<h3 class="font-h2 text-h2 text-on-surface">Инспектор данных</h3>
+</div>
+<div class="p-4 flex flex-col gap-6">
+<!-- Profile Section -->
+<div class="bg-surface border border-outline-variant rounded-lg p-4">
+<div class="flex items-center gap-2 mb-3 text-on-surface font-semibold font-data-tabular border-b border-outline-variant pb-2">
+<span class="material-symbols-outlined text-[18px]">person</span> Профиль
+                        </div>
+<div class="flex flex-col gap-2 text-body-sm font-body-sm">
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Имя:</span>
+<span class="text-on-surface font-medium">Елена Иванова</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Компания:</span>
+<span class="text-on-surface font-medium">ООО "ПромТех"</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Должность:</span>
+<span class="text-on-surface font-medium">Гл. Инженер</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Телефон:</span>
+<span class="text-on-surface font-medium">+7 (903) 765-43-21</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Email:</span>
+<span class="text-secondary cursor-pointer">e.ivanova@promtech.ru</span>
+</div>
+</div>
+</div>
+<!-- Deal Status Section -->
+<div class="bg-surface border border-outline-variant rounded-lg p-4">
+<div class="flex items-center gap-2 mb-3 text-on-surface font-semibold font-data-tabular border-b border-outline-variant pb-2">
+<span class="material-symbols-outlined text-[18px]">attach_money</span> Статус сделки
+                        </div>
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<span class="text-body-sm font-body-sm text-on-surface-variant">Стадия:</span>
+<span class="px-2 py-1 bg-surface-container-high rounded text-label-caps font-label-caps text-on-surface">Квалификация</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-body-sm font-body-sm text-on-surface-variant">Потенциал:</span>
+<span class="text-data-tabular font-data-tabular text-on-surface font-bold">1 250 000 ₽</span>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full mt-1 overflow-hidden">
+<div class="bg-secondary h-full rounded-full" style="width: 30%"></div>
+</div>
+</div>
+</div>
+<!-- Marketing Tracking -->
+<div class="bg-surface border border-outline-variant rounded-lg p-4">
+<div class="flex items-center gap-2 mb-3 text-on-surface font-semibold font-data-tabular border-b border-outline-variant pb-2">
+<span class="material-symbols-outlined text-[18px]">track_changes</span> Маркетинг
+                        </div>
+<div class="flex flex-col gap-2 text-body-sm font-body-sm">
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Источник:</span>
+<span class="text-on-surface">Yandex.Direct</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Кампания:</span>
+<span class="text-on-surface truncate w-32 text-right">b2b_pumps_q3</span>
+</div>
+<div class="flex justify-between">
+<span class="text-on-surface-variant">Первый визит:</span>
+<span class="text-on-surface">12 Окт 2023</span>
+</div>
+</div>
+</div>
+<!-- Safe Admin Actions -->
+<div class="bg-surface border border-outline-variant rounded-lg p-4 mb-8">
+<div class="flex items-center gap-2 mb-3 text-on-surface font-semibold font-data-tabular border-b border-outline-variant pb-2">
+<span class="material-symbols-outlined text-[18px]">admin_panel_settings</span> Действия
+                        </div>
+<div class="flex flex-col gap-2">
+<button class="w-full bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors py-2 px-3 rounded text-body-sm font-body-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">person_add</span> Назначить менеджера
+                            </button>
+<button class="w-full bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors py-2 px-3 rounded text-body-sm font-body-sm flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">merge</span> Объединить дубль
+                            </button>
+<button class="w-full bg-error/10 hover:bg-error/20 text-error border border-error/30 transition-colors py-2 px-3 rounded text-body-sm font-body-sm flex items-center justify-center gap-2 mt-2">
+<span class="material-symbols-outlined text-[16px]">block</span> Заблокировать
+                            </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body></html>

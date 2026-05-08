@@ -58,6 +58,12 @@ from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery
+from src.services.bot_behavior_rules import (
+    BehaviorRuleSearchContext,
+    format_behavior_rules_prompt,
+    rule_to_applied_dict,
+    search_behavior_rules,
+)
 from src.services.customer_identity import (
     build_bounded_returning_customer_context,
     format_llm_crm_context,
@@ -72,6 +78,7 @@ MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
+LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SELECTION_CONFIRMATION_ALLOWED_TOOLS = frozenset(
@@ -373,6 +380,7 @@ class SalesDeps:
     crm_context: dict[str, Any] | None = None
     user_query: str = ""
     faq_context: list[dict[str, str]] | None = None  # Cached FAQ search results
+    behavior_rules: list[dict[str, Any]] | None = None
     recent_history: list[str] | None = None  # Last N messages for escalation context
     defer_product_media: bool = False
     pending_product_media: list[ProductMediaPayload] = field(default_factory=list)
@@ -1447,6 +1455,27 @@ async def _store_quote_customer_details(
     return details
 
 
+async def _store_applied_bot_rules(
+    db: AsyncSession,
+    conversation: Conversation,
+    rules: list[dict[str, Any]],
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    if rules:
+        metadata[LAST_APPLIED_BOT_RULES_KEY] = rules
+    else:
+        metadata.pop(LAST_APPLIED_BOT_RULES_KEY, None)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush applied bot rules for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
 def _pending_quote_selection_from_metadata(
     conversation: Conversation,
 ) -> Mapping[str, Any] | None:
@@ -2215,6 +2244,9 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         stage=ctx.deps.conversation.sales_stage,
         language=ctx.deps.conversation.language,
     )
+
+    if ctx.deps.behavior_rules:
+        base_prompt += f"\n\n{format_behavior_rules_prompt(ctx.deps.behavior_rules)}\n"
 
     # RAG: inject cached knowledge base FAQ context
     if ctx.deps.faq_context:
@@ -3401,6 +3433,27 @@ async def process_message(
         )
     except Exception:
         logger.warning("FAQ knowledge base search failed", exc_info=True)
+
+    try:
+        metadata = conv.metadata_ if isinstance(conv.metadata_, dict) else {}
+        segment = None
+        if crm_context:
+            segment = crm_context.get("Segment") or crm_context.get("segment")
+        segment = segment or metadata.get("segment")
+        rules = await search_behavior_rules(
+            db,
+            context=BehaviorRuleSearchContext(
+                message=masked_text,
+                stage=str(conv.sales_stage) if conv.sales_stage else None,
+                language=str(conv.language) if conv.language else None,
+                segment=str(segment) if segment else None,
+            ),
+            embedding_engine=embedding_engine,
+        )
+        deps.behavior_rules = [rule_to_applied_dict(rule) for rule in rules]
+        await _store_applied_bot_rules(db, conv, deps.behavior_rules)
+    except Exception:
+        logger.warning("Bot behavior rule search failed", exc_info=True)
 
     policy_decision = evaluate_verified_answer_policy(
         masked_text, deps.faq_context or []

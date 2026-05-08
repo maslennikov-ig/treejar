@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import Base, UUIDMixin
@@ -28,6 +28,15 @@ class KnowledgeBase(UUIDMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(),
     )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+    )
+    deleted_by: Mapped[str | None] = mapped_column(String(120), default=None)
 
     # Auto-FAQ fields: track entries created from manager responses
     is_auto_generated: Mapped[bool] = mapped_column(

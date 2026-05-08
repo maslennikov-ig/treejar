@@ -28,6 +28,13 @@ from src.services.report_localization import translate_report_trigger
 logger = logging.getLogger(__name__)
 
 
+def _normalize_report_boundary(value: datetime) -> datetime:
+    """Normalize report filters for timestamp-without-time-zone DB columns."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
 class ReportData(BaseModel):
     """Structured report data."""
 
@@ -66,6 +73,8 @@ async def generate_report(
     if start_date is None:
         start_date = now - timedelta(days=7)
 
+    start_date = _normalize_report_boundary(start_date)
+    end_date = _normalize_report_boundary(end_date)
     days_in_period = max((end_date - start_date).days, 1)
 
     # Conversations count and unique customers

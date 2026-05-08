@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -28,6 +28,7 @@ from src.llm.safety import (
     run_agent_with_safety,
 )
 from src.models.knowledge_base import KnowledgeBase
+from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
 from src.rag.embeddings import EmbeddingEngine
 from src.services.auto_faq_types import AutoFAQCandidate
 
@@ -293,6 +294,8 @@ async def review_auto_faq_candidate(
     manager_draft: str,
     customer_message: str,
     embedding_engine: EmbeddingEngine,
+    persist_candidate: bool = False,
+    source_metadata: dict[str, Any] | None = None,
 ) -> AutoFAQSaveResult:
     """Run deterministic checks and return a candidate for admin confirmation.
 
@@ -306,12 +309,30 @@ async def review_auto_faq_candidate(
         customer_message=customer_message,
         embedding_engine=embedding_engine,
     )
-    return AutoFAQSaveResult(
+    result = AutoFAQSaveResult(
         status=checks.status,
         candidate=candidate,
         guard_reasons=checks.guard_reasons,
         duplicate_similarity=checks.duplicate_similarity,
     )
+    if persist_candidate and candidate is not None:
+        db.add(
+            KnowledgeBaseCandidate(
+                question=candidate.question,
+                answer=candidate.answer,
+                language=candidate.language,
+                confidence=candidate.confidence,
+                status=checks.status,
+                guard_reasons=list(checks.guard_reasons),
+                duplicate_similarity=checks.duplicate_similarity,
+                original_question=candidate.question,
+                manager_draft=manager_draft,
+                customer_message=customer_message,
+                metadata_=source_metadata,
+            )
+        )
+        await db.commit()
+    return result
 
 
 async def save_confirmed_faq_candidate(

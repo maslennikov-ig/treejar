@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-04-30
+Updated: 2026-05-08
 Current baseline branch: `main`
 
 ## Current truth
@@ -18,6 +18,8 @@ Current baseline branch: `main`
 - `tj-e2e26` is delivered on `2dc356e`: CI/deploy passed, smoke passed (`verify_api.py` 7/0, `/api/v1/health` ok, `/dashboard/` 401, `/api/v1/conversations/` 403, Alembic `2026_04_26_outbound_audit`). Narrow production recheck passed for approved `Fr3141` and rejected `Fr3142` order-status copy; `tj-e2e26` pending test conversations count is `0`.
 - Stage `tj-prl26` is launch-ready with explicit defer after controlled pre-launch E2E. `tj-prl26.5` fixed/deployed/rechecked SKU masking; full rerun `20260426181300` passed customer chat/product/stock, quotation approve/reject (`Fr3143`/`Fr3144`), Telegram private manager reply, active escalation fallback, outbound audit readback, and pending count (`5` rerun conversations, `0` pending). Stage closeout passed with full local pytest `774 passed, 19 skipped`.
 - Stage `tj-final27` is active in `docs/plans/2026-04-27-final-delivery-completion.md` to close the remaining gap between the technical specification, commercial offer, and final client acceptance. Delivered items: `tj-final27.1` catalog/Zoho truth plus strict catalog price fail-closed follow-up, `tj-final27.2` CRM/source attribution completeness, `tj-final27.3` guarded payment reminders with disabled defaults, and `tj-final27.9` acceptance pack/runbook evidence now tracked in repo. Stale review findings against old worktrees are resolved on deployed `main`: `tj-final27.11` sales fallback is deployed, `tj-final27.13` payment-reminder run-level provider reuse is deployed, and `tj-jy5i` commercial-offer/proposal escalation routing is deployed. DeepSeek sandbox task `tj-final27.12` was deleted per user decision.
+- Stage `tj-40n0` is implemented locally in worktree `.worktrees/codex-full-crm-admin` on branch `codex/full-crm-admin` for the full Noor CRM admin workspace. Local verification passed for ruff, format-check, mypy, full pytest with `-s` (`913 passed, 19 skipped`), frontend lint, frontend build, and dashboard regression tests. It is not deployed to `https://noor.starec.ai`.
+- Bead `tj-jp06` is implemented locally in worktree `.worktrees/codex-bot-behavior-rules` on branch `codex/bot-behavior-rules-admin`, based on the `tj-40n0` CRM-admin stream. It adds DB-backed Bot Behavior Rules/Playbooks, admin CRUD/preview APIs, LLM `[BOT OPERATING RULES]` injection, applied-rule visibility in conversation detail, Stitch design references under `docs/design/stitch/noor-ai-crm-dashboard/`, and a Stitch-adapted CRM admin shell. Local verification passed on 2026-05-08: ruff check, ruff format-check, mypy, frontend static regression, frontend `tsc`, frontend build, and full pytest (`926 passed, 16 skipped`). Frontend admin dependency health for `tj-puk5` is now Node 22/Vite 8/Tailwind 4.2.4 with clean npm audit. Local pytest capture failure on the WSL/Codex Windows temp mount is fixed by `tj-85oy`; browser-smoke blockers from `tj-u05w` are fixed by removing the broadcast-like admin CTA and normalizing report datetime filters for timestamp-without-time-zone columns. Repeat local browser smoke passed on 2026-05-08 for anonymous protection, admin login, all dashboard sections, 3-panel conversations, KB editor, bot rules, reports generation, audit, and absence of WhatsApp compose/broadcast affordances; screenshots are in `.tmp/current/playwright/noor-admin-smoke/`. It is not deployed to `https://noor.starec.ai`.
 
 ## Next recommended
 
@@ -32,7 +34,7 @@ Treat `tj-ruue`, `tj-e2e26`, `tj-prl26`, `tj-final27.1-.3`, `tj-final27.9`, `tj-
 Do not deploy, mutate production config, run broad production suites, run `scripts/verify_wazzup.py`, enable scheduled AI Quality Controls, or send unsolicited WhatsApp/media/voice tests without explicit approval.
 
 ## Explicit defers
-- Extended referrals admin/reporting remains intentionally deferred; some worktrees hit a local pytest capture tmpfile `FileNotFoundError` before collection with plain `uv run pytest ...`, while equivalent full runs with `-s` have passed.
+- Extended referrals admin/reporting remains intentionally deferred.
 - `salePrice` remains raw-only until a separate approved sale policy exists; missing/invalid catalog `price` now fails closed with manager escalation instead of using Zoho rate as customer-facing fallback.
 - DeepSeek V4 Pro is intentionally not being pursued as a production model switch after A/B; the sandbox Bead was deleted.
 - Final acceptance still needs client decisions for UTM/source outbound Zoho field mapping, payment reminder templates/policy before enabling sends, referral rules or written exclusion, voice/media E2E permission, and final live E2E scenario approval.
