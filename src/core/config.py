@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     telegram_allowed_inbound_phone: str = "+971551220665"
+    telegram_admin_user_ids: str = ""
+    telegram_admin_login_ttl_seconds: int = 300
 
     # API key for internal endpoints (referrals, reports, notifications)
     api_key: str = ""

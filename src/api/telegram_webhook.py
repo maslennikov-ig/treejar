@@ -59,6 +59,7 @@ _PENDING_TTL_SECONDS = 600
 _RESET_PENDING_KEY_PREFIX = "tg_reset_pending:"
 _RESET_TTL_SECONDS = 300
 _ORDER_DECISION_SOURCE = "telegram_order_decision"
+_ADMIN_LOGIN_COMMAND_RE = re.compile(r"^/admin(?:@[A-Za-z0-9_]+)?\s*$")
 _RESET_COMMAND_RE = re.compile(r"^/reset(?:@[A-Za-z0-9_]+)?(?:\s+(?P<phone>.+))?$")
 
 
@@ -147,6 +148,8 @@ async def telegram_webhook(
     # Handle text message (manager's reply after clicking a button)
     message = data.get("message")
     if message and message.get("text"):
+        if await _handle_admin_login_command_if_present(message):
+            return {"status": "ok"}
         if await _handle_reset_command_if_present(message):
             return {"status": "ok"}
         await _handle_manager_reply(message)
@@ -240,6 +243,51 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
 def _is_configured_admin_chat(chat_id: Any) -> bool:
     configured = str(settings.telegram_chat_id).strip()
     return bool(configured) and str(chat_id) == configured
+
+
+async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> bool:
+    text = str(message.get("text") or "").strip()
+    if not _ADMIN_LOGIN_COMMAND_RE.match(text):
+        return False
+
+    chat_id = message.get("chat", {}).get("id")
+    if not _is_configured_admin_chat(chat_id):
+        return True
+
+    from_user = message.get("from") or {}
+    requester_id = from_user.get("id")
+    if not isinstance(requester_id, int):
+        client = _get_telegram_client()
+        await client.send_message(
+            "Не удалось определить Telegram user id. Вход в CRM не выдан.",
+            chat_id=str(chat_id),
+        )
+        return True
+
+    from src.services.telegram_admin_login import create_telegram_admin_login_link
+
+    result = await create_telegram_admin_login_link(
+        redis_client,
+        chat_id=chat_id,
+        user_id=requester_id,
+        username=from_user.get("username"),
+        first_name=from_user.get("first_name"),
+    )
+    client = _get_telegram_client()
+    if not result.authorized or not result.url:
+        await client.send_message(
+            "Доступ к CRM не настроен для Telegram user id "
+            f"<code>{escape(str(requester_id))}</code>.",
+            chat_id=str(chat_id),
+        )
+        return True
+
+    await client.send_message_with_inline_keyboard(
+        "Одноразовая ссылка для входа в Noor CRM действует 5 минут.",
+        [[{"text": "Открыть Noor CRM", "url": result.url}]],
+        chat_id=str(chat_id),
+    )
+    return True
 
 
 async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:

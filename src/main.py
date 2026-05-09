@@ -11,9 +11,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from src.api.admin.dashboard_redirect_admin import DashboardRedirectAdmin
 from src.api.v1.admin import require_admin_session
 from src.core.config import settings
-from src.core.database import engine
+from src.core.database import async_session_factory, engine
 from src.core.redis import redis_client
 from src.integrations.notifications.telegram_webhook import sync_telegram_webhook
+from src.services.admin_audit import log_admin_action
+from src.services.telegram_admin_login import consume_telegram_admin_login_token
 
 
 @asynccontextmanager
@@ -74,7 +76,7 @@ def create_app() -> FastAPI:
     # --- Landing Page SPA Integration ---
     import os
 
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, RedirectResponse
     from fastapi.staticfiles import StaticFiles
 
     # --- Admin Dashboard SPA Integration ---
@@ -89,6 +91,34 @@ def create_app() -> FastAPI:
         StaticFiles(directory="frontend/admin/dist/assets"),
         name="admin-assets",
     )
+
+    @app.get("/dashboard/telegram-login", include_in_schema=False)
+    async def consume_dashboard_telegram_login(
+        request: Request,
+        token: str,
+    ) -> RedirectResponse:
+        identity = await consume_telegram_admin_login_token(redis_client, token)
+        if identity is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired login link")
+
+        async with async_session_factory() as db:
+            await log_admin_action(
+                db,
+                action="admin_login.telegram",
+                entity_type="admin_session",
+                actor=f"telegram:{identity.user_id}",
+                request=request,
+                metadata={
+                    "telegram_chat_id": identity.chat_id,
+                    "telegram_user_id": identity.user_id,
+                    "telegram_username": identity.username,
+                    "telegram_first_name": identity.first_name,
+                },
+            )
+            await db.commit()
+
+        request.session.update({"token": "admin_session"})
+        return RedirectResponse(url="/dashboard/", status_code=303)
 
     @app.get("/dashboard/{full_path:path}", include_in_schema=False)
     async def serve_admin_spa(request: Request, full_path: str) -> FileResponse:
