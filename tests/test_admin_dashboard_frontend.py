@@ -29,6 +29,15 @@ def test_crm_admin_static_contract() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_admin_dashboard_uses_no_external_font_hosts() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    index_html = repo_root / "frontend" / "admin" / "index.html"
+    source = index_html.read_text(encoding="utf-8")
+
+    assert "fonts.googleapis.com" not in source
+    assert "fonts.gstatic.com" not in source
+
+
 def test_operator_center_review_message_handles_refresh_failure_after_success() -> None:
     result = _run_frontend_regression("operator_center_review_message_regression.mjs")
 
