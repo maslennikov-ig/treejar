@@ -1,6 +1,13 @@
 import { motion } from 'framer-motion';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import { CHART_TOOLTIP_STYLE } from './chartTheme';
+import {
+    CHART_CARD_CLASS,
+    CHART_EMPTY_CLASS,
+    CHART_LEGEND_STYLE,
+    CHART_SUBTITLE_CLASS,
+    CHART_TITLE_CLASS,
+    CHART_TOOLTIP_STYLE,
+} from './chartTheme';
 
 interface SegmentPieChartProps {
     byLanguage: Record<string, number>;
@@ -36,13 +43,13 @@ export default function SegmentPieChart({ byLanguage, targetVsNontarget }: Segme
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-            className="rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/[0.08] p-6"
+            className={CHART_CARD_CLASS}
         >
-            <h3 className="text-lg font-semibold text-slate-200 mb-4">Classification</h3>
+            <h3 className={`${CHART_TITLE_CLASS} mb-4`}>Classification</h3>
             <div className="grid grid-cols-2 gap-4">
                 {/* Language donut */}
                 <div>
-                    <p className="text-xs text-slate-500 text-center mb-2">By Language</p>
+                    <p className={CHART_SUBTITLE_CLASS}>By Language</p>
                     {hasLangData ? (
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
@@ -64,13 +71,13 @@ export default function SegmentPieChart({ byLanguage, targetVsNontarget }: Segme
                             </PieChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div className="flex items-center justify-center h-[200px] text-slate-600 text-sm">No data</div>
+                        <div className={`${CHART_EMPTY_CLASS} h-[200px]`}>No data</div>
                     )}
                 </div>
 
                 {/* Target vs non-target donut */}
                 <div>
-                    <p className="text-xs text-slate-500 text-center mb-2">Target vs Non-target</p>
+                    <p className={CHART_SUBTITLE_CLASS}>Target vs Non-target</p>
                     {hasTargetData ? (
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
@@ -89,11 +96,11 @@ export default function SegmentPieChart({ byLanguage, targetVsNontarget }: Segme
                                     ))}
                                 </Pie>
                                 <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                                <Legend wrapperStyle={{ color: '#94a3b8', fontSize: '12px' }} />
+                                <Legend wrapperStyle={CHART_LEGEND_STYLE} />
                             </PieChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div className="flex items-center justify-center h-[200px] text-slate-600 text-sm">No data</div>
+                        <div className={`${CHART_EMPTY_CLASS} h-[200px]`}>No data</div>
                     )}
                 </div>
             </div>

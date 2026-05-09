@@ -4,6 +4,31 @@
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --admin-chart-surface: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  --admin-chart-border: rgba(15, 23, 42, 0.12);
+  --admin-chart-title: #0f172a;
+  --admin-chart-muted: #475569;
+  --admin-chart-empty: #64748b;
+  --admin-chart-grid: rgba(30, 41, 59, 0.16);
+  --admin-chart-axis: #64748b;
+  --admin-chart-tooltip-bg: #ffffff;
+  --admin-chart-tooltip-border: rgba(15, 23, 42, 0.16);
+  --admin-chart-tooltip-text: #0f172a;
+  --admin-chart-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+:where(.dark, .dark *) {
+  --admin-chart-surface: linear-gradient(135deg, rgba(30, 41, 59, 0.58) 0%, rgba(15, 23, 42, 0.58) 100%);
+  --admin-chart-border: rgba(255, 255, 255, 0.1);
+  --admin-chart-title: #e2e8f0;
+  --admin-chart-muted: #94a3b8;
+  --admin-chart-empty: #64748b;
+  --admin-chart-grid: rgba(148, 163, 184, 0.22);
+  --admin-chart-axis: #94a3b8;
+  --admin-chart-tooltip-bg: #1e293b;
+  --admin-chart-tooltip-border: rgba(255, 255, 255, 0.12);
+  --admin-chart-tooltip-text: #e2e8f0;
+  --admin-chart-shadow: none;
 }
 
 body {
@@ -15,4 +40,10 @@ body {
 
 #root {
   min-height: 100vh;
+}
+
+.admin-chart-card {
+  border: 1px solid var(--admin-chart-border);
+  background: var(--admin-chart-surface);
+  box-shadow: var(--admin-chart-shadow);
 }
