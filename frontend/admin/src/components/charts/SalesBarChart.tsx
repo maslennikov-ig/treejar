@@ -1,6 +1,14 @@
 import { motion } from 'framer-motion';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { CHART_AXIS_FONT_SIZE, CHART_AXIS_STROKE, CHART_GRID_STROKE, CHART_TOOLTIP_STYLE } from './chartTheme';
+import {
+    CHART_AXIS_FONT_SIZE,
+    CHART_AXIS_STROKE,
+    CHART_CARD_CLASS,
+    CHART_GRID_STROKE,
+    CHART_META_CLASS,
+    CHART_TITLE_CLASS,
+    CHART_TOOLTIP_STYLE,
+} from './chartTheme';
 
 interface SalesBarChartProps {
     noorSales: { count: number; amount: number };
@@ -26,12 +34,12 @@ export default function SalesBarChart({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.5 }}
-            className="rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/[0.08] p-6"
+            className={CHART_CARD_CLASS}
         >
             <div className="mb-4 flex items-center justify-between">
                 <div>
-                    <h3 className="text-lg font-semibold text-slate-200">Sales & Escalation</h3>
-                    <p className="text-sm text-slate-500">Conversion Rate: {conversionRate}%</p>
+                    <h3 className={CHART_TITLE_CLASS}>Sales & Escalation</h3>
+                    <p className={CHART_META_CLASS}>Conversion Rate: {conversionRate}%</p>
                 </div>
             </div>
             <ResponsiveContainer width="100%" height={280}>

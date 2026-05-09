@@ -8,7 +8,16 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
-import { CHART_AXIS_FONT_SIZE, CHART_AXIS_STROKE, CHART_GRID_STROKE, CHART_TOOLTIP_STYLE } from './chartTheme';
+import {
+    CHART_AXIS_FONT_SIZE,
+    CHART_AXIS_STROKE,
+    CHART_CARD_CLASS,
+    CHART_EMPTY_CLASS,
+    CHART_GRID_STROKE,
+    CHART_META_CLASS,
+    CHART_TITLE_CLASS,
+    CHART_TOOLTIP_STYLE,
+} from './chartTheme';
 import type { TimeseriesPoint } from '@/types/metrics';
 
 interface ConversationsChartProps {
@@ -33,12 +42,12 @@ export default function ConversationsChart({ points, totalConversations }: Conve
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
-            className="rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/[0.08] p-6"
+            className={CHART_CARD_CLASS}
         >
             <div className="mb-4 flex items-center justify-between">
                 <div>
-                    <h3 className="text-lg font-semibold text-slate-200">Conversations</h3>
-                    <p className="text-sm text-slate-500">New vs Returning • Total: {totalConversations}</p>
+                    <h3 className={CHART_TITLE_CLASS}>Conversations</h3>
+                    <p className={CHART_META_CLASS}>New vs Returning • Total: {totalConversations}</p>
                 </div>
             </div>
             {data.length > 0 ? (
@@ -69,7 +78,7 @@ export default function ConversationsChart({ points, totalConversations }: Conve
                     </LineChart>
                 </ResponsiveContainer>
             ) : (
-                <div className="flex items-center justify-center h-[280px] text-slate-600 text-sm">
+                <div className={`${CHART_EMPTY_CLASS} h-[280px]`}>
                     No conversation data for this period
                 </div>
             )}
