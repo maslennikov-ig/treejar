@@ -146,6 +146,7 @@ async def test_admin_login_grants_dashboard_and_api_access(client: AsyncClient) 
         },
     )
     assert login_response.status_code in (200, 302, 303)
+    assert login_response.headers["location"].endswith("/dashboard/")
 
     admin_response = await client.get("/admin/")
     assert admin_response.status_code == 200

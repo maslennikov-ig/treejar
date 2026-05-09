@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI, HTTPException, Request
-from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
 
+from src.api.admin.dashboard_redirect_admin import DashboardRedirectAdmin
 from src.api.v1.admin import require_admin_session
 from src.core.config import settings
 from src.core.database import engine
@@ -60,7 +60,7 @@ def create_app() -> FastAPI:
     # Mount SQLAdmin
     from src.api.admin.auth import authentication_backend
 
-    admin = Admin(
+    admin = DashboardRedirectAdmin(
         app,
         engine,
         title="Treejar Admin",
