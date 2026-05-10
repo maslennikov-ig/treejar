@@ -62,7 +62,6 @@ _ORDER_DECISION_SOURCE = "telegram_order_decision"
 _ADMIN_LOGIN_COMMAND_RE = re.compile(
     r"^(?:/admin(?:@[A-Za-z0-9_]+)?|/start(?:@[A-Za-z0-9_]+)?\s+admin)\s*$"
 )
-_ADMIN_LOGIN_START_COMMAND_RE = re.compile(r"^/start(?:@[A-Za-z0-9_]+)?\s+admin\s*$")
 _RESET_COMMAND_RE = re.compile(r"^/reset(?:@[A-Za-z0-9_]+)?(?:\s+(?P<phone>.+))?$")
 
 
@@ -248,30 +247,44 @@ def _is_configured_admin_chat(chat_id: Any) -> bool:
     return bool(configured) and str(chat_id) == configured
 
 
+def _is_private_chat_for_user(
+    *,
+    chat_id: Any,
+    chat_type: Any,
+    user_id: int,
+) -> bool:
+    return str(chat_type or "").lower() == "private" and str(chat_id) == str(user_id)
+
+
 async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> bool:
     text = str(message.get("text") or "").strip()
     if not _ADMIN_LOGIN_COMMAND_RE.match(text):
         return False
 
-    chat_id = message.get("chat", {}).get("id")
-    if not _is_configured_admin_chat(chat_id):
-        if _ADMIN_LOGIN_START_COMMAND_RE.match(text):
-            client = _get_telegram_client()
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+    chat_type = chat.get("type")
+    from_user = message.get("from") or {}
+    requester_id = from_user.get("id")
+    client = _get_telegram_client()
+
+    if not isinstance(requester_id, int):
+        if (
+            _is_configured_admin_chat(chat_id)
+            or str(chat_type or "").lower() == "private"
+        ):
             await client.send_message(
-                "Отправьте <code>/admin</code> в рабочем Telegram-чате Noor. "
-                "Личный чат с ботом не выдает CRM-ссылки.",
+                "Не удалось определить Telegram user id. Вход в CRM не выдан.",
                 chat_id=str(chat_id),
             )
         return True
 
-    from_user = message.get("from") or {}
-    requester_id = from_user.get("id")
-    if not isinstance(requester_id, int):
-        client = _get_telegram_client()
-        await client.send_message(
-            "Не удалось определить Telegram user id. Вход в CRM не выдан.",
-            chat_id=str(chat_id),
-        )
+    is_allowed_source = _is_configured_admin_chat(chat_id) or _is_private_chat_for_user(
+        chat_id=chat_id,
+        chat_type=chat_type,
+        user_id=requester_id,
+    )
+    if not is_allowed_source:
         return True
 
     from src.services.telegram_admin_login import create_telegram_admin_login_link
@@ -279,11 +292,11 @@ async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> boo
     result = await create_telegram_admin_login_link(
         redis_client,
         chat_id=chat_id,
+        chat_type=str(chat_type or ""),
         user_id=requester_id,
         username=from_user.get("username"),
         first_name=from_user.get("first_name"),
     )
-    client = _get_telegram_client()
     if not result.authorized or not result.url:
         await client.send_message(
             "Доступ к CRM не настроен для Telegram user id "

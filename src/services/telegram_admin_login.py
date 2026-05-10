@@ -45,11 +45,33 @@ def parse_telegram_admin_user_ids(raw: str) -> set[int]:
     return user_ids
 
 
-def is_authorized_telegram_admin(*, chat_id: int | str | None, user_id: int) -> bool:
-    configured_chat_id = settings.telegram_chat_id.strip()
-    if not configured_chat_id or str(chat_id) != configured_chat_id:
+def _is_private_chat_for_user(
+    *,
+    chat_id: int | str | None,
+    user_id: int,
+    chat_type: str | None,
+) -> bool:
+    return str(chat_type or "").lower() == "private" and str(chat_id) == str(user_id)
+
+
+def is_authorized_telegram_admin(
+    *,
+    chat_id: int | str | None,
+    user_id: int,
+    chat_type: str | None = None,
+) -> bool:
+    if user_id not in parse_telegram_admin_user_ids(settings.telegram_admin_user_ids):
         return False
-    return user_id in parse_telegram_admin_user_ids(settings.telegram_admin_user_ids)
+
+    configured_chat_id = settings.telegram_chat_id.strip()
+    if configured_chat_id and str(chat_id) == configured_chat_id:
+        return True
+
+    return _is_private_chat_for_user(
+        chat_id=chat_id,
+        user_id=user_id,
+        chat_type=chat_type,
+    )
 
 
 def telegram_admin_login_base_url() -> str | None:
@@ -73,11 +95,16 @@ async def create_telegram_admin_login_link(
     redis: Any,
     *,
     chat_id: int | str | None,
+    chat_type: str | None = None,
     user_id: int,
     username: str | None,
     first_name: str | None,
 ) -> TelegramAdminLoginLinkResult:
-    if not is_authorized_telegram_admin(chat_id=chat_id, user_id=user_id):
+    if not is_authorized_telegram_admin(
+        chat_id=chat_id,
+        user_id=user_id,
+        chat_type=chat_type,
+    ):
         return TelegramAdminLoginLinkResult(authorized=False, reason="unauthorized")
 
     base_url = telegram_admin_login_base_url()

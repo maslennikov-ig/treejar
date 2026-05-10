@@ -139,8 +139,9 @@ async def test_admin_login_page_shows_telegram_admin_entrypoint(
     assert "Войти через Telegram" in response.text
     assert "Treejar_Trading_bot" in response.text
     assert "https://t.me/Treejar_Trading_bot" in response.text
-    assert "Отправьте /admin" in response.text
-    assert "рабочем Telegram-чате" in response.text
+    assert "/admin" in response.text
+    assert "личный чат" in response.text
+    assert "Личный чат с ботом не выдает CRM-ссылки" not in response.text
 
 
 @pytest.mark.asyncio

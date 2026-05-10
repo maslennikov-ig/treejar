@@ -72,7 +72,14 @@ def test_empty_telegram_admin_user_ids_disables_access(
 
     settings.telegram_admin_user_ids = ""
 
-    assert is_authorized_telegram_admin(chat_id=-100123456789, user_id=777) is False
+    assert (
+        is_authorized_telegram_admin(
+            chat_id=777,
+            user_id=777,
+            chat_type="private",
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -140,6 +147,7 @@ async def test_wrong_chat_admin_link_request_is_denied(
     result = await create_telegram_admin_login_link(
         redis,
         chat_id=-100999999999,
+        chat_type="group",
         user_id=777,
         username="owner",
         first_name=None,
@@ -148,6 +156,32 @@ async def test_wrong_chat_admin_link_request_is_denied(
     assert result.authorized is False
     assert result.url is None
     assert redis.values == {}
+
+
+@pytest.mark.asyncio
+async def test_private_admin_link_request_is_allowed_for_whitelisted_user(
+    telegram_admin_settings: None,
+) -> None:
+    from src.services.telegram_admin_login import create_telegram_admin_login_link
+
+    redis = _MemoryRedis()
+
+    with patch("src.services.telegram_admin_login.secrets.token_urlsafe") as token:
+        token.return_value = "raw-login-token"
+        result = await create_telegram_admin_login_link(
+            redis,
+            chat_id=777,
+            chat_type="private",
+            user_id=777,
+            username="owner",
+            first_name="Noor",
+        )
+
+    assert result.authorized is True
+    assert result.url == (
+        "https://crm.example.test/dashboard/telegram-login?token=raw-login-token"
+    )
+    assert len(redis.values) == 1
 
 
 @pytest.mark.asyncio
@@ -215,36 +249,50 @@ async def test_admin_command_sends_login_url_for_whitelisted_user(
 
 
 @pytest.mark.asyncio
-async def test_admin_command_from_wrong_chat_is_silent(
+async def test_private_admin_command_sends_login_url_for_whitelisted_user(
     telegram_admin_settings: None,
 ) -> None:
     from src.api.telegram_webhook import _handle_admin_login_command_if_present
 
     telegram = AsyncMock()
 
-    with patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram):
+    with (
+        patch("src.api.telegram_webhook.redis_client", _MemoryRedis()),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch("src.services.telegram_admin_login.secrets.token_urlsafe") as token,
+    ):
+        token.return_value = "raw-login-token"
         handled = await _handle_admin_login_command_if_present(
             {
-                "chat": {"id": -100999999999},
-                "from": {"id": 777, "username": "owner"},
+                "chat": {"id": 777, "type": "private"},
+                "from": {"id": 777, "username": "owner", "first_name": "Noor"},
                 "text": "/admin",
             }
         )
 
     assert handled is True
-    telegram.send_message.assert_not_awaited()
-    telegram.send_message_with_inline_keyboard.assert_not_awaited()
+    telegram.send_message_with_inline_keyboard.assert_awaited_once()
+    buttons = telegram.send_message_with_inline_keyboard.await_args.args[1]
+    assert buttons[0][0]["text"] == "Открыть Noor CRM"
+    assert buttons[0][0]["url"] == (
+        "https://crm.example.test/dashboard/telegram-login?token=raw-login-token"
+    )
 
 
 @pytest.mark.asyncio
-async def test_start_admin_deeplink_explains_secure_group_flow(
+async def test_start_admin_deeplink_sends_login_url_for_whitelisted_user(
     telegram_admin_settings: None,
 ) -> None:
     from src.api.telegram_webhook import _handle_admin_login_command_if_present
 
     telegram = AsyncMock()
 
-    with patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram):
+    with (
+        patch("src.api.telegram_webhook.redis_client", _MemoryRedis()),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+        patch("src.services.telegram_admin_login.secrets.token_urlsafe") as token,
+    ):
+        token.return_value = "raw-login-token"
         handled = await _handle_admin_login_command_if_present(
             {
                 "chat": {"id": 777, "type": "private"},
@@ -254,11 +302,12 @@ async def test_start_admin_deeplink_explains_secure_group_flow(
         )
 
     assert handled is True
-    telegram.send_message.assert_awaited_once()
-    message = telegram.send_message.await_args.args[0]
-    assert "Отправьте <code>/admin</code>" in message
-    assert "рабочем Telegram-чате" in message
-    telegram.send_message_with_inline_keyboard.assert_not_awaited()
+    telegram.send_message.assert_not_awaited()
+    telegram.send_message_with_inline_keyboard.assert_awaited_once()
+    buttons = telegram.send_message_with_inline_keyboard.await_args.args[1]
+    assert buttons[0][0]["url"] == (
+        "https://crm.example.test/dashboard/telegram-login?token=raw-login-token"
+    )
 
 
 @pytest.mark.asyncio
@@ -272,7 +321,7 @@ async def test_admin_command_from_non_whitelisted_user_has_no_login_url(
     with patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram):
         handled = await _handle_admin_login_command_if_present(
             {
-                "chat": {"id": -100123456789},
+                "chat": {"id": 999, "type": "private"},
                 "from": {"id": 999, "username": "other"},
                 "text": "/admin",
             }
@@ -282,6 +331,28 @@ async def test_admin_command_from_non_whitelisted_user_has_no_login_url(
     telegram.send_message.assert_awaited_once()
     telegram.send_message_with_inline_keyboard.assert_not_awaited()
     assert "999" in telegram.send_message.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_admin_command_from_arbitrary_group_is_silent(
+    telegram_admin_settings: None,
+) -> None:
+    from src.api.telegram_webhook import _handle_admin_login_command_if_present
+
+    telegram = AsyncMock()
+
+    with patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram):
+        handled = await _handle_admin_login_command_if_present(
+            {
+                "chat": {"id": -100999999999, "type": "group"},
+                "from": {"id": 777, "username": "owner"},
+                "text": "/admin",
+            }
+        )
+
+    assert handled is True
+    telegram.send_message.assert_not_awaited()
+    telegram.send_message_with_inline_keyboard.assert_not_awaited()
 
 
 @pytest.mark.asyncio
