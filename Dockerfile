@@ -64,6 +64,7 @@ COPY --from=deps /app/.venv /app/.venv
 COPY pyproject.toml uv.lock README.md ./
 
 COPY src/ ./src/
+COPY templates/ ./templates/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 COPY scripts/entrypoint.sh /entrypoint.sh

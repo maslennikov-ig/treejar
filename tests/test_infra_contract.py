@@ -19,6 +19,7 @@ def test_infra_build_contract_uses_locked_uv_and_cpu_torch() -> None:
     )
     assert "RUN UV_NO_DEV=1 uv sync --locked" in dockerfile
     assert "RUN UV_NO_DEV=1 uv sync --locked --no-install-project" in dockerfile
+    assert "COPY templates/ ./templates/" in dockerfile
     assert "pip install --no-cache-dir" not in dockerfile
 
     assert 'uv pip install --system -e ".[dev]"' not in ci_workflow
