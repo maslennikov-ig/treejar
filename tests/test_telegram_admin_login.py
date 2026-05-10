@@ -237,6 +237,31 @@ async def test_admin_command_from_wrong_chat_is_silent(
 
 
 @pytest.mark.asyncio
+async def test_start_admin_deeplink_explains_secure_group_flow(
+    telegram_admin_settings: None,
+) -> None:
+    from src.api.telegram_webhook import _handle_admin_login_command_if_present
+
+    telegram = AsyncMock()
+
+    with patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram):
+        handled = await _handle_admin_login_command_if_present(
+            {
+                "chat": {"id": 777, "type": "private"},
+                "from": {"id": 777, "username": "owner"},
+                "text": "/start admin",
+            }
+        )
+
+    assert handled is True
+    telegram.send_message.assert_awaited_once()
+    message = telegram.send_message.await_args.args[0]
+    assert "Отправьте <code>/admin</code>" in message
+    assert "рабочем Telegram-чате" in message
+    telegram.send_message_with_inline_keyboard.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_admin_command_from_non_whitelisted_user_has_no_login_url(
     telegram_admin_settings: None,
 ) -> None:

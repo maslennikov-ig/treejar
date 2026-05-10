@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 
-Updated: 2026-05-09
+Updated: 2026-05-10
 Current baseline branch: `main`
 
 ## Current truth
@@ -20,21 +20,21 @@ Current baseline branch: `main`
 - Stage `tj-final27` is active in `docs/plans/2026-04-27-final-delivery-completion.md` to close the remaining gap between the technical specification, commercial offer, and final client acceptance. Delivered items: `tj-final27.1` catalog/Zoho truth plus strict catalog price fail-closed follow-up, `tj-final27.2` CRM/source attribution completeness, `tj-final27.3` guarded payment reminders with disabled defaults, and `tj-final27.9` acceptance pack/runbook evidence now tracked in repo. Stale review findings against old worktrees are resolved on deployed `main`: `tj-final27.11` sales fallback is deployed, `tj-final27.13` payment-reminder run-level provider reuse is deployed, and `tj-jy5i` commercial-offer/proposal escalation routing is deployed. DeepSeek sandbox task `tj-final27.12` was deleted per user decision.
 - Stage `tj-40n0` and Bead `tj-jp06` are delivered on `main`: `/dashboard/` is now the Noor CRM admin workspace, `/admin/` remains the SQLAdmin fallback, and successful `/admin/login` now lands normal admins in `/dashboard/`. Admin CRM/knowledge-base/bot-rules APIs are deployed, audit logging and migrations are applied, DB-backed Bot Behavior Rules/Playbooks are injected separately as `[BOT OPERATING RULES]`, applied rule IDs are visible in conversation detail, Stitch design references are tracked under `docs/design/stitch/noor-ai-crm-dashboard/`, and the admin frontend toolchain is Node 22/Vite 8/Tailwind 4.2.4 with clean npm audit. Pre-merge local verification passed ruff, format-check, mypy, frontend regression scripts, frontend lint/build, full pytest (`926 passed, 16 skipped`), process verification, and local browser smoke for anonymous protection, login, all dashboard sections, 3-panel conversations, KB editor, bot rules, reports, audit, and absence of WhatsApp compose/broadcast affordances. Post-deploy hotfix `tj-xw6k` fixed the SPA fallback for unknown API paths; post-deploy hotfix `tj-gdxt` removed blocked external Google Fonts from the admin dashboard; post-deploy hotfix `tj-pxo0` fixed the confusing login redirect to old SQLAdmin; authenticated production browser smoke screenshots and result JSON are under `.tmp/current/playwright/noor-admin-prod-smoke-20260509/`.
 - `tj-90i6` is delivered on `main@15b0c9e`: whitelisted Telegram admins can send `/admin` to the configured `TELEGRAM_CHAT_ID`, receive a 5-minute one-time Noor CRM login URL, consume it at `/dashboard/telegram-login`, get the normal `admin_session`, and land on `/dashboard/`. Access requires `TELEGRAM_ADMIN_USER_IDS`; wrong chat/user gets no login URL; Redis stores only a SHA-256 token key plus identity payload; consume writes `AdminActionAudit` action `admin_login.telegram` without raw token metadata. Local verification passed: ruff check, ruff format-check, mypy `src/`, targeted Telegram/admin/audit tests (`47 passed`), frontend dashboard regression tests after `npm ci --prefix frontend/admin` (`10 passed`), and full pytest (`945 passed, 19 skipped`). GitHub Actions run `25608164556` passed lint/test/type-check/deploy; production smoke passed health `200`, anonymous dashboard `401`, invalid Telegram login token `401`, and `verify_api.py` `7/0`. Production `TELEGRAM_ADMIN_USER_IDS` is configured with approved Telegram user id `166848328`; runtime check confirmed the id is present and health remained `200`.
+- `tj-nmuo` found a production E2E blocker after `tj-90i6`: `/admin/login` still showed only the legacy SQLAdmin username/password form, so testers without legacy credentials had no visible Telegram login entrypoint. Local fix is implemented on branch `codex/telegram-admin-login`: `/admin/login` now renders a visible "Войти через Telegram" CTA for `@Treejar_Trading_bot`, explains that `/admin` must be sent in the configured work Telegram chat, `/start admin` in a private chat returns that safety instruction instead of silently doing nothing, and startup Telegram sync registers `/admin`, `/status`, and `/help` in the bot command menu. Verification passed locally: ruff check, ruff format-check, mypy `src/`, targeted admin/telegram tests, and full pytest (`947 passed, 19 skipped`). This fix is not yet deployed in production.
 
 ## Next recommended
 
 Next stage id: `tj-final27`
-Recommended action: collect approved Telegram user IDs and set production `TELEGRAM_ADMIN_USER_IDS` if the owner wants Telegram login enabled now; otherwise continue final acceptance work with `tj-final27.4` through `tj-final27.8`.
+Recommended action: after explicit deploy approval, deploy `codex/telegram-admin-login`, verify `/admin/login` has the Telegram CTA on `https://noor.starec.ai`, then rerun the production CRM E2E smoke from `tj-nmuo`.
 
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage / $stage-orchestrator. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, and `docs/plans/2026-04-27-final-delivery-completion.md` first.
-Worktree: create a fresh isolated worktree from current `origin/main` for unrelated work. Treat `tj-90i6` as deployed code but not production-enabled for any user until `TELEGRAM_ADMIN_USER_IDS` is configured.
-Do not mutate production config further without explicit approval and approved Telegram user IDs.
+Worktree: create a fresh isolated worktree from current `origin/main` for unrelated work. Treat `tj-90i6` as deployed and production-enabled for approved Telegram user id `166848328`; treat `tj-nmuo` as locally fixed but pending deploy and E2E rerun.
+Do not mutate production config or deploy further without explicit approval.
 
 ## Explicit defers
 - Extended referrals admin/reporting remains intentionally deferred.
 - `salePrice` remains raw-only until a separate approved sale policy exists; missing/invalid catalog `price` now fails closed with manager escalation instead of using Zoho rate as customer-facing fallback.
 - DeepSeek V4 Pro is intentionally not being pursued as a production model switch after A/B; the sandbox Bead was deleted.
 - Final acceptance still needs client decisions for UTM/source outbound Zoho field mapping, payment reminder templates/policy before enabling sends, referral rules or written exclusion, voice/media E2E permission, and final live E2E scenario approval.
-- Telegram admin login production enablement is deferred until the owner provides the approved Telegram user IDs for `TELEGRAM_ADMIN_USER_IDS` and separately approves deploy/config mutation.

@@ -130,6 +130,20 @@ async def test_unknown_api_routes_do_not_fall_through_to_spa(
 
 
 @pytest.mark.asyncio
+async def test_admin_login_page_shows_telegram_admin_entrypoint(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/admin/login")
+
+    assert response.status_code == 200
+    assert "Войти через Telegram" in response.text
+    assert "Treejar_Trading_bot" in response.text
+    assert "https://t.me/Treejar_Trading_bot" in response.text
+    assert "Отправьте /admin" in response.text
+    assert "рабочем Telegram-чате" in response.text
+
+
+@pytest.mark.asyncio
 async def test_admin_login_grants_dashboard_and_api_access(client: AsyncClient) -> None:
     """Real SQLAdmin login should authorize /dashboard and /api/v1/admin routes."""
     dashboard_response = await client.get("/dashboard/")

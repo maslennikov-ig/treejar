@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 
 _CANONICAL_BASE_URL = "https://noor.starec.ai"
 _TELEGRAM_WEBHOOK_ALLOWED_UPDATES = ["message", "callback_query"]
+_TELEGRAM_BOT_COMMANDS = [
+    {"command": "admin", "description": "Войти в Noor CRM"},
+    {"command": "status", "description": "Проверить статус работы"},
+    {"command": "help", "description": "Справка по уведомлениям"},
+]
 _TELEGRAM_WEBHOOK_PATH = "/api/v1/webhook/telegram"
 
 
@@ -77,6 +82,12 @@ async def sync_telegram_webhook() -> bool:
         synced = bool(result and result.get("ok"))
         if synced:
             logger.info("Telegram webhook synced to %s", webhook_url)
+            commands_result = await client.set_my_commands(_TELEGRAM_BOT_COMMANDS)
+            if not commands_result or not commands_result.get("ok"):
+                logger.warning(
+                    "Telegram command menu sync returned a non-ok response: %s",
+                    commands_result,
+                )
         else:
             logger.warning(
                 "Telegram webhook sync returned a non-ok response: %s", result

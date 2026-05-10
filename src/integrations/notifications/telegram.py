@@ -211,6 +211,17 @@ class TelegramClient:
 
         return await self._post("setWebhook", json=payload)
 
+    async def set_my_commands(
+        self,
+        commands: list[dict[str, str]],
+    ) -> dict[str, Any] | None:
+        """Register bot commands shown in Telegram clients."""
+        if not self.is_configured:
+            logger.debug("Telegram not configured, skipping set_my_commands")
+            return None
+
+        return await self._post("setMyCommands", json={"commands": commands})
+
     async def aclose(self) -> None:
         """Close the underlying httpx client if it was opened."""
         if self._http is None or self._http.is_closed:

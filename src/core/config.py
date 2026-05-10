@@ -76,6 +76,7 @@ class Settings(BaseSettings):
 
     # Telegram Notifications (Stage 2)
     telegram_bot_token: str = ""
+    telegram_bot_username: str = "Treejar_Trading_bot"
     telegram_chat_id: str = ""
     telegram_allowed_inbound_phone: str = "+971551220665"
     telegram_admin_user_ids: str = ""

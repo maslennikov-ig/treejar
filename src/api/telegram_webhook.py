@@ -59,7 +59,10 @@ _PENDING_TTL_SECONDS = 600
 _RESET_PENDING_KEY_PREFIX = "tg_reset_pending:"
 _RESET_TTL_SECONDS = 300
 _ORDER_DECISION_SOURCE = "telegram_order_decision"
-_ADMIN_LOGIN_COMMAND_RE = re.compile(r"^/admin(?:@[A-Za-z0-9_]+)?\s*$")
+_ADMIN_LOGIN_COMMAND_RE = re.compile(
+    r"^(?:/admin(?:@[A-Za-z0-9_]+)?|/start(?:@[A-Za-z0-9_]+)?\s+admin)\s*$"
+)
+_ADMIN_LOGIN_START_COMMAND_RE = re.compile(r"^/start(?:@[A-Za-z0-9_]+)?\s+admin\s*$")
 _RESET_COMMAND_RE = re.compile(r"^/reset(?:@[A-Za-z0-9_]+)?(?:\s+(?P<phone>.+))?$")
 
 
@@ -252,6 +255,13 @@ async def _handle_admin_login_command_if_present(message: dict[str, Any]) -> boo
 
     chat_id = message.get("chat", {}).get("id")
     if not _is_configured_admin_chat(chat_id):
+        if _ADMIN_LOGIN_START_COMMAND_RE.match(text):
+            client = _get_telegram_client()
+            await client.send_message(
+                "Отправьте <code>/admin</code> в рабочем Telegram-чате Noor. "
+                "Личный чат с ботом не выдает CRM-ссылки.",
+                chat_id=str(chat_id),
+            )
         return True
 
     from_user = message.get("from") or {}

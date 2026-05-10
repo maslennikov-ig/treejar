@@ -124,6 +124,9 @@ async def test_sync_telegram_webhook_uses_current_expected_secret_token() -> Non
             mock_client.set_webhook = AsyncMock(
                 return_value={"ok": True, "result": True}
             )
+            mock_client.set_my_commands = AsyncMock(
+                return_value={"ok": True, "result": True}
+            )
 
             synced = await sync_telegram_webhook()
 
@@ -135,6 +138,9 @@ async def test_sync_telegram_webhook_uses_current_expected_secret_token() -> Non
             call.kwargs["webhook_url"] == "https://example.com/api/v1/webhook/telegram"
         )
         assert call.kwargs["allowed_updates"] == ["message", "callback_query"]
+        mock_client.set_my_commands.assert_awaited_once()
+        commands = mock_client.set_my_commands.await_args.args[0]
+        assert {"command": "admin", "description": "Войти в Noor CRM"} in commands
     finally:
         settings.telegram_bot_token = original_token
         settings.domain = original_domain
@@ -172,11 +178,15 @@ async def test_sync_telegram_webhook_is_idempotent() -> None:
             mock_client.set_webhook = AsyncMock(
                 return_value={"ok": True, "result": True}
             )
+            mock_client.set_my_commands = AsyncMock(
+                return_value={"ok": True, "result": True}
+            )
 
             assert await sync_telegram_webhook() is True
             assert await sync_telegram_webhook() is True
 
         assert mock_client.set_webhook.await_count == 2
+        assert mock_client.set_my_commands.await_count == 2
         first_call = mock_client.set_webhook.await_args_list[0]
         second_call = mock_client.set_webhook.await_args_list[1]
         assert first_call.kwargs == second_call.kwargs
