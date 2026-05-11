@@ -323,6 +323,8 @@ async def test_approve_admin_kb_candidate_uses_collision_safe_title(
     assert entry.title.startswith(question)
     assert entry.title != question
     assert candidate.status == "approved"
+    assert candidate.updated_at is not None
+    assert candidate.updated_at.tzinfo is None
     assert audit_calls[0]["after"]["candidate_status"] == "approved"
 
 
@@ -387,5 +389,7 @@ async def test_reject_admin_kb_candidate_marks_rejected_and_preserves_reason(
         "qa_run_id": "reject",
         "rejection_reason": "qa cleanup",
     }
+    assert candidate.updated_at is not None
+    assert candidate.updated_at.tzinfo is None
     assert db.committed is True
     assert audit_calls[0]["action"] == "knowledge_base.candidate_reject"

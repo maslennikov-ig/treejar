@@ -43,6 +43,10 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _now_naive_utc() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def _float(value: object | None) -> float | None:
     if value is None:
         return None
@@ -505,7 +509,7 @@ async def approve_admin_kb_candidate(
     db.add(entry)
     before = {"candidate_status": candidate.status}
     candidate.status = "approved"
-    candidate.updated_at = _now()
+    candidate.updated_at = _now_naive_utc()
     await log_admin_action(
         db,
         action="knowledge_base.candidate_approve",
@@ -544,7 +548,7 @@ async def reject_admin_kb_candidate(
         metadata["rejection_reason"] = body.reason
     candidate.metadata_ = metadata
     candidate.status = "rejected"
-    candidate.updated_at = _now()
+    candidate.updated_at = _now_naive_utc()
     await log_admin_action(
         db,
         action="knowledge_base.candidate_reject",
