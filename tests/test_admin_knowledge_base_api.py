@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
 
 from src.schemas.common import PaginatedResponse
 
@@ -215,3 +216,176 @@ async def test_admin_knowledge_base_candidates_endpoint(
 
     assert response.status_code == 200
     assert response.json()["items"][0]["question"] == "What is delivery time?"
+
+
+@pytest.mark.asyncio
+async def test_approve_admin_kb_candidate_uses_collision_safe_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Approving a candidate should not 500 on an existing auto-FAQ title."""
+    from src.models.knowledge_base import KnowledgeBase
+    from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
+    from src.services import admin_knowledge_base
+
+    candidate_id = uuid.uuid4()
+    question = "QA disposable FAQ candidate 2026051110008"
+    candidate = KnowledgeBaseCandidate(
+        id=candidate_id,
+        question=question,
+        answer="This is a disposable QA answer.",
+        language="en",
+        confidence=0.95,
+        status="needs_confirmation",
+        guard_reasons=[],
+        duplicate_similarity=None,
+        original_question=question,
+        manager_draft="Disposable QA answer",
+        customer_message="Disposable QA answer",
+        metadata_={"qa_run_id": "2026051110008"},
+    )
+
+    class FakeScalarResult:
+        def scalar_one_or_none(self) -> object:
+            return KnowledgeBase(
+                id=uuid.uuid4(),
+                source="auto_faq",
+                title=question,
+                content="Q: duplicate\nA: duplicate",
+                language="en",
+                category="faq",
+            )
+
+    class FakeDB:
+        def __init__(self) -> None:
+            self.added: list[object] = []
+            self.committed = False
+            self.refreshed: object | None = None
+            self.lookup_count = 0
+
+        async def get(
+            self,
+            model: object,
+            item_id: uuid.UUID,
+        ) -> KnowledgeBaseCandidate | None:
+            assert model is KnowledgeBaseCandidate
+            assert item_id == candidate_id
+            return candidate
+
+        async def execute(self, _stmt: object) -> FakeScalarResult:
+            self.lookup_count += 1
+            if self.lookup_count == 1:
+                return FakeScalarResult()
+
+            class EmptyScalarResult:
+                def scalar_one_or_none(self) -> object | None:
+                    return None
+
+            return EmptyScalarResult()
+
+        def add(self, row: object) -> None:
+            self.added.append(row)
+
+        async def commit(self) -> None:
+            created_entry = next(
+                row for row in self.added if isinstance(row, KnowledgeBase)
+            )
+            if created_entry.title == question:
+                raise IntegrityError(
+                    statement="insert knowledge_base",
+                    params={},
+                    orig=RuntimeError("duplicate key value"),
+                )
+            self.committed = True
+
+        async def refresh(self, row: object) -> None:
+            self.refreshed = row
+            row.created_at = datetime(2026, 5, 11, 12, 0, 0)
+
+    class FakeEmbeddingEngine:
+        async def embed_async(self, text: str) -> list[float]:
+            assert question in text
+            return [0.1] * 1024
+
+    audit_calls: list[dict[str, Any]] = []
+
+    async def fake_log_admin_action(*_: object, **kwargs: Any) -> None:
+        audit_calls.append(kwargs)
+
+    monkeypatch.setattr(admin_knowledge_base, "EmbeddingEngine", FakeEmbeddingEngine)
+    monkeypatch.setattr(admin_knowledge_base, "log_admin_action", fake_log_admin_action)
+
+    entry = await admin_knowledge_base.approve_admin_kb_candidate(
+        db=FakeDB(),
+        candidate_id=candidate_id,
+        request=None,
+    )
+
+    assert entry.title.startswith(question)
+    assert entry.title != question
+    assert candidate.status == "approved"
+    assert audit_calls[0]["after"]["candidate_status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_reject_admin_kb_candidate_marks_rejected_and_preserves_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.models.knowledge_base_candidate import KnowledgeBaseCandidate
+    from src.schemas.admin import AdminKnowledgeBaseCandidateReject
+    from src.services import admin_knowledge_base
+
+    candidate_id = uuid.uuid4()
+    candidate = KnowledgeBaseCandidate(
+        id=candidate_id,
+        question="QA disposable FAQ candidate reject",
+        answer="Disposable answer",
+        language="en",
+        confidence=0.9,
+        status="needs_confirmation",
+        guard_reasons=[],
+        duplicate_similarity=None,
+        metadata_={"qa_run_id": "reject"},
+    )
+
+    class FakeDB:
+        committed = False
+        refreshed: object | None = None
+
+        async def get(
+            self,
+            model: object,
+            item_id: uuid.UUID,
+        ) -> KnowledgeBaseCandidate | None:
+            assert model is KnowledgeBaseCandidate
+            assert item_id == candidate_id
+            return candidate
+
+        async def commit(self) -> None:
+            self.committed = True
+
+        async def refresh(self, row: object) -> None:
+            self.refreshed = row
+            row.created_at = datetime(2026, 5, 11, 12, 0, 0)
+
+    audit_calls: list[dict[str, Any]] = []
+
+    async def fake_log_admin_action(*_: object, **kwargs: Any) -> None:
+        audit_calls.append(kwargs)
+
+    monkeypatch.setattr(admin_knowledge_base, "log_admin_action", fake_log_admin_action)
+    db = FakeDB()
+
+    result = await admin_knowledge_base.reject_admin_kb_candidate(
+        db=db,
+        candidate_id=candidate_id,
+        body=AdminKnowledgeBaseCandidateReject(reason="qa cleanup"),
+        request=None,
+    )
+
+    assert result.status == "rejected"
+    assert result.metadata == {
+        "qa_run_id": "reject",
+        "rejection_reason": "qa cleanup",
+    }
+    assert db.committed is True
+    assert audit_calls[0]["action"] == "knowledge_base.candidate_reject"

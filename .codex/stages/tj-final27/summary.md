@@ -1,6 +1,6 @@
 # Stage tj-final27: Final Delivery Completion
 
-Updated: 2026-04-30
+Updated: 2026-05-11
 Status: active
 Branch: `codex/tj-final27-final-delivery-plan`
 Plan: `docs/plans/2026-04-27-final-delivery-completion.md`
@@ -48,3 +48,5 @@ The `tj-final27.9` final acceptance pack and controlled E2E runbook are now trac
 Commercial offer/proposal escalation routing fix `tj-jy5i` is also deployed on `main@1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`. Controlled text-only E2E on `79262810921` passed for proposal clarification and high-risk payment terms routing, and the synthetic test data was cleaned from production.
 
 Remaining final-acceptance work is `tj-final27.4` through `tj-final27.8`, with live WhatsApp/media/voice/E2E tests requiring explicit scenario approval before execution.
+
+CRM admin production-regression fixes from E2E run `20260511110724` are prepared locally on branch `codex/admin-regression-fixes` from `origin/main@79538a2fdc7d`. The branch fixes KB soft-delete state handling, Auto-FAQ approve/reject failures, disabled AI Quality Controls behavior for Bot QA/Manager QA, and the dead Support sidebar action. Local verification passed ruff, format-check, mypy, targeted admin KB/CRM/API tests, frontend static regressions, frontend lint/build, and full pytest. No deploy or production mutation was performed.

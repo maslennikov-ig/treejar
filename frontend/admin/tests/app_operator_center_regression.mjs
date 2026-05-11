@@ -97,6 +97,7 @@ const STUBS = new Map([
         export const HelpCircle = Icon;
         export const History = Icon;
         export const Inbox = Icon;
+        export const LifeBuoy = Icon;
         export const MessageCircle = Icon;
         export const Package = Icon;
         export const RefreshCw = Icon;

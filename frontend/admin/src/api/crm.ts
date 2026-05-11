@@ -8,6 +8,7 @@ import type {
     AdminConversationUpdate,
     AdminCustomerListItem,
     AdminKnowledgeBaseCandidate,
+    AdminKnowledgeBaseCandidateReject,
     AdminKnowledgeBasePreview,
     AdminKnowledgeBaseRead,
     AdminKnowledgeBaseWrite,
@@ -15,6 +16,22 @@ import type {
 } from '@/types/crm';
 
 const ADMIN_BASE = '/api/v1/admin';
+
+async function responseError(response: Response): Promise<Error> {
+    const text = await response.text();
+    try {
+        const payload = JSON.parse(text) as { detail?: unknown };
+        if (typeof payload.detail === 'string') {
+            return new Error(payload.detail);
+        }
+        if (Array.isArray(payload.detail)) {
+            return new Error(payload.detail.map((item) => JSON.stringify(item)).join('; '));
+        }
+    } catch {
+        // Keep the raw text below when the server did not return JSON.
+    }
+    return new Error(text || `Request failed: ${response.status} ${response.statusText}`);
+}
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${ADMIN_BASE}${path}`, {
@@ -26,8 +43,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     });
 
     if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Request failed: ${response.status} ${response.statusText}`);
+        throw await responseError(response);
     }
 
     return response.json();
@@ -136,6 +152,16 @@ export function approveKnowledgeBaseCandidate(
     return requestJson(`/knowledge-base/candidates/${candidateId}/approve`, {
         method: 'POST',
         body: JSON.stringify({}),
+    });
+}
+
+export function rejectKnowledgeBaseCandidate(
+    candidateId: string,
+    payload: AdminKnowledgeBaseCandidateReject = {},
+): Promise<AdminKnowledgeBaseCandidate> {
+    return requestJson(`/knowledge-base/candidates/${candidateId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
     });
 }
 

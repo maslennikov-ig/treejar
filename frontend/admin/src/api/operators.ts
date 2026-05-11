@@ -17,6 +17,22 @@ import type {
 const API_BASE = '/api/v1/admin';
 const PUBLIC_CLIENT_SELF_TEST_API_BASE = '/api/v1/client-self-test';
 
+async function responseError(response: Response): Promise<Error> {
+    const text = await response.text();
+    try {
+        const payload = JSON.parse(text) as { detail?: unknown };
+        if (typeof payload.detail === 'string') {
+            return new Error(payload.detail);
+        }
+        if (Array.isArray(payload.detail)) {
+            return new Error(payload.detail.map((item) => JSON.stringify(item)).join('; '));
+        }
+    } catch {
+        // Keep the raw text below when the server did not return JSON.
+    }
+    return new Error(text || `Request failed: ${response.status} ${response.statusText}`);
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
         headers: {
@@ -27,8 +43,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     });
 
     if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Request failed: ${response.status} ${response.statusText}`);
+        throw await responseError(response);
     }
 
     return response.json();
@@ -44,8 +59,7 @@ async function requestAbsoluteJson<T>(url: string, init?: RequestInit): Promise<
     });
 
     if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Request failed: ${response.status} ${response.statusText}`);
+        throw await responseError(response);
     }
 
     return response.json();

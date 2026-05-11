@@ -30,13 +30,20 @@ assert.match(appSource, /bg-\[#131b2e\]/);
 assert.match(appSource, /bg-\[#2170e4\]/);
 assert.match(appSource, /Noor AI/);
 assert.match(appSource, /fetchPendingManagerReviews/);
+assert.match(appSource, /fetchAIQualityControls/);
 assert.match(appSource, /generateOperationsReport/);
 assert.match(appSource, /syncProducts/);
 assert.match(appSource, /Reset preview/);
 assert.match(appSource, /globalThis\.confirm\('Показать preview reset/);
 assert.match(appSource, /globalThis\.confirm\('Удалить запись мягко\?'/);
+assert.match(appSource, /handleDelete\(selected\)/);
 assert.match(appSource, /globalThis\.confirm\('Архивировать правило бота\?'/);
 assert.match(appSource, /Applied bot rules/);
+assert.match(appSource, /useAIQualityControlBlock\('bot_qa', 'Bot QA'\)/);
+assert.match(appSource, /useAIQualityControlBlock\('manager_qa', 'Manager QA'\)/);
+assert.match(appSource, /отключена в Admin AI Quality Controls/);
+assert.match(appSource, /setActiveView\('support'\)/);
+assert.match(appSource, /function SupportView/);
 assert.match(appSource, /Режим мониторинга/);
 assert.doesNotMatch(appSource, /compose/i);
 assert.doesNotMatch(appSource, /Создать рассылку/);
@@ -53,6 +60,11 @@ for (const apiPath of [
 ]) {
     assert.match(apiSource, new RegExp(apiPath.replaceAll('/', '\\/')));
 }
+
+assert.ok(
+    apiSource.includes('/knowledge-base/candidates/${candidateId}/reject'),
+    'CRM API should expose Auto-FAQ reject endpoint',
+);
 
 for (const typeName of [
     'AdminConversationDetail',

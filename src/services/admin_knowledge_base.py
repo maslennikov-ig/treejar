@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -101,6 +102,40 @@ def _candidate_read(candidate: KnowledgeBaseCandidate) -> AdminKnowledgeBaseCand
         created_at=candidate.created_at,
         updated_at=candidate.updated_at,
     )
+
+
+async def _auto_faq_title_exists(db: AsyncSession, title: str) -> bool:
+    result = await db.execute(
+        select(KnowledgeBase)
+        .where(KnowledgeBase.source == "auto_faq", KnowledgeBase.title == title)
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _candidate_kb_title(
+    db: AsyncSession,
+    candidate: KnowledgeBaseCandidate,
+) -> str:
+    base_title = candidate.question[:200]
+    if not await _auto_faq_title_exists(db, base_title):
+        return base_title
+
+    suffix = f" [{str(candidate.id)[:8]}]"
+    candidate_title = f"{candidate.question[: 200 - len(suffix)]}{suffix}"
+    if not await _auto_faq_title_exists(db, candidate_title):
+        return candidate_title
+
+    raise HTTPException(
+        status_code=409,
+        detail="Knowledge-base entry already exists for this Auto-FAQ candidate",
+    )
+
+
+async def _rollback_if_available(db: AsyncSession) -> None:
+    rollback = getattr(db, "rollback", None)
+    if rollback is not None:
+        await rollback()
 
 
 async def list_admin_kb_entries(
@@ -453,10 +488,11 @@ async def approve_admin_kb_candidate(
         raise HTTPException(status_code=409, detail="Candidate is not approvable")
 
     content = f"Q: {candidate.question}\nA: {candidate.answer}"
+    title = await _candidate_kb_title(db, candidate)
     entry = KnowledgeBase(
         id=uuid.uuid4(),
         source="auto_faq",
-        title=candidate.question[:200],
+        title=title,
         content=content,
         language=candidate.language,
         category="faq",
@@ -479,7 +515,14 @@ async def approve_admin_kb_candidate(
         after={"candidate_status": candidate.status, "entry_id": entry.id},
         request=request,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await _rollback_if_available(db)
+        raise HTTPException(
+            status_code=409,
+            detail="Knowledge-base entry already exists for this Auto-FAQ candidate",
+        ) from exc
     await db.refresh(entry)
     return _kb_read(entry)
 

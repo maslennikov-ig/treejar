@@ -27,6 +27,7 @@ from src.quality.config import (
     AIQualityControlsConfig,
     AIQualityControlsResponse,
     AIQualityControlsUpdate,
+    AIQualityScope,
     build_ai_quality_response,
     get_ai_quality_controls_config,
     merge_ai_quality_controls_update,
@@ -51,6 +52,7 @@ from src.schemas import (
     SettingsUpdate,
     TimeseriesResponse,
 )
+from src.services.admin_crm import require_admin_ai_quality_manual_gate
 from src.services.client_self_test import format_client_self_test_summary
 from src.services.followup import (
     PaymentReminderControlsConfig,
@@ -322,6 +324,7 @@ async def evaluate_admin_manager_review(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ManagerReviewDetail:
     """Run a manager review from the dashboard operator surface."""
+    await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
     return await evaluate_escalation(escalation_id=escalation_id, db=db)
 
 

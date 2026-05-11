@@ -601,8 +601,11 @@ async def test_admin_manager_review_operator_endpoints(
         pending_response = await admin_client.get(
             "/api/v1/admin/manager-reviews/pending"
         )
-        evaluate_response = await admin_client.post(
-            f"/api/v1/admin/manager-reviews/{pending_item['escalation_id']}/evaluate"
+        evaluate_response = await _with_fake_db(
+            admin_client,
+            _FakeAIQualityConfigDB({"manager_qa": {"mode": "manual"}}),
+            "POST",
+            f"/api/v1/admin/manager-reviews/{pending_item['escalation_id']}/evaluate",
         )
 
     assert recent_response.status_code == 200
@@ -614,6 +617,30 @@ async def test_admin_manager_review_operator_endpoints(
     mock_list.assert_awaited_once()
     mock_pending.assert_awaited_once()
     mock_evaluate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_manager_review_evaluate_respects_disabled_ai_controls(
+    admin_client: AsyncClient,
+) -> None:
+    """Disabled Manager QA controls should block manual admin evaluation."""
+    escalation_id = uuid.uuid4()
+
+    with patch(
+        "src.api.v1.admin.evaluate_escalation",
+        new_callable=AsyncMock,
+    ) as mock_evaluate:
+        response = await _with_fake_db(
+            admin_client,
+            _FakeAIQualityConfigDB(),
+            "POST",
+            f"/api/v1/admin/manager-reviews/{escalation_id}/evaluate",
+        )
+
+    assert response.status_code == 409
+    assert "Manager QA" in response.text
+    assert "disabled" in response.text
+    mock_evaluate.assert_not_awaited()
 
 
 @pytest.mark.asyncio

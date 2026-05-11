@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import uuid
 from collections import OrderedDict
@@ -22,6 +23,11 @@ from src.models.manager_review import ManagerReview
 from src.models.message import Message
 from src.models.outbound_message import OutboundMessageAudit
 from src.models.quality_review import QualityReview
+from src.quality.config import (
+    AIQualityScope,
+    evaluate_ai_quality_run_gate,
+    get_ai_quality_controls_config,
+)
 from src.quality.evaluator import evaluate_conversation
 from src.quality.service import conversation_already_reviewed, save_review
 from src.schemas.admin import (
@@ -50,6 +56,8 @@ from src.services.conversation_reset import (
     execute_conversation_reset,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _pages(total: int, page_size: int) -> int:
     return math.ceil(total / page_size) if total > 0 else 1
@@ -77,6 +85,40 @@ def _metadata_text(metadata: dict[str, Any], key: str) -> str | None:
 def _metadata_dict(metadata: dict[str, Any], key: str) -> dict[str, Any] | None:
     value = metadata.get(key)
     return dict(value) if isinstance(value, dict) else None
+
+
+def _ai_quality_scope_label(scope: AIQualityScope) -> str:
+    return "Bot QA" if scope == AIQualityScope.BOT_QA else "Manager QA"
+
+
+async def require_admin_ai_quality_manual_gate(
+    db: AsyncSession,
+    scope: AIQualityScope,
+) -> None:
+    try:
+        config = await get_ai_quality_controls_config(db)
+    except Exception as exc:
+        logger.warning("Failed to read Admin AI Quality Controls", exc_info=True)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{_ai_quality_scope_label(scope)} cannot run because Admin AI "
+                "Quality Controls are unavailable"
+            ),
+        ) from exc
+
+    gate = evaluate_ai_quality_run_gate(config, scope=scope, trigger="manual")
+    if gate.allowed:
+        return
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"{_ai_quality_scope_label(scope)} is disabled by Admin AI Quality "
+            f"Controls ({gate.reason}). Enable manual mode in Settings before "
+            "running this action."
+        ),
+    )
 
 
 def _order_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
@@ -630,6 +672,7 @@ async def run_admin_bot_quality_review(
     conversation_id: uuid.UUID,
     request: object | None,
 ) -> AdminActionResult:
+    await require_admin_ai_quality_manual_gate(db, AIQualityScope.BOT_QA)
     if await conversation_already_reviewed(db, conversation_id):
         raise HTTPException(status_code=409, detail="Conversation already reviewed")
 
@@ -679,6 +722,7 @@ async def run_admin_manager_quality_review(
         save_manager_review,
     )
 
+    await require_admin_ai_quality_manual_gate(db, AIQualityScope.MANAGER_QA)
     escalation_result = await db.execute(
         select(Escalation)
         .where(Escalation.conversation_id == conversation_id)

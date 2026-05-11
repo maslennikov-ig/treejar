@@ -211,6 +211,10 @@ export interface AdminKnowledgeBaseCandidate {
     updated_at: string | null;
 }
 
+export interface AdminKnowledgeBaseCandidateReject {
+    reason?: string | null;
+}
+
 export interface AdminBotRuleRead {
     id: string;
     title: string;

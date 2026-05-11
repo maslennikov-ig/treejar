@@ -3,8 +3,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 
 from src.schemas.common import PaginatedResponse
@@ -228,6 +230,42 @@ async def test_update_admin_conversation_writes_audit(
     assert audit_calls[0]["action"] == "conversation.update"
     assert audit_calls[0]["before"]["status"] == "active"
     assert audit_calls[0]["after"]["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_admin_bot_quality_review_respects_disabled_ai_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services import admin_crm
+
+    evaluate_mock = AsyncMock(side_effect=AssertionError("LLM should not run"))
+
+    monkeypatch.setattr(
+        admin_crm,
+        "conversation_already_reviewed",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(admin_crm, "evaluate_conversation", evaluate_mock)
+
+    class FakeResult:
+        def scalar_one_or_none(self) -> object | None:
+            return None
+
+    class FakeDB:
+        async def execute(self, _stmt: object) -> FakeResult:
+            return FakeResult()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_crm.run_admin_bot_quality_review(
+            db=FakeDB(),
+            conversation_id=uuid.uuid4(),
+            request=None,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "Bot QA" in str(exc_info.value.detail)
+    assert "disabled" in str(exc_info.value.detail)
+    evaluate_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

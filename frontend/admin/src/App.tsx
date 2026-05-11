@@ -13,6 +13,7 @@ import {
     FileText,
     History,
     Inbox,
+    LifeBuoy,
     MessageCircle,
     Package,
     RefreshCw,
@@ -47,6 +48,7 @@ import {
     previewKnowledgeBaseEntry,
     reindexBotRule,
     reindexKnowledgeBaseEntry,
+    rejectKnowledgeBaseCandidate,
     runBotQualityReview,
     softDeleteKnowledgeBaseEntry,
     updateBotRule,
@@ -55,6 +57,7 @@ import {
 } from '@/api/crm';
 import {
     evaluateManagerReview,
+    fetchAIQualityControls,
     fetchNotificationConfig,
     fetchPendingManagerReviews,
     fetchRecentManagerReviews,
@@ -78,6 +81,8 @@ import type {
     AdminKnowledgeBaseWrite,
 } from '@/types/crm';
 import type {
+    AIQualityScopeConfig,
+    AIQualityScopeKey,
     ManagerReviewRead,
     NotificationConfig,
     OperationsReportResponse,
@@ -106,7 +111,7 @@ const NAV_ITEMS = [
     { id: 'audit', label: 'Аудит', icon: History },
 ] as const;
 
-type ViewId = (typeof NAV_ITEMS)[number]['id'];
+type ViewId = (typeof NAV_ITEMS)[number]['id'] | 'support';
 type ActionMessage = { tone: 'success' | 'error' | 'info'; text: string };
 type StatusTone = 'gray' | 'amber' | 'green' | 'blue';
 
@@ -166,6 +171,49 @@ const EMPTY_BOT_RULE_FORM: AdminBotRuleWrite = {
     trigger_examples: [],
 };
 
+function qualityControlBlockMessage(
+    scopeConfig: AIQualityScopeConfig,
+    labelText: string,
+): string | null {
+    if (scopeConfig.mode === 'disabled') {
+        return `${labelText} отключена в Admin AI Quality Controls. Включите manual mode в настройках.`;
+    }
+    if (scopeConfig.daily_budget_cents <= 0) {
+        return `${labelText} отключена: дневной бюджет равен 0.`;
+    }
+    if (scopeConfig.max_calls_per_run <= 0) {
+        return `${labelText} отключена: лимит запусков на run равен 0.`;
+    }
+    if (scopeConfig.max_calls_per_day <= 0) {
+        return `${labelText} отключена: дневной лимит запусков равен 0.`;
+    }
+    return null;
+}
+
+function useAIQualityControlBlock(
+    scope: AIQualityScopeKey,
+    labelText: string,
+): string | null {
+    const [message, setMessage] = useState<string | null>(null);
+
+    useEffect(() => {
+        let mounted = true;
+        fetchAIQualityControls()
+            .then((response) => {
+                if (!mounted) return;
+                setMessage(qualityControlBlockMessage(response.config[scope], labelText));
+            })
+            .catch(() => {
+                if (mounted) setMessage(null);
+            });
+        return () => {
+            mounted = false;
+        };
+    }, [labelText, scope]);
+
+    return message;
+}
+
 export default function App() {
     const routeMode = getAppRouteMode();
 
@@ -199,6 +247,7 @@ function DashboardApp() {
     const [period, setPeriod] = useState<Period>('all_time');
     const { data, timeseries, loading, error, refetch } = useMetrics(period);
     const activeNavItem = NAV_ITEMS.find((item) => item.id === activeView);
+    const activeLabel = activeView === 'support' ? 'Поддержка' : activeNavItem?.label;
 
     return (
         <div className="min-h-screen bg-[#f8f9ff] text-[#0b1c30]">
@@ -245,8 +294,17 @@ function DashboardApp() {
                         })}
                     </nav>
                     <div className="mt-4 border-t border-[#273247] pt-4">
-                        <button type="button" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[#7c839b] transition hover:bg-[#0058be] hover:text-white">
-                            <ShieldCheck size={17} />
+                        <button
+                            type="button"
+                            onClick={() => setActiveView('support')}
+                            className={cx(
+                                'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition',
+                                activeView === 'support'
+                                    ? 'bg-[#2170e4] text-white'
+                                    : 'text-[#7c839b] hover:bg-[#0058be] hover:text-white',
+                            )}
+                        >
+                            <LifeBuoy size={17} />
                             <span>Поддержка</span>
                         </button>
                     </div>
@@ -291,14 +349,14 @@ function DashboardApp() {
 
                     <div className="border-b border-[#e5e7eb] bg-white px-6 py-4">
                         <p className="text-xs font-semibold uppercase text-[#45464d]">
-                            {activeNavItem?.label}
+                            {activeLabel}
                         </p>
                         <h2 className="mt-1 text-2xl font-semibold text-[#0b1c30]">
                             {activeView === 'conversations'
                                 ? 'Клиенты и диалоги'
                                 : activeView === 'botRules'
                                     ? 'Правила поведения бота'
-                                    : activeNavItem?.label}
+                                    : activeLabel}
                         </h2>
                     </div>
 
@@ -325,6 +383,7 @@ function DashboardApp() {
                     {activeView === 'reports' && <ReportsView />}
                     {activeView === 'settings' && <SettingsView />}
                     {activeView === 'audit' && <AuditView />}
+                    {activeView === 'support' && <SupportView />}
                 </main>
             </div>
         </div>
@@ -377,6 +436,46 @@ function OverviewView({
     );
 }
 
+function SupportView() {
+    return (
+        <section className="space-y-5 p-6">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                <Panel
+                    title="Поддержка администратора"
+                    subtitle="Внутренний канал для CRM-инцидентов, доступа и production smoke/regression."
+                    icon={LifeBuoy}
+                >
+                    <div className="space-y-3">
+                        <div className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4">
+                            <p className="text-sm font-semibold text-[#0b1c30]">Telegram admin channel</p>
+                            <p className="mt-1 text-sm leading-6 text-[#45464d]">
+                                Используйте рабочий Telegram-чат Noor/Treejar для доступа, smoke evidence и срочных runtime-вопросов.
+                            </p>
+                        </div>
+                        <div className="rounded-md border border-[#e5eeff] bg-[#f8f9ff] p-4">
+                            <p className="text-sm font-semibold text-[#0b1c30]">Runtime target</p>
+                            <p className="mt-1 text-sm leading-6 text-[#45464d]">https://noor.starec.ai</p>
+                        </div>
+                    </div>
+                </Panel>
+
+                <Panel
+                    title="Production smoke checklist"
+                    subtitle="Сводка для повторной проверки после локальной верификации и deploy approval."
+                    icon={ShieldCheck}
+                >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <StatusCard title="Auth" value="401/200" note="anonymous guard и Telegram login" tone="green" />
+                        <StatusCard title="CRM" value="Admin" note="диалоги, очереди, база знаний, аудит" tone="blue" />
+                        <StatusCard title="Mutation" value="Guarded" note="только disposable/test data" tone="amber" />
+                        <StatusCard title="Deploy" value="Manual" note="требует отдельного разрешения" />
+                    </div>
+                </Panel>
+            </div>
+        </section>
+    );
+}
+
 function ConversationsView() {
     const [search, setSearch] = useState('');
     const [status, setStatus] = useState('');
@@ -386,6 +485,7 @@ function ConversationsView() {
     const [loading, setLoading] = useState(false);
     const [actionBusy, setActionBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const botQaBlock = useAIQualityControlBlock('bot_qa', 'Bot QA');
 
     useEffect(() => {
         let cancelled = false;
@@ -457,7 +557,7 @@ function ConversationsView() {
     }
 
     async function handleBotQa() {
-        if (!detail || !globalThis.confirm('Запустить ручную Bot QA проверку?')) return;
+        if (!detail || botQaBlock || !globalThis.confirm('Запустить ручную Bot QA проверку?')) return;
         setActionBusy(true);
         try {
             await runBotQualityReview(detail.id);
@@ -583,6 +683,7 @@ function ConversationsView() {
                     </InspectorBlock>
 
                     <InspectorBlock title="Действия">
+                        {botQaBlock && <StateLine text={botQaBlock} tone="red" />}
                         <div className="grid grid-cols-2 gap-2">
                             <IconButton
                                 icon={CheckCircle2}
@@ -593,7 +694,7 @@ function ConversationsView() {
                             <IconButton
                                 icon={Bot}
                                 label="Bot QA"
-                                disabled={!detail || actionBusy}
+                                disabled={!detail || actionBusy || Boolean(botQaBlock)}
                                 onClick={() => void handleBotQa()}
                             />
                             <IconButton
@@ -695,13 +796,15 @@ function KnowledgeBaseView() {
         }
     }
 
-    async function handleDelete() {
-        if (!selected || !globalThis.confirm('Удалить запись мягко?')) return;
+    async function handleDelete(entry: AdminKnowledgeBaseRead | null) {
+        if (!entry || !globalThis.confirm('Удалить запись мягко?')) return;
         setBusy(true);
         try {
-            await softDeleteKnowledgeBaseEntry(selected.id);
+            await softDeleteKnowledgeBaseEntry(entry.id);
+            setEntries((current) => current.filter((item) => item.id !== entry.id));
             setSelected(null);
             setForm(EMPTY_KB_FORM);
+            setPreview(null);
             await load();
         } catch (err) {
             setError(errorMessage(err));
@@ -730,6 +833,20 @@ function KnowledgeBaseView() {
             const entry = await approveKnowledgeBaseCandidate(candidateId);
             setSelected(entry);
             setForm(entryToForm(entry));
+            await load();
+        } catch (err) {
+            setError(errorMessage(err));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleReject(candidateId: string) {
+        if (!globalThis.confirm('Отклонить Auto-FAQ кандидата?')) return;
+        setBusy(true);
+        try {
+            await rejectKnowledgeBaseCandidate(candidateId, { reason: 'admin_rejected' });
+            setCandidates((current) => current.filter((candidate) => candidate.id !== candidateId));
             await load();
         } catch (err) {
             setError(errorMessage(err));
@@ -821,7 +938,7 @@ function KnowledgeBaseView() {
                         <IconButton icon={Search} label="Preview" disabled={busy} onClick={() => void handlePreview()} />
                         <IconButton icon={Save} label="Save and index" disabled={busy} onClick={() => void handleSave()} />
                         <IconButton icon={RefreshCw} label="Reindex" disabled={!selected || busy} onClick={() => void handleReindex()} />
-                        <IconButton icon={Trash2} label="Soft-delete" disabled={!selected || busy} onClick={() => void handleDelete()} danger />
+                        <IconButton icon={Trash2} label="Soft-delete" disabled={!selected || busy} onClick={() => void handleDelete(selected)} danger />
                     </div>
                 </div>
             </div>
@@ -843,13 +960,24 @@ function KnowledgeBaseView() {
                             <p className="mt-1 line-clamp-3 text-sm text-[#45464d]">{candidate.answer}</p>
                             <div className="mt-2 flex items-center justify-between gap-2">
                                 <Badge label={label(candidate.status)} />
-                                <button
-                                    type="button"
-                                    onClick={() => void handleApprove(candidate.id)}
-                                    className="rounded-md bg-[#0058be] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#004395]"
-                                >
-                                    Approve
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => void handleReject(candidate.id)}
+                                        className="rounded-md border border-[#fecaca] bg-white px-3 py-1.5 text-xs font-medium text-[#be123c] hover:bg-[#fff1f2] disabled:opacity-50"
+                                    >
+                                        Reject
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => void handleApprove(candidate.id)}
+                                        className="rounded-md bg-[#0058be] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#004395] disabled:opacity-50"
+                                    >
+                                        Approve
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -1306,7 +1434,9 @@ function QueuesView() {
     const [loading, setLoading] = useState(true);
     const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
     const [approvingId, setApprovingId] = useState<string | null>(null);
+    const [rejectingId, setRejectingId] = useState<string | null>(null);
     const [message, setMessage] = useState<ActionMessage | null>(null);
+    const managerQaBlock = useAIQualityControlBlock('manager_qa', 'Manager QA');
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -1330,7 +1460,7 @@ function QueuesView() {
     }, [load]);
 
     async function handleEvaluate(item: PendingManagerReview) {
-        if (!globalThis.confirm('Запустить Manager QA для этой эскалации?')) return;
+        if (managerQaBlock || !globalThis.confirm('Запустить Manager QA для этой эскалации?')) return;
         setEvaluatingId(item.escalation_id);
         setMessage(null);
         try {
@@ -1362,9 +1492,25 @@ function QueuesView() {
         }
     }
 
+    async function handleReject(candidate: AdminKnowledgeBaseCandidate) {
+        if (!globalThis.confirm('Отклонить Auto-FAQ кандидата?')) return;
+        setRejectingId(candidate.id);
+        setMessage(null);
+        try {
+            await rejectKnowledgeBaseCandidate(candidate.id, { reason: 'admin_rejected' });
+            setMessage({ tone: 'success', text: 'FAQ-кандидат отклонен.' });
+            await load();
+        } catch (err) {
+            setMessage({ tone: 'error', text: errorMessage(err) });
+        } finally {
+            setRejectingId(null);
+        }
+    }
+
     return (
         <section className="space-y-5 p-6">
             {message && <ActionMessageBox message={message} />}
+            {managerQaBlock && <ActionMessageBox message={{ tone: 'info', text: managerQaBlock }} />}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <StatusCard title="Manager QA pending" value={pendingReviews.length} note="закрытые эскалации без оценки" tone="amber" />
                 <StatusCard title="Auto-FAQ candidates" value={candidates.length} note="требуют подтверждения" tone="blue" />
@@ -1391,7 +1537,7 @@ function QueuesView() {
                                     </div>
                                     <button
                                         type="button"
-                                        disabled={evaluatingId !== null}
+                                        disabled={evaluatingId !== null || Boolean(managerQaBlock)}
                                         onClick={() => void handleEvaluate(item)}
                                         className="inline-flex items-center justify-center gap-2 rounded-md border border-[#f59e0b] bg-[#fff7ed] px-3 py-2 text-sm font-medium text-[#92400e] hover:bg-[#ffedd5] disabled:opacity-50"
                                     >
@@ -1422,14 +1568,24 @@ function QueuesView() {
                                 </div>
                                 <div className="mt-3 flex items-center justify-between gap-3">
                                     <p className="text-xs text-[#7c839b]">{candidate.language} · {label(candidate.status)}</p>
-                                    <button
-                                        type="button"
-                                        disabled={approvingId !== null}
-                                        onClick={() => void handleApprove(candidate)}
-                                        className="rounded-md bg-[#0058be] px-3 py-2 text-xs font-medium text-white hover:bg-[#004395] disabled:opacity-50"
-                                    >
-                                        {approvingId === candidate.id ? 'Saving...' : 'Approve'}
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={rejectingId !== null || approvingId !== null}
+                                            onClick={() => void handleReject(candidate)}
+                                            className="rounded-md border border-[#fecaca] bg-white px-3 py-2 text-xs font-medium text-[#be123c] hover:bg-[#fff1f2] disabled:opacity-50"
+                                        >
+                                            {rejectingId === candidate.id ? 'Rejecting...' : 'Reject'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={approvingId !== null || rejectingId !== null}
+                                            onClick={() => void handleApprove(candidate)}
+                                            className="rounded-md bg-[#0058be] px-3 py-2 text-xs font-medium text-white hover:bg-[#004395] disabled:opacity-50"
+                                        >
+                                            {approvingId === candidate.id ? 'Saving...' : 'Approve'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -1520,6 +1676,7 @@ function QualityView({ refetch }: { refetch: () => void }) {
     const [loading, setLoading] = useState(true);
     const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
     const [message, setMessage] = useState<ActionMessage | null>(null);
+    const managerQaBlock = useAIQualityControlBlock('manager_qa', 'Manager QA');
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -1543,7 +1700,7 @@ function QualityView({ refetch }: { refetch: () => void }) {
     }, [load]);
 
     async function handleEvaluate(item: PendingManagerReview) {
-        if (!globalThis.confirm('Запустить Manager QA и обновить качество?')) return;
+        if (managerQaBlock || !globalThis.confirm('Запустить Manager QA и обновить качество?')) return;
         setEvaluatingId(item.escalation_id);
         setMessage(null);
         try {
@@ -1566,6 +1723,7 @@ function QualityView({ refetch }: { refetch: () => void }) {
     return (
         <section className="space-y-5 p-6">
             {message && <ActionMessageBox message={message} />}
+            {managerQaBlock && <ActionMessageBox message={{ tone: 'info', text: managerQaBlock }} />}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <StatusCard title="Pending QA" value={pendingReviews.length} note="эскалации без оценки" tone="amber" />
                 <StatusCard title="Recent reviews" value={recentReviews.length} note="последние оценки" />
@@ -1592,7 +1750,7 @@ function QualityView({ refetch }: { refetch: () => void }) {
                                     </div>
                                     <button
                                         type="button"
-                                        disabled={evaluatingId !== null}
+                                        disabled={evaluatingId !== null || Boolean(managerQaBlock)}
                                         onClick={() => void handleEvaluate(item)}
                                         className="inline-flex items-center gap-2 rounded-md bg-[#0058be] px-3 py-2 text-sm font-medium text-white hover:bg-[#004395] disabled:opacity-50"
                                     >
