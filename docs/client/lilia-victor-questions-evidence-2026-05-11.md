@@ -11,6 +11,7 @@
 1. **Файлы/источники базы знаний:** текущая текстовая база знаний фактически индексирует `docs/faq.md`, `docs/04-sales-dialogue-guidelines.md` и `docs/05-company-values.md`. Каталог товаров, цены, категории и фото — это не файл, а Treejar Catalog API. Zoho CRM/Inventory — операционный контур. Примеры диалогов и КП есть как клиентские обучающие материалы/референсы, но не как основной текстовый индекс в текущем индексаторе.
 2. **Правка про дешёвые стулья vs executive:** правка Виктора **в целом правильная**, если клиент явно просил дешёвые/бюджетные стулья или уже выбрал бюджетный сегмент. В таком случае дорогой executive chair нельзя подавать как равнозначную рекомендацию. Но это не абсолютный запрет на executive-модель: её можно показывать только как явно подписанный “premium option / альтернатива выше бюджета” и лучше после уточнения бюджета.
 3. **Правила ведения диалога:** заложено 15 основных правил + 3 дополнительных правила: добавлять несколько вариантов в квоту, делать follow-up через сутки/3/7 дней, быстро понять потребность клиента и сделать квоту.
+4. **Что должно быть в КП для клиента:** по исходным образцам КП обязательны имя клиента, компания, email и адрес. Номер телефона клиента в обязательных полях не указан. Телефон указан у менеджера в блоке `Quoted by`. В КП должны быть фото товара, SKU, описание, количество, цена за единицу, сумма по позиции, TOTAL, VAT 5%, GRAND TOTAL, terms and conditions. Доставка должна быть отражена: как delivery terms и, если есть стоимость/бонус, отдельной строкой в позициях КП.
 
 ## 1. Какие файлы Виктор изначально давал и что сейчас входит в базу знаний
 
@@ -167,6 +168,102 @@
 > “Чек-лист оценки первичного диалога / Dialogue Evaluation Checklist”
 
 Источник: `docs/06-dialogue-evaluation-checklist.md`, строка 71 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/06-dialogue-evaluation-checklist.md#L71)
+
+## 4. Какие данные должны быть отражены в КП для клиента
+
+**Ответ Лилии:** в исходных образцах КП обязательными клиентскими данными указаны `Name / Company Name / Email / Address`. Номер телефона клиента в обязательных данных КП не указан. При этом телефон есть у менеджера в блоке `Quoted by`: имя + телефон + email менеджера. Стоимость товара обязательна: цена за единицу и итог по позиции. Также обязательны фото товара, SKU, описание, количество, TOTAL, VAT 5%, GRAND TOTAL и условия. Доставка должна быть отражена: как срок доставки в Terms and Conditions и отдельной строкой в позициях КП, если доставка платная, бесплатная или включает установку.
+
+> “Данные клиента: Name / Company Name / Email / Address”
+
+Источник: `docs/sample-quotations/README.md`, строки 17-18 — [открыть строки](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L17-L18)
+Что подтверждает: обязательные клиентские поля в структуре КП — имя, компания, email, адрес. Номер телефона клиента здесь не указан.
+
+> “Quoted by: имя + телефон + email менеджера”
+
+Источник: `docs/sample-quotations/README.md`, строка 42 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L42)
+Что подтверждает: телефон в КП предусмотрен для менеджера, который подготовил КП.
+
+> “Reference Image | Фото товара (реальное или каталожное)”
+
+Источник: `docs/sample-quotations/README.md`, строка 23 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L23)
+Что подтверждает: в КП должно быть фото каждого товара.
+
+> “Code/SKU | Код модели”
+
+Источник: `docs/sample-quotations/README.md`, строка 24 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L24)
+Что подтверждает: в КП должен быть SKU/код модели.
+
+> “Description | Полное описание: материалы, размеры, цвет, гарантия”
+
+Источник: `docs/sample-quotations/README.md`, строка 25 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L25)
+Что подтверждает: описание должно включать материалы, размеры, цвет и гарантию.
+
+> “QTY | Количество”
+
+Источник: `docs/sample-quotations/README.md`, строка 26 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L26)
+Что подтверждает: количество товара обязательно.
+
+> “Unit Price | Цена за единицу (AED)”
+
+Источник: `docs/sample-quotations/README.md`, строка 27 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L27)
+Что подтверждает: стоимость единицы товара обязательна.
+
+> “Total Price | Итого за позицию (AED)”
+
+Источник: `docs/sample-quotations/README.md`, строка 28 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L28)
+Что подтверждает: итоговая стоимость по каждой позиции обязательна.
+
+> “TOTAL (сумма без НДС)”
+
+Источник: `docs/sample-quotations/README.md`, строка 31 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L31)
+Что подтверждает: общий итог без VAT нужен.
+
+> “VAT 5%”
+
+Источник: `docs/sample-quotations/README.md`, строка 32 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L32)
+Что подтверждает: VAT 5% нужно указывать отдельно.
+
+> “GRAND TOTAL”
+
+Источник: `docs/sample-quotations/README.md`, строка 33 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L33)
+Что подтверждает: финальная сумма КП обязательна.
+
+> “Delivery: 02-08 working days from order confirmation”
+
+Источник: `docs/sample-quotations/README.md`, строка 37 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L37)
+Что подтверждает: срок доставки должен быть в Terms and Conditions.
+
+> “DP | Delivery — FREE OF COST”
+
+Источник: `docs/sample-quotations/README.md`, строка 59 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L59)
+Что подтверждает: доставка может быть отдельной строкой позиции, даже если она бесплатная.
+
+> “DP | Delivery + Installation | Professional installation charges”
+
+Источник: `docs/sample-quotations/README.md`, строка 120 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L120)
+Что подтверждает: доставка/установка может быть отдельной платной строкой в КП.
+
+> “Delivery включать отдельной строкой (free для крупных заказов)”
+
+Источник: `docs/sample-quotations/README.md`, строка 172 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/sample-quotations/README.md#L172)
+Что подтверждает: правило для Noor — включать delivery отдельной строкой.
+
+> “КП формировать и отправлять клиенту после подтверждения точных `SKU + quantity`”
+
+Источник: `docs/03-ai-agent-requirements.md`, строка 29 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/03-ai-agent-requirements.md#L29)
+Что подтверждает: КП должно строиться только после подтверждения точных SKU и количества.
+
+> “Отправлять КП в PDF (индивидуальное, на основании данных CRM).”
+
+Источник: `docs/03-ai-agent-requirements.md`, строка 32 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/03-ai-agent-requirements.md#L32)
+Что подтверждает: КП должно быть индивидуальным и использовать данные CRM.
+
+> “Бот производит актуальный рассчёт стоимости заказа (товар+доставка)”
+
+Источник: `docs/02-tz-extended.md`, строка 52 — [открыть строку](https://github.com/maslennikov-ig/treejar/blob/b989bf0a1014acf01183e08f3f38ff224a67f66e/docs/02-tz-extended.md#L52)
+Что подтверждает: доставка входит в расчет стоимости заказа по ТЗ.
+
+**Итого по вопросу Виктора:** да, строка про доставку должна быть. В Terms and Conditions должен быть срок доставки, а в таблице позиций должна быть отдельная строка `Delivery` / `Delivery + Installation`, если доставка влияет на стоимость или предоставляется как бонус. Обязательность телефона клиента в первичных образцах КП не найдена; обязательны имя, компания, email и адрес.
 
 ## Что можно отправить Виктору по файлам
 
