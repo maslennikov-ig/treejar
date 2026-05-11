@@ -162,8 +162,11 @@ async def search_knowledge(
     # 1. Embed user question/query
     query_vector = await embedding_engine.embed_async(query)
 
-    # 2. Build select (filter out records without embeddings)
-    stmt = select(KnowledgeBase).where(KnowledgeBase.embedding.is_not(None))
+    # 2. Build select (filter out records without embeddings and soft-deleted rows)
+    stmt = select(KnowledgeBase).where(
+        KnowledgeBase.embedding.is_not(None),
+        KnowledgeBase.deleted_at.is_(None),
+    )
 
     # 3. Order by cosine distance
     stmt = stmt.order_by(KnowledgeBase.embedding.cosine_distance(query_vector))

@@ -109,3 +109,22 @@ async def test_search_knowledge_pipeline() -> None:
     assert len(result) == 1
     assert result[0]["title"] == "Test Q"
     assert result[0]["category"] == "faq"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_search_knowledge_excludes_soft_deleted_entries() -> None:
+    """Soft-deleted knowledge-base rows must not be injected into LLM FAQ context."""
+    mock_db = AsyncMock(spec=AsyncSession)
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    mock_db.execute.return_value = mock_result
+
+    mock_embedding_engine = MagicMock()
+    mock_embedding_engine.embed_async = AsyncMock(return_value=[0.1] * 1024)
+
+    await search_knowledge(mock_db, "payment terms discount", mock_embedding_engine)
+
+    statement = mock_db.execute.await_args.args[0]
+    where_text = " ".join(str(criteria) for criteria in statement._where_criteria)
+    assert "knowledge_base.deleted_at IS NULL" in where_text
