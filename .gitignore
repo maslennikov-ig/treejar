@@ -58,6 +58,7 @@ docs/estimate.md
 # Generated artifacts (PDFs regenerated from .md sources)
 docs/*.pdf
 docs/**/*.pdf
+!docs/client/github-issues-cheatsheet-ru.pdf
 !docs/client/telegram-reset-instruction-ru.pdf
 *.csv
 
@@ -82,6 +83,7 @@ docs/**/*.pdf
 .codex/*
 !.codex/handoff.md
 !.codex/orchestrator.toml
+!.codex/project-index.md
 !.codex/report-template.md
 !.codex/stage-artifact-template.md
 !.codex/stages/
