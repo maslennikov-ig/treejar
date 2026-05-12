@@ -6,7 +6,7 @@ branch: codex/communication-rules-policy
 base_branch: origin/main
 base_commit: 6848bd26f2040227b8ec7940901c3413990fa2f6
 worktree: /home/me/code/treejar/.worktrees/communication-rules-policy
-status: returned
+status: delivered
 verification:
   - uv run --extra dev python -m pytest tests/test_llm_prompts.py -v --tb=short: red before implementation, then passed
   - uv run --extra dev python -m pytest tests/test_llm_prompts.py::test_build_system_prompt_includes_compact_communication_policy -q: red after source-alignment tightening, then passed
@@ -19,6 +19,10 @@ verification:
   - python3 scripts/orchestration/validate_artifact.py .codex/stages/tj-7zq7/artifacts/tj-7zq7.md: passed
   - python3 scripts/orchestration/check_stage_ready.py tj-7zq7: passed
   - python3 scripts/orchestration/run_stage_closeout.py --stage tj-7zq7: passed
+  - gh run watch 25748539979 --exit-status: passed
+  - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed
+  - ssh noor-server 'cd /opt/noor && cat .release-sha && cat .release-run-id': passed
+  - production guard checks: passed
 changed_files:
   - .codex/handoff.md
   - .codex/project-index.md
@@ -35,6 +39,16 @@ The client-provided Russian communication rules were located and preserved uncha
 
 The runtime implementation adds `src/llm/communication_policy.py` with a 1580-character compact English policy derived from the Russian rules. It explicitly covers the client rules for Siyyad/Treejar greeting, preferred form of address, friendly active listening, genuine specific compliment, Treejar-as-tailored-solutions positioning, needs discovery, drill-and-hole principle, quote variants, complete-package benefit, contact collection, closing/next step, and the 24h/3d/7d follow-up cadence through allowed templates. `src/llm/prompts.py::build_system_prompt` now loads this as a separate `communication_rules_policy` SystemPrompt component between the base prompt and language/stage directives. This keeps behavior/style policy separate from FAQ/KB facts and keeps it present even when `base_prompt` or stage prompts are overridden through SystemPrompt storage.
 
+# Delivery
+
+- Feature branch `codex/communication-rules-policy` was pushed.
+- `main` was fast-forwarded and pushed to `8312661c7e4f5468999355520d9c5eb349913868`.
+- GitHub Actions run `25748539979` passed `changes`, `lint`, `test`, `type-check`, and `deploy`.
+- Runtime `/opt/noor/.release-sha` matched `8312661c7e4f5468999355520d9c5eb349913868`; `/opt/noor/.release-run-id` was `25748539979`.
+- Post-deploy smoke passed: `verify_api.py` 7/0, health 200, dashboard anonymous 401, admin metrics anonymous 401, Telegram bad secret 403.
+- No live WhatsApp testing or admin prompt/config mutation was performed.
+- Admin `SystemPrompt` row creation was not necessary: `communication_rules_policy` is supplied as code default and remains overrideable by an active DB row if one is intentionally created later.
+
 # Verification
 
 - `uv run --extra dev python -m pytest tests/test_llm_prompts.py -v --tb=short` -> red before implementation (`2 failed, 7 passed`), then passed (`9 passed`).
@@ -48,8 +62,12 @@ The runtime implementation adds `src/llm/communication_policy.py` with a 1580-ch
 - `python3 scripts/orchestration/validate_artifact.py .codex/stages/tj-7zq7/artifacts/tj-7zq7.md` -> passed.
 - `python3 scripts/orchestration/check_stage_ready.py tj-7zq7` -> passed.
 - `python3 scripts/orchestration/run_stage_closeout.py --stage tj-7zq7` -> passed; it reran `ruff`, format check, `mypy`, full pytest (`957 passed, 19 skipped`), process verification, artifact validation, and stage-ready checks.
+- `gh run watch 25748539979 --exit-status` -> passed.
+- `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> passed (`7 passed, 0 failed`).
+- `ssh noor-server 'cd /opt/noor && cat .release-sha && cat .release-run-id'` -> `8312661c7e4f5468999355520d9c5eb349913868`, `25748539979`.
+- Production guard checks -> health 200, dashboard anonymous 401, admin metrics anonymous 401, Telegram bad secret 403.
 
 # Risks / Follow-ups / Explicit Defers
 
 - Ambiguity: some repo docs call the dialogue source "17 rules", while `docs/04-sales-dialogue-guidelines.md` contains 15 numbered rules plus 3 unnumbered addenda. This stage treats that file as canonical because later client evidence docs explicitly describe it as 15 plus 3 addenda.
-- The policy is ready for code review and owner sign-off. It is not deployed, pushed, merged, or applied to production/admin settings.
+- The policy is delivered and deployed. Admin prompt/config mutation was intentionally skipped because it was not necessary for runtime behavior and would duplicate the code-default policy.

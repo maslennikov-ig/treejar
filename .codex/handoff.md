@@ -7,7 +7,7 @@ Current baseline branch: `main`
 
 - Canonical host: `https://noor.starec.ai`; canonical runtime path: `/opt/noor`.
 - Treejar Catalog API is the customer-facing catalog source of truth; Zoho remains exact stock/price and order-execution truth.
-- Latest deployed baseline before this tail closeout is `main@01d7fd16b5174c6f15b7e81eb7e78a380497b1b1` (`docs(orchestration): record prelaunch e2e closeout`), delivered by GitHub Actions run `25715145758`; runtime `/opt/noor/.release-sha` matched and post-deploy smoke passed (`verify_api.py` 7/0, `/dashboard/` anonymous 401, bad Telegram token 401, health 200).
+- Communication-rules runtime policy is delivered in `main`: first deployed as `8312661c7e4f5468999355520d9c5eb349913868` by GitHub Actions run `25748539979`; runtime `/opt/noor/.release-sha` matched and post-deploy smoke passed (`verify_api.py` 7/0, health 200, `/dashboard/` anonymous 401, `/api/v1/admin/dashboard/metrics/` anonymous 401, Telegram bad secret 403).
 - Telegram admin login private-chat flow is delivered: allowlisted Telegram users can request an admin CRM one-time login link in the bot private chat, and `/admin/login` keeps password fallback.
 - Noor CRM admin production smoke/regression was completed after the Telegram admin login deployment. The latest admin regression fix batch was delivered in `main` before this tail closeout, including KB delete state handling, Auto-FAQ approval collision handling, Admin AI Quality Controls gating, and the Support view handler.
 - Tail closeout task `tj-zi2t` is preserving useful leftover docs/research and integrating only the small safe admin light-theme chart fix. Stale/conflicting final27 implementation branches are not merged in this stream.
@@ -15,16 +15,16 @@ Current baseline branch: `main`
 
 ## Next recommended
 
-Next stage id: `tj-7zq7` communication-rules runtime policy.
-Recommended action: review `codex/communication-rules-policy` from `/home/me/code/treejar/.worktrees/communication-rules-policy`. The client Russian source is preserved in `docs/04-sales-dialogue-guidelines.md`; `docs/02-tz-extended.md` keeps the client Google Doc pointer, though direct export currently returns a sign-in/storage-access page. The compact English runtime policy is wired through `src/llm/communication_policy.py` and `src/llm/prompts.py`. No deploy or merge without explicit approval.
+Next stage id: none for communication-rules policy; `tj-7zq7` is delivered.
+Recommended action: monitor normal Noor replies for adherence to the client communication rules. The client Russian source is preserved in `docs/04-sales-dialogue-guidelines.md`; `docs/02-tz-extended.md` keeps the client Google Doc pointer, though direct export currently returns a sign-in/storage-access page. The compact English runtime policy is wired through `src/llm/communication_policy.py` and `src/llm/prompts.py`. No admin `SystemPrompt` row was mutated because the code default now supplies `communication_rules_policy` when DB has no active override.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage. Review stage `tj-7zq7` artifact and diff on `codex/communication-rules-policy`.
-Focus: confirm the compact communication policy is traceable, token-efficient, and inserted as a separate SystemPrompt component before language/stage directives.
+Use $orchestrator-stage for the next requested product/runtime stage.
+Focus if revisiting communication rules: verify live conversations respect the compact policy and only add an admin `SystemPrompt` override if an owner explicitly wants runtime editing rather than the code default.
 Documentation: Context7 PydanticAI docs were checked for dynamic system prompt composition; no provider/model switch was made.
 Asset Routing: Skills used: `orchestrator-stage`, `senior-prompt-engineer`, `test-driven-development`, `verification-before-completion`. Agents/personas: none. Catalog candidates: none.
-Boundaries: no deploy, production mutation, live WhatsApp testing, admin settings mutation, push, or merge was performed.
+Boundaries: no live WhatsApp test or admin prompt/config mutation was performed for `tj-7zq7`; deployment used the normal `main` GitHub Actions path after explicit approval.
 
 ## Explicit defers
 
