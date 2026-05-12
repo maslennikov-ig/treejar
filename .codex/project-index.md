@@ -19,7 +19,7 @@ Stable navigation map for this repository. Keep operational state in
 - `README.md` - product/runtime overview and developer quick start.
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
-- `src/llm/engine.py` and `src/llm/prompts.py` - sales-agent tools, guarded routing, and prompt policy.
+- `src/llm/engine.py`, `src/llm/prompts.py`, and `src/llm/communication_policy.py` - sales-agent tools, guarded routing, and prompt policy.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
 
 ## Core Subsystems

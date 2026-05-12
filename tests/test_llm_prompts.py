@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -34,6 +34,71 @@ async def test_build_system_prompt_custom_language() -> None:
 
     assert "The user prefers to communicate in English" in prompt
     assert "STAGE: SOLUTION" in prompt
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_includes_compact_communication_policy() -> None:
+    db, redis = AsyncMock(), AsyncMock()
+    redis.get.return_value = None
+    db.execute.return_value.scalars.return_value.first.return_value = None
+
+    prompt = await build_system_prompt(
+        db, redis, SalesStage.SOLUTION.value, language="en"
+    )
+
+    marker = "[COMMUNICATION RULES POLICY]"
+    assert marker in prompt
+    policy = prompt.split(marker, maxsplit=1)[1].split(
+        "IMPORTANT: The user prefers", maxsplit=1
+    )[0]
+    assert "Source: docs/04-sales-dialogue-guidelines.md" in policy
+    assert "Opening and trust" in policy
+    assert "sincere, specific compliment" in policy
+    assert "tailors solutions" in policy
+    assert "solution, not just a product" in policy
+    assert "multiple options" in policy
+    assert "approved discount" in policy
+    assert "24h, 3d, and 7d" in policy
+    assert "exact next step" in policy
+    assert "Правило" not in policy
+    assert len(policy) < 1600
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_keeps_policy_when_base_prompt_is_overridden() -> (
+    None
+):
+    db, redis = AsyncMock(), AsyncMock()
+
+    async def fake_component(
+        _db: AsyncMock, _redis: AsyncMock, name: str, default: str
+    ) -> str:
+        if name == "base_prompt":
+            return "CUSTOM BASE PROMPT"
+        if name.startswith("stage_"):
+            return "CUSTOM STAGE RULE"
+        return default
+
+    with patch(
+        "src.llm.prompts.get_system_prompt_component",
+        side_effect=fake_component,
+    ):
+        prompt = await build_system_prompt(
+            db, redis, SalesStage.SOLUTION.value, language="en"
+        )
+
+    assert "CUSTOM BASE PROMPT" in prompt
+    assert "[COMMUNICATION RULES POLICY]" in prompt
+    assert "CUSTOM STAGE RULE" in prompt
+    assert prompt.index("CUSTOM BASE PROMPT") < prompt.index(
+        "[COMMUNICATION RULES POLICY]"
+    )
+    assert prompt.index("[COMMUNICATION RULES POLICY]") < prompt.index(
+        "The user prefers to communicate in English"
+    )
+    assert prompt.index("The user prefers to communicate in English") < prompt.index(
+        "CUSTOM STAGE RULE"
+    )
 
 
 @pytest.mark.asyncio

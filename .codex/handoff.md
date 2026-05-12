@@ -15,17 +15,16 @@ Current baseline branch: `main`
 
 ## Next recommended
 
-Next stage id: create a fresh Beads task/stage for the communication-rules compliance work.
-Recommended action: start from current `origin/main` after `tj-zi2t` lands. First locate the client's Russian communication rules, translate/condense them into an English runtime policy artifact, then wire them into the agent behavior with focused tests. Do not mix this with stale `tj-final27` integration branches.
+Next stage id: `tj-7zq7` communication-rules runtime policy.
+Recommended action: review `codex/communication-rules-policy` from `/home/me/code/treejar/.worktrees/communication-rules-policy`. The client Russian source is preserved in `docs/04-sales-dialogue-guidelines.md`; `docs/02-tz-extended.md` keeps the client Google Doc pointer, though direct export currently returns a sign-in/storage-access page. The compact English runtime policy is wired through `src/llm/communication_policy.py` and `src/llm/prompts.py`. No deploy or merge without explicit approval.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `.codex/project-index.md`, and the relevant prompt/LLM files first.
-Worktree: create a fresh isolated worktree from current `origin/main`.
-Task: find the client-provided communication rules, determine where current agent instructions are built, and implement a token-efficient English policy layer that makes the agent follow those rules without bloating the main prompt. Add targeted tests for the most important rule failures. If the rules are in Russian, preserve the original source and add a concise English runtime version.
-Documentation: use MCP Context7 only if implementation touches version-sensitive library/framework/API behavior; otherwise no external docs are needed.
-Asset Routing: Skills: `orchestrator-stage`, `senior-prompt-engineer` if useful for policy compression, `systematic-debugging` if reproducing a rule failure. Agents/personas: none unless the user explicitly authorizes subagents. Catalog candidates: none.
-Boundaries: no deploy, production mutation, broad live WhatsApp testing, or prompt rewrite beyond the communication-rules scope without explicit approval.
+Use $orchestrator-stage. Review stage `tj-7zq7` artifact and diff on `codex/communication-rules-policy`.
+Focus: confirm the compact communication policy is traceable, token-efficient, and inserted as a separate SystemPrompt component before language/stage directives.
+Documentation: Context7 PydanticAI docs were checked for dynamic system prompt composition; no provider/model switch was made.
+Asset Routing: Skills used: `orchestrator-stage`, `senior-prompt-engineer`, `test-driven-development`, `verification-before-completion`. Agents/personas: none. Catalog candidates: none.
+Boundaries: no deploy, production mutation, live WhatsApp testing, admin settings mutation, push, or merge was performed.
 
 ## Explicit defers
 

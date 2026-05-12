@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.llm.communication_policy import COMMUNICATION_RULES_POLICY
 from src.models.system_prompt import SystemPrompt
 from src.schemas.common import Language, SalesStage
 
@@ -245,6 +246,12 @@ async def build_system_prompt(
     base_prompt = await get_system_prompt_component(
         db, redis, "base_prompt", BASE_SYSTEM_PROMPT
     )
+    communication_policy = await get_system_prompt_component(
+        db,
+        redis,
+        "communication_rules_policy",
+        COMMUNICATION_RULES_POLICY,
+    )
 
     language_name = "English" if language_val == "en" else "Arabic"
     lang_directive = LANGUAGE_DIRECTIVE.format(language=language_name)
@@ -257,8 +264,9 @@ async def build_system_prompt(
 
     parts = [
         base_prompt.strip(),
+        communication_policy.strip(),
         lang_directive.strip(),
         stage_rule.strip(),
     ]
 
-    return "\n\n".join(parts) + "\n"
+    return "\n\n".join(part for part in parts if part) + "\n"
