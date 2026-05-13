@@ -12,7 +12,7 @@ status: accepted
 delivery_method: manual integration
 accepted_by_orchestrator: yes
 cleanup_status: cleaned
-cleanup_notes: "Implemented locally in the hotfix worktree; production recheck pending after deploy."
+cleanup_notes: "Deployed in df3f3b1, rechecked on production with the exact failed prompt, and stale synthetic pending escalation cleaned through the repo application service."
 risk_level: high
 verification:
   - "uv run pytest tests/test_llm_engine.py::test_process_message_exact_quote_missing_details_accepts_quantity_x_sku -q": failed before fix, passed after fix
@@ -21,13 +21,16 @@ verification:
   - "uv run ruff format --check src/ tests/": passed
   - "uv run mypy src/": passed
   - "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" uv run pytest tests/ -v --tb=short": passed, 1006 passed and 19 skipped
+  - "GitHub Actions CI 25793771538": passed
+  - "production bot_test missing-data quotation prompt on 79262810921#tj-gh12-final-20260513133925": passed
+  - "read-only DB evidence for c7be1bf8-20c2-4cf2-9f55-d7ca207a9b1c": passed
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
   - .codex/stages/tj-gh12/artifacts/tj-gh12.15-second-post-deploy-live-e2e.md
   - .codex/stages/tj-gh12/artifacts/tj-gh12.19-quantity-x-hotfix.md
 explicit_defers:
-  - "Deploy and recheck live missing-data quotation scenario; then clean the synthetic pending escalation from the failed E2E run."
+  - "No remaining tj-gh12.19-specific defer after production recheck and synthetic escalation cleanup."
 ---
 
 # Summary
@@ -60,4 +63,4 @@ uv run pytest tests/ -v --tb=short -> 1006 passed, 19 skipped
 
 # Risks / Follow-ups / Explicit Defers
 
-Production live E2E must be repeated after deploy for the exact failed prompt. The existing synthetic pending escalation from `d82cb1ca-4cde-4042-9f18-4c3129901f93` remains pending until cleanup through the normal application-level manager-resolution path.
+Production live E2E was repeated after deploy for the exact failed prompt and passed. The existing synthetic pending escalation from `d82cb1ca-4cde-4042-9f18-4c3129901f93` was resolved through the repo application service.

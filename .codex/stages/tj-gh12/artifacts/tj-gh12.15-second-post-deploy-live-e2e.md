@@ -11,8 +11,8 @@ worktree: /home/me/code/treejar/.worktrees/codex-tj-gh12-name-gate-hotfix-clean
 status: blocked
 delivery_method: n/a
 accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: "Synthetic conversation d82cb1ca-4cde-4042-9f18-4c3129901f93 has a pending escalation e1c22bde-754d-4ef2-95dc-e4dc73aca8dc from the missing-data quotation blocker; cleanup remains pending until the hotfix is deployed/rechecked."
+cleanup_status: cleaned
+cleanup_notes: "Synthetic conversation d82cb1ca-4cde-4042-9f18-4c3129901f93 had pending escalation e1c22bde-754d-4ef2-95dc-e4dc73aca8dc from the missing-data quotation blocker; after df3f3b1 was deployed and rechecked, cleanup used the repo application service and readback showed both conversation and escalation resolved."
 risk_level: high
 verification:
   - "ssh noor-server 'cd /opt/noor && cat .release-sha && cat .release-run-id'": passed
@@ -24,14 +24,14 @@ verification:
 changed_files:
   - .codex/stages/tj-gh12/artifacts/tj-gh12.15-second-post-deploy-live-e2e.md
 explicit_defers:
-  - "Resume live E2E after tj-gh12.19 is deployed; then clean the synthetic pending escalation through the normal application-level manager-resolution path."
+  - "Resolved by tj-gh12.19 and final accepted E2E artifact tj-gh12.15-final-live-e2e.md."
 ---
 
 # Summary
 
 Second post-deploy E2E on `main@0a283a42a94b10e77456f641ee0b87a789f13efd` verified that `tj-gh12.18` works in production: first-turn product requests still stop at the Noor name gate, and a following name-only reply stores `customer_name` and returns `name-capture` without manager escalation.
 
-The same worker run found a new quotation blocker converted into Bead `tj-gh12.19`: `Please create a quotation for 1 x CH-620. Deliver to UAE.` entered `exact-quote-fallback` and created a pending manager escalation instead of asking for missing company/specific-address details.
+The same worker run found a new quotation blocker converted into Bead `tj-gh12.19`: `Please create a quotation for 1 x CH-620. Deliver to UAE.` entered `exact-quote-fallback` and created a pending manager escalation instead of asking for missing company/specific-address details. That blocker was fixed and rechecked in `tj-gh12.15-final-live-e2e.md`.
 
 # Scenario Results
 
@@ -50,4 +50,4 @@ The E2E worker used only controlled text messages to the approved suffix under `
 
 # Risks / Follow-ups / Explicit Defers
 
-The pending synthetic escalation must be cleaned after `tj-gh12.19` is deployed/rechecked. Live happy quotation/PDF and pending quote resume remain intentionally skipped because they would create real external Zoho/PDF/WhatsApp side effects without a dedicated approved synthetic quote path.
+The pending synthetic escalation was cleaned after `tj-gh12.19` was deployed/rechecked. Live happy quotation/PDF and pending quote resume remain intentionally skipped because they would create real external Zoho/PDF/WhatsApp side effects without a dedicated approved synthetic quote path.

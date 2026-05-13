@@ -1,7 +1,7 @@
 # Stage tj-gh12: GitHub Issues Stabilization
 
 Updated: 2026-05-13
-Status: third hotfix verified locally after second post-deploy E2E found quotation missing-data blocker
+Status: deployed and post-deploy E2E accepted for approved text-only scope
 Branch: `codex/tj-gh12-name-gate-hotfix-clean`
 Base: `main@0a283a42a94b10e77456f641ee0b87a789f13efd`
 
@@ -40,7 +40,11 @@ Hotfix `91e61fca5390f857b5902f8476b5ee54a87dbf24` was deployed by GitHub Actions
 
 Hotfix `0a283a42a94b10e77456f641ee0b87a789f13efd` was deployed by GitHub Actions run `25792412177`. Second post-deploy E2E verified `tj-gh12.18`: first-turn product request returned `name-gate`, the next name-only reply returned `name-capture`, stored `customer_name=E2E Tester`, and did not escalate. Showroom Maps also returned the deterministic Google Maps URL without escalation.
 
-Second post-deploy E2E then found `tj-gh12.19`: `Please create a quotation for 1 x CH-620. Deliver to UAE.` parsed the item candidate as `x CH-620`, failed deterministic SKU resolution, and created a pending exact-quote fallback escalation instead of asking for missing company/specific-address details. `tj-gh12.19` is fixed locally by normalizing leading quantity multiplier markers (`x`, `pcs`, `pieces`, `units`, `qty`) out of exact-quote item candidates before SKU resolution, allowing the existing missing-data gate to block without Zoho/PDF/media/manager side effects.
+Second post-deploy E2E then found `tj-gh12.19`: `Please create a quotation for 1 x CH-620. Deliver to UAE.` parsed the item candidate as `x CH-620`, failed deterministic SKU resolution, and created a pending exact-quote fallback escalation instead of asking for missing company/specific-address details. `tj-gh12.19` normalizes leading quantity multiplier markers (`x`, `pcs`, `pieces`, `units`, `qty`) out of exact-quote item candidates before SKU resolution, allowing the existing missing-data gate to block without Zoho/PDF/media/manager side effects.
+
+Hotfix `df3f3b10f4ee0ab4ee36aa523d4e9cfa4beb2456` was deployed by GitHub Actions run `25793771538`. Final post-deploy E2E on approved suffix `79262810921#tj-gh12-final-20260513133925` passed name gate, name capture, showroom Maps, and the exact failed missing-data quotation prompt. Read-only DB evidence for conversation `c7be1bf8-20c2-4cf2-9f55-d7ca207a9b1c` showed `customer_name=E2E Tester`, `escalation_status=none`, assistant models `name-gate`, `name-capture`, `z-ai/glm-5|showroom-location`, and `z-ai/glm-5|exact-quote-missing-details`, four sent text `bot_reply` outbound rows, no media/PDF rows, and no escalations.
+
+The stale synthetic pending escalation from failed second E2E conversation `d82cb1ca-4cde-4042-9f18-4c3129901f93` / `e1c22bde-754d-4ef2-95dc-e4dc73aca8dc` was resolved through the repo application service, with readback showing both conversation and escalation row `resolved`.
 
 project-index: reviewed-no-change - existing index already covers `src/services/` follow-up responsibilities, messaging integrations, orchestration scripts, and verification entrypoints; no stable navigation entrypoint changed.
 
@@ -68,6 +72,9 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 - `tj-gh12.19` RED/GREEN regression failed before fix and passed after fix.
 - `tj-gh12.19` impacted suite passed: `203 passed`.
 - `tj-gh12.19` full local pytest passed: `1006 passed, 19 skipped`.
+- Third hotfix deploy passed: GitHub Actions run `25793771538`, release marker `df3f3b10f4ee0ab4ee36aa523d4e9cfa4beb2456`.
+- Final production API smoke passed: `7 passed, 0 failed`.
+- Final production E2E passed for name gate, name capture, showroom Maps, and missing quotation data; cleanup readback passed.
 - `uv run ruff check src/ tests/`: passed.
 - `uv run ruff format --check src/ tests/`: passed.
 - `uv run mypy src/`: passed.
@@ -78,5 +85,4 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 
 - Wazzup typing cannot be delivered without official provider support or documentation for a typing endpoint.
 - Follow-up message sending must stay disabled until approved WhatsApp templates/config are supplied; template-mode sends additionally require confirmed Wazzup template transport schema.
-- Live E2E remains paused until `tj-gh12.19` is deployed and the exact failed quotation missing-data prompt is rechecked.
-- Synthetic conversation `d82cb1ca-4cde-4042-9f18-4c3129901f93` has a pending escalation from the failed E2E run; clean it through the normal application-level manager-resolution path after `tj-gh12.19` is deployed/rechecked.
+- Live happy quotation/PDF creation and pending quote resume were not executed because they would create real external Zoho/PDF/WhatsApp side effects without a dedicated approved synthetic quote path.
