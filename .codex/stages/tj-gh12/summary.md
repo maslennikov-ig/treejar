@@ -1,9 +1,9 @@
 # Stage tj-gh12: GitHub Issues Stabilization
 
 Updated: 2026-05-13
-Status: second post-deploy E2E found name-only capture blocker; hotfix verified locally
+Status: third hotfix verified locally after second post-deploy E2E found quotation missing-data blocker
 Branch: `codex/tj-gh12-name-gate-hotfix-clean`
-Base: `main@91e61fca5390f857b5902f8476b5ee54a87dbf24`
+Base: `main@0a283a42a94b10e77456f641ee0b87a789f13efd`
 
 ## Goal
 
@@ -38,7 +38,9 @@ Hotfix Beads `tj-gh12.16` and `tj-gh12.17` were added. `tj-gh12.16` short-circui
 
 Hotfix `91e61fca5390f857b5902f8476b5ee54a87dbf24` was deployed by GitHub Actions run `25789632904`. Post-hotfix scenario A passed in production: first-turn unknown-name SKU request returned `name-gate`, kept escalation `none`, and sent no product media. Scenario B then found `tj-gh12.18`: after the name gate, a name-only reply was not captured and escalated to manager confirmation. The synthetic B conversation was resolved through the application-level Telegram `faq_private` manager-reply handler; no direct DB/Redis cleanup update was used.
 
-`tj-gh12.18` is fixed locally. Natural-language names such as `My name is E2E Tester.` are extracted into quote customer details and `conversation.customer_name`; name-only replies after the name gate now return a local `name-capture` acknowledgement without LLM or manager escalation.
+Hotfix `0a283a42a94b10e77456f641ee0b87a789f13efd` was deployed by GitHub Actions run `25792412177`. Second post-deploy E2E verified `tj-gh12.18`: first-turn product request returned `name-gate`, the next name-only reply returned `name-capture`, stored `customer_name=E2E Tester`, and did not escalate. Showroom Maps also returned the deterministic Google Maps URL without escalation.
+
+Second post-deploy E2E then found `tj-gh12.19`: `Please create a quotation for 1 x CH-620. Deliver to UAE.` parsed the item candidate as `x CH-620`, failed deterministic SKU resolution, and created a pending exact-quote fallback escalation instead of asking for missing company/specific-address details. `tj-gh12.19` is fixed locally by normalizing leading quantity multiplier markers (`x`, `pcs`, `pieces`, `units`, `qty`) out of exact-quote item candidates before SKU resolution, allowing the existing missing-data gate to block without Zoho/PDF/media/manager side effects.
 
 project-index: reviewed-no-change - existing index already covers `src/services/` follow-up responsibilities, messaging integrations, orchestration scripts, and verification entrypoints; no stable navigation entrypoint changed.
 
@@ -61,6 +63,11 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 - `tj-gh12.18` RED/GREEN regression failed before fix and passed after fix.
 - `tj-gh12.18` impacted suite passed: `202 passed`.
 - `tj-gh12.18` full local pytest passed: `1005 passed, 19 skipped`.
+- Second post-deploy production readback passed on `0a283a4` / run `25792412177`; API smoke passed (`7 passed, 0 failed`).
+- Second post-deploy E2E verified `name-gate`, `name-capture`, and showroom Maps; missing-data quotation blocked on `tj-gh12.19` with synthetic pending escalation.
+- `tj-gh12.19` RED/GREEN regression failed before fix and passed after fix.
+- `tj-gh12.19` impacted suite passed: `203 passed`.
+- `tj-gh12.19` full local pytest passed: `1006 passed, 19 skipped`.
 - `uv run ruff check src/ tests/`: passed.
 - `uv run ruff format --check src/ tests/`: passed.
 - `uv run mypy src/`: passed.
@@ -71,4 +78,5 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 
 - Wazzup typing cannot be delivered without official provider support or documentation for a typing endpoint.
 - Follow-up message sending must stay disabled until approved WhatsApp templates/config are supplied; template-mode sends additionally require confirmed Wazzup template transport schema.
-- Live B-H E2E remains paused until `tj-gh12.18` is deployed and name-only capture is rechecked.
+- Live E2E remains paused until `tj-gh12.19` is deployed and the exact failed quotation missing-data prompt is rechecked.
+- Synthetic conversation `d82cb1ca-4cde-4042-9f18-4c3129901f93` has a pending escalation from the failed E2E run; clean it through the normal application-level manager-resolution path after `tj-gh12.19` is deployed/rechecked.

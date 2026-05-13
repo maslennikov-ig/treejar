@@ -762,6 +762,12 @@ def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
     for match in _QUANTITY_ITEM_SIGNAL_RE.finditer(text):
         quantity = int(match.group("quantity"))
         item_candidate = " ".join(match.group("item").split()).strip(" -")
+        item_candidate = re.sub(
+            r"^(?:x|pcs?|pieces?|units?|qty)\s+",
+            "",
+            item_candidate,
+            flags=re.IGNORECASE,
+        ).strip(" -")
         item_candidate = _normalize_sku_homoglyphs(item_candidate)
         if not _looks_like_exact_item_candidate(item_candidate):
             continue

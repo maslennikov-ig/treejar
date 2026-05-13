@@ -4309,6 +4309,67 @@ async def test_process_message_exact_quote_missing_details_returns_gate_without_
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_missing_details_accepts_quantity_x_sku(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "E2E Tester"
+    conv.metadata_ = {"quote_customer_details": {"name": "E2E Tester"}}
+    text = "Please create a quotation for 1 x CH-620. Deliver to UAE."
+    mock_build_history.return_value = _split_first_turn_history(
+        "Hi, I need CH-620 product details.",
+        "My name is E2E Tester.",
+        text,
+    )
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your delivery address."),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    _assert_first_turn_opening(response.text, "")
+    assert "before i prepare the quotation" in response.text.lower()
+    assert "company name" in response.text.lower()
+    assert "specific delivery address" in response.text.lower()
+    assert "manager" not in response.text.lower()
+    assert response.model.endswith("|exact-quote-missing-details")
+    assert conv.escalation_status == "none"
+    mock_notify.assert_not_awaited()
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.create_sale_order.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "exact_quote"
+    assert pending_quote["items"] == [{"sku": "CH-620", "quantity": 1}]
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_exact_quote_second_consultative_pass_fails_closed_without_exact_sku(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
