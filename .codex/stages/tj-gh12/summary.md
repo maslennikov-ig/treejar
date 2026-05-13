@@ -1,13 +1,13 @@
 # Stage tj-gh12: GitHub Issues Stabilization
 
 Updated: 2026-05-13
-Status: deployed and post-deploy E2E accepted for approved text-only scope
+Status: closed; deployed, post-deploy E2E accepted, and GitHub issues reconciled
 Branch: `codex/tj-gh12-name-gate-hotfix-clean`
 Base: `main@0a283a42a94b10e77456f641ee0b87a789f13efd`
 
 ## Goal
 
-Stabilize the new GitHub issue batch #21, #22, #24-#33 through Local Beads without mutating GitHub issues, production config, or live WhatsApp state.
+Stabilize the new GitHub issue batch #21, #22, #24-#33 through Local Beads. The implementation and E2E stages avoided GitHub issue mutation until explicit approval; after approval, GitHub issues were commented and closed.
 
 ## Scope
 
@@ -28,7 +28,7 @@ A code review report was written to `docs/reports/code-reviews/2026-05/CR-2026-0
 
 A follow-up code review report was written to `docs/reports/code-reviews/2026-05/CR-2026-05-13-tj-gh12-follow-up-review.md`. Follow-up Beads `tj-gh12.12` through `tj-gh12.14` were created and closed after fixing price phrase SKU false positives, restoring artifact-required closeout enforcement, and blocking proposal template-mode sends until the Wazzup template transport shape is explicitly confirmed.
 
-`tj-b4n` remains blocked because the public Wazzup sending-message documentation does not expose a supported typing endpoint. The code deliberately logs/no-ops for Wazzup typing instead of guessing an undocumented API shape.
+`tj-b4n` was closed after GitHub #24 was closed as provider-blocked/not-planned. The public Wazzup sending-message documentation does not expose a supported typing endpoint, so the code deliberately logs/no-ops for Wazzup typing instead of guessing an undocumented API shape.
 
 Proposal follow-up sending remains disabled by default. The runtime now records proposal follow-up state after quotation PDF send, stops/pauses the chain on customer reply, rejection, autoreply, or Wazzup read status, and includes a bounded ARQ executor. Outbound FU sends still require explicit enablement and configured templates/freeform copy; outside-24h template mode also requires `template_transport_confirmed` after the real Wazzup payload shape is confirmed.
 
@@ -45,6 +45,8 @@ Second post-deploy E2E then found `tj-gh12.19`: `Please create a quotation for 1
 Hotfix `df3f3b10f4ee0ab4ee36aa523d4e9cfa4beb2456` was deployed by GitHub Actions run `25793771538`. Final post-deploy E2E on approved suffix `79262810921#tj-gh12-final-20260513133925` passed name gate, name capture, showroom Maps, and the exact failed missing-data quotation prompt. Read-only DB evidence for conversation `c7be1bf8-20c2-4cf2-9f55-d7ca207a9b1c` showed `customer_name=E2E Tester`, `escalation_status=none`, assistant models `name-gate`, `name-capture`, `z-ai/glm-5|showroom-location`, and `z-ai/glm-5|exact-quote-missing-details`, four sent text `bot_reply` outbound rows, no media/PDF rows, and no escalations.
 
 The stale synthetic pending escalation from failed second E2E conversation `d82cb1ca-4cde-4042-9f18-4c3129901f93` / `e1c22bde-754d-4ef2-95dc-e4dc73aca8dc` was resolved through the repo application service, with readback showing both conversation and escalation row `resolved`.
+
+After explicit user approval, GitHub issues #21, #22, and #24-#33 were commented and closed against deployed main `c589ac20734dc6c11050aade245383d4d394f987`. Already closed #23 received a duplicate/context comment for the showroom Maps work in #26. GitHub #24 was closed with reason `not planned` because the provider endpoint is unavailable; the other issues were closed as completed. Local Beads `tj-b4n` and `tj-gh12` were also closed with matching close reasons.
 
 project-index: reviewed-no-change - existing index already covers `src/services/` follow-up responsibilities, messaging integrations, orchestration scripts, and verification entrypoints; no stable navigation entrypoint changed.
 
@@ -80,9 +82,10 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 - `uv run mypy src/`: passed.
 - `scripts/orchestration/run_process_verification.sh`: passed.
 - `scripts/orchestration/run_stage_closeout.py --stage tj-gh12`: passed.
+- GitHub reconciliation: #21, #22, #24-#33 closed; #23 duplicate/context comment added.
 
 ## Risks / Follow-ups
 
-- Wazzup typing cannot be delivered without official provider support or documentation for a typing endpoint.
+- Wazzup typing cannot be delivered without official provider support or documentation for a typing endpoint; #24 is closed as provider-blocked/not-planned until that exists.
 - Follow-up message sending must stay disabled until approved WhatsApp templates/config are supplied; template-mode sends additionally require confirmed Wazzup template transport schema.
 - Live happy quotation/PDF creation and pending quote resume were not executed because they would create real external Zoho/PDF/WhatsApp side effects without a dedicated approved synthetic quote path.
