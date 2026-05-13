@@ -8,6 +8,7 @@ WhatsApp delivery to Treejar customers.
 from __future__ import annotations
 
 import logging
+import re
 from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +31,16 @@ logger = logging.getLogger(__name__)
 ADAPTER_MODEL_NAME = model_name_for_path(PATH_RESPONSE_ADAPTER)
 AUTO_FAQ_CANDIDATE_MODEL_NAME = model_name_for_path(PATH_AUTO_FAQ_CANDIDATE)
 AUTO_FAQ_CANDIDATE_FALLBACK_MODEL_NAME = settings.openrouter_model_main
+
+_PRICE_SIGNALS_RE = re.compile(r"\b(?:aed|dirhams?|dhs?)\b|درهم", re.I)
+_STOCK_SIGNALS_RE = re.compile(
+    r"\b(?:in\s+stock|stock|currently\s+available|available\s+(?:now|for))\b",
+    re.I,
+)
+_IMMEDIATE_DELIVERY_RE = re.compile(
+    r"\b(?:immediate(?:ly)?|same[-\s]?day|today|tomorrow)\b.*\bdeliver",
+    re.I,
+)
 
 
 ADAPTER_SYSTEM_PROMPT = """\
@@ -146,6 +157,20 @@ auto_faq_manager_reply_fallback_agent: Agent[None, ManagerReplyWithAutoFAQResult
 )
 
 
+def _introduces_unsupported_risky_claims(adapted: str, draft: str) -> bool:
+    if not draft.strip():
+        return False
+
+    checks = (
+        _PRICE_SIGNALS_RE,
+        _STOCK_SIGNALS_RE,
+        _IMMEDIATE_DELIVERY_RE,
+    )
+    return any(
+        pattern.search(adapted) and not pattern.search(draft) for pattern in checks
+    )
+
+
 async def adapt_manager_response(
     question: str, draft: str, language: str = "en"
 ) -> str:
@@ -173,7 +198,13 @@ async def adapt_manager_response(
         user_prompt,
         model_name=ADAPTER_MODEL_NAME,
     )
-    return cast("str", result.output)
+    adapted = cast("str", result.output)
+    if _introduces_unsupported_risky_claims(adapted, draft):
+        logger.warning(
+            "Response adapter introduced unsupported risky claims; using manager draft."
+        )
+        return draft.strip()
+    return adapted
 
 
 async def adapt_manager_response_with_faq_candidate(

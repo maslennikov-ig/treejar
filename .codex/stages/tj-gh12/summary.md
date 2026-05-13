@@ -1,9 +1,9 @@
 # Stage tj-gh12: GitHub Issues Stabilization
 
 Updated: 2026-05-13
-Status: follow-up review fixes verified locally
-Branch: `codex/tj-gh12-new-issues`
-Base: `origin/main@838d3d65887947452b2e77e75c633848a37fa2b9`
+Status: post-deploy E2E found name-gate side effects; hotfix verified locally
+Branch: `codex/tj-gh12-name-gate-hotfix-clean`
+Base: `main@cc3fcf5a5f3e3dd13249aaf7091a1b0d975a180a`
 
 ## Goal
 
@@ -32,6 +32,10 @@ A follow-up code review report was written to `docs/reports/code-reviews/2026-05
 
 Proposal follow-up sending remains disabled by default. The runtime now records proposal follow-up state after quotation PDF send, stops/pauses the chain on customer reply, rejection, autoreply, or Wazzup read status, and includes a bounded ARQ executor. Outbound FU sends still require explicit enablement and configured templates/freeform copy; outside-24h template mode also requires `template_transport_confirmed` after the real Wazzup payload shape is confirmed.
 
+Post-deploy controlled E2E task `tj-gh12.15` was started on production `main@cc3fcf5a5f3e3dd13249aaf7091a1b0d975a180a` using the approved WhatsApp test number. Scenario A found a blocker: the first visible reply correctly used Noor and asked for the customer's name, but the exact-quote/product-media path still created a pending escalation and sent product media captions before the name was known. The synthetic conversation was later resolved through the normal `faq_private` manager-resolution path; final `tj-gh12-e2e` pending count was `0`.
+
+Hotfix Beads `tj-gh12.16` and `tj-gh12.17` were added. `tj-gh12.16` short-circuits first-turn unknown-name requests before any product/quotation/escalation/media side effects. `tj-gh12.17` prevents the private manager reply adapter from introducing risky unsupported price, stock, or immediate-delivery claims absent from the manager draft.
+
 project-index: reviewed-no-change - existing index already covers `src/services/` follow-up responsibilities, messaging integrations, orchestration scripts, and verification entrypoints; no stable navigation entrypoint changed.
 
 ## Verification
@@ -46,6 +50,9 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 - Follow-up impacted suite: passed (`39 passed`).
 - Frontend regression dependency restored with `npm ci` in `frontend/admin`; `tests/test_admin_dashboard_frontend.py` passed (`11 passed`).
 - Full local pytest passed: `1002 passed, 19 skipped`.
+- Hotfix RED/GREEN for `tj-gh12.16` and `tj-gh12.17`: failed before fixes and passed after fixes.
+- Hotfix impacted suite passed: `201 passed`.
+- Hotfix full local pytest passed: `1004 passed, 19 skipped`.
 - `uv run ruff check src/ tests/`: passed.
 - `uv run ruff format --check src/ tests/`: passed.
 - `uv run mypy src/`: passed.

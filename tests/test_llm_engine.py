@@ -1137,6 +1137,69 @@ async def test_process_message_first_turn_service_handoff_gets_opening(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_effects(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    text = "Hi, I need CH-620 / CH620 product details, price, and stock availability."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    pending_payload = ProductMediaPayload(
+        url="https://example.com/ch620.jpg",
+        caption="CH 620 grey - 290.00 AED",
+        product_key="ch-620-grey",
+        zoho_item_id=None,
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.pending_product_media.append(pending_payload)
+        deps.conversation.escalation_status = "pending"
+        return _FakeAgentResult("CH 620 grey is available for 290 AED.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == (
+        "Hello, I'm Noor from Treejar. "
+        "May I know your name so I can address you properly?"
+    )
+    assert response.model == "name-gate"
+    assert response.deferred_product_media == ()
+    assert conv.escalation_status == "none"
+    assert mock_run.await_count == 0
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_plain_greeting_bypasses_verified_handoff(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -1249,9 +1312,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
         response.text
         == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
     )
-    assert conv.metadata_ == {
-        "verified_policy_repair": {"kind": "benign_no_match", "count": 1}
-    }
+    assert conv.metadata_ is None
     assert conv.escalation_status == "none"
 
 

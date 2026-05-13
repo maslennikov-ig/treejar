@@ -3821,6 +3821,13 @@ async def process_message(
         defer_product_media=True,
     )
 
+    if is_first_turn and not str(conv.customer_name or "").strip():
+        return _build_static_response(
+            "Hello",
+            "name-gate",
+            allow_product_media=False,
+        )
+
     # Store customer details from the original, unmasked text before any route
     # can call create_quotation. Phone is enough to create a draft, while the
     # other fields are optional PDF details when the customer provides them.

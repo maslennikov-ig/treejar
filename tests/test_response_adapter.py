@@ -125,6 +125,35 @@ async def test_normal_manager_reply_does_not_generate_kb_candidate() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_adapt_manager_response_falls_back_when_adapter_invents_price_stock() -> (
+    None
+):
+    with patch(
+        "src.llm.response_adapter.response_adapter_agent.run",
+        new=AsyncMock(
+            return_value=SimpleNamespace(
+                output=(
+                    "The CH-620 is available for 1,250 AED and can be delivered "
+                    "immediately."
+                )
+            )
+        ),
+    ):
+        result = await adapt_manager_response(
+            question="Hi, I need CH-620 product details, price, and stock.",
+            draft=(
+                "Controlled E2E cleanup: please ignore this synthetic test "
+                "conversation."
+            ),
+        )
+
+    assert result == (
+        "Controlled E2E cleanup: please ignore this synthetic test conversation."
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_adapt_manager_response_with_faq_candidate_uses_one_combined_call() -> (
     None
 ):
