@@ -1,9 +1,9 @@
 # Stage tj-gh12: GitHub Issues Stabilization
 
 Updated: 2026-05-13
-Status: post-deploy E2E found name-gate side effects; hotfix verified locally
+Status: second post-deploy E2E found name-only capture blocker; hotfix verified locally
 Branch: `codex/tj-gh12-name-gate-hotfix-clean`
-Base: `main@cc3fcf5a5f3e3dd13249aaf7091a1b0d975a180a`
+Base: `main@91e61fca5390f857b5902f8476b5ee54a87dbf24`
 
 ## Goal
 
@@ -36,6 +36,10 @@ Post-deploy controlled E2E task `tj-gh12.15` was started on production `main@cc3
 
 Hotfix Beads `tj-gh12.16` and `tj-gh12.17` were added. `tj-gh12.16` short-circuits first-turn unknown-name requests before any product/quotation/escalation/media side effects. `tj-gh12.17` prevents the private manager reply adapter from introducing risky unsupported price, stock, or immediate-delivery claims absent from the manager draft.
 
+Hotfix `91e61fca5390f857b5902f8476b5ee54a87dbf24` was deployed by GitHub Actions run `25789632904`. Post-hotfix scenario A passed in production: first-turn unknown-name SKU request returned `name-gate`, kept escalation `none`, and sent no product media. Scenario B then found `tj-gh12.18`: after the name gate, a name-only reply was not captured and escalated to manager confirmation. The synthetic B conversation was resolved through the application-level Telegram `faq_private` manager-reply handler; no direct DB/Redis cleanup update was used.
+
+`tj-gh12.18` is fixed locally. Natural-language names such as `My name is E2E Tester.` are extracted into quote customer details and `conversation.customer_name`; name-only replies after the name gate now return a local `name-capture` acknowledgement without LLM or manager escalation.
+
 project-index: reviewed-no-change - existing index already covers `src/services/` follow-up responsibilities, messaging integrations, orchestration scripts, and verification entrypoints; no stable navigation entrypoint changed.
 
 ## Verification
@@ -53,6 +57,10 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 - Hotfix RED/GREEN for `tj-gh12.16` and `tj-gh12.17`: failed before fixes and passed after fixes.
 - Hotfix impacted suite passed: `201 passed`.
 - Hotfix full local pytest passed: `1004 passed, 19 skipped`.
+- Post-hotfix production E2E A passed on `91e61fc`; B blocked on `tj-gh12.18` and was cleaned through `faq_private`.
+- `tj-gh12.18` RED/GREEN regression failed before fix and passed after fix.
+- `tj-gh12.18` impacted suite passed: `202 passed`.
+- `tj-gh12.18` full local pytest passed: `1005 passed, 19 skipped`.
 - `uv run ruff check src/ tests/`: passed.
 - `uv run ruff format --check src/ tests/`: passed.
 - `uv run mypy src/`: passed.
@@ -63,4 +71,4 @@ project-index: reviewed-no-change - existing index already covers `src/services/
 
 - Wazzup typing cannot be delivered without official provider support or documentation for a typing endpoint.
 - Follow-up message sending must stay disabled until approved WhatsApp templates/config are supplied; template-mode sends additionally require confirmed Wazzup template transport schema.
-- No live WhatsApp/media/voice/prod validation was run by design.
+- Live B-H E2E remains paused until `tj-gh12.18` is deployed and name-only capture is rechecked.

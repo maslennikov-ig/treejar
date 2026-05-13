@@ -80,6 +80,21 @@ VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
+BOT_TEST_MARKER_RE = re.compile(r"\s*\[smoke:[^\]]+\]\s*", re.I)
+NATURAL_NAME_PATTERNS = (
+    re.compile(
+        r"\bmy\s+name\s+is\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
+        re.I | re.S,
+    ),
+    re.compile(
+        r"\byou\s+can\s+call\s+me\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
+        re.I | re.S,
+    ),
+    re.compile(
+        r"\bcall\s+me\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
+        re.I | re.S,
+    ),
+)
 TREEJAR_MAPS_URL = (
     "https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z"
 )
@@ -1551,6 +1566,66 @@ def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
     return match.group("value").strip(" \t,;")
 
 
+def _strip_synthetic_test_marker(text: str) -> str:
+    return BOT_TEST_MARKER_RE.sub(" ", text).strip()
+
+
+def _clean_natural_customer_name(value: str) -> str:
+    name = BOT_TEST_MARKER_RE.sub(" ", value)
+    name = re.split(
+        r"\b(?:please|show|quote|quotation|price|stock|availability|need|want)\b",
+        name,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    name = " ".join(name.strip(" \t\r\n.,;:!?-").split())
+    if not name or len(name) > 80:
+        return ""
+    if len(name.split()) > 6:
+        return ""
+    return name
+
+
+def _extract_natural_customer_name(text: str) -> str:
+    stripped = _strip_synthetic_test_marker(text)
+    for pattern in NATURAL_NAME_PATTERNS:
+        match = pattern.search(stripped)
+        if not match:
+            continue
+        name = _clean_natural_customer_name(match.group("value"))
+        if name:
+            return name
+    return ""
+
+
+def _is_name_only_customer_detail_reply(
+    text: str,
+    details: Mapping[str, str],
+) -> bool:
+    if not _string_value(details.get("name")):
+        return False
+
+    stripped = _strip_synthetic_test_marker(text)
+    for pattern in NATURAL_NAME_PATTERNS:
+        match = pattern.search(stripped)
+        if not match:
+            continue
+        before = stripped[: match.start()].strip(" \t\r\n.,;:!")
+        after = stripped[match.end() :].strip(" \t\r\n.,;:!")
+        before_is_social = not before or before.casefold() in {
+            "hi",
+            "hello",
+            "hey",
+        }
+        after_is_social = not after or after.casefold() in {
+            "thanks",
+            "thank you",
+        }
+        return before_is_social and after_is_social
+
+    return False
+
+
 def _is_customer_phone_detail(text: str, match: re.Match[str]) -> bool:
     raw_phone = match.group(0).strip()
     if raw_phone.startswith("+"):
@@ -1588,6 +1663,10 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     )
     if name:
         details["name"] = name
+
+    natural_name = _extract_natural_customer_name(text)
+    if natural_name:
+        details["name"] = natural_name
 
     company = _labeled_detail_value(
         text,
@@ -1740,6 +1819,8 @@ async def _store_quote_customer_details(
     details = {**existing, **extracted}
     metadata[QUOTE_CUSTOMER_DETAILS_KEY] = details
     conversation.metadata_ = metadata
+    if details.get("name") and not _string_value(conversation.customer_name):
+        conversation.customer_name = details["name"]
     try:
         await db.flush()
     except Exception:
@@ -3821,19 +3902,35 @@ async def process_message(
         defer_product_media=True,
     )
 
-    if is_first_turn and not str(conv.customer_name or "").strip():
-        return _build_static_response(
+    customer_name_was_unknown = not str(conv.customer_name or "").strip()
+    current_quote_customer_details = _extract_quote_customer_details(combined_text)
+
+    if is_first_turn and customer_name_was_unknown:
+        response = _build_static_response(
             "Hello",
             "name-gate",
             allow_product_media=False,
         )
+        if current_quote_customer_details:
+            await _store_quote_customer_details(db, conv, combined_text)
+        return response
 
     # Store customer details from the original, unmasked text before any route
     # can call create_quotation. Phone is enough to create a draft, while the
     # other fields are optional PDF details when the customer provides them.
-    current_quote_customer_details = _extract_quote_customer_details(combined_text)
     if current_quote_customer_details:
         await _store_quote_customer_details(db, conv, combined_text)
+
+    if _is_name_only_customer_detail_reply(
+        combined_text,
+        current_quote_customer_details,
+    ):
+        return _build_static_response(
+            f"Thank you, {current_quote_customer_details['name']}. "
+            "How can I help you with your office furniture requirement?",
+            "name-capture",
+            allow_product_media=False,
+        )
 
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)
     try:
