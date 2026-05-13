@@ -374,6 +374,25 @@ async def test_send_template_strips_smoke_profile_suffix_from_chat_id(
     "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
     new_callable=AsyncMock,
 )
+async def test_send_typing_is_best_effort_noop_without_api_request(
+    mock_request: AsyncMock,
+    wazzup_provider: WazzupProvider,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="src.integrations.messaging.wazzup")
+
+    result = await wazzup_provider.send_typing("79998881122")
+
+    assert result is False
+    mock_request.assert_not_awaited()
+    assert "typing indicator is not supported" in caplog.text
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
 async def test_resolve_channel_phone_returns_normalized_plain_id(
     mock_request: AsyncMock, wazzup_provider: WazzupProvider
 ) -> None:

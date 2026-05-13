@@ -325,7 +325,7 @@ class TestSuite:
             assert response, "Empty response"
             assert len(response) > 20, "Response too short"
             response_lower = response.lower()
-            assert "siyyad" in response_lower, "Response must introduce Siyyad"
+            assert "noor" in response_lower, "Response must introduce Noor"
             assert "treejar" in response_lower, "Response must mention Treejar"
             assert any(
                 signal in response_lower

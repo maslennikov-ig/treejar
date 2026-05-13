@@ -76,38 +76,40 @@
         </tbody>
     </table>
 
-    <div class="summary-section">
-        <table class="summary-table">
-            <tr>
-                <th>TOTAL (AED):</th>
-                <td>{{ "%.2f"|format(subtotal|float) }}</td>
-            </tr>
-            <tr>
-                <th>VAT 5% (AED):</th>
-                <td>{{ "%.2f"|format(vat_amount|float) }}</td>
-            </tr>
-            <tr class="grand-total">
-                <th>GRAND TOTAL (AED):</th>
-                <td>{{ "%.2f"|format(grand_total|float) }}</td>
-            </tr>
-        </table>
-    </div>
+    <div class="closing-block">
+        <div class="summary-section">
+            <table class="summary-table">
+                <tr>
+                    <th>TOTAL (AED):</th>
+                    <td>{{ "%.2f"|format(subtotal|float) }}</td>
+                </tr>
+                <tr>
+                    <th>VAT 5% (AED):</th>
+                    <td>{{ "%.2f"|format(vat_amount|float) }}</td>
+                </tr>
+                <tr class="grand-total">
+                    <th>GRAND TOTAL (AED):</th>
+                    <td>{{ "%.2f"|format(grand_total|float) }}</td>
+                </tr>
+            </table>
+        </div>
 
-    <div class="footer-bottom">
-        <h4>Terms & Conditions</h4>
-        <ul>
-            <li><strong>Supplier:</strong> Treejar Trading FZC LLC</li>
-            <li><strong>Delivery:</strong> 02-08 working days from order confirmation</li>
-            <li><strong>Payment Terms:</strong> 50% advance, 50% after installation</li>
-            <li><strong>Validity:</strong> 15 days from date of quotation and/or till stock last</li>
-            <li><strong>Amendment:</strong> No alterations after PO issued</li>
-            <li><strong>Pictures:</strong> Illustration only, actual may vary</li>
-        </ul>
-        
-        <div class="quoted-by">
-            <p><strong>Quoted by:</strong> {{ manager.name }}</p>
-            <p>Mob: {{ manager.phone }}</p>
-            <p>Email: {{ manager.email }}</p>
+        <div class="footer-bottom">
+            <h4>Terms & Conditions</h4>
+            <ul>
+                <li><strong>Supplier:</strong> Treejar Trading FZC LLC</li>
+                <li><strong>Delivery:</strong> 02-08 working days from order confirmation</li>
+                <li><strong>Payment Terms:</strong> 50% advance, 50% after installation</li>
+                <li><strong>Validity:</strong> 15 days from date of quotation and/or till stock last</li>
+                <li><strong>Amendment:</strong> No alterations after PO issued</li>
+                <li><strong>Pictures:</strong> Illustration only, actual may vary</li>
+            </ul>
+
+            <div class="quoted-by">
+                <p><strong>Quoted by:</strong> {{ manager.name }}</p>
+                <p>Mob: {{ manager.phone }}</p>
+                <p>Email: {{ manager.email }}</p>
+            </div>
         </div>
     </div>
 </body>

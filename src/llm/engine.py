@@ -69,6 +69,7 @@ from src.services.customer_identity import (
     format_llm_crm_context,
 )
 from src.services.escalation_state import is_active_human_handoff
+from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,9 @@ VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
+TREEJAR_MAPS_URL = (
+    "https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z"
+)
 ORDER_HANDOFF_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SERVICE_POLICY_ALLOWED_TOOLS = frozenset({"escalate_to_manager", "update_language"})
 SELECTION_CONFIRMATION_ALLOWED_TOOLS = frozenset(
@@ -106,14 +110,14 @@ ORDER_HANDOFF_PASS_2_DIRECTIVES = (
 )
 EXACT_QUOTE_PASS_1_DIRECTIVES = (
     "the customer is asking for an exact quotation-ready commitment",
-    "do not ask for full name, company, or email before the quote draft",
+    "create_quotation requires customer name, company or explicit individual status, specific delivery address, and exact item quantities",
     "if exact sku and quantity are already known, confirm stock via get_stock and then call create_quotation immediately",
     "Treejar catalog price is the customer-facing commercial truth; Zoho rate is operational and must not replace or invalidate catalog price",
     "if Zoho cannot confirm the item, escalate to manager and do not promise exact price or availability",
 )
 EXACT_QUOTE_PASS_2_DIRECTIVES = (
     "previous pass stayed consultative on an exact quotation-ready request",
-    "do not ask for company details first",
+    "do not call create_quotation until customer name, company or explicit individual status, specific delivery address, and exact item quantities are present",
     "use Zoho-confirmed stock but keep Treejar catalog price as the customer-facing commercial price",
     "if exact sku and quantity are already known, call create_quotation immediately after confirmation",
 )
@@ -187,7 +191,31 @@ _EXACT_QUOTE_HIGH_RISK_BLOCKERS = (
     "special price",
 )
 _QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
-_SKU_SIGNAL_RE = re.compile(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b")
+_SKU_SIGNAL_RE = re.compile(
+    r"\b(?:[a-z]{1,4}[-\s]?\d{2,8}|\d{2,}(?:-\d{2,})+|[a-z0-9]+(?:-[a-z0-9]+)+)\b",
+    re.IGNORECASE,
+)
+_SKU_PRICE_PREFIX_STOPWORDS = frozenset(
+    {
+        "aed",
+        "dhs",
+        "from",
+        "max",
+        "min",
+        "to",
+    }
+)
+_SKU_PRODUCT_PREFIX_STOPWORDS = frozenset(
+    {
+        "desk",
+        "pod",
+        "sofa",
+    }
+)
+_SKU_FOLLOWING_CURRENCY_RE = re.compile(
+    r"\s*(?:aed|dhs?|dirhams?|dirham|درهم|د\.إ)\b",
+    re.IGNORECASE,
+)
 _QUANTITY_ITEM_SIGNAL_RE = re.compile(
     r"\b(?P<quantity>\d{1,4})\b\s+(?P<item>[^?.!,;\n]+)",
     re.IGNORECASE,
@@ -513,6 +541,45 @@ def _normalize_sku_homoglyphs(text: str) -> str:
     return text.translate(_SKU_HOMOGLYPH_TRANSLATION)
 
 
+def _canonicalize_sku_signal(value: str) -> str:
+    normalized = " ".join(_normalize_sku_homoglyphs(value).split()).strip().upper()
+    compact_match = re.fullmatch(r"([A-Z]{1,4})[-\s]?(\d{2,8})", normalized)
+    if compact_match:
+        return f"{compact_match.group(1)}-{compact_match.group(2)}"
+    return re.sub(r"\s+", "-", normalized)
+
+
+def _looks_like_price_phrase_sku_match(text: str, match: re.Match[str]) -> bool:
+    normalized_match = " ".join(
+        _normalize_sku_homoglyphs(match.group(0)).split()
+    ).strip()
+    compact_match = re.fullmatch(
+        r"([A-Z]{1,4})[-\s]?(\d{2,8})",
+        normalized_match.upper(),
+    )
+    if not compact_match:
+        return False
+
+    prefix = compact_match.group(1).casefold()
+    if prefix in _SKU_PRICE_PREFIX_STOPWORDS:
+        return True
+
+    suffix = text[match.end() : match.end() + 24]
+    return (
+        prefix in _SKU_PRODUCT_PREFIX_STOPWORDS
+        and _SKU_FOLLOWING_CURRENCY_RE.match(suffix) is not None
+    )
+
+
+def _extract_sku_signal(text: str) -> str | None:
+    normalized_text = _normalize_sku_homoglyphs(text)
+    for match in _SKU_SIGNAL_RE.finditer(normalized_text):
+        if _looks_like_price_phrase_sku_match(normalized_text, match):
+            continue
+        return _canonicalize_sku_signal(match.group(0))
+    return None
+
+
 def _tokenize_exact_match_text(text: str) -> list[str]:
     return [
         token
@@ -589,6 +656,7 @@ def _extract_sales_order_quote_items(
     text: str,
 ) -> tuple[ExactQuoteCandidate, ...] | None:
     """Parse sales-order item lists where the quantity follows the item name."""
+    text = _normalize_sku_homoglyphs(text)
     body = _extract_sales_order_body(text)
     if not body:
         return None
@@ -598,12 +666,12 @@ def _extract_sales_order_quote_items(
         item_candidate = _clean_sales_order_item_candidate(match.group("item"))
         if not _looks_like_exact_item_candidate(item_candidate):
             continue
-        sku_match = re.search(_SKU_SIGNAL_RE.pattern, item_candidate, re.IGNORECASE)
+        sku = _extract_sku_signal(item_candidate)
         items.append(
             ExactQuoteCandidate(
                 quantity=int(match.group("quantity")),
                 item_candidate=item_candidate,
-                sku=sku_match.group(0).upper() if sku_match else None,
+                sku=sku,
             )
         )
 
@@ -651,8 +719,27 @@ def _service_confirmation_handoff_text() -> str:
     )
 
 
+def _showroom_location_response(language: str) -> str:
+    normalized = str(language or "").strip().casefold()
+    if normalized in {"ar", "arabic", "العربية"}:
+        return (
+            "يقع معرض Treejar في دبي. يمكنك فتح الموقع على خرائط Google هنا: "
+            f"{TREEJAR_MAPS_URL}"
+        )
+    if normalized in {"ru", "russian", "русский"}:
+        return (
+            "Шоурум Treejar находится в Дубае. Откройте точку на Google Maps: "
+            f"{TREEJAR_MAPS_URL}"
+        )
+    return (
+        "Treejar showroom is in Dubai. Open the location on Google Maps: "
+        f"{TREEJAR_MAPS_URL}"
+    )
+
+
 def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
     """Parse a concrete quantity + item request that should stay on the exact-quote path."""
+    text = _normalize_sku_homoglyphs(text)
     normalized = _normalize_text(text)
     if not normalized or not _has_exact_commitment_intent(normalized):
         return None
@@ -664,8 +751,7 @@ def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
         if not _looks_like_exact_item_candidate(item_candidate):
             continue
 
-        sku_match = re.search(_SKU_SIGNAL_RE.pattern, item_candidate, re.IGNORECASE)
-        sku = sku_match.group(0).upper() if sku_match else None
+        sku = _extract_sku_signal(item_candidate)
         return ExactQuoteCandidate(
             quantity=quantity,
             item_candidate=item_candidate,
@@ -1411,6 +1497,32 @@ async def _store_pending_sales_order_quote(
         )
 
 
+async def _store_pending_exact_quote(
+    db: AsyncSession,
+    conversation: Conversation,
+    items: list[QuotationItem],
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata[PENDING_QUOTE_SELECTION_KEY] = {
+        "source": "exact_quote",
+        "items": [
+            {"sku": item.sku.strip(), "quantity": item.quantity}
+            for item in items
+            if item.sku.strip() and item.quantity > 0
+        ],
+        "unresolved_items": [],
+    }
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush pending exact quote for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
 def _quote_customer_details_from_metadata(
     conversation: Conversation,
 ) -> dict[str, str]:
@@ -1421,7 +1533,7 @@ def _quote_customer_details_from_metadata(
     if not isinstance(raw_details, Mapping):
         return {}
     details: dict[str, str] = {}
-    for key in ("name", "company", "email", "phone", "address"):
+    for key in ("name", "company", "email", "phone", "address", "customer_type"):
         value = raw_details.get(key)
         if isinstance(value, str) and value.strip():
             details[key] = value.strip()
@@ -1506,7 +1618,112 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     if address:
         details["address"] = address
 
+    normalized = _normalize_text(text)
+    if re.search(
+        r"\b(?:individual|personal|private customer|for myself)\b",
+        normalized,
+    ) or re.search(r"(?:частное\s+лицо|для\s+себя|лично)", text, re.IGNORECASE):
+        details["customer_type"] = "individual"
+
     return details
+
+
+def _quote_context_details_from_deps(deps: SalesDeps) -> dict[str, str]:
+    conversation = deps.conversation
+    details: dict[str, str] = {}
+    customer_name = _string_value(getattr(conversation, "customer_name", None))
+    if customer_name:
+        details["name"] = customer_name
+
+    if deps.crm_context:
+        crm_name = _string_value(
+            deps.crm_context.get("Name") or deps.crm_context.get("Full_Name")
+        )
+        crm_email = _string_value(deps.crm_context.get("Email"))
+        crm_company = _string_value(
+            deps.crm_context.get("Company") or deps.crm_context.get("Account_Name")
+        )
+        if crm_name:
+            details["name"] = crm_name
+        if crm_email:
+            details["email"] = crm_email
+        if crm_company:
+            details["company"] = crm_company
+
+    quote_details = _quote_customer_details_from_metadata(conversation)
+    details.update(quote_details)
+    return details
+
+
+def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
+    customer_type = _normalize_text(details.get("customer_type", ""))
+    company = _normalize_text(details.get("company", ""))
+    return customer_type in {
+        "individual",
+        "personal",
+        "private customer",
+    } or company in {
+        "individual",
+        "personal",
+        "private customer",
+        "частное лицо",
+    }
+
+
+def _is_specific_delivery_address(address: str | None) -> bool:
+    value = _string_value(address)
+    if not value:
+        return False
+    normalized = re.sub(r"[\W_]+", " ", value.casefold()).strip()
+    generic_addresses = {
+        "uae",
+        "u a e",
+        "united arab emirates",
+        "emirates",
+        "dubai",
+        "abu dhabi",
+        "sharjah",
+        "ajman",
+        "ras al khaimah",
+        "fujairah",
+        "umm al quwain",
+        "оаэ",
+        "дубай",
+    }
+    if normalized in generic_addresses:
+        return False
+    tokens = [token for token in normalized.split() if token]
+    return len(tokens) >= 2 or bool(re.search(r"\d", value))
+
+
+def _quote_missing_required_details(
+    deps: SalesDeps,
+    items: list[QuotationItem],
+) -> list[str]:
+    details = _quote_context_details_from_deps(deps)
+    missing: list[str] = []
+    if not items or not all(item.quantity > 0 and item.sku.strip() for item in items):
+        missing.append("items and quantities")
+    if not _string_value(details.get("name")):
+        missing.append("customer name")
+    if not _string_value(
+        details.get("company")
+    ) and not _is_explicit_individual_customer(details):
+        missing.append("company name, or confirm you are buying as an individual")
+    if not _is_specific_delivery_address(details.get("address")):
+        missing.append("specific delivery address")
+    return missing
+
+
+def _quote_missing_required_details_message(missing: list[str]) -> str:
+    if not missing:
+        return ""
+    return (
+        "Before I prepare the quotation, please share: "
+        f"{'; '.join(missing)}. "
+        "I need these details to put the correct customer and delivery information "
+        "on the PDF."
+    )
 
 
 async def _store_quote_customer_details(
@@ -1662,12 +1879,12 @@ def _sales_order_followup_candidates(
     if not _looks_like_exact_item_candidate(item_candidate):
         return ()
 
-    sku_match = re.search(_SKU_SIGNAL_RE.pattern, item_candidate, re.IGNORECASE)
+    sku = _extract_sku_signal(item_candidate)
     return (
         ExactQuoteCandidate(
             quantity=unresolved_items[0].quantity,
             item_candidate=item_candidate,
-            sku=sku_match.group(0).upper() if sku_match else None,
+            sku=sku,
         ),
     )
 
@@ -2442,16 +2659,25 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
 # NOTE: Function name MUST match prompt references (prompts.py) exactly.
 # PydanticAI derives tool name from function name.
 @sales_agent.tool
-async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolReturn:
+async def search_products(
+    ctx: RunContext[SalesDeps],
+    query: str,
+    max_price: float | None = None,
+    min_price: float | None = None,
+) -> str | ToolReturn:
     """Search for products in the Treejar catalog based on the customer's query.
     Call this whenever a customer asks for recommendations, prices, or product features.
 
     Args:
         query: What the customer is looking for (e.g. "ergonomic chair under $500")
+        max_price: Optional upper price limit in AED.
+        min_price: Optional lower price limit in AED.
     """
     logger.info(
-        "LLM Tool requested: search_products(query=%r, executed_calls=%d)",
+        "LLM Tool requested: search_products(query=%r, min_price=%r, max_price=%r, executed_calls=%d)",
         query,
+        min_price,
+        max_price,
         ctx.deps.product_search_calls,
     )
     if ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
@@ -2473,7 +2699,12 @@ async def search_products(ctx: RunContext[SalesDeps], query: str) -> str | ToolR
         MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE,
         query,
     )
-    search_query = ProductSearchQuery(query=query, limit=3)
+    search_query = ProductSearchQuery(
+        query=query,
+        limit=3,
+        min_price=min_price,
+        max_price=max_price,
+    )
 
     results = await rag_search_products(
         db=ctx.deps.db,
@@ -2822,12 +3053,16 @@ async def create_quotation(
 ) -> str:
     """Generate a formal PDF quotation for the customer, save it to Zoho Inventory as a draft, and send it via WhatsApp.
     Call this when the customer has explicitly asked for a quote and confirmed the items and quantities.
-    Do not block on missing full name, company name, or email: use CRM/conversation fallback and resolve or create a valid Inventory customer first.
+    Block before Zoho/PDF/send if customer name, company-or-explicit-individual, specific delivery address, or item quantities are missing.
 
     Args:
         items: List of the SKUs and quantities to include in the quote.
     """
     logger.info(f"LLM Tool called: create_quotation(items={items})")
+
+    missing_required = _quote_missing_required_details(ctx.deps, items)
+    if missing_required:
+        return _quote_missing_required_details_message(missing_required)
 
     # Needs to fetch item details from Zoho Inventory
     skus_to_fetch = [item.sku for item in items]
@@ -2945,11 +3180,13 @@ async def create_quotation(
     for ti in template_items:
         ti.pop("_catalog_image_url", None)
 
-    # Resolve customer data from CRM or conversation context
-    # Priority: CRM contact > crm_context > conversation fields > fallback
-    customer_name = ctx.deps.conversation.customer_name or "Valued Customer"
+    # Resolve customer data from CRM or conversation context.
+    # Priority: CRM contact > crm_context > conversation fields > quote metadata.
+    context_details = _quote_context_details_from_deps(ctx.deps)
+    customer_name = context_details.get("name", "")
     customer_email = ""
-    customer_company = ""
+    customer_company = context_details.get("company", "")
+    customer_address = context_details.get("address", "")
 
     if ctx.deps.zoho_crm:
         contact = await ctx.deps.zoho_crm.find_contact_by_phone(
@@ -2986,7 +3223,7 @@ async def create_quotation(
     customer_email = quote_customer_details.get("email") or customer_email
     customer_company = quote_customer_details.get("company") or customer_company
     customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
-    customer_address = quote_customer_details.get("address") or "UAE"
+    customer_address = quote_customer_details.get("address") or customer_address
 
     customer_id = await resolve_inventory_customer_id(
         phone=ctx.deps.conversation.phone,
@@ -3062,7 +3299,7 @@ async def create_quotation(
 
     pdf_filename = f"quotation_{quote_number}.pdf"
     try:
-        await ctx.deps.messaging_client.send_media(
+        media_message_id = await ctx.deps.messaging_client.send_media(
             chat_id=ctx.deps.conversation.phone,
             content=pdf_bytes,
             content_type="application/pdf",
@@ -3071,6 +3308,20 @@ async def create_quotation(
     except Exception as e:
         logger.error("Failed to send quotation PDF %s to customer: %s", pdf_filename, e)
         return await _fail_closed_exact_quote_request(ctx.deps)
+
+    record_proposal_sent(
+        ctx.deps.conversation,
+        sent_at=_dt.datetime.now(_dt.UTC),
+        kp_message_id=_string_value(media_message_id) or quote_number,
+    )
+    try:
+        await ctx.deps.db.flush()
+    except Exception as flush_err:
+        logger.warning(
+            "Failed to persist proposal follow-up metadata for %s: %s",
+            quote_number,
+            flush_err,
+        )
 
     ctx.deps.quotation_created = True
     return f"Quotation {quote_number} has been prepared and sent to you."
@@ -3844,6 +4095,26 @@ async def process_message(
             if resolved_exact_sku:
                 from pydantic_ai.usage import RunUsage
 
+                exact_quote_items = [
+                    QuotationItem(
+                        sku=resolved_exact_sku,
+                        quantity=exact_quote_candidate.quantity,
+                    )
+                ]
+                missing_required = _quote_missing_required_details(
+                    second_exact_deps,
+                    exact_quote_items,
+                )
+                if missing_required:
+                    await _store_pending_exact_quote(db, conv, exact_quote_items)
+                    await _clear_verified_policy_repair_state()
+                    return _build_static_response(
+                        _quote_missing_required_details_message(missing_required),
+                        f"{db_model_main}|exact-quote-missing-details",
+                        response_deps=second_exact_deps,
+                        allow_product_media=False,
+                    )
+
                 fallback_ctx = RunContext(
                     deps=second_exact_deps,
                     retry=0,
@@ -3854,12 +4125,7 @@ async def process_message(
                 )
                 fallback_text = await create_quotation(
                     fallback_ctx,
-                    [
-                        QuotationItem(
-                            sku=resolved_exact_sku,
-                            quantity=exact_quote_candidate.quantity,
-                        )
-                    ],
+                    exact_quote_items,
                 )
                 if second_exact_deps.quotation_created or _has_escalation(conv):
                     await _clear_verified_policy_repair_state()
@@ -4011,6 +4277,17 @@ async def process_message(
             return _build_static_response(
                 _service_confirmation_handoff_text(),
                 f"{db_model_main}|service-confirmation-handoff",
+                allow_product_media=False,
+            )
+
+        if (
+            not policy_decision.is_order_status
+            and "showroom" in policy_decision.matched_topics
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _showroom_location_response(str(deps.conversation.language)),
+                f"{db_model_main}|showroom-location",
                 allow_product_media=False,
             )
 

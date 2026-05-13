@@ -27,12 +27,9 @@ def main(argv: list[str]) -> int:
     if not summary_path.exists():
         errors.append(f"missing stage summary: {summary_path}")
 
-    if not artifacts_dir.exists():
-        errors.append(f"missing artifacts directory: {artifacts_dir}")
-
     artifacts = sorted(artifacts_dir.glob("*.md")) if artifacts_dir.exists() else []
     if not artifacts:
-        errors.append(f"stage {stage_id} has no tracked artifacts")
+        errors.append(f"missing stage artifacts: {artifacts_dir}")
 
     if handoff_path.exists():
         handoff_text = handoff_path.read_text()
@@ -55,7 +52,11 @@ def main(argv: list[str]) -> int:
             print(error, file=sys.stderr)
         return 1
 
-    subprocess.run([sys.executable, str(validator), *[str(path) for path in artifacts]], check=True)
+    if artifacts:
+        subprocess.run(
+            [sys.executable, str(validator), *[str(path) for path in artifacts]],
+            check=True,
+        )
     print(f"stage {stage_id} ready")
     return 0
 

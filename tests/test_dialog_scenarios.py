@@ -62,8 +62,7 @@ def _mock_conversation(
 
 
 def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
-    assert text.startswith("Hello, I'm Siyyad from Treejar.")
-    assert "May I know your name so I can address you properly?" in text
+    assert text.startswith("Hello, I'm Noor from Treejar.")
     assert text.endswith(expected_tail)
 
 
@@ -182,7 +181,7 @@ class TestScenario1HappyPath:
                 ]
             )
 
-        conv = _mock_conversation(SalesStage.SOLUTION)
+        conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         deps = _mock_deps(conv)
 
         with sales_agent.override(model=FunctionModel(model_fn)):
@@ -359,6 +358,15 @@ class TestScenario3QuotationFlow:
         conv = _mock_conversation(
             SalesStage.QUOTING, customer_name="Sarah", phone="+971509876543"
         )
+        conv.metadata_ = {
+            "quote_customer_details": {
+                "name": "Sarah",
+                "company": "Scenario Trading LLC",
+                "email": "sarah@example.com",
+                "phone": "+971509876543",
+                "address": "Dubai Marina, Tower A",
+            }
+        }
 
         # Redis must be AsyncMock for setex/get (not MagicMock from spec=Redis)
         mock_redis = AsyncMock()
@@ -450,7 +458,7 @@ class TestScenario4Escalation:
                 ]
             )
 
-        conv = _mock_conversation(SalesStage.SOLUTION)
+        conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         deps = _mock_deps(conv)
         deps.recent_history = ["user: Let me speak to your manager NOW!"]
 
@@ -564,7 +572,7 @@ class TestScenario5MultiToolChaining:
                     ]
                 )
 
-        conv = _mock_conversation(SalesStage.SOLUTION)
+        conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         deps = _mock_deps(conv, zoho_inventory=mock_inv)
 
         with sales_agent.override(model=FunctionModel(model_fn)):
@@ -643,7 +651,7 @@ class TestScenario6ProductSearchCap:
                 ]
             )
 
-        conv = _mock_conversation(SalesStage.SOLUTION)
+        conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         deps = _mock_deps(conv)
 
         with sales_agent.override(model=FunctionModel(model_fn)):
@@ -693,7 +701,7 @@ class TestScenario7OrderHandoffGuard:
         mock_get_system_config.return_value = "test-model"
         mock_search_knowledge.return_value = []
 
-        conv = _mock_conversation(SalesStage.SOLUTION)
+        conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         db = AsyncMock(spec=AsyncSession)
         db.get.return_value = conv
         redis = AsyncMock(spec=Redis)
@@ -802,7 +810,7 @@ class TestScenario7OrderHandoffGuard:
             total_found=0,
         )
 
-        conv = _mock_conversation(SalesStage.SOLUTION)
+        conv = _mock_conversation(SalesStage.SOLUTION, customer_name="Sarah")
         db = AsyncMock(spec=AsyncSession)
         db.get.return_value = conv
         redis = AsyncMock(spec=Redis)
@@ -910,7 +918,7 @@ class TestScenario7OrderHandoffGuard:
             total_found=1,
         )
 
-        conv = _mock_conversation(SalesStage.NEEDS_ANALYSIS)
+        conv = _mock_conversation(SalesStage.NEEDS_ANALYSIS, customer_name="Sarah")
         db = AsyncMock(spec=AsyncSession)
         db.get.return_value = conv
         redis = AsyncMock(spec=Redis)

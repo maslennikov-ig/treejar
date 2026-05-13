@@ -11,7 +11,7 @@ multi_repo = false
 launch_mode = "direct_or_orchestrated"
 
 [baseline]
-profile = "balanced-v2.5"
+profile = "balanced-v2.7"
 source_skill = "orchestration-setup"
 
 [execution]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,6 +8,7 @@ import pytest
 
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import process_incoming_batch
+from src.services.proposal_followup import record_proposal_sent
 
 
 class MockResult:
@@ -251,6 +253,419 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
     )
     assert mock_wazzup.send_media.await_args.kwargs["caption"] == (
         "Operative table — 179.00 AED"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_refreshes_typing_while_llm_runs(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    from src.llm import LLMResponse
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-typing"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
+    ]
+
+    async def _slow_process_message(**_: object) -> LLMResponse:
+        await asyncio.sleep(0.025)
+        return LLMResponse(
+            text="Typing-aware reply",
+            tokens_in=10,
+            tokens_out=20,
+            cost=0.05,
+            model="test-model",
+        )
+
+    mock_process_message.side_effect = _slow_process_message
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-text"
+    mock_wazzup.send_typing = AsyncMock()
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-typing",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        patch("src.services.chat.TYPING_REFRESH_INTERVAL_SECONDS", 0.01),
+    ):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    assert mock_wazzup.send_typing.await_count >= 2
+    mock_wazzup.send_typing.assert_any_await("1234567890")
+    mock_wazzup.send_text.assert_awaited_once()
+    mock_wazzup_cls.assert_called_once_with(channel_id="chan-1")
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_ignores_typing_failures(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    from src.llm import LLMResponse
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-typing-failure"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="Reply despite typing failure",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-text"
+    mock_wazzup.send_typing = AsyncMock(side_effect=RuntimeError("unsupported"))
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-typing-failure",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_wazzup.send_typing.assert_awaited()
+    mock_wazzup.send_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_skips_typing_loop_when_provider_unsupported(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    from src.llm import LLMResponse
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-no-typing-support"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),
+        MockResult(existing_conv),
+        MockResult([]),
+        MockResult(2),
+        MockResult(None),
+        MockResult(None),
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="Reply without typing churn",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup.supports_typing_indicator = False
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-text"
+    mock_wazzup.send_typing = AsyncMock()
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-no-typing-support",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_wazzup.send_typing.assert_not_awaited()
+    mock_wazzup.send_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_stops_proposal_followup_on_customer_reply(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    from src.llm import LLMResponse
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-proposal-followup"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+    record_proposal_sent(
+        existing_conv,
+        sent_at=datetime.fromisoformat("2026-05-04T08:00:00+00:00"),
+        kp_message_id="quotation-media-1",
+    )
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="I will update the quotation details.",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-text"
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-proposal-reply",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Please update it for five chairs.",
+        channelId="chan-1",
+        timestamp=1777896000,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    proposal_state = existing_conv.metadata_["proposal_followup"]
+    assert proposal_state["chain_stopped"] is True
+    assert proposal_state["stop_reason"] == "customer_reply"
+    mock_process_message.assert_awaited_once()
+    mock_wazzup.send_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_typing_failure_does_not_block_timeout_fallback(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-typing-timeout"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.language = "en"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(None),  # timeout fallback audit idempotency lookup
+    ]
+
+    async def _never_finishes(**_: object) -> None:
+        await asyncio.sleep(0.05)
+
+    mock_process_message.side_effect = _never_finishes
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.return_value = "msg-timeout"
+    mock_wazzup.send_typing = AsyncMock(side_effect=RuntimeError("unsupported"))
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-typing-timeout",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
+        patch("src.services.chat.LLM_TIMEOUT", 0.01),
+    ):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_wazzup.send_typing.assert_awaited()
+    mock_wazzup.send_text.assert_awaited_once()
+    assert mock_wazzup.send_text.await_args.args == (
+        "1234567890",
+        "Sorry, I'm currently overloaded. Please try again in a minute.",
     )
 
 

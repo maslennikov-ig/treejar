@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import re
 
-_EN_IDENTITY = "Hello, I'm Siyyad from Treejar."
+_EN_IDENTITY = "Hello, I'm Noor from Treejar."
 _EN_NAME_QUESTION = "May I know your name so I can address you properly?"
-_AR_IDENTITY = "مرحبًا، أنا Siyyad من Treejar."
+_AR_IDENTITY = "مرحبًا، أنا Noor من Treejar."
 _AR_NAME_QUESTION = "هل يمكنني معرفة اسمك لأخاطبك بشكل مناسب؟"
 
 _EN_NAME_QUESTION_SIGNALS = (
@@ -34,7 +34,7 @@ def _is_arabic_language(language: str) -> bool:
 
 def _has_identity(text: str) -> bool:
     normalized = text.casefold()
-    return "siyyad" in normalized and "treejar" in normalized
+    return "noor" in normalized and "treejar" in normalized
 
 
 def _has_name_question(text: str) -> bool:
@@ -61,6 +61,25 @@ def _strip_generic_english_opening(text: str) -> str:
     return body.lstrip() or text.lstrip()
 
 
+def _strip_legacy_identity(text: str) -> str:
+    body = text.lstrip()
+    body = re.sub(
+        r"\A(?:hello|hi|hey)?[\s!,.:-]*(?:i(?:'| a)m|i am)\s+"
+        r"(?:si[y]yad|noor)\s+from\s+treejar[\s!,.:-]*",
+        "",
+        body,
+        count=1,
+        flags=re.I,
+    )
+    body = re.sub(
+        r"\Aمرحبًا،\s*أنا\s+(?:Si[y]yad|Noor)\s+من\s+Treejar[\s.،!]*",
+        "",
+        body,
+        count=1,
+    )
+    return body.lstrip()
+
+
 def apply_opening_guard(
     text: str,
     *,
@@ -80,10 +99,12 @@ def apply_opening_guard(
     identity = _AR_IDENTITY if is_arabic else _EN_IDENTITY
     name_question = _AR_NAME_QUESTION if is_arabic else _EN_NAME_QUESTION
 
+    if not _has_customer_name(customer_name):
+        return f"{identity} {name_question}"
+
+    body = _strip_legacy_identity(body) or body
     needs_identity = not _has_identity(body)
-    needs_name_question = not _has_customer_name(
-        customer_name
-    ) and not _has_name_question(body)
+    needs_name_question = False
 
     if not needs_identity and not needs_name_question:
         return text

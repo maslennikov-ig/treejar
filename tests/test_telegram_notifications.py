@@ -386,7 +386,7 @@ async def test_red_flag_warning_formatting() -> None:
             RedFlagItem(
                 code="missing_identity",
                 title="Missing identity",
-                explanation="The first reply omitted Siyyad and Treejar.",
+                explanation="The first reply omitted Noor and Treejar.",
                 evidence=["Hello, how can I help?", "Tell me what you need."],
             )
         ],
@@ -402,7 +402,7 @@ async def test_red_flag_warning_formatting() -> None:
     assert "09.04.2026 14:00" in msg
     assert "приветствие" in msg
     assert "Нет идентификации" in msg
-    assert "Ассистент не представился как Siyyad из Treejar" in msg
+    assert "Ассистент не представился как Noor из Treejar" in msg
     assert "Hello, how can I help?" in msg
     assert "Рекомендуемое действие" in msg
 
@@ -559,7 +559,7 @@ async def test_notify_red_flag_warning_calls_telegram() -> None:
                 RedFlagItem(
                     code="missing_identity",
                     title="Missing identity",
-                    explanation="The first reply omitted Siyyad and Treejar.",
+                    explanation="The first reply omitted Noor and Treejar.",
                     evidence=["Hello, how can I help?"],
                 )
             ],

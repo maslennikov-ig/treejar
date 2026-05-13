@@ -48,7 +48,7 @@ async def test_quality_evaluation_e2e_pipeline() -> None:
     mock_msg_user.content = "Hello, I need office chairs."
     mock_msg_assistant = MagicMock()
     mock_msg_assistant.role = "assistant"
-    mock_msg_assistant.content = "Hi! I'm Siyyad from Treejar. How can I help?"
+    mock_msg_assistant.content = "Hi! I'm Noor from Treejar. How can I help?"
 
     mock_db = AsyncMock()
     mock_scalars = MagicMock()
@@ -73,7 +73,7 @@ async def test_quality_evaluation_e2e_pipeline() -> None:
     prompt = mock_agent.run.call_args[0][0]
     assert "<BOUNDED_REVIEW_CONTEXT" in prompt
     assert "</BOUNDED_REVIEW_CONTEXT>" in prompt
-    assert "Siyyad" in prompt
+    assert "Noor" in prompt
 
 
 # =============================================================================

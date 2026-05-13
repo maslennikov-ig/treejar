@@ -107,7 +107,7 @@ _RED_FLAG_TITLE_LABELS: Mapping[str, str] = {
 }
 
 _RED_FLAG_EXPLANATION_LABELS: Mapping[str, str] = {
-    "missing_identity": "Ассистент не представился как Siyyad из Treejar в первом ответе.",
+    "missing_identity": "Ассистент не представился как Noor из Treejar в первом ответе.",
     "hard_deflection": "Ассистент слишком быстро перевёл клиента на менеджера без попытки помочь.",
     "unverified_commitment": "Ассистент пообещал факты или обязательства без подтверждения в контексте.",
     "ignored_question": "Прямой вопрос клиента не получил содержательного ответа.",

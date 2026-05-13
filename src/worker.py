@@ -23,6 +23,7 @@ from src.services.chat import process_incoming_batch
 from src.services.followup import run_automatic_followups, run_feedback_requests
 from src.services.metrics import calculate_and_store_metrics
 from src.services.notifications import run_daily_summary
+from src.services.proposal_followup import run_proposal_followups
 from src.services.reports import run_weekly_report
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ class WorkerSettings:
         process_incoming_batch,
         refresh_conversation_summary,
         run_automatic_followups,
+        run_proposal_followups,
         run_feedback_requests,
         calculate_and_store_metrics,
         evaluate_realtime_red_flags,
@@ -96,6 +98,7 @@ class WorkerSettings:
             run_at_startup=False,
         ),
         cron(run_automatic_followups, minute={0}, run_at_startup=False),
+        cron(run_proposal_followups, minute={15}, run_at_startup=False),
         cron(run_feedback_requests, hour={10}, minute={0}, run_at_startup=False),
         cron(
             calculate_and_store_metrics,

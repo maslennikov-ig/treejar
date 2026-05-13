@@ -13,6 +13,9 @@ PROCESS_VERIFICATION = (
     REPO_ROOT / "scripts" / "orchestration" / "run_process_verification.sh"
 )
 RUNTIME_SUPPORT = REPO_ROOT / "scripts" / "orchestration" / "runtime_support.py"
+STAGE_CLOSEOUT = REPO_ROOT / "scripts" / "orchestration" / "run_stage_closeout.py"
+STAGE_CLEANUP = REPO_ROOT / "scripts" / "orchestration" / "cleanup_stage_workspace.py"
+CHECK_STAGE_READY = REPO_ROOT / "scripts" / "orchestration" / "check_stage_ready.py"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -30,6 +33,91 @@ def _load_runtime_support():
 
 
 class ProcessVerificationTests(unittest.TestCase):
+    def test_stage_ready_requires_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            stage_dir = tmp_path / ".codex" / "stages" / "tj-no-artifacts"
+            stage_dir.mkdir(parents=True)
+            (stage_dir / "summary.md").write_text(
+                "# Stage tj-no-artifacts\n\nproject-index: reviewed-no-change\n"
+            )
+            (tmp_path / ".codex" / "handoff.md").write_text(
+                "# Handoff\n\n"
+                "Stage tj-no-artifacts is under review.\n\n"
+                "## Explicit defers\n\n"
+                "- tracked bead covers the blocker.\n"
+            )
+
+            result = subprocess.run(
+                [sys.executable, str(CHECK_STAGE_READY), "tj-no-artifacts"],
+                cwd=tmp_path,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing stage artifacts", result.stderr)
+
+    def test_stage_closeout_requires_artifacts_when_contract_requires_them(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            stage_dir = tmp_path / ".codex" / "stages" / "tj-no-artifacts"
+            stage_dir.mkdir(parents=True)
+            (stage_dir / "summary.md").write_text(
+                "# Stage tj-no-artifacts\n\nproject-index: reviewed-no-change\n"
+            )
+            (tmp_path / ".codex" / "handoff.md").write_text(
+                "# Handoff\n\n"
+                "Stage tj-no-artifacts is under review.\n\n"
+                "## Explicit defers\n\n"
+                "- tracked bead covers the blocker.\n"
+            )
+            (tmp_path / ".codex" / "orchestrator.toml").write_text(
+                "\n".join(
+                    [
+                        'handoff_file = ".codex/handoff.md"',
+                        "",
+                        "[enforcement]",
+                        'process_verification_entrypoint = "scripts/orchestration/run_process_verification.sh"',
+                        "artifact_required_for_stage_close = true",
+                        "",
+                        "[verification]",
+                        "",
+                    ]
+                )
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(STAGE_CLOSEOUT),
+                    "--stage",
+                    "tj-no-artifacts",
+                    "--dry-run",
+                    "--skip-process-check",
+                ],
+                cwd=tmp_path,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing stage artifacts", result.stderr)
+
+    def test_stage_scripts_bootstrap_tomllib_runtime_before_import(self) -> None:
+        for path in (STAGE_CLOSEOUT, STAGE_CLEANUP):
+            text = path.read_text()
+            self.assertIn("ensure_tomllib_runtime", text)
+            self.assertLess(
+                text.index("ensure_tomllib_runtime"),
+                text.index("import tomllib"),
+                f"{path.name} must re-exec Python 3.10 before importing tomllib",
+            )
+
     def test_runtime_support_reexecs_with_uv_for_python_without_tomllib(self) -> None:
         runtime_support = _load_runtime_support()
         exec_calls: list[tuple[str, list[str]]] = []

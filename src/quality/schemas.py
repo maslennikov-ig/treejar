@@ -17,7 +17,7 @@ RedFlagCode = Literal[
 ]
 
 RULE_NAMES: dict[int, str] = {
-    1: "Always greeting + name (Siyyad) + company (Treejar).",
+    1: "Always greeting + name (Noor) + company (Treejar).",
     2: "Polite greeting and introduction.",
     3: "Asked how to address the customer.",
     4: "Friendly tone and active listening.",

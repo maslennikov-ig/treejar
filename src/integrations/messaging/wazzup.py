@@ -30,6 +30,8 @@ class WazzupMediaSendResult:
 class WazzupProvider(MessagingProvider):
     """Wazzup API client implementing MessagingProvider protocol."""
 
+    supports_typing_indicator = False
+
     def __init__(self, channel_id: str | None = None) -> None:
         """Initialize the Wazzup API client.
 
@@ -217,6 +219,20 @@ class WazzupProvider(MessagingProvider):
 
         response = await self._request("POST", "/message", json=payload)
         return self._extract_message_id(response.json())
+
+    async def send_typing(self, chat_id: str) -> bool:
+        """Best-effort typing indicator.
+
+        Public Wazzup API docs used by this project do not expose a supported
+        typing endpoint, so this intentionally remains a no-op instead of
+        guessing an undocumented request shape.
+        """
+        outbound_chat_id = self._outbound_chat_id(chat_id)
+        logger.info(
+            "Wazzup typing indicator is not supported; no-op for chat_id=%s",
+            outbound_chat_id,
+        )
+        return False
 
     async def send_media_detailed(
         self,

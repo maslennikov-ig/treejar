@@ -1,12 +1,44 @@
+import datetime
+import uuid
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
 from src.main import app
+from src.models.conversation import Conversation
+from src.services.proposal_followup import record_proposal_sent
 
 client = TestClient(app)
 EXPECTED_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
+
+
+def _dt(value: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+class _ScalarResult:
+    def __init__(self, value: object | None) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object | None:
+        return self._value
+
+
+class _Scalars:
+    def __init__(self, values: list[object]) -> None:
+        self._values = values
+
+    def all(self) -> list[object]:
+        return self._values
+
+
+class _ScalarsResult:
+    def __init__(self, values: list[object]) -> None:
+        self._values = values
+
+    def scalars(self) -> _Scalars:
+        return _Scalars(self._values)
 
 
 @patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
@@ -108,6 +140,58 @@ def test_wazzup_webhook_status_only_updates_outbound_audit(mock_networks: Any) -
             }
         ],
     )
+    db.commit.assert_awaited_once()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_read_status_reschedules_proposal_fu1(
+    mock_networks: Any,
+) -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501234567",
+        status="active",
+        deal_status="pending",
+        metadata_={},
+    )
+    record_proposal_sent(
+        conv,
+        sent_at=_dt("2026-05-04T08:00:00Z"),
+        kp_message_id="kp-provider-1",
+    )
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _ScalarResult(None),
+        _ScalarsResult([conv]),
+    ]
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", AsyncMock(return_value=1)),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "statuses": [
+                    {
+                        "messageId": "kp-provider-1",
+                        "timestamp": "2026-05-04T09:00:00.000Z",
+                        "status": "read",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    state = conv.metadata_["proposal_followup"]
+    assert state["kp_read"] is True
+    assert state["kp_read_at"] == "2026-05-04T09:00:00+00:00"
+    assert state["steps"]["1"]["scheduled_at"] == "2026-05-04T11:00:00+00:00"
     db.commit.assert_awaited_once()
 
 

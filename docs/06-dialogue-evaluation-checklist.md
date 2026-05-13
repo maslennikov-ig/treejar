@@ -72,7 +72,7 @@
 
 | № | Правило (RU) | Rule (EN) | Оценка (0/1/2) | Комментарий |
 | :---- | :---- | :---- | :---- | :---- |
-| 1 | Всегда приветствие \+ имя (Сияд) \+ компания (Treejar). | Always greeting \+ name (Siyyad) \+ company (Treejar). |   |   |
+| 1 | Всегда приветствие \+ имя (Noor) \+ компания (Treejar). | Always greeting \+ name (Noor) \+ company (Treejar). |   |   |
 | 2 | Вежливое приветствие и представление. | Polite greeting and introduction. |   |   |
 | 3 | Вопрос: Как к вам обращаться? | Question: How should I address you? |   |   |
 | 4 | Дружелюбный тон и активное слушание. | Friendly tone and active listening. |   |   |

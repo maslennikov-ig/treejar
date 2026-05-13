@@ -14,6 +14,7 @@ from src.core.config import settings
 from src.core.database import async_session_factory
 from src.schemas import WazzupWebhookPayload
 from src.services.outbound_audit import update_wazzup_statuses
+from src.services.proposal_followup import apply_proposal_read_statuses
 
 # Bind to uvicorn.error so info logs appear in docker logs
 logger = logging.getLogger("uvicorn.error")
@@ -104,10 +105,15 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         try:
             async with async_session_factory() as db:
                 updated_rows = await update_wazzup_statuses(db, statuses)
+                proposal_read_updates = await apply_proposal_read_statuses(
+                    db,
+                    statuses,
+                )
                 await db.commit()
             logger.info(
-                "Wazzup webhook: updated %d outbound status rows",
+                "Wazzup webhook: updated %d outbound status rows and %d proposal read states",
                 updated_rows,
+                proposal_read_updates,
             )
         except Exception:
             logger.exception("Wazzup webhook: failed to persist status updates")

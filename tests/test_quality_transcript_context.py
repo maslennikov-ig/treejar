@@ -43,7 +43,7 @@ def test_summary_context_includes_required_sections_and_stays_bounded() -> None:
             conversation_id=conversation_id,
             idx=1,
             role="assistant",
-            content="FIRST BOT TURN: Hi, I am Siyyad from Treejar.",
+            content="FIRST BOT TURN: Hi, I am Noor from Treejar.",
         ),
         _message(
             conversation_id=conversation_id,

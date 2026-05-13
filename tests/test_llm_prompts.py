@@ -19,7 +19,7 @@ async def test_build_system_prompt_default_language() -> None:
     assert "You work for Treejar" in prompt
     assert "The user prefers to communicate in Arabic" in prompt
     assert "STAGE: GREETING" in prompt
-    assert "Siyyad from Treejar" in prompt
+    assert "Noor from Treejar" in prompt
     assert "ask how you should address them" in prompt
 
 

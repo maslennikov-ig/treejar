@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tomllib
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 ALLOWED_STATUS = {"returned", "blocked"}
 ALLOWED_VERIFY = {"passed", "failed", "blocked"}
@@ -27,9 +27,7 @@ def require_string(value: object, name: str) -> str:
     return value
 
 
-def resolve_runtime_path(
-    repo_root: pathlib.Path, inbox: dict, key: str
-) -> pathlib.Path:
+def resolve_runtime_path(repo_root: pathlib.Path, inbox: dict, key: str) -> pathlib.Path:
     raw_path = pathlib.Path(require_string(inbox.get(key), f"completion_inbox.{key}"))
     scope = inbox.get("scope", "repo_root")
     if scope == "git_common_dir":
@@ -62,9 +60,7 @@ def main(argv: list[str]) -> int:
     contract = load_contract()
     inbox = contract.get("completion_inbox")
     if not isinstance(inbox, dict):
-        raise SystemExit(
-            "missing [completion_inbox] section in .codex/orchestrator.toml"
-        )
+        raise SystemExit("missing [completion_inbox] section in .codex/orchestrator.toml")
 
     events_file = resolve_runtime_path(repo_root, inbox, "events_file")
     artifact_path = pathlib.Path(args.artifact)
@@ -75,7 +71,7 @@ def main(argv: list[str]) -> int:
 
     payload = {
         "event_id": str(uuid.uuid4()),
-        "reported_at": datetime.now(UTC).isoformat(),
+        "reported_at": datetime.now(timezone.utc).isoformat(),
         "task_id": args.task,
         "stage_id": args.stage,
         "stream_id": args.task,

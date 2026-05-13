@@ -6,6 +6,8 @@ import logging
 import re
 import traceback
 from collections.abc import Sequence
+from contextlib import suppress
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -42,12 +44,14 @@ from src.services.outbound_audit import (
     send_wazzup_media_with_audit,
     send_wazzup_text_with_audit,
 )
+from src.services.proposal_followup import record_customer_reply
 from src.services.public_media import build_signed_product_image_url
 
 logger = logging.getLogger(__name__)
 
 # Maximum time to wait for LLM response (seconds)
 LLM_TIMEOUT = 120
+TYPING_REFRESH_INTERVAL_SECONDS = 4.0
 
 # WhatsApp Formatting Regexes
 WHATSAPP_HEADERS_RE = re.compile(
@@ -348,6 +352,46 @@ async def _send_deferred_product_media(
             )
 
 
+def _provider_supports_typing_indicator(provider: Any) -> bool:
+    return getattr(provider, "supports_typing_indicator", True) is not False
+
+
+async def _send_typing_best_effort(provider: Any, chat_id: str) -> bool:
+    if not _provider_supports_typing_indicator(provider):
+        return False
+    try:
+        result = await provider.send_typing(chat_id)
+    except Exception:
+        logger.warning(
+            "Failed to send typing indicator for %s; continuing.",
+            chat_id,
+            exc_info=True,
+        )
+        return True
+    return result is not False
+
+
+async def _typing_refresh_loop(provider: Any, chat_id: str) -> None:
+    while True:
+        if not await _send_typing_best_effort(provider, chat_id):
+            return
+        await asyncio.sleep(TYPING_REFRESH_INTERVAL_SECONDS)
+
+
+def _start_typing_refresh(provider: Any, chat_id: str) -> asyncio.Task[None] | None:
+    if not _provider_supports_typing_indicator(provider):
+        return None
+    return asyncio.create_task(_typing_refresh_loop(provider, chat_id))
+
+
+async def _stop_typing_refresh(task: asyncio.Task[None] | None) -> None:
+    if task is None:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
 def _determine_role(msg: WazzupIncomingMessage) -> str:
     """Determine message role based on Wazzup authorType field.
 
@@ -619,198 +663,210 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
             extract_inbound_source_attribution(messages),
         )
 
-        if isinstance(channel_id, str):
-            try:
-                async with WazzupProvider(channel_id=channel_id) as wazzup_lookup:
-                    resolved_phone = await wazzup_lookup.resolve_channel_phone(
+        # CR-WA-01 fix: pass channel_id from settings to WazzupProvider
+        async with WazzupProvider(channel_id=channel_id) as wazzup_provider:
+            if isinstance(channel_id, str):
+                try:
+                    resolved_phone = await wazzup_provider.resolve_channel_phone(
                         channel_id
                     )
-            except Exception:
-                logger.exception(
-                    "Failed to resolve inbound channel phone for %s via %s",
-                    chat_id,
-                    channel_id,
+                except Exception:
+                    logger.exception(
+                        "Failed to resolve inbound channel phone for %s via %s",
+                        chat_id,
+                        channel_id,
+                    )
+                    resolved_phone = None
+
+                inbound_channel_phone = (
+                    resolved_phone if isinstance(resolved_phone, str) else None
                 )
-                resolved_phone = None
+                update_conversation_inbound_channel(
+                    conv,
+                    channel_id=channel_id,
+                    channel_phone=inbound_channel_phone,
+                )
 
-            inbound_channel_phone = (
-                resolved_phone if isinstance(resolved_phone, str) else None
+            # 2. Manual takeover: manager writes when no escalation is active
+            if has_manager_message and not should_pause_bot_for_escalation(
+                conv.escalation_status
+            ):
+                conv.escalation_status = "manual_takeover"
+                logger.info(
+                    "Manual takeover for %s by manager %s",
+                    chat_id,
+                    manager_name or "unknown",
+                )
+
+            # 3. Save incoming messages (deduplicate by wazzup_message_id)
+            message_ids = [m.messageId for m in messages if m.messageId]
+            existing_msgs_stmt = select(Message.wazzup_message_id).where(
+                Message.wazzup_message_id.in_(message_ids)
             )
-            update_conversation_inbound_channel(
-                conv,
-                channel_id=channel_id,
-                channel_phone=inbound_channel_phone,
-            )
+            existing_result = await db.execute(existing_msgs_stmt)
+            existing_ids = set(existing_result.scalars().all())
+            latest_customer_reply_at: datetime | None = None
 
-        # 2. Manual takeover: manager writes when no escalation is active
-        if has_manager_message and not should_pause_bot_for_escalation(
-            conv.escalation_status
-        ):
-            conv.escalation_status = "manual_takeover"
-            logger.info(
-                "Manual takeover for %s by manager %s",
-                chat_id,
-                manager_name or "unknown",
-            )
-
-        # 3. Save incoming messages (deduplicate by wazzup_message_id)
-        message_ids = [m.messageId for m in messages if m.messageId]
-        existing_msgs_stmt = select(Message.wazzup_message_id).where(
-            Message.wazzup_message_id.in_(message_ids)
-        )
-        existing_result = await db.execute(existing_msgs_stmt)
-        existing_ids = set(existing_result.scalars().all())
-
-        for index, m in enumerate(messages):
-            if m.messageId and m.messageId not in existing_ids:
-                role = _determine_role(m)
-                is_audio = m.type in ("audio", "voice")
-
-                audio_url = None
-                transcription = None
-                if is_audio and m.messageId in audio_results:
-                    audio_url = audio_results[m.messageId].get("url")
-                    transcription = audio_results[m.messageId].get("transcription")
-
-                new_msg = Message(
-                    conversation_id=conv.id,
-                    role=role,
-                    content=transcription
-                    if is_audio and transcription
-                    else (m.text or ""),
-                    message_type=m.type,
-                    wazzup_message_id=m.messageId,
-                    audio_url=audio_url,
-                    transcription=transcription,
-                    created_at=message_created_at_from_wazzup(
+            for index, m in enumerate(messages):
+                if m.messageId and m.messageId not in existing_ids:
+                    role = _determine_role(m)
+                    is_audio = m.type in ("audio", "voice")
+                    created_at = message_created_at_from_wazzup(
                         date_time=m.dateTime,
                         timestamp=m.timestamp,
                         sequence=index,
-                    ),
+                    )
+
+                    audio_url = None
+                    transcription = None
+                    if is_audio and m.messageId in audio_results:
+                        audio_url = audio_results[m.messageId].get("url")
+                        transcription = audio_results[m.messageId].get("transcription")
+
+                    new_msg = Message(
+                        conversation_id=conv.id,
+                        role=role,
+                        content=transcription
+                        if is_audio and transcription
+                        else (m.text or ""),
+                        message_type=m.type,
+                        wazzup_message_id=m.messageId,
+                        audio_url=audio_url,
+                        transcription=transcription,
+                        created_at=created_at,
+                    )
+                    db.add(new_msg)
+                    existing_ids.add(m.messageId)
+                    if role == "user":
+                        latest_customer_reply_at = created_at
+
+            if latest_customer_reply_at is not None:
+                record_customer_reply(
+                    conv,
+                    text=combined_text,
+                    received_at=latest_customer_reply_at,
                 )
-                db.add(new_msg)
-                existing_ids.add(m.messageId)
 
-        await db.commit()
+            await db.commit()
 
-        # 4. Active human handoff: send fallback to client + re-notify manager.
-        # Resolved escalations should not keep the bot in fallback mode.
-        if should_send_escalation_fallback(conv.escalation_status):
-            logger.info(
-                "Escalation active (%s) for %s. Sending fallback response.",
-                conv.escalation_status,
-                chat_id,
-            )
-            async with WazzupProvider(
-                channel_id=channel_id,
-            ) as wazzup_fallback:
+            # 4. Active human handoff: send fallback to client + re-notify manager.
+            # Resolved escalations should not keep the bot in fallback mode.
+            if should_send_escalation_fallback(conv.escalation_status):
+                logger.info(
+                    "Escalation active (%s) for %s. Sending fallback response.",
+                    conv.escalation_status,
+                    chat_id,
+                )
                 await _handle_escalation_fallback(
                     conv=conv,
                     combined_text=combined_text,
-                    wazzup=wazzup_fallback,
+                    wazzup=wazzup_provider,
                     redis=redis,
                     db=db,
                 )
-            return
-        if conv.escalation_status == "manual_takeover":
-            logger.info(
-                "Manual takeover active for %s. Skipping LLM + fallback.",
-                chat_id,
-            )
-            return
+                return
+            if conv.escalation_status == "manual_takeover":
+                logger.info(
+                    "Manual takeover active for %s. Skipping LLM + fallback.",
+                    chat_id,
+                )
+                return
 
-        # 5. Generate LLM response
-        embedding_engine = EmbeddingEngine()
+            # 5. Generate LLM response
+            embedding_engine = EmbeddingEngine()
 
-        # CR-WA-01 fix: pass channel_id from settings to WazzupProvider
-        async with (
-            ZohoInventoryClient(redis_client=redis) as zoho_client,
-            ZohoCRMClient(redis_client=redis) as crm_client,
-            WazzupProvider(
-                channel_id=channel_id,
-            ) as wazzup_provider,
-        ):
-            logger.info("Calling LLM for %s (timeout=%ds)", chat_id, LLM_TIMEOUT)
-            try:
-                llm_response = await asyncio.wait_for(
-                    process_message(
+            async with (
+                ZohoInventoryClient(redis_client=redis) as zoho_client,
+                ZohoCRMClient(redis_client=redis) as crm_client,
+            ):
+                logger.info("Calling LLM for %s (timeout=%ds)", chat_id, LLM_TIMEOUT)
+                try:
+                    typing_task = _start_typing_refresh(wazzup_provider, chat_id)
+                    await asyncio.sleep(0)
+                    try:
+                        llm_response = await asyncio.wait_for(
+                            process_message(
+                                conversation_id=conv.id,
+                                combined_text=combined_text,
+                                db=db,
+                                redis=redis,
+                                embedding_engine=embedding_engine,
+                                zoho_client=zoho_client,
+                                crm_client=crm_client,
+                                messaging_client=wazzup_provider,
+                            ),
+                            timeout=LLM_TIMEOUT,
+                        )
+                    finally:
+                        await _stop_typing_refresh(typing_task)
+                except TimeoutError:
+                    logger.error(
+                        "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
+                    )
+                    # R3-11: Send timeout fallback in client's language
+                    lang = conv.language or "en"
+                    timeout_msg = (
+                        "عذراً، أنا مشغول حالياً. يرجى إعادة المحاولة بعد دقيقة."
+                        if lang == "ar"
+                        else "Sorry, I'm currently overloaded. Please try again in a minute."
+                    )
+                    await send_wazzup_text_with_audit(
+                        db,
+                        provider=wazzup_provider,
                         conversation_id=conv.id,
-                        combined_text=combined_text,
-                        db=db,
-                        redis=redis,
-                        embedding_engine=embedding_engine,
-                        zoho_client=zoho_client,
-                        crm_client=crm_client,
-                        messaging_client=wazzup_provider,
-                    ),
-                    timeout=LLM_TIMEOUT,
+                        chat_id=chat_id,
+                        text=timeout_msg,
+                        source="llm_timeout",
+                        crm_message_id=deterministic_crm_message_id(
+                            "timeout",
+                            conv.id,
+                            hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[
+                                :16
+                            ],
+                        ),
+                    )
+                    await db.commit()
+                    return
+
+                # 4. Save response to DB
+                assistant_msg = Message(
+                    conversation_id=conv.id,
+                    role="assistant",
+                    content=llm_response.text,
+                    tokens_in=llm_response.tokens_in,
+                    tokens_out=llm_response.tokens_out,
+                    cost=llm_response.cost,
+                    model=llm_response.model,
+                    created_at=message_created_at_now(),
                 )
-            except TimeoutError:
-                logger.error(
-                    "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
-                )
-                # R3-11: Send timeout fallback in client's language
-                lang = conv.language or "en"
-                timeout_msg = (
-                    "عذراً، أنا مشغول حالياً. يرجى إعادة المحاولة بعد دقيقة."
-                    if lang == "ar"
-                    else "Sorry, I'm currently overloaded. Please try again in a minute."
-                )
+                db.add(assistant_msg)
+                await db.flush()
+                await db.commit()
+                await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
+
+                # 5. Send via Wazzup
+                logger.info("Sending reply to %s via Wazzup", chat_id)
+                whatsapp_text = _format_for_whatsapp(llm_response.text)
                 await send_wazzup_text_with_audit(
                     db,
                     provider=wazzup_provider,
                     conversation_id=conv.id,
                     chat_id=chat_id,
-                    text=timeout_msg,
-                    source="llm_timeout",
+                    text=whatsapp_text,
+                    source="bot_reply",
                     crm_message_id=deterministic_crm_message_id(
-                        "timeout",
+                        "bot",
                         conv.id,
-                        hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
+                        assistant_msg.id,
                     ),
                 )
                 await db.commit()
-                return
-
-            # 4. Save response to DB
-            assistant_msg = Message(
-                conversation_id=conv.id,
-                role="assistant",
-                content=llm_response.text,
-                tokens_in=llm_response.tokens_in,
-                tokens_out=llm_response.tokens_out,
-                cost=llm_response.cost,
-                model=llm_response.model,
-                created_at=message_created_at_now(),
-            )
-            db.add(assistant_msg)
-            await db.flush()
-            await db.commit()
-            await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
-
-            # 5. Send via Wazzup
-            logger.info("Sending reply to %s via Wazzup", chat_id)
-            whatsapp_text = _format_for_whatsapp(llm_response.text)
-            await send_wazzup_text_with_audit(
-                db,
-                provider=wazzup_provider,
-                conversation_id=conv.id,
-                chat_id=chat_id,
-                text=whatsapp_text,
-                source="bot_reply",
-                crm_message_id=deterministic_crm_message_id(
-                    "bot",
-                    conv.id,
-                    assistant_msg.id,
-                ),
-            )
-            await db.commit()
-            if llm_response.deferred_product_media:
-                await _send_deferred_product_media(
-                    db,
-                    provider=wazzup_provider,
-                    conversation_id=conv.id,
-                    chat_id=chat_id,
-                    media_items=llm_response.deferred_product_media,
-                )
-            logger.info("Reply sent to %s successfully", chat_id)
+                if llm_response.deferred_product_media:
+                    await _send_deferred_product_media(
+                        db,
+                        provider=wazzup_provider,
+                        conversation_id=conv.id,
+                        chat_id=chat_id,
+                        media_items=llm_response.deferred_product_media,
+                    )
+                logger.info("Reply sent to %s successfully", chat_id)

@@ -14,6 +14,25 @@ from src.llm.engine import (
 from src.models.conversation import Conversation
 
 
+def _quote_metadata(
+    *,
+    name: str = "Test Customer",
+    company: str = "Test Trading LLC",
+    address: str = "Dubai Marina, Tower A",
+    customer_type: str | None = None,
+) -> dict[str, dict[str, str]]:
+    details = {
+        "name": name,
+        "company": company,
+        "email": "test@example.com",
+        "phone": "+1234567890",
+        "address": address,
+    }
+    if customer_type:
+        details["customer_type"] = customer_type
+    return {"quote_customer_details": details}
+
+
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -46,9 +65,11 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     }
 
     mock_messaging = AsyncMock()
+    mock_messaging.send_media.return_value = "media-quotation-1"
     mock_conversation = MagicMock(spec=Conversation)
     mock_conversation.phone = "+1234567890"
     mock_conversation.customer_name = "Test Customer"
+    mock_conversation.metadata_ = _quote_metadata()
 
     # Redis must be AsyncMock (not MagicMock) for setex to be awaitable
     mock_redis = AsyncMock()
@@ -129,6 +150,10 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     assert render_context["items"][0]["image_url"].startswith("data:image/jpeg;base64,")
     assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-123"
     assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-001"
+    proposal_state = mock_conversation.metadata_["proposal_followup"]
+    assert proposal_state["kp_message_id"] == "media-quotation-1"
+    assert proposal_state["kp_read"] is False
+    assert set(proposal_state["steps"]) == {"1", "2", "3", "4"}
 
     # Verify PDF generation was called
     mock_pdf.assert_called_once()
@@ -178,6 +203,7 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     mock_conversation = MagicMock(spec=Conversation)
     mock_conversation.phone = "+1234567890"
     mock_conversation.customer_name = "Test Customer"
+    mock_conversation.metadata_ = _quote_metadata()
 
     mock_redis = AsyncMock()
     mock_redis.setex = AsyncMock()
@@ -268,7 +294,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
         id="conv-1",
         phone="+1234567890",
         customer_name="Test Customer",
-        metadata_={},
+        metadata_=_quote_metadata(),
     )
     mock_redis = AsyncMock()
     mock_redis.setex = AsyncMock()
@@ -312,7 +338,8 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     assert "SA-REAL-001" in result
     assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-flat-123"
     assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-REAL-001"
-    mock_db.flush.assert_awaited_once()
+    assert mock_conversation.metadata_["proposal_followup"]["kp_read"] is False
+    assert mock_db.flush.await_count == 2
 
     mock_redis.setex.assert_not_awaited()
     mock_notify.assert_not_awaited()
@@ -355,7 +382,7 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
         id="conv-1",
         phone="+1234567890",
         customer_name="Test Customer",
-        metadata_={},
+        metadata_=_quote_metadata(),
     )
     mock_redis = AsyncMock()
     mock_redis.setex = AsyncMock()
@@ -417,6 +444,15 @@ async def test_create_quotation_sku_not_found() -> None:
 
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
+    deps.conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name="Test Customer",
+        metadata_=_quote_metadata(),
+    )
+    deps.crm_context = None
+    deps.zoho_crm = AsyncMock()
+    deps.zoho_crm.find_contact_by_phone.return_value = None
     deps.db = AsyncMock()
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = None
@@ -465,8 +501,8 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     mock_conversation = SimpleNamespace(
         id="conv-1",
         phone="+1234567890",
-        customer_name=None,
-        metadata_={},
+        customer_name="Test Customer",
+        metadata_=_quote_metadata(company="", customer_type="individual"),
     )
     mock_redis = AsyncMock()
     mock_redis.setex = AsyncMock()
@@ -532,9 +568,9 @@ async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
     mock_conversation = SimpleNamespace(
         id="conv-1",
         phone="+1234567890",
-        customer_name=None,
+        customer_name="Test Customer",
         escalation_status="none",
-        metadata_={},
+        metadata_=_quote_metadata(),
     )
     mock_redis = AsyncMock()
     mock_db = AsyncMock()
@@ -616,8 +652,8 @@ async def test_create_quotation_catalog_mismatch_notifies_and_aborts(
     mock_conversation = SimpleNamespace(
         id="conv-1",
         phone="+1234567890",
-        customer_name=None,
-        metadata_={},
+        customer_name="Test Customer",
+        metadata_=_quote_metadata(),
     )
     mock_redis = AsyncMock()
     mock_db = AsyncMock()
@@ -671,8 +707,8 @@ async def test_create_quotation_malformed_inventory_payload_fails_closed(
     mock_conversation = SimpleNamespace(
         id="conv-1",
         phone="+1234567890",
-        customer_name=None,
-        metadata_={},
+        customer_name="Test Customer",
+        metadata_=_quote_metadata(),
     )
     mock_redis = AsyncMock()
     mock_db = AsyncMock()

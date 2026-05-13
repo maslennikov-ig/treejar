@@ -109,5 +109,5 @@ def test_translate_red_flag_by_code_for_owner_facing_views() -> None:
     assert translate_red_flag_title("missing_identity") == "Нет идентификации"
     assert (
         translate_red_flag_explanation("missing_identity")
-        == "Ассистент не представился как Siyyad из Treejar в первом ответе."
+        == "Ассистент не представился как Noor из Treejar в первом ответе."
     )

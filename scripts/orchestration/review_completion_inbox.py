@@ -9,7 +9,7 @@ import pathlib
 import subprocess
 import sys
 import tomllib
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 ALLOWED_DECISIONS = {
     "accepted",
@@ -30,9 +30,7 @@ def require_string(value: object, name: str) -> str:
     return value
 
 
-def resolve_runtime_path(
-    repo_root: pathlib.Path, inbox: dict, key: str
-) -> pathlib.Path:
+def resolve_runtime_path(repo_root: pathlib.Path, inbox: dict, key: str) -> pathlib.Path:
     raw_path = pathlib.Path(require_string(inbox.get(key), f"completion_inbox.{key}"))
     scope = inbox.get("scope", "repo_root")
     if scope == "git_common_dir":
@@ -100,9 +98,7 @@ def main(argv: list[str]) -> int:
     contract = load_contract()
     inbox = contract.get("completion_inbox")
     if not isinstance(inbox, dict):
-        raise SystemExit(
-            "missing [completion_inbox] section in .codex/orchestrator.toml"
-        )
+        raise SystemExit("missing [completion_inbox] section in .codex/orchestrator.toml")
 
     events_file = resolve_runtime_path(repo_root, inbox, "events_file")
     state_file = resolve_runtime_path(repo_root, inbox, "review_state_file")
@@ -117,14 +113,12 @@ def main(argv: list[str]) -> int:
     if args.mark_reviewed:
         if not args.decision:
             raise SystemExit("--decision is required with --mark-reviewed")
-        matching = [
-            event for event in events if event.get("event_id") == args.mark_reviewed
-        ]
+        matching = [event for event in events if event.get("event_id") == args.mark_reviewed]
         if not matching:
             raise SystemExit(f"event not found: {args.mark_reviewed}")
         reviewed[args.mark_reviewed] = {
             "decision": args.decision,
-            "reviewed_at": datetime.now(UTC).isoformat(),
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
             "note": args.note,
             "task_id": matching[0].get("task_id"),
             "stage_id": matching[0].get("stage_id"),

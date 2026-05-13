@@ -19,6 +19,10 @@ class MessagingProvider(Protocol):
         """Send a text message. Returns message ID."""
         ...
 
+    async def send_typing(self, chat_id: str) -> bool:
+        """Send or refresh a typing indicator. Returns False when unsupported."""
+        ...
+
     async def send_media(
         self,
         chat_id: str,

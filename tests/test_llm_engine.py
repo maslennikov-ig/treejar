@@ -40,6 +40,7 @@ def mock_deps() -> tuple[
     conv = Conversation(
         id=uuid.uuid4(),
         phone="12345",
+        customer_name="Test User",
         sales_stage=SalesStage.GREETING.value,
         language="Russian",
         escalation_status="none",
@@ -106,9 +107,21 @@ class _FakeAgentResult:
 
 
 def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
-    assert text.startswith("Hello, I'm Siyyad from Treejar.")
-    assert "May I know your name so I can address you properly?" in text
+    assert text.startswith("Hello, I'm Noor from Treejar.")
     assert text.endswith(expected_tail)
+
+
+def _set_required_quote_details(conv: Conversation) -> None:
+    conv.customer_name = "Test User"
+    metadata = dict(conv.metadata_ or {})
+    metadata["quote_customer_details"] = {
+        "name": "Test User",
+        "company": "Test Trading LLC",
+        "email": "test@example.com",
+        "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A",
+    }
+    conv.metadata_ = metadata
 
 
 @pytest.mark.asyncio
@@ -1042,15 +1055,11 @@ async def test_process_message_missing_low_risk_hands_off_without_agent_run(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Viktor"
     text = "Do you have a showroom?"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-
-    async def notify_side_effect(**kwargs: object) -> None:
-        kwargs["conversation"].escalation_status = "pending"
-
-    mock_notify.side_effect = notify_side_effect
 
     response = await process_message(
         conversation_id=conv.id,
@@ -1063,10 +1072,14 @@ async def test_process_message_missing_low_risk_hands_off_without_agent_run(
     )
 
     assert mock_run.await_count == 0
-    mock_notify.assert_awaited_once()
-    assert conv.escalation_status == "pending"
-    assert "manager" in response.text.lower()
-    assert "showroom" not in response.text.lower()
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert "manager" not in response.text.lower()
+    assert "google.com/maps/place/treejar+trading" in response.text.lower()
+    assert "entry=" not in response.text
+    assert "g_ep=" not in response.text
+    assert "[" not in response.text
+    assert "](" not in response.text
 
 
 @pytest.mark.asyncio
@@ -1089,15 +1102,11 @@ async def test_process_message_first_turn_service_handoff_gets_opening(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
     text = "Do you have a showroom?"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-
-    async def notify_side_effect(**kwargs: object) -> None:
-        kwargs["conversation"].escalation_status = "pending"
-
-    mock_notify.side_effect = notify_side_effect
 
     response = await process_message(
         conversation_id=conv.id,
@@ -1110,10 +1119,13 @@ async def test_process_message_first_turn_service_handoff_gets_opening(
     )
 
     assert mock_run.await_count == 0
-    mock_notify.assert_awaited_once()
-    assert response.text.startswith("Hello, I'm Siyyad from Treejar.")
+    mock_notify.assert_not_awaited()
+    assert response.text == (
+        "Hello, I'm Noor from Treejar. "
+        "May I know your name so I can address you properly?"
+    )
     assert "May I know your name so I can address you properly?" in response.text
-    assert "manager" in response.text.lower()
+    assert "manager" not in response.text.lower()
 
 
 @pytest.mark.asyncio
@@ -1175,6 +1187,7 @@ async def test_process_message_first_turn_llm_response_gets_contractual_opening(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
     text = "Hello"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -1191,9 +1204,10 @@ async def test_process_message_first_turn_llm_response_gets_contractual_opening(
         messaging_client=messaging,
     )
 
-    assert response.text.startswith("Hello, I'm Siyyad from Treejar.")
-    assert "May I know your name so I can address you properly?" in response.text
-    assert response.text.endswith("I can help with office furniture.")
+    assert (
+        response.text
+        == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+    )
 
 
 @pytest.mark.asyncio
@@ -1214,6 +1228,7 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
     text = "Добрый день, подскажите"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -1230,8 +1245,10 @@ async def test_process_message_assist_opener_returns_clarification_without_hando
     )
 
     assert mock_notify.await_count == 0
-    assert "products" in response.text.lower()
-    assert "delivery" in response.text.lower()
+    assert (
+        response.text
+        == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+    )
     assert conv.metadata_ == {
         "verified_policy_repair": {"kind": "benign_no_match", "count": 1}
     }
@@ -1256,6 +1273,7 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
     text = "Добрый день, подскажите"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -1272,10 +1290,10 @@ async def test_process_message_first_turn_static_clarification_gets_opening(
     )
 
     assert mock_notify.await_count == 0
-    assert response.text.startswith("Hello, I'm Siyyad from Treejar.")
-    assert "May I know your name so I can address you properly?" in response.text
-    assert "products" in response.text.lower()
-    assert "delivery" in response.text.lower()
+    assert (
+        response.text
+        == "Hello, I'm Noor from Treejar. May I know your name so I can address you properly?"
+    )
 
 
 @pytest.mark.asyncio
@@ -1504,7 +1522,7 @@ async def test_process_message_service_handoff_deduplicates_current_user_in_rece
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
-    text = "Do you have a showroom?"
+    text = "Do you offer deferred payment for this order?"
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelRequest(parts=[UserPromptPart(content="Hello")]),
@@ -1533,9 +1551,12 @@ async def test_process_message_service_handoff_deduplicates_current_user_in_rece
     assert recent_messages == [
         "user: Hello",
         "assistant: How can I help?",
-        "user: Do you have a showroom?",
+        "user: Do you offer deferred payment for this order?",
     ]
-    assert recent_messages.count("user: Do you have a showroom?") == 1
+    assert (
+        recent_messages.count("user: Do you offer deferred payment for this order?")
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -2003,6 +2024,58 @@ async def test_tools_search_products_second_empty_result_exhausts_retry_budget(
         assert isinstance(second.content, str)
         assert "one narrow clarifying question" in second.content.lower()
         assert mock_search.await_count == 2
+    finally:
+        if orig_search:
+            engine_module.rag_search_products = orig_search
+
+
+@pytest.mark.asyncio
+async def test_tools_search_products_passes_price_filters_to_rag(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    from src.schemas.product import ProductSearchResult
+
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(products=[], total_found=0)
+    )
+
+    orig_search = getattr(engine_module, "rag_search_products", None)
+    engine_module.rag_search_products = mock_search
+
+    try:
+        from pydantic_ai.usage import RunUsage
+
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="budget chair",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+
+        await engine_module.search_products(
+            ctx, "ergonomic chair", max_price=500.0, min_price=100.0
+        )
+
+        search_query = mock_search.await_args.kwargs["query"]
+        assert search_query.query == "ergonomic chair"
+        assert search_query.max_price == 500.0
+        assert search_query.min_price == 100.0
     finally:
         if orig_search:
             engine_module.rag_search_products = orig_search
@@ -2543,6 +2616,7 @@ async def test_tools_create_quotation_sends_pdf_to_customer_when_price_is_safe(
     ],
 ) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -2716,6 +2790,120 @@ async def test_tools_create_quotation_prefers_customer_details_metadata(
 
 
 @pytest.mark.asyncio
+@patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+@patch("src.services.pdf.generator.render_quotation_html")
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_blocks_missing_required_customer_details_before_zoho(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_render_html: MagicMock,
+    mock_generate_pdf: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Tiger Lion"
+    conv.metadata_ = {
+        "quote_customer_details": {
+            "name": "Tiger Lion",
+            "company": "Tiger Trading LLC",
+            "address": "UAE",
+        }
+    }
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 00-07024023"],
+    )
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(ctx, [QuotationItem(sku="00-07024023", quantity=1)])
+
+    assert "delivery address" in result.lower()
+    assert "specific" in result.lower()
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.create_sale_order.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
+    mock_render_html.assert_not_called()
+    mock_generate_pdf.assert_not_awaited()
+    mock_notify_mismatch.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.services.pdf.generator.generate_pdf", new_callable=AsyncMock)
+@patch("src.services.pdf.generator.render_quotation_html")
+@patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+async def test_tools_create_quotation_blocks_any_invalid_item_before_zoho(
+    mock_notify_manager: AsyncMock,
+    mock_notify_mismatch: AsyncMock,
+    mock_render_html: MagicMock,
+    mock_generate_pdf: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        recent_history=["user: send quotation for 1 00-07024023 and 0 BAD-SKU"],
+    )
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_quotation
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_quotation(
+        ctx,
+        [
+            QuotationItem(sku="00-07024023", quantity=1),
+            QuotationItem(sku="BAD-SKU", quantity=0),
+        ],
+    )
+
+    assert "items and quantities" in result.lower()
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.create_sale_order.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
+    mock_render_html.assert_not_called()
+    mock_generate_pdf.assert_not_awaited()
+    mock_notify_mismatch.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -2729,6 +2917,7 @@ async def test_tools_create_quotation_blocks_when_catalog_line_rate_override_fai
     ],
 ) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -2799,6 +2988,7 @@ async def test_tools_create_quotation_ignores_zoho_rate_diff_and_catalog_only_es
     ],
 ) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -2890,6 +3080,7 @@ async def test_tools_create_quotation_blocks_catalog_only_item_and_escalates(
     ],
 ) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -2952,6 +3143,7 @@ async def test_tools_create_quotation_fails_closed_when_catalog_price_missing_or
     ],
 ) -> None:
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -3039,6 +3231,7 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     text = "What is the exact price and availability for 1 CHAIR-01?"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -3117,6 +3310,59 @@ def test_extract_exact_quote_candidate_accepts_numeric_hyphenated_sku() -> None:
     assert candidate.quantity == 1
     assert candidate.item_candidate == "00-07024023"
     assert candidate.sku == "00-07024023"
+
+
+@pytest.mark.parametrize(
+    ("raw_sku", "expected_sku"),
+    [
+        ("CH 190", "CH-190"),
+        ("CH190", "CH-190"),
+        ("СН 970", "CH-970"),
+        ("СН-970", "CH-970"),
+        ("АВ-100", "AB-100"),
+        ("ТХ 50", "TX-50"),
+    ],
+)
+def test_extract_exact_quote_candidate_accepts_spaced_compact_and_homoglyph_skus(
+    raw_sku: str, expected_sku: str
+) -> None:
+    candidate = extract_exact_quote_candidate(
+        f"Please issue a proforma invoice for 5 {raw_sku} black."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 5
+    assert candidate.sku == expected_sku
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Please quote 2 chairs from 500 to 600 AED.",
+        "Please quote 2 desk 500 AED.",
+        "Please quote 2 sofa max 900 AED.",
+    ],
+)
+def test_extract_exact_quote_candidate_does_not_parse_price_phrases_as_skus(
+    text: str,
+) -> None:
+    candidate = extract_exact_quote_candidate(text)
+
+    assert candidate is not None
+    assert candidate.quantity == 2
+    assert candidate.sku is None
+
+
+def test_extract_sales_order_items_accepts_homoglyph_item_before_quantity_sku() -> None:
+    items = engine_module._extract_sales_order_quote_items(
+        "Give me please sales order on СН 970 black 5 pcs"
+    )
+
+    assert items is not None
+    assert len(items) == 1
+    assert items[0].quantity == 5
+    assert items[0].item_candidate == "CH 970 black"
+    assert items[0].sku == "CH-970"
 
 
 def test_extract_exact_quote_candidate_does_not_accept_bare_offer_word() -> None:
@@ -3641,6 +3887,7 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     text = "What is the exact price and availability for 1 CHAIR-01?"
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -3763,6 +4010,7 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     text = "Please issue a proforma invoice for 1 00-07024023."
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -3796,7 +4044,7 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="00-07024023", quantity=1)]
-    assert not (conv.metadata_ or {}).get("quote_customer_details")
+    assert (conv.metadata_ or {}).get("quote_customer_details")
 
 
 @pytest.mark.asyncio
@@ -3816,6 +4064,7 @@ async def test_process_message_exact_named_item_second_consultative_pass_resolve
     ],
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     text = (
         "I need the exact price and current availability for "
         "1 Reception desk 1600 SKYLAND LUMA 9788-8."
@@ -3868,6 +4117,60 @@ async def test_process_message_exact_named_item_second_consultative_pass_resolve
             quantity=1,
         )
     ]
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_missing_details_returns_gate_without_escalation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    conv.metadata_ = {}
+    text = "Please issue a quotation for 1 CHAIR-01."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your delivery address."),
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    _assert_first_turn_opening(response.text, "")
+    assert "before i prepare the quotation" in response.text.lower()
+    assert "company name" in response.text.lower()
+    assert "specific delivery address" in response.text.lower()
+    assert "manager" not in response.text.lower()
+    assert conv.escalation_status == "none"
+    mock_notify.assert_not_awaited()
+    zoho.get_stock_bulk.assert_not_awaited()
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "exact_quote"
+    assert pending_quote["items"] == [{"sku": "CHAIR-01", "quantity": 1}]
 
 
 @pytest.mark.asyncio
@@ -4184,7 +4487,7 @@ async def test_process_message_sales_order_unresolved_stores_pending_context(
         ("CH-410-BLACK", 1),
     ]
     assert pending_quote["unresolved_items"] == [
-        {"sku": None, "quantity": 2, "item_candidate": "CH 190 black"}
+        {"sku": "CH-190", "quantity": 2, "item_candidate": "CH 190 black"}
     ]
     mock_create_quotation.assert_not_awaited()
     mock_run.assert_not_awaited()

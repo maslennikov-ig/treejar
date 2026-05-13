@@ -435,7 +435,7 @@ async def test_evaluate_conversation_with_mock_agent() -> None:
     mock_msg1.content = "Hello"
     mock_msg2 = MagicMock()
     mock_msg2.role = "assistant"
-    mock_msg2.content = "Hi! I am Siyyad from Treejar."
+    mock_msg2.content = "Hi! I am Noor from Treejar."
 
     mock_scalars = MagicMock()
     mock_scalars.all.return_value = [mock_msg1, mock_msg2]
@@ -456,7 +456,7 @@ async def test_evaluate_conversation_with_mock_agent() -> None:
     call_args = mock_agent.run.call_args
     # Verify the prompt contains the dialogue
     assert "Hello" in call_args[0][0]
-    assert "Siyyad" in call_args[0][0]
+    assert "Noor" in call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -483,7 +483,7 @@ async def test_evaluate_conversation_infers_sales_stage_when_missing() -> None:
     mock_msg1.content = "Hello"
     mock_msg2 = MagicMock()
     mock_msg2.role = "assistant"
-    mock_msg2.content = "Hi! I am Siyyad from Treejar."
+    mock_msg2.content = "Hi! I am Noor from Treejar."
 
     mock_scalars = MagicMock()
     mock_scalars.all.return_value = [mock_msg1, mock_msg2]
@@ -555,7 +555,7 @@ async def test_output_validator_recomputes_total_score() -> None:
     mock_msg_user.content = "Hello"
     mock_msg_assistant = MagicMock()
     mock_msg_assistant.role = "assistant"
-    mock_msg_assistant.content = "Hi! I am Siyyad from Treejar."
+    mock_msg_assistant.content = "Hi! I am Noor from Treejar."
     mock_scalars = MagicMock()
     mock_scalars.all.return_value = [mock_msg_user, mock_msg_assistant]
     mock_execute_result = MagicMock()

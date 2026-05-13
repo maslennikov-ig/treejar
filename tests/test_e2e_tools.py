@@ -48,6 +48,15 @@ def _make_conversation(
     conv.language = "en"
     conv.customer_name = customer_name
     conv.escalation_status = "none"
+    conv.metadata_ = {
+        "quote_customer_details": {
+            "name": customer_name or "Ahmed",
+            "company": "Treejar Test Trading LLC",
+            "email": "ahmed@example.com",
+            "phone": phone,
+            "address": "Dubai Marina, Tower A",
+        }
+    }
     return conv
 
 
