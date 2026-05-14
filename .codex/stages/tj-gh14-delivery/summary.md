@@ -1,7 +1,7 @@
 # Stage tj-gh14-delivery: Push, Merge, and E2E
 
 Updated: 2026-05-14
-Status: delivered; safe E2E passed; live WhatsApp gate open
+Status: delivered; safe and live E2E passed
 Branch: `codex/tj-gh14-new-issues`
 Base: `origin/main@27ac4fae74fe3fc201522b5ceedbf76477f58e4f`
 Parent stage: `tj-gh14`
@@ -17,7 +17,8 @@ WhatsApp/media/voice channels before separate approval.
 - `tj-gh14-delivery`: delivery and E2E epic.
 - `tj-gh14-delivery.1`: commit, push feature branch, merge to `main`, push `main` - closed.
 - `tj-gh14-delivery.2`: post-merge safe E2E/verification - closed.
-- `tj-gh14-delivery.3`: production live E2E approval gate - open pending explicit live messaging approval.
+- `tj-gh14-delivery.3`: production live E2E approval gate - live WhatsApp E2E passed after explicit approval.
+- `tj-gh14-delivery.4`: live E2E hotfix for punctuated/spaced SKU quote resume - fixed, deployed, and live-verified.
 
 ## Parallel Decomposition
 
@@ -40,7 +41,7 @@ WhatsApp/media/voice channels before separate approval.
 
 ## Delivery Evidence
 
-- Commit delivered to `main`: `71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`.
+- Original implementation commit delivered to `main`: `71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`.
 - Feature branch pushed: `origin/codex/tj-gh14-new-issues`.
 - `origin/main` pushed to `71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`.
 - GitHub Actions run `25863943847`: success for `changes`, `lint`, `test`,
@@ -53,10 +54,50 @@ WhatsApp/media/voice channels before separate approval.
   `uv run --extra dev python -m pytest ...` -> `6 passed`.
 - Independent E2E explorer `Mendel`: PASS.
 
+## Live E2E / Hotfix Evidence
+
+Explicit live WhatsApp E2E approval was received for personal number
+`+79262810921`.
+
+Initial live scenario exposed a production blocker:
+
+- Suffix `79262810921#tj-gh14-live-quote-20260514153622`.
+- First turn `Hi, I need 5 x CH 190.` returned `name-gate`.
+- Second turn `My name is E2E Tester.` escalated via verified-policy handoff.
+
+Accepted hotfixes:
+
+- `7966ac9b6512f4215aa178bcf1379f8c5932428d`
+  `fix(runtime): accept punctuated bare sku quote requests`.
+- `7075be5831dd0e09e29a319d842003f24c6dcf0f`
+  `fix(runtime): resolve spaced sku quote aliases`.
+
+Final hotfix verification:
+
+- Local gates: `ruff`, `format --check`, `mypy`, full pytest
+  `1019 passed, 19 skipped`, and process verification passed.
+- GitHub Actions run `25872745415`: success for `changes`, `lint`, `test`,
+  `type-check`, and `deploy`.
+- Production `/opt/noor/.release-sha`:
+  `7075be5831dd0e09e29a319d842003f24c6dcf0f`.
+- Production API smoke: `7 passed, 0 failed`.
+
+Final live WhatsApp E2E:
+
+- Quote suffix `79262810921#tj-gh14-live-quote-20260514165102`:
+  first turn returned `name-gate`; name reply returned
+  `z-ai/glm-5|exact-quote-missing-details`, escalation `none`, and
+  `pending_quote_selection` for `CH-190` quantity `5`.
+- Product suffix `79262810921#tj-gh14-live-product-20260514165102`:
+  `I need 5 office chairs.` returned product options, escalation `none`.
+  Product media audits show media provider message ids, caption rows with
+  `provider_message_id = None` and `details.customer_visible = false`.
+
+Artifact: `.codex/stages/tj-gh14-delivery/artifacts/tj-gh14-delivery-live-e2e.md`.
+
 ## Boundaries
 
 - Push and merge are approved by the current user request.
 - Main push triggered the repo CI deploy job; no manual deploy or production
   config mutation was performed.
-- GitHub issue mutation and live WhatsApp/media/voice tests remain
-  approval-gated.
+- GitHub issue mutation remains approval-gated and was not performed.

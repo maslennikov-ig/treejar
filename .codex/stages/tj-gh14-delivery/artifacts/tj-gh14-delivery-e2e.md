@@ -9,7 +9,7 @@ base_branch: origin/main
 base_commit: 27ac4fae74fe3fc201522b5ceedbf76477f58e4f
 worktree: /home/me/code/treejar/.worktrees/codex-tj-gh14-main-merge
 status: accepted
-delivery_method: n/a
+delivery_method: manual integration
 accepted_by_orchestrator: yes
 cleanup_status: cleaned
 cleanup_notes: Read-only E2E explorer; no branch or worktree was created.
