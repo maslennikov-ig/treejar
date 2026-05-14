@@ -1,7 +1,7 @@
 # Stage tj-gh14: Liliya GitHub Issues Stabilization
 
 Updated: 2026-05-14
-Status: implemented and verified; delivery pending approval
+Status: implemented, delivered, deployed by CI, and safe E2E verified
 Branch: `codex/tj-gh14-new-issues`
 Base: `origin/main@27ac4fae74fe3fc201522b5ceedbf76477f58e4f`
 Plan: `docs/plans/2026-05-14-liliya-gh34-37-stabilization.md`
@@ -61,13 +61,19 @@ production config, live WhatsApp state, or deployment state before explicit appr
 - Canonical gates passed: full `ruff check`, full `ruff format --check`, `mypy`,
   full pytest `1016 passed, 19 skipped`, and process verification.
 - Stage closeout passed with code-change verification and process verification.
+- Delivery stage `tj-gh14-delivery` pushed feature branch
+  `origin/codex/tj-gh14-new-issues`, fast-forwarded `main`, pushed
+  `origin/main` to `71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`, and verified
+  GitHub Actions run `25863943847` through successful deploy.
+- Safe post-deploy E2E passed: production API smoke `7 passed, 0 failed` and
+  targeted merged-main regression/E2E `6 passed`.
 - Local Beads `tj-gh14`, `tj-gh14.1`, `tj-gh14.2`, `tj-gh14.3`, and
   `tj-gh14.4` are closed.
 
 ## Boundaries
 
 - Do not comment on or close GitHub #34-#37 until explicit approval after evidence.
-- Do not deploy, mutate production config, or run live WhatsApp/media/voice tests
-  without explicit approval.
+- Do not mutate production config or run live WhatsApp/media/voice tests without
+  explicit approval.
 - Keep central `src/llm/engine.py` changes sequential unless write zones are split
   explicitly before spawning subagents.

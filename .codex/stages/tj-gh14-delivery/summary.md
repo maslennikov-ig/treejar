@@ -1,7 +1,7 @@
 # Stage tj-gh14-delivery: Push, Merge, and E2E
 
 Updated: 2026-05-14
-Status: in progress
+Status: delivered; safe E2E passed; live WhatsApp gate open
 Branch: `codex/tj-gh14-new-issues`
 Base: `origin/main@27ac4fae74fe3fc201522b5ceedbf76477f58e4f`
 Parent stage: `tj-gh14`
@@ -15,9 +15,9 @@ WhatsApp/media/voice channels before separate approval.
 ## Beads
 
 - `tj-gh14-delivery`: delivery and E2E epic.
-- `tj-gh14-delivery.1`: commit, push feature branch, merge to `main`, push `main`.
-- `tj-gh14-delivery.2`: post-merge safe E2E/verification.
-- `tj-gh14-delivery.3`: production live E2E approval gate.
+- `tj-gh14-delivery.1`: commit, push feature branch, merge to `main`, push `main` - closed.
+- `tj-gh14-delivery.2`: post-merge safe E2E/verification - closed.
+- `tj-gh14-delivery.3`: production live E2E approval gate - open pending explicit live messaging approval.
 
 ## Parallel Decomposition
 
@@ -38,8 +38,25 @@ WhatsApp/media/voice channels before separate approval.
 - Context7 checked `/pydantic/pydantic-ai` for `@agent.tool` schema behavior.
 - Local spot checks passed with `OPENROUTER_API_KEY=dummy`.
 
+## Delivery Evidence
+
+- Commit delivered to `main`: `71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`.
+- Feature branch pushed: `origin/codex/tj-gh14-new-issues`.
+- `origin/main` pushed to `71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`.
+- GitHub Actions run `25863943847`: success for `changes`, `lint`, `test`,
+  `type-check`, and `deploy`.
+- Deploy log: `Deployment successful. Active release:
+  71cec58b55e10b0393bfab5c9dc0ff2ccac0e3aa`.
+- Production API smoke: `uv run python scripts/verify_api.py --base-url
+  https://noor.starec.ai` -> `7 passed, 0 failed`.
+- Targeted merged-main regression/E2E:
+  `uv run --extra dev python -m pytest ...` -> `6 passed`.
+- Independent E2E explorer `Mendel`: PASS.
+
 ## Boundaries
 
 - Push and merge are approved by the current user request.
-- No manual deploy, production config mutation, GitHub issue mutation, or live
-  WhatsApp/media/voice test is approved yet.
+- Main push triggered the repo CI deploy job; no manual deploy or production
+  config mutation was performed.
+- GitHub issue mutation and live WhatsApp/media/voice tests remain
+  approval-gated.
