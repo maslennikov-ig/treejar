@@ -247,13 +247,14 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
     provider_calls = [call[0] for call in mock_wazzup.method_calls]
     assert provider_calls.index("send_text") < provider_calls.index("send_media")
     mock_wazzup.send_text.assert_awaited_once()
+    assert mock_wazzup.send_text.await_args.args[1] == (
+        "Hello, here are table options."
+    )
     mock_wazzup.send_media.assert_awaited_once()
     assert mock_wazzup.send_media.await_args.kwargs["url"] == (
         "https://example.com/table.jpg"
     )
-    assert mock_wazzup.send_media.await_args.kwargs["caption"] == (
-        "Operative table — 179.00 AED"
-    )
+    assert mock_wazzup.send_media.await_args.kwargs["caption"] is None
 
 
 @pytest.mark.asyncio

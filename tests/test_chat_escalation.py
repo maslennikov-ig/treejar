@@ -109,6 +109,7 @@ async def test_resolved_escalation_resumes_bot(
 
     mock_conv = _make_mock_conv(escalation_status="resolved")
     mock_conv.language = "en"
+    mock_conv.sales_stage = "solution"
 
     mock_session.execute.side_effect = [
         MockResult(None),
@@ -157,6 +158,7 @@ async def test_resolved_escalation_resumes_bot(
     mock_process_message.assert_awaited_once()
     mock_enqueue_summary.assert_awaited_once()
     mock_wazzup.send_text.assert_awaited_once()
+    assert mock_conv.sales_stage == "solution"
 
 
 @pytest.mark.asyncio

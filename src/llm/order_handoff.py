@@ -34,7 +34,10 @@ _PRODUCT_RE = re.compile(
     r"pods?|"
     r"booths?|"
     r"tables?|"
-    r"sofas?"
+    r"sofas?|"
+    r"[a-z]{1,4}[-\s]?\d{2,8}|"
+    r"\d{2,}(?:-\d{2,})+|"
+    r"[a-z0-9]+(?:-[a-z0-9]+)+"
     r")\b"
 )
 _NEED_RE = re.compile(r"\b(?:i need|we need)\b")

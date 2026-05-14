@@ -1,7 +1,7 @@
 # Stage tj-gh14: Liliya GitHub Issues Stabilization
 
 Updated: 2026-05-14
-Status: planned, not implemented
+Status: implemented and verified; delivery pending approval
 Branch: `codex/tj-gh14-new-issues`
 Base: `origin/main@27ac4fae74fe3fc201522b5ceedbf76477f58e4f`
 Plan: `docs/plans/2026-05-14-liliya-gh34-37-stabilization.md`
@@ -30,10 +30,39 @@ production config, live WhatsApp state, or deployment state before explicit appr
   and `src/services/conversation_reset.py`.
 - Context7 checked `/pydantic/pydantic-ai` for agent tool behavior.
 
+## Implementation
+
+- #34 / `tj-gh14.1`: added deterministic bare quantity+SKU parsing for
+  `5 x CH 190`, `CH 190 x 5`, and numeric hyphenated SKUs; order handoff now
+  recognizes SKU-like products when delivery/logistics evidence is present.
+- #37 / `tj-gh14.2`: added an `order_confirmation` tool guard so product/SKU
+  plus quantity alone is not enough to notify a manager.
+- #36 / `tj-gh14.3`: first-turn unknown-name requests store a bounded
+  `name_gate_pending_request`; name-only replies consume it and resume normal
+  routing instead of returning the generic opener. Resolved escalation now has
+  a regression check that it does not mutate `sales_stage`.
+- #35 / `tj-gh14.4`: deferred `product_media` sends images with no
+  customer-visible caption while retaining internal caption audit metadata.
+
+## Delegation
+
+- Worker `Newton` implemented #35 in the messaging/outbound-audit zone; the
+  orchestrator reviewed diff and reran the full worker test scope.
+- Explorer `Kierkegaard` inspected #36 read-only; orchestrator verified the
+  cited code paths and implemented the accepted minimal path.
+
 ## Verification So Far
 
-- No code implementation or tests run for `tj-gh14` yet.
-- Current branch contains planning artifacts and Beads only.
+- RED observed for #34/#37 parser/tool guard and #36 pending-request behavior.
+- Targeted post-format suite: `29 passed`.
+- Worker scope: `25 passed`.
+- Wide modified LLM/escalation suite: `158 passed`.
+- `ruff check` and `ruff format --check` passed for changed files.
+- Canonical gates passed: full `ruff check`, full `ruff format --check`, `mypy`,
+  full pytest `1016 passed, 19 skipped`, and process verification.
+- Stage closeout passed with code-change verification and process verification.
+- Local Beads `tj-gh14`, `tj-gh14.1`, `tj-gh14.2`, `tj-gh14.3`, and
+  `tj-gh14.4` are closed.
 
 ## Boundaries
 

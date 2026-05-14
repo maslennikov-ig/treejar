@@ -1186,6 +1186,7 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
     assert response.model == "name-gate"
     assert response.deferred_product_media == ()
     assert conv.escalation_status == "none"
+    assert (conv.metadata_ or {})["name_gate_pending_request"]["text"] == text
     assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
@@ -1252,6 +1253,199 @@ async def test_process_message_name_only_reply_after_name_gate_does_not_escalate
     assert conv.escalation_status == "none"
     assert response.model == "name-capture"
     assert "manager" not in response.text.lower()
+    assert mock_run.await_count == 0
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_name_only_reply_resumes_pending_name_gate_request(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = "Hi, I need CH-620 price and availability."
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "My name is E2E Tester."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        assert deps.user_query == pending_text
+        assert any(
+            "Continue the customer's prior request" in directive
+            for directive in deps.runtime_directives
+        )
+        return _FakeAgentResult("Thank you, E2E Tester. CH-620 is available.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.customer_name == "E2E Tester"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert response.model == "mock-model"
+    assert "CH-620 is available" in response.text
+    assert (
+        "How can I help you with your office furniture requirement?"
+        not in response.text
+    )
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_name_only_reply_resumes_pending_exact_quote_request(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = "5 x CH 190"
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "My name is Jio."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Thank you, Jio. Before I prepare the quotation, please share your company and delivery address."
+    )
+
+    orig_resolve = engine_module._resolve_exact_quote_candidate_sku
+    engine_module._resolve_exact_quote_candidate_sku = AsyncMock(return_value="CH-190")
+
+    try:
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+    finally:
+        engine_module._resolve_exact_quote_candidate_sku = orig_resolve
+
+    assert conv.customer_name == "Jio"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert mock_run.await_count == 2
+    for call in mock_run.await_args_list:
+        deps = call.kwargs["deps"]
+        assert deps.user_query == pending_text
+        assert deps.tool_mode == "exact_quote"
+    assert response.model == "mock-model|exact-quote-missing-details"
+    assert "quotation" in response.text.lower()
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_first_turn_unknown_name_does_not_store_plain_greeting(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    text = "Hello"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "name-gate"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
     assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
@@ -1884,6 +2078,58 @@ async def test_tools_escalate_to_manager(
         assert call_kwargs.kwargs["recent_messages"] == [
             "user: I want to speak to your manager"
         ]
+    finally:
+        notifications.notify_manager_escalation = orig_notify
+
+
+@pytest.mark.asyncio
+async def test_tools_escalate_to_manager_rejects_product_quantity_without_fulfillment(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="I need 2 mobile tables and 2 Skyland Novo 2400",
+        recent_history=[
+            "assistant: SKYLAND NOVO 2400 is available for 4500 AED.",
+            "user: I need 2 mobile tables and 2 Skyland Novo 2400",
+        ],
+    )
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import escalate_to_manager
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    import src.integrations.notifications.escalation as notifications
+
+    orig_notify = notifications.notify_manager_escalation
+    mock_notify = AsyncMock()
+    notifications.notify_manager_escalation = mock_notify
+
+    try:
+        result = await escalate_to_manager(
+            ctx,
+            reason="Customer gave product names and quantities",
+            escalation_type="order_confirmation",
+        )
+
+        assert "Do not escalate" in result
+        mock_notify.assert_not_awaited()
     finally:
         notifications.notify_manager_escalation = orig_notify
 
@@ -3437,6 +3683,24 @@ def test_extract_exact_quote_candidate_accepts_numeric_hyphenated_sku() -> None:
     assert candidate.quantity == 1
     assert candidate.item_candidate == "00-07024023"
     assert candidate.sku == "00-07024023"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_quantity", "expected_sku"),
+    [
+        ("5 x CH 190", 5, "CH-190"),
+        ("CH 190 x 5", 5, "CH-190"),
+        ("3 x 00-07024023", 3, "00-07024023"),
+    ],
+)
+def test_extract_exact_quote_candidate_accepts_bare_quantity_sku(
+    text: str, expected_quantity: int, expected_sku: str
+) -> None:
+    candidate = extract_exact_quote_candidate(text)
+
+    assert candidate is not None
+    assert candidate.quantity == expected_quantity
+    assert candidate.sku == expected_sku
 
 
 @pytest.mark.parametrize(

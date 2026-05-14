@@ -297,6 +297,7 @@ async def send_wazzup_media_with_audit(
     content_type: str | None = None,
     caption_crm_message_id: str | None = None,
     file_name: str | None = None,
+    send_caption: bool = True,
 ) -> AuditedMediaSendResult:
     existing = await _find_by_crm_message_id(db, crm_message_id)
     if existing is not None and _is_active(existing):
@@ -328,7 +329,9 @@ async def send_wazzup_media_with_audit(
                     retry_caption_audit.source = source
                     retry_caption_audit.provider_message_id = None
                     retry_caption_audit.error_details = None
-                    retry_caption_audit.details = None
+                    retry_caption_audit.details = (
+                        None if send_caption else {"customer_visible": False}
+                    )
                     retry_caption_audit.status = "pending"
                     retry_caption_audit.status_updated_at = _now()
                 else:
@@ -342,12 +345,27 @@ async def send_wazzup_media_with_audit(
                         caption=caption,
                         source=source,
                         crm_message_id=caption_crm_message_id,
+                        details=None if send_caption else {"customer_visible": False},
                         status="pending",
                         status_updated_at=_now(),
                     )
                     db.add(retry_caption_audit)
 
                 await db.flush()
+                if not send_caption:
+                    retry_caption_audit.provider_message_id = None
+                    retry_caption_audit.status = "sent"
+                    retry_caption_audit.status_updated_at = _now()
+                    retry_caption_result = AuditedSendResult(
+                        audit=retry_caption_audit,
+                        provider_message_id=None,
+                    )
+                    await db.flush()
+                    return AuditedMediaSendResult(
+                        media=media_result,
+                        caption=retry_caption_result,
+                    )
+
                 try:
                     caption_message_id = await provider.send_text(
                         chat_id,
@@ -444,7 +462,9 @@ async def send_wazzup_media_with_audit(
             caption_audit.source = source
             caption_audit.provider_message_id = None
             caption_audit.error_details = None
-            caption_audit.details = None
+            caption_audit.details = (
+                None if send_caption else {"customer_visible": False}
+            )
             caption_audit.status = "pending"
             caption_audit.status_updated_at = _now()
         else:
@@ -458,6 +478,7 @@ async def send_wazzup_media_with_audit(
                 caption=caption,
                 source=source,
                 crm_message_id=caption_crm_message_id,
+                details=None if send_caption else {"customer_visible": False},
                 status="pending",
                 status_updated_at=_now(),
             )
@@ -470,11 +491,11 @@ async def send_wazzup_media_with_audit(
             provider_result = await provider.send_media_detailed(
                 chat_id=chat_id,
                 url=url,
-                caption=caption,
+                caption=caption if send_caption else None,
                 content=content,
                 content_type=content_type,
                 crm_message_id=crm_message_id,
-                caption_crm_message_id=caption_crm_message_id,
+                caption_crm_message_id=caption_crm_message_id if send_caption else None,
             )
             media_message_id = provider_result.message_id
             caption_message_id = provider_result.caption_message_id
@@ -484,11 +505,11 @@ async def send_wazzup_media_with_audit(
             media_message_id = await provider.send_media(
                 chat_id=chat_id,
                 url=url,
-                caption=caption,
+                caption=caption if send_caption else None,
                 content=content,
                 content_type=content_type,
                 crm_message_id=crm_message_id,
-                caption_crm_message_id=caption_crm_message_id,
+                caption_crm_message_id=caption_crm_message_id if send_caption else None,
             )
             caption_message_id = None
             content_uri = url
@@ -538,19 +559,29 @@ async def send_wazzup_media_with_audit(
 
     caption_result: AuditedSendResult | None = None
     if caption_audit:
-        normalized_caption_message_id = _provider_message_id(caption_message_id)
-        caption_audit.provider_message_id = normalized_caption_message_id
-        caption_audit.status = "sent" if normalized_caption_message_id else "error"
-        caption_audit.status_updated_at = _now()
-        if not normalized_caption_message_id:
-            caption_audit.error_details = {
-                "error": "caption_send_failed",
-                "description": "Provider returned no caption message id.",
-            }
-        caption_result = AuditedSendResult(
-            audit=caption_audit,
-            provider_message_id=normalized_caption_message_id,
-        )
+        if send_caption:
+            normalized_caption_message_id = _provider_message_id(caption_message_id)
+            caption_audit.provider_message_id = normalized_caption_message_id
+            caption_audit.status = "sent" if normalized_caption_message_id else "error"
+            caption_audit.status_updated_at = _now()
+            if not normalized_caption_message_id:
+                caption_audit.error_details = {
+                    "error": "caption_send_failed",
+                    "description": "Provider returned no caption message id.",
+                }
+            caption_result = AuditedSendResult(
+                audit=caption_audit,
+                provider_message_id=normalized_caption_message_id,
+            )
+        else:
+            caption_audit.provider_message_id = None
+            caption_audit.status = "sent"
+            caption_audit.status_updated_at = _now()
+            caption_audit.error_details = None
+            caption_result = AuditedSendResult(
+                audit=caption_audit,
+                provider_message_id=None,
+            )
 
     await db.flush()
     return AuditedMediaSendResult(media=media_result, caption=caption_result)

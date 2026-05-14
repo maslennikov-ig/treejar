@@ -8,6 +8,8 @@ from src.llm.order_handoff import is_high_confidence_first_turn_order
     [
         ("I need 200 chairs delivered to Dubai Marina by next week", True),
         ("We need 40 workstations installed in Abu Dhabi next Monday", True),
+        ("I need 5 x CH 190 delivered to Dubai Marina by next week", True),
+        ("I need 5 x CH 190", False),
         ("We need 20 chairs for next week, what options do you have?", False),
         ("What is your MOQ for chairs?", False),
         ("What are your wholesale prices for bulk orders?", False),

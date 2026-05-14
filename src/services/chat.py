@@ -341,6 +341,7 @@ async def _send_deferred_product_media(
                 caption=item.caption,
                 content=None,
                 content_type=None,
+                send_caption=False,
             )
             await db.commit()
         except Exception as exc:

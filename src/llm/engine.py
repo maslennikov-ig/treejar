@@ -79,6 +79,8 @@ MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
+NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
+MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(r"\s*\[smoke:[^\]]+\]\s*", re.I)
 NATURAL_NAME_PATTERNS = (
@@ -210,6 +212,18 @@ _SKU_SIGNAL_RE = re.compile(
     r"\b(?:[a-z]{1,4}[-\s]?\d{2,8}|\d{2,}(?:-\d{2,})+|[a-z0-9]+(?:-[a-z0-9]+)+)\b",
     re.IGNORECASE,
 )
+_SKU_SIGNAL_PATTERN = (
+    r"[a-z]{1,4}[-\s]?\d{2,8}|"
+    r"\d{2,}(?:-\d{2,})+|"
+    r"[a-z0-9]+(?:-[a-z0-9]+)+"
+)
+_BARE_QUANTITY_SKU_RE = re.compile(
+    rf"(?<![\w.-])(?:"
+    rf"(?P<quantity_first>\d{{1,4}})\s*(?:x|×)\s*(?P<sku_after>{_SKU_SIGNAL_PATTERN})|"
+    rf"(?P<sku_before>{_SKU_SIGNAL_PATTERN})\s*(?:x|×)\s*(?P<quantity_after>\d{{1,4}})"
+    rf")(?![\w.-])",
+    re.IGNORECASE,
+)
 _SKU_PRICE_PREFIX_STOPWORDS = frozenset(
     {
         "aed",
@@ -229,6 +243,40 @@ _SKU_PRODUCT_PREFIX_STOPWORDS = frozenset(
 )
 _SKU_FOLLOWING_CURRENCY_RE = re.compile(
     r"\s*(?:aed|dhs?|dirhams?|dirham|درهم|د\.إ)\b",
+    re.IGNORECASE,
+)
+_ORDER_CONFIRMATION_PRODUCT_RE = re.compile(
+    r"\b(?:"
+    r"acoustic pods?|phone booths?|workstations?|chairs?|desks?|pods?|booths?|"
+    r"tables?|sofas?|furniture|"
+    rf"{_SKU_SIGNAL_PATTERN}"
+    r")\b",
+    re.IGNORECASE,
+)
+_ORDER_CONFIRMATION_EXPLICIT_FULFILLMENT_RE = re.compile(
+    r"\b(?:"
+    r"place the order|confirm the order|finali[sz]e the order|proceed with the order|"
+    r"please deliver|arrange delivery|arrange installation|book delivery|"
+    r"schedule installation|deliver it|ship it|ship to"
+    r")\b",
+    re.IGNORECASE,
+)
+_ORDER_CONFIRMATION_DELIVERY_INSTALL_RE = re.compile(
+    r"\b(?:deliver|delivered|delivery|install|installed|installation|ship|shipping)\b",
+    re.IGNORECASE,
+)
+_ORDER_CONFIRMATION_LOCATION_RE = re.compile(
+    r"\b(?:to|in|at)\s+"
+    r"(?!stock\b|bulk\b|wholesale\b|available\b|availability\b|next\b|this\b|the\b|our\b|your\b)"
+    r"[a-z]+(?:\s+[a-z]+){0,3}\b",
+    re.IGNORECASE,
+)
+_ORDER_CONFIRMATION_TIMEFRAME_RE = re.compile(
+    r"\b(?:"
+    r"by\s+(?:next\s+)?(?:week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"next\s+(?:week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+    r"this\s+(?:week|month)|today|tomorrow"
+    r")\b",
     re.IGNORECASE,
 )
 _QUANTITY_ITEM_SIGNAL_RE = re.compile(
@@ -595,6 +643,25 @@ def _extract_sku_signal(text: str) -> str | None:
     return None
 
 
+def _extract_bare_quantity_sku_candidate(text: str) -> ExactQuoteCandidate | None:
+    normalized_text = _normalize_sku_homoglyphs(text)
+    for match in _BARE_QUANTITY_SKU_RE.finditer(normalized_text):
+        quantity_raw = match.group("quantity_first") or match.group("quantity_after")
+        sku_fragment = match.group("sku_after") or match.group("sku_before")
+        if not quantity_raw or not sku_fragment:
+            continue
+        sku = _extract_sku_signal(sku_fragment)
+        if sku is None:
+            continue
+        item_candidate = " ".join(_normalize_sku_homoglyphs(sku_fragment).split())
+        return ExactQuoteCandidate(
+            quantity=int(quantity_raw),
+            item_candidate=item_candidate,
+            sku=sku,
+        )
+    return None
+
+
 def _tokenize_exact_match_text(text: str) -> list[str]:
     return [
         token
@@ -612,6 +679,9 @@ def _has_exact_commitment_intent(normalized: str) -> bool:
         return False
 
     if any(term in normalized for term in _QUOTE_REQUEST_TERMS):
+        return True
+
+    if _BARE_QUANTITY_SKU_RE.search(normalized):
         return True
 
     has_commitment_target = any(
@@ -734,6 +804,40 @@ def _service_confirmation_handoff_text() -> str:
     )
 
 
+def _has_order_confirmation_product_quantity_signal(text: str) -> bool:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    return bool(
+        _QUANTITY_SIGNAL_RE.search(normalized)
+        and _ORDER_CONFIRMATION_PRODUCT_RE.search(normalized)
+    )
+
+
+def _has_order_confirmation_fulfillment_evidence(text: str) -> bool:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    if not normalized:
+        return False
+
+    explicit_fulfillment = bool(
+        _ORDER_CONFIRMATION_EXPLICIT_FULFILLMENT_RE.search(normalized)
+    )
+    delivery_or_install = bool(
+        _ORDER_CONFIRMATION_DELIVERY_INSTALL_RE.search(normalized)
+    )
+    has_logistics = bool(
+        _ORDER_CONFIRMATION_LOCATION_RE.search(normalized)
+        or _ORDER_CONFIRMATION_TIMEFRAME_RE.search(normalized)
+    )
+    return (explicit_fulfillment and has_logistics) or (
+        delivery_or_install and has_logistics
+    )
+
+
+def _should_reject_order_confirmation_escalation(text: str) -> bool:
+    return _has_order_confirmation_product_quantity_signal(
+        text
+    ) and not _has_order_confirmation_fulfillment_evidence(text)
+
+
 def _showroom_location_response(language: str) -> str:
     normalized = str(language or "").strip().casefold()
     if normalized in {"ar", "arabic", "العربية"}:
@@ -758,6 +862,10 @@ def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
     normalized = _normalize_text(text)
     if not normalized or not _has_exact_commitment_intent(normalized):
         return None
+
+    bare_quantity_sku = _extract_bare_quantity_sku_candidate(text)
+    if bare_quantity_sku is not None:
+        return bare_quantity_sku
 
     for match in _QUANTITY_ITEM_SIGNAL_RE.finditer(text):
         quantity = int(match.group("quantity"))
@@ -1630,6 +1738,99 @@ def _is_name_only_customer_detail_reply(
         return before_is_social and after_is_social
 
     return False
+
+
+def _is_substantive_name_gate_request(text: str) -> bool:
+    stripped = " ".join(_strip_synthetic_test_marker(text).split())
+    if not stripped:
+        return False
+
+    details = _extract_quote_customer_details(stripped)
+    if _is_name_only_customer_detail_reply(stripped, details):
+        return False
+
+    normalized = _normalize_text(stripped)
+    normalized = re.sub(
+        r"^(?:hi|hello|hey|good morning|good afternoon|good evening|"
+        r"добрый день|здравствуйте|привет|مرحبا|السلام عليكم)[,!\s]*",
+        "",
+        normalized,
+    ).strip()
+    if not normalized:
+        return False
+    return normalized not in {
+        "can you help",
+        "could you help",
+        "please advise",
+        "подскажите",
+        "thanks",
+        "thank you",
+        "ok",
+        "okay",
+        "yes",
+        "no",
+    }
+
+
+async def _store_name_gate_pending_request(
+    db: AsyncSession,
+    conversation: Conversation,
+    text: str,
+) -> None:
+    if not _is_substantive_name_gate_request(text):
+        return
+
+    metadata = dict(conversation.metadata_ or {})
+    metadata[NAME_GATE_PENDING_REQUEST_KEY] = {
+        "text": " ".join(text.split())[:MAX_NAME_GATE_PENDING_REQUEST_CHARS],
+        "source": "first_turn_name_gate",
+    }
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush name-gate pending request for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+def _name_gate_pending_request_from_metadata(
+    conversation: Conversation,
+) -> str | None:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    raw = metadata.get(NAME_GATE_PENDING_REQUEST_KEY)
+    if not isinstance(raw, Mapping):
+        return None
+    text = raw.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    return text.strip()
+
+
+async def _consume_name_gate_pending_request(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> str | None:
+    pending_text = _name_gate_pending_request_from_metadata(conversation)
+    if pending_text is None:
+        return None
+
+    metadata = dict(conversation.metadata_ or {})
+    metadata.pop(NAME_GATE_PENDING_REQUEST_KEY, None)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush consumed name-gate pending request for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+    return pending_text
 
 
 def _is_customer_phone_detail(text: str, match: re.Match[str]) -> bool:
@@ -3663,6 +3864,19 @@ async def escalate_to_manager(
 
     esc_type = EscalationType(escalation_type)
 
+    if esc_type == EscalationType.ORDER_CONFIRMATION and (
+        _should_reject_order_confirmation_escalation(ctx.deps.user_query)
+    ):
+        logger.info(
+            "Rejected order_confirmation escalation without fulfillment evidence: %r",
+            ctx.deps.user_query,
+        )
+        return (
+            "Do not escalate. Product names or SKUs plus quantities alone are not "
+            "a confirmed order; continue the sales conversation, confirm the "
+            "products/pricing, or ask one necessary delivery/detail question."
+        )
+
     # Use pre-built history from SalesDeps (no extra SQL query)
     recent_messages = ctx.deps.recent_history or []
 
@@ -3912,6 +4126,7 @@ async def process_message(
     current_quote_customer_details = _extract_quote_customer_details(combined_text)
 
     if is_first_turn and customer_name_was_unknown:
+        await _store_name_gate_pending_request(db, conv, combined_text)
         response = _build_static_response(
             "Hello",
             "name-gate",
@@ -3931,12 +4146,33 @@ async def process_message(
         combined_text,
         current_quote_customer_details,
     ):
-        return _build_static_response(
-            f"Thank you, {current_quote_customer_details['name']}. "
-            "How can I help you with your office furniture requirement?",
-            "name-capture",
-            allow_product_media=False,
-        )
+        pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
+        if pending_name_gate_request:
+            combined_text = pending_name_gate_request
+            masked_text, pending_piis = mask_pii(combined_text)
+            pii_map.update(pending_piis)
+            pending_user_entry = f"user: {masked_text}"
+            if pending_user_entry not in recent_history:
+                recent_history.append(pending_user_entry)
+            recent_history = recent_history[-5:]
+            deps = replace(
+                deps,
+                user_query=masked_text,
+                recent_history=recent_history,
+                runtime_directives=(
+                    *deps.runtime_directives,
+                    "Continue the customer's prior request now that their name is known. "
+                    "Acknowledge the name briefly; do not ask what they need again.",
+                ),
+            )
+            current_quote_customer_details = {}
+        else:
+            return _build_static_response(
+                f"Thank you, {current_quote_customer_details['name']}. "
+                "How can I help you with your office furniture requirement?",
+                "name-capture",
+                allow_product_media=False,
+            )
 
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)
     try:
