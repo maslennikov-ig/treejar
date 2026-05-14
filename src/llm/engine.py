@@ -221,7 +221,7 @@ _BARE_QUANTITY_SKU_RE = re.compile(
     rf"(?<![\w.-])(?:"
     rf"(?P<quantity_first>\d{{1,4}})\s*(?:x|×)\s*(?P<sku_after>{_SKU_SIGNAL_PATTERN})|"
     rf"(?P<sku_before>{_SKU_SIGNAL_PATTERN})\s*(?:x|×)\s*(?P<quantity_after>\d{{1,4}})"
-    rf")(?![\w.-])",
+    rf")(?=$|[^\w.-]|\.(?:\s|$|\[))",
     re.IGNORECASE,
 )
 _SKU_PRICE_PREFIX_STOPWORDS = frozenset(

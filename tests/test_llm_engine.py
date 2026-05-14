@@ -1355,7 +1355,7 @@ async def test_process_message_name_only_reply_resumes_pending_exact_quote_reque
 ) -> None:
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = None
-    pending_text = "5 x CH 190"
+    pending_text = "Hi, I need 5 x CH 190.\n[smoke:a444e12f]"
     conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
     text = "My name is Jio."
     mock_build_history.return_value = [
@@ -3689,6 +3689,8 @@ def test_extract_exact_quote_candidate_accepts_numeric_hyphenated_sku() -> None:
     ("text", "expected_quantity", "expected_sku"),
     [
         ("5 x CH 190", 5, "CH-190"),
+        ("Hi, I need 5 x CH 190.", 5, "CH-190"),
+        ("Hi, I need 5 x CH 190.\n[smoke:a444e12f]", 5, "CH-190"),
         ("CH 190 x 5", 5, "CH-190"),
         ("3 x 00-07024023", 3, "00-07024023"),
     ],
