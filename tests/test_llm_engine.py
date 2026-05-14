@@ -3728,6 +3728,22 @@ def test_extract_exact_quote_candidate_accepts_spaced_compact_and_homoglyph_skus
     assert candidate.sku == expected_sku
 
 
+@pytest.mark.asyncio
+async def test_resolve_exact_quote_candidate_accepts_spaced_canonical_sku() -> None:
+    db = AsyncMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    db.execute.return_value = result
+
+    candidate = extract_exact_quote_candidate("Hi, I need 5 x CH 190.")
+
+    assert candidate is not None
+    assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) == (
+        "CH-190"
+    )
+    db.execute.assert_awaited_once()
+
+
 @pytest.mark.parametrize(
     "text",
     [

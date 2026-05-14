@@ -1060,7 +1060,10 @@ async def _resolve_exact_quote_candidate_sku(
         exact_sku_product = await _find_catalog_product_by_sku(db, candidate_sku)
         if exact_sku_product is not None:
             return str(exact_sku_product.sku)
-        if _normalize_text(candidate_item) == _normalize_text(candidate_sku):
+        if (
+            _normalize_text(candidate_item) == _normalize_text(candidate_sku)
+            or _canonicalize_sku_signal(candidate_item) == candidate_sku
+        ):
             return candidate_sku
 
     from src.models.product import Product
