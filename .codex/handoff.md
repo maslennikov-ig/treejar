@@ -1,37 +1,31 @@
 # Orchestrator Handoff
 
 Updated: 2026-05-15
-Current branch: `codex/tj-gh15-name-escalation-hardening`
+Current branch: `codex/tj-long-memory-e2e`
 
 ## Current Truth
 
 - Canonical host: `https://noor.starec.ai`; canonical runtime path: `/opt/noor`.
-- Stage `tj-gh15` fixed GitHub #36/#37 and is delivered, deployed, live E2E verified, and GitHub-closed.
-- Final code commit: `cf966f0e2345da0154c8f11f57c0c60340ff451e` (`fix(runtime): harden name gate and product routing`).
-- Delivery: `origin/codex/tj-gh15-name-escalation-hardening` pushed, `origin/main` fast-forwarded to `cf966f0e2345da0154c8f11f57c0c60340ff451e`, GitHub Actions run `25910228955` succeeded.
-- Production release markers match: `/opt/noor/.release-sha` is `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `/opt/noor/.release-run-id` is `25910228955`.
-- Production API smoke passed: `scripts/verify_api.py --base-url https://noor.starec.ai` returned `7 passed, 0 failed`.
-- Approved cleanup for `79262810921%` was performed in one transaction: before 72 conversations, 284 messages, 250 outbound audits, 41 escalations, 7 quality reviews; after all matching counts were 0.
-- Approved live E2E on `+79262810921` passed in conversation `5e587327-0092-4699-a4ee-df6e23edf0ca`: first turn returned `name-gate`; bare `Lili` stored `customer_name=Lili`, cleared `name_gate_pending_request`, and resumed the original request; `2 Skyland Novo and 2xten` stayed on product clarification; escalation stayed `none` with `0` pending escalations.
-- Independent read-only verifier subagent returned PASS on release marker, runtime health, DB state, transcript, metadata, and no escalation text.
-- GitHub #36 and #37 were commented with fix/evidence and closed as completed:
-  - #36 comment: https://github.com/maslennikov-ig/treejar/issues/36#issuecomment-4459034706
-  - #37 comment: https://github.com/maslennikov-ig/treejar/issues/37#issuecomment-4459034949
-- Local Beads `tj-gh15`, `tj-gh15.1`, `tj-gh15.2`, and `tj-gh15.3` are closed.
-- Lili's real WhatsApp conversation was not mutated.
-- Stage summary: `.codex/stages/tj-gh15/summary.md`; artifacts: `.codex/stages/tj-gh15/artifacts/tj-gh15.1-2.md` and `.codex/stages/tj-gh15/artifacts/tj-gh15.3-live-e2e.md`.
+- Production release is `cf966f0e2345da0154c8f11f57c0c60340ff451e`; GitHub Actions run `25910228955` succeeded; `/opt/noor/.release-sha` matches.
+- Stage `tj-gh15` fixed GitHub #36/#37, passed short live E2E, and the issues are closed. Details: `.codex/stages/tj-gh15/summary.md`.
+- Stage `tj-e2e15` ran a separate long-dialog production E2E stress test on the approved personal number `+79262810921` and found a new blocker.
+- Stress conversation `cb46ebcb-1c5a-41f4-a7d7-99e295f11ba7`: turn 1 `name-gate` passed, turn 2 bare `Lili` stored name and resumed product planning, turn 3 company detail triggered `z-ai/glm-5|verified-policy` and `escalation_status=pending`.
+- After that, turns 4-6 returned manager-notified fallback replies and turn 7 timed out; long-dialog retention did not pass.
+- New Bead `tj-e2e15.2` is open as P1: customer detail-only messages during active product/quotation context must not trigger verified-policy handoff.
+- Stage summary: `.codex/stages/tj-e2e15/summary.md`; artifact: `.codex/stages/tj-e2e15/artifacts/tj-e2e15.1-stress-failed.md`.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
 ## Next recommended
 
-Next stage id: none.
+Next stage id: `tj-e2e15.2` or a new fix stage for the long-dialog detail-capture escalation bug.
 
-Recommended action: no further `tj-gh15` work is pending. Use $orchestrator-stage only if the user asks for another issue batch, another live E2E cycle, or additional production/GitHub mutations.
+Recommended action: use $orchestrator-stage to fix `tj-e2e15.2`, deploy it, clean `+79262810921` again with approval already tied to this testing flow, and repeat the long-dialog E2E stress test through the final summary turns.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage if new GitHub issues or production follow-up work arrives. Current delivered production release is `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `tj-gh15` is closed.
+Use $orchestrator-stage for `tj-e2e15.2`. Current delivered production release is `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `tj-gh15` is closed, but `tj-e2e15` found a new production blocker in conversation `cb46ebcb-1c5a-41f4-a7d7-99e295f11ba7`.
 
 ## Explicit defers
 
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup typing endpoint.
+- `tj-e2e15.2` remains open for code fix, deploy, and repeat long-dialog E2E validation.
