@@ -83,6 +83,108 @@ NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(r"\s*\[smoke:[^\]]+\]\s*", re.I)
+BARE_NAME_GATE_REPLY_RE = re.compile(
+    r"[^\W\d_]+(?:[ '\-][^\W\d_]+){0,3}",
+    re.UNICODE,
+)
+BARE_NAME_GATE_REJECT_PHRASES = frozenset(
+    {
+        "yes",
+        "yeah",
+        "yep",
+        "sure",
+        "ok",
+        "okay",
+        "no",
+        "thanks",
+        "thank you",
+        "go ahead",
+        "да",
+        "нет",
+        "ок",
+        "окей",
+        "хорошо",
+        "спасибо",
+        "نعم",
+        "لا",
+        "حسنا",
+        "حسنًا",
+        "شكرا",
+    }
+)
+BARE_NAME_GATE_REJECT_TOKENS = frozenset(
+    {
+        "availability",
+        "available",
+        "assembly",
+        "booth",
+        "booths",
+        "cabinet",
+        "cabinets",
+        "catalog",
+        "chair",
+        "chairs",
+        "call",
+        "delivery",
+        "deliver",
+        "desk",
+        "desks",
+        "drawer",
+        "drawers",
+        "furniture",
+        "imago",
+        "install",
+        "installation",
+        "mobile",
+        "model",
+        "my",
+        "name",
+        "need",
+        "novo",
+        "order",
+        "pedestal",
+        "pod",
+        "pods",
+        "price",
+        "prices",
+        "quotation",
+        "quote",
+        "sku",
+        "skyland",
+        "sofa",
+        "sofas",
+        "station",
+        "stock",
+        "storage",
+        "table",
+        "tables",
+        "is",
+        "trend",
+        "want",
+        "work",
+        "workstation",
+        "workstations",
+        "xten",
+        "доставка",
+        "кресло",
+        "мебель",
+        "нужно",
+        "нужен",
+        "нужна",
+        "нужны",
+        "сборка",
+        "склад",
+        "стол",
+        "столы",
+        "цена",
+        "шкаф",
+        "كرسي",
+        "مكتب",
+        "طاولة",
+        "توصيل",
+        "تركيب",
+    }
+)
 NATURAL_NAME_PATTERNS = (
     re.compile(
         r"\bmy\s+name\s+is\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
@@ -1715,14 +1817,44 @@ def _extract_natural_customer_name(text: str) -> str:
     return ""
 
 
+def _extract_bare_name_gate_reply(text: str) -> str:
+    stripped = _strip_synthetic_test_marker(text)
+    stripped = " ".join(stripped.strip(" \t\r\n.,;:!?").split())
+    if not stripped or len(stripped) > 80:
+        return ""
+    if any(char.isdigit() for char in stripped):
+        return ""
+    if not BARE_NAME_GATE_REPLY_RE.fullmatch(stripped):
+        return ""
+
+    normalized = _normalize_text(stripped)
+    compact = re.sub(r"[\s'\-]+", "", normalized)
+    if normalized in BARE_NAME_GATE_REJECT_PHRASES:
+        return ""
+    if compact in BARE_NAME_GATE_REJECT_PHRASES:
+        return ""
+
+    tokens = re.findall(r"[^\W\d_]+", normalized, flags=re.UNICODE)
+    if any(token in BARE_NAME_GATE_REJECT_TOKENS for token in tokens):
+        return ""
+    if any(phrase in normalized for phrase in BARE_NAME_GATE_REJECT_TOKENS):
+        return ""
+    return stripped
+
+
 def _is_name_only_customer_detail_reply(
     text: str,
     details: Mapping[str, str],
 ) -> bool:
-    if not _string_value(details.get("name")):
+    name = _string_value(details.get("name"))
+    if not name:
         return False
 
     stripped = _strip_synthetic_test_marker(text)
+    bare_name = _extract_bare_name_gate_reply(stripped)
+    if bare_name and bare_name.casefold() == name.casefold():
+        return True
+
     for pattern in NATURAL_NAME_PATTERNS:
         match = pattern.search(stripped)
         if not match:
@@ -2021,6 +2153,14 @@ async def _store_quote_customer_details(
     text: str,
 ) -> dict[str, str]:
     extracted = _extract_quote_customer_details(text)
+    return await _store_extracted_quote_customer_details(db, conversation, extracted)
+
+
+async def _store_extracted_quote_customer_details(
+    db: AsyncSession,
+    conversation: Conversation,
+    extracted: Mapping[str, str],
+) -> dict[str, str]:
     if not extracted:
         return _quote_customer_details_from_metadata(conversation)
 
@@ -4127,6 +4267,14 @@ async def process_message(
 
     customer_name_was_unknown = not str(conv.customer_name or "").strip()
     current_quote_customer_details = _extract_quote_customer_details(combined_text)
+    pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
+    if customer_name_was_unknown and pending_name_gate_request:
+        bare_name = _extract_bare_name_gate_reply(combined_text)
+        if bare_name and not current_quote_customer_details.get("name"):
+            current_quote_customer_details = {
+                **current_quote_customer_details,
+                "name": bare_name,
+            }
 
     if is_first_turn and customer_name_was_unknown:
         await _store_name_gate_pending_request(db, conv, combined_text)
@@ -4136,14 +4284,22 @@ async def process_message(
             allow_product_media=False,
         )
         if current_quote_customer_details:
-            await _store_quote_customer_details(db, conv, combined_text)
+            await _store_extracted_quote_customer_details(
+                db,
+                conv,
+                current_quote_customer_details,
+            )
         return response
 
     # Store customer details from the original, unmasked text before any route
     # can call create_quotation. Phone is enough to create a draft, while the
     # other fields are optional PDF details when the customer provides them.
     if current_quote_customer_details:
-        await _store_quote_customer_details(db, conv, combined_text)
+        await _store_extracted_quote_customer_details(
+            db,
+            conv,
+            current_quote_customer_details,
+        )
 
     if _is_name_only_customer_detail_reply(
         combined_text,
@@ -4595,7 +4751,10 @@ async def process_message(
                 replace(
                     deps,
                     tool_mode="full",
-                    runtime_directives=MIXED_PRODUCT_SERVICE_DIRECTIVES,
+                    runtime_directives=(
+                        *deps.runtime_directives,
+                        *MIXED_PRODUCT_SERVICE_DIRECTIVES,
+                    ),
                 )
             )
             await _clear_verified_policy_repair_state()
@@ -4704,8 +4863,9 @@ async def process_message(
                 replace(
                     deps,
                     tool_mode="service_policy",
-                    runtime_directives=build_service_runtime_directives(
-                        policy_decision
+                    runtime_directives=(
+                        *deps.runtime_directives,
+                        *build_service_runtime_directives(policy_decision),
                     ),
                 )
             )

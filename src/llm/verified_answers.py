@@ -70,10 +70,26 @@ _PRODUCT_SIGNALS = (
     "pods",
     "booth",
     "booths",
+    "cabinet",
+    "cabinets",
+    "drawer",
+    "drawers",
+    "imago",
+    "mobile drawer",
+    "mobile drawers",
+    "novo",
+    "pedestal",
+    "pedestals",
+    "skyland",
+    "storage",
     "workstation",
     "workstations",
+    "work station",
+    "work stations",
     "table",
     "tables",
+    "trend",
+    "xten",
     "sofa",
     "sofas",
     "catalog",
@@ -93,6 +109,10 @@ _COMPACT_PRODUCT_SIGNALS = tuple(
     re.sub(r"[\s-]+", "", signal)
     for signal in _PRODUCT_SIGNALS
     if re.search(r"[a-z]", signal)
+)
+_PRODUCT_SELECTION_QUANTITY_RE = re.compile(
+    r"(?:^|[^\w])\d{1,4}\s*(?:x|×)?\s*[\w'-]+",
+    re.IGNORECASE | re.UNICODE,
 )
 _PRODUCT_DISCOVERY_PHRASES = (
     "what options",
@@ -451,6 +471,13 @@ def _has_product_signal(normalized: str) -> bool:
     return any(signal in compact for signal in _COMPACT_PRODUCT_SIGNALS)
 
 
+def _has_product_selection_signal(normalized: str) -> bool:
+    return _has_product_signal(normalized) and bool(
+        _NUMBER_RE.search(normalized)
+        or _PRODUCT_SELECTION_QUANTITY_RE.search(normalized)
+    )
+
+
 def _unicode_tokens(text: str) -> tuple[str, ...]:
     return tuple(
         token for token in _UNICODE_TOKEN_RE.findall(_normalize_social_text(text))
@@ -563,6 +590,7 @@ def classify_question(query: str) -> QuestionClass:
 
     normalized = _normalize(routed_query).casefold()
     has_product_signal = _has_product_signal(normalized)
+    has_product_selection = _has_product_selection_signal(normalized)
     has_product_discovery = any(
         phrase in normalized for phrase in _PRODUCT_DISCOVERY_PHRASES
     )
@@ -572,7 +600,7 @@ def classify_question(query: str) -> QuestionClass:
         for keyword in _TOPIC_KEYWORDS[topic]
     )
 
-    if has_product_signal and has_product_discovery:
+    if has_product_signal and (has_product_discovery or has_product_selection):
         return "product"
 
     if is_quote_or_proposal_request(normalized) and not _has_commercial_terms_risk(

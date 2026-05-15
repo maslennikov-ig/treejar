@@ -22,6 +22,7 @@ from src.llm.engine import (
     ProductMediaPayload,
     QuotationItem,
     SalesDeps,
+    _extract_bare_name_gate_reply,
     extract_exact_quote_candidate,
     inject_system_prompt,
     process_message,
@@ -1329,6 +1330,117 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
         "How can I help you with your office furniture requirement?"
         not in response.text
     )
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Lili", "Lili"),
+        ("Лилия", "Лилия"),
+        ("ليلى", "ليلى"),
+        ("My name is Jio", ""),
+        ("yes", ""),
+        ("ok", ""),
+        ("4 tables", ""),
+        ("I need 4 tables", ""),
+        ("Skyland Novo", ""),
+        ("2 Skyland Novo and 2xten", ""),
+    ],
+)
+def test_extract_bare_name_gate_reply_accepts_only_likely_names(
+    text: str,
+    expected: str,
+) -> None:
+    assert _extract_bare_name_gate_reply(text) == expected
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_bare_name_reply_resumes_pending_name_gate_request(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = (
+        "Hello, I am interested in ordering work station for 2 people and some "
+        "mobile drawers. I appreciate fast delivery within 2-3 days. I wanted "
+        "to ask if you will also assembly the desk upon delivery?"
+    )
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "Lili"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = [
+        {
+            "title": "Delivery and installation",
+            "content": (
+                "Q: Do you provide installation?\n"
+                "A: Yes, we provide professional delivery and installation services."
+            ),
+        }
+    ]
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        assert deps.user_query == pending_text
+        assert any(
+            "Continue the customer's prior request" in directive
+            for directive in deps.runtime_directives
+        )
+        return _FakeAgentResult(
+            "Thank you, Lili. I can help with 2-person workstations, mobile "
+            "drawers, delivery, and assembly options."
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.customer_name == "Lili"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert response.model == "mock-model"
+    assert "workstations" in response.text
+    assert "What do you need" not in response.text
+    assert "I can help with products, prices, stock" not in response.text
     assert mock_run.await_count == 1
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
@@ -5164,6 +5276,67 @@ async def test_process_message_mixed_product_service_request_stays_in_full_mode(
         for directive in call["deps"].runtime_directives
     )
     mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2 Skyland Novo and 2xten",
+        "I need 2 trend mobile and 2 Skyland Novo 2400",
+    ],
+)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_brand_quantity_selection_stays_on_product_path(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    text: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="I need office furniture.")]),
+        ModelResponse(parts=[TextPart(content="Sure, which models do you prefer?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I can help confirm the exact Skyland Novo and XTEN models."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model"
+    assert "manager will confirm" not in response.text.lower()
+    assert conv.escalation_status == "none"
+    assert mock_run.await_count == 1
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "full"
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
 
 
 @pytest.mark.asyncio

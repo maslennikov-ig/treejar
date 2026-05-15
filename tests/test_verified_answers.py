@@ -219,6 +219,18 @@ def test_policy_routes_office_workspace_need_to_product_path() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_routes_brand_quantity_selection_to_product_path() -> None:
+    for query in (
+        "2 Skyland Novo and 2xten",
+        "I need 2 trend mobile and 2 Skyland Novo 2400",
+    ):
+        decision = evaluate_verified_answer_policy(query=query, faq_context=[])
+
+        assert decision.question_class == "product"
+        assert decision.policy_action == "allow"
+        assert decision.requires_manager_handoff is False
+
+
 def test_policy_keeps_company_office_location_question_on_service_path() -> None:
     decision = evaluate_verified_answer_policy(
         query="Where is your office in Dubai?",
