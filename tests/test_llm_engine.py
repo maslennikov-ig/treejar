@@ -1497,6 +1497,15 @@ def test_extract_quote_customer_details_accepts_natural_company_and_address() ->
     ) == {"address": "Bay Square Building 3, Business Bay, Dubai"}
 
 
+def test_extract_sales_memory_updates_keeps_delivery_timing() -> None:
+    updates = engine_module._extract_sales_memory_updates(
+        "I appreciate fast delivery within 2-3 days and assembly is required."
+    )
+
+    assert updates["delivery_timing"] == "2-3 days"
+    assert updates["assembly_required"] == "yes"
+
+
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -1741,6 +1750,75 @@ async def test_process_message_product_quantity_update_stays_with_agent(
     assert "3 mobile drawers" in response.text
     assert "manager" not in response.text.lower()
     assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_saved_context_summary_does_not_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.sales_stage = SalesStage.QUALIFYING.value
+    conv.metadata_ = {
+        "quote_customer_details": {
+            "name": "Lili",
+            "company": "Memory Test LLC",
+            "address": "Bay Square Building 3, Business Bay, Dubai",
+        },
+        "sales_memory": {
+            "latest_product_note": (
+                "Let's use 3 mobile drawers instead of 2. Keep 2 workstations."
+            ),
+            "delivery_timing": "2-3 days",
+            "assembly_required": "yes",
+            "quotation_hold": "yes",
+        },
+    }
+    text = (
+        "What details have you saved about my company, delivery address, "
+        "products, quantities, delivery timing, and assembly?"
+    )
+    mock_build_history.return_value = _active_product_planning_history(text=text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.escalation_status == "none"
+    assert response.model == "saved-context-summary"
+    assert "Memory Test LLC" in response.text
+    assert "Bay Square Building 3" in response.text
+    assert "3 mobile drawers" in response.text
+    assert "2 workstations" in response.text
+    assert "2-3 days" in response.text
+    assert "Assembly: required" in response.text
+    assert "manager" not in response.text.lower()
+    assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 

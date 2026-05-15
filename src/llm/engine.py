@@ -2095,7 +2095,12 @@ def _sales_memory_from_metadata(conversation: Conversation) -> dict[str, str]:
     if not isinstance(raw_memory, Mapping):
         return {}
     memory: dict[str, str] = {}
-    for key in ("assembly_required", "quotation_hold", "latest_product_note"):
+    for key in (
+        "assembly_required",
+        "quotation_hold",
+        "latest_product_note",
+        "delivery_timing",
+    ):
         value = raw_memory.get(key)
         if isinstance(value, str) and value.strip():
             memory[key] = value.strip()
@@ -2136,6 +2141,16 @@ def _extract_sales_memory_updates(text: str) -> dict[str, str]:
     updates: dict[str, str] = {}
     if _is_product_memory_note(stripped):
         updates["latest_product_note"] = stripped[:500]
+
+    delivery_timing_match = re.search(
+        r"\b(?:(?:fast|quick|urgent)\s+)?delivery\s+"
+        r"(?:within|in|by)\s+"
+        r"(?P<timing>\d{1,2}\s*(?:-|to)\s*\d{1,2}\s*days?|\d{1,2}\s*days?|"
+        r"tomorrow|today|next\s+week)\b",
+        normalized,
+    )
+    if delivery_timing_match:
+        updates["delivery_timing"] = delivery_timing_match.group("timing")
 
     if re.search(
         r"\b(?:assembly|installation|setup)\s+(?:is\s+)?required\b",
@@ -2204,6 +2219,10 @@ def _format_captured_sales_context(deps: SalesDeps) -> str:
     if memory.get("assembly_required"):
         lines.append(
             f"assembly required: {_captured_context_value(memory['assembly_required'])}"
+        )
+    if memory.get("delivery_timing"):
+        lines.append(
+            f"delivery timing: {_captured_context_value(memory['delivery_timing'])}"
         )
     if memory.get("quotation_hold"):
         lines.append(
@@ -2381,12 +2400,81 @@ def _detail_capture_acknowledgement(
         noted.append(f"customer type: {customer_details['customer_type']}")
     if sales_memory_updates.get("assembly_required"):
         noted.append("assembly is required")
+    if sales_memory_updates.get("delivery_timing"):
+        noted.append(f"delivery timing: {sales_memory_updates['delivery_timing']}")
     if sales_memory_updates.get("quotation_hold"):
         noted.append("do not create a quotation yet")
 
     if not noted:
         return "Thanks, I've noted that."
     return f"Thanks, I've noted {', '.join(noted)}."
+
+
+def _is_saved_sales_context_summary_request(text: str) -> bool:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+    if not (
+        "?" in text
+        or normalized.startswith("summarize")
+        or normalized.startswith("recap")
+        or normalized.startswith("please summarize")
+    ):
+        return False
+    summary_terms = (
+        "what details",
+        "details you have",
+        "details have you saved",
+        "what have you saved",
+        "saved about",
+        "summarize the details",
+        "recap the details",
+        "my request",
+    )
+    if not any(term in normalized for term in summary_terms):
+        return False
+    context_terms = (
+        "company",
+        "address",
+        "delivery",
+        "products",
+        "items",
+        "quantities",
+        "quantity",
+        "assembly",
+        "request",
+    )
+    return any(term in normalized for term in context_terms)
+
+
+def _saved_sales_context_summary(deps: SalesDeps) -> str:
+    details = _quote_context_details_from_deps(deps)
+    memory = _sales_memory_from_metadata(deps.conversation)
+    lines: list[str] = []
+
+    if details.get("name"):
+        lines.append(f"Customer: {details['name']}")
+    if details.get("company"):
+        lines.append(f"Company: {details['company']}")
+    if details.get("address"):
+        lines.append(f"Delivery address: {details['address']}")
+    if memory.get("latest_product_note"):
+        lines.append(f"Products and quantities: {memory['latest_product_note']}")
+    if memory.get("delivery_timing"):
+        lines.append(f"Delivery timing: {memory['delivery_timing']}")
+    if memory.get("assembly_required"):
+        lines.append("Assembly: required")
+    if memory.get("quotation_hold"):
+        lines.append("Quotation: on hold until you confirm")
+
+    if not lines:
+        return (
+            "I do not have saved request details yet. Please share the products, "
+            "quantities, company, and delivery address you want me to keep."
+        )
+    return "Here are the details I have saved:\n" + "\n".join(
+        f"- {line}" for line in lines
+    )
 
 
 def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
@@ -4670,6 +4758,15 @@ async def process_message(
                 current_sales_memory_updates,
             ),
             "detail-capture",
+            allow_product_media=False,
+        )
+
+    if _has_active_sales_detail_capture_context(
+        conv, deps.recent_history
+    ) and _is_saved_sales_context_summary_request(combined_text):
+        return _build_static_response(
+            _saved_sales_context_summary(deps),
+            "saved-context-summary",
             allow_product_media=False,
         )
 
