@@ -1,8 +1,8 @@
 # Stage tj-e2e16: Long-Dialog Detail Capture Hardening
 
 Updated: 2026-05-15
-Status: implementation ready, delivery pending
-Branch: `codex/tj-e2e15-detail-capture-hardening`
+Status: delivered, deployed, live E2E verified
+Branch: `main`
 Base: `origin/codex/tj-long-memory-e2e@9b2df496b38b4c55c296522dfa9c130e9a498b85`
 
 ## Goal
@@ -48,6 +48,7 @@ were checked for current PydanticAI multi-turn and testing behavior:
 - `tj-e2e16.2`: deterministic detail capture and anti-escalation implementation.
 - `tj-e2e16.3`: repeatable stress evidence and stage documentation.
 - `tj-e2e16.4`: remaining merge/deploy/live E2E task.
+- `tj-e2e16.5`: saved-context summary hotfix discovered during live E2E.
 - `tj-e2e15.2`: original production blocker remains open until deployed and
   live E2E passes.
 
@@ -60,10 +61,17 @@ were checked for current PydanticAI multi-turn and testing behavior:
 - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`: 1041 passed, 19 skipped.
 - `scripts/orchestration/run_process_verification.sh`: passed.
 - `scripts/orchestration/check_stage_ready.py tj-e2e16`: passed.
+- GitHub Actions run `25930025028`: passed; deployed `37c2b88`.
+- GitHub Actions run `25932016725`: passed; deployed hotfix `2b86b03`.
+- Production API smoke after final deploy: 7 passed, 0 failed.
+- Final live E2E conversation `ae1c7a38-d7e6-401c-a520-07a0a480cd2e`: passed.
+- Production DB readback: `customer_name=Lili`, `escalation_status=none`,
+  `name_gate_pending_request=false`, pending escalations `0`, company/address
+  metadata present, sales memory contains product note, delivery timing
+  `2-3 days`, assembly required, and quotation hold.
 
 ## Boundaries
 
-- No production deploy was performed in this stage.
-- No production database cleanup or live WhatsApp E2E retest was performed in
-  this stage.
+- Production deploy and live WhatsApp E2E were performed on the approved test
+  phone.
 - Lili's real WhatsApp thread was not mutated.

@@ -9,10 +9,10 @@ base_branch: origin/codex/tj-long-memory-e2e
 base_commit: 9b2df496b38b4c55c296522dfa9c130e9a498b85
 worktree: /home/me/code/treejar/.worktrees/codex-tj-gh15-name-escalation-hardening
 status: accepted
-delivery_method: n/a
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: Implementation stayed in the stage worktree; no child worker write worktree was created.
+cleanup_status: cleaned
+cleanup_notes: Implementation was delivered through main; no child worker write worktree was created.
 risk_level: medium
 verification:
   - "Context7 PydanticAI docs: agent.md, testing.md, api/models/test.md": checked
@@ -32,7 +32,7 @@ changed_files:
   - .codex/stages/tj-e2e16/artifacts/tj-e2e16.1-3.md
   - .codex/handoff.md
 explicit_defers:
-  - Merge, deploy, production cleanup for 79262810921%, and repeat live long-dialog E2E remain tracked in tj-e2e16.4 and require explicit delivery approval.
+  - none
 ---
 
 # Summary
@@ -92,7 +92,5 @@ Completed verification:
 
 # Risks / Follow-ups
 
-This branch is not deployed. The original production bug `tj-e2e15.2` should
-stay open until `tj-e2e16.4` completes: merge, deploy, audited cleanup for the
-approved test phone `+79262810921`, and a repeat live long-dialog E2E through the
-final memory-summary turns.
+This implementation was later deployed and verified by `tj-e2e16.4-5`. No
+defers remain for `tj-e2e16`.
