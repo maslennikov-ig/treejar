@@ -1,7 +1,7 @@
 # Stage tj-gh15: Name-Gate Memory and Escalation Hardening
 
 Updated: 2026-05-15
-Status: implemented locally, verified, pending delivery/deploy/live E2E
+Status: delivered, deployed, live E2E verified, and GitHub issues closed
 Branch: `codex/tj-gh15-name-escalation-hardening`
 Base: `origin/main@3f539f5cd4e404eaab7fc776945d367e6afa07bb`
 
@@ -53,10 +53,34 @@ handoff because catalog brand/family terms were not product signals.
   - `uv run mypy src/`
   - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short` -> 1033 passed, 19 skipped.
   - `scripts/orchestration/run_process_verification.sh`
+  - `scripts/orchestration/run_stage_closeout.py --stage tj-gh15`
+
+## Delivery And Live E2E
+
+- Pushed `origin/codex/tj-gh15-name-escalation-hardening` and fast-forwarded
+  `origin/main` to `cf966f0e2345da0154c8f11f57c0c60340ff451e`.
+- GitHub Actions run `25910228955` completed successfully.
+- Production release marker `/opt/noor/.release-sha` matches
+  `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `/opt/noor/.release-run-id`
+  is `25910228955`.
+- Production API smoke passed: `7 passed, 0 failed`.
+- Approved cleanup prefix `79262810921%` was deleted in one transaction:
+  before cleanup there were 72 conversations, 284 messages, 250 outbound audit
+  rows, 41 escalations, and 7 quality reviews; after cleanup all matching counts
+  were 0.
+- Live conversation `5e587327-0092-4699-a4ee-df6e23edf0ca` passed:
+  `name-gate` first reply, bare `Lili` resumed the stored request, final
+  `customer_name=Lili`, `name_gate_pending_request` absent,
+  `escalation_status=none`, pending escalations `0`, and the product/quantity
+  message stayed on product clarification with no manager handoff text.
+- Independent read-only verifier subagent returned PASS on production release,
+  runtime health, DB state, transcript, metadata, and no escalation text.
+- GitHub #36 and #37 were commented with fix and verification evidence and
+  closed as completed:
+  - #36: https://github.com/maslennikov-ig/treejar/issues/36#issuecomment-4459034706
+  - #37: https://github.com/maslennikov-ig/treejar/issues/37#issuecomment-4459034949
 
 ## Boundaries
 
-- No GitHub issue mutation has been performed yet for #36/#37.
-- No deployment or production DB mutation has been performed yet for `tj-gh15`.
-- Live E2E is explicitly approved for `+79262810921` and will happen only after
-  merge/deploy and audited cleanup of matching production DB state.
+- Lili's real WhatsApp conversation was not mutated.
+- No `tj-gh15` defers remain.

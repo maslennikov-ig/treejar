@@ -6,33 +6,32 @@ Current branch: `codex/tj-gh15-name-escalation-hardening`
 ## Current Truth
 
 - Canonical host: `https://noor.starec.ai`; canonical runtime path: `/opt/noor`.
-- Production state before `tj-gh15` delivery is `7075be5831dd0e09e29a319d842003f24c6dcf0f`.
-- Stage `tj-gh15` is in progress for reopened GitHub #36/#37 hardening after Lili's production conversation `94343a3d-dce0-4fb0-ab05-8b9c00f80b9f`.
-- Local branch/worktree: `codex/tj-gh15-name-escalation-hardening` at `/home/me/code/treejar/.worktrees/codex-tj-gh15-name-escalation-hardening`, based on `origin/main@3f539f5cd4e404eaab7fc776945d367e6afa07bb`.
-- Implemented locally: bare-name replies such as `Lili` are accepted only when a pending name-gate request exists, stored in customer/quote metadata, and resume the stored original request.
-- Implemented locally: verified-answer product classification recognizes catalog brand/family/product terms such as Skyland, Novo, XTEN, Trend, Imago, drawers, pedestals, cabinets, storage, and work stations; quantity plus likely catalog item stays on product/catalog path.
-- Lili's real WhatsApp thread was used only for read-only root-cause analysis; it has not been mutated.
-- Verification passed: new targeted regression suite `13 passed`, modified LLM policy suites `183 passed`, full `ruff check`, `ruff format --check`, `mypy`, full pytest `1033 passed, 19 skipped`, and process verification.
-- First full pytest in this clean worktree failed only because frontend admin `node_modules` were absent; `npm ci` in `frontend/admin` installed the lockfile dependencies and the full suite then passed.
-- Stage summary: `.codex/stages/tj-gh15/summary.md`; artifact: `.codex/stages/tj-gh15/artifacts/tj-gh15.1-2.md`.
-- Local Beads: `tj-gh15` epic plus `tj-gh15.1` (#36), `tj-gh15.2` (#37), and `tj-gh15.3` production cleanup/live E2E.
-- No GitHub issue mutation, deployment, or production DB mutation has been performed yet for `tj-gh15`.
-- Live E2E and production DB cleanup for `79262810921%` are explicitly approved by the user for this task after merge/deploy.
+- Stage `tj-gh15` fixed GitHub #36/#37 and is delivered, deployed, live E2E verified, and GitHub-closed.
+- Final code commit: `cf966f0e2345da0154c8f11f57c0c60340ff451e` (`fix(runtime): harden name gate and product routing`).
+- Delivery: `origin/codex/tj-gh15-name-escalation-hardening` pushed, `origin/main` fast-forwarded to `cf966f0e2345da0154c8f11f57c0c60340ff451e`, GitHub Actions run `25910228955` succeeded.
+- Production release markers match: `/opt/noor/.release-sha` is `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `/opt/noor/.release-run-id` is `25910228955`.
+- Production API smoke passed: `scripts/verify_api.py --base-url https://noor.starec.ai` returned `7 passed, 0 failed`.
+- Approved cleanup for `79262810921%` was performed in one transaction: before 72 conversations, 284 messages, 250 outbound audits, 41 escalations, 7 quality reviews; after all matching counts were 0.
+- Approved live E2E on `+79262810921` passed in conversation `5e587327-0092-4699-a4ee-df6e23edf0ca`: first turn returned `name-gate`; bare `Lili` stored `customer_name=Lili`, cleared `name_gate_pending_request`, and resumed the original request; `2 Skyland Novo and 2xten` stayed on product clarification; escalation stayed `none` with `0` pending escalations.
+- Independent read-only verifier subagent returned PASS on release marker, runtime health, DB state, transcript, metadata, and no escalation text.
+- GitHub #36 and #37 were commented with fix/evidence and closed as completed:
+  - #36 comment: https://github.com/maslennikov-ig/treejar/issues/36#issuecomment-4459034706
+  - #37 comment: https://github.com/maslennikov-ig/treejar/issues/37#issuecomment-4459034949
+- Local Beads `tj-gh15`, `tj-gh15.1`, `tj-gh15.2`, and `tj-gh15.3` are closed.
+- Lili's real WhatsApp conversation was not mutated.
+- Stage summary: `.codex/stages/tj-gh15/summary.md`; artifacts: `.codex/stages/tj-gh15/artifacts/tj-gh15.1-2.md` and `.codex/stages/tj-gh15/artifacts/tj-gh15.3-live-e2e.md`.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
 ## Next recommended
 
-Next stage id: `tj-gh15.3`
+Next stage id: none.
 
-Recommended action: Commit and push `codex/tj-gh15-name-escalation-hardening`, fast-forward `main`, push `origin/main`, wait for GitHub Actions deploy, verify release/API health, clean production DB state for `79262810921%` in one audited transaction, run live E2E on `+79262810921`, then comment on and close GitHub #36/#37 with evidence.
-
-Use $orchestrator-stage for delivery, production cleanup, live E2E, and GitHub issue closure because these are externally visible follow-through steps for stage `tj-gh15`.
+Recommended action: no further `tj-gh15` work is pending. Use $orchestrator-stage only if the user asks for another issue batch, another live E2E cycle, or additional production/GitHub mutations.
 
 ## Starter prompt for next orchestrator
 
-Continue stage `tj-gh15` delivery from branch `codex/tj-gh15-name-escalation-hardening`. Do not touch Lili's real thread. Use approved test number `+79262810921` only after deploy and audited cleanup.
+Use $orchestrator-stage if new GitHub issues or production follow-up work arrives. Current delivered production release is `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `tj-gh15` is closed.
 
 ## Explicit defers
 
-- `tj-gh15.3` remains pending until merge, deploy, production cleanup, live E2E, and GitHub #36/#37 closure.
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup typing endpoint.
