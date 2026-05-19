@@ -4533,6 +4533,34 @@ def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choi
     )
 
 
+def test_context_purchase_selection_accepts_word_quantity_sku_after_product_choice() -> (
+    None
+):
+    selection = engine_module._extract_purchase_selection_for_context(
+        "one Skyland Operative Chair CH 616 NEW black",
+        [
+            "assistant: How many chairs would you need? Would you like "
+            "Skyland Operative Chair CH 616 NEW black?"
+        ],
+    )
+
+    assert selection is not None
+    assert [(item.quantity, item.sku) for item in selection.items] == [(1, "CH-616")]
+    assert (
+        engine_module._extract_purchase_selection(
+            "one Skyland Operative Chair CH 616 NEW black"
+        )
+        is None
+    )
+    assert (
+        engine_module._extract_purchase_selection_for_context(
+            "one Skyland Operative Chair CH 616 NEW black",
+            ["assistant: Thanks, please share your company name."],
+        )
+        is None
+    )
+
+
 def test_extract_purchase_selection_does_not_treat_and_as_currency() -> None:
     selection = engine_module._extract_purchase_selection(
         "I want to order 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet."
@@ -5110,6 +5138,90 @@ async def test_process_message_terse_details_preserves_pending_quote_context(
     }
     assert conv.metadata_["pending_quote_selection"]["items"] == [
         {"sku": "CH-616", "quantity": 1}
+    ]
+    assert conv.escalation_status == "none"
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch(
+    "src.llm.engine._resolve_exact_quote_candidate_sku",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_terse_details_recovers_llm_selection_table(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lil"
+    conv.language = "en"
+    conv.metadata_ = {}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Perfect, Lil! Here's your selection:\n\n"
+                        "| Item | Qty | Price | Total |\n"
+                        "|------|-----|-------|-------|\n"
+                        "| MEETING TABLE SKYLAND NOVO 2400 | 1 | 1,740 AED | 1,740 AED |\n"
+                        "| Skyland Operative Chair CH 616 NEW (Black) | 1 | 268 AED | 268 AED |\n\n"
+                        "Would you like me to send you a formal quotation? If so, please share:\n"
+                        "1. Your company name (or if this is for personal use)\n"
+                        "2. Your delivery address"
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_resolve_sku.side_effect = ["SKY-NOVO-2400", "CH-616"]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="Lil, 1 dubay",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "what do you need" not in response.text.lower()
+    assert "manager will confirm" not in response.text.lower()
+    assert "company name" in response.text.lower()
+    assert "individual" in response.text.lower()
+    assert "specific delivery address" not in response.text.lower()
+    assert response.model.endswith("|quote-resume-missing-details")
+    assert conv.metadata_["quote_customer_details"] == {
+        "name": "Lil",
+        "address": "1 dubay",
+    }
+    pending_items = conv.metadata_["pending_quote_selection"]["items"]
+    assert [(item["sku"], item["quantity"]) for item in pending_items] == [
+        ("SKY-NOVO-2400", 1),
+        ("CH-616", 1),
     ]
     assert conv.escalation_status == "none"
     mock_run.assert_not_awaited()

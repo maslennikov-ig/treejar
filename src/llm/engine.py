@@ -416,6 +416,24 @@ _PURCHASE_SELECTION_BLOCKERS = (
     "tracking",
 )
 _SELECTION_QUANTITY_START_RE = re.compile(r"(?<![\w.-])(?P<quantity>\d{1,4})(?=\s+)")
+_SELECTION_WORD_QUANTITY_START_RE = re.compile(
+    r"(?<![\w.-])(?P<quantity_word>one|two|three|four|five|six|seven|eight|nine|ten|a|an)(?=\s+)",
+    re.IGNORECASE,
+)
+_SELECTION_WORD_QUANTITY_VALUES = {
+    "a": 1,
+    "an": 1,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
 _SELECTION_SKU_RE = re.compile(
     r"\b[a-z0-9]+(?:[-.][a-z0-9]+)+\b",
     re.IGNORECASE,
@@ -1253,6 +1271,44 @@ def _extract_purchase_selection(
     return PurchaseSelection(items=tuple(items))
 
 
+def _extract_word_quantity_purchase_selection(text: str) -> PurchaseSelection | None:
+    quantity_matches = list(_SELECTION_WORD_QUANTITY_START_RE.finditer(text))
+    if not quantity_matches:
+        return None
+
+    items: list[PurchaseSelectionItem] = []
+    for index, match in enumerate(quantity_matches):
+        word = match.group("quantity_word").casefold()
+        quantity = _SELECTION_WORD_QUANTITY_VALUES.get(word)
+        if quantity is None:
+            continue
+        start = match.start()
+        end = (
+            quantity_matches[index + 1].start()
+            if index + 1 < len(quantity_matches)
+            else len(text)
+        )
+        fragment = text[start:end].strip(" ,.;:-")
+        sku = _best_selection_sku(fragment)
+        if not sku:
+            continue
+        item_candidate = fragment[len(match.group("quantity_word")) :].strip(" ,.;:-")
+        stated_unit_price, stated_currency = _extract_stated_price(fragment)
+        items.append(
+            PurchaseSelectionItem(
+                quantity=quantity,
+                item_candidate=item_candidate,
+                sku=sku,
+                stated_unit_price=stated_unit_price,
+                stated_currency=stated_currency,
+            )
+        )
+
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
 def _last_assistant_asked_product_selection(recent_history: list[str] | None) -> bool:
     last_assistant = _last_assistant_message(recent_history)
     normalized = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
@@ -1289,7 +1345,10 @@ def _extract_purchase_selection_for_context(
         return selection
     if not _last_assistant_asked_product_selection(recent_history):
         return None
-    return _extract_purchase_selection(text, require_trigger=False)
+    return _extract_purchase_selection(
+        text,
+        require_trigger=False,
+    ) or _extract_word_quantity_purchase_selection(text)
 
 
 def _selection_runtime_directives(
@@ -2964,6 +3023,87 @@ async def _store_applied_bot_rules(
             conversation.id,
             exc_info=True,
         )
+
+
+def _clean_assistant_selection_cell(value: str) -> str:
+    cleaned = re.sub(r"[*_`]+", "", value)
+    return " ".join(cleaned.strip(" \t\r\n|").split())
+
+
+def _quote_candidates_from_last_assistant_selection(
+    recent_history: list[str] | None,
+) -> tuple[ExactQuoteCandidate, ...]:
+    last_assistant = _last_assistant_message(recent_history)
+    if not last_assistant or "|" not in last_assistant:
+        return ()
+
+    candidates: list[ExactQuoteCandidate] = []
+    for raw_line in last_assistant.splitlines():
+        if "|" not in raw_line:
+            continue
+        cells = [
+            _clean_assistant_selection_cell(cell)
+            for cell in raw_line.strip().strip("|").split("|")
+        ]
+        if len(cells) < 2:
+            continue
+
+        item_candidate = cells[0]
+        quantity_cell = cells[1]
+        normalized_item = _normalize_text(item_candidate)
+        if not item_candidate or normalized_item in {"item", "product", "items"}:
+            continue
+        if set(item_candidate.replace(" ", "")) <= {"-"}:
+            continue
+
+        quantity_match = re.search(r"\b(\d{1,4})\b", quantity_cell)
+        if quantity_match is None:
+            continue
+        quantity = int(quantity_match.group(1))
+        if quantity <= 0:
+            continue
+
+        candidates.append(
+            ExactQuoteCandidate(
+                quantity=quantity,
+                item_candidate=item_candidate,
+                sku=_extract_sku_signal(item_candidate),
+            )
+        )
+
+    return tuple(candidates)
+
+
+async def _store_pending_quote_from_last_assistant_selection(
+    db: AsyncSession,
+    conversation: Conversation,
+    recent_history: list[str] | None,
+) -> Mapping[str, Any] | None:
+    candidates = _quote_candidates_from_last_assistant_selection(recent_history)
+    if not candidates:
+        return None
+
+    resolved_items: list[QuotationItem] = []
+    unresolved_items: list[ExactQuoteCandidate] = []
+    for candidate in candidates:
+        resolved_sku = await _resolve_exact_quote_candidate_sku(db, candidate)
+        if resolved_sku:
+            resolved_items.append(
+                QuotationItem(sku=resolved_sku, quantity=candidate.quantity)
+            )
+        else:
+            unresolved_items.append(candidate)
+
+    if not resolved_items and not unresolved_items:
+        return None
+
+    await _store_pending_sales_order_quote(
+        db,
+        conversation,
+        resolved_items=resolved_items,
+        unresolved_items=tuple(unresolved_items),
+    )
+    return _pending_quote_selection_from_metadata(conversation)
 
 
 def _pending_quote_selection_from_metadata(
@@ -5042,14 +5182,18 @@ async def process_message(
     has_pending_quote_selection = (
         _pending_quote_selection_from_metadata(conv) is not None
     )
-    if (
-        not current_quote_customer_details
-        and has_pending_quote_selection
-        and _last_assistant_asked_quote_customer_details(recent_history)
-    ):
-        current_quote_customer_details = _extract_terse_quote_customer_details(
+    assistant_asked_quote_details = _last_assistant_asked_quote_customer_details(
+        recent_history
+    )
+    if assistant_asked_quote_details:
+        terse_quote_customer_details = _extract_terse_quote_customer_details(
             combined_text
         )
+        if terse_quote_customer_details:
+            current_quote_customer_details = {
+                **current_quote_customer_details,
+                **terse_quote_customer_details,
+            }
     if customer_name_was_unknown and pending_name_gate_request:
         bare_name = _extract_bare_name_gate_reply(combined_text)
         if bare_name and not current_quote_customer_details.get("name"):
@@ -5121,6 +5265,7 @@ async def process_message(
 
     if (
         _pending_quote_selection_from_metadata(conv) is None
+        and not assistant_asked_quote_details
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
         and _is_neutral_detail_capture_update(
             text=combined_text,
@@ -5498,6 +5643,18 @@ async def process_message(
             )
 
         pending_quote_selection = _pending_quote_selection_from_metadata(conv)
+        if (
+            pending_quote_selection is None
+            and _last_assistant_asked_quote_customer_details(deps.recent_history)
+        ):
+            pending_quote_selection = (
+                await _store_pending_quote_from_last_assistant_selection(
+                    db,
+                    conv,
+                    deps.recent_history,
+                )
+            )
+
         if pending_quote_selection is not None:
             pending_quote_customer_details = current_quote_customer_details
             if pending_quote_customer_details:
@@ -5578,6 +5735,16 @@ async def process_message(
                         f"{db_model_main}|quote-resume-missing-details",
                         allow_product_media=False,
                     )
+        elif (
+            current_quote_customer_details
+            and _last_assistant_asked_quote_customer_details(deps.recent_history)
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _pending_quote_missing_items_message(str(conv.language)),
+                f"{db_model_main}|quote-resume-missing-items",
+                allow_product_media=False,
+            )
 
         if (
             not policy_decision.is_order_status
