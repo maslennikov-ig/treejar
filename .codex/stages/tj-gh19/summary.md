@@ -1,9 +1,11 @@
 # Stage tj-gh19: GitHub #40 Quotation Context Hardening
 
 Updated: 2026-05-19
-Status: local implementation verified; delivery, deploy, live E2E, and GitHub #40 closure pending
+Status: delivered, deployed, live E2E verified, GitHub #40 closed
 Branch: `codex/tj-gh19-quote-context-hardening`
 Base: `origin/main@f268e17ea0cf`
+Final main release: `b05422e1fb6647ffda7a10c337eef9c7c922273d`
+Final deploy run: `26094670599`
 GitHub issues: `gh-40`
 Beads: `tj-gh19`, `tj-gh19.1`, `tj-gh19.2`, `tj-gh19.3`
 
@@ -43,6 +45,11 @@ Beads: `tj-gh19`, `tj-gh19.1`, `tj-gh19.2`, `tj-gh19.3`
   falling back to the generic opener.
 - Added runtime prompt policy that ambiguous/terse quotation details must
   preserve quote context and ask only for missing or unclear required details.
+- During deployed E2E, fixed one additional edge case where an exact product
+  reference without quantities (`SKYLAND NOVO 2400 Meeting Table and CH 616`)
+  could resume after name-gate into a generic LLM preference line. The final
+  route now deterministically asks for item quantities and does not treat
+  model number `2400` as a quantity.
 
 ## Documentation
 
@@ -55,34 +62,45 @@ framework/API behavior.
 - RED tests were run before implementation for the new #40 cases and failed on
   the expected symptoms: `NOVO 2400` became quantity, terse details reset to the
   generic opener, and pending quote context was not preserved.
-- `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py tests/test_verified_answers.py -v --tb=short` -> `212 passed`.
+- Initial local implementation: `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py tests/test_verified_answers.py -v --tb=short` -> `212 passed`.
+- Final hotfix verification: `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py tests/test_verified_answers.py -v --tb=short` -> `215 passed`.
 - `uv run ruff check src/ tests/` -> passed.
 - `uv run ruff format --check src/ tests/` -> passed.
 - `git diff --check` -> passed.
 - `uv run mypy src/` -> passed.
-- `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short` -> `1063 passed, 19 skipped`.
+- Initial full pytest -> `1063 passed, 19 skipped`.
+- Final full pytest -> `1066 passed, 19 skipped`.
 - `uv run python scripts/orchestration/validate_artifact.py .codex/stages/tj-gh19/artifacts/tj-gh19.1-2.md` -> passed.
 - `scripts/orchestration/run_process_verification.sh` -> passed.
 - `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh19` -> passed; repeated `ruff`, format-check, `mypy`, full pytest `1063 passed, 19 skipped`, and process verification.
+- Final `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh19` -> passed; repeated `ruff`, format-check, `mypy`, full pytest `1066 passed, 19 skipped`, and process verification.
 - Read-only reviewer `Mendel` found no P0/P1 issues and recommended acceptance;
   the one residual test suggestion was addressed by adding direct `6 СН 616`
   coverage.
 
-## Delivery And E2E Plan
+## Delivery And E2E Evidence
 
-Run only after explicit merge/deploy/production authorization:
-
-1. Merge `codex/tj-gh19-quote-context-hardening` to `main` and deploy through
-   the existing GitHub Actions path.
-2. Run `scripts/verify_api.py --base-url https://noor.starec.ai`.
-3. Run the #40 E2E conversation on a clean synthetic/live identity:
-   `I need SKYLAND NOVO 2400 Meeting Table and CH 616` must lead to quantity
-   clarification, not `2400 x CH 616`; then select/clarify a specific item and
-   quantity; then send `Lil, 1 dubay`; the bot must preserve quote context and
-   ask only for company name or explicit individual confirmation.
-4. Continue with `individual`; quotation may proceed only when item, quantity,
-   name, address, and individual/company requirement are satisfied.
-5. Comment and close GitHub #40 only after deployed evidence is recorded.
+- Branch was pushed, fast-forwarded into `main`, and deployed through GitHub
+  Actions.
+- Initial deployed release `15785943804fff52a4c55259c1eb7785e33ebe46` passed
+  CI/deploy but live E2E exposed a missing pending-quote recovery path when the
+  assistant had produced an item table without persisting `pending_quote_selection`.
+- Hotfix release `30d8975af45668d6039bc9fd9582efe337b0f25a` recovered quote
+  selection from assistant tables, then live E2E exposed the generic exact-ref
+  resume edge case after name-gate.
+- Final release `b05422e1fb6647ffda7a10c337eef9c7c922273d`, GitHub Actions
+  run `26094670599`, is deployed; `/opt/noor/.release-sha` matches.
+- Production smoke: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  -> `7 passed, 0 failed`.
+- Final live E2E conversation `640d0cfb-0460-4033-b6f0-7de84eadcc2a`:
+  `I need SKYLAND NOVO 2400 Meeting Table and CH 616` -> name gate; `Lil` ->
+  `product-quantity-clarify`, with no `2400` quantity and no escalation; `one
+  Skyland Operative Chair CH 616 NEW black` -> `selection-confirmation`;
+  `Lil, 1 dubay` -> `quote-resume-missing-details`, with name/address stored,
+  pending quote preserved, and only company-or-individual requested.
+- Synthetic failed E2E conversation `1ffc309a-287c-4b9b-903b-515f54829cd2`
+  was resolved in production after the final fix so no manager action remains.
+- GitHub #40 was commented with release/test/E2E evidence and closed.
 
 ## Project Index
 
@@ -92,7 +110,6 @@ verification commands changed.
 
 ## Remaining Defers
 
-- `tj-gh19.3` tracks merge/deploy/production E2E/GitHub #40 closure.
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup
   typing endpoint.
 - GitHub #11 remains pending Lilia's answers.
