@@ -1,0 +1,408 @@
+{
+  "schema_version": 1,
+  "name": "dialogue_state_kernel_replay_v1",
+  "description": "Replay corpus for the LangGraph Dialogue State Kernel v1 plan.",
+  "default_mode": "shadow",
+  "fixture_contract": {
+    "thread_id_source": "Conversation.metadata_.dialogue_kernel.thread_id or conversation:<conversation_id>",
+    "shadow_side_effect_rule": "All shadow cases must set expected.side_effects_allowed to false and expected.allowed_side_effects to an empty list.",
+    "durable_state_location": "Conversation.metadata_"
+  },
+  "cases": [
+    {
+      "id": "gh36_name_gate_resume_bare_name",
+      "issue_refs": ["gh-36"],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh36-name-gate",
+      "initial_metadata": {
+        "customer_name": null,
+        "name_gate_pending_request": {
+          "text": "I need 2 SKYLAND NOVO 2400 tables and 4 ergonomic chairs",
+          "created_turn": 1
+        },
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-gh36-name-gate",
+          "route": "name_gate",
+          "flow": "identity_capture"
+        }
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hi, I need 2 SKYLAND NOVO 2400 tables and 4 ergonomic chairs"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello, this is Noor from Treejar. May I have your name first?"
+        },
+        {
+          "role": "user",
+          "content": "Lili"
+        }
+      ],
+      "expected": {
+        "route": "name_gate_resume",
+        "flow": "product_discovery",
+        "slots": {
+          "customer_name": "Lili",
+          "pending_request": "I need 2 SKYLAND NOVO 2400 tables and 4 ergonomic chairs",
+          "name_gate_pending_request_status": "resumed"
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": false,
+        "forbidden_routes": ["manager_handoff", "order_confirmation"]
+      }
+    },
+    {
+      "id": "gh37_product_quantity_without_fulfillment_no_handoff",
+      "issue_refs": ["gh-37"],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh37-product-quantity",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-gh37-product-quantity",
+          "route": "product_clarify",
+          "flow": "product_discovery"
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Which office furniture models or quantities would you like us to check?"
+        },
+        {
+          "role": "user",
+          "content": "2 Skyland Novo and 2xten"
+        }
+      ],
+      "expected": {
+        "route": "policy_no_handoff",
+        "flow": "product_discovery",
+        "slots": {
+          "requested_items": [
+            {
+              "text": "Skyland Novo",
+              "quantity": 2,
+              "specificity": "model_family"
+            },
+            {
+              "text": "xten",
+              "quantity": 2,
+              "specificity": "model_or_family"
+            }
+          ],
+          "fulfillment_intent": false
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": false,
+        "forbidden_routes": ["order_confirmation", "manager_handoff"],
+        "forbidden_side_effects": ["manager_escalation", "telegram_notification"]
+      }
+    },
+    {
+      "id": "gh39_ch616_selection_after_product_choice",
+      "issue_refs": ["gh-39"],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh39-ch616-selection",
+      "initial_metadata": {
+        "customer_name": "Lil",
+        "last_assistant_route": "product_choice_prompt",
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-gh39-ch616-selection",
+          "route": "product_clarify",
+          "flow": "product_discovery"
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "For ergonomic chairs, we can offer CH 616 NEW black, CH-190, or CH 620. Which option and quantity do you prefer?"
+        },
+        {
+          "role": "user",
+          "content": "I need 6 CH 616"
+        }
+      ],
+      "expected": {
+        "route": "product_selection_legacy_delegate",
+        "flow": "product_discovery",
+        "slots": {
+          "pending_quote_selection": {
+            "source": "product_choice",
+            "items": [
+              {
+                "sku": "CH 616",
+                "normalized_sku": "CH-616",
+                "quantity": 6
+              }
+            ]
+          }
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true,
+        "forbidden_routes": ["manager_handoff", "policy_escalation"]
+      }
+    },
+    {
+      "id": "gh40_terse_quote_details_preserve_context",
+      "issue_refs": ["gh-40"],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh40-quote-context",
+      "initial_metadata": {
+        "customer_name": null,
+        "pending_quote_selection": {
+          "source": "selection_confirmation",
+          "items": [
+            {
+              "sku": "CH 616",
+              "name": "Skyland Operative Chair CH 616 NEW black",
+              "quantity": 1
+            }
+          ],
+          "unresolved_items": []
+        },
+        "quote_customer_details": {},
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-gh40-quote-context",
+          "route": "selection_confirmation",
+          "flow": "quotation_build"
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Please share your name, company or individual status, and the specific delivery address for the quotation."
+        },
+        {
+          "role": "user",
+          "content": "Lil, 1 dubay"
+        }
+      ],
+      "expected": {
+        "route": "quote_resume_missing_details",
+        "flow": "quotation_build",
+        "slots": {
+          "customer_name": "Lil",
+          "quote_customer_details": {
+            "name": "Lil",
+            "address": "1 dubay"
+          },
+          "pending_quote_selection": {
+            "items": [
+              {
+                "sku": "CH 616",
+                "quantity": 1
+              }
+            ]
+          },
+          "missing_quote_fields": ["company_or_individual"]
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": false,
+        "forbidden_routes": ["generic_opener", "create_quotation"],
+        "forbidden_side_effects": ["zoho_sale_order", "quotation_pdf", "whatsapp_media"]
+      }
+    },
+    {
+      "id": "gh11_post_quotation_bulk_sample_discount_hold",
+      "issue_refs": ["gh-11"],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh11-post-quotation-hold",
+      "initial_metadata": {
+        "customer_name": "Vituzone Buyer",
+        "last_quote_status": "sent",
+        "pending_quote_selection": {
+          "source": "quotation_sent",
+          "items": [
+            {
+              "sku": "CH 616",
+              "quantity": 12
+            }
+          ]
+        },
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-gh11-post-quotation-hold",
+          "route": "selection_confirmation",
+          "flow": "quotation_build"
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I have shared the quotation for 12 chairs. Please let me know if you would like to proceed."
+        },
+        {
+          "role": "user",
+          "content": "Can you send a sample first and give free delivery or a better discount?"
+        }
+      ],
+      "expected": {
+        "route": "post_quotation_hold",
+        "flow": "manager_review_hold",
+        "slots": {
+          "bulk_quantity": 12,
+          "sample_requested": true,
+          "discount_requested": true,
+          "delivery_concession_requested": true,
+          "blocked_pending_lilia": true,
+          "closure_allowed": false
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": false,
+        "notes": "GitHub #11 remains non-closable until Lilia answers the pending clarification questions."
+      }
+    },
+    {
+      "id": "long_dialog_quote_memory_stress",
+      "issue_refs": ["gh-36", "gh-37", "gh-39", "gh-40"],
+      "mode": "shadow",
+      "conversation_id": "fixture-long-dialog-stress",
+      "initial_metadata": {
+        "customer_name": null,
+        "quote_customer_details": {},
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-long-dialog-stress",
+          "route": "legacy_fallback",
+          "flow": "legacy"
+        }
+      },
+      "messages": [
+        {"role": "user", "content": "Hi, need desks and chairs for new office"},
+        {"role": "assistant", "content": "Hello, this is Noor from Treejar. May I have your name first?"},
+        {"role": "user", "content": "Ameer"},
+        {"role": "assistant", "content": "Thanks Ameer. How many workstations and chairs do you need?"},
+        {"role": "user", "content": "2 SKYLAND NOVO 2400 meeting tables and 6 ergonomic chairs"},
+        {"role": "assistant", "content": "For ergonomic chairs we can offer CH 616 NEW black, CH-190, or CH 620."},
+        {"role": "user", "content": "I need 6 CH 616"},
+        {"role": "assistant", "content": "I can prepare a quotation for 2 SKYLAND NOVO 2400 meeting tables and 6 CH 616 chairs. Please share company or individual status and delivery address."},
+        {"role": "user", "content": "Is delivery to Dubai possible this week?"},
+        {"role": "assistant", "content": "Delivery timing depends on stock and schedule. Please share the exact address for the quotation."},
+        {"role": "user", "content": "Ameer, Business Bay Dubai"},
+        {"role": "assistant", "content": "Should the quotation be under a company or individual name?"},
+        {"role": "user", "content": "individual"}
+      ],
+      "expected": {
+        "route": "quote_resume_missing_details",
+        "flow": "quotation_build",
+        "slots": {
+          "customer_name": "Ameer",
+          "pending_quote_selection": {
+            "items": [
+              {
+                "sku": "SKYLAND NOVO 2400",
+                "quantity": 2
+              },
+              {
+                "sku": "CH 616",
+                "normalized_sku": "CH-616",
+                "quantity": 6
+              }
+            ]
+          },
+          "quote_customer_details": {
+            "name": "Ameer",
+            "address": "Business Bay Dubai",
+            "company_or_individual": "individual"
+          },
+          "model_number_quantity_guard": true
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": false,
+        "forbidden_routes": ["manager_handoff", "generic_opener"],
+        "forbidden_side_effects": ["manager_escalation", "zoho_sale_order", "quotation_pdf"]
+      }
+    },
+    {
+      "id": "multilingual_mixed_latin_cyrillic_sku_variants",
+      "issue_refs": ["gh-39"],
+      "mode": "shadow",
+      "conversation_id": "fixture-mixed-sku-variants",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "last_assistant_route": "product_choice_prompt",
+        "dialogue_kernel": {
+          "version": 1,
+          "thread_id": "conversation:fixture-mixed-sku-variants",
+          "route": "product_clarify",
+          "flow": "product_discovery"
+        }
+      },
+      "variant_matrix": [
+        {
+          "input": "I need 6 CH 616",
+          "expected_normalized_sku": "CH-616",
+          "expected_quantity": 6
+        },
+        {
+          "input": "I need 6 CH-616",
+          "expected_normalized_sku": "CH-616",
+          "expected_quantity": 6
+        },
+        {
+          "input": "I need 6 CH616",
+          "expected_normalized_sku": "CH-616",
+          "expected_quantity": 6
+        },
+        {
+          "input": "need 6 ch   616",
+          "expected_normalized_sku": "CH-616",
+          "expected_quantity": 6
+        },
+        {
+          "input": "I need 6 СН 616",
+          "expected_normalized_sku": "CH-616",
+          "expected_quantity": 6,
+          "note": "СН uses Cyrillic letters."
+        },
+        {
+          "input": "Нужно 6 CH 616",
+          "expected_normalized_sku": "CH-616",
+          "expected_quantity": 6
+        }
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "For ergonomic chairs, please choose between CH 616 NEW black, CH-190, and CH 620."
+        },
+        {
+          "role": "user",
+          "content": "Нужно 6 СН 616"
+        }
+      ],
+      "expected": {
+        "route": "product_selection_legacy_delegate",
+        "flow": "product_discovery",
+        "slots": {
+          "pending_quote_selection": {
+            "items": [
+              {
+                "sku": "CH 616",
+                "normalized_sku": "CH-616",
+                "quantity": 6
+              }
+            ]
+          },
+          "supported_variant_count": 6
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true,
+        "forbidden_routes": ["manager_handoff"]
+      }
+    }
+  ]
+}

@@ -156,6 +156,238 @@ def _active_product_planning_history(
 
 
 @pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_dialogue_kernel_shadow_records_trace_and_uses_legacy(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    text = "I need SKYLAND NOVO 2400 and CH 616"
+    mock_build_history.return_value = _first_turn_history(text)
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "name_gate,product_selection",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "name-gate"
+    assert conv.metadata_["name_gate_pending_request"]["text"] == text
+    trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
+    assert trace["mode"] == "shadow"
+    assert trace["kernel_route"] == "name_gate"
+    assert trace["legacy_route"] == "name-gate"
+    assert trace["decision"]["side_effects_allowed"] is False
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_dialogue_kernel_enforce_name_gate_before_llm(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    text = "I need CH 616"
+    mock_build_history.return_value = _first_turn_history(text)
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "enforce",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "name_gate",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "dialogue-kernel|name_gate"
+    _assert_first_turn_opening(
+        response.text,
+        "May I know your name so I can address you properly?",
+    )
+    assert conv.metadata_["name_gate_pending_request"]["text"] == text
+    assert conv.metadata_["dialogue_kernel"]["traces"][-1]["mode"] == "enforce"
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine.evaluate_verified_answer_policy")
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_dialogue_kernel_shadow_records_verified_policy_handoff_route(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_policy: MagicMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.llm.verified_answers import VerifiedAnswerDecision
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {}
+    text = "Can you guarantee installation tomorrow outside UAE?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Hello")]),
+        ModelResponse(parts=[TextPart(content="Hello, how can I help?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_policy.return_value = VerifiedAnswerDecision(
+        question_class="service_high_risk",
+        faq_support="missing",
+        policy_action="handoff",
+        matched_topics=("installation",),
+        asks_for_specific_commitment=True,
+        requires_manager_handoff=True,
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock_model|verified-policy"
+    trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
+    assert trace["mode"] == "shadow"
+    assert trace["kernel_route"] == "legacy_fallback"
+    assert trace["legacy_route"] == "mock_model|verified-policy"
+    assert trace["decision"]["side_effects_allowed"] is False
+    mock_notify.assert_awaited_once()
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_dialogue_kernel_enforce_quote_details_stores_legacy_metadata(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH 616", "quantity": 1}],
+            "unresolved_items": [],
+        }
+    }
+    text = "Lil, 1 dubay"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="I need one CH 616")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Please share your name, company or individual status, "
+                        "and the specific delivery address for the quotation."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "enforce",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "quote_details",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "dialogue-kernel|quote_details"
+    assert "company name" in response.text.lower()
+    assert conv.customer_name == "Lil"
+    assert conv.metadata_["quote_customer_details"] == {
+        "name": "Lil",
+        "address": "1 dubay",
+    }
+    assert "pending_quote_selection" in conv.metadata_
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_engine_process_message_success(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

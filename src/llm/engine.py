@@ -22,6 +22,11 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.dialogue.runner import (
+    DialogueKernelResult,
+    record_legacy_route,
+    run_dialogue_kernel,
+)
 from src.integrations.crm.zoho_crm import (
     ZohoCRMClient,
     apply_zoho_attribution_mapping,
@@ -778,6 +783,15 @@ class CommercialPriceDecision:
 
 def _normalize_text(text: str) -> str:
     return " ".join(text.casefold().split())
+
+
+def _dialogue_kernel_bool_config(value: str, *, default: bool) -> bool:
+    normalized = str(value or "").strip().casefold()
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
 
 
 def _normalize_sku_homoglyphs(text: str) -> str:
@@ -5097,6 +5111,8 @@ async def process_message(
     5. Unmasks PII in response
     """
 
+    dialogue_kernel_result: DialogueKernelResult | None = None
+
     def _is_first_turn(history_messages: list[ModelRequest | ModelResponse]) -> bool:
         user_turns = 0
         assistant_turns = 0
@@ -5191,6 +5207,12 @@ async def process_message(
         final_text = unmask_pii(result.output, pii_map)
         final_text = _apply_first_turn_opening_guard(final_text)
         usage = result.usage()
+        if conv is not None and not model_name.startswith("dialogue-kernel|"):
+            record_legacy_route(
+                conv,
+                dialogue_kernel_result,
+                legacy_route=model_name,
+            )
         return LLMResponse(
             text=final_text,
             tokens_in=usage.input_tokens if usage else None,
@@ -5213,6 +5235,12 @@ async def process_message(
         response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
         final_text = _apply_first_turn_opening_guard(final_text)
+        if conv is not None and not model_name.startswith("dialogue-kernel|"):
+            record_legacy_route(
+                conv,
+                dialogue_kernel_result,
+                legacy_route=model_name,
+            )
         return LLMResponse(
             text=final_text,
             tokens_in=0,
@@ -5234,6 +5262,12 @@ async def process_message(
             else build_service_handoff_response(policy_decision, decision_language)
         )
         final_text = _apply_first_turn_opening_guard(final_text)
+        if conv is not None:
+            record_legacy_route(
+                conv,
+                dialogue_kernel_result,
+                legacy_route=f"{model_name}|verified-policy",
+            )
         return LLMResponse(
             text=final_text,
             tokens_in=0,
@@ -5308,6 +5342,63 @@ async def process_message(
         recent_history=recent_history,
         defer_product_media=True,
     )
+
+    from src.core.config import get_system_config
+
+    dialogue_kernel_mode = await get_system_config(
+        db,
+        "dialogue_kernel_mode",
+        settings.dialogue_kernel_mode,
+    )
+    dialogue_kernel_trace_enabled = _dialogue_kernel_bool_config(
+        await get_system_config(
+            db,
+            "dialogue_kernel_trace_enabled",
+            str(settings.dialogue_kernel_trace_enabled).lower(),
+        ),
+        default=settings.dialogue_kernel_trace_enabled,
+    )
+    dialogue_kernel_enforced_flows = await get_system_config(
+        db,
+        "dialogue_kernel_enforced_flows",
+        settings.dialogue_kernel_enforced_flows,
+    )
+    dialogue_kernel_result = await run_dialogue_kernel(
+        conversation=conv,
+        text=combined_text,
+        recent_history=recent_history,
+        is_first_turn=is_first_turn,
+        mode=dialogue_kernel_mode,
+        enforced_flows=dialogue_kernel_enforced_flows,
+        trace_enabled=dialogue_kernel_trace_enabled,
+    )
+    if dialogue_kernel_result.should_use_kernel:
+        if dialogue_kernel_result.decision.flow == "name_gate":
+            await _store_name_gate_pending_request(db, conv, combined_text)
+        if dialogue_kernel_result.decision.flow == "quote_details":
+            raw_details = dialogue_kernel_result.decision.metadata.get(
+                "quote_customer_details"
+            )
+            if isinstance(raw_details, Mapping):
+                quote_details: dict[str, str] = {}
+                name = raw_details.get("customer_name")
+                address = raw_details.get("delivery_address")
+                company = raw_details.get("company")
+                customer_type = raw_details.get("customer_type")
+                if isinstance(name, str) and name.strip():
+                    quote_details["name"] = name.strip()
+                if isinstance(address, str) and address.strip():
+                    quote_details["address"] = address.strip()
+                if isinstance(company, str) and company.strip():
+                    quote_details["company"] = company.strip()
+                if isinstance(customer_type, str) and customer_type.strip():
+                    quote_details["customer_type"] = customer_type.strip()
+                await _store_extracted_quote_customer_details(db, conv, quote_details)
+        return _build_static_response(
+            dialogue_kernel_result.decision.response_text or "",
+            f"dialogue-kernel|{dialogue_kernel_result.decision.flow}",
+            allow_product_media=False,
+        )
 
     customer_name_was_unknown = not str(conv.customer_name or "").strip()
     current_quote_customer_details = _extract_quote_customer_details(combined_text)

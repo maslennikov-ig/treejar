@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     llm_non_core_budget_blocked: bool = False
     voxtral_model: str = "openai/gpt-audio-mini"
 
+    # Dialogue kernel rollout
+    dialogue_kernel_mode: str = "legacy"
+    dialogue_kernel_trace_enabled: bool = True
+    dialogue_kernel_enforced_flows: str = ""
+
     # Wazzup (WhatsApp Gateway)
     wazzup_api_key: str = ""
     wazzup_api_url: str = "https://api.wazzup24.com/v3"

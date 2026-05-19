@@ -20,6 +20,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
 - `src/llm/engine.py`, `src/llm/prompts.py`, and `src/llm/communication_policy.py` - sales-agent tools, guarded routing, and prompt policy.
+- `src/dialogue/` - LangGraph dialogue-state kernel, slot state, trace reducer, and catalog reference parsing.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
 
 ## Core Subsystems
@@ -28,6 +29,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/core/` - settings, database, Redis, security, cache, discount helpers.
 - `src/models/` and `src/schemas/` - SQLAlchemy persistence and Pydantic contracts.
 - `src/llm/` - PydanticAI agent, tool routing, safety, verified answers, order handoff.
+- `src/dialogue/` - explicit dialogue state kernel used for legacy/shadow/enforce rollout modes.
 - `src/rag/` - knowledge/product search and embedding pipeline.
 - `src/integrations/` - Wazzup messaging, Zoho CRM, Zoho Inventory, Telegram notification clients.
 - `src/services/` - business services for chat, notifications, follow-up, reports, media, PDF, referrals.
