@@ -804,6 +804,14 @@ def _looks_like_named_model_sku(candidate: str) -> bool:
     return match.group(1).casefold() in _SELECTION_MODEL_PREFIX_STOPWORDS
 
 
+def _looks_like_model_number_quantity(text: str, match: re.Match[str]) -> bool:
+    prefix = _normalize_text(_normalize_sku_homoglyphs(text[: match.start()]))
+    tokens = re.findall(r"[a-z0-9]+", prefix)
+    if not tokens:
+        return False
+    return tokens[-1] in _SELECTION_MODEL_PREFIX_STOPWORDS
+
+
 def _extract_bare_quantity_sku_candidate(text: str) -> ExactQuoteCandidate | None:
     normalized_text = _normalize_sku_homoglyphs(text)
     for match in _BARE_QUANTITY_SKU_RE.finditer(normalized_text):
@@ -1209,6 +1217,8 @@ def _extract_purchase_selection(
 
     items: list[PurchaseSelectionItem] = []
     for index, match in enumerate(quantity_matches):
+        if _looks_like_model_number_quantity(text, match):
+            continue
         start = match.start()
         end = (
             quantity_matches[index + 1].start()
@@ -2341,6 +2351,72 @@ def _quote_context_details_from_deps(deps: SalesDeps) -> dict[str, str]:
     return details
 
 
+def _looks_like_terse_delivery_address(value: str) -> bool:
+    normalized = _normalize_text(value)
+    if not normalized or len(normalized) > 160:
+        return False
+    if normalized in BARE_NAME_GATE_REJECT_PHRASES:
+        return False
+    if any(token in BARE_NAME_GATE_REJECT_TOKENS for token in normalized.split()):
+        return False
+    if _has_product_or_quote_routing_signal(value):
+        return False
+    location_terms = (
+        "dubai",
+        "dubay",
+        "abu dhabi",
+        "sharjah",
+        "ajman",
+        "business bay",
+        "marina",
+        "jlt",
+        "jvc",
+        "jumeirah",
+        "deira",
+        "al quoz",
+        "difc",
+        "дубай",
+    )
+    return bool(re.search(r"\d", value)) or any(
+        term in normalized for term in location_terms
+    )
+
+
+def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
+    stripped = _strip_synthetic_test_marker(text)
+    stripped = " ".join(stripped.strip(" \t\r\n.;:!?").split())
+    if not stripped or len(stripped) > 220 or "?" in stripped:
+        return {}
+
+    details: dict[str, str] = {}
+    parts = [
+        part.strip(" \t\r\n,.;:-")
+        for part in re.split(r"[,;\n]+", stripped, maxsplit=1)
+        if part.strip(" \t\r\n,.;:-")
+    ]
+    if len(parts) >= 2:
+        name = _extract_bare_name_gate_reply(parts[0])
+        address = parts[1]
+        if name and _looks_like_terse_delivery_address(address):
+            details["name"] = name
+            details["address"] = address
+        return details
+
+    match = re.fullmatch(
+        r"(?P<name>[^\d,;:!?]{1,80}?)\s+(?P<address>\d.+)",
+        stripped,
+        flags=re.UNICODE,
+    )
+    if not match:
+        return {}
+    name = _extract_bare_name_gate_reply(match.group("name"))
+    address = match.group("address").strip(" \t\r\n,.;:-")
+    if name and _looks_like_terse_delivery_address(address):
+        details["name"] = name
+        details["address"] = address
+    return details
+
+
 def _sales_memory_from_metadata(conversation: Conversation) -> dict[str, str]:
     metadata = (
         conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
@@ -2635,6 +2711,38 @@ def _has_active_sales_detail_capture_context(
         "installation",
     )
     return any(term in history_text for term in context_terms)
+
+
+def _last_assistant_asked_quote_customer_details(
+    recent_history: list[str] | None,
+) -> bool:
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    if not last_assistant:
+        return False
+    asks_details = any(
+        term in last_assistant
+        for term in (
+            "company",
+            "individual",
+            "delivery address",
+            "specific delivery",
+            "address",
+            "customer name",
+            "full name",
+        )
+    )
+    quote_context = any(
+        term in last_assistant
+        for term in (
+            "quotation",
+            "quote",
+            "prepare",
+            "pdf",
+            "company",
+            "delivery address",
+        )
+    )
+    return asks_details and quote_context
 
 
 def _detail_capture_acknowledgement(
@@ -4931,6 +5039,17 @@ async def process_message(
     current_quote_customer_details = _extract_quote_customer_details(combined_text)
     current_sales_memory_updates = _extract_sales_memory_updates(combined_text)
     pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
+    has_pending_quote_selection = (
+        _pending_quote_selection_from_metadata(conv) is not None
+    )
+    if (
+        not current_quote_customer_details
+        and has_pending_quote_selection
+        and _last_assistant_asked_quote_customer_details(recent_history)
+    ):
+        current_quote_customer_details = _extract_terse_quote_customer_details(
+            combined_text
+        )
     if customer_name_was_unknown and pending_name_gate_request:
         bare_name = _extract_bare_name_gate_reply(combined_text)
         if bare_name and not current_quote_customer_details.get("name"):
@@ -5380,18 +5499,17 @@ async def process_message(
 
         pending_quote_selection = _pending_quote_selection_from_metadata(conv)
         if pending_quote_selection is not None:
-            current_quote_customer_details = _extract_quote_customer_details(
-                combined_text
-            )
-            await _store_quote_customer_details(
-                db,
-                conv,
-                combined_text,
-            )
+            pending_quote_customer_details = current_quote_customer_details
+            if pending_quote_customer_details:
+                await _store_extracted_quote_customer_details(
+                    db,
+                    conv,
+                    pending_quote_customer_details,
+                )
             if _should_resume_pending_quote_selection(
                 combined_text=combined_text,
                 masked_text=masked_text,
-                customer_details=current_quote_customer_details,
+                customer_details=pending_quote_customer_details,
             ):
                 quote_items = _pending_quote_items_from_metadata(
                     pending_quote_selection
@@ -5406,6 +5524,18 @@ async def process_message(
                     )
 
                 from pydantic_ai.usage import RunUsage
+
+                missing_required = _quote_missing_required_details(
+                    deps,
+                    list(quote_items),
+                )
+                if missing_required:
+                    await _clear_verified_policy_repair_state()
+                    return _build_static_response(
+                        _quote_missing_required_details_message(missing_required),
+                        f"{db_model_main}|quote-resume-missing-details",
+                        allow_product_media=False,
+                    )
 
                 quote_resume_deps = replace(
                     deps,
@@ -5433,6 +5563,21 @@ async def process_message(
                     response_deps=quote_resume_deps,
                     allow_product_media=False,
                 )
+            if _last_assistant_asked_quote_customer_details(deps.recent_history):
+                quote_items = _pending_quote_items_from_metadata(
+                    pending_quote_selection
+                )
+                missing_required = _quote_missing_required_details(
+                    deps,
+                    list(quote_items),
+                )
+                if missing_required:
+                    await _clear_verified_policy_repair_state()
+                    return _build_static_response(
+                        _quote_missing_required_details_message(missing_required),
+                        f"{db_model_main}|quote-resume-missing-details",
+                        allow_product_media=False,
+                    )
 
         if (
             not policy_decision.is_order_status

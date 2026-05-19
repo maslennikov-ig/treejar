@@ -166,6 +166,7 @@ Your current objective is to collect their details for a quotation.
 Before creating a quotation, collect the customer's full name, company name (unless they explicitly say this is an individual/personal purchase), specific delivery address, and exact product quantities.
 The delivery address must be specific enough for fulfillment; "UAE", "Dubai", or "ОАЭ" alone is not enough.
 Do NOT call `create_quotation` until those required details and exact SKU + quantity are confirmed.
+If the customer's details reply is terse or ambiguous, preserve the current quotation context and ask only for the missing or unclear required details. Never reset to a generic opener.
 Do this naturally as part of the conversation.
 Once collected, use `advance_stage` to move to `quoting`.
 """,

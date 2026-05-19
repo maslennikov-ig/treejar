@@ -4480,6 +4480,14 @@ def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
     ]
 
 
+def test_extract_purchase_selection_ignores_model_number_before_sku() -> None:
+    selection = engine_module._extract_purchase_selection(
+        "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
+    )
+
+    assert selection is None
+
+
 @pytest.mark.parametrize(
     ("text", "expected_sku"),
     [
@@ -4487,6 +4495,7 @@ def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
         ("I want 6 CH-616", "CH-616"),
         ("I need 6 CH616", "CH-616"),
         ("I need   6   CH   616", "CH-616"),
+        ("I need 6 СН 616", "CH-616"),
     ],
 )
 def test_extract_purchase_selection_accepts_generic_sku_spacing_variants(
@@ -4890,6 +4899,60 @@ async def test_process_message_ch616_selection_confirms_without_manager_handoff(
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_novo_model_number_does_not_become_chair_quantity(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.language = "en"
+    text = "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="My name is Lili")]),
+        ModelResponse(parts=[TextPart(content="Thanks, how can I help?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Sure, I can help. How many meeting tables and chairs do you need?"
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model"
+    assert "2400 x" not in response.text
+    assert "quantity: 2400" not in response.text.lower()
+    assert "how many" in response.text.lower()
+    assert conv.escalation_status == "none"
+    mock_run.assert_awaited_once()
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -4921,7 +4984,8 @@ async def test_process_message_customer_details_resume_pending_quote_selection(
         "Full name: Lilia Kustova\n"
         "Company: Test Clinic LLC\n"
         "Email: lilia@example.com\n"
-        "Phone: +971501234567"
+        "Phone: +971501234567\n"
+        "Delivery address: Dubai Marina, Tower A"
     )
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
@@ -4972,7 +5036,185 @@ async def test_process_message_customer_details_resume_pending_quote_selection(
         "company": "Test Clinic LLC",
         "email": "lilia@example.com",
         "phone": "+971501234567",
+        "address": "Dubai Marina, Tower A",
     }
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_terse_details_preserves_pending_quote_context(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.language = "en"
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH-616", "quantity": 1}],
+            "unresolved_items": [],
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Before I prepare the quotation, please share: company "
+                        "name, or confirm you are buying as an individual; "
+                        "specific delivery address."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="Lil, 1 dubay",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "what do you need" not in response.text.lower()
+    assert "company name" in response.text.lower()
+    assert "individual" in response.text.lower()
+    assert "specific delivery address" not in response.text.lower()
+    assert response.model.endswith("|quote-resume-missing-details")
+    assert conv.customer_name == "Lil"
+    assert conv.metadata_["quote_customer_details"] == {
+        "name": "Lil",
+        "address": "1 dubay",
+    }
+    assert conv.metadata_["pending_quote_selection"]["items"] == [
+        {"sku": "CH-616", "quantity": 1}
+    ]
+    assert conv.escalation_status == "none"
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_terse_generic_city_still_asks_specific_address(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH-616", "quantity": 1}],
+            "unresolved_items": [],
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(parts=[TextPart(content="Please share company and address.")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="Lil, dubay",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "company name" in response.text.lower()
+    assert "specific delivery address" in response.text.lower()
+    assert conv.metadata_["quote_customer_details"]["name"] == "Lil"
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_unparseable_quote_details_reply_stays_in_quote_context(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH-616", "quantity": 1}],
+            "unresolved_items": [],
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(parts=[TextPart(content="Please share company and address.")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="same as before",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "what do you need" not in response.text.lower()
+    assert "before i prepare the quotation" in response.text.lower()
+    assert "customer name" in response.text.lower()
+    assert "company name" in response.text.lower()
+    assert "specific delivery address" in response.text.lower()
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -4992,12 +5234,14 @@ async def test_process_message_russian_kp_request_resumes_pending_quote_selectio
     ],
 ) -> None:
     db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
     conv.metadata_ = {
+        **(conv.metadata_ or {}),
         "pending_quote_selection": {
             "source": "selection_confirmation",
             "items": [{"sku": "00-07024022", "quantity": 10}],
             "unresolved_items": [],
-        }
+        },
     }
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
