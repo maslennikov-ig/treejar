@@ -1,7 +1,7 @@
 # Stage tj-gh20: Dialogue State Kernel
 
 Updated: 2026-05-19
-Status: local implementation verified; delivery deferred
+Status: delivered to production in shadow mode
 Branch: `codex/tj-gh20-dialogue-state-kernel`
 Worktree: `/home/me/code/treejar/.worktrees/codex-tj-gh20-dialogue-state-kernel`
 Base: `origin/main` at `f22545b7260e77ffe2d00f8ef4f24aa40a20f4f6`
@@ -29,7 +29,7 @@ The first release is a framework migration and observability layer:
 | B `tj-gh20.2-.3` state/reducer/catalog | Pydantic state, pure reducer, SKU/model resolver | worker Boole + orchestrator review | `src/dialogue/state.py`, `src/dialogue/reducer.py`, `src/dialogue/catalog_refs.py`, tests | none | dialogue state/catalog unit tests, ruff, mypy | high | parallel accepted with follow-up fixes | Disjoint from engine integration until bridge. |
 | C `tj-gh20.4-.5` runner/integration | LangGraph runner, config, engine bridge, v1 flows | orchestrator sequential | `src/dialogue/runner.py`, `src/core/config.py`, `src/llm/engine.py`, tests | B interface | targeted runner/engine tests | inherited | sequential | Central `process_message` routing and metadata sync required one owner. |
 | D `tj-gh20.6` evaluator/review | Replay harness and independent code review | explorer Pasteur + orchestrator | read-only review, fixture tests | after A/B/C green | review findings, replay tests | high | accepted findings fixed | Review found real rollout-safety issues; orchestrator verified and fixed them. |
-| E `tj-gh20.7` delivery | Production shadow deploy, synthetic E2E, decision report | pending | deployment/runtime config | explicit approval required | production smoke/E2E | n/a | deferred | No deploy/prod mutation/GitHub closure was authorized in this task. |
+| E `tj-gh20.7` delivery | Production shadow deploy, synthetic E2E, decision report | orchestrator | deployment/runtime config, `.codex/stages/tj-gh20/artifacts/tj-gh20.7-delivery.md` | explicit approval received | production smoke/E2E | n/a | completed | Deployed with customer-visible behavior still legacy; shadow traces provide decision evidence before any enforce rollout. |
 
 ## Implemented
 
@@ -77,10 +77,35 @@ The first release is a framework migration and observability layer:
   and `git diff --check`.
 - Full pytest passed after all review fixes:
   `1098 passed, 19 skipped`.
+- Delivery commit `9e967d5acd862e98c74b472c1d6fa102e686bf3f` was
+  fast-forwarded to `main` and deployed by GitHub Actions run `26098722338`.
+- Production `/opt/noor/.release-sha` matches
+  `9e967d5acd862e98c74b472c1d6fa102e686bf3f`.
+- Production smoke passed:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  -> `7 passed, 0 failed`.
+- Production `SystemConfig` is set to `dialogue_kernel_mode=shadow`,
+  `dialogue_kernel_trace_enabled=true`, and empty
+  `dialogue_kernel_enforced_flows`.
+- Synthetic production E2E with mock messaging passed for name-gate resume,
+  quote-detail context preservation, `NOVO 2400` non-quantity parsing,
+  `CH 616` quantity parsing, product reference clarification, and
+  side-effect-free shadow traces.
+
+## Delivery Decision
+
+- Keep production in `shadow` mode. Do not switch to `enforce` yet.
+- Shadow traces show the kernel is equal or better for the tested
+  name-gate, product/SKU, and quote-details flows while still allowing legacy
+  to perform all customer-visible behavior.
+- The post-quotation hold scenario showed a useful mismatch: the kernel would
+  preserve quotation context, while legacy answered with a manager-confirm
+  message. Because GitHub #11 is still waiting for Lilia's policy answers, this
+  remains a tracked defer rather than an enforce rollout.
 
 ## Explicit Defers
 
-- `tj-gh20.7`: merge/deploy, production `shadow` E2E, decision report, and any
-  enforce rollout require separate explicit approval.
+- Enforce rollout remains deferred until shadow evidence is reviewed and #11
+  follow-up policy questions are answered.
 - GitHub #11 remains pending Lilia's answers; this stage only models a safe
   post-quotation hold and does not close #11.
