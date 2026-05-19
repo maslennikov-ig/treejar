@@ -1,32 +1,33 @@
 # Orchestrator Handoff
 
 Updated: 2026-05-19
-Current branch: `codex/tj-gh18-open-issues-hardening`
+Current branch: `main`
 
 ## Current Truth
 
 - Canonical host: `https://noor.starec.ai`; canonical runtime path: `/opt/noor`.
-- Production release remains `3d24007713d5a2ca5068aeacc9c8719f101fe8d1`; no deploy or production mutation was performed in `tj-gh18`.
+- Production release is `af39abc4a1f299eb2c37af916c14d476ea2ab1b7`; GitHub Actions run `26087478319` succeeded; `/opt/noor/.release-sha` matches.
 - Stage `tj-gh17` is delivered, deployed, live E2E verified, and GitHub #38 is closed.
-- Stage `tj-gh18` is local-implementation verified for GitHub #39/#35 on branch `codex/tj-gh18-open-issues-hardening`.
-- `tj-gh18.1` / #39 now parses `I need 6 CH 616`, `CH-616`, and `CH616` as product selection, stores `pending_quote_selection`, and avoids verified-policy manager handoff.
-- `tj-gh18.2` / #35 now has explicit regressions proving deferred product media sends with `caption=None`, no caption CRM id, and only hidden non-customer-visible caption audit context.
-- Verification passed for `tj-gh18`: targeted suites `246 passed`; full pytest `1056 passed, 19 skipped`; ruff, format-check, mypy, and process verification passed.
-- Stage summary: `.codex/stages/tj-gh18/summary.md`; artifact: `.codex/stages/tj-gh18/artifacts/tj-gh18.1-2.md`.
+- Stage `tj-gh18` is delivered, deployed, live E2E verified, and GitHub #39/#35 are closed.
+- `tj-gh18.1` / #39 parses `CH 616`, `CH-616`, `CH616`, lowercase, Cyrillic homoglyph `СН 616`, and repeated spaces `CH   616` as product selection, stores `pending_quote_selection`, and avoids verified-policy manager handoff.
+- `tj-gh18.2` / #35 is live-verified: product media rows have provider ids, hidden caption audit rows have `provider_message_id=NULL` and `customer_visible=false`, with no separate customer-visible caption text.
+- Final live evidence: #39 conversation `e3b12221-7206-4be8-8e59-d70d0732d446`; #35 media conversation `d331625b-84be-442e-9b6a-f92ce6139101`; production API smoke `7 passed, 0 failed`.
+- Verification passed for `tj-gh18`: final full pytest `1057 passed, 19 skipped`; ruff, format-check, mypy, process verification, stage closeout, final deploy, production SKU matrix, and live E2E passed.
+- Stage summary: `.codex/stages/tj-gh18/summary.md`; artifacts: `.codex/stages/tj-gh18/artifacts/tj-gh18.1-2.md`, `.codex/stages/tj-gh18/artifacts/tj-gh18.3-live-e2e.md`.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
 ## Next recommended
 
-Next stage id: `tj-gh18.3`.
+Next stage id: none.
 
-Recommended action: deliver `codex/tj-gh18-open-issues-hardening` through the approved path, run the comprehensive deployed E2E matrix from `.codex/stages/tj-gh18/summary.md`, then comment and close GitHub #39/#35 only after passing evidence.
+Recommended action: monitor normal production behavior; no remaining `tj-gh18` delivery action.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-gh18.3`: merge/deploy branch `codex/tj-gh18-open-issues-hardening`, run production synthetic/live E2E for SKU variants and product media captions, verify no manager handoff/no customer-visible caption leak, then close GitHub #39/#35 with evidence. Do not touch GitHub #11 until Lilia answers the pending questions.
+Use $orchestrator-stage for the next distinct production issue. Current delivered production release is `af39abc4a1f299eb2c37af916c14d476ea2ab1b7`; `tj-gh18` is closed after live E2E. Do not touch GitHub #11 until Lilia answers the pending questions.
 
 ## Explicit defers
 
-- `tj-gh18.3` tracks delivery, deployed E2E, production/live evidence, comments, and GitHub closure for #39/#35.
+- none for `tj-gh18`.
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup typing endpoint.
 - GitHub #11 remains pending Lilia's answers.
