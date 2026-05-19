@@ -412,6 +412,7 @@ _PRICE_SIGNAL_RE = re.compile(
     r"(?P<amount>\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)\s*(?P<currency>[A-Z]{3})\b",
     re.IGNORECASE,
 )
+_VALID_PRICE_CURRENCIES = frozenset({"AED", "DHS", "USD", "EUR", "GBP", "SAR"})
 _SALES_ORDER_TERM_RE = re.compile(r"\b(?:sales order|sale order)\b", re.IGNORECASE)
 _ITEM_BEFORE_QUANTITY_RE = re.compile(
     r"(?P<item>.*?)(?:\s*[-–—:]\s*|\s+)"
@@ -420,6 +421,11 @@ _ITEM_BEFORE_QUANTITY_RE = re.compile(
     r"(?=\s*(?:and\b|,|$))",
     re.IGNORECASE,
 )
+_SALES_ORDER_QUANTITY_FIRST_RE = re.compile(
+    r"(?<![\w.-])(?P<quantity>\d{1,4})\s*(?:x|×)?\s+",
+    re.IGNORECASE,
+)
+_NUMERIC_HYPHEN_SKU_RE = re.compile(r"\b\d{2,}(?:-\d{1,})+\b")
 _MIXED_SERVICE_TERMS = (
     "delivery",
     "deliver",
@@ -833,12 +839,103 @@ def _clean_sales_order_item_candidate(candidate: str) -> str:
     return cleaned.strip(" ,.;:-–—")
 
 
+def _clean_sales_order_body_prefix(body: str) -> str:
+    cleaned = re.sub(r"^\s*(?:on|for|with|:)\s*", "", body, flags=re.IGNORECASE)
+    for _ in range(3):
+        updated = re.sub(
+            r"^[\s?.!,;:-]*(?:please\s+)?(?:(?:i|we)\s+)?"
+            r"(?:need|want|would\s+like|like|have)\s+",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if updated == cleaned:
+            break
+        cleaned = updated
+    return cleaned.strip(" \t\r\n?.!,;:-–—")
+
+
 def _extract_sales_order_body(text: str) -> str | None:
     match = _SALES_ORDER_TERM_RE.search(text)
     if not match:
         return None
     body = text[match.end() :]
-    return re.sub(r"^\s*(?:on|for|with|:)\s*", "", body, flags=re.IGNORECASE)
+    return _clean_sales_order_body_prefix(body)
+
+
+def _extract_sales_order_sku_signal(item_candidate: str) -> str | None:
+    normalized = _normalize_sku_homoglyphs(item_candidate)
+    numeric_hyphen = _NUMERIC_HYPHEN_SKU_RE.search(normalized)
+    if numeric_hyphen:
+        return numeric_hyphen.group(0).upper()
+    return _extract_sku_signal(normalized)
+
+
+def _looks_like_sales_order_item_candidate(candidate: str) -> bool:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(candidate))
+    if not normalized or any(
+        blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS
+    ):
+        return False
+    if _looks_like_exact_item_candidate(candidate):
+        return True
+    tokens = [
+        token
+        for token in re.split(r"[^a-z0-9]+", normalized)
+        if token
+        and token
+        not in {
+            "and",
+            "or",
+            "pcs",
+            "pc",
+            "piece",
+            "pieces",
+            "unit",
+            "units",
+            "qty",
+        }
+    ]
+    return len(tokens) >= 2 and any(re.search(r"[a-z]", token) for token in tokens)
+
+
+def _extract_quantity_first_sales_order_quote_items(
+    body: str,
+) -> tuple[ExactQuoteCandidate, ...] | None:
+    body = _clean_sales_order_body_prefix(body)
+    if not body or not _SALES_ORDER_QUANTITY_FIRST_RE.match(body):
+        return None
+
+    quantity_matches = list(_SALES_ORDER_QUANTITY_FIRST_RE.finditer(body))
+    if not quantity_matches or quantity_matches[0].start() != 0:
+        return None
+
+    items: list[ExactQuoteCandidate] = []
+    for index, match in enumerate(quantity_matches):
+        end = (
+            quantity_matches[index + 1].start()
+            if index + 1 < len(quantity_matches)
+            else len(body)
+        )
+        item_candidate = body[match.end() : end]
+        item_candidate = re.sub(
+            r"\s+(?:and|or)\s*$",
+            "",
+            item_candidate,
+            flags=re.IGNORECASE,
+        )
+        item_candidate = _clean_sales_order_item_candidate(item_candidate)
+        if not _looks_like_sales_order_item_candidate(item_candidate):
+            continue
+        items.append(
+            ExactQuoteCandidate(
+                quantity=int(match.group("quantity")),
+                item_candidate=item_candidate,
+                sku=_extract_sales_order_sku_signal(item_candidate),
+            )
+        )
+
+    return tuple(items) or None
 
 
 def _extract_sales_order_quote_items(
@@ -850,12 +947,16 @@ def _extract_sales_order_quote_items(
     if not body:
         return None
 
+    quantity_first_items = _extract_quantity_first_sales_order_quote_items(body)
+    if quantity_first_items is not None:
+        return quantity_first_items
+
     items: list[ExactQuoteCandidate] = []
     for match in _ITEM_BEFORE_QUANTITY_RE.finditer(body):
         item_candidate = _clean_sales_order_item_candidate(match.group("item"))
-        if not _looks_like_exact_item_candidate(item_candidate):
+        if not _looks_like_sales_order_item_candidate(item_candidate):
             continue
-        sku = _extract_sku_signal(item_candidate)
+        sku = _extract_sales_order_sku_signal(item_candidate)
         items.append(
             ExactQuoteCandidate(
                 quantity=int(match.group("quantity")),
@@ -963,6 +1064,8 @@ def _showroom_location_response(language: str) -> str:
 def extract_exact_quote_candidate(text: str) -> ExactQuoteCandidate | None:
     """Parse a concrete quantity + item request that should stay on the exact-quote path."""
     text = _normalize_sku_homoglyphs(text)
+    if _SALES_ORDER_TERM_RE.search(text) and _extract_sales_order_quote_items(text):
+        return None
     normalized = _normalize_text(text)
     if not normalized or not _has_exact_commitment_intent(normalized):
         return None
@@ -1019,12 +1122,15 @@ def _extract_stated_price(fragment: str) -> tuple[float | None, str | None]:
     if not matches:
         return None, None
     match = matches[-1]
+    currency = match.group("currency").upper()
+    if currency not in _VALID_PRICE_CURRENCIES:
+        return None, None
     amount = match.group("amount").replace(",", "")
     try:
         price = float(amount)
     except ValueError:
         return None, None
-    return price, match.group("currency").upper()
+    return price, currency
 
 
 def _extract_purchase_selection(text: str) -> PurchaseSelection | None:
@@ -1100,6 +1206,16 @@ def _catalog_product_match_text(product: Any) -> str:
         )
         if part
     )
+
+
+def _catalog_product_contains_numeric_hyphen_anchor(
+    product: Any,
+    anchor: str,
+) -> bool:
+    if not anchor:
+        return False
+    product_text = _normalize_sku_homoglyphs(_catalog_product_match_text(product))
+    return anchor.casefold() in product_text.casefold()
 
 
 async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
@@ -1195,6 +1311,24 @@ async def _resolve_exact_quote_candidate_sku(
     )
     products = list(result.scalars().all())
     if not products:
+        return None
+
+    strict_numeric_anchor = (
+        candidate_sku
+        if candidate_sku and _NUMERIC_HYPHEN_SKU_RE.fullmatch(candidate_sku)
+        else None
+    )
+    if strict_numeric_anchor:
+        strict_products = [
+            product
+            for product in products
+            if _catalog_product_contains_numeric_hyphen_anchor(
+                product,
+                strict_numeric_anchor,
+            )
+        ]
+        if len(strict_products) == 1:
+            return str(strict_products[0].sku)
         return None
 
     candidate_token_set = set(candidate_tokens)
@@ -4604,7 +4738,10 @@ async def process_message(
             tokens_out=0,
             cost=None,
             model=f"{model_name}|verified-policy",
-            deferred_product_media=tuple(deps.pending_product_media),
+            deferred_product_media=_deferred_product_media_for_response(
+                deps,
+                allow_product_media=False,
+            ),
         )
 
     # Load conversation (already loaded by caller typically, but we fetch to be safe/fresh)
@@ -5015,6 +5152,7 @@ async def process_message(
                     first_result,
                     db_model_main,
                     response_deps=first_exact_deps,
+                    allow_product_media=not _has_escalation(conv),
                 )
 
             second_exact_deps = replace(
@@ -5029,6 +5167,7 @@ async def process_message(
                     second_result,
                     db_model_main,
                     response_deps=second_exact_deps,
+                    allow_product_media=not _has_escalation(conv),
                 )
 
             resolved_exact_sku = await _resolve_exact_quote_candidate_sku(
@@ -5081,7 +5220,10 @@ async def process_message(
             fail_closed_text = await _fail_closed_exact_quote_request(second_exact_deps)
             await _clear_verified_policy_repair_state()
             return _build_static_response(
-                fail_closed_text, f"{db_model_main}|exact-quote-fallback"
+                fail_closed_text,
+                f"{db_model_main}|exact-quote-fallback",
+                response_deps=second_exact_deps,
+                allow_product_media=False,
             )
 
         purchase_selection = _extract_purchase_selection(masked_text)

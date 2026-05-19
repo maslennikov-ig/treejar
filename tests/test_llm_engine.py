@@ -4322,6 +4322,33 @@ async def test_resolve_exact_quote_candidate_accepts_spaced_canonical_sku() -> N
     db.execute.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_resolve_exact_quote_candidate_requires_full_numeric_hyphen_anchor() -> (
+    None
+):
+    db = AsyncMock()
+    exact_result = MagicMock()
+    exact_result.scalar_one_or_none.return_value = None
+    fuzzy_result = MagicMock()
+    fuzzy_result.scalars.return_value.all.return_value = [
+        SimpleNamespace(
+            sku="SL-9719-5",
+            name_en="SKYLAND LUMA 9719-5",
+            description_en="Reception desk",
+            attributes={"treejar_slug": "skyland-luma-9719-5"},
+        )
+    ]
+    db.execute.side_effect = [exact_result, fuzzy_result]
+
+    candidate = engine_module.ExactQuoteCandidate(
+        quantity=2,
+        item_candidate="SKYLAND LUMA 9719-4",
+        sku="9719-4",
+    )
+
+    assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) is None
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -4370,6 +4397,26 @@ def test_extract_sales_order_items_accepts_item_before_quantity_list() -> None:
         ("CH 620 black", 2),
         ("executive Office Chair CH 410 black", 1),
     ]
+
+
+def test_extract_sales_order_items_accepts_quantity_before_item_list() -> None:
+    items = engine_module._extract_sales_order_quote_items(
+        "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet"
+    )
+
+    assert items is not None
+    assert [(item.item_candidate, item.quantity, item.sku) for item in items] == [
+        ("SKYLAND LUMA 9719-4", 2, "9719-4"),
+        ("TORR Cabinet", 3, None),
+    ]
+
+
+def test_extract_exact_quote_candidate_rejects_multi_item_sales_order_list() -> None:
+    candidate = extract_exact_quote_candidate(
+        "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet"
+    )
+
+    assert candidate is None
 
 
 def test_extract_sales_order_items_normalizes_cyrillic_homoglyph_prefix() -> None:
@@ -4431,6 +4478,16 @@ def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
     assert [(item.quantity, item.sku) for item in selection.items] == [
         (1, "00-07024023")
     ]
+
+
+def test_extract_purchase_selection_does_not_treat_and_as_currency() -> None:
+    selection = engine_module._extract_purchase_selection(
+        "I want to order 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet."
+    )
+
+    assert selection is not None
+    assert selection.items[0].stated_unit_price is None
+    assert selection.items[0].stated_currency is None
 
 
 @pytest.mark.parametrize(
@@ -5245,10 +5302,21 @@ async def test_process_message_exact_quote_second_consultative_pass_fails_closed
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.side_effect = [
-        _FakeAgentResult("Could you share your company name?"),
-        _FakeAgentResult("Please also share your email address."),
-    ]
+    pending_payload = ProductMediaPayload(
+        url="https://example.com/quote-side-effect.jpg",
+        caption="Catalog photo that must not follow fail-closed quote",
+        product_key="chair-1",
+        zoho_item_id=None,
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        if mock_run.await_count == 1:
+            deps.pending_product_media.append(pending_payload)
+            return _FakeAgentResult("Could you share your company name?")
+        return _FakeAgentResult("Please also share your email address.")
+
+    mock_run.side_effect = run_side_effect
 
     async def notify_side_effect(**kwargs: object) -> None:
         kwargs["conversation"].escalation_status = "pending"
@@ -5270,6 +5338,56 @@ async def test_process_message_exact_quote_second_consultative_pass_fails_closed
     assert conv.escalation_status == "pending"
     assert response.text != "Please also share your email address."
     assert "manager" in response.text.lower()
+    assert response.deferred_product_media == ()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_escalation_suppresses_product_media(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I need the exact price and current availability for 1 Reception desk SKYLAND LUMA."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    pending_payload = ProductMediaPayload(
+        url="https://example.com/quote-side-effect.jpg",
+        caption="Catalog photo that must not follow handoff",
+        product_key="chair-1",
+        zoho_item_id=None,
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.pending_product_media.append(pending_payload)
+        conv.escalation_status = "pending"
+        return _FakeAgentResult("Our manager will verify this for you.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 1
+    assert "manager" in response.text.lower()
+    assert response.deferred_product_media == ()
 
 
 @pytest.mark.asyncio
@@ -5400,6 +5518,69 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
         ("CH-620-BLACK", 2),
         ("CH-410-BLACK", 1),
     ]
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_sales_order_quantity_before_item_unresolved_clarifies(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Can I have sales order ? I need 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        if candidate.item_candidate == "SKYLAND LUMA 9719-4":
+            return "SL-9719-4"
+        return None
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    _assert_first_turn_opening(
+        response.text,
+        "I can prepare a sales order, but I need to confirm the exact catalog "
+        "item(s) for: 3 x TORR Cabinet. Please share the SKU or choose the exact "
+        "catalog option for each unresolved item.",
+    )
+    assert response.model == "mock-model|sales-order-clarify"
+    assert response.deferred_product_media == ()
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "sales_order_quote"
+    assert pending_quote["items"] == [{"sku": "SL-9719-4", "quantity": 2}]
+    assert pending_quote["unresolved_items"] == [
+        {"sku": None, "quantity": 3, "item_candidate": "TORR Cabinet"}
+    ]
+    mock_create_quotation.assert_not_awaited()
     mock_run.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
