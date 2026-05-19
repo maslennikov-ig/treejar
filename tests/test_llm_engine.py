@@ -4480,6 +4480,49 @@ def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_sku"),
+    [
+        ("I need 6 CH 616", "CH-616"),
+        ("I want 6 CH-616", "CH-616"),
+        ("I need 6 CH616", "CH-616"),
+    ],
+)
+def test_extract_purchase_selection_accepts_generic_sku_spacing_variants(
+    text: str,
+    expected_sku: str,
+) -> None:
+    selection = engine_module._extract_purchase_selection(text)
+
+    assert selection is not None
+    assert [(item.quantity, item.sku) for item in selection.items] == [
+        (6, expected_sku)
+    ]
+
+
+def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choice() -> (
+    None
+):
+    selection = engine_module._extract_purchase_selection_for_context(
+        "6 CH 616",
+        [
+            "assistant: Which chair would you like - the operative chair CH 616 "
+            "or visitor chair CH 620?"
+        ],
+    )
+
+    assert selection is not None
+    assert [(item.quantity, item.sku) for item in selection.items] == [(6, "CH-616")]
+    assert engine_module._extract_purchase_selection("6 CH 616") is None
+    assert (
+        engine_module._extract_purchase_selection_for_context(
+            "6 CH 616",
+            ["assistant: Thanks, please share your company name."],
+        )
+        is None
+    )
+
+
 def test_extract_purchase_selection_does_not_treat_and_as_currency() -> None:
     selection = engine_module._extract_purchase_selection(
         "I want to order 2 SKYLAND LUMA 9719-4 and 3 TORR Cabinet."
@@ -4733,6 +4776,115 @@ async def test_process_message_confirms_selection_from_prior_product_media_capti
         ("00-07024022", 10),
         ("00-07023896", 5),
     ]
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_ch616_selection_confirms_without_manager_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.language = "en"
+    conv.metadata_ = {}
+    text = "I need 6 CH 616"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content=(
+                        "Hi, I need 2 SKYLAND NOVO 2400 tables and 4 ergonomic chairs"
+                    )
+                )
+            ]
+        ),
+        ModelResponse(parts=[TextPart(content="How should I address you?")]),
+        ModelRequest(parts=[UserPromptPart(content="lil")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Which table type do you prefer - the SKYLAND NOVO 2400 "
+                        "workstation or meeting table? For the chairs, would you like "
+                        "Skyland Operative Chair CH 616 NEW black or visitor chairs?"
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH-616",
+        zoho_item_id="zoho-ch-616",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        description_en="Skyland Operative Chair CH 616 NEW black",
+        price=199.0,
+        currency="AED",
+        stock=12,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    execute_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": "CH-616",
+        "stock_on_hand": 12,
+        "rate": 199.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "CH 616" in response.text
+    assert "6" in response.text
+    assert "manager will confirm" not in response.text.lower()
+    assert "our manager" not in response.text.lower()
+    assert response.deferred_product_media == ()
+    assert conv.escalation_status == "none"
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "selection_confirmation"
+    assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
+        ("CH-616", 6)
+    ]
+    mock_notify_manager.assert_not_awaited()
     mock_run.assert_not_awaited()
 
 

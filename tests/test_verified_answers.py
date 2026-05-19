@@ -231,6 +231,17 @@ def test_policy_routes_brand_quantity_selection_to_product_path() -> None:
         assert decision.requires_manager_handoff is False
 
 
+def test_policy_routes_generic_sku_quantity_selection_to_product_path() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="I need 6 CH 616",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
 def test_policy_keeps_company_office_location_question_on_service_path() -> None:
     decision = evaluate_verified_answer_policy(
         query="Where is your office in Dubai?",

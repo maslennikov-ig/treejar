@@ -114,6 +114,14 @@ _PRODUCT_SELECTION_QUANTITY_RE = re.compile(
     r"(?:^|[^\w])\d{1,4}\s*(?:x|×)?\s*[\w'-]+",
     re.IGNORECASE | re.UNICODE,
 )
+_SKU_SELECTION_SIGNAL_RE = re.compile(
+    r"\b(?:"
+    r"[a-z]{1,4}[-\s]?\d{2,8}|"
+    r"\d{2,}(?:-\d{1,})+|"
+    r"[a-z0-9]+(?:[-.][a-z0-9]+)+"
+    r")\b",
+    re.IGNORECASE,
+)
 _PRODUCT_DISCOVERY_PHRASES = (
     "what options",
     "show me",
@@ -472,9 +480,13 @@ def _has_product_signal(normalized: str) -> bool:
 
 
 def _has_product_selection_signal(normalized: str) -> bool:
-    return _has_product_signal(normalized) and bool(
+    if _has_product_signal(normalized) and bool(
         _NUMBER_RE.search(normalized)
         or _PRODUCT_SELECTION_QUANTITY_RE.search(normalized)
+    ):
+        return True
+    return bool(
+        _NUMBER_RE.search(normalized) and _SKU_SELECTION_SIGNAL_RE.search(normalized)
     )
 
 
@@ -613,6 +625,12 @@ def classify_question(query: str) -> QuestionClass:
 
     if has_high_risk_service_topic or _asks_for_specific_commitment(normalized):
         return "service_high_risk"
+
+    if has_product_selection:
+        return "product"
+
+    if has_product_signal and has_product_discovery:
+        return "product"
 
     if has_product_signal:
         return "product"

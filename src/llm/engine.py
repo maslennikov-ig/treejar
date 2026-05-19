@@ -18,7 +18,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
 from redis.asyncio import Redis
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -345,6 +345,18 @@ _SKU_PRODUCT_PREFIX_STOPWORDS = frozenset(
         "sofa",
     }
 )
+_SELECTION_MODEL_PREFIX_STOPWORDS = frozenset(
+    {
+        "imago",
+        "luma",
+        "mobile",
+        "novo",
+        "skyland",
+        "torr",
+        "trend",
+        "xten",
+    }
+)
 _SKU_FOLLOWING_CURRENCY_RE = re.compile(
     r"\s*(?:aed|dhs?|dirhams?|dirham|درهم|د\.إ)\b",
     re.IGNORECASE,
@@ -388,7 +400,7 @@ _QUANTITY_ITEM_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 _PURCHASE_SELECTION_TRIGGER_RE = re.compile(
-    r"\b(?:buy|purchase|order|proceed|take|confirm)\b",
+    r"\b(?:buy|purchase|order|proceed|take|confirm|need|want|would\s+like|like)\b",
     re.IGNORECASE,
 )
 _PURCHASE_SELECTION_BLOCKERS = (
@@ -722,6 +734,35 @@ def _canonicalize_sku_signal(value: str) -> str:
     return re.sub(r"\s+", "-", normalized)
 
 
+def _sku_lookup_variants(value: str) -> tuple[str, ...]:
+    normalized = " ".join(_normalize_sku_homoglyphs(value).split()).strip().upper()
+    if not normalized:
+        return ()
+
+    variants: list[str] = []
+
+    def add(candidate: str) -> None:
+        candidate = candidate.strip().upper()
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+
+    add(normalized)
+    add(_canonicalize_sku_signal(normalized))
+
+    tokens = re.findall(r"[A-Z0-9]+", normalized)
+    if len(tokens) >= 2 and any(
+        any(char.isdigit() for char in token) for token in tokens
+    ):
+        add("-".join(tokens))
+        add(" ".join(tokens))
+        add("".join(tokens))
+
+    add(normalized.replace("-", " "))
+    add(normalized.replace(" ", "-"))
+    add(re.sub(r"[^A-Z0-9]+", "", normalized))
+    return tuple(variants)
+
+
 def _looks_like_price_phrase_sku_match(text: str, match: re.Match[str]) -> bool:
     normalized_match = " ".join(
         _normalize_sku_homoglyphs(match.group(0)).split()
@@ -751,6 +792,16 @@ def _extract_sku_signal(text: str) -> str | None:
             continue
         return _canonicalize_sku_signal(match.group(0))
     return None
+
+
+def _looks_like_named_model_sku(candidate: str) -> bool:
+    match = re.fullmatch(
+        r"([A-Z]{2,})[-\s]?(\d{2,8})",
+        " ".join(_normalize_sku_homoglyphs(candidate).split()).strip().upper(),
+    )
+    if not match:
+        return False
+    return match.group(1).casefold() in _SELECTION_MODEL_PREFIX_STOPWORDS
 
 
 def _extract_bare_quantity_sku_candidate(text: str) -> ExactQuoteCandidate | None:
@@ -1104,17 +1155,22 @@ def is_exact_quote_request(text: str) -> bool:
 
 def _best_selection_sku(fragment: str) -> str | None:
     fragment = _normalize_sku_homoglyphs(fragment)
-    candidates = [
-        match.group(0)
-        for match in _SELECTION_SKU_RE.finditer(fragment)
-        if any(char.isalpha() for char in match.group(0)) or "-" in match.group(0)
-    ]
+    candidates: list[str] = []
+    for pattern in (_SELECTION_SKU_RE, _SKU_SIGNAL_RE):
+        for match in pattern.finditer(fragment):
+            candidate = match.group(0)
+            if _looks_like_price_phrase_sku_match(fragment, match):
+                continue
+            if _looks_like_named_model_sku(candidate):
+                continue
+            if any(char.isalpha() for char in candidate) or "-" in candidate:
+                candidates.append(candidate)
     if not candidates:
         return None
     for candidate in candidates:
         if any(char.isdigit() for char in candidate):
-            return candidate.upper()
-    return candidates[-1].upper()
+            return _canonicalize_sku_signal(candidate)
+    return _canonicalize_sku_signal(candidates[-1])
 
 
 def _extract_stated_price(fragment: str) -> tuple[float | None, str | None]:
@@ -1133,12 +1189,16 @@ def _extract_stated_price(fragment: str) -> tuple[float | None, str | None]:
     return price, currency
 
 
-def _extract_purchase_selection(text: str) -> PurchaseSelection | None:
+def _extract_purchase_selection(
+    text: str,
+    *,
+    require_trigger: bool = True,
+) -> PurchaseSelection | None:
     """Parse explicit customer-selected SKU/quantity lines without product discovery."""
     normalized = _normalize_text(text)
     if not normalized:
         return None
-    if not _PURCHASE_SELECTION_TRIGGER_RE.search(text):
+    if require_trigger and not _PURCHASE_SELECTION_TRIGGER_RE.search(text):
         return None
     if any(blocker in normalized for blocker in _PURCHASE_SELECTION_BLOCKERS):
         return None
@@ -1183,6 +1243,45 @@ def _extract_purchase_selection(text: str) -> PurchaseSelection | None:
     return PurchaseSelection(items=tuple(items))
 
 
+def _last_assistant_asked_product_selection(recent_history: list[str] | None) -> bool:
+    last_assistant = _last_assistant_message(recent_history)
+    normalized = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
+    if not normalized:
+        return False
+    has_choice_prompt = "?" in last_assistant or any(
+        phrase in normalized
+        for phrase in (
+            "which",
+            "would you like",
+            "do you prefer",
+            "prefer",
+            "choose",
+            "select",
+            "option",
+            "options",
+        )
+    )
+    if not has_choice_prompt:
+        return False
+    return bool(
+        any(term in normalized for term in _MIXED_PRODUCT_TERMS)
+        or _SKU_SIGNAL_RE.search(normalized)
+        or any(term in normalized for term in ("skyland", "novo", "xten", "trend"))
+    )
+
+
+def _extract_purchase_selection_for_context(
+    text: str,
+    recent_history: list[str] | None,
+) -> PurchaseSelection | None:
+    selection = _extract_purchase_selection(text)
+    if selection is not None:
+        return selection
+    if not _last_assistant_asked_product_selection(recent_history):
+        return None
+    return _extract_purchase_selection(text, require_trigger=False)
+
+
 def _selection_runtime_directives(
     selection: PurchaseSelection,
 ) -> tuple[str, ...]:
@@ -1221,12 +1320,24 @@ def _catalog_product_contains_numeric_hyphen_anchor(
 async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None:
     from src.models.product import Product
 
-    normalized_sku = sku.strip()
-    if not normalized_sku:
+    variants = _sku_lookup_variants(sku)
+    if not variants:
         return None
 
+    variant_priority = {
+        variant.casefold(): index for index, variant in enumerate(variants)
+    }
     result = await db.execute(
-        select(Product).where(func.lower(Product.sku) == normalized_sku.casefold())
+        select(Product)
+        .where(func.lower(Product.sku).in_(variant_priority))
+        .order_by(
+            case(
+                variant_priority,
+                value=func.lower(Product.sku),
+                else_=len(variant_priority),
+            )
+        )
+        .limit(1)
     )
     product = result.scalar_one_or_none()
     if product is None or not isinstance(getattr(product, "sku", None), str):
@@ -1441,16 +1552,25 @@ def _purchase_caption_match_score(
     caption_tokens = set(_tokenize_exact_match_text(caption))
     item_tokens = set(_tokenize_exact_match_text(item.item_candidate))
     sku_tokens = set(_tokenize_exact_match_text(item.sku))
+    sku_variant_norms = {
+        _normalize_text(variant)
+        for variant in _sku_lookup_variants(item.sku)
+        if _normalize_text(variant)
+    }
 
     has_sku_match = bool(
         sku_norm
-        and (sku_norm in caption_norm or (sku_tokens and sku_tokens <= caption_tokens))
+        and (
+            sku_norm in caption_norm
+            or any(variant in caption_norm for variant in sku_variant_norms)
+            or (sku_tokens and sku_tokens <= caption_tokens)
+        )
     )
     if not has_sku_match:
         return None
 
     overlap = item_tokens & caption_tokens
-    if len(overlap) < 3:
+    if len(overlap) < 3 and not (sku_tokens and sku_tokens <= caption_tokens):
         return None
 
     exact_text_match = int(bool(item_norm and item_norm in caption_norm))
@@ -5226,9 +5346,15 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        purchase_selection = _extract_purchase_selection(masked_text)
+        purchase_selection = _extract_purchase_selection_for_context(
+            masked_text,
+            deps.recent_history,
+        )
         if purchase_selection is None:
-            purchase_selection = _extract_purchase_selection(combined_text)
+            purchase_selection = _extract_purchase_selection_for_context(
+                combined_text,
+                deps.recent_history,
+            )
         if purchase_selection is not None:
             selection_deps = replace(
                 deps,

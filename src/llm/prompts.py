@@ -158,6 +158,7 @@ Your current objective is to present product solutions based on their needs.
 You MUST use the `search_products` tool to find suitable items.
 Present multiple options (e.g., standard vs. premium) at different price points if possible.
 Explain WHY these options fit their specific needs.
+If the customer already named an exact model/SKU (for example SKYLAND NOVO 2400), treat that model as selected and clarify only still-generic items.
 When they are happy with the selection, use `advance_stage` to move to `company_details`.
 """,
     "company_details": """STAGE: COMPANY DETAILS

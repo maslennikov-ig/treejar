@@ -503,12 +503,73 @@ async def test_send_wazzup_media_with_audit_can_audit_caption_without_sending_it
 class _DetailedMediaProvider:
     def __init__(self, result: SimpleNamespace) -> None:
         self.result = result
+        self.send_media_detailed_calls: list[dict[str, object]] = []
+        self.send_text = AsyncMock()
 
     def outbound_chat_id(self, chat_id: str) -> str:
         return chat_id
 
     async def send_media_detailed(self, **kwargs: object) -> SimpleNamespace:
+        self.send_media_detailed_calls.append(kwargs)
         return self.result
+
+
+@pytest.mark.asyncio
+async def test_send_wazzup_media_with_audit_detailed_provider_suppresses_caption_send() -> (
+    None
+):
+    from src.models.outbound_message import OutboundMessageAudit
+    from src.services.outbound_audit import send_wazzup_media_with_audit
+
+    db = AsyncMock()
+    db.execute.side_effect = [_ScalarResult(None), _ScalarResult(None)]
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    provider = _DetailedMediaProvider(
+        SimpleNamespace(
+            message_id="wz-media-1",
+            caption_message_id="should-not-be-used",
+            content_uri="https://example.com/image.jpg",
+            outbound_chat_id="971501234567",
+        )
+    )
+
+    result = await send_wazzup_media_with_audit(
+        db,
+        provider=provider,
+        conversation_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        chat_id="+971501234567",
+        source="product_media",
+        crm_message_id="product:conv-1:sku-1:media",
+        caption_crm_message_id="product:conv-1:sku-1:caption",
+        url="https://example.com/image.jpg",
+        caption="Caption",
+        send_caption=False,
+    )
+
+    assert provider.send_media_detailed_calls == [
+        {
+            "chat_id": "+971501234567",
+            "url": "https://example.com/image.jpg",
+            "caption": None,
+            "content": None,
+            "content_type": None,
+            "crm_message_id": "product:conv-1:sku-1:media",
+            "caption_crm_message_id": None,
+        }
+    ]
+    provider.send_text.assert_not_awaited()
+    assert db.add.call_count == 2
+    caption_audit = db.add.call_args_list[1].args[0]
+    assert isinstance(caption_audit, OutboundMessageAudit)
+    assert caption_audit.message_type == "caption"
+    assert caption_audit.content == "Caption"
+    assert caption_audit.crm_message_id == "product:conv-1:sku-1:caption"
+    assert caption_audit.provider_message_id is None
+    assert caption_audit.status == "sent"
+    assert caption_audit.details == {"customer_visible": False}
+    assert result.caption is not None
+    assert result.caption.provider_message_id is None
 
 
 @pytest.mark.asyncio

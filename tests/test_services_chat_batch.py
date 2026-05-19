@@ -255,6 +255,16 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
         "https://example.com/table.jpg"
     )
     assert mock_wazzup.send_media.await_args.kwargs["caption"] is None
+    assert mock_wazzup.send_media.await_args.kwargs["caption_crm_message_id"] is None
+    caption_audits = [
+        call.args[0]
+        for call in mock_session.add.call_args_list
+        if getattr(call.args[0], "message_type", None) == "caption"
+    ]
+    assert len(caption_audits) == 1
+    assert caption_audits[0].content == "Operative table — 179.00 AED"
+    assert caption_audits[0].provider_message_id is None
+    assert caption_audits[0].details == {"customer_visible": False}
 
 
 @pytest.mark.asyncio
