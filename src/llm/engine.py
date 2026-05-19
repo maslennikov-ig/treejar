@@ -313,11 +313,11 @@ _EXACT_QUOTE_HIGH_RISK_BLOCKERS = (
 )
 _QUANTITY_SIGNAL_RE = re.compile(r"\b\d{1,4}\b")
 _SKU_SIGNAL_RE = re.compile(
-    r"\b(?:[a-z]{1,4}[-\s]?\d{2,8}|\d{2,}(?:-\d{2,})+|[a-z0-9]+(?:-[a-z0-9]+)+)\b",
+    r"\b(?:[a-z]{1,4}(?:[-\s]+)?\d{2,8}|\d{2,}(?:-\d{2,})+|[a-z0-9]+(?:-[a-z0-9]+)+)\b",
     re.IGNORECASE,
 )
 _SKU_SIGNAL_PATTERN = (
-    r"[a-z]{1,4}[-\s]?\d{2,8}|"
+    r"[a-z]{1,4}(?:[-\s]+)?\d{2,8}|"
     r"\d{2,}(?:-\d{2,})+|"
     r"[a-z0-9]+(?:-[a-z0-9]+)+"
 )

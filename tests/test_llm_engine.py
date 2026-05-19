@@ -4486,6 +4486,7 @@ def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
         ("I need 6 CH 616", "CH-616"),
         ("I want 6 CH-616", "CH-616"),
         ("I need 6 CH616", "CH-616"),
+        ("I need   6   CH   616", "CH-616"),
     ],
 )
 def test_extract_purchase_selection_accepts_generic_sku_spacing_variants(
