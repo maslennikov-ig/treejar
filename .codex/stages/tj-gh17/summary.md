@@ -1,6 +1,6 @@
 # Stage tj-gh17: GitHub #38 Sales Order SKU Resolver
 
-Status: local implementation complete; not deployed
+Status: delivered, deployed, live E2E verified, and GitHub issue closed
 Branch: `codex/tj-gh17-sales-order-hardening`
 Base: `origin/main@8483f36`
 GitHub issue: `gh-38`
@@ -67,9 +67,31 @@ prompt bulk.
 - `scripts/orchestration/check_stage_ready.py tj-gh17` -> passed.
 - `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh17` -> passed.
 
-## Delivery Boundary
+## Delivery And Live E2E
 
-- No deploy was performed.
-- No production database or live WhatsApp state was mutated.
-- GitHub #38 was not commented on or closed; that should wait for merge/deploy
-  and, if approved, live E2E evidence.
+- Branch `codex/tj-gh17-sales-order-hardening` was pushed.
+- `origin/main` was fast-forwarded to
+  `3d24007713d5a2ca5068aeacc9c8719f101fe8d1`.
+- GitHub Actions run `26083979252` completed successfully and deployed the
+  release to the canonical runtime.
+- `/opt/noor/.release-sha` is
+  `3d24007713d5a2ca5068aeacc9c8719f101fe8d1`; `/opt/noor/.release-run-id` is
+  `26083979252`.
+- Production API smoke passed: `7 passed, 0 failed`.
+- Production SKU parser matrix passed for canonical, compact `2x`, comma,
+  Cyrillic homoglyph, `CH-190`, `CH 190`, `CH190`, and existing
+  item-before-quantity forms.
+- Direct production runtime check for #38 returned `sales-order-clarify`, stored
+  `pending_quote_selection`, and had no escalation or media.
+- Approved cleanup for `79262810921` / `+79262810921` prefixes cleared matching
+  production state before live E2E.
+- Live webhook E2E conversation `58550f16-7530-4177-9980-224d1513c995` passed:
+  first turn returned `name-gate`; bare `Lili` stored the name, cleared
+  `name_gate_pending_request`, resumed the original sales-order request, asked
+  for the exact SKU/catalog option for `TORR Cabinet`, and kept
+  `escalation_status=none`, pending escalations `0`, outbound media `0`.
+- GitHub #38 was commented with fix and verification evidence and closed.
+
+## Remaining Defers
+
+None.
