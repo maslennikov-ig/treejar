@@ -415,6 +415,46 @@ _PURCHASE_SELECTION_BLOCKERS = (
     "track order",
     "tracking",
 )
+_PRODUCT_QUANTITY_CLARIFY_BLOCKERS = (
+    "available",
+    "availability",
+    "catalog",
+    "do you have",
+    "do you sell",
+    "how much",
+    "options",
+    "price",
+    "recommend",
+    "recommendation",
+    "show me",
+    "stock",
+)
+_PRODUCT_REFERENCE_SKU_PREFIX_STOPWORDS = frozenset(
+    {
+        "call",
+        "have",
+        "like",
+        "name",
+        "need",
+        "net",
+        "show",
+        "want",
+        "with",
+    }
+)
+_PRODUCT_REFERENCE_SPLIT_RE = re.compile(
+    r"\s+(?:and|plus|with)\s+|[,;\n]+",
+    re.IGNORECASE,
+)
+_PRODUCT_REFERENCE_REQUEST_PREFIX_RE = re.compile(
+    r"^\s*(?:please\s+|kindly\s+)?(?:(?:i|we)\s+)?"
+    r"(?:need|want|would\s+like|like|require|am\s+looking\s+for|looking\s+for)\s+",
+    re.IGNORECASE,
+)
+_NAMED_MODEL_REFERENCE_RE = re.compile(
+    r"\b(?:(?:skyland|treejar)\s+)?(?:novo|luma|imago|trend|xten)\s+\d{3,4}\b",
+    re.IGNORECASE,
+)
 _SELECTION_QUANTITY_START_RE = re.compile(r"(?<![\w.-])(?P<quantity>\d{1,4})(?=\s+)")
 _SELECTION_WORD_QUANTITY_START_RE = re.compile(
     r"(?<![\w.-])(?P<quantity_word>one|two|three|four|five|six|seven|eight|nine|ten|a|an)(?=\s+)",
@@ -1349,6 +1389,100 @@ def _extract_purchase_selection_for_context(
         text,
         require_trigger=False,
     ) or _extract_word_quantity_purchase_selection(text)
+
+
+def _clean_product_reference_segment(segment: str) -> str:
+    cleaned = BOT_TEST_MARKER_RE.sub("", _normalize_sku_homoglyphs(segment))
+    cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", cleaned)
+    return " ".join(cleaned.split()).strip(" ,.;:-")
+
+
+def _segment_starts_with_explicit_quantity(segment: str) -> bool:
+    numeric_match = _SELECTION_QUANTITY_START_RE.match(segment)
+    if numeric_match is not None and not _looks_like_model_number_quantity(
+        segment,
+        numeric_match,
+    ):
+        return True
+    return _SELECTION_WORD_QUANTITY_START_RE.match(segment) is not None
+
+
+def _has_product_reference_sku_signal(segment: str) -> bool:
+    normalized_segment = _normalize_sku_homoglyphs(segment)
+    for match in _SKU_SIGNAL_RE.finditer(normalized_segment):
+        if _looks_like_price_phrase_sku_match(normalized_segment, match):
+            continue
+        raw = " ".join(match.group(0).split()).strip().upper()
+        compact_match = re.fullmatch(r"([A-Z]{1,4})[-\s]?(\d{2,8})", raw)
+        if (
+            compact_match is not None
+            and compact_match.group(1).casefold()
+            in _PRODUCT_REFERENCE_SKU_PREFIX_STOPWORDS
+        ):
+            continue
+        return True
+    return False
+
+
+def _is_missing_quantity_product_reference(segment: str) -> bool:
+    if not segment or _segment_starts_with_explicit_quantity(segment):
+        return False
+    if _has_product_reference_sku_signal(segment):
+        return True
+    return _NAMED_MODEL_REFERENCE_RE.search(segment) is not None
+
+
+def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    if not normalized:
+        return ()
+    if any(blocker in normalized for blocker in _PRODUCT_QUANTITY_CLARIFY_BLOCKERS):
+        return ()
+    if any(blocker in normalized for blocker in _EXACT_QUOTE_HIGH_RISK_BLOCKERS):
+        return ()
+    if not (
+        _PURCHASE_SELECTION_TRIGGER_RE.search(text)
+        or is_quote_or_proposal_request(text)
+    ):
+        return ()
+    if (
+        _extract_purchase_selection(text) is not None
+        or _extract_sales_order_quote_items(text) is not None
+        or extract_exact_quote_candidate(text) is not None
+    ):
+        return ()
+
+    references: list[str] = []
+    for raw_segment in _PRODUCT_REFERENCE_SPLIT_RE.split(text):
+        segment = _clean_product_reference_segment(raw_segment)
+        if not _is_missing_quantity_product_reference(segment):
+            continue
+        if segment not in references:
+            references.append(segment)
+
+    return tuple(references)
+
+
+def _missing_quantity_product_references_message(
+    references: tuple[str, ...],
+    language: str,
+) -> str:
+    item_list = ", ".join(references)
+    normalized_language = str(language or "").casefold()
+    if normalized_language in {"ru", "russian", "русский"}:
+        return (
+            f"Я понял позиции: {item_list}. Пожалуйста, подтвердите количество "
+            "по каждой позиции, чтобы я проверил наличие и подготовил следующий шаг."
+        )
+    if normalized_language in {"ar", "arabic", "العربية"}:
+        return (
+            f"فهمت المنتجات التالية: {item_list}. يرجى تأكيد الكمية لكل منتج "
+            "حتى أتحقق من التوفر وأكمل الخطوة التالية."
+        )
+    return (
+        f"I have these product references: {item_list}. Please confirm the quantity "
+        "for each item so I can check availability and prepare the next step."
+    )
 
 
 def _selection_runtime_directives(
@@ -5639,6 +5773,24 @@ async def process_message(
                 confirmation_text,
                 f"{db_model_main}|selection-confirmation",
                 response_deps=selection_deps,
+                allow_product_media=False,
+            )
+
+        missing_quantity_references = _extract_missing_quantity_product_references(
+            masked_text
+        )
+        if not missing_quantity_references:
+            missing_quantity_references = _extract_missing_quantity_product_references(
+                combined_text
+            )
+        if missing_quantity_references:
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _missing_quantity_product_references_message(
+                    missing_quantity_references,
+                    str(conv.language),
+                ),
+                f"{db_model_main}|product-quantity-clarify",
                 allow_product_media=False,
             )
 

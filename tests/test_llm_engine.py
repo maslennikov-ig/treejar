@@ -1921,6 +1921,75 @@ async def test_process_message_bare_name_reply_resumes_pending_name_gate_request
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_bare_name_resume_exact_refs_asks_quantities(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.language = "en"
+    pending_text = "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "Lil"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Let me know your preference and I can help you move forward!"
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.customer_name == "Lil"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert response.model == "mock-model|product-quantity-clarify"
+    assert "SKYLAND NOVO 2400 Meeting Table" in response.text
+    assert "CH 616" in response.text
+    assert "quantity" in response.text.lower()
+    assert "what do you need" not in response.text.lower()
+    assert "manager" not in response.text.lower()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_name_only_reply_resumes_pending_exact_quote_request(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -4958,7 +5027,7 @@ async def test_process_message_novo_model_number_does_not_become_chair_quantity(
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
     mock_run.return_value = _FakeAgentResult(
-        "Sure, I can help. How many meeting tables and chairs do you need?"
+        "Let me know your preference and I can help you move forward!"
     )
 
     response = await process_message(
@@ -4971,12 +5040,14 @@ async def test_process_message_novo_model_number_does_not_become_chair_quantity(
         messaging_client=messaging,
     )
 
-    assert response.model == "mock-model"
+    assert response.model == "mock-model|product-quantity-clarify"
     assert "2400 x" not in response.text
     assert "quantity: 2400" not in response.text.lower()
-    assert "how many" in response.text.lower()
+    assert "SKYLAND NOVO 2400 Meeting Table" in response.text
+    assert "CH 616" in response.text
+    assert "quantity" in response.text.lower()
     assert conv.escalation_status == "none"
-    mock_run.assert_awaited_once()
+    mock_run.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
 
 
