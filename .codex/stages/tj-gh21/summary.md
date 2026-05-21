@@ -1,6 +1,6 @@
 # Stage tj-gh21 Summary
 
-Status: in progress
+Status: delivered
 
 project-index: reviewed-no-change - Wazzup integration behavior changed for template payload support, but repository navigation, entrypoints, and ownership boundaries in `.codex/project-index.md` remain accurate.
 
@@ -32,6 +32,10 @@ Review-and-fix pass:
 - Deferred: ordered Wazzup template parameter mapping until actual approved template variables are known.
 
 Delivery status:
-- Delivery authorized by user on 2026-05-21; merge/push/deploy in progress.
+- Delivery authorized by user on 2026-05-21.
+- Merged by fast-forward push to `main` and deployed by GitHub Actions run `26226211978`.
+- Deployed runtime commit: `1d42a39ac72e28d20d40a05514ef449be09071e0`.
+- Production smoke passed: `scripts/verify_api.py --base-url https://noor.starec.ai` returned `7 passed, 0 failed`.
+- SSH release-sha verification was not available from the local environment because `noor.starec.ai:22` timed out.
 - Client setup guide added: `docs/client/wazzup-waba-followup-setup-guide.md`.
 - Production follow-up sending remains blocked until approved Wazzup WABA template ids/codes are configured for English and Arabic.
