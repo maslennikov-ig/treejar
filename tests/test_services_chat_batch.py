@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.schemas.webhook import WazzupIncomingMessage
-from src.services.chat import process_incoming_batch
+from src.services.chat import _handle_escalation_fallback, process_incoming_batch
 from src.services.proposal_followup import record_proposal_sent
 
 
@@ -47,6 +47,33 @@ def _assert_bot_reply_sent(
     assert mock_wazzup.send_text.await_args.kwargs["crm_message_id"].startswith(
         f"bot:{conversation_id}:"
     )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.send_wazzup_text_with_audit", new_callable=AsyncMock)
+async def test_escalation_fallback_normalizes_legacy_arabic_language_marker(
+    mock_send_text: AsyncMock,
+) -> None:
+    conv = MagicMock()
+    conv.id = "conv-arabic-fallback"
+    conv.phone = "+971501234567"
+    conv.language = "العربية"
+
+    redis = AsyncMock()
+    redis.get.side_effect = [None, "1"]
+    db = AsyncMock()
+    wazzup = AsyncMock()
+
+    await _handle_escalation_fallback(
+        conv,
+        "Any update?",
+        wazzup,
+        redis,
+        db,
+    )
+
+    assert "شكراً" in mock_send_text.await_args.kwargs["text"]
+    assert "Thank you" not in mock_send_text.await_args.kwargs["text"]
 
 
 @pytest.mark.asyncio

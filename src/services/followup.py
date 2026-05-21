@@ -21,6 +21,7 @@ from src.models.outbound_message import OutboundMessageAudit
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.common import DealStatus, SalesStage
+from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import allows_automatic_followup
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
@@ -990,7 +991,7 @@ async def _send_feedback_request(db: Any, conv: Conversation) -> None:
     messaging = WazzupProvider()
 
     # Send initial feedback request FIRST (before committing stage change)
-    if conv.language == "ar":
+    if is_arabic_customer_language(getattr(conv, "language", "en")):
         text = (
             "مرحبًا! 🎉 نأمل أنك تستمتع بأثاثك الجديد من Treejar. "
             "نود سماع رأيك حول تجربتك معنا. "

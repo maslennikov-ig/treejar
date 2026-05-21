@@ -17,6 +17,7 @@ from src.models.conversation import Conversation
 from src.models.message import Message
 from src.models.outbound_message import OutboundMessageAudit
 from src.models.system_config import SystemConfig
+from src.services.customer_language import normalize_customer_language
 from src.services.outbound_audit import (
     deterministic_crm_message_id,
     send_wazzup_template_with_audit,
@@ -29,14 +30,13 @@ PROPOSAL_FOLLOWUP_SOURCE = "proposal_followup"
 DEFAULT_BUSINESS_TIMEZONE = "Asia/Dubai"
 BUSINESS_START = datetime.time(hour=10)
 BUSINESS_END = datetime.time(hour=20)
-FU1_UNREAD_DELAY = datetime.timedelta(hours=24)
-FU1_READ_DELAY = datetime.timedelta(hours=2)
-FOLLOWUP_CADENCE_BY_STEP = {
-    2: datetime.timedelta(days=1),
-    3: datetime.timedelta(days=3),
-    4: datetime.timedelta(days=5),
+FOLLOWUP_OFFSETS_BY_STEP = {
+    1: datetime.timedelta(hours=24),
+    2: datetime.timedelta(days=3),
+    3: datetime.timedelta(days=7),
 }
 FREEFORM_WINDOW = datetime.timedelta(hours=24)
+FINAL_NO_RESPONSE_GRACE = datetime.timedelta(hours=24)
 MAX_FOLLOWUPS_PER_RUN = 100
 DEFAULT_FOLLOWUPS_PER_RUN = 10
 MIN_FOLLOWUP_SCAN_CAP = 500
@@ -100,9 +100,17 @@ class ProposalFollowupReplyDecision:
 class ProposalFollowupSendControls:
     enabled: bool = False
     template_name: str | None = None
+    template_name_by_language: Mapping[str, str] = field(default_factory=dict)
     template_name_by_step: Mapping[int, str] = field(default_factory=dict)
+    template_name_by_step_language: Mapping[str, Mapping[int, str]] = field(
+        default_factory=dict
+    )
     template_transport_confirmed: bool = False
+    freeform_text_by_language: Mapping[str, str] = field(default_factory=dict)
     freeform_text_by_step: Mapping[int, str] = field(default_factory=dict)
+    freeform_text_by_step_language: Mapping[str, Mapping[int, str]] = field(
+        default_factory=dict
+    )
     freeform_window: datetime.timedelta = FREEFORM_WINDOW
     max_per_run: int = DEFAULT_FOLLOWUPS_PER_RUN
     scan_cap: int = MIN_FOLLOWUP_SCAN_CAP
@@ -184,8 +192,49 @@ def _step_text_map(value: Any) -> dict[int, str]:
         except (TypeError, ValueError):
             continue
         text = _optional_text(raw_value)
-        if step in {1, 2, 3, 4} and text:
+        if step in FOLLOWUP_OFFSETS_BY_STEP and text:
             parsed[step] = text
+    return parsed
+
+
+def _config_language_key(value: Any) -> str | None:
+    language = str(value or "").strip().casefold().replace("_", "-")
+    if not language:
+        return None
+    if language in {"en", "eng", "english"} or language.startswith("en-"):
+        return "en"
+    if language in {"ar", "ara", "arabic", "العربية", "عربي"} or language.startswith(
+        "ar-"
+    ):
+        return "ar"
+    return None
+
+
+def _language_text_map(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    parsed: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        language = _config_language_key(raw_key)
+        if language is None:
+            continue
+        text = _optional_text(raw_value)
+        if text:
+            parsed[language] = text
+    return parsed
+
+
+def _language_step_text_map(value: Any) -> dict[str, dict[int, str]]:
+    if not isinstance(value, Mapping):
+        return {}
+    parsed: dict[str, dict[int, str]] = {}
+    for raw_key, raw_value in value.items():
+        language = _config_language_key(raw_key)
+        if language is None:
+            continue
+        step_map = _step_text_map(raw_value)
+        if step_map:
+            parsed[language] = step_map
     return parsed
 
 
@@ -210,11 +259,23 @@ def parse_proposal_followup_send_controls(
     return ProposalFollowupSendControls(
         enabled=_parse_bool(raw.get("enabled")),
         template_name=_optional_text(raw.get("template_name")),
+        template_name_by_language=_language_text_map(
+            raw.get("template_name_by_language")
+        ),
         template_name_by_step=_step_text_map(raw.get("template_name_by_step")),
+        template_name_by_step_language=_language_step_text_map(
+            raw.get("template_name_by_step_language")
+        ),
         template_transport_confirmed=_parse_bool(
             raw.get("template_transport_confirmed")
         ),
+        freeform_text_by_language=_language_text_map(
+            raw.get("freeform_text_by_language")
+        ),
         freeform_text_by_step=_step_text_map(raw.get("freeform_text_by_step")),
+        freeform_text_by_step_language=_language_step_text_map(
+            raw.get("freeform_text_by_step_language")
+        ),
         freeform_window=_freeform_window(raw.get("freeform_window_hours")),
         max_per_run=_bounded_int(
             raw.get("max_per_run"),
@@ -312,28 +373,18 @@ def _step_template(step: int, scheduled_at: datetime.datetime) -> dict[str, Any]
     }
 
 
-def _step_anchor(step_state: Mapping[str, Any]) -> datetime.datetime | None:
-    return _parse_datetime(step_state.get("sent_at")) or _parse_datetime(
-        step_state.get("scheduled_at")
-    )
-
-
 def _build_steps(
-    first_scheduled_at: datetime.datetime,
+    sent_at: datetime.datetime,
     *,
     timezone_name: str = DEFAULT_BUSINESS_TIMEZONE,
 ) -> dict[str, dict[str, Any]]:
-    steps: dict[str, dict[str, Any]] = {"1": _step_template(1, first_scheduled_at)}
-    anchor = first_scheduled_at
-
-    for step in (2, 3, 4):
+    steps: dict[str, dict[str, Any]] = {}
+    for step, offset in FOLLOWUP_OFFSETS_BY_STEP.items():
         scheduled_at = _apply_business_window(
-            anchor + FOLLOWUP_CADENCE_BY_STEP[step],
+            sent_at + offset,
             timezone_name=timezone_name,
         )
         steps[str(step)] = _step_template(step, scheduled_at)
-        anchor = scheduled_at
-
     return steps
 
 
@@ -360,43 +411,69 @@ def _steps(state: Mapping[str, Any]) -> dict[str, Any]:
     return steps if isinstance(steps, dict) else {}
 
 
-def _reschedule_after(
+def _mark_no_response_rejected(
+    conversation: Conversation,
     state: dict[str, Any],
-    step: int,
     *,
-    timezone_name: str = DEFAULT_BUSINESS_TIMEZONE,
+    decided_at: datetime.datetime,
 ) -> None:
-    steps = _steps(state)
-    previous = steps.get(str(step))
-    if not isinstance(previous, Mapping):
-        return
+    metadata = _metadata(conversation)
+    quote_number = metadata.get("zoho_sale_order_number") or metadata.get(
+        "quotation_quote_number"
+    )
+    sale_order_id = metadata.get("zoho_sale_order_id")
+    state["final_status"] = "no_response"
+    state["chain_stopped"] = True
+    state["stop_reason"] = "no_response_after_followups"
+    state["stopped_at"] = _iso_utc(decided_at)
+    metadata["quotation_decision_status"] = "rejected"
+    metadata["quotation_decision_at"] = _iso_utc(decided_at)
+    metadata["zoho_sale_order_active"] = False
+    decision: dict[str, Any] = {
+        "status": "rejected",
+        "reason": "no_response_after_followups",
+        "active": False,
+        "decided_at": _iso_utc(decided_at),
+    }
+    if isinstance(quote_number, str) and quote_number.strip():
+        decision["quote_number"] = quote_number.strip()
+    if isinstance(sale_order_id, str) and sale_order_id.strip():
+        decision["zoho_sale_order_id"] = sale_order_id.strip()
+    metadata["quotation_decision"] = decision
+    metadata[PROPOSAL_FOLLOWUP_METADATA_KEY] = state
+    conversation.metadata_ = metadata
 
-    anchor = _step_anchor(previous)
-    if anchor is None:
-        return
 
-    for next_step in range(step + 1, 5):
-        current = steps.get(str(next_step))
-        if not isinstance(current, dict):
-            current = _step_template(next_step, anchor)
-            steps[str(next_step)] = current
-
-        if current.get("status") == "sent":
-            sent_anchor = _step_anchor(current)
-            if sent_anchor is not None:
-                anchor = sent_anchor
-            continue
-
-        scheduled_at = _apply_business_window(
-            anchor + FOLLOWUP_CADENCE_BY_STEP[next_step],
-            timezone_name=timezone_name,
-        )
-        current["scheduled_at"] = _iso_utc(scheduled_at)
-        current.setdefault("label", f"FU{next_step}")
-        current.setdefault("status", "pending")
-        current.setdefault("sent_at", None)
-        current.setdefault("provider_message_id", None)
-        anchor = scheduled_at
+def _mark_explicit_rejection(
+    conversation: Conversation,
+    state: dict[str, Any],
+    *,
+    decided_at: datetime.datetime,
+    customer_text: str,
+) -> None:
+    metadata = _metadata(conversation)
+    quote_number = metadata.get("zoho_sale_order_number") or metadata.get(
+        "quotation_quote_number"
+    )
+    sale_order_id = metadata.get("zoho_sale_order_id")
+    decided_at_iso = _iso_utc(decided_at)
+    metadata["quotation_decision_status"] = "rejected"
+    metadata["quotation_decision_at"] = decided_at_iso
+    metadata["zoho_sale_order_active"] = False
+    decision: dict[str, Any] = {
+        "status": "rejected",
+        "reason": "explicit_rejection",
+        "active": False,
+        "decided_at": decided_at_iso,
+        "customer_text": customer_text.strip()[:500],
+    }
+    if isinstance(quote_number, str) and quote_number.strip():
+        decision["quote_number"] = quote_number.strip()
+    if isinstance(sale_order_id, str) and sale_order_id.strip():
+        decision["zoho_sale_order_id"] = sale_order_id.strip()
+    metadata["quotation_decision"] = decision
+    metadata[PROPOSAL_FOLLOWUP_METADATA_KEY] = state
+    conversation.metadata_ = metadata
 
 
 def record_proposal_sent(
@@ -404,14 +481,12 @@ def record_proposal_sent(
     *,
     sent_at: datetime.datetime,
     kp_message_id: str,
+    quote_number: str | None = None,
+    sale_order_id: str | None = None,
     timezone_name: str = DEFAULT_BUSINESS_TIMEZONE,
 ) -> dict[str, Any]:
     """Initialize deterministic proposal follow-up metadata without sending."""
     sent_at_utc = _as_aware_utc(sent_at)
-    first_scheduled_at = _apply_business_window(
-        sent_at_utc + FU1_UNREAD_DELAY,
-        timezone_name=timezone_name,
-    )
     state: dict[str, Any] = {
         "sent_at": _iso_utc(sent_at_utc),
         "kp_message_id": kp_message_id,
@@ -419,9 +494,46 @@ def record_proposal_sent(
         "kp_read_at": None,
         "chain_stopped": False,
         "pause_until": None,
-        "steps": _build_steps(first_scheduled_at, timezone_name=timezone_name),
+        "steps": _build_steps(sent_at_utc, timezone_name=timezone_name),
     }
-    _set_state(conversation, state)
+    metadata = _metadata(conversation)
+    metadata[PROPOSAL_FOLLOWUP_METADATA_KEY] = state
+
+    current_quote_number = (
+        quote_number
+        or metadata.get("zoho_sale_order_number")
+        or metadata.get("quotation_quote_number")
+    )
+    current_sale_order_id = sale_order_id or metadata.get("zoho_sale_order_id")
+    real_quote_number = (
+        current_quote_number
+        if isinstance(current_quote_number, str)
+        and current_quote_number.strip()
+        and current_quote_number.strip().casefold() != "draft"
+        else None
+    )
+    metadata["quotation_decision_status"] = "pending"
+    metadata.pop("quotation_decision_at", None)
+    metadata.pop("quotation_status", None)
+    metadata.pop("zoho_sale_order_number", None)
+    metadata.pop("quotation_quote_number", None)
+    metadata["zoho_sale_order_active"] = True
+    if isinstance(current_sale_order_id, str) and current_sale_order_id.strip():
+        metadata["zoho_sale_order_id"] = current_sale_order_id.strip()
+    if real_quote_number:
+        metadata["zoho_sale_order_number"] = real_quote_number.strip()
+        metadata["quotation_quote_number"] = real_quote_number.strip()
+    decision: dict[str, Any] = {
+        "status": "pending",
+        "active": True,
+        "sent_at": _iso_utc(sent_at_utc),
+    }
+    if real_quote_number:
+        decision["quote_number"] = real_quote_number.strip()
+    if isinstance(current_sale_order_id, str) and current_sale_order_id.strip():
+        decision["zoho_sale_order_id"] = current_sale_order_id.strip()
+    metadata["quotation_decision"] = decision
+    conversation.metadata_ = metadata
     return state
 
 
@@ -439,17 +551,6 @@ def record_proposal_read(
     state["kp_read"] = True
     state["kp_read_at"] = _iso_utc(read_at_utc)
 
-    steps = _steps(state)
-    first_step = steps.get("1")
-    if isinstance(first_step, dict) and first_step.get("status") != "sent":
-        first_step["scheduled_at"] = _iso_utc(
-            _apply_business_window(
-                read_at_utc + FU1_READ_DELAY,
-                timezone_name=timezone_name,
-            )
-        )
-        _reschedule_after(state, 1, timezone_name=timezone_name)
-
     _set_state(conversation, state)
     return state
 
@@ -462,8 +563,8 @@ def record_followup_step_sent(
     provider_message_id: str | None = None,
     timezone_name: str = DEFAULT_BUSINESS_TIMEZONE,
 ) -> dict[str, Any] | None:
-    if step not in {1, 2, 3, 4}:
-        raise ValueError("step must be 1, 2, 3, or 4")
+    if step not in FOLLOWUP_OFFSETS_BY_STEP:
+        raise ValueError("step must be 1, 2, or 3")
 
     state = _state(conversation)
     if state is None:
@@ -476,11 +577,41 @@ def record_followup_step_sent(
         steps[str(step)] = step_state
 
     step_state["status"] = "sent"
-    step_state["sent_at"] = _iso_utc(sent_at)
+    sent_at_utc = _as_aware_utc(sent_at)
+    step_state["sent_at"] = _iso_utc(sent_at_utc)
     step_state["provider_message_id"] = provider_message_id
-    _reschedule_after(state, step, timezone_name=timezone_name)
+    if step == max(FOLLOWUP_OFFSETS_BY_STEP):
+        state["final_status"] = "awaiting_response_after_final_followup"
+        state["final_followup_sent_at"] = _iso_utc(sent_at_utc)
+        state["final_no_response_due_at"] = _iso_utc(
+            sent_at_utc + FINAL_NO_RESPONSE_GRACE
+        )
     _set_state(conversation, state)
     return state
+
+
+def final_no_response_due(
+    conversation: Conversation,
+    *,
+    now: datetime.datetime,
+) -> bool:
+    state = _state(conversation)
+    if state is None or state.get("chain_stopped") is True:
+        return False
+    if state.get("final_status") != "awaiting_response_after_final_followup":
+        return False
+
+    due_at = _parse_datetime(state.get("final_no_response_due_at"))
+    if due_at is None or _as_aware_utc(now) < due_at:
+        return False
+
+    final_sent_at = _parse_datetime(state.get("final_followup_sent_at"))
+    last_customer_reply_at = _parse_datetime(state.get("last_customer_reply_at"))
+    return not (
+        final_sent_at is not None
+        and last_customer_reply_at is not None
+        and last_customer_reply_at >= final_sent_at
+    )
 
 
 def next_due_followup_step(
@@ -498,7 +629,7 @@ def next_due_followup_step(
         return None
 
     steps = _steps(state)
-    for step in (1, 2, 3, 4):
+    for step in FOLLOWUP_OFFSETS_BY_STEP:
         step_state = steps.get(str(step))
         if not isinstance(step_state, Mapping):
             continue
@@ -598,7 +729,12 @@ def record_customer_reply(
 
     if _is_rejection(normalized):
         _stop_chain(state, reason="explicit_rejection", received_at=received_at_utc)
-        _set_state(conversation, state)
+        _mark_explicit_rejection(
+            conversation,
+            state,
+            decided_at=received_at_utc,
+            customer_text=text,
+        )
         return ProposalFollowupReplyDecision(
             action="stop",
             reason="explicit_rejection",
@@ -647,6 +783,7 @@ def build_followup_send_plan(
     controls: ProposalFollowupSendControls | None = None,
     last_customer_inbound_at: datetime.datetime | None = None,
     now: datetime.datetime | None = None,
+    language: str = "en",
 ) -> ProposalFollowupSendPlan:
     active_controls = controls or ProposalFollowupSendControls()
     if not active_controls.enabled:
@@ -665,8 +802,16 @@ def build_followup_send_plan(
         and current - inbound_at < active_controls.freeform_window
     )
 
+    language_key = normalize_customer_language(language)
+
     if within_freeform_window:
-        text = active_controls.freeform_text_by_step.get(due_step.step)
+        text = (
+            active_controls.freeform_text_by_step_language.get(language_key, {}).get(
+                due_step.step
+            )
+            or active_controls.freeform_text_by_step.get(due_step.step)
+            or active_controls.freeform_text_by_language.get(language_key)
+        )
         if not text:
             return ProposalFollowupSendPlan(
                 can_send=False,
@@ -681,7 +826,11 @@ def build_followup_send_plan(
         )
 
     template_name = (
-        active_controls.template_name_by_step.get(due_step.step)
+        active_controls.template_name_by_step_language.get(language_key, {}).get(
+            due_step.step
+        )
+        or active_controls.template_name_by_step.get(due_step.step)
+        or active_controls.template_name_by_language.get(language_key)
         or active_controls.template_name
     )
     if not template_name:
@@ -726,6 +875,20 @@ async def process_due_proposal_followup(
     now: datetime.datetime,
     provider: Any,
 ) -> ProposalFollowupSendResult:
+    if final_no_response_due(conversation, now=now):
+        state = _state(conversation)
+        if state is not None:
+            _mark_no_response_rejected(
+                conversation,
+                state,
+                decided_at=_as_aware_utc(now),
+            )
+            await db.commit()
+            return ProposalFollowupSendResult(
+                sent=False,
+                reason="final_no_response_marked",
+            )
+
     due_step = next_due_followup_step(conversation, now=now)
     if due_step is None:
         return ProposalFollowupSendResult(sent=False, reason="not_due")
@@ -737,6 +900,7 @@ async def process_due_proposal_followup(
         controls=controls,
         last_customer_inbound_at=last_customer_inbound_at,
         now=now,
+        language=str(getattr(conversation, "language", "en") or "en"),
     )
     if not plan.can_send:
         return ProposalFollowupSendResult(
@@ -846,7 +1010,10 @@ async def _proposal_followup_candidate_rows(
 
         for conversation, last_customer_inbound_at in rows:
             scanned_count += 1
-            if next_due_followup_step(conversation, now=now):
+            if next_due_followup_step(
+                conversation,
+                now=now,
+            ) or final_no_response_due(conversation, now=now):
                 candidates.append((conversation, last_customer_inbound_at))
                 if len(candidates) >= limit:
                     break

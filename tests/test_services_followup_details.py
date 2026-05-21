@@ -12,6 +12,7 @@ from src.services.followup import (
     PaymentReminderControlsConfig,
     _process_followup_for_conversation,
     _process_payment_reminder_for_conversation,
+    _send_feedback_request,
 )
 
 
@@ -304,3 +305,28 @@ async def test_payment_reminder_within_24h_requires_explicit_configured_text() -
         "Your approved order is awaiting payment.",
         crm_message_id=f"payment_reminder:{conv.id}:so-001:initial-1h",
     )
+
+
+@pytest.mark.asyncio
+async def test_feedback_request_normalizes_legacy_arabic_language_marker() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501234567",
+        language="Arabic",
+        sales_stage=SalesStage.CLOSING.value,
+    )
+    db = AsyncMock()
+    provider = AsyncMock()
+
+    with (
+        patch("src.services.followup.WazzupProvider", return_value=provider),
+        patch(
+            "src.services.followup.send_wazzup_text_with_audit",
+            new_callable=AsyncMock,
+        ) as mock_send_text,
+    ):
+        await _send_feedback_request(db, conv)
+
+    sent_text = mock_send_text.await_args.kwargs["text"]
+    assert "مرحبًا" in sent_text
+    assert "Hello" not in sent_text

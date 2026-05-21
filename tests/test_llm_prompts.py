@@ -12,12 +12,14 @@ async def test_build_system_prompt_default_language() -> None:
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
     prompt = await build_system_prompt(
-        db, redis, SalesStage.GREETING.value, language="Russian"
+        db, redis, SalesStage.GREETING.value, language="ru"
     )
 
     assert "You are Noor" in prompt
     assert "You work for Treejar" in prompt
-    assert "The user prefers to communicate in Arabic" in prompt
+    assert "The user prefers to communicate in English" in prompt
+    assert "Russian" not in prompt
+    assert "ОАЭ" not in prompt
     assert "STAGE: GREETING" in prompt
     assert "Noor from Treejar" in prompt
     assert "ask how you should address them" in prompt
@@ -52,6 +54,7 @@ async def test_build_system_prompt_includes_compact_communication_policy() -> No
         "IMPORTANT: The user prefers", maxsplit=1
     )[0]
     assert "Source: docs/04-sales-dialogue-guidelines.md" in policy
+    assert "preserved RU" not in policy
     assert "Opening and trust" in policy
     assert "sincere, specific compliment" in policy
     assert "tailors solutions" in policy
@@ -107,12 +110,11 @@ async def test_build_system_prompt_unknown_stage() -> None:
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
     # If a database field has an invalid stage string, we default to generic
-    prompt = await build_system_prompt(
-        db, redis, "unknown_stage_123", language="Russian"
-    )
+    prompt = await build_system_prompt(db, redis, "unknown_stage_123", language="ru")
 
     # Should contain base rules
     assert "You are Noor" in prompt
+    assert "The user prefers to communicate in English" in prompt
     # Shouldn't crash and returns at least the base
     assert len(prompt) > 100
 

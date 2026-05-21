@@ -1,3 +1,4 @@
+import datetime
 import json
 import uuid
 from decimal import Decimal
@@ -32,6 +33,7 @@ from src.llm.engine import (
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
+from src.services.proposal_followup import record_proposal_sent
 
 
 @pytest.fixture
@@ -44,7 +46,7 @@ def mock_deps() -> tuple[
         phone="12345",
         customer_name="Test User",
         sales_stage=SalesStage.GREETING.value,
-        language="Russian",
+        language="en",
         escalation_status="none",
     )
     db.get.return_value = conv
@@ -153,6 +155,212 @@ def _active_product_planning_history(
         ),
         ModelRequest(parts=[UserPromptPart(content=text)]),
     ]
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_post_quotation_acceptance_hands_off_to_manager(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.language = "ru"
+    conv.metadata_ = {
+        "zoho_sale_order_id": "so-accepted-1",
+        "zoho_sale_order_number": "SO-ACCEPTED-1",
+        "zoho_sale_order_active": True,
+    }
+    record_proposal_sent(
+        conv,
+        sent_at=datetime.datetime.fromisoformat("2026-05-04T08:00:00+00:00"),
+        kp_message_id="quotation-media-1",
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Please send the quotation.")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Quotation SO-ACCEPTED-1 has been sent. "
+                        "Please let me know if the quotation works for you."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="ok")]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "legacy",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="ok",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock_model|post-quotation-accepted"
+    assert "manager" in response.text.lower()
+    assert "менеджер" not in response.text.lower()
+    assert conv.metadata_["quotation_decision_status"] == "approved"
+    assert conv.metadata_["quotation_decision"]["active"] is True
+    assert conv.metadata_["proposal_followup"]["chain_stopped"] is True
+    assert conv.metadata_["proposal_followup"]["stop_reason"] == "quotation_accepted"
+    mock_notify_manager.assert_awaited_once()
+    assert (
+        mock_notify_manager.await_args.kwargs["escalation_type"].value
+        == "order_confirmation"
+    )
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_post_quotation_generic_ok_after_non_approval_answer_does_not_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {
+        "zoho_sale_order_id": "so-pending-1",
+        "zoho_sale_order_number": "SO-PENDING-1",
+        "zoho_sale_order_active": True,
+    }
+    record_proposal_sent(
+        conv,
+        sent_at=datetime.datetime.fromisoformat("2026-05-04T08:00:00+00:00"),
+        kp_message_id="quotation-media-1",
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="When can you deliver it?")]),
+        ModelResponse(parts=[TextPart(content="Delivery usually takes 3-5 days.")]),
+        ModelRequest(parts=[UserPromptPart(content="ok")]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "legacy",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Noted.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="ok",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Noted."
+    assert response.model == "mock_model|post-quotation-ack"
+    assert conv.metadata_.get("quotation_decision_status") != "approved"
+    mock_notify_manager.assert_not_awaited()
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_post_quotation_acceptance_runs_before_dialogue_kernel_enforce(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {
+        "zoho_sale_order_id": "so-accepted-2",
+        "zoho_sale_order_number": "SO-ACCEPTED-2",
+        "zoho_sale_order_active": True,
+    }
+    record_proposal_sent(
+        conv,
+        sent_at=datetime.datetime.fromisoformat("2026-05-04T08:00:00+00:00"),
+        kp_message_id="quotation-media-2",
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Quotation SO-ACCEPTED-2 has been sent. "
+                        "Please let me know if the quotation works for you."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="ok")]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "enforce",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "post_quotation_hold",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="ok",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock_model|post-quotation-accepted"
+    assert conv.metadata_["quotation_decision_status"] == "approved"
+    mock_notify_manager.assert_awaited_once()
+    mock_run.assert_not_awaited()
 
 
 @pytest.mark.asyncio

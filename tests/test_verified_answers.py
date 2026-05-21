@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from src.llm.verified_answers import (
+    build_clarification_response,
+    build_sales_fallback_response,
+    build_service_handoff_response,
     classify_product_match,
     evaluate_verified_answer_policy,
     is_quote_or_proposal_request,
@@ -23,6 +26,23 @@ def test_policy_marks_delivery_terms_as_verified_when_faq_covers_them() -> None:
     assert decision.requires_manager_handoff is False
     assert decision.confirmed_fact is not None
     assert "3-5 business days" in decision.confirmed_fact
+
+
+def test_customer_facing_verified_answer_builders_normalize_legacy_arabic_markers() -> (
+    None
+):
+    decision = evaluate_verified_answer_policy(
+        query="Can you deliver tomorrow?",
+        faq_context=[],
+    )
+
+    handoff = build_service_handoff_response(decision, "العربية")
+    fallback = build_sales_fallback_response("retention", "Arabic")
+    clarification = build_clarification_response("arabic")
+
+    assert "مديرنا" in handoff
+    assert "لا مشكلة" in fallback
+    assert "يمكنني المساعدة" in clarification
 
 
 def test_policy_marks_specific_installation_slot_as_partial_when_only_general_fact_exists() -> (

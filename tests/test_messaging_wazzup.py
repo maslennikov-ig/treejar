@@ -310,8 +310,48 @@ async def test_send_template_success(
     mock_resp.json.return_value = {"messageId": "msg_tmpl"}
     mock_request.return_value = mock_resp
 
-    msg_id = await wazzup_provider.send_template("123", "tmpl_1", {})
+    msg_id = await wazzup_provider.send_template(
+        "123",
+        "6201005a-9a6f-486f-bdd5-e6cb86c76ddb",
+        {"customer_name": "Lilia"},
+    )
     assert msg_id == "msg_tmpl"
+    payload = mock_request.call_args.kwargs["json"]
+    assert payload["templateId"] == "6201005a-9a6f-486f-bdd5-e6cb86c76ddb"
+    assert payload["templateValues"] == ["Lilia"]
+    assert "template" not in payload
+    assert "text" not in payload
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
+    new_callable=AsyncMock,
+)
+async def test_send_template_supports_wazzup_template_code_in_text(
+    mock_request: AsyncMock, wazzup_provider: WazzupProvider
+) -> None:
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {"messageId": "msg_tmpl"}
+    mock_request.return_value = mock_resp
+
+    msg_id = await wazzup_provider.send_template(
+        "123",
+        "@template: 6201005a-9a6f-486f-bdd5-e6cb86c76ddb { [[Lilia]] }",
+        {},
+    )
+
+    assert msg_id == "msg_tmpl"
+    payload = mock_request.call_args.kwargs["json"]
+    assert payload["text"] == (
+        "@template: 6201005a-9a6f-486f-bdd5-e6cb86c76ddb { [[Lilia]] }"
+    )
+    assert "templateId" not in payload
+    assert "templateValues" not in payload
 
 
 @pytest.mark.asyncio

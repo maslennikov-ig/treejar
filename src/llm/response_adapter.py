@@ -26,6 +26,7 @@ from src.llm.safety import (
     run_agent_with_safety,
 )
 from src.services.auto_faq_types import AutoFAQCandidate
+from src.services.customer_language import normalize_customer_language
 
 logger = logging.getLogger(__name__)
 ADAPTER_MODEL_NAME = model_name_for_path(PATH_RESPONSE_ADAPTER)
@@ -55,7 +56,7 @@ INSTRUCTIONS:
 2. Preserve ALL factual content (numbers, dates, prices, conditions). \
    Do NOT invent or alter any facts.
 3. Add a brief greeting and an offer of further help when appropriate.
-4. Reply in the language specified in the user request (e.g. 'en', 'ar', 'ru').
+4. Reply in the language specified in the user request ('en' or 'ar' only).
 5. Use WhatsApp formatting: *bold*, _italic_ (NOT Markdown headers or links).
 6. Return ONLY the final message text, no commentary.
 """
@@ -179,15 +180,16 @@ async def adapt_manager_response(
     Args:
         question: The original customer question.
         draft: The manager's short/technical response draft.
-        language: The target language code (e.g., 'en', 'ar', 'ru').
+        language: The target language code ('en' or 'ar'). Unsupported values fall back to English.
 
     Returns:
         A polished, customer-friendly message ready for WhatsApp delivery in the target language.
     """
+    safe_language = normalize_customer_language(language)
     user_prompt = (
         f"Customer question: {question}\n\n"
         f"Manager draft: {draft}\n\n"
-        f"Rewrite the draft as a polished customer message in language code '{language}'.\n"
+        f"Rewrite the draft as a polished customer message in language code '{safe_language}'.\n"
         "Translate the manager draft into the requested language if necessary."
     )
 
@@ -216,10 +218,11 @@ async def adapt_manager_response_with_faq_candidate(
     manager replies should use :func:`adapt_manager_response` so they do not
     generate Auto-FAQ candidates.
     """
+    safe_language = normalize_customer_language(language)
     user_prompt = (
         f"Customer question: {question}\n\n"
         f"Manager draft: {draft}\n\n"
-        f"Requested customer message language code: '{language}'.\n"
+        f"Requested customer message language code: '{safe_language}'.\n"
         "Return the structured customer_message and kb_candidate fields."
     )
 

@@ -1,7 +1,7 @@
 # Orchestrator Handoff
 
-Updated: 2026-05-19
-Current branch: `main`
+Updated: 2026-05-21
+Current branch: `codex/tj-gh21-post-quotation-followup`
 
 ## Current Truth
 
@@ -9,32 +9,28 @@ Current branch: `main`
 - Production release is `9e967d5acd862e98c74b472c1d6fa102e686bf3f`; GitHub Actions run `26098722338` succeeded; `/opt/noor/.release-sha` matches.
 - Stage `tj-gh18` is delivered, deployed, live E2E verified, and GitHub #39/#35 are closed.
 - Stage `tj-gh19` is delivered, deployed, live E2E verified, Beads closed, and GitHub #40 is closed.
-- `tj-gh19.1` / #40 context fix preserves pending quote context for terse details like `Lil, 1 dubay`, stores name/address, keeps `pending_quote_selection`, and asks only for missing company-or-individual when address is specific.
-- `tj-gh19.2` / #40 quantity fix prevents model numbers such as `SKYLAND NOVO 2400` from becoming quantities for `CH 616`; prior SKU variants including Cyrillic homoglyph `СН 616` remain covered.
-- Final `tj-gh19` verification passed: targeted LLM/verified-answer suites `215 passed`; ruff, format-check, mypy, git diff check, full pytest `1066 passed, 19 skipped`, process verification, and stage closeout.
-- Production smoke passed: `scripts/verify_api.py --base-url https://noor.starec.ai` -> `7 passed, 0 failed`.
-- Final live E2E conversation `640d0cfb-0460-4033-b6f0-7de84eadcc2a` verified name-gate resume, exact product reference quantity clarification, `NOVO 2400` non-quantity behavior, `CH 616` variant selection, `Lil, 1 dubay` quote-context preservation, company-or-individual gate, and no escalation.
-- Stage summary: `.codex/stages/tj-gh19/summary.md`; artifacts: `.codex/stages/tj-gh19/artifacts/tj-gh19.1-2.md`, `.codex/stages/tj-gh19/artifacts/tj-gh19.3-live-e2e.md`.
-- Stage `tj-gh20` is delivered to production in `shadow` mode. Customer-visible behavior remains legacy; the LangGraph Dialogue State Kernel writes bounded traces only.
-- Production `SystemConfig`: `dialogue_kernel_mode=shadow`, `dialogue_kernel_trace_enabled=true`, `dialogue_kernel_enforced_flows=""`.
-- `tj-gh20` adds a LangGraph Dialogue State Kernel with default `legacy`, side-effect-free `shadow`, and allowlisted `enforce`; exact SKU+quantity turns are recognized but delegated to legacy in v1 until kernel-owned quote side effects are implemented.
-- Production synthetic E2E with mock messaging passed for name-gate resume, quote-detail context preservation, `NOVO 2400` non-quantity parsing, `CH 616` quantity parsing, product reference clarification, and side-effect-free shadow traces.
-- Decision report: keep `shadow`, do not enable `enforce` yet. Post-quotation shadow trace showed the kernel would hold quote context while legacy answered with a manager-confirm message; this remains under GitHub #11 until Lilia answers policy questions.
-- `tj-gh20` artifacts: `.codex/stages/tj-gh20/summary.md`, `.codex/stages/tj-gh20/artifacts/tj-gh20.1-docs-fixtures.md`, `.codex/stages/tj-gh20/artifacts/tj-gh20.2-6-runtime-kernel.md`, `.codex/stages/tj-gh20/artifacts/tj-gh20.6-readonly-review.md`, `.codex/stages/tj-gh20/artifacts/tj-gh20.7-delivery.md`.
+- Stage `tj-gh20` is delivered to production in `shadow` mode. Production `SystemConfig`: `dialogue_kernel_mode=shadow`, `dialogue_kernel_trace_enabled=true`, `dialogue_kernel_enforced_flows=""`.
+- `tj-gh20` decision report: keep `shadow`, do not enable `enforce` yet; artifacts live under `.codex/stages/tj-gh20/`.
+- Stage `tj-gh21` is in progress locally on `codex/tj-gh21-post-quotation-followup` for GitHub #11 post-quotation follow-up after Lilia's answers.
+- `tj-gh21` local behavior: customer-facing output remains English/Arabic only; after КП Noor asks if the quotation works; explicit acceptance hands off to manager; customer questions before acceptance remain bot-handled; follow-up cadence is 24h/3d/7d using Wazzup template transport outside 24h.
+- `tj-gh21` review-and-fix pass completed: generic `yes/ok/fine/works` approval is gated by the previous explicit quotation approval prompt; stale quotation decision metadata resets on new КП; acceptance runs before dialogue-kernel enforce; FU3 waits 24h before no-response rejection; explicit rejection persists rejected metadata; Arabic locale variants stay Arabic.
+- `tj-gh21` verification passed after review fixes and after adding the Wazzup WABA guide: targeted 246 tests, full pytest `1114 passed, 19 skipped`, ruff, format-check, mypy, git diff check, and process verification.
+- `tj-gh21` client WABA setup guide added at `docs/client/wazzup-waba-followup-setup-guide.md`; delivery is authorized and in progress.
+- `tj-gh21` is not deployed yet; production behavior is unchanged from the `tj-gh20` release until the GitHub Actions deployment succeeds.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
 ## Next recommended
 
-Next stage id: new `tj-gh21` or #11-specific stage after Lilia answers follow-up policy questions.
+Next stage id: continue `tj-gh21` until merge/deploy decision.
 
-Recommended action: monitor production shadow traces and prepare an enforce rollout proposal only after #11 policy answers are available. Keep #11 pending until Lilia answers the already-posted questions.
+Recommended action: complete merge/deploy for `tj-gh21`, run production smoke verification, then keep production follow-up sending disabled until Wazzup EN/AR approved template ids/codes are configured.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for the next medium/complex issue batch. Current delivered production release is `9e967d5acd862e98c74b472c1d6fa102e686bf3f`; `tj-gh20` is deployed in `shadow` mode only, with decision report in `.codex/stages/tj-gh20/artifacts/tj-gh20.7-delivery.md`. Do not enable `enforce` or touch GitHub #11 until Lilia answers the pending questions.
+Use $orchestrator-stage to continue `tj-gh21`. Current delivered production release is still `9e967d5acd862e98c74b472c1d6fa102e686bf3f`; `tj-gh20` is deployed in `shadow` mode only. Local `tj-gh21` review fixes and Wazzup WABA client guide are verified; merge/deploy is in progress. See `.codex/stages/tj-gh21/summary.md` and artifacts `tj-gh21-local-implementation.md`, `tj-gh21-review-fixes.md`.
 
 ## Explicit defers
 
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup typing endpoint.
-- GitHub #11 remains pending Lilia's answers.
+- Production follow-up sending for GitHub #11 remains blocked pending approved Wazzup WABA template ids/codes for English and Arabic.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.

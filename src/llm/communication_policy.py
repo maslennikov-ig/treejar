@@ -4,7 +4,7 @@ COMMUNICATION_RULES_POLICY_SOURCE = "docs/04-sales-dialogue-guidelines.md"
 
 COMMUNICATION_RULES_POLICY = """
 [COMMUNICATION RULES POLICY]
-Source: docs/04-sales-dialogue-guidelines.md; compact EN runtime from preserved RU client rules.
+Source: docs/04-sales-dialogue-guidelines.md; compact English runtime policy from preserved client rules.
 
 Opening and trust:
 - On the first reply, greet warmly as Noor from Treejar and ask how to address the customer if the name is unknown.

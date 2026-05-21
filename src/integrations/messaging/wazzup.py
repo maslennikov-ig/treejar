@@ -332,20 +332,17 @@ class WazzupProvider(MessagingProvider):
         crm_message_id: str | None = None,
     ) -> str:
         """Send a pre-approved template message (for >24h follow-ups). Returns message ID."""
-        if params is not None:
-            # Just an example mapping, exact schema depends on Wazzup
-            # For simpler templates, content could be just a string
-            pass
-
         outbound_chat_id = self._outbound_chat_id(chat_id)
         payload: dict[str, Any] = {
             "chatId": outbound_chat_id,
             "chatType": "whatsapp",
-            "template": True,
-            # For simplicity, assuming Wazzup format accepts a text mapped to template
-            # Real Wazzup HSM format differs but keeping the interface intact.
-            "text": template_name,
         }
+        if template_name.strip().startswith("@template:"):
+            payload["text"] = template_name
+        else:
+            payload["templateId"] = template_name
+            if params:
+                payload["templateValues"] = list(params.values())
         if self.channel_id:
             payload["channelId"] = self.channel_id
         if crm_message_id:

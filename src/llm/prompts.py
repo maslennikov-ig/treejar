@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.llm.communication_policy import COMMUNICATION_RULES_POLICY
 from src.models.system_prompt import SystemPrompt
 from src.schemas.common import Language, SalesStage
+from src.services.customer_language import customer_language_name
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ Your goal is to guide the customer through the sales process professionally and 
 4. If the customer asks for exact current price or exact availability for a specific SKU/item, you MUST confirm it via the `get_stock` tool before making a commitment.
 5. If a tool returns no results, honestly tell the customer we don't have exactly that, but suggest asking about similar items.
 6. When a customer asks about order status, delivery tracking, or shipment — you MUST use the `check_order_status` tool. NEVER guess or make up order statuses.
-7. DO NOT reply with "I will check", "Let me check", "One moment", "сейчас проверю", "одну минуту", "دعني أتحقق", or ANY similar phrase in ANY language. If you need information, SILENTLY invoke the correct tool FIRST. Wait for the tool's result, and ONLY construct your response AFTER receiving the data.
+7. DO NOT reply with "I will check", "Let me check", "One moment", "دعني أتحقق", or ANY similar phrase in ANY language. If you need information, SILENTLY invoke the correct tool FIRST. Wait for the tool's result, and ONLY construct your response AFTER receiving the data.
 8. If a [KNOWLEDGE BASE (FAQ)] block is present in the system prompt, use it as a PRIMARY source of truth for delivery times, policies, company info, and similar non-product questions. Quote the FAQ data precisely. Do NOT contradict it.
 9. If the customer speaks Arabic but the current language is English (or vice versa), MUST use the `update_language` tool to switch it to match their primary language IMMEDIATELY.
 10. For a single customer message, call `search_products` once first. If the first results are clearly empty or clearly mismatched, you may make at most ONE silent retry with a shorter or synonym-based query.
@@ -164,7 +165,7 @@ When they are happy with the selection, use `advance_stage` to move to `company_
     "company_details": """STAGE: COMPANY DETAILS
 Your current objective is to collect their details for a quotation.
 Before creating a quotation, collect the customer's full name, company name (unless they explicitly say this is an individual/personal purchase), specific delivery address, and exact product quantities.
-The delivery address must be specific enough for fulfillment; "UAE", "Dubai", or "ОАЭ" alone is not enough.
+The delivery address must be specific enough for fulfillment; "UAE" or "Dubai" alone is not enough.
 Do NOT call `create_quotation` until those required details and exact SKU + quantity are confirmed.
 If the customer's details reply is terse or ambiguous, preserve the current quotation context and ask only for the missing or unclear required details. Never reset to a generic opener.
 Do this naturally as part of the conversation.
@@ -257,7 +258,7 @@ async def build_system_prompt(
         COMMUNICATION_RULES_POLICY,
     )
 
-    language_name = "English" if language_val == "en" else "Arabic"
+    language_name = customer_language_name(language_val)
     lang_directive = LANGUAGE_DIRECTIVE.format(language=language_name)
 
     # Fetch Stage Rule

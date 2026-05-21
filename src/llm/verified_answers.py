@@ -5,6 +5,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from src.services.customer_language import is_arabic_customer_language
+
 QuestionClass = Literal["product", "service_low_risk", "service_high_risk", "social"]
 SocialIntent = Literal["greeting", "gratitude", "goodbye", "assist_opener"]
 FaqSupport = Literal["verified", "partial", "missing"]
@@ -922,8 +924,7 @@ def build_service_handoff_reason(query: str, decision: VerifiedAnswerDecision) -
 def build_service_handoff_response(
     decision: VerifiedAnswerDecision, language: str
 ) -> str:
-    lang = language.lower()
-    is_arabic = lang == "ar"
+    is_arabic = is_arabic_customer_language(language)
 
     if decision.confirmed_fact:
         if is_arabic:
@@ -942,7 +943,7 @@ def build_service_handoff_response(
 
 
 def build_sales_fallback_response(intent: SalesFallbackIntent, language: str) -> str:
-    is_arabic = language.lower() == "ar"
+    is_arabic = is_arabic_customer_language(language)
 
     if intent == "price_objection":
         if is_arabic:
@@ -984,13 +985,13 @@ def build_sales_fallback_response(intent: SalesFallbackIntent, language: str) ->
 
 
 def build_clarification_response(language: str) -> str:
-    if language.lower() == "ar":
+    if is_arabic_customer_language(language):
         return "يمكنني المساعدة في المنتجات والأسعار والتوفر والتوصيل أو عروض الأسعار. ماذا تحتاج؟"
     return "I can help with products, prices, stock, delivery, or quotations. What do you need?"
 
 
 def build_quote_or_proposal_clarification_response(language: str) -> str:
-    if language.lower() == "ar":
+    if is_arabic_customer_language(language):
         return "يمكنني تجهيز عرض سعر أو فاتورة أولية. يرجى تأكيد المنتجات والكمية لكل منتج تريد إدراجه."
     return (
         "I can prepare a quotation or proforma invoice. Please confirm the item(s) "

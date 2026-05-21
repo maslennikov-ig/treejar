@@ -34,6 +34,7 @@ from src.services.customer_identity import (
     apply_source_attribution_metadata,
     extract_inbound_source_attribution,
 )
+from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import (
     should_pause_bot_for_escalation,
     should_send_escalation_fallback,
@@ -227,10 +228,8 @@ async def _handle_escalation_fallback(
         )
         return
 
-    lang = conv.language or "en"
-
     # 1. Client fallback — contextual ack
-    if lang == "ar":
+    if is_arabic_customer_language(getattr(conv, "language", "en")):
         fallback = (
             "شكراً لتواصلك! 🙏\n"
             "تم إبلاغ المدير بطلبك وسيتواصل معك قريباً.\n"
@@ -805,10 +804,9 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
                     )
                     # R3-11: Send timeout fallback in client's language
-                    lang = conv.language or "en"
                     timeout_msg = (
                         "عذراً، أنا مشغول حالياً. يرجى إعادة المحاولة بعد دقيقة."
-                        if lang == "ar"
+                        if is_arabic_customer_language(getattr(conv, "language", "en"))
                         else "Sorry, I'm currently overloaded. Please try again in a minute."
                     )
                     await send_wazzup_text_with_audit(

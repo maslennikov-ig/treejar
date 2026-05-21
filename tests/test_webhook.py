@@ -144,7 +144,7 @@ def test_wazzup_webhook_status_only_updates_outbound_audit(mock_networks: Any) -
 
 
 @patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
-def test_wazzup_webhook_read_status_reschedules_proposal_fu1(
+def test_wazzup_webhook_read_status_records_proposal_read_without_reschedule(
     mock_networks: Any,
 ) -> None:
     conv = Conversation(
@@ -191,7 +191,7 @@ def test_wazzup_webhook_read_status_reschedules_proposal_fu1(
     state = conv.metadata_["proposal_followup"]
     assert state["kp_read"] is True
     assert state["kp_read_at"] == "2026-05-04T09:00:00+00:00"
-    assert state["steps"]["1"]["scheduled_at"] == "2026-05-04T11:00:00+00:00"
+    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T08:00:00+00:00"
     db.commit.assert_awaited_once()
 
 

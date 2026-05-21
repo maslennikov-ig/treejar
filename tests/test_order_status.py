@@ -23,6 +23,10 @@ class TestDealStageMapping:
         assert get_deal_stage_label("Qualification", "ar") == "يتم معالجة طلبك"
 
     @pytest.mark.unit
+    def test_legacy_arabic_language_marker_is_arabic(self) -> None:
+        assert get_deal_stage_label("Qualification", "العربية") == "يتم معالجة طلبك"
+
+    @pytest.mark.unit
     def test_new_lead_en(self) -> None:
         assert get_deal_stage_label("New Lead", "en") == "Order received"
 
@@ -179,3 +183,8 @@ class TestFormatOrderStatus:
         """Both None returns an appropriate error message."""
         result = format_order_status(None, None, "en")
         assert "not found" in result.lower() or "no order" in result.lower()
+
+    @pytest.mark.unit
+    def test_arabic_language_name_gets_arabic_no_data_message(self) -> None:
+        result = format_order_status(None, None, "Arabic")
+        assert "لم يتم العثور" in result

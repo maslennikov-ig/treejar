@@ -153,7 +153,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     proposal_state = mock_conversation.metadata_["proposal_followup"]
     assert proposal_state["kp_message_id"] == "media-quotation-1"
     assert proposal_state["kp_read"] is False
-    assert set(proposal_state["steps"]) == {"1", "2", "3", "4"}
+    assert set(proposal_state["steps"]) == {"1", "2", "3"}
 
     # Verify PDF generation was called
     mock_pdf.assert_called_once()
@@ -294,6 +294,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
         id="conv-1",
         phone="+1234567890",
         customer_name="Test Customer",
+        language="ar-AE",
         metadata_=_quote_metadata(),
     )
     mock_redis = AsyncMock()
@@ -346,7 +347,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     mock_messaging.send_media.assert_awaited_once()
     assert (
         mock_messaging.send_media.await_args.kwargs["caption"]
-        == "Your Treejar quotation: SA-REAL-001"
+        == "عرض السعر من Treejar: SA-REAL-001"
     )
 
 

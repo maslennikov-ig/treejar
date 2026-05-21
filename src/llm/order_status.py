@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.services.customer_language import is_arabic_customer_language
+
 # CRM Deal Stage → (EN, AR) labels
 DEAL_STAGE_MAP: dict[str, tuple[str, str]] = {
     "New Lead": ("Order received", "تم استلام الطلب"),
@@ -32,7 +34,7 @@ APPROVED_DECISION_STATUS_LABEL = (
 
 def _lang_index(language: str) -> int:
     """Return 0 for EN, 1 for AR."""
-    return 1 if language.lower().startswith("ar") else 0
+    return 1 if is_arabic_customer_language(language) else 0
 
 
 def get_deal_stage_label(stage: str, language: str) -> str:

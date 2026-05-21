@@ -102,6 +102,26 @@ async def test_adapt_manager_response_passes_expected_llm_safety_kwargs() -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.unit
+async def test_adapt_manager_response_normalizes_unsupported_customer_language_to_en() -> (
+    None
+):
+    with patch(
+        "src.llm.response_adapter.response_adapter_agent.run",
+        new=AsyncMock(return_value=SimpleNamespace(output="Polished answer")),
+    ) as mock_run:
+        await adapt_manager_response(
+            question="Можно скидку?",
+            draft="Offer alternatives, no discount approved.",
+            language="ru",
+        )
+
+    user_prompt = mock_run.await_args.args[0]
+    assert "language code 'en'" in user_prompt
+    assert "language code 'ru'" not in user_prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
 async def test_normal_manager_reply_does_not_generate_kb_candidate() -> None:
     with (
         patch(

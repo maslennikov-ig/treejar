@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import math
 import re
@@ -74,6 +75,7 @@ from src.services.customer_identity import (
     build_bounded_returning_customer_context,
     format_llm_crm_context,
 )
+from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import is_active_human_handoff
 from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
@@ -527,6 +529,91 @@ _SERVICE_CONFIRMATION_TERMS = (
     "сборк",
     "монтаж",
     "установ",
+)
+
+_POST_QUOTATION_ACCEPTANCE_EXACT = frozenset(
+    {
+        "yes",
+        "y",
+        "ok",
+        "okay",
+        "approved",
+        "approve",
+        "accepted",
+        "accept",
+        "agreed",
+        "works",
+        "fine",
+        "go ahead",
+        "proceed",
+        "please proceed",
+        "you can proceed",
+        "да",
+        "ок",
+        "хорошо",
+        "устраивает",
+        "можно оформлять",
+        "согласен",
+        "согласна",
+        "نعم",
+        "موافق",
+        "تمام",
+        "اوكي",
+        "أوافق",
+    }
+)
+_POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT = frozenset(
+    {
+        "yes",
+        "y",
+        "ok",
+        "okay",
+        "works",
+        "fine",
+        "да",
+        "ок",
+        "хорошо",
+        "نعم",
+        "تمام",
+        "اوكي",
+    }
+)
+_POST_QUOTATION_ACCEPTANCE_PHRASES = (
+    "quotation works",
+    "proposal works",
+    "offer works",
+    "we accept",
+    "i accept",
+    "please go ahead",
+    "let's proceed",
+    "lets proceed",
+    "можно оформлять",
+    "меня устраивает",
+    "нас устраивает",
+    "العرض مناسب",
+    "نوافق على العرض",
+)
+_POST_QUOTATION_APPROVAL_PROMPT_CUES = (
+    "let me know if the quotation works",
+    "if the quotation works for you",
+    "whether the quotation works",
+    "does the quotation work",
+    "let me know if the proposal works",
+    "if the proposal works for you",
+    "whether the proposal works",
+    "does the proposal work",
+    "if the offer works",
+    "whether the offer works",
+    "does the offer work",
+    "quotation suits",
+    "proposal suits",
+    "offer suits",
+    "quotation suit",
+    "proposal suit",
+    "offer suit",
+    "устраивает ли",
+    "если предложение устраивает",
+    "هل يناسبك العرض",
 )
 _MIXED_PRODUCT_TERMS = (
     "workstation",
@@ -1175,15 +1262,9 @@ def _should_reject_order_confirmation_escalation(text: str) -> bool:
 
 
 def _showroom_location_response(language: str) -> str:
-    normalized = str(language or "").strip().casefold()
-    if normalized in {"ar", "arabic", "العربية"}:
+    if is_arabic_customer_language(language):
         return (
             "يقع معرض Treejar في دبي. يمكنك فتح الموقع على خرائط Google هنا: "
-            f"{TREEJAR_MAPS_URL}"
-        )
-    if normalized in {"ru", "russian", "русский"}:
-        return (
-            "Шоурум Treejar находится в Дубае. Откройте точку на Google Maps: "
             f"{TREEJAR_MAPS_URL}"
         )
     return (
@@ -1482,13 +1563,7 @@ def _missing_quantity_product_references_message(
     language: str,
 ) -> str:
     item_list = ", ".join(references)
-    normalized_language = str(language or "").casefold()
-    if normalized_language in {"ru", "russian", "русский"}:
-        return (
-            f"Я понял позиции: {item_list}. Пожалуйста, подтвердите количество "
-            "по каждой позиции, чтобы я проверил наличие и подготовил следующий шаг."
-        )
-    if normalized_language in {"ar", "arabic", "العربية"}:
+    if is_arabic_customer_language(language):
         return (
             f"فهمت المنتجات التالية: {item_list}. يرجى تأكيد الكمية لكل منتج "
             "حتى أتحقق من التوفر وأكمل الخطوة التالية."
@@ -3415,11 +3490,10 @@ def _should_resume_pending_quote_selection(
 
 
 def _pending_quote_missing_items_message(language: str) -> str:
-    normalized_language = language.casefold()
-    if normalized_language.startswith("ru") or "russian" in normalized_language:
+    if is_arabic_customer_language(language):
         return (
-            "Я получил ваши данные, но для КП нужно уточнить точные позиции и "
-            "количество по каждой позиции."
+            "وصلتني بياناتك، لكنني ما زلت بحاجة إلى تحديد المنتجات والكميات "
+            "لكل منتج قبل تجهيز عرض السعر."
         )
     return (
         "I have your details, but I still need the exact item(s) and quantity "
@@ -3689,12 +3763,99 @@ def _metadata_quotation_number(metadata: Mapping[str, Any]) -> str:
     )
 
 
+def _has_pending_proposal_decision(conversation: Conversation) -> bool:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    proposal_state = metadata.get("proposal_followup")
+    if not isinstance(proposal_state, Mapping):
+        return False
+    status = _metadata_quotation_decision_status(metadata)
+    return status not in {"approved", "accepted", "rejected", "cancelled", "canceled"}
+
+
+def _last_assistant_asked_post_quotation_approval(
+    recent_history: list[str] | None,
+) -> bool:
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    if not last_assistant:
+        return False
+    return any(cue in last_assistant for cue in _POST_QUOTATION_APPROVAL_PROMPT_CUES)
+
+
+def _is_post_quotation_acceptance(
+    text: str,
+    recent_history: list[str] | None = None,
+) -> bool:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+    if normalized in _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT:
+        return _last_assistant_asked_post_quotation_approval(recent_history)
+    if normalized in _POST_QUOTATION_ACCEPTANCE_EXACT:
+        return True
+    return len(normalized.split()) <= 8 and any(
+        phrase in normalized for phrase in _POST_QUOTATION_ACCEPTANCE_PHRASES
+    )
+
+
+def _post_quotation_accepted_response(language: str) -> str:
+    if is_arabic_customer_language(language):
+        return "شكراً لك. سأحوّل الموافقة إلى المدير لمتابعة الخطوات التالية."
+    return "Thank you. I’ve passed your approval to our manager to proceed with the next steps."
+
+
+def _post_quotation_acknowledgement_response(language: str) -> str:
+    if is_arabic_customer_language(language):
+        return "تم، شكراً لك."
+    return "Noted."
+
+
+def _mark_quotation_accepted(
+    conversation: Conversation,
+    *,
+    accepted_at: datetime.datetime,
+    customer_text: str,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    proposal_state = metadata.get("proposal_followup")
+    if isinstance(proposal_state, dict):
+        proposal_state["chain_stopped"] = True
+        proposal_state["stop_reason"] = "quotation_accepted"
+        proposal_state["stopped_at"] = accepted_at.astimezone(datetime.UTC).isoformat()
+        proposal_state["last_customer_reply_at"] = accepted_at.astimezone(
+            datetime.UTC
+        ).isoformat()
+        metadata["proposal_followup"] = proposal_state
+
+    quote_number = _metadata_quotation_number(metadata) or _string_value(
+        metadata.get("zoho_sale_order_number")
+    )
+    sale_order_id = _string_value(metadata.get("zoho_sale_order_id"))
+    decided_at = accepted_at.astimezone(datetime.UTC).isoformat()
+    metadata["quotation_decision_status"] = "approved"
+    metadata["quotation_decision_at"] = decided_at
+    metadata["zoho_sale_order_active"] = True
+    decision: dict[str, Any] = {
+        "status": "approved",
+        "active": True,
+        "decided_at": decided_at,
+        "customer_text": customer_text.strip()[:500],
+    }
+    if quote_number:
+        decision["quote_number"] = quote_number
+    if sale_order_id:
+        decision["zoho_sale_order_id"] = sale_order_id
+    metadata["quotation_decision"] = decision
+    conversation.metadata_ = metadata
+
+
 def _format_rejected_quotation_status(
     metadata: Mapping[str, Any],
     language: str,
 ) -> str:
     quote_number = _metadata_quotation_number(metadata)
-    if language.startswith("ar"):
+    if is_arabic_customer_language(language):
         if quote_number:
             return f"تم رفض عرض السعر {quote_number}. لا يوجد طلب نشط مرتبط بهذه المحادثة حالياً."
         return "تم رفض عرض السعر. لا يوجد طلب نشط مرتبط بهذه المحادثة حالياً."
@@ -4785,11 +4946,18 @@ async def create_quotation(
 
     pdf_filename = f"quotation_{quote_number}.pdf"
     try:
+        pdf_caption = (
+            f"عرض السعر من Treejar: {quote_number}"
+            if is_arabic_customer_language(
+                getattr(ctx.deps.conversation, "language", "en")
+            )
+            else f"Your Treejar quotation: {quote_number}"
+        )
         media_message_id = await ctx.deps.messaging_client.send_media(
             chat_id=ctx.deps.conversation.phone,
             content=pdf_bytes,
             content_type="application/pdf",
-            caption=f"Your Treejar quotation: {quote_number}",
+            caption=pdf_caption,
         )
     except Exception as e:
         logger.error("Failed to send quotation PDF %s to customer: %s", pdf_filename, e)
@@ -4799,6 +4967,8 @@ async def create_quotation(
         ctx.deps.conversation,
         sent_at=_dt.datetime.now(_dt.UTC),
         kp_message_id=_string_value(media_message_id) or quote_number,
+        quote_number=quote_number,
+        sale_order_id=sale_order_id,
     )
     try:
         await ctx.deps.db.flush()
@@ -4810,7 +4980,12 @@ async def create_quotation(
         )
 
     ctx.deps.quotation_created = True
-    return f"Quotation {quote_number} has been prepared and sent to you."
+    if is_arabic_customer_language(getattr(ctx.deps.conversation, "language", "en")):
+        return f"تم تجهيز عرض السعر {quote_number} وإرساله إليك. هل يناسبك العرض؟"
+    return (
+        f"Quotation {quote_number} has been prepared and sent to you. "
+        "Please let me know if the quotation works for you."
+    )
 
 
 @sales_agent.tool
@@ -4992,7 +5167,7 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
         return _format_rejected_quotation_status(metadata, language)
 
     if not deal_id and not active_sale_order_id:
-        if language.startswith("ar"):
+        if is_arabic_customer_language(language):
             return "لم يتم العثور على طلب مرتبط بهذه المحادثة. قد لا يكون لدى العميل صفقة مؤكدة بعد."
         return "No order found linked to this conversation. The customer may not have a confirmed deal yet."
 
@@ -5363,6 +5538,58 @@ async def process_message(
         "dialogue_kernel_enforced_flows",
         settings.dialogue_kernel_enforced_flows,
     )
+
+    if _has_pending_proposal_decision(conv) and _is_post_quotation_acceptance(
+        combined_text,
+        recent_history,
+    ):
+        from src.integrations.notifications.escalation import (
+            notify_manager_escalation,
+        )
+        from src.schemas.common import EscalationType
+
+        accepted_at = datetime.datetime.now(datetime.UTC)
+        _mark_quotation_accepted(
+            conv,
+            accepted_at=accepted_at,
+            customer_text=combined_text,
+        )
+        if not is_active_human_handoff(conv.escalation_status):
+            await notify_manager_escalation(
+                conversation=conv,
+                reason=(
+                    "Customer accepted the quotation/proposal after the PDF was sent. "
+                    "Manager should proceed with the next commercial steps."
+                ),
+                recent_messages=deps.recent_history or [],
+                db=db,
+                escalation_type=EscalationType.ORDER_CONFIRMATION,
+            )
+        await db.flush()
+        db_model_main = await get_system_config(
+            db, "openrouter_model_main", settings.openrouter_model_main
+        )
+        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
+        return _build_static_response(
+            _post_quotation_accepted_response(str(conv.language)),
+            f"{db_model_main}|post-quotation-accepted",
+            allow_product_media=False,
+        )
+
+    if (
+        _has_pending_proposal_decision(conv)
+        and _normalize_text(combined_text) in _POST_QUOTATION_GENERIC_ACCEPTANCE_EXACT
+    ):
+        db_model_main = await get_system_config(
+            db, "openrouter_model_main", settings.openrouter_model_main
+        )
+        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
+        return _build_static_response(
+            _post_quotation_acknowledgement_response(str(conv.language)),
+            f"{db_model_main}|post-quotation-ack",
+            allow_product_media=False,
+        )
+
     dialogue_kernel_result = await run_dialogue_kernel(
         conversation=conv,
         text=combined_text,
