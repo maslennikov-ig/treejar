@@ -22,8 +22,8 @@ Verification:
 
 Delivery status:
 - Branch `codex/tj-gh22-fu1-service-window` was pushed and fast-forwarded into `main`.
-- Runtime commit: `000dcfbc32c6a0084678c0582c983392e3b27ea6`.
-- GitHub Actions run `26233069352` succeeded, including deploy.
+- Runtime commit: `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`.
+- GitHub Actions run `26233690578` succeeded, including deploy.
 - Production smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
 - Direct `/opt/noor/.release-sha` SSH verification was unavailable from the local environment because SSH public-key authentication failed. Delivery evidence is successful GitHub Actions deploy plus production API smoke.
 - Full E2E execution plan added: `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`.

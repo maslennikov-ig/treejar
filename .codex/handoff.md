@@ -6,7 +6,7 @@ Current branch: `codex/tj-gh22-fu1-service-window`
 ## Current Truth
 
 - Canonical host: `https://noor.starec.ai`; canonical runtime path: `/opt/noor`.
-- Production release includes runtime commit `000dcfbc32c6a0084678c0582c983392e3b27ea6`; GitHub Actions run `26233069352` succeeded, including deploy; production smoke `scripts/verify_api.py --base-url https://noor.starec.ai` passed `7 passed, 0 failed`.
+- Production release includes runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`; GitHub Actions run `26233690578` succeeded, including deploy; production smoke `scripts/verify_api.py --base-url https://noor.starec.ai` passed `7 passed, 0 failed`.
 - Direct `/opt/noor/.release-sha` SSH verification was unavailable from this local environment because SSH public-key authentication failed. Treat successful GitHub Actions deploy plus production API smoke as the current delivery evidence unless a host-side check is run separately.
 - Stage `tj-gh18` is delivered, deployed, live E2E verified, and GitHub #39/#35 are closed.
 - Stage `tj-gh19` is delivered, deployed, live E2E verified, Beads closed, and GitHub #40 is closed.
@@ -19,7 +19,7 @@ Current branch: `codex/tj-gh22-fu1-service-window`
 - `tj-gh21` client WABA setup guide added at `docs/client/wazzup-waba-followup-setup-guide.md`.
 - `tj-gh21` production deployment succeeded: commit `1d42a39ac72e28d20d40a05514ef449be09071e0`, GitHub Actions run `26226211978`; production smoke `scripts/verify_api.py --base-url https://noor.starec.ai` passed `7 passed, 0 failed`.
 - SSH release-sha verification was not available from the local environment (`noor.starec.ai:22` timed out); delivery is verified by successful GitHub Actions deploy plus production API smoke.
-- Stage `tj-gh22` is delivered to production: FU1 is scheduled at 23h and can use free-form text only when the real 24h WhatsApp window is still open; FU2/FU3 still require Wazzup WABA templates. Verification passed before delivery: targeted 21 tests, full pytest `1115 passed, 19 skipped`, ruff, format-check, mypy, process verification, GitHub Actions deploy run `26233069352`, and production smoke `7 passed, 0 failed`.
+- Stage `tj-gh22` is delivered to production: FU1 is scheduled at 23h and can use free-form text only when the real 24h WhatsApp window is still open; FU2/FU3 still require Wazzup WABA templates. Verification passed before delivery: targeted 21 tests, full pytest `1115 passed, 19 skipped`, ruff, format-check, mypy, process verification, GitHub Actions deploy run `26233690578`, and production smoke `7 passed, 0 failed`.
 - `tj-gh22` E2E execution plan is tracked at `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`. Live E2E has not been executed after this deploy; it requires an approved test window, approved number/channel/suffixes, FU1 EN/AR free-form config, and FU2/FU3 Wazzup WABA approved template ids/codes for full template-path validation.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
@@ -31,7 +31,7 @@ Recommended action: run the planned controlled E2E only after explicit approval 
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage to continue `tj-gh22.1` E2E execution. Current delivered production release includes runtime commit `000dcfbc32c6a0084678c0582c983392e3b27ea6`; `tj-gh20` remains in `shadow` mode only. `tj-gh21` runtime changes, Wazzup WABA client guide, and `tj-gh22` FU1 23h refinement are merged, deployed, and production-smoke verified. See `.codex/stages/tj-gh22/summary.md` and `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`.
+Use $orchestrator-stage to continue `tj-gh22.1` E2E execution. Current delivered production release includes runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`; `tj-gh20` remains in `shadow` mode only. `tj-gh21` runtime changes, Wazzup WABA client guide, and `tj-gh22` FU1 23h refinement are merged, deployed, and production-smoke verified. See `.codex/stages/tj-gh22/summary.md` and `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`.
 
 ## Explicit defers
 

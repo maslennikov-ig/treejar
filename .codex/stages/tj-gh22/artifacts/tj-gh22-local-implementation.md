@@ -22,7 +22,7 @@ verification:
   - uv run mypy src/: passed
   - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed (1115 passed, 19 skipped)
   - scripts/orchestration/run_process_verification.sh: passed
-  - GitHub Actions run 26233069352: passed, including deploy
+  - GitHub Actions run 26233690578: passed, including deploy
   - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed (7 passed, 0 failed)
 changed_files:
   - src/services/proposal_followup.py
@@ -40,14 +40,14 @@ explicit_defers:
 
 Implemented the FU1 service-window refinement locally. FU1 now becomes due at 23 hours instead of 24 hours, and the existing send planner still verifies the actual WhatsApp free-form window from the last customer inbound message before sending.
 
-Merged the branch into `main`, deployed runtime commit `000dcfbc32c6a0084678c0582c983392e3b27ea6` through GitHub Actions run `26233069352`, and verified production API smoke against `https://noor.starec.ai`.
+Merged the branch into `main`, deployed runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6` through GitHub Actions run `26233690578`, and verified production API smoke against `https://noor.starec.ai`.
 
 # Verification
 
 - RED test run failed on the old 24h FU1 schedule as expected.
 - Targeted follow-up/webhook/prompt tests passed: 21 passed.
 - Ruff, format check, mypy, full pytest, and process verification passed locally.
-- GitHub Actions run `26233069352` passed, including deploy.
+- GitHub Actions run `26233690578` passed, including deploy.
 - Production smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
 
 # Risks / Follow-ups

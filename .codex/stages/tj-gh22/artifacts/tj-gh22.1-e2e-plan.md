@@ -14,13 +14,13 @@ accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: planning artifact only; no separate worker workspace
 risk_level: low
-runtime_commit: 000dcfbc32c6a0084678c0582c983392e3b27ea6
-github_actions_run: "26233069352"
+runtime_commit: 3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6
+github_actions_run: "26233690578"
 production_smoke: passed
 plan_file: docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md
 verification:
   - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed (7 passed, 0 failed)
-  - GitHub Actions run 26233069352: passed, including deploy
+  - GitHub Actions run 26233690578: passed, including deploy
   - scripts/orchestration/validate_artifact.py .codex/stages/tj-gh22/artifacts/tj-gh22.1-e2e-plan.md: passed
 changed_files:
   - docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md
@@ -42,13 +42,13 @@ transport, Arabic follow-up, and regression scenarios from recent GitHub issues.
 
 # Evidence So Far
 
-- Runtime commit `000dcfbc32c6a0084678c0582c983392e3b27ea6` was deployed by GitHub Actions run `26233069352`.
+- Runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6` was deployed by GitHub Actions run `26233690578`.
 - Production smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
 - Live E2E is not executed yet; this artifact intentionally records planning and blockers only.
 
 # Verification
 
-- Deployment evidence was already collected before this plan: GitHub Actions run `26233069352` succeeded.
+- Deployment evidence was already collected before this plan: GitHub Actions run `26233690578` succeeded.
 - Production smoke passed against `https://noor.starec.ai`.
 - Artifact validation passed.
 

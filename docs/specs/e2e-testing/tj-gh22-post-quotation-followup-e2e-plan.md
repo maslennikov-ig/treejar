@@ -4,12 +4,12 @@ Date: 2026-05-21
 
 Runtime target: `https://noor.starec.ai`
 
-Runtime commit under test: `000dcfbc32c6a0084678c0582c983392e3b27ea6`
+Runtime commit under test: `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`
 
 Delivery evidence:
 
 - Branch `codex/tj-gh22-fu1-service-window` was fast-forwarded into `main`.
-- GitHub Actions run `26233069352` completed successfully, including the `deploy` job.
+- GitHub Actions run `26233690578` completed successfully, including the `deploy` job.
 - Production smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> `7 passed, 0 failed`.
 - Direct `/opt/noor/.release-sha` SSH check was not available from the local environment because SSH public-key authentication failed. Runtime evidence is therefore the successful GitHub Actions deploy plus production API smoke.
 
