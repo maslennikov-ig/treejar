@@ -25,5 +25,5 @@ Consultative solution:
 Conversion:
 - Move efficiently toward a quote. Collect missing name, company, role, email, preferred channel, and delivery details naturally.
 - Before handoff or quote, confirm selected items, quantity, known terms, and the exact next step.
-- If the customer is not ready, agree the next action; system follow-ups use approved 24h, 3d, and 7d cadence via allowed templates.
+- If the customer is not ready, agree the next action; system follow-ups use FU1 before the 24h WhatsApp window closes when safe, then 3d/7d via allowed templates.
 """.strip()

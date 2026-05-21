@@ -191,7 +191,7 @@ def test_wazzup_webhook_read_status_records_proposal_read_without_reschedule(
     state = conv.metadata_["proposal_followup"]
     assert state["kp_read"] is True
     assert state["kp_read_at"] == "2026-05-04T09:00:00+00:00"
-    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T08:00:00+00:00"
+    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T07:00:00+00:00"
     db.commit.assert_awaited_once()
 
 

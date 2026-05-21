@@ -1,7 +1,7 @@
 # Orchestrator Handoff
 
 Updated: 2026-05-21
-Current branch: `codex/tj-gh21-post-quotation-followup`
+Current branch: `codex/tj-gh22-fu1-service-window`
 
 ## Current Truth
 
@@ -18,20 +18,21 @@ Current branch: `codex/tj-gh21-post-quotation-followup`
 - `tj-gh21` client WABA setup guide added at `docs/client/wazzup-waba-followup-setup-guide.md`.
 - `tj-gh21` production deployment succeeded: commit `1d42a39ac72e28d20d40a05514ef449be09071e0`, GitHub Actions run `26226211978`; production smoke `scripts/verify_api.py --base-url https://noor.starec.ai` passed `7 passed, 0 failed`.
 - SSH release-sha verification was not available from the local environment (`noor.starec.ai:22` timed out); delivery is verified by successful GitHub Actions deploy plus production API smoke.
+- Stage `tj-gh22` is verified locally on `codex/tj-gh22-fu1-service-window`: FU1 is scheduled at 23h and can use free-form text only when the real 24h WhatsApp window is still open; FU2/FU3 still require Wazzup WABA templates. Local verification passed: targeted 21 tests, full pytest `1115 passed, 19 skipped`, ruff, format-check, mypy, and process verification.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
 ## Next recommended
 
-Next stage id: continue `tj-gh21` only for Wazzup template configuration, or start a new stage for unrelated work.
+Next stage id: continue `tj-gh22` for delivery, or continue `tj-gh21` only for Wazzup template configuration.
 
-Recommended action: collect approved Wazzup WABA EN/AR template ids/codes from the client using `docs/client/wazzup-waba-followup-setup-guide.md`, then configure production follow-up sending. Keep production follow-up sending disabled until those ids/codes are configured.
+Recommended action: review and deliver `tj-gh22` when authorized. Then collect approved Wazzup WABA EN/AR template ids/codes for FU2/FU3 using `docs/client/wazzup-waba-followup-setup-guide.md`, and configure production follow-up sending. Keep production follow-up sending disabled until FU1 text and FU2/FU3 templates are configured.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage to continue `tj-gh21`. Current delivered production release includes commit `1d42a39ac72e28d20d40a05514ef449be09071e0`; `tj-gh20` remains in `shadow` mode only. `tj-gh21` runtime changes and Wazzup WABA client guide are merged, deployed, and production-smoke verified. See `.codex/stages/tj-gh21/summary.md` and artifacts `tj-gh21-local-implementation.md`, `tj-gh21-review-fixes.md`.
+Use $orchestrator-stage to continue `tj-gh22`. Current delivered production release includes commit `1d42a39ac72e28d20d40a05514ef449be09071e0`; `tj-gh20` remains in `shadow` mode only. `tj-gh21` runtime changes and Wazzup WABA client guide are merged, deployed, and production-smoke verified. `tj-gh22` FU1 23h refinement is local-only and verified; see `.codex/stages/tj-gh22/summary.md`.
 
 ## Explicit defers
 
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup typing endpoint.
-- Production follow-up sending for GitHub #11 remains blocked pending approved Wazzup WABA template ids/codes for English and Arabic.
+- Production follow-up sending for GitHub #11 remains blocked pending explicit FU1 EN/AR free-form text configuration and approved Wazzup WABA FU2/FU3 template ids/codes for English and Arabic.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.

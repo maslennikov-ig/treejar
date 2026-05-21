@@ -31,7 +31,7 @@ DEFAULT_BUSINESS_TIMEZONE = "Asia/Dubai"
 BUSINESS_START = datetime.time(hour=10)
 BUSINESS_END = datetime.time(hour=20)
 FOLLOWUP_OFFSETS_BY_STEP = {
-    1: datetime.timedelta(hours=24),
+    1: datetime.timedelta(hours=23),
     2: datetime.timedelta(days=3),
     3: datetime.timedelta(days=7),
 }

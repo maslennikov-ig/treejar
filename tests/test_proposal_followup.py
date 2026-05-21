@@ -56,7 +56,7 @@ def test_record_proposal_sent_initializes_followup_metadata_and_schedule() -> No
     assert state["chain_stopped"] is False
     assert state["pause_until"] is None
     assert set(state["steps"]) == {"1", "2", "3"}
-    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T08:00:00+00:00"
+    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T07:00:00+00:00"
     assert state["steps"]["2"]["scheduled_at"] == "2026-05-07T08:00:00+00:00"
     assert state["steps"]["3"]["scheduled_at"] == "2026-05-11T08:00:00+00:00"
 
@@ -107,7 +107,7 @@ def test_record_proposal_read_keeps_approved_cadence() -> None:
     state = _proposal_state(conv)
     assert state["kp_read"] is True
     assert state["kp_read_at"] == "2026-05-04T09:00:00+00:00"
-    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T08:00:00+00:00"
+    assert state["steps"]["1"]["scheduled_at"] == "2026-05-05T07:00:00+00:00"
     assert state["steps"]["2"]["scheduled_at"] == "2026-05-07T08:00:00+00:00"
 
 
@@ -207,7 +207,7 @@ def test_next_due_followup_respects_pause_and_stop_state() -> None:
         sent_at=_dt("2026-05-04T08:00:00Z"),
         kp_message_id="kp-msg-1",
     )
-    due_at = _dt("2026-05-05T08:00:00Z")
+    due_at = _dt("2026-05-05T07:00:00Z")
 
     assert next_due_followup_step(conv, now=due_at).step == 1
 
@@ -336,7 +336,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
         sent_at=_dt("2026-05-04T08:00:00Z"),
         kp_message_id="kp-msg-1",
     )
-    due = next_due_followup_step(conv, now=_dt("2026-05-05T08:00:00Z"))
+    due = next_due_followup_step(conv, now=_dt("2026-05-05T07:00:00Z"))
 
     assert due is not None
     default_plan = build_followup_send_plan(due)
@@ -347,7 +347,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
         due,
         controls=ProposalFollowupSendControls(enabled=True),
         last_customer_inbound_at=_dt("2026-05-03T08:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
     )
     assert no_template.can_send is False
     assert no_template.reason == "template_required_outside_24h"
@@ -359,7 +359,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
             template_name="proposal_followup_fu1_v1",
         ),
         last_customer_inbound_at=_dt("2026-05-03T08:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
     )
     assert unconfirmed_template_plan.can_send is False
     assert unconfirmed_template_plan.reason == "template_transport_unconfirmed"
@@ -372,7 +372,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
             template_transport_confirmed=True,
         ),
         last_customer_inbound_at=_dt("2026-05-03T08:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
     )
     assert template_plan.can_send is True
     assert template_plan.mode == "template"
@@ -390,7 +390,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
             template_transport_confirmed=True,
         ),
         last_customer_inbound_at=_dt("2026-05-03T08:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
         language="ru",
     )
     assert language_template_plan.can_send is True
@@ -401,7 +401,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
         due,
         controls=ProposalFollowupSendControls(enabled=True),
         last_customer_inbound_at=_dt("2026-05-05T07:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
     )
     assert no_freeform.can_send is False
     assert no_freeform.reason == "freeform_text_required_within_24h"
@@ -413,7 +413,7 @@ def test_send_plan_is_disabled_by_default_and_requires_safe_message_mode() -> No
             freeform_text_by_step={1: "Checking whether you had a chance to review."},
         ),
         last_customer_inbound_at=_dt("2026-05-05T07:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
     )
     assert freeform_plan.can_send is True
     assert freeform_plan.mode == "freeform"
@@ -501,7 +501,7 @@ async def test_process_due_proposal_followup_template_send_records_step() -> Non
     provider.outbound_chat_id.return_value = conv.phone
     provider.send_template.return_value = "fu-provider-1"
     db = _mock_db()
-    scheduled_at = _dt("2026-05-05T08:00:00Z")
+    scheduled_at = _dt("2026-05-05T07:00:00Z")
     crm_message_id = deterministic_crm_message_id(
         "proposal_followup",
         conv.id,
@@ -557,7 +557,7 @@ async def test_process_due_proposal_followup_missing_template_does_not_mark_sent
         conv,
         controls=ProposalFollowupSendControls(enabled=True),
         last_customer_inbound_at=_dt("2026-05-03T08:00:00Z"),
-        now=_dt("2026-05-05T08:00:00Z"),
+        now=_dt("2026-05-05T07:00:00Z"),
         provider=provider,
     )
 
@@ -568,3 +568,53 @@ async def test_process_due_proposal_followup_missing_template_does_not_mark_sent
     db.commit.assert_not_awaited()
     state = _proposal_state(conv)
     assert state["steps"]["1"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_process_due_proposal_followup_fu1_uses_freeform_before_24h_window() -> (
+    None
+):
+    conv = _conversation()
+    record_proposal_sent(
+        conv,
+        sent_at=_dt("2026-05-04T08:00:00Z"),
+        kp_message_id="kp-msg-1",
+    )
+    provider = AsyncMock()
+    provider.outbound_chat_id.return_value = conv.phone
+    provider.send_text.return_value = "fu-text-1"
+    db = _mock_db()
+    scheduled_at = _dt("2026-05-05T07:00:00Z")
+    crm_message_id = deterministic_crm_message_id(
+        "proposal_followup",
+        conv.id,
+        "fu1",
+        scheduled_at.isoformat(),
+    )
+
+    result = await process_due_proposal_followup(
+        db,
+        conv,
+        controls=ProposalFollowupSendControls(
+            enabled=True,
+            freeform_text_by_step={1: "Checking whether you had a chance to review."},
+        ),
+        last_customer_inbound_at=_dt("2026-05-04T07:30:00Z"),
+        now=scheduled_at,
+        provider=provider,
+    )
+
+    assert result.sent is True
+    assert result.reason is None
+    assert result.crm_message_id == crm_message_id
+    assert result.provider_message_id == "fu-text-1"
+    provider.send_text.assert_awaited_once_with(
+        conv.phone,
+        "Checking whether you had a chance to review.",
+        crm_message_id=crm_message_id,
+    )
+    provider.send_template.assert_not_awaited()
+    db.commit.assert_awaited_once()
+    state = _proposal_state(conv)
+    assert state["steps"]["1"]["status"] == "sent"
+    assert state["steps"]["1"]["provider_message_id"] == "fu-text-1"

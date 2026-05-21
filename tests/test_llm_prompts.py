@@ -61,7 +61,8 @@ async def test_build_system_prompt_includes_compact_communication_policy() -> No
     assert "solution, not just a product" in policy
     assert "multiple options" in policy
     assert "approved discount" in policy
-    assert "24h, 3d, and 7d" in policy
+    assert "FU1 before the 24h WhatsApp window closes" in policy
+    assert "3d/7d via allowed templates" in policy
     assert "exact next step" in policy
     assert "Правило" not in policy
     assert len(policy) < 1600
