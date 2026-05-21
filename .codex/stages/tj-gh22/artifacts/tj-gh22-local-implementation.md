@@ -8,11 +8,11 @@ branch: codex/tj-gh22-fu1-service-window
 base_branch: origin/main
 base_commit: 32dabb352e8aa8cb584ca575651835a82aef2e0b
 worktree: /home/me/code/treejar/.worktrees/codex-tj-gh14-main-merge
-status: accepted
+status: merged
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: blocked
-cleanup_notes: branch/worktree retained pending delivery authorization
+cleanup_status: pending
+cleanup_notes: branch/worktree retained until docs/E2E-plan commit is pushed
 risk_level: low
 verification:
   - OPENROUTER_API_KEY=dummy uv run pytest tests/test_proposal_followup.py -v --tb=short: failed before implementation as expected on old 24h FU1 schedule
@@ -22,6 +22,8 @@ verification:
   - uv run mypy src/: passed
   - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed (1115 passed, 19 skipped)
   - scripts/orchestration/run_process_verification.sh: passed
+  - GitHub Actions run 26233069352: passed, including deploy
+  - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed (7 passed, 0 failed)
 changed_files:
   - src/services/proposal_followup.py
   - src/llm/communication_policy.py
@@ -31,12 +33,25 @@ changed_files:
   - docs/client/wazzup-waba-followup-setup-guide.md
 explicit_defers:
   - production follow-up sending still requires explicit configuration of FU1 free-form text and approved Wazzup WABA template ids/codes for FU2/FU3
+  - live E2E execution is tracked separately in tj-gh22.1
 ---
 
 # Summary
 
 Implemented the FU1 service-window refinement locally. FU1 now becomes due at 23 hours instead of 24 hours, and the existing send planner still verifies the actual WhatsApp free-form window from the last customer inbound message before sending.
 
-# Notes
+Merged the branch into `main`, deployed runtime commit `000dcfbc32c6a0084678c0582c983392e3b27ea6` through GitHub Actions run `26233069352`, and verified production API smoke against `https://noor.starec.ai`.
+
+# Verification
+
+- RED test run failed on the old 24h FU1 schedule as expected.
+- Targeted follow-up/webhook/prompt tests passed: 21 passed.
+- Ruff, format check, mypy, full pytest, and process verification passed locally.
+- GitHub Actions run `26233069352` passed, including deploy.
+- Production smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
+
+# Risks / Follow-ups
 
 This does not make unsafe free-form sends possible: if the real 24h window has closed, the code still requires a WABA template or blocks the send. The client WABA guide now asks for mandatory FU2/FU3 templates only, with optional FU1 fallback templates.
+
+Full production E2E is planned in `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md` and tracked in Beads as `tj-gh22.1`.
