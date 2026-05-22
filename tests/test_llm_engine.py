@@ -1937,6 +1937,29 @@ def test_extract_quote_customer_details_accepts_natural_company_and_address() ->
     ) == {"address": "Bay Square Building 3, Business Bay, Dubai"}
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_address"),
+    [
+        (
+            "Please prepare a quotation delivered to Office 1202, Business Bay, Dubai.",
+            "Office 1202, Business Bay, Dubai",
+        ),
+        (
+            "Please prepare a quotation with delivery to Office 1203, Business Bay, Dubai.",
+            "Office 1203, Business Bay, Dubai",
+        ),
+        (
+            "Please prepare a quotation and ship to Office 1204, Business Bay, Dubai.",
+            "Office 1204, Business Bay, Dubai",
+        ),
+    ],
+)
+def test_extract_quote_customer_details_accepts_natural_delivery_address(
+    text: str, expected_address: str
+) -> None:
+    assert _extract_quote_customer_details(text)["address"] == expected_address
+
+
 def test_extract_sales_memory_updates_keeps_delivery_timing() -> None:
     updates = engine_module._extract_sales_memory_updates(
         "I appreciate fast delivery within 2-3 days and assembly is required."
@@ -2484,13 +2507,116 @@ async def test_process_message_name_only_reply_resumes_pending_exact_quote_reque
 
     assert conv.customer_name == "Jio"
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
-    assert mock_run.await_count == 2
-    for call in mock_run.await_args_list:
-        deps = call.kwargs["deps"]
-        assert deps.user_query == pending_text
-        assert deps.tool_mode == "exact_quote"
+    mock_run.assert_not_awaited()
     assert response.model == "mock-model|exact-quote-missing-details"
     assert "quotation" in response.text.lower()
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+@patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
+async def test_process_message_first_turn_unknown_name_quote_ready_resumes_deterministically(
+    mock_resolve_sku: AsyncMock,
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    quote_request = (
+        "Hello, I need a quotation for 1 CH 616 chair delivered to Office 1202, "
+        "Business Bay, Dubai. I am an individual."
+    )
+    name_reply = "Alex"
+    mock_build_history.side_effect = [
+        _first_turn_history(quote_request),
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=quote_request)]),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content=(
+                            "Hello, I'm Noor from Treejar. "
+                            "May I know your name so I can address you properly?"
+                        )
+                    )
+                ]
+            ),
+            ModelRequest(parts=[UserPromptPart(content=name_reply)]),
+        ],
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_resolve_sku.return_value = "CH 616 NEW black"
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        assert ctx.deps.conversation.metadata_["quote_customer_details"] == {
+            "customer_type": "individual",
+            "address": "Office 1202, Business Bay, Dubai",
+            "name": "Alex",
+        }
+        return "Quotation SA-616 has been prepared and sent to you."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=quote_request,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "name-gate"
+    assert conv.metadata_["quote_customer_details"] == {
+        "customer_type": "individual",
+        "address": "Office 1202, Business Bay, Dubai",
+    }
+    assert conv.metadata_["quote_intent_frame"]["items"] == [
+        {"sku": "CH-616", "quantity": 1, "item_candidate": "CH 616 chair"}
+    ]
+
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=name_reply,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert second_response.text == "Quotation SA-616 has been prepared and sent to you."
+    assert second_response.model == "mock-model|exact-quote-deterministic"
+    assert conv.customer_name == "Alex"
+    assert conv.escalation_status == "none"
+    assert "name_gate_pending_request" not in conv.metadata_
+    assert "quote_intent_frame" not in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_awaited_once()
+    _, items = mock_create_quotation.await_args.args
+    assert items == [QuotationItem(sku="CH 616 NEW black", quantity=1)]
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -4680,9 +4806,11 @@ async def test_tools_create_quotation_fails_closed_when_catalog_price_missing_or
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_exact_price_request_without_quote_terms_uses_guarded_path(
     mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
@@ -4697,14 +4825,11 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
 
-    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
-        deps = kwargs["deps"]
-        if mock_run.await_count == 1:
-            return _FakeAgentResult("Please share your company email.")
-        deps.quotation_created = True
-        return _FakeAgentResult("Quotation SA-001 has been prepared and sent to you.")
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SA-001 has been prepared and sent to you."
 
-    mock_run.side_effect = run_side_effect
+    mock_create_quotation.side_effect = create_quotation_side_effect
 
     response = await process_message(
         conversation_id=conv.id,
@@ -4720,11 +4845,10 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
         response.text,
         "Quotation SA-001 has been prepared and sent to you.",
     )
-    assert mock_run.await_count == 2
-    first_call = mock_run.await_args_list[0].kwargs
-    second_call = mock_run.await_args_list[1].kwargs
-    assert first_call["deps"].tool_mode == "exact_quote"
-    assert second_call["deps"].tool_mode == "exact_quote"
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_awaited_once()
+    _, items = mock_create_quotation.await_args.args
+    assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
 
 
 def test_extract_exact_quote_candidate_accepts_exact_named_item_without_quote_terms() -> (
@@ -4815,6 +4939,19 @@ def test_extract_exact_quote_candidate_accepts_spaced_compact_and_homoglyph_skus
     assert candidate.sku == expected_sku
 
 
+def test_extract_exact_quote_candidate_keeps_word_quantity_from_model_number() -> None:
+    candidate = extract_exact_quote_candidate(
+        "Please prepare a quotation for one Skyland Operative Chair CH 616 NEW black "
+        "delivered to Office 1201, Business Bay, Dubai."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 1
+    assert candidate.sku == "CH-616"
+    assert "CH 616 NEW black" in candidate.item_candidate
+    assert "Office 1201" not in candidate.item_candidate
+
+
 @pytest.mark.asyncio
 async def test_resolve_exact_quote_candidate_accepts_spaced_canonical_sku() -> None:
     db = AsyncMock()
@@ -4828,7 +4965,7 @@ async def test_resolve_exact_quote_candidate_accepts_spaced_canonical_sku() -> N
     assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) == (
         "CH-190"
     )
-    db.execute.assert_awaited_once()
+    assert db.execute.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -4855,6 +4992,72 @@ async def test_resolve_exact_quote_candidate_requires_full_numeric_hyphen_anchor
         sku="9719-4",
     )
 
+    assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_sku", ["CH 616", "CH-616", "CH616", "СН 616"])
+async def test_resolve_exact_quote_candidate_accepts_suffix_sku_variants(
+    raw_sku: str,
+) -> None:
+    db = AsyncMock()
+    exact_result = MagicMock()
+    exact_result.scalar_one_or_none.return_value = None
+    suffix_result = MagicMock()
+    suffix_result.scalars.return_value.all.return_value = [
+        SimpleNamespace(
+            sku="CH 616 NEW black",
+            name_en="Skyland Operative Chair CH 616 NEW black",
+            description_en="Skyland Operative Chair CH 616 NEW black",
+            attributes={"treejar_slug": "skyland-operative-chair-ch-616-new-black"},
+            is_active=True,
+        )
+    ]
+    db.execute.side_effect = [exact_result, suffix_result]
+
+    candidate = extract_exact_quote_candidate(
+        f"Please prepare a quotation for 1 {raw_sku} chair."
+    )
+
+    assert candidate is not None
+    assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) == (
+        "CH 616 NEW black"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_exact_quote_candidate_leaves_ambiguous_suffix_sku_unresolved() -> (
+    None
+):
+    db = AsyncMock()
+    exact_result = MagicMock()
+    exact_result.scalar_one_or_none.return_value = None
+    suffix_result = MagicMock()
+    suffix_result.scalars.return_value.all.return_value = [
+        SimpleNamespace(
+            sku="CH 616 black",
+            name_en="Skyland Operative Chair CH 616 black",
+            description_en="Skyland Operative Chair CH 616 black",
+            attributes={"treejar_slug": "skyland-operative-chair-ch-616-black"},
+            is_active=True,
+        ),
+        SimpleNamespace(
+            sku="CH 616 NEW black",
+            name_en="Skyland Operative Chair CH 616 NEW black",
+            description_en="Skyland Operative Chair CH 616 NEW black",
+            attributes={"treejar_slug": "skyland-operative-chair-ch-616-new-black"},
+            is_active=True,
+        ),
+    ]
+    fuzzy_result = MagicMock()
+    fuzzy_result.scalars.return_value.all.return_value = []
+    db.execute.side_effect = [exact_result, suffix_result, fuzzy_result]
+
+    candidate = extract_exact_quote_candidate(
+        "Please prepare a quotation for 1 CH 616."
+    )
+
+    assert candidate is not None
     assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) is None
 
 
@@ -5981,7 +6184,7 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
         response.text,
         "Quotation SA-001 has been prepared and sent to you.",
     )
-    assert mock_run.await_count == 2
+    mock_run.assert_not_awaited()
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
@@ -6104,7 +6307,7 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
         response.text,
         "Quotation SA-002 has been prepared and sent to you.",
     )
-    assert mock_run.await_count == 2
+    mock_run.assert_not_awaited()
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="00-07024023", quantity=1)]
@@ -6172,7 +6375,7 @@ async def test_process_message_exact_named_item_second_consultative_pass_resolve
         response.text,
         "Quotation SA-009 has been prepared and sent to you.",
     )
-    assert mock_run.await_count == 2
+    mock_run.assert_not_awaited()
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [
@@ -6307,7 +6510,7 @@ async def test_process_message_exact_quote_missing_details_accepts_quantity_x_sk
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_exact_quote_second_consultative_pass_fails_closed_without_exact_sku(
+async def test_process_message_exact_quote_unresolved_item_clarifies_without_escalation(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -6322,26 +6525,10 @@ async def test_process_message_exact_quote_second_consultative_pass_fails_closed
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    pending_payload = ProductMediaPayload(
-        url="https://example.com/quote-side-effect.jpg",
-        caption="Catalog photo that must not follow fail-closed quote",
-        product_key="chair-1",
-        zoho_item_id=None,
-    )
-
-    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
-        deps = kwargs["deps"]
-        if mock_run.await_count == 1:
-            deps.pending_product_media.append(pending_payload)
-            return _FakeAgentResult("Could you share your company name?")
-        return _FakeAgentResult("Please also share your email address.")
-
-    mock_run.side_effect = run_side_effect
-
-    async def notify_side_effect(**kwargs: object) -> None:
-        kwargs["conversation"].escalation_status = "pending"
-
-    mock_notify.side_effect = notify_side_effect
+    mock_run.side_effect = [
+        _FakeAgentResult("Could you share your company name?"),
+        _FakeAgentResult("Please also share your email address."),
+    ]
 
     response = await process_message(
         conversation_id=conv.id,
@@ -6353,11 +6540,22 @@ async def test_process_message_exact_quote_second_consultative_pass_fails_closed
         messaging_client=messaging,
     )
 
-    assert mock_run.await_count == 2
-    mock_notify.assert_awaited_once()
-    assert conv.escalation_status == "pending"
-    assert response.text != "Please also share your email address."
-    assert "manager" in response.text.lower()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert "manager" not in response.text.lower()
+    assert "exact catalog" in response.text.lower()
+    assert response.model == "mock-model|exact-quote-clarify-item"
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "exact_quote"
+    assert pending_quote["items"] == []
+    assert pending_quote["unresolved_items"] == [
+        {
+            "sku": None,
+            "quantity": 1,
+            "item_candidate": "Reception desk SKYLAND LUMA",
+        }
+    ]
     assert response.deferred_product_media == ()
 
 
@@ -6366,7 +6564,7 @@ async def test_process_message_exact_quote_second_consultative_pass_fails_closed
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_exact_quote_escalation_suppresses_product_media(
+async def test_process_message_exact_quote_clarification_suppresses_product_media(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -6380,21 +6578,6 @@ async def test_process_message_exact_quote_escalation_suppresses_product_media(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    pending_payload = ProductMediaPayload(
-        url="https://example.com/quote-side-effect.jpg",
-        caption="Catalog photo that must not follow handoff",
-        product_key="chair-1",
-        zoho_item_id=None,
-    )
-
-    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
-        deps = kwargs["deps"]
-        deps.pending_product_media.append(pending_payload)
-        conv.escalation_status = "pending"
-        return _FakeAgentResult("Our manager will verify this for you.")
-
-    mock_run.side_effect = run_side_effect
-
     response = await process_message(
         conversation_id=conv.id,
         combined_text=text,
@@ -6405,8 +6588,10 @@ async def test_process_message_exact_quote_escalation_suppresses_product_media(
         messaging_client=messaging,
     )
 
-    assert mock_run.await_count == 1
-    assert "manager" in response.text.lower()
+    mock_run.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert "exact catalog" in response.text.lower()
+    assert "manager" not in response.text.lower()
     assert response.deferred_product_media == ()
 
 
@@ -6415,7 +6600,7 @@ async def test_process_message_exact_quote_escalation_suppresses_product_media(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
+async def test_process_message_exact_quote_request_gates_missing_details_before_llm(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -6432,23 +6617,6 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    pending_payload = ProductMediaPayload(
-        url="https://example.com/quote-side-effect.jpg",
-        caption="Catalog photo that must not follow a quotation",
-        product_key="chair-1",
-        zoho_item_id=None,
-    )
-
-    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
-        deps = kwargs["deps"]
-        if mock_run.await_count == 1:
-            return _FakeAgentResult("Please share your full name, company, and email.")
-        deps.pending_product_media.append(pending_payload)
-        deps.quotation_created = True
-        return _FakeAgentResult("Quotation SA-001 has been prepared and sent to you.")
-
-    mock_run.side_effect = run_side_effect
-
     response = await process_message(
         conversation_id=conv.id,
         combined_text=text,
@@ -6459,15 +6627,10 @@ async def test_process_message_exact_quote_request_retries_in_exact_quote_mode(
         messaging_client=messaging,
     )
 
-    _assert_first_turn_opening(
-        response.text,
-        "Quotation SA-001 has been prepared and sent to you.",
-    )
-    assert mock_run.await_count == 2
-    first_call = mock_run.await_args_list[0].kwargs
-    second_call = mock_run.await_args_list[1].kwargs
-    assert first_call["deps"].tool_mode == "exact_quote"
-    assert second_call["deps"].tool_mode == "exact_quote"
+    _assert_first_turn_opening(response.text, "")
+    assert "before i prepare the quotation" in response.text.lower()
+    assert "specific delivery address" in response.text.lower()
+    mock_run.assert_not_awaited()
     assert response.deferred_product_media == ()
 
 

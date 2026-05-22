@@ -1,6 +1,6 @@
 # Stage tj-gh22 Summary
 
-Status: delivered; production smoke passed; E2E planned
+Status: delivered; production smoke passed; post-quotation E2E blocked by exact-quotation creation failure
 
 Scope: GitHub #11 follow-up timing refinement: send FU1 before the WhatsApp/WABA 24h customer-service window usually closes, while keeping FU2/FU3 template-based.
 
@@ -29,7 +29,13 @@ Delivery status:
 - Full E2E execution plan added: `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`.
 
 E2E status:
-- Planned, not executed in this turn.
-- Live WhatsApp sends require explicit approved run window, approved number/channel/suffixes, and access to record conversation/outbound audit evidence.
-- FU1 live send requires configured EN/AR free-form texts.
-- FU2/FU3 live send requires approved Wazzup WABA EN/AR template ids/codes; otherwise only blocked/fallback behavior can be verified.
+- Execution artifact added: `.codex/stages/tj-gh22/artifacts/tj-gh22.1-e2e-execution.md`.
+- S0 production smoke was freshly executed and passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
+- After the user confirmed permissions and approved `+79262810921`, live synthetic sends were executed through production channel `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
+- Product/SKU name-gate sanity passed in conversation `c11ac597-9452-4e79-8dd9-50261dbcd768`: `Hello, I need 6 CH 616` -> name gate -> `Alex` -> product/catalog answer with no escalation.
+- Exact quotation creation failed before post-quotation follow-up could be tested:
+  - `baa857a8-cc87-4d4f-85c3-aa5a746fcbc1`: word-quantity exact quote request ended in `z-ai/glm-5|exact-quote-fallback` and pending escalation.
+  - `d6fa2284-0029-4019-b304-285e9d352e6f`: numeric `1 CH 616` exact quote request ended in `z-ai/glm-5|exact-quote-fallback` and pending escalation.
+  - `c11ac597-9452-4e79-8dd9-50261dbcd768`: after product answer, `Please prepare a quotation for 3 CH 616 chairs...` also ended in `exact-quote-fallback`.
+- Root cause is tracked in new Beads stage `tj-gh23`: exact quotation frame parser/resolver/address/fallback policy. GitHub #11 should remain open until quote creation and post-quotation follow-up E2E both pass.
+- Supporting local follow-up/regression pack passed: 53 tests covering post-quotation handoff/guards, follow-up stop/template/freeform/no-response paths, EN/AR language normalization, and #36/#37/#39/#40/#35 regression symptoms.

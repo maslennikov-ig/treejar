@@ -7,34 +7,28 @@ Current branch: `codex/tj-gh22-fu1-service-window`
 
 - Canonical host: `https://noor.starec.ai`; canonical runtime path: `/opt/noor`.
 - Production release includes runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`; GitHub Actions run `26233690578` succeeded, including deploy; production smoke `scripts/verify_api.py --base-url https://noor.starec.ai` passed `7 passed, 0 failed`.
-- Direct `/opt/noor/.release-sha` SSH verification was unavailable from this local environment because SSH public-key authentication failed. Treat successful GitHub Actions deploy plus production API smoke as the current delivery evidence unless a host-side check is run separately.
-- Stage `tj-gh18` is delivered, deployed, live E2E verified, and GitHub #39/#35 are closed.
-- Stage `tj-gh19` is delivered, deployed, live E2E verified, Beads closed, and GitHub #40 is closed.
-- Stage `tj-gh20` is delivered to production in `shadow` mode. Production `SystemConfig`: `dialogue_kernel_mode=shadow`, `dialogue_kernel_trace_enabled=true`, `dialogue_kernel_enforced_flows=""`.
-- `tj-gh20` decision report: keep `shadow`, do not enable `enforce` yet; artifacts live under `.codex/stages/tj-gh20/`.
-- Stage `tj-gh21` is delivered to production for GitHub #11 post-quotation follow-up after Lilia's answers.
-- `tj-gh21` local behavior: customer-facing output remains English/Arabic only; after КП Noor asks if the quotation works; explicit acceptance hands off to manager; customer questions before acceptance remain bot-handled.
-- `tj-gh21` review-and-fix pass completed: generic `yes/ok/fine/works` approval is gated by the previous explicit quotation approval prompt; stale quotation decision metadata resets on new КП; acceptance runs before dialogue-kernel enforce; FU3 waits 24h before no-response rejection; explicit rejection persists rejected metadata; Arabic locale variants stay Arabic.
-- `tj-gh21` verification passed after review fixes and after adding the Wazzup WABA guide: targeted 246 tests, full pytest `1114 passed, 19 skipped`, ruff, format-check, mypy, git diff check, and process verification.
-- `tj-gh21` client WABA setup guide added at `docs/client/wazzup-waba-followup-setup-guide.md`.
-- `tj-gh21` production deployment succeeded: commit `1d42a39ac72e28d20d40a05514ef449be09071e0`, GitHub Actions run `26226211978`; production smoke `scripts/verify_api.py --base-url https://noor.starec.ai` passed `7 passed, 0 failed`.
-- SSH release-sha verification was not available from the local environment (`noor.starec.ai:22` timed out); delivery is verified by successful GitHub Actions deploy plus production API smoke.
-- Stage `tj-gh22` is delivered to production: FU1 is scheduled at 23h and can use free-form text only when the real 24h WhatsApp window is still open; FU2/FU3 still require Wazzup WABA templates. Verification passed before delivery: targeted 21 tests, full pytest `1115 passed, 19 skipped`, ruff, format-check, mypy, process verification, GitHub Actions deploy run `26233690578`, and production smoke `7 passed, 0 failed`.
-- `tj-gh22` E2E execution plan is tracked at `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`. Live E2E has not been executed after this deploy; it requires an approved test window, approved number/channel/suffixes, FU1 EN/AR free-form config, and FU2/FU3 Wazzup WABA approved template ids/codes for full template-path validation.
+- Direct `/opt/noor/.release-sha` SSH verification was unavailable locally because SSH public-key authentication failed; delivery evidence is GitHub Actions deploy plus production API smoke.
+- Stages `tj-gh18` and `tj-gh19` are delivered, deployed, live E2E verified, Beads closed, and GitHub #39/#35/#40 are closed.
+- Stage `tj-gh20` is delivered in production `shadow` mode only: `dialogue_kernel_mode=shadow`, `dialogue_kernel_trace_enabled=true`, `dialogue_kernel_enforced_flows=""`; keep `enforce` deferred.
+- Stage `tj-gh21` is delivered for GitHub #11 post-quotation follow-up after Lilia's answers; local and production delivery evidence is in `.codex/stages/tj-gh21/`, and GitHub #11 remains open pending live follow-up E2E.
+- Stage `tj-gh22` is delivered to production: FU1 is scheduled at 23h and can use free-form text only when the real 24h WhatsApp window is still open; FU2/FU3 still require Wazzup WABA templates.
+- `tj-gh22.1` controlled E2E artifact is tracked at `.codex/stages/tj-gh22/artifacts/tj-gh22.1-e2e-execution.md`; S0 production smoke passed, live sends used approved `+79262810921` and channel `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
+- `tj-gh22.1` blocker: product/SKU name-gate path worked, but exact quote conversations `baa857a8-cc87-4d4f-85c3-aa5a746fcbc1`, `d6fa2284-0029-4019-b304-285e9d352e6f`, and `c11ac597-9452-4e79-8dd9-50261dbcd768` ended in `exact-quote-fallback` with pending escalation before quotation creation.
+- Stage `tj-gh23` is locally implemented and stage closeout passed: deterministic exact quote frame persistence through name gate, natural delivered-to address extraction, CH 616 suffix-SKU resolver hardening, and fail-open clarification for parser/resolver uncertainty.
 - Orchestration baseline is `balanced-v2.7`; use repo-local commands in `.codex/orchestrator.toml`.
 
 ## Next recommended
 
-Next stage id: `tj-gh22.1` for controlled production E2E execution, or continue `tj-gh21` only for Wazzup template configuration.
+Next stage id: `tj-gh23.5`, then resume `tj-gh22.1` controlled production E2E after quote creation is proven live.
 
-Recommended action: run the planned controlled E2E only after explicit approval for the test window/number/channel/suffixes and after configuring FU1 EN/AR free-form text. For complete 3-day/7-day follow-up validation, first collect approved Wazzup WABA EN/AR template ids/codes for FU2/FU3 using `docs/client/wazzup-waba-followup-setup-guide.md`. Keep broad production follow-up sending disabled until FU1 text and FU2/FU3 templates are configured.
+Recommended action: get explicit authorization for merge/deploy/live E2E, clean or resolve the three synthetic pending exact-quote escalations, prove quotation creation on approved `+79262810921`, then continue post-quotation follow-up E2E. Do not close GitHub #11 yet.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage to continue `tj-gh22.1` E2E execution. Current delivered production release includes runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`; `tj-gh20` remains in `shadow` mode only. `tj-gh21` runtime changes, Wazzup WABA client guide, and `tj-gh22` FU1 23h refinement are merged, deployed, and production-smoke verified. See `.codex/stages/tj-gh22/summary.md` and `docs/specs/e2e-testing/tj-gh22-post-quotation-followup-e2e-plan.md`.
+Use $orchestrator-stage to continue `tj-gh23.5` delivery/E2E. Current delivered production release includes runtime commit `3f0ed132a12f90c6d2087f40697f0fcdc0c2b3a6`; `tj-gh20` remains in `shadow` mode only. Local `tj-gh23` closeout passed in worktree `/home/me/code/treejar/.worktrees/codex-tj-gh14-main-merge`, but merge/deploy/live E2E were not authorized. After deployment, prove exact quotation creation on approved `+79262810921`, then resume `tj-gh22.1` post-quotation E2E.
 
 ## Explicit defers
 
 - `tj-b4n` / GitHub #24 remains provider-blocked pending an official Wazzup typing endpoint.
-- Full production follow-up sending for GitHub #11 remains blocked pending explicit FU1 EN/AR free-form text configuration and approved Wazzup WABA FU2/FU3 template ids/codes for English and Arabic. FU1 can be validated independently inside the 24h window after FU1 text is configured and an approved test run is opened.
+- Full production follow-up E2E for GitHub #11 remains blocked by `tj-gh23.5` delivery/live quote-creation proof, then by explicit FU1 EN/AR free-form text configuration and approved Wazzup WABA FU2/FU3 template ids/codes for English and Arabic.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.

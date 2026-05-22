@@ -171,6 +171,10 @@ def resolve_catalog_references(
             ref if isinstance(ref, CatalogParsedRef) else parse_catalog_reference(ref)
         )
         product = _find_by_variants(parsed.raw, index.by_sku)
+        matched_by = "sku"
+        if product is None:
+            product = _find_unique_by_sku_stem(parsed.raw, index.by_sku)
+            matched_by = "sku" if product is not None else ""
         if product is not None:
             resolved.append(
                 CatalogResolvedRef(
@@ -178,7 +182,7 @@ def resolve_catalog_references(
                     normalized=parsed.normalized,
                     sku=_text_attr(product, "sku"),
                     product=product,
-                    matched_by="sku",
+                    matched_by=matched_by,
                 )
             )
             continue
@@ -225,6 +229,38 @@ def _find_by_variants(raw: str, products_by_variant: dict[str, Any]) -> Any | No
         if product is not None:
             return product
     return None
+
+
+def _sku_stem(raw: str) -> str | None:
+    normalized = normalize_catalog_ref(raw)
+    match = re.match(
+        r"^(?P<prefix>[A-Z]{2,3})[-\s]?(?P<number>\d+(?:\.\d+)?[A-Z]?)", normalized
+    )
+    if match is None:
+        return None
+    return f"{match.group('prefix')}{match.group('number')}"
+
+
+def _find_unique_by_sku_stem(
+    raw: str,
+    products_by_variant: dict[str, Any],
+) -> Any | None:
+    stem = _sku_stem(raw)
+    if stem is None:
+        return None
+
+    matches: dict[str, Any] = {}
+    for variant, product in products_by_variant.items():
+        if _sku_stem(variant) != stem:
+            continue
+        sku = _text_attr(product, "sku")
+        if not sku:
+            continue
+        matches.setdefault(sku, product)
+
+    if len(matches) != 1:
+        return None
+    return next(iter(matches.values()))
 
 
 def _normalize_text(raw: str) -> str:

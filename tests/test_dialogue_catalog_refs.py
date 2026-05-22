@@ -90,6 +90,29 @@ def test_resolve_catalog_references_prefers_sku_over_model_name() -> None:
     ]
 
 
+def test_resolve_catalog_references_matches_unique_suffix_sku() -> None:
+    products = [
+        SimpleNamespace(
+            sku="CH 616 NEW black",
+            name_en="Skyland Operative Chair CH 616 NEW black",
+            is_active=True,
+        ),
+        SimpleNamespace(
+            sku="CH 620 black",
+            name_en="Skyland Operative Chair CH 620 black",
+            is_active=True,
+        ),
+    ]
+    index = CatalogReferenceIndex.from_products(products)
+
+    resolved = resolve_catalog_references(
+        ["CH 616", "CH-616", "CH616", "СН 616"], index
+    )
+
+    assert [item.sku for item in resolved] == ["CH 616 NEW black"] * 4
+    assert all(item.matched_by == "sku" for item in resolved)
+
+
 def test_resolve_catalog_references_returns_unresolved_without_crashing() -> None:
     index = CatalogReferenceIndex.from_products([])
 
