@@ -5061,6 +5061,44 @@ async def test_resolve_exact_quote_candidate_leaves_ambiguous_suffix_sku_unresol
     assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) is None
 
 
+@pytest.mark.asyncio
+async def test_resolve_exact_quote_candidate_uses_full_text_to_disambiguate_suffix_sku() -> (
+    None
+):
+    db = AsyncMock()
+    exact_result = MagicMock()
+    exact_result.scalar_one_or_none.return_value = None
+    suffix_result = MagicMock()
+    suffix_result.scalars.return_value.all.return_value = [
+        SimpleNamespace(
+            sku="CH 616 black",
+            name_en="Skyland Operative Chair CH 616 black",
+            description_en="Skyland Operative Chair CH 616 black",
+            attributes={"treejar_slug": "skyland-operative-chair-ch-616-black"},
+            is_active=True,
+        ),
+        SimpleNamespace(
+            sku="CH 616 NEW black",
+            name_en="Skyland Operative Chair CH 616 NEW black",
+            description_en="Skyland Operative Chair CH 616 NEW black",
+            attributes={"treejar_slug": "skyland-operative-chair-ch-616-new-black"},
+            is_active=True,
+        ),
+    ]
+    db.execute.side_effect = [exact_result, suffix_result]
+
+    candidate = extract_exact_quote_candidate(
+        "Please prepare a quotation for one Skyland Operative Chair CH 616 NEW black "
+        "delivered to Office 1201, Business Bay, Dubai."
+    )
+
+    assert candidate is not None
+    assert candidate.sku == "CH-616"
+    assert await engine_module._resolve_exact_quote_candidate_sku(db, candidate) == (
+        "CH 616 NEW black"
+    )
+
+
 @pytest.mark.parametrize(
     "text",
     [

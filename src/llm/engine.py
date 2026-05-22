@@ -1742,6 +1742,44 @@ async def _find_catalog_product_by_sku(db: AsyncSession, sku: str) -> Any | None
     return product
 
 
+def _select_exact_quote_product_by_candidate_text(
+    candidate_item: str,
+    products: list[Any],
+) -> Any | None:
+    candidate_token_set = set(_tokenize_exact_match_text(candidate_item))
+    if len(candidate_token_set) < 2:
+        return None
+
+    best_product: Any | None = None
+    best_score = (-1, -1, -1)
+    second_best_score = (-1, -1, -1)
+    for product in products:
+        product_tokens = set(
+            _tokenize_exact_match_text(_catalog_product_match_text(product))
+        )
+        overlap = candidate_token_set & product_tokens
+        digit_overlap = sum(1 for token in overlap if any(ch.isdigit() for ch in token))
+        long_overlap = sum(1 for token in overlap if len(token) >= 4)
+        score = (digit_overlap, long_overlap, len(overlap))
+        if score > best_score:
+            second_best_score = best_score
+            best_score = score
+            best_product = product
+        elif score > second_best_score:
+            second_best_score = score
+
+    if best_product is None:
+        return None
+
+    min_overlap = 3 if len(candidate_token_set) >= 4 else 2
+    if best_score[2] < min_overlap:
+        return None
+    if best_score == second_best_score:
+        return None
+
+    return best_product
+
+
 async def _download_catalog_image(
     image_url: str | None,
 ) -> tuple[bytes, str] | None:
@@ -1794,6 +1832,12 @@ async def _resolve_exact_quote_candidate_sku(
         if len(suffix_sku_products) == 1:
             return str(suffix_sku_products[0].sku)
         if len(suffix_sku_products) > 1:
+            suffix_product = _select_exact_quote_product_by_candidate_text(
+                candidate_item,
+                suffix_sku_products,
+            )
+            if suffix_product is not None:
+                return str(suffix_product.sku)
             return None
         if (
             _normalize_text(candidate_item) == _normalize_text(candidate_sku)
@@ -1846,32 +1890,11 @@ async def _resolve_exact_quote_candidate_sku(
             return str(strict_products[0].sku)
         return None
 
-    candidate_token_set = set(candidate_tokens)
-    best_product: Any | None = None
-    best_score = (-1, -1, -1)
-    second_best_score = (-1, -1, -1)
-    for product in products:
-        product_tokens = set(
-            _tokenize_exact_match_text(_catalog_product_match_text(product))
-        )
-        overlap = candidate_token_set & product_tokens
-        digit_overlap = sum(1 for token in overlap if any(ch.isdigit() for ch in token))
-        long_overlap = sum(1 for token in overlap if len(token) >= 4)
-        score = (digit_overlap, long_overlap, len(overlap))
-        if score > best_score:
-            second_best_score = best_score
-            best_score = score
-            best_product = product
-        elif score > second_best_score:
-            second_best_score = score
-
+    best_product = _select_exact_quote_product_by_candidate_text(
+        candidate_item,
+        products,
+    )
     if best_product is None:
-        return None
-
-    min_overlap = 3 if len(candidate_token_set) >= 4 else 2
-    if best_score[2] < min_overlap:
-        return None
-    if best_score == second_best_score:
         return None
 
     return str(best_product.sku)
