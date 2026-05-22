@@ -1,6 +1,6 @@
 # Stage tj-gh22 Summary
 
-Status: delivered; production smoke passed; post-quotation E2E blocked by exact-quotation creation failure
+Status: delivered; production smoke passed; post-quotation E2E partially resumed after exact-quotation blocker fix
 
 Scope: GitHub #11 follow-up timing refinement: send FU1 before the WhatsApp/WABA 24h customer-service window usually closes, while keeping FU2/FU3 template-based.
 
@@ -39,3 +39,13 @@ E2E status:
   - `c11ac597-9452-4e79-8dd9-50261dbcd768`: after product answer, `Please prepare a quotation for 3 CH 616 chairs...` also ended in `exact-quote-fallback`.
 - Root cause is tracked in new Beads stage `tj-gh23`: exact quotation frame parser/resolver/address/fallback policy. GitHub #11 should remain open until quote creation and post-quotation follow-up E2E both pass.
 - Supporting local follow-up/regression pack passed: 53 tests covering post-quotation handoff/guards, follow-up stop/template/freeform/no-response paths, EN/AR language normalization, and #36/#37/#39/#40/#35 regression symptoms.
+
+Update 2026-05-22:
+- `tj-gh23` was delivered to production in runtime `322bee30d667b245a143813dbd5fccbcf120eecf`; GitHub Actions run `26279825756` succeeded including deploy; production smoke passed `7 passed, 0 failed`.
+- The previous exact quotation blocker is resolved live:
+  - word quantity exact product created quotation `Fr3294` in conversation `cf9f4ade-b261-4f56-b104-69062f861cdd`;
+  - numeric exact product created quotation `Fr3295` in conversation `e3d30ece-31b5-46a2-a948-dd10096a4bb7`;
+  - ambiguous `CH 616 chair` now asks exact item/SKU clarification without escalation in conversation `c397b396-b63a-4050-87b6-6b41eab72bea`.
+- Post-quotation approval was live-tested in `cf9f4ade-b261-4f56-b104-69062f861cdd`: model `post-quotation-accepted`, expected manager handoff created, proposal follow-up stopped with `stop_reason=quotation_accepted`.
+- A pre-acceptance delivery question was bot-handled without escalation, but the answer was weak and re-asked for item/quantity. Do not close GitHub #11 until this is reviewed and the FU1/FU2/FU3 live matrix is completed.
+- Synthetic `tj-gh22-*` and `tj-gh23-*` pending escalations were cleaned; pending/in-progress synthetic escalations are zero.
