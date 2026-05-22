@@ -1,6 +1,6 @@
 # Stage tj-gh22 Summary
 
-Status: delivered; production smoke passed; post-quotation E2E partially resumed after exact-quotation blocker fix
+Status: delivered; GitHub #11 closed by owner request after production quote/post-quote evidence
 
 Scope: GitHub #11 follow-up timing refinement: send FU1 before the WhatsApp/WABA 24h customer-service window usually closes, while keeping FU2/FU3 template-based.
 
@@ -47,5 +47,6 @@ Update 2026-05-22:
   - numeric exact product created quotation `Fr3295` in conversation `e3d30ece-31b5-46a2-a948-dd10096a4bb7`;
   - ambiguous `CH 616 chair` now asks exact item/SKU clarification without escalation in conversation `c397b396-b63a-4050-87b6-6b41eab72bea`.
 - Post-quotation approval was live-tested in `cf9f4ade-b261-4f56-b104-69062f861cdd`: model `post-quotation-accepted`, expected manager handoff created, proposal follow-up stopped with `stop_reason=quotation_accepted`.
-- A pre-acceptance delivery question was bot-handled without escalation, but the answer was weak and re-asked for item/quantity. Do not close GitHub #11 until this is reviewed and the FU1/FU2/FU3 live matrix is completed.
+- A pre-acceptance delivery question was bot-handled without escalation, but the answer was weak and re-asked for item/quantity.
 - Synthetic `tj-gh22-*` and `tj-gh23-*` pending escalations were cleaned; pending/in-progress synthetic escalations are zero.
+- GitHub #11 was closed by explicit owner request on 2026-05-22. Beads `tj-gh22.1` was also closed with the same caveat: the FU1/FU2/FU3 time-delayed/template matrix and weak delivery-question answer are documented as future follow-up risk, not closure blockers.
