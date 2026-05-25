@@ -3001,6 +3001,16 @@ def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
                 continue
             if not details.get("name"):
                 name = _extract_bare_name_gate_reply(part)
+                if not name:
+                    name_candidate = re.sub(
+                        r"^.*\b(?:quotation|quote|proposal|proforma invoice)\.?\s+",
+                        "",
+                        part,
+                        count=1,
+                        flags=re.IGNORECASE,
+                    )
+                    if name_candidate != part:
+                        name = _extract_bare_name_gate_reply(name_candidate)
                 if name:
                     details["name"] = name
                     continue
@@ -3769,6 +3779,38 @@ def _quote_candidates_from_last_assistant_selection(
         for line in last_assistant.splitlines()
     ]
     for index, line in enumerate(cleaned_lines):
+        inline_quantity_item_match = re.search(
+            r"\bfor\s+(?P<quantity>\d{1,4})\s+units?\s+of\s+"
+            r"(?:the\s+)?(?P<item>[^,\n.;:]+?)(?:\s*,|\s+your\s+total\b|\s+would\b|$)",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if inline_quantity_item_match is not None:
+            quantity = int(inline_quantity_item_match.group("quantity"))
+            item_candidate = _clean_assistant_selection_cell(
+                inline_quantity_item_match.group("item")
+            ).strip(" \t\r\n,.;:-")
+            item_candidate = re.sub(
+                r"\s+(?:chairs?|units?|items?)$",
+                "",
+                item_candidate,
+                flags=re.IGNORECASE,
+            ).strip(" \t\r\n,.;:-")
+            if quantity > 0 and _looks_like_exact_item_candidate(item_candidate):
+                candidate_key = (quantity, _normalize_text(item_candidate))
+                if not any(
+                    (candidate.quantity, _normalize_text(candidate.item_candidate))
+                    == candidate_key
+                    for candidate in candidates
+                ):
+                    candidates.append(
+                        ExactQuoteCandidate(
+                            quantity=quantity,
+                            item_candidate=item_candidate,
+                            sku=_extract_sku_signal(item_candidate),
+                        )
+                    )
+
         quantity_match = re.search(
             r"\btotal\s+for\s+(?P<quantity>\d{1,4})\s+"
             r"(?:units?|items?|chairs?)\b",
@@ -3825,6 +3867,22 @@ def _quote_candidates_from_last_assistant_selection(
         )
 
     return tuple(candidates)
+
+
+def _last_assistant_offered_quote_for_selection(
+    recent_history: list[str] | None,
+) -> bool:
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    if not last_assistant:
+        return False
+    quote_offer = (
+        "would you like" in last_assistant
+        and ("quote" in last_assistant or "quotation" in last_assistant)
+        and "prepare" in last_assistant
+    )
+    return quote_offer and bool(
+        _quote_candidates_from_last_assistant_selection(recent_history)
+    )
 
 
 async def _store_pending_quote_from_last_assistant_selection(
@@ -6152,7 +6210,13 @@ async def process_message(
     assistant_asked_quote_details = _last_assistant_asked_quote_customer_details(
         recent_history
     )
-    if assistant_asked_quote_details:
+    assistant_offered_quote_selection = _last_assistant_offered_quote_for_selection(
+        recent_history
+    )
+    assistant_supports_quote_resume = (
+        assistant_asked_quote_details or assistant_offered_quote_selection
+    )
+    if assistant_supports_quote_resume:
         terse_quote_customer_details = _extract_terse_quote_customer_details(
             combined_text
         )
@@ -6587,7 +6651,7 @@ async def process_message(
 
         purchase_selection = None
         suppress_purchase_selection_for_quote_details = (
-            bool(current_quote_customer_details) and assistant_asked_quote_details
+            bool(current_quote_customer_details) and assistant_supports_quote_resume
         )
         if not suppress_purchase_selection_for_quote_details:
             purchase_selection = pending_reference_selection
@@ -6650,10 +6714,15 @@ async def process_message(
             )
 
         pending_quote_selection = _pending_quote_selection_from_metadata(conv)
-        if (
-            pending_quote_selection is None
-            and _last_assistant_asked_quote_customer_details(deps.recent_history)
-        ):
+        should_recover_last_assistant_quote = assistant_asked_quote_details or (
+            assistant_offered_quote_selection
+            and _should_resume_pending_quote_selection(
+                combined_text=combined_text,
+                masked_text=masked_text,
+                customer_details=current_quote_customer_details,
+            )
+        )
+        if pending_quote_selection is None and should_recover_last_assistant_quote:
             pending_quote_selection = (
                 await _store_pending_quote_from_last_assistant_selection(
                     db,
@@ -6742,10 +6811,7 @@ async def process_message(
                         f"{db_model_main}|quote-resume-missing-details",
                         allow_product_media=False,
                     )
-        elif (
-            current_quote_customer_details
-            and _last_assistant_asked_quote_customer_details(deps.recent_history)
-        ):
+        elif current_quote_customer_details and assistant_asked_quote_details:
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 _pending_quote_missing_items_message(str(conv.language)),
