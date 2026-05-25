@@ -86,6 +86,7 @@ __all__ = ["ProductMediaPayload", "rag_search_products"]
 MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
+PENDING_PRODUCT_REFERENCE_QUANTITY_KEY = "pending_product_reference_quantity"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
 SALES_MEMORY_KEY = "sales_memory"
@@ -1679,6 +1680,111 @@ def _missing_quantity_product_references_message(
     )
 
 
+async def _store_pending_product_reference_quantity(
+    db: AsyncSession,
+    conversation: Conversation,
+    references: tuple[str, ...],
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    clean_references = [
+        reference.strip()
+        for reference in references
+        if isinstance(reference, str) and reference.strip()
+    ]
+    if clean_references:
+        metadata[PENDING_PRODUCT_REFERENCE_QUANTITY_KEY] = {
+            "source": "product_reference_quantity_clarification",
+            "references": clean_references,
+        }
+    else:
+        metadata.pop(PENDING_PRODUCT_REFERENCE_QUANTITY_KEY, None)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush pending product reference quantity for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+def _pending_product_reference_quantity_from_metadata(
+    conversation: Conversation,
+) -> tuple[str, ...]:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    raw_pending = metadata.get(PENDING_PRODUCT_REFERENCE_QUANTITY_KEY)
+    if not isinstance(raw_pending, Mapping):
+        return ()
+    raw_references = raw_pending.get("references")
+    if not isinstance(raw_references, list):
+        return ()
+    references = [
+        reference.strip()
+        for reference in raw_references
+        if isinstance(reference, str) and reference.strip()
+    ]
+    return tuple(references)
+
+
+async def _clear_pending_product_reference_quantity(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    if PENDING_PRODUCT_REFERENCE_QUANTITY_KEY not in metadata:
+        return
+    metadata.pop(PENDING_PRODUCT_REFERENCE_QUANTITY_KEY, None)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to clear pending product reference quantity for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+def _extract_bare_quantity_reply(text: str) -> int | None:
+    stripped = " ".join(
+        _strip_synthetic_test_marker(text).strip(" \t\r\n.,;:!?").split()
+    )
+    if not stripped:
+        return None
+    if re.fullmatch(r"\d{1,4}", stripped):
+        quantity = int(stripped)
+        return quantity if quantity > 0 else None
+    normalized = _normalize_text(stripped)
+    word_quantity = _SELECTION_WORD_QUANTITY_VALUES.get(normalized)
+    return word_quantity if word_quantity and word_quantity > 0 else None
+
+
+def _purchase_selection_from_pending_product_references(
+    references: tuple[str, ...],
+    quantity: int,
+) -> PurchaseSelection | None:
+    if quantity <= 0:
+        return None
+    items: list[PurchaseSelectionItem] = []
+    for reference in references:
+        sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
+        if not sku:
+            continue
+        items.append(
+            PurchaseSelectionItem(
+                quantity=quantity,
+                item_candidate=reference,
+                sku=sku,
+            )
+        )
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
 def _selection_runtime_directives(
     selection: PurchaseSelection,
 ) -> tuple[str, ...]:
@@ -2870,19 +2976,36 @@ def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
     stripped = " ".join(stripped.strip(" \t\r\n.;:!?").split())
     if not stripped or len(stripped) > 220 or "?" in stripped:
         return {}
+    if re.search(
+        r"\b(?:full name|name|customer name|company name|company|email|"
+        r"phone|delivery address|address|location)\s*(?::|：|=|\bis\b)",
+        stripped,
+        flags=re.IGNORECASE,
+    ):
+        return {}
 
     details: dict[str, str] = {}
     parts = [
         part.strip(" \t\r\n,.;:-")
-        for part in re.split(r"[,;\n]+", stripped, maxsplit=1)
+        for part in re.split(r"[,;\n/]+", stripped)
         if part.strip(" \t\r\n,.;:-")
     ]
     if len(parts) >= 2:
-        name = _extract_bare_name_gate_reply(parts[0])
-        address = parts[1]
-        if name and _looks_like_terse_delivery_address(address):
-            details["name"] = name
-            details["address"] = address
+        for part in parts:
+            part_details = _extract_quote_customer_details(part)
+            if part_details.get("customer_type"):
+                details["customer_type"] = part_details["customer_type"]
+                continue
+            if part_details.get("email"):
+                details["email"] = part_details["email"]
+                continue
+            if not details.get("name"):
+                name = _extract_bare_name_gate_reply(part)
+                if name:
+                    details["name"] = name
+                    continue
+            if not details.get("address") and _looks_like_terse_delivery_address(part):
+                details["address"] = part
         return details
 
     match = re.fullmatch(
@@ -3367,18 +3490,23 @@ def _quote_missing_required_details(
     deps: SalesDeps,
     items: list[QuotationItem],
 ) -> list[str]:
-    details = _quote_context_details_from_deps(deps)
+    quote_details = _quote_customer_details_from_metadata(deps.conversation)
+    customer_name = quote_details.get("name") or _string_value(
+        getattr(deps.conversation, "customer_name", None)
+    )
     missing: list[str] = []
     if not items or not all(item.quantity > 0 and item.sku.strip() for item in items):
         missing.append("items and quantities")
-    if not _string_value(details.get("name")):
+    if not _string_value(customer_name):
         missing.append("customer name")
     if not _string_value(
-        details.get("company")
-    ) and not _is_explicit_individual_customer(details):
+        quote_details.get("company")
+    ) and not _is_explicit_individual_customer(quote_details):
         missing.append("company name, or confirm you are buying as an individual")
-    if not _is_specific_delivery_address(details.get("address")):
+    if not _is_specific_delivery_address(quote_details.get("address")):
         missing.append("specific delivery address")
+    if not _string_value(quote_details.get("email")):
+        missing.append("customer email")
     return missing
 
 
@@ -3565,35 +3693,69 @@ def _quote_candidates_from_last_assistant_selection(
     recent_history: list[str] | None,
 ) -> tuple[ExactQuoteCandidate, ...]:
     last_assistant = _last_assistant_message(recent_history)
-    if not last_assistant or "|" not in last_assistant:
+    if not last_assistant:
         return ()
 
     candidates: list[ExactQuoteCandidate] = []
-    for raw_line in last_assistant.splitlines():
-        if "|" not in raw_line:
-            continue
-        cells = [
-            _clean_assistant_selection_cell(cell)
-            for cell in raw_line.strip().strip("|").split("|")
-        ]
-        if len(cells) < 2:
-            continue
+    if "|" in last_assistant:
+        for raw_line in last_assistant.splitlines():
+            if "|" not in raw_line:
+                continue
+            cells = [
+                _clean_assistant_selection_cell(cell)
+                for cell in raw_line.strip().strip("|").split("|")
+            ]
+            if len(cells) < 2:
+                continue
 
-        item_candidate = cells[0]
-        quantity_cell = cells[1]
-        normalized_item = _normalize_text(item_candidate)
-        if not item_candidate or normalized_item in {"item", "product", "items"}:
-            continue
-        if set(item_candidate.replace(" ", "")) <= {"-"}:
-            continue
+            item_candidate = cells[0]
+            quantity_cell = cells[1]
+            normalized_item = _normalize_text(item_candidate)
+            if not item_candidate or normalized_item in {"item", "product", "items"}:
+                continue
+            if set(item_candidate.replace(" ", "")) <= {"-"}:
+                continue
 
-        quantity_match = re.search(r"\b(\d{1,4})\b", quantity_cell)
-        if quantity_match is None:
-            continue
-        quantity = int(quantity_match.group(1))
+            quantity_match = re.search(r"\b(\d{1,4})\b", quantity_cell)
+            if quantity_match is None:
+                continue
+            quantity = int(quantity_match.group(1))
+            if quantity <= 0:
+                continue
+
+            candidates.append(
+                ExactQuoteCandidate(
+                    quantity=quantity,
+                    item_candidate=item_candidate,
+                    sku=_extract_sku_signal(item_candidate),
+                )
+            )
+
+    for match in re.finditer(
+        r"(?<![\w.-])(?P<quantity>\d{1,4})\s*(?:x|×)\s+"
+        r"(?P<item>[^.\n;]+)",
+        last_assistant,
+        flags=re.IGNORECASE,
+    ):
+        quantity = int(match.group("quantity"))
         if quantity <= 0:
             continue
-
+        item_candidate = _clean_assistant_selection_cell(match.group("item"))
+        item_candidate = re.split(
+            r"\b(?:would|please|to prepare|before i prepare|if so)\b",
+            item_candidate,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip(" \t\r\n,.;:-")
+        if not item_candidate or not _looks_like_exact_item_candidate(item_candidate):
+            continue
+        candidate_key = (quantity, _normalize_text(item_candidate))
+        if any(
+            (candidate.quantity, _normalize_text(candidate.item_candidate))
+            == candidate_key
+            for candidate in candidates
+        ):
+            continue
         candidates.append(
             ExactQuoteCandidate(
                 quantity=quantity,
@@ -5146,50 +5308,21 @@ async def create_quotation(
     for ti in template_items:
         ti.pop("_catalog_image_url", None)
 
-    # Resolve customer data from CRM or conversation context.
-    # Priority: CRM contact > crm_context > conversation fields > quote metadata.
-    context_details = _quote_context_details_from_deps(ctx.deps)
-    customer_name = context_details.get("name", "")
-    customer_email = ""
-    customer_company = context_details.get("company", "")
-    customer_address = context_details.get("address", "")
-
-    if ctx.deps.zoho_crm:
-        contact = await ctx.deps.zoho_crm.find_contact_by_phone(
-            ctx.deps.conversation.phone
-        )
-        if contact:
-            crm_first = contact.get("First_Name", "")
-            crm_last = contact.get("Last_Name", "")
-            crm_full = f"{crm_first} {crm_last}".strip()
-            if crm_full:
-                customer_name = crm_full
-            customer_email = _string_value(contact.get("Email"))
-            customer_company = _extract_crm_company(contact.get("Account_Name"))
-
-    if ctx.deps.crm_context:
-        customer_name = _string_value(
-            ctx.deps.crm_context.get("Name")
-            or ctx.deps.crm_context.get("Full_Name")
-            or customer_name
-        )
-        customer_email = _string_value(
-            ctx.deps.crm_context.get("Email") or customer_email
-        )
-        customer_company = _string_value(
-            ctx.deps.crm_context.get("Company")
-            or ctx.deps.crm_context.get("Account_Name")
-            or customer_company
-        )
-
+    # Customer-facing quotation fields must come from the current quote details,
+    # not stale CRM/test context attached to the WhatsApp number.
     quote_customer_details = _quote_customer_details_from_metadata(
         ctx.deps.conversation
     )
-    customer_name = quote_customer_details.get("name") or customer_name
-    customer_email = quote_customer_details.get("email") or customer_email
-    customer_company = quote_customer_details.get("company") or customer_company
+    customer_name = quote_customer_details.get("name") or _string_value(
+        getattr(ctx.deps.conversation, "customer_name", None)
+    )
+    customer_email = quote_customer_details.get("email", "")
+    if _is_explicit_individual_customer(quote_customer_details):
+        customer_company = "Individual"
+    else:
+        customer_company = quote_customer_details.get("company", "")
     customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
-    customer_address = quote_customer_details.get("address") or customer_address
+    customer_address = quote_customer_details.get("address", "")
 
     customer_id = await resolve_inventory_customer_id(
         phone=ctx.deps.conversation.phone,
@@ -6132,6 +6265,18 @@ async def process_message(
                 model_name=db_model_main,
             )
 
+        pending_reference_quantity = _extract_bare_quantity_reply(combined_text)
+        if pending_reference_quantity is None:
+            pending_reference_quantity = _extract_bare_quantity_reply(masked_text)
+        pending_reference_selection = None
+        if pending_reference_quantity is not None:
+            pending_reference_selection = (
+                _purchase_selection_from_pending_product_references(
+                    _pending_product_reference_quantity_from_metadata(conv),
+                    pending_reference_quantity,
+                )
+            )
+
         sales_order_items = _extract_sales_order_quote_items(masked_text)
         if sales_order_items is None:
             sales_order_items = _extract_sales_order_quote_items(combined_text)
@@ -6380,10 +6525,12 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        purchase_selection = _extract_purchase_selection_for_context(
-            masked_text,
-            deps.recent_history,
-        )
+        purchase_selection = pending_reference_selection
+        if purchase_selection is None:
+            purchase_selection = _extract_purchase_selection_for_context(
+                masked_text,
+                deps.recent_history,
+            )
         if purchase_selection is None:
             purchase_selection = _extract_purchase_selection_for_context(
                 combined_text,
@@ -6403,6 +6550,8 @@ async def process_message(
                 crm_context=crm_context,
             )
             await _store_pending_quote_selection(db, conv, resolution)
+            if pending_reference_selection is not None:
+                await _clear_pending_product_reference_quantity(db, conv)
             confirmation_text = _build_purchase_selection_confirmation_text(resolution)
             await _clear_verified_policy_repair_state()
             return _build_static_response(
@@ -6420,6 +6569,11 @@ async def process_message(
                 combined_text
             )
         if missing_quantity_references:
+            await _store_pending_product_reference_quantity(
+                db,
+                conv,
+                missing_quantity_references,
+            )
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 _missing_quantity_product_references_message(
