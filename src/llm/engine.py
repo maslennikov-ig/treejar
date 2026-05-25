@@ -3699,6 +3699,38 @@ def _clean_assistant_selection_cell(value: str) -> str:
     return " ".join(cleaned.strip(" \t\r\n|").split())
 
 
+def _is_assistant_quote_attribute_line(value: str) -> bool:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return True
+    attribute_terms = (
+        "price",
+        "availability",
+        "features",
+        "feature",
+        "stock",
+        "total",
+        "requested quantity",
+        "free delivery",
+        "delivery across",
+        "load capacity",
+        "gas lift",
+        "armrests",
+        "mesh back",
+        "reclining mechanism",
+        "units confirmed",
+        "units available",
+        "unit requirement",
+        "confirmed available",
+    )
+    if any(term in normalized for term in attribute_terms):
+        return True
+    return bool(
+        re.search(r"\b\d{1,4}\s*(?:kg|aed|units?)\b", normalized)
+        and not _SKU_SIGNAL_RE.search(normalized)
+    )
+
+
 def _quote_candidates_from_last_assistant_selection(
     recent_history: list[str] | None,
 ) -> tuple[ExactQuoteCandidate, ...]:
@@ -3829,24 +3861,28 @@ def _quote_candidates_from_last_assistant_selection(
             continue
 
         item_candidate = ""
-        for previous_line in reversed(cleaned_lines[max(0, index - 5) : index]):
+        for previous_line in reversed(cleaned_lines[max(0, index - 12) : index]):
             normalized_line = _normalize_text(previous_line)
             if not previous_line or normalized_line in {
                 "great news",
+                "perfect",
                 "price",
                 "availability",
                 "features",
                 "total",
             }:
                 continue
-            if re.search(
-                r"\b(?:price|availability|features|stock|total|requested quantity)\b",
-                previous_line,
-                flags=re.IGNORECASE,
-            ):
+            if _is_assistant_quote_attribute_line(previous_line):
                 continue
-            if _looks_like_exact_item_candidate(previous_line):
-                item_candidate = previous_line
+            previous_item = re.split(
+                r"\s+[–—-]\s*\d[\d,.]*\s*(?:aed|د\.إ)\b"
+                r"|\s+\d[\d,.]*\s*(?:aed|د\.إ)\s+each\b",
+                previous_line,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0].strip(" \t\r\n,.;:-")
+            if _looks_like_exact_item_candidate(previous_item):
+                item_candidate = previous_item
                 break
 
         if not item_candidate:

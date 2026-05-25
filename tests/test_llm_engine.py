@@ -6503,19 +6503,21 @@ async def test_process_message_terse_details_recovers_availability_quote_context
             parts=[
                 TextPart(
                     content=(
-                        "Great news! I found exactly what you're looking for:\n\n"
-                        "**Skyland Executive Office Chair CH 140 Black**\n"
-                        "- **Price:** 450.00 AED each\n"
-                        "- **Stock:** 4 units available (matches your quantity)\n"
-                        "- **Key Features:** Aircraft reclining mechanism with 3 "
-                        "lockable positions, mesh back with fabric seat, 3D "
-                        "adjustable armrests, chrome metal base, height adjustment, "
-                        "120 kg load capacity\n\n"
-                        "**Total for 4 chairs:** 1,800.00 AED with free delivery "
-                        "across the UAE.\n\n"
-                        "Would you like me to prepare a quotation for you? If so, "
-                        "I'll need your company name (or if it's a personal order) "
-                        "and delivery address."
+                        "Perfect! We have exactly what you need in stock:\n\n"
+                        "**Skyland Executive Office Chair CH 140 Black** — "
+                        "450 AED each\n"
+                        "- **12 units confirmed available** (more than your "
+                        "4-unit requirement)\n"
+                        "- Aircraft reclining mechanism with 3 lockable positions\n"
+                        "- Mesh back with breathable fabric seat\n"
+                        "- 3D adjustable armrests\n"
+                        "- Chrome metal base, German TUV Class 3 gas lift\n"
+                        "- 120 kg load capacity\n"
+                        "- Free delivery across UAE\n\n"
+                        "**Total for 4 chairs: 1,800 AED**\n\n"
+                        "Would you like me to prepare a quotation for these 4 "
+                        "chairs? If so, please share the delivery address and "
+                        "confirm if this is for a company or personal purchase."
                     )
                 )
             ]
