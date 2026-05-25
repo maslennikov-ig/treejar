@@ -1592,6 +1592,23 @@ def _extract_purchase_selection_for_context(
     ) or _extract_word_quantity_purchase_selection(text)
 
 
+def _extract_purchase_selection_from_quote_details_reply(
+    text: str,
+) -> PurchaseSelection | None:
+    stripped = _strip_synthetic_test_marker(text)
+    for part in re.split(r"[,;\n/]+", stripped):
+        segment = part.strip(" \t\r\n,.;:-")
+        if not segment:
+            continue
+        selection = _extract_purchase_selection(
+            segment,
+            require_trigger=False,
+        ) or _extract_word_quantity_purchase_selection(segment)
+        if selection is not None:
+            return selection
+    return None
+
+
 def _clean_product_reference_segment(segment: str) -> str:
     cleaned = BOT_TEST_MARKER_RE.sub("", _normalize_sku_homoglyphs(segment))
     cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", cleaned)
@@ -1727,6 +1744,38 @@ def _pending_product_reference_quantity_from_metadata(
         if isinstance(reference, str) and reference.strip()
     ]
     return tuple(references)
+
+
+def _last_assistant_asked_pending_product_reference_quantity(
+    recent_history: list[str] | None,
+    references: tuple[str, ...],
+) -> bool:
+    if not references:
+        return False
+    last_assistant = _last_assistant_message(recent_history)
+    normalized_last = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
+    if not normalized_last or "quantity" not in normalized_last:
+        return False
+    if not any(
+        phrase in normalized_last
+        for phrase in (
+            "please confirm",
+            "confirm the quantity",
+            "confirm quantity",
+            "how many",
+        )
+    ):
+        return False
+
+    for reference in references:
+        normalized_reference = _normalize_text(_normalize_sku_homoglyphs(reference))
+        sku = _extract_sku_signal(reference)
+        normalized_sku = _normalize_text(sku or "")
+        if normalized_reference and normalized_reference in normalized_last:
+            return True
+        if normalized_sku and normalized_sku in normalized_last:
+            return True
+    return False
 
 
 async def _clear_pending_product_reference_quantity(
@@ -2949,6 +2998,11 @@ def _looks_like_terse_delivery_address(value: str) -> bool:
     if any(token in BARE_NAME_GATE_REJECT_TOKENS for token in normalized.split()):
         return False
     if _has_product_or_quote_routing_signal(value):
+        return False
+    if (
+        _extract_purchase_selection(value, require_trigger=False) is not None
+        or _extract_word_quantity_purchase_selection(value) is not None
+    ):
         return False
     location_terms = (
         "dubai",
@@ -6488,12 +6542,21 @@ async def process_message(
             pending_reference_quantity = _extract_bare_quantity_reply(masked_text)
         pending_reference_selection = None
         if pending_reference_quantity is not None:
-            pending_reference_selection = (
-                _purchase_selection_from_pending_product_references(
-                    _pending_product_reference_quantity_from_metadata(conv),
-                    pending_reference_quantity,
-                )
+            pending_reference_quantity_refs = (
+                _pending_product_reference_quantity_from_metadata(conv)
             )
+            if _last_assistant_asked_pending_product_reference_quantity(
+                deps.recent_history,
+                pending_reference_quantity_refs,
+            ):
+                pending_reference_selection = (
+                    _purchase_selection_from_pending_product_references(
+                        pending_reference_quantity_refs,
+                        pending_reference_quantity,
+                    )
+                )
+            elif pending_reference_quantity_refs:
+                await _clear_pending_product_reference_quantity(db, conv)
 
         sales_order_items = _extract_sales_order_quote_items(masked_text)
         if sales_order_items is None:
@@ -6743,12 +6806,23 @@ async def process_message(
                 allow_product_media=False,
             )
 
+        quote_details_purchase_selection = None
+        if assistant_supports_quote_resume:
+            quote_details_purchase_selection = (
+                _extract_purchase_selection_from_quote_details_reply(combined_text)
+                or _extract_purchase_selection_from_quote_details_reply(masked_text)
+            )
+
         purchase_selection = None
         suppress_purchase_selection_for_quote_details = (
-            bool(current_quote_customer_details) and assistant_supports_quote_resume
+            bool(current_quote_customer_details)
+            and assistant_supports_quote_resume
+            and quote_details_purchase_selection is None
         )
         if not suppress_purchase_selection_for_quote_details:
             purchase_selection = pending_reference_selection
+            if purchase_selection is None:
+                purchase_selection = quote_details_purchase_selection
             if purchase_selection is None:
                 purchase_selection = _extract_purchase_selection_for_context(
                     masked_text,
