@@ -3900,6 +3900,12 @@ def _quote_candidates_from_last_assistant_selection(
                 line,
                 flags=re.IGNORECASE,
             )
+            or re.search(
+                r"\byour\s+order\s*:\s*(?P<quantity>\d{1,4})\s+"
+                r"(?:units?|items?|chairs?)\b",
+                line,
+                flags=re.IGNORECASE,
+            )
         )
         if quantity_match is None:
             continue
@@ -3962,7 +3968,7 @@ def _last_assistant_offered_quote_for_selection(
     quote_offer = (
         "would you like" in last_assistant
         and ("quote" in last_assistant or "quotation" in last_assistant)
-        and "prepare" in last_assistant
+        and ("prepare" in last_assistant or "send" in last_assistant)
     )
     proceed_offer = (
         "would you like" in last_assistant and "proceed with" in last_assistant

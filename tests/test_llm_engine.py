@@ -6794,16 +6794,17 @@ async def test_process_message_quote_offer_details_do_not_stop_at_detail_capture
             parts=[
                 TextPart(
                     content=(
-                        "Great news! The **Skyland Executive Office Chair CH 140 "
-                        "Black** is available:\n\n"
-                        "| Product | Price (AED) | Stock |\n"
-                        "|---------|-------------|-------|\n"
-                        "| **Skyland CH 140 Black** | 450.00 | 4 units ✓ |\n"
-                        "| Skyland CH 125 Black (similar) | 460.00 | 21 units |\n\n"
-                        "The CH 140 Black has exactly 4 units in stock — perfect "
-                        "for your requirement.\n\n"
-                        "Would you like me to prepare a quotation for 4 units of "
-                        "the CH 140 Black?"
+                        "Perfect — confirmed availability:\n\n"
+                        "**Skyland Executive Office Chair CH 140 Black**\n"
+                        "- **Price:** 450 AED each\n"
+                        "- **Stock:** 12 units confirmed in stock ✓\n"
+                        "- Features: Aircraft mechanism (3 lockable positions), "
+                        "mesh back, fabric seat, 3D adjustable armrests, chrome "
+                        "base, 120 kg load capacity\n"
+                        "- Free delivery across UAE\n\n"
+                        "**Your order:** 4 chairs = **1,800 AED total**\n\n"
+                        "Would you like me to send you a formal quotation for "
+                        "these 4 chairs?"
                     )
                 )
             ]
