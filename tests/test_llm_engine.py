@@ -6679,6 +6679,86 @@ def test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer() -
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch(
+    "src.llm.engine._resolve_exact_quote_candidate_sku",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quote_details_recovers_proceed_with_units_context(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lil"
+    conv.language = "en"
+    conv.metadata_ = {}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Great news! The **Skyland CH 140 Black** you requested "
+                        "is available:\n\n"
+                        "1. **Skyland CH 140 Black** – 450 AED each\n"
+                        "   - 12 in stock (enough for your 4 chairs)\n"
+                        "   - Mesh back with fabric seat, aircraft mechanism with "
+                        "3-position lock, 3D adjustable armrests, chrome base\n\n"
+                        "**Similar alternatives if you'd like to compare:**\n\n"
+                        "2. **Skyland CH 125 Black** – 460 AED each (21 in stock)\n"
+                        "3. **Skyland CH 490 Black** – 1,013 AED each (55 in stock)\n\n"
+                        "The CH 140 fits your request and is ready to ship. Would "
+                        "you like to proceed with the 4 units, or would you prefer "
+                        "to see details on any alternatives?"
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_resolve_sku.return_value = "CH-140"
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="Yes, prepare quotation. Lil / individual purchase / 2 street",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "item(s) and quantity" not in response.text.lower()
+    assert "email" in response.text.lower()
+    assert response.model.endswith("|quote-resume-missing-details")
+    assert conv.metadata_["pending_quote_selection"]["items"] == [
+        {"sku": "CH-140", "quantity": 4}
+    ]
+    resolved_candidate = mock_resolve_sku.await_args.args[1]
+    assert resolved_candidate.item_candidate == "CH 140"
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)

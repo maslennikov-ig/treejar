@@ -3824,6 +3824,33 @@ def _quote_candidates_from_last_assistant_selection(
         for line in last_assistant.splitlines()
     ]
     for index, line in enumerate(cleaned_lines):
+        proceed_quantity_item_match = re.search(
+            r"\b(?:the\s+)?(?P<item>[a-z]{1,4}\s*-?\s*\d{2,4}(?:\s+\w+){0,3})"
+            r"\s+fits\b.*\bproceed\s+with\s+(?:the\s+)?"
+            r"(?P<quantity>\d{1,4})\s+units?\b",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if proceed_quantity_item_match is not None:
+            quantity = int(proceed_quantity_item_match.group("quantity"))
+            item_candidate = _clean_assistant_selection_cell(
+                proceed_quantity_item_match.group("item")
+            ).strip(" \t\r\n,.;:-?")
+            if quantity > 0 and _looks_like_exact_item_candidate(item_candidate):
+                candidate_key = (quantity, _normalize_text(item_candidate))
+                if not any(
+                    (candidate.quantity, _normalize_text(candidate.item_candidate))
+                    == candidate_key
+                    for candidate in candidates
+                ):
+                    candidates.append(
+                        ExactQuoteCandidate(
+                            quantity=quantity,
+                            item_candidate=item_candidate,
+                            sku=_extract_sku_signal(item_candidate),
+                        )
+                    )
+
         inline_quantity_item_match = re.search(
             r"\bfor\s+(?P<quantity>\d{1,4})\s+units?\s+of\s+"
             r"(?:the\s+)?(?P<item>[^,\n.;:]+?)(?:\s*,|\s+your\s+total\b|\s+would\b|$)",
@@ -3937,7 +3964,10 @@ def _last_assistant_offered_quote_for_selection(
         and ("quote" in last_assistant or "quotation" in last_assistant)
         and "prepare" in last_assistant
     )
-    return quote_offer and bool(
+    proceed_offer = (
+        "would you like" in last_assistant and "proceed with" in last_assistant
+    )
+    return (quote_offer or proceed_offer) and bool(
         _quote_candidates_from_last_assistant_selection(recent_history)
     )
 
