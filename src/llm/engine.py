@@ -3798,7 +3798,7 @@ def _quote_candidates_from_last_assistant_selection(
             }:
                 continue
             if re.search(
-                r"\b(?:price|availability|features|total|requested quantity)\b",
+                r"\b(?:price|availability|features|stock|total|requested quantity)\b",
                 previous_line,
                 flags=re.IGNORECASE,
             ):

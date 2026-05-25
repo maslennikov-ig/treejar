@@ -6503,15 +6503,19 @@ async def test_process_message_terse_details_recovers_availability_quote_context
             parts=[
                 TextPart(
                     content=(
-                        "Great news - the Skyland CH 140 Black is available for "
-                        "your order:\n\n"
-                        "Skyland Executive Office Chair CH 140 Black\n"
-                        "- Price: 450 AED each -> 1,800 AED total for 4 units\n"
-                        "- Availability: 12 units in stock (confirmed)\n\n"
-                        "Your requested quantity of 4 is ready to ship. Would you "
-                        "like me to prepare a formal quotation for these 4 chairs? "
-                        "If so, please share your company name or confirm if it's "
-                        "a personal order and delivery address."
+                        "Great news! I found exactly what you're looking for:\n\n"
+                        "**Skyland Executive Office Chair CH 140 Black**\n"
+                        "- **Price:** 450.00 AED each\n"
+                        "- **Stock:** 4 units available (matches your quantity)\n"
+                        "- **Key Features:** Aircraft reclining mechanism with 3 "
+                        "lockable positions, mesh back with fabric seat, 3D "
+                        "adjustable armrests, chrome metal base, height adjustment, "
+                        "120 kg load capacity\n\n"
+                        "**Total for 4 chairs:** 1,800.00 AED with free delivery "
+                        "across the UAE.\n\n"
+                        "Would you like me to prepare a quotation for you? If so, "
+                        "I'll need your company name (or if it's a personal order) "
+                        "and delivery address."
                     )
                 )
             ]
@@ -6550,6 +6554,10 @@ async def test_process_message_terse_details_recovers_availability_quote_context
     assert conv.metadata_["pending_quote_selection"]["items"] == [
         {"sku": "CH-140", "quantity": 4}
     ]
+    resolved_candidate = mock_resolve_sku.await_args.args[1]
+    assert resolved_candidate.item_candidate == (
+        "Skyland Executive Office Chair CH 140 Black"
+    )
     mock_run.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
