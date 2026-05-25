@@ -6391,6 +6391,7 @@ async def process_message(
     if (
         _pending_quote_selection_from_metadata(conv) is None
         and not assistant_asked_quote_details
+        and not assistant_offered_quote_selection
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
         and _is_neutral_detail_capture_update(
             text=combined_text,
