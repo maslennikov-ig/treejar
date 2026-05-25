@@ -6654,6 +6654,30 @@ async def test_process_message_quote_confirmation_recovers_availability_offer_co
     mock_notify.assert_not_awaited()
 
 
+def test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer() -> None:
+    candidates = engine_module._quote_candidates_from_last_assistant_selection(
+        [
+            "assistant: "
+            "Great news — stock confirmed!\n\n"
+            "**Skyland CH 140 Black — 450 AED each**\n"
+            "- **12 units available** (enough for your 4 chairs)\n"
+            "- 3-position aircraft mechanism, mesh back, fabric seat, "
+            "3D adjustable armrests, chrome base\n\n"
+            "**Alternatives if you'd like to compare:**\n\n"
+            "| Chair | Price (AED) | Stock |\n"
+            "|-------|-------------|-------|\n"
+            "| Skyland CH 125 Black | 460 | 21 units |\n"
+            "| Skyland CH 490 Black | 1,013 | 55 units |\n\n"
+            "Would you like me to prepare a quote for 4 units of the CH 140 Black?"
+        ]
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].quantity == 4
+    assert candidates[0].item_candidate == "CH 140 Black"
+    assert candidates[0].sku == "CH-140"
+
+
 @pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)

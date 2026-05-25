@@ -3740,8 +3740,10 @@ def _quote_candidates_from_last_assistant_selection(
 
     candidates: list[ExactQuoteCandidate] = []
     if "|" in last_assistant:
+        table_second_column_is_quantity: bool | None = None
         for raw_line in last_assistant.splitlines():
             if "|" not in raw_line:
+                table_second_column_is_quantity = None
                 continue
             cells = [
                 _clean_assistant_selection_cell(cell)
@@ -3753,9 +3755,20 @@ def _quote_candidates_from_last_assistant_selection(
             item_candidate = cells[0]
             quantity_cell = cells[1]
             normalized_item = _normalize_text(item_candidate)
+            normalized_quantity_header = _normalize_text(quantity_cell)
+            if normalized_item in {"item", "product", "items", "chair", "chairs"}:
+                table_second_column_is_quantity = normalized_quantity_header in {
+                    "quantity",
+                    "qty",
+                    "units",
+                    "unit",
+                }
+                continue
             if not item_candidate or normalized_item in {"item", "product", "items"}:
                 continue
             if set(item_candidate.replace(" ", "")) <= {"-"}:
+                continue
+            if table_second_column_is_quantity is False:
                 continue
 
             quantity_match = re.search(r"\b(\d{1,4})\b", quantity_cell)
@@ -3821,7 +3834,7 @@ def _quote_candidates_from_last_assistant_selection(
             quantity = int(inline_quantity_item_match.group("quantity"))
             item_candidate = _clean_assistant_selection_cell(
                 inline_quantity_item_match.group("item")
-            ).strip(" \t\r\n,.;:-")
+            ).strip(" \t\r\n,.;:-?")
             item_candidate = re.sub(
                 r"\s+(?:chairs?|units?|items?)$",
                 "",
