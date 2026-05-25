@@ -3843,15 +3843,23 @@ def _quote_candidates_from_last_assistant_selection(
                         )
                     )
 
-        quantity_match = re.search(
-            r"\btotal\s+for\s+(?P<quantity>\d{1,4})\s+"
-            r"(?:units?|items?|chairs?)\b",
-            line,
-            flags=re.IGNORECASE,
-        ) or re.search(
-            r"\brequested\s+quantity\s+of\s+(?P<quantity>\d{1,4})\b",
-            line,
-            flags=re.IGNORECASE,
+        quantity_match = (
+            re.search(
+                r"\btotal\s+for\s+(?P<quantity>\d{1,4})\s+"
+                r"(?:units?|items?|chairs?)\b",
+                line,
+                flags=re.IGNORECASE,
+            )
+            or re.search(
+                r"\btotal\s+for\s+(?P<quantity>\d{1,4})\s*:",
+                line,
+                flags=re.IGNORECASE,
+            )
+            or re.search(
+                r"\brequested\s+quantity\s+of\s+(?P<quantity>\d{1,4})\b",
+                line,
+                flags=re.IGNORECASE,
+            )
         )
         if quantity_match is None:
             continue
@@ -3880,7 +3888,7 @@ def _quote_candidates_from_last_assistant_selection(
                 previous_line,
                 maxsplit=1,
                 flags=re.IGNORECASE,
-            )[0].strip(" \t\r\n,.;:-")
+            )[0].strip(" \t\r\n,.;:-✓✔☑")
             if _looks_like_exact_item_candidate(previous_item):
                 item_candidate = previous_item
                 break

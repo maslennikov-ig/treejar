@@ -6514,7 +6514,7 @@ async def test_process_message_terse_details_recovers_availability_quote_context
                         "- Chrome metal base, German TUV Class 3 gas lift\n"
                         "- 120 kg load capacity\n"
                         "- Free delivery across UAE\n\n"
-                        "**Total for 4 chairs: 1,800 AED**\n\n"
+                        "**Total for 4: 1,800 AED**\n\n"
                         "Would you like me to prepare a quotation for these 4 "
                         "chairs? If so, please share the delivery address and "
                         "confirm if this is for a company or personal purchase."
