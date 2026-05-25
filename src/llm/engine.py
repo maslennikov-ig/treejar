@@ -3764,6 +3764,66 @@ def _quote_candidates_from_last_assistant_selection(
             )
         )
 
+    cleaned_lines = [
+        _clean_assistant_selection_cell(line).strip(" \t\r\n-:•")
+        for line in last_assistant.splitlines()
+    ]
+    for index, line in enumerate(cleaned_lines):
+        quantity_match = re.search(
+            r"\btotal\s+for\s+(?P<quantity>\d{1,4})\s+"
+            r"(?:units?|items?|chairs?)\b",
+            line,
+            flags=re.IGNORECASE,
+        ) or re.search(
+            r"\brequested\s+quantity\s+of\s+(?P<quantity>\d{1,4})\b",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if quantity_match is None:
+            continue
+
+        quantity = int(quantity_match.group("quantity"))
+        if quantity <= 0:
+            continue
+
+        item_candidate = ""
+        for previous_line in reversed(cleaned_lines[max(0, index - 5) : index]):
+            normalized_line = _normalize_text(previous_line)
+            if not previous_line or normalized_line in {
+                "great news",
+                "price",
+                "availability",
+                "features",
+                "total",
+            }:
+                continue
+            if re.search(
+                r"\b(?:price|availability|features|total|requested quantity)\b",
+                previous_line,
+                flags=re.IGNORECASE,
+            ):
+                continue
+            if _looks_like_exact_item_candidate(previous_line):
+                item_candidate = previous_line
+                break
+
+        if not item_candidate:
+            continue
+        candidate_key = (quantity, _normalize_text(item_candidate))
+        if any(
+            (candidate.quantity, _normalize_text(candidate.item_candidate))
+            == candidate_key
+            for candidate in candidates
+        ):
+            continue
+        candidates.append(
+            ExactQuoteCandidate(
+                quantity=quantity,
+                item_candidate=item_candidate,
+                sku=_extract_sku_signal(item_candidate),
+            )
+        )
+
     return tuple(candidates)
 
 
@@ -6525,17 +6585,22 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        purchase_selection = pending_reference_selection
-        if purchase_selection is None:
-            purchase_selection = _extract_purchase_selection_for_context(
-                masked_text,
-                deps.recent_history,
-            )
-        if purchase_selection is None:
-            purchase_selection = _extract_purchase_selection_for_context(
-                combined_text,
-                deps.recent_history,
-            )
+        purchase_selection = None
+        suppress_purchase_selection_for_quote_details = (
+            bool(current_quote_customer_details) and assistant_asked_quote_details
+        )
+        if not suppress_purchase_selection_for_quote_details:
+            purchase_selection = pending_reference_selection
+            if purchase_selection is None:
+                purchase_selection = _extract_purchase_selection_for_context(
+                    masked_text,
+                    deps.recent_history,
+                )
+            if purchase_selection is None:
+                purchase_selection = _extract_purchase_selection_for_context(
+                    combined_text,
+                    deps.recent_history,
+                )
         if purchase_selection is not None:
             selection_deps = replace(
                 deps,

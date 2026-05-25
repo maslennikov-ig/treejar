@@ -23,6 +23,11 @@ verification:
   - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed after npm --prefix frontend/admin ci (1136 passed, 16 skipped)
   - scripts/orchestration/run_process_verification.sh: passed
   - scripts/orchestration/run_stage_closeout.py --stage tj-m7wz: passed
+  - live E2E #41/#42 on +79262810921#tj-m7wz-qty-20260525a after first deploy: passed
+  - live E2E #43/#45 after first deploy: found residual availability-prose gap before hotfix
+  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py::test_process_message_terse_details_recovers_availability_quote_context -v --tb=short: failed before hotfix, then passed
+  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py -k "quantity or quote or quotation or individual or availability" -v --tb=short: passed after hotfix (83 passed, 122 deselected)
+  - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed after hotfix (1137 passed, 16 skipped)
 changed_files:
   - .codex/handoff.md
   - .codex/stages/tj-m7wz/summary.md
@@ -35,7 +40,7 @@ explicit_defers:
 
 # Summary
 
-Implemented quotation-context and PDF-provenance fixes for GitHub #41-#46 in the dedicated `tj-m7wz` worktree. The bot now persists pending product references when asking for quantity, resolves bare quantity replies into the prior product context, recovers quote items from prose confirmations, treats `individual purchase` as customer type, and prevents stale CRM/test company/email data from satisfying or rendering customer-facing quotation PDF fields.
+Implemented quotation-context and PDF-provenance fixes for GitHub #41-#46 in the dedicated `tj-m7wz` worktree. The bot now persists pending product references when asking for quantity, resolves bare quantity replies into the prior product context, recovers quote items from prose and availability confirmations, treats `individual purchase` as customer type, and prevents stale CRM/test company/email data from satisfying or rendering customer-facing quotation PDF fields.
 
 # Verification
 
@@ -43,4 +48,4 @@ The new regression tests were written before the corresponding implementation. T
 
 # Risks / Follow-ups
 
-The remaining validation is runtime delivery plus live E2E on the approved phone number `+79262810921`. No production mutation or GitHub issue closure has been performed in this local implementation artifact.
+The first production E2E found and drove the availability-prose hotfix. The remaining validation is the second runtime delivery plus live E2E rerun on the approved phone number `+79262810921`. No GitHub issue closure has been performed.
