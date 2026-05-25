@@ -9,43 +9,65 @@ base_branch: origin/main
 base_commit: 29d16ec8d13ef8c7fb367289a27bf49c72026bea
 worktree: /home/me/code/treejar/.worktrees/codex-tj-gh42-quote-context-provenance
 status: accepted
-delivery_method: manual integration
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: blocked
-cleanup_notes: stage worktree is intentionally retained for commit, delivery, deploy verification, and live E2E
+cleanup_status: cleaned
+cleanup_notes: production synthetic conversations were closed; stage worktree retained only for final bookkeeping commit
 risk_level: high
 verification:
-  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py::test_tools_create_quotation_requires_explicit_company_or_individual_instead_of_crm_fallback -v --tb=short: failed before fix, then passed
-  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py -k "quantity or quote or quotation or individual" -v --tb=short: passed (82 passed, 122 deselected)
+  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py::test_process_message_quote_offer_details_do_not_stop_at_detail_capture -v --tb=short: failed before final order-summary fix, then passed
+  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py::test_process_message_quote_offer_details_do_not_stop_at_detail_capture tests/test_llm_engine.py::test_process_message_quote_details_recovers_proceed_with_units_context tests/test_llm_engine.py::test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer -v --tb=short: passed
+  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py::test_process_message_quote_details_item_correction_updates_selection_first tests/test_llm_engine.py::test_process_message_stale_pending_quantity_does_not_consume_later_number -v --tb=short: failed before reviewer-fix, then passed
+  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py -k "quantity or quote or quotation or individual or availability" -v --tb=short: passed (89 passed, 122 deselected)
   - uv run ruff check src/ tests/: passed
   - uv run ruff format --check src/ tests/: passed
   - uv run mypy src/: passed
-  - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed after npm --prefix frontend/admin ci (1136 passed, 16 skipped)
-  - scripts/orchestration/run_process_verification.sh: passed
-  - scripts/orchestration/run_stage_closeout.py --stage tj-m7wz: passed
-  - live E2E #41/#42 on +79262810921#tj-m7wz-qty-20260525a after first deploy: passed
-  - live E2E #43/#45 after first deploy: found residual availability-prose gap before hotfix
-  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py::test_process_message_terse_details_recovers_availability_quote_context -v --tb=short: failed before hotfix, then passed
-  - PYTHONPATH=. OPENROUTER_API_KEY=dummy uv run --extra dev pytest tests/test_llm_engine.py -k "quantity or quote or quotation or individual or availability" -v --tb=short: passed after hotfix (83 passed, 122 deselected)
-  - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed after hotfix (1137 passed, 16 skipped)
+  - OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed (1143 passed, 16 skipped)
+  - scripts/orchestration/run_process_verification.sh --stage tj-m7wz: passed
+  - gh run watch 26404203850 --exit-status: passed
+  - ssh noor-server 'cat /opt/noor/.release-sha; cat /opt/noor/.release-run-id': 6d91fde34f85936bb018d9ac0a778a918c05c066 / 26404203850
+  - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed (7 passed, 0 failed)
+  - live E2E resume11 on +79262810921: passed, quotation Fr3306, explicit customer fields only
+  - live E2E qty-final on +79262810921: passed, bare quantity 5 resumed CH 140 context
+  - live E2E reviewfix on +79262810921: passed, mixed 5 CH 140 correction selected quantity 5 and quotation Fr3307 used explicit fields only
 changed_files:
   - .codex/handoff.md
   - .codex/stages/tj-m7wz/summary.md
   - .codex/stages/tj-m7wz/artifacts/tj-m7wz-local-implementation.md
+  - .codex/stages/tj-m7wz/artifacts/tj-m7wz-production-e2e.md
   - src/llm/engine.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - live E2E on +79262810921 remains pending until the fixed commit is delivered to the production runtime
+  - none
 ---
 
 # Summary
 
-Implemented quotation-context and PDF-provenance fixes for GitHub #41-#46 in the dedicated `tj-m7wz` worktree. The bot now persists pending product references when asking for quantity, resolves bare quantity replies into the prior product context, recovers quote items from prose and availability confirmations, treats `individual purchase` as customer type, and prevents stale CRM/test company/email data from satisfying or rendering customer-facing quotation PDF fields.
+Implemented quotation-context and PDF-provenance fixes for GitHub #41-#46 in
+the dedicated `tj-m7wz` worktree. The bot now persists pending product
+references when asking for quantity, resolves bare quantity replies into the
+prior product context, recovers quote items from prose and live availability
+confirmations, treats `individual purchase` as customer type, and prevents
+stale CRM/test company/email data from satisfying or rendering customer-facing
+quotation PDF fields.
+
+The final reviewer-fix also handles a mixed product-correction-plus-details
+reply deterministically before quote resume and clears stale pending quantity
+state unless the latest assistant turn actually asked for that quantity.
 
 # Verification
 
-The new regression tests were written before the corresponding implementation. Targeted quote regression tests, ruff, format check, mypy, full pytest, process verification, stage closeout, and two visible correctness reviews passed. The first full pytest run failed only because the isolated worktree lacked `frontend/admin` Node dependencies; after `npm --prefix frontend/admin ci`, the full suite passed.
+The new regression tests were written before the corresponding implementation
+or hotfix. Targeted quote regression tests, ruff, format check, mypy, full
+pytest, process verification, CI/deploy, production smoke, and live E2E on the
+approved number passed.
+
+# Delivery
+
+Production is running
+`6d91fde34f85936bb018d9ac0a778a918c05c066` from GitHub Actions run
+`26404203850`.
 
 # Risks / Follow-ups
 
-The first production E2E found and drove the availability-prose hotfix. The remaining validation is the second runtime delivery plus live E2E rerun on the approved phone number `+79262810921`. No GitHub issue closure has been performed.
+No in-scope code defers remain. GitHub issues were not closed by Codex.
