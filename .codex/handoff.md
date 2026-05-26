@@ -1,13 +1,12 @@
 # Orchestrator Handoff
 Updated: 2026-05-26
-Current branch: `main`
+Current branch: `codex/tj-final27-price-objection-selection`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
 - `main@000798e` includes the selective `tj-final27.4`-`.8` port and was pushed on 2026-05-26.
 - GitHub Actions run `26447020048` passed changes, lint, tests, type-check, and deploy for `000798e`.
 - Read-only production smoke after deploy passed: `/api/v1/health` OK with Redis OK, products `200`, conversations auth guard `403`, quality auth guard `403`, dashboard auth guard `401`, admin metrics auth guard `401`, webhook empty payload `200`, admin `200`.
-- `/.release-sha` returned `404`, so runtime SHA was not available via that public path; deploy job success and API smoke are the current delivery evidence.
 - `tj-mmj8` Fr3309 is merged, deployed, production-smoked, and live E2E verified on `+79262810921` with isolated suffixes `tj-mmj8-fr3309-*`.
 - Core evidence: slash `Fr3310`, multiline `Fr3311`, low-confidence confirm `Fr3312`, labeled fields `Fr3313`; PDFs preserve `Lilia`, `LLD`, `Lfdsf@kfsl.ru`, and expected address.
 - Later ambiguous `individual / dubay 2 street 7` did not overwrite company `LLD`.
@@ -21,14 +20,15 @@ Current branch: `main`
 - Legacy `tj-final27` artifacts have been normalized and merged locally; stage process verification now passes. Local `main` is ahead of `origin/main` with docs/orchestration-only commits.
 - Referral search refresh on 2026-05-26 found no client-approved mechanics in client docs, stage artifacts, handoff notes, or Beads. Existing docs only define referral scope and request missing discount/bonus/activation parameters; internal implementation defaults are not approval.
 - Approved 2026-05-26 bounded text E2E started: smoke `8/0`, chat canary passed, SKU `00-07024023` returned `310.65 AED` and stock `12` after name-gate, then run stopped on `tj-final27.17` price-objection misread as selected item. Current suffix readback: `2` conversations, `0` pending.
+- `tj-final27.17` local fix is accepted on branch `codex/tj-final27-price-objection-selection`: strip `[smoke:*]` before purchase-selection parsing. RED/GREEN, targeted tests, `tests/test_llm_engine.py` (`218 passed`), ruff, format-check, mypy, and stage process verification passed.
 - No production config mutation, deploy, push, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/audio/payment/referral/feedback branch, or real customer conversation has been run for this refresh.
 
 ## Next recommended
 Next stage id: `tj-final27`.
-Recommended action: fix or explicitly accept `tj-final27.17` before widening final E2E. Keep referrals blocked until the client approves rules or explicitly excludes the module.
+Recommended action: merge/deploy/retest `tj-final27.17` or explicitly defer it before widening final E2E. Keep referrals blocked until the client approves rules or explicitly excludes the module.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from local `main`; it is ahead of `origin/main` with final27 docs/orchestration commits. The 2026-05-26 bounded live text E2E stopped on `tj-final27.17` after smoke/chat/SKU passed. Request exact authorization before any scope beyond fixing or triaging that bug.
+Use $orchestrator-stage. Continue from branch `codex/tj-final27-price-objection-selection`; local `main` is ahead of `origin/main` with final27 docs/orchestration commits. `tj-final27.17` is fixed locally but not pushed/deployed; production still runs `main@000798e`. Request approval before push/deploy/live retest.
 
 ## Explicit defers
 - `tj-mmj8`: Beads closure pending explicit owner approval only.
@@ -37,4 +37,4 @@ Use $orchestrator-stage. Continue from local `main`; it is ahead of `origin/main
 - FU1/FU2/FU3 production follow-up matrix needs approved copy/templates.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.
 - `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion; no approved mechanics found in repo evidence as of 2026-05-26.
-- `tj-final27.9`: final acceptance still needs `tj-final27.17` disposition, explicit approval for further live E2E, and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.
+- `tj-final27.9`: final acceptance still needs `tj-final27.17` deploy/retest or explicit defer, further live E2E approval, and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.

@@ -1464,6 +1464,7 @@ def _extract_purchase_selection(
     require_trigger: bool = True,
 ) -> PurchaseSelection | None:
     """Parse explicit customer-selected SKU/quantity lines without product discovery."""
+    text = _strip_synthetic_test_marker(text)
     normalized = _normalize_text(text)
     if not normalized:
         return None
@@ -1515,6 +1516,7 @@ def _extract_purchase_selection(
 
 
 def _extract_word_quantity_purchase_selection(text: str) -> PurchaseSelection | None:
+    text = _strip_synthetic_test_marker(text)
     quantity_matches = list(_SELECTION_WORD_QUANTITY_START_RE.finditer(text))
     if not quantity_matches:
         return None

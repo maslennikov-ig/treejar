@@ -5612,6 +5612,15 @@ def test_extract_purchase_selection_accepts_numeric_hyphenated_sku() -> None:
     ]
 
 
+def test_extract_word_quantity_purchase_selection_ignores_smoke_marker() -> None:
+    selection = engine_module._extract_word_quantity_purchase_selection(
+        "This price is higher than I expected. Can you give me a discount "
+        "or a better value option? [smoke:bf823564]"
+    )
+
+    assert selection is None
+
+
 def test_extract_purchase_selection_ignores_model_number_before_sku() -> None:
     selection = engine_module._extract_purchase_selection(
         "I need SKYLAND NOVO 2400 Meeting Table and CH 616"
