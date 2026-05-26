@@ -79,7 +79,9 @@ Referral search refresh, 2026-05-26: no client-approved referral mechanics were 
 
 E2E posture: final controlled E2E is appropriate to run, but the current runbook requires fresh explicit approval for exact phone/channel/suffix/scenarios before live WhatsApp messages. Referral/feedback/payment-send/voice/media branches need separate approval; until referral rules are approved, referral E2E can only assert disabled-safe/client-decision behavior.
 
-Remaining: explicit client decision for referrals, exact approval for final live E2E scenario scope, and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.
+2026-05-26 controlled text-only E2E refresh: user approval was received, read-only production smoke passed (`8 passed, 0 failed`), chat canary passed with name-gate, and SKU `00-07024023` returned `310.65 AED` and `12` stock after explicit name-gate. The run stopped on a price-objection defect: `This price is higher than I expected. Can you give me a discount or a better value option?` was routed to `selection-confirmation` and captured `1 x better value option?` instead of the expected sales fallback. Beads bug `tj-final27.17` tracks it. Final readback for current suffixes: `2` conversations, `0` pending escalations.
+
+Remaining: fix or explicitly accept `tj-final27.17`, explicit client decision for referrals, exact approval for any further final live E2E scope, and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.
 
 Telegram private admin login and CRM admin production-regression fixes are delivered through `main@3bad8cd` and verified in production. Authenticated CRM admin E2E run `20260511154258` passed guards, Telegram session consume, all dashboard nav sections, conversations 3-panel layout, KB editor/preview/save/reindex/soft-delete, Auto-FAQ approve/reject, bot rules preview/save/reindex/archive, catalog/report/settings/quality/queues read-only smoke, Support, and Audit evidence for `admin_login.telegram` / `telegram:166848328`.
 

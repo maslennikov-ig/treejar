@@ -18,16 +18,17 @@ Current branch: `main`
 - `tj-gh20` remains production `shadow` only.
 - `tj-final27.4` through `.8` useful work has been selectively ported from stale `origin/codex/tj-final27-acceptance-integration` and merged to `main@000798e`; old handoff/orchestration drift was intentionally not ported.
 - Local final27 port verification passed: targeted suites `50+55+7+15`, combined targeted suite `127 passed`, backend `ruff`/format/`mypy`, frontend admin `npm ci`/lint/build, no-stage process verification, and full `pytest` (`1177 passed, 19 skipped`). Local `npm ci` emitted a Node engine warning because Node `v24.15.0` is outside `>=22.12.0 <23`.
-- Legacy `tj-final27` artifacts have been normalized and merged locally to `main@183e31d`; artifact validation and `scripts/orchestration/check_stage_ready.py tj-final27` now pass.
+- Legacy `tj-final27` artifacts have been normalized and merged locally; stage process verification now passes. Local `main` is ahead of `origin/main` with docs/orchestration-only commits.
 - Referral search refresh on 2026-05-26 found no client-approved mechanics in client docs, stage artifacts, handoff notes, or Beads. Existing docs only define referral scope and request missing discount/bonus/activation parameters; internal implementation defaults are not approval.
-- Old remote branch `origin/codex/tj-final27-acceptance-integration` and local branch `codex/tj-final27-port-current` were deleted after merge. No production config mutation, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/media/payment/referral test, or real customer conversation has been run for this final27 port.
+- Approved 2026-05-26 bounded text E2E started: smoke `8/0`, chat canary passed, SKU `00-07024023` returned `310.65 AED` and stock `12` after name-gate, then run stopped on `tj-final27.17` price-objection misread as selected item. Current suffix readback: `2` conversations, `0` pending.
+- No production config mutation, deploy, push, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/audio/payment/referral/feedback branch, or real customer conversation has been run for this refresh.
 
 ## Next recommended
 Next stage id: `tj-final27`.
-Recommended action: run the approved bounded final live E2E text-only scope, then record evidence. Keep referrals blocked until the client approves rules or explicitly excludes the module.
+Recommended action: fix or explicitly accept `tj-final27.17` before widening final E2E. Keep referrals blocked until the client approves rules or explicitly excludes the module.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from local `main@183e31d`. The selective final27 `.4`-`.8` port is merged and deployed; local targeted/backend/frontend/full pytest/no-stage process verification and CI/deploy run `26447020048` passed. Legacy final27 artifacts were normalized and stage readiness now passes locally. Request exact authorization before any scope beyond the approved bounded text-only E2E.
+Use $orchestrator-stage. Continue from local `main`; it is ahead of `origin/main` with final27 docs/orchestration commits. The 2026-05-26 bounded live text E2E stopped on `tj-final27.17` after smoke/chat/SKU passed. Request exact authorization before any scope beyond fixing or triaging that bug.
 
 ## Explicit defers
 - `tj-mmj8`: Beads closure pending explicit owner approval only.
@@ -36,4 +37,4 @@ Use $orchestrator-stage. Continue from local `main@183e31d`. The selective final
 - FU1/FU2/FU3 production follow-up matrix needs approved copy/templates.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.
 - `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion; no approved mechanics found in repo evidence as of 2026-05-26.
-- `tj-final27.9`: final acceptance still needs explicit approval for exact live E2E phone/channel/suffix/scenarios and any live voice/media/payment/referral/feedback branch or production nonfunctional drill.
+- `tj-final27.9`: final acceptance still needs `tj-final27.17` disposition, explicit approval for further live E2E, and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.

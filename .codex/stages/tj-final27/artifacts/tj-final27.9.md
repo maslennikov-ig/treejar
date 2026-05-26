@@ -44,6 +44,12 @@ verification:
   - "quality large-order handoff scenario: passed, conversation 0c9fc0b3-7315-4a4b-8214-d00aa857e864, synthetic manager reply resolved pending escalation"
   - "quality final pending readback: passed, 6 tj-final27-quality conversations, 0 pending"
   - "quality outbound audit aggregate: bot_reply text 8, manager_reply text 6, product_media media/caption 9/9, all sent"
+  - "2026-05-26 runtime smoke: passed, verify_api.py 8 passed / 0 failed"
+  - "2026-05-26 controlled E2E chat canary: passed, conversation 94cf2757-9b4f-4f77-8a2c-408dd390a8c3, name-gate response, escalation none"
+  - "2026-05-26 controlled E2E SKU truth after explicit name gate: passed, conversation e22c786c-3bad-40f5-afe1-ca3a3dd639f6, SKU 00-07024023 price 310.65 AED, stock 12, escalation none"
+  - "2026-05-26 controlled E2E price objection: stopped on defect, same conversation routed to selection-confirmation and captured unresolved item '1 x better value option?'"
+  - "2026-05-26 final pending readback for current suffixes: passed, 2 tj-final27 conversations, 0 pending"
+  - "bd create tj-final27.17: passed"
   - "bd update tj-final27.9 --status blocked --append-notes quality result: passed"
   - "git diff --check: passed"
   - "uv run python scripts/orchestration/validate_artifact.py .codex/stages/tj-final27/artifacts/tj-final27.9.md: passed"
@@ -174,6 +180,22 @@ Quality conclusion:
 - Functional safety is acceptable for the tested set: no fake discount, no unsupported payment terms, no unsupported cross-border delivery promise, no off-catalog hallucination, no invented budget product, and all synthetic escalations were closed.
 - Commercial response quality was uneven in the 2026-04-29 quality pass. The model was strong when catalog search succeeded or when the large-order handoff path was explicit, but the verified-policy fallback was too generic for objection handling, retention, and off-catalog redirection. This was later addressed by `tj-final27.11` with compact deterministic sales fallback and controlled text-only E2E.
 - WhatsApp readability is acceptable but not fully polished. Responses use separators and bold markdown that are readable in WhatsApp-style text, but the format can look mechanical for a sales chat.
+
+# 2026-05-26 Controlled Text-Only Refresh
+
+User approval to proceed was received on 2026-05-26 after the artifact-schema normalization merge. Scope stayed bounded to production smoke and text-only WhatsApp messages on the approved test number `79262810921` with `tj-final27-*` suffixes. No referral, feedback, voice/audio, payment-reminder send/template, broad production suite, scheduled AI Quality Control, deploy, production config change, or `scripts/verify_wazzup.py` was run.
+
+Read-only smoke passed with `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`: `8 passed`, `0 failed`. Runtime `.release-sha` on `noor-server` was `000798e4eb19d868c0aa2891683cdcdbc55a9b65`, matching the deployed final27 port; the local artifact-normalization commits are docs/orchestration-only and were not deployed.
+
+The run used server-side `scripts/bot_test.py` so production `API_KEY` and `WAZZUP_CHANNEL_ID` did not need to be copied or printed. Local `.env` still lacks `API_KEY`/`BOT_TEST_API_KEY`.
+
+Results:
+
+- Chat canary: suffix `79262810921#tj-final27-chat-202605261152`, conversation `94cf2757-9b4f-4f77-8a2c-408dd390a8c3`. Webhook and protected polling passed; bot returned the name-gate prompt; `escalation_status=none`.
+- SKU truth: suffix `79262810921#tj-final27-sku-202605261152`, conversation `e22c786c-3bad-40f5-afe1-ca3a3dd639f6`. The first combined name+SKU message still hit name-gate; after explicit name reply, the repeated SKU request returned `00-07024023`, `310.65 AED`, `12 items available`, `escalation_status=none`.
+- Price objection: same SKU conversation. Customer asked: `This price is higher than I expected. Can you give me a discount or a better value option?` The bot did not promise a discount, but incorrectly routed to `z-ai/glm-5|selection-confirmation` and captured unresolved item `1 x better value option?`, then returned manager-verification copy. This is not the expected price-objection sales fallback.
+
+Stop decision: the run stopped at the price-objection defect instead of widening into off-catalog, quote, manager, referral, feedback, voice, or payment branches. Beads bug `tj-final27.17` tracks the defect. Final readback for 2026-05-26 `tj-final27` suffixes showed `2` conversations and `0` pending escalations.
 
 # Verification
 
