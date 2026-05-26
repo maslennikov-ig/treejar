@@ -8,7 +8,7 @@ subagent_model: n/a
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: Single coupled state-machine bug in src/llm/engine.py; no independent parallel stream.
 repo: treejar
-branch: codex/tj-8ma2-sales-order-brief-resume
+branch: main
 base_branch: main
 base_commit: bc03a8fdb5db71744c5ce6ad18d963a3ebc24063
 worktree: /home/me/code/treejar
@@ -37,10 +37,10 @@ depends_on_streams:
   - none
 parallel_decision: local
 status: accepted
-delivery_method: n/a
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: Feature branch retained pending owner decision on merge/push/deploy/live E2E.
+cleanup_status: cleaned
+cleanup_notes: Feature branch merged to main, pushed/deployed, then deleted locally after delivery; no extra worktree remained.
 risk_level: medium
 docs_impact: behavior
 docs_reviewed: updated
@@ -58,7 +58,7 @@ changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - Merge, push, deploy, and live WhatsApp E2E require explicit owner approval.
+  - Residual Zoho Inventory create_contact HTTP 400 finalization failure is tracked separately as tj-4xnf.
 ---
 
 # Summary
@@ -89,10 +89,14 @@ dashboard regression file passed.
 
 # Delivery / Cleanup
 
-The local branch is ready for owner decision. It has not been merged, pushed,
-deployed, or live-E2E tested. No extra worktree was created.
+The local implementation was fast-forwarded into `main` as
+`80e6f4371da44f163406f76f30f858e94d35da4a`, pushed to `origin/main`, deployed
+by GitHub Actions run `26462939020`, and verified on production. The local
+feature branch was deleted after delivery. No extra worktree was created.
 
 # Risks / Follow-ups
 
-No in-scope local blocker remains. Delivery and live production retest remain
-explicitly deferred until owner approval. `tj-nzob` remains separate.
+No in-scope `tj-8ma2` blocker remains. Live E2E exposed a separate Zoho
+Inventory customer-resolution failure after the fixed state-machine path reached
+`create_quotation`; that residual is tracked under `tj-4xnf`. `tj-nzob`
+remains separate.

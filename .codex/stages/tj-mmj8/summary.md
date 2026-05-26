@@ -1,7 +1,7 @@
 # Stage tj-mmj8 Summary
 
-Status: deployed to production and live Fr3309 E2E verified; Beads closure
-deferred pending explicit owner approval.
+Status: deployed to production, live Fr3309 E2E verified, cleaned, and closed in
+Beads.
 
 Scope: fix Fr3309 PDF brief-detail loss where the tester sent
 `Lilia / LLD / Lfdsf@kfsl.ru / 2 street`, but the bot failed to treat it as a
@@ -107,8 +107,11 @@ Documentation:
 - graph-reviewed: no-change-needed - repo has no configured knowledge graph or
   `graphify-out/GRAPH_REPORT.md` in this worktree.
 
+Beads:
+- `tj-mmj8` was closed after owner approval to proceed with cleanup.
+- Follow-up bugs `tj-4cm4` and `tj-8ma2` were handled and closed separately.
+- `tj-nzob` remains a separate focused stage.
+
 Residual / handoff:
-- Core Fr3309 acceptance is verified in production and `tj-mmj8` can be closed
-  once the owner explicitly authorizes closure.
-- Follow-up bugs `tj-4cm4`, `tj-8ma2`, and `tj-nzob` should be handled in
-  separate focused stages.
+- Core Fr3309 acceptance is verified in production and closed.
+- `tj-nzob` should be handled in a separate focused stage.

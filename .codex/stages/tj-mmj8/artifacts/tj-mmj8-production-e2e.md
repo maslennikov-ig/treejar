@@ -32,8 +32,7 @@ changed_files:
   - .codex/stages/tj-mmj8/summary.md
   - .codex/stages/tj-mmj8/artifacts/tj-mmj8-production-e2e.md
 explicit_defers:
-  - tj-mmj8 Beads closure deferred pending explicit owner approval
-  - ancillary findings tracked separately as tj-4cm4, tj-8ma2, tj-nzob
+  - ancillary finding tj-nzob remains open
 ---
 
 # Summary
@@ -177,6 +176,6 @@ Cleanup readback:
 
 # Closeout Decision
 
-Core Fr3309 acceptance is verified in production. `tj-mmj8` can be closed after
-explicit owner approval. It remains `in_progress` because this turn was not
-authorized to close Beads/GitHub tasks.
+Core Fr3309 acceptance is verified in production. `tj-mmj8` was closed after
+owner approval to proceed with cleanup. Follow-up findings `tj-4cm4` and
+`tj-8ma2` were handled separately; `tj-nzob` remains open.
