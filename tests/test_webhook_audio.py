@@ -52,6 +52,23 @@ class TestMessageModelAudioFields:
         assert msg.audio_url is None
         assert msg.transcription is None
 
+    def test_message_admin_exposes_audio_and_cost_fields(self) -> None:
+        """SQLAdmin message inspection must show voice audit fields."""
+        from src.api.admin.views import MessageAdmin
+
+        assert Message.message_type in MessageAdmin.column_list
+        assert Message.audio_url in MessageAdmin.column_list
+        assert Message.transcription in MessageAdmin.column_list
+        assert Message.tokens_in in MessageAdmin.column_list
+        assert Message.tokens_out in MessageAdmin.column_list
+        assert Message.cost in MessageAdmin.column_list
+        assert Message.model in MessageAdmin.column_list
+
+        assert Message.audio_url in MessageAdmin.column_details_list
+        assert Message.transcription in MessageAdmin.column_details_list
+        assert Message.cost in MessageAdmin.column_details_list
+        assert Message.model in MessageAdmin.column_details_list
+
 
 class TestWazzupDownloadMedia:
     def test_provider_has_download_media(self) -> None:

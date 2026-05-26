@@ -1,9 +1,34 @@
+import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from src.models.message import Message
 from src.services.chat import _format_for_whatsapp, process_incoming_batch
+
+
+class MockResult:
+    def __init__(self, val: Any) -> None:
+        self.val = val
+
+    def scalar_one_or_none(self) -> Any:
+        return self.val
+
+    def scalar_one(self) -> Any:
+        return self.val
+
+    def scalars(self) -> "MockResult":
+        return self
+
+    def first(self) -> Any:
+        return self.val
+
+    def all(self) -> Any:
+        if isinstance(self.val, list):
+            return self.val
+        return [self.val] if self.val is not None else []
 
 
 def test_format_for_whatsapp() -> None:
@@ -191,3 +216,293 @@ async def test_process_incoming_batch_no_redis() -> None:
     """When context lacks redis entirely, should raise KeyError."""
     with pytest.raises(KeyError, match="redis"):
         await process_incoming_batch({}, "79991234567")
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.EmbeddingEngine")
+async def test_audio_transcription_metadata_is_persisted_for_user_message(
+    mock_embedding_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_provider_class: MagicMock,
+    mock_db_factory: MagicMock,
+    chat_context: dict[str, Any],
+) -> None:
+    chat_id = "79991234567"
+    audio_url = "https://cdn.wazzup24.com/files/voice.ogg"
+    mock_redis = chat_context["redis"]
+    mock_redis.lpop.side_effect = [
+        json.dumps(
+            {
+                "messageId": "audio-001",
+                "chatId": chat_id,
+                "chatType": "whatsapp",
+                "type": "voice",
+                "channelId": "ch1",
+                "status": "inbound",
+                "authorType": "client",
+                "dateTime": "2026-04-30T10:00:00.000",
+                "media": {"url": audio_url, "mimeType": "audio/ogg"},
+            }
+        ),
+        None,
+    ]
+
+    mock_db = AsyncMock()
+    mock_db_factory.return_value.__aenter__.return_value = mock_db
+
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-uuid-123"
+    mock_conv.phone = chat_id
+    mock_conv.escalation_status = "none"
+    mock_conv.language = "en"
+    mock_conv.metadata_ = {}
+    mock_db.execute.side_effect = [
+        MockResult(None),  # bot_enabled config lookup
+        MockResult(mock_conv),  # conversation lookup
+        MockResult([]),  # batch messages dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit lookup
+    ]
+
+    from src.llm import LLMResponse
+
+    mock_process_message.return_value = LLMResponse(
+        text="Sure, I can help with chairs.",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.001,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_provider = AsyncMock()
+    mock_provider.download_media.return_value = b"audio-bytes"
+    mock_provider.resolve_channel_phone.return_value = None
+    mock_provider.send_text.return_value = "msg_out_1"
+    mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=mock_provider)
+    mock_provider_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    transcription = SimpleNamespace(
+        text="I need two office chairs",
+        tokens_in=120,
+        tokens_out=8,
+        total_tokens=128,
+        cost=0.00042,
+        model="openai/gpt-audio-mini",
+    )
+    transcribe_with_metadata = AsyncMock(return_value=transcription)
+    legacy_transcribe = AsyncMock(
+        side_effect=AssertionError("legacy string-only transcription path used")
+    )
+
+    with (
+        patch(
+            "src.integrations.voice.voxtral.transcribe_audio_with_metadata",
+            transcribe_with_metadata,
+            create=True,
+        ),
+        patch("src.integrations.voice.voxtral.transcribe_audio", legacy_transcribe),
+        patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+    ):
+        await process_incoming_batch(chat_context, chat_id)
+
+    legacy_transcribe.assert_not_awaited()
+    transcribe_with_metadata.assert_awaited_once()
+    mock_process_message.assert_awaited_once()
+    assert (
+        mock_process_message.await_args.kwargs["combined_text"]
+        == "I need two office chairs"
+    )
+
+    added_messages = [
+        call.args[0]
+        for call in mock_db.add.call_args_list
+        if isinstance(call.args[0], Message)
+    ]
+    user_message = next(msg for msg in added_messages if msg.role == "user")
+    assert user_message.message_type == "voice"
+    assert user_message.audio_url == audio_url
+    assert user_message.transcription == "I need two office chairs"
+    assert user_message.tokens_in == 120
+    assert user_message.tokens_out == 8
+    assert user_message.cost == 0.00042
+    assert user_message.model == "openai/gpt-audio-mini"
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.process_message")
+async def test_audio_only_oversized_message_sends_safe_fallback_without_llm(
+    mock_process_message: AsyncMock,
+    mock_provider_class: MagicMock,
+    mock_db_factory: MagicMock,
+    chat_context: dict[str, Any],
+) -> None:
+    from src.integrations.voice.voxtral import MAX_AUDIO_SIZE
+
+    chat_id = "79991234567"
+    audio_url = "https://cdn.wazzup24.com/files/too-large.ogg"
+    mock_redis = chat_context["redis"]
+    mock_redis.lpop.side_effect = [
+        json.dumps(
+            {
+                "messageId": "audio-too-large",
+                "chatId": chat_id,
+                "chatType": "whatsapp",
+                "type": "voice",
+                "channelId": "ch1",
+                "status": "inbound",
+                "authorType": "client",
+                "dateTime": "2026-04-30T10:00:00.000",
+                "media": {"url": audio_url, "mimeType": "audio/ogg"},
+            }
+        ),
+        None,
+    ]
+
+    mock_db = AsyncMock()
+    mock_db_factory.return_value.__aenter__.return_value = mock_db
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-uuid-123"
+    mock_conv.phone = chat_id
+    mock_conv.escalation_status = "none"
+    mock_conv.language = "en"
+    mock_conv.metadata_ = {}
+    mock_db.execute.side_effect = [
+        MockResult(None),  # bot_enabled config lookup
+        MockResult(mock_conv),  # conversation lookup
+        MockResult([]),  # batch messages dedup check
+        MockResult(None),  # outbound audit lookup for voice fallback
+    ]
+
+    mock_provider = AsyncMock()
+    mock_provider.download_media.return_value = b"x" * (MAX_AUDIO_SIZE + 1)
+    mock_provider.resolve_channel_phone.return_value = None
+    mock_provider.send_text.return_value = "voice_fallback_1"
+    mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=mock_provider)
+    mock_provider_class.return_value.__aexit__ = AsyncMock(return_value=False)
+    transcribe_with_metadata = AsyncMock(
+        side_effect=AssertionError("oversized audio should not reach transcription")
+    )
+
+    with (
+        patch(
+            "src.integrations.voice.voxtral.transcribe_audio_with_metadata",
+            transcribe_with_metadata,
+            create=True,
+        ),
+        patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+    ):
+        await process_incoming_batch(chat_context, chat_id)
+
+    transcribe_with_metadata.assert_not_awaited()
+    mock_process_message.assert_not_awaited()
+    mock_provider.send_text.assert_awaited_once()
+    sent_text = mock_provider.send_text.await_args.args[1]
+    assert "couldn't understand the voice message" in sent_text
+
+    added_messages = [
+        call.args[0]
+        for call in mock_db.add.call_args_list
+        if isinstance(call.args[0], Message)
+    ]
+    user_message = next(msg for msg in added_messages if msg.role == "user")
+    assistant_message = next(msg for msg in added_messages if msg.role == "assistant")
+    assert user_message.audio_url == audio_url
+    assert "file too large" in (user_message.transcription or "")
+    assert assistant_message.model == "voice_fallback"
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.process_message")
+async def test_audio_only_transcription_error_sends_safe_fallback_without_llm(
+    mock_process_message: AsyncMock,
+    mock_provider_class: MagicMock,
+    mock_db_factory: MagicMock,
+    chat_context: dict[str, Any],
+) -> None:
+    chat_id = "79991234567"
+    audio_url = "https://cdn.wazzup24.com/files/unreadable.ogg"
+    mock_redis = chat_context["redis"]
+    mock_redis.lpop.side_effect = [
+        json.dumps(
+            {
+                "messageId": "audio-unreadable",
+                "chatId": chat_id,
+                "chatType": "whatsapp",
+                "type": "audio",
+                "channelId": "ch1",
+                "status": "inbound",
+                "authorType": "client",
+                "dateTime": "2026-04-30T10:00:00.000",
+                "media": {"url": audio_url, "mimeType": "audio/ogg"},
+            }
+        ),
+        None,
+    ]
+
+    mock_db = AsyncMock()
+    mock_db_factory.return_value.__aenter__.return_value = mock_db
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-uuid-123"
+    mock_conv.phone = chat_id
+    mock_conv.escalation_status = "none"
+    mock_conv.language = "en"
+    mock_conv.metadata_ = {}
+    mock_db.execute.side_effect = [
+        MockResult(None),  # bot_enabled config lookup
+        MockResult(mock_conv),  # conversation lookup
+        MockResult([]),  # batch messages dedup check
+        MockResult(None),  # outbound audit lookup for voice fallback
+    ]
+
+    mock_provider = AsyncMock()
+    mock_provider.download_media.return_value = b"audio-bytes"
+    mock_provider.resolve_channel_phone.return_value = None
+    mock_provider.send_text.return_value = "voice_fallback_1"
+    mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=mock_provider)
+    mock_provider_class.return_value.__aexit__ = AsyncMock(return_value=False)
+    transcribe_with_metadata = AsyncMock(side_effect=ValueError("bad audio"))
+
+    with (
+        patch(
+            "src.integrations.voice.voxtral.transcribe_audio_with_metadata",
+            transcribe_with_metadata,
+            create=True,
+        ),
+        patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+    ):
+        await process_incoming_batch(chat_context, chat_id)
+
+    transcribe_with_metadata.assert_awaited_once()
+    mock_process_message.assert_not_awaited()
+    mock_provider.send_text.assert_awaited_once()
+
+    added_messages = [
+        call.args[0]
+        for call in mock_db.add.call_args_list
+        if isinstance(call.args[0], Message)
+    ]
+    user_message = next(msg for msg in added_messages if msg.role == "user")
+    assistant_message = next(msg for msg in added_messages if msg.role == "assistant")
+    assert user_message.audio_url == audio_url
+    assert "error during processing" in (user_message.transcription or "")
+    assert assistant_message.model == "voice_fallback"
