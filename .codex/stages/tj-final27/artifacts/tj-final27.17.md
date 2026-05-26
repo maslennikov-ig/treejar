@@ -34,11 +34,11 @@ parallel_group: local-fix
 depends_on_streams:
   - none
 parallel_decision: local
-status: accepted
-delivery_method: n/a
+status: merged
+delivery_method: merge
 accepted_by_orchestrator: yes
 cleanup_status: pending
-cleanup_notes: Keep branch until the fix is merged, deployed, and production retested.
+cleanup_notes: Fix is merged locally to main; keep branch until push, deploy, and production retest complete.
 risk_level: medium
 docs_impact: behavior
 docs_reviewed: updated
@@ -56,7 +56,7 @@ changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - production retest of tj-final27.17 requires explicit push/deploy approval because https://noor.starec.ai still runs main@000798e
+  - production retest of tj-final27.17 is pending CI/deploy completion after push
 ---
 
 # Summary
@@ -81,8 +81,8 @@ Local verification passed:
 
 # Delivery / Cleanup
 
-The fix is accepted locally on branch `codex/tj-final27-price-objection-selection`. It is not pushed, merged to deployed `main`, or deployed. Keep the branch until production retest is approved and completed.
+The fix is merged locally to `main` but not pushed or deployed yet. Keep the feature branch until production retest is completed.
 
 # Risks / Follow-ups / Explicit Defers
 
-Production retest is still pending. `https://noor.starec.ai` still runs `main@000798e`, so repeating the live price-objection scenario before deploy would only reproduce the old bug.
+Production retest is still pending CI/deploy completion. Repeating the live price-objection scenario before deploy would only test the old runtime.

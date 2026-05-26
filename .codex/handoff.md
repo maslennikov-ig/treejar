@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 Updated: 2026-05-26
-Current branch: `codex/tj-final27-price-objection-selection`
+Current branch: `main`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
@@ -20,15 +20,15 @@ Current branch: `codex/tj-final27-price-objection-selection`
 - Legacy `tj-final27` artifacts have been normalized and merged locally; stage process verification now passes. Local `main` is ahead of `origin/main` with docs/orchestration-only commits.
 - Referral search refresh on 2026-05-26 found no client-approved mechanics in client docs, stage artifacts, handoff notes, or Beads. Existing docs only define referral scope and request missing discount/bonus/activation parameters; internal implementation defaults are not approval.
 - Approved 2026-05-26 bounded text E2E started: smoke `8/0`, chat canary passed, SKU `00-07024023` returned `310.65 AED` and stock `12` after name-gate, then run stopped on `tj-final27.17` price-objection misread as selected item. Current suffix readback: `2` conversations, `0` pending.
-- `tj-final27.17` local fix is accepted on branch `codex/tj-final27-price-objection-selection`: strip `[smoke:*]` before purchase-selection parsing. RED/GREEN, targeted tests, `tests/test_llm_engine.py` (`218 passed`), ruff, format-check, mypy, and stage process verification passed.
+- `tj-final27.17` fix is merged locally to `main`: strip `[smoke:*]` before purchase-selection parsing. RED/GREEN, targeted tests, `tests/test_llm_engine.py` (`218 passed`), ruff, format-check, mypy, and stage process verification passed.
 - No production config mutation, deploy, push, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/audio/payment/referral/feedback branch, or real customer conversation has been run for this refresh.
 
 ## Next recommended
 Next stage id: `tj-final27`.
-Recommended action: merge/deploy/retest `tj-final27.17` or explicitly defer it before widening final E2E. Keep referrals blocked until the client approves rules or explicitly excludes the module.
+Recommended action: push/deploy/retest `tj-final27.17` before widening final E2E. Keep referrals blocked until the client approves rules or explicitly excludes the module.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from branch `codex/tj-final27-price-objection-selection`; local `main` is ahead of `origin/main` with final27 docs/orchestration commits. `tj-final27.17` is fixed locally but not pushed/deployed; production still runs `main@000798e`. Request approval before push/deploy/live retest.
+Use $orchestrator-stage. Continue from local `main`; it is ahead of `origin/main` with final27 docs/orchestration commits and `tj-final27.17`. Production still runs `main@000798e` until push/deploy completes. Request approval before widening beyond the narrow retest.
 
 ## Explicit defers
 - `tj-mmj8`: Beads closure pending explicit owner approval only.
