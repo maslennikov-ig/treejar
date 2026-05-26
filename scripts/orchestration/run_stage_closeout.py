@@ -3,20 +3,11 @@
 
 from __future__ import annotations
 
-import pathlib
-import sys
-
-SCRIPT_PATH = pathlib.Path(__file__).resolve()
-if __package__ in {None, ""}:
-    sys.path.insert(0, str(SCRIPT_PATH.parent))
-
-from runtime_support import ensure_tomllib_runtime
-
-ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
-
 import argparse
+import pathlib
 import re
 import subprocess
+import sys
 import tomllib
 
 DEBT_MARKER_PATTERN = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
@@ -27,17 +18,35 @@ DEBT_POLICY_REFERENCE_PATTERNS = (
     "debt markers",
 )
 PROJECT_INDEX_REVIEW_MARKER = "project-index: reviewed-no-change"
+DOCS_REVIEW_MARKER = "docs-reviewed:"
 PLACEHOLDERS = {"", "n/a", "<short cleanup result or blocker>"}
 STRUCTURAL_CHANGE_PREFIXES = (
+    "app/",
+    "apps/",
+    "api/",
+    "pages/",
+    "routes/",
+    "packages/",
     "src/api/",
+    "src/app/",
     "src/integrations/",
+    "src/routes/",
+    "src/server/",
+    "src/services/",
+    "migrations/",
+    "db/migrations/",
+    "supabase/migrations/",
+    ".github/workflows/",
     "scripts/orchestration/",
     "frontend/",
 )
 STRUCTURAL_CHANGE_FILES = {
     "AGENTS.md",
     "README.md",
+    "package.json",
+    "pnpm-workspace.yaml",
     "pyproject.toml",
+    "Dockerfile",
     "docker-compose.yml",
     "docker-compose.dev.yml",
     ".codex/orchestrator.toml",
@@ -86,9 +95,7 @@ def parse_artifact(path: pathlib.Path) -> dict[str, object]:
     return data
 
 
-def load_stage_artifacts(
-    repo_root: pathlib.Path, stage_id: str
-) -> list[dict[str, object]]:
+def load_stage_artifacts(repo_root: pathlib.Path, stage_id: str) -> list[dict[str, object]]:
     artifacts_dir = repo_root / ".codex" / "stages" / stage_id / "artifacts"
     if not artifacts_dir.exists():
         return []
@@ -96,41 +103,14 @@ def load_stage_artifacts(
     return [parse_artifact(path) for path in sorted(artifacts_dir.glob("*.md"))]
 
 
-def artifact_required_for_stage_close(contract: dict[str, object]) -> bool:
-    enforcement = contract.get("enforcement", {})
-    if isinstance(enforcement, dict):
-        return enforcement.get("artifact_required_for_stage_close") is True
-    return False
-
-
-def check_required_stage_artifacts(
-    repo_root: pathlib.Path,
-    stage_id: str,
-    contract: dict[str, object],
-    artifacts: list[dict[str, object]],
-) -> None:
-    if not artifact_required_for_stage_close(contract) or artifacts:
-        return
-
-    artifacts_dir = repo_root / ".codex" / "stages" / stage_id / "artifacts"
-    print(f"missing stage artifacts: {artifacts_dir}", file=sys.stderr)
-    raise SystemExit(1)
-
-
-def infer_groups(
-    contract: dict[str, object],
-    artifacts: list[dict[str, object]],
-    include_optional: bool,
-) -> list[str]:
+def infer_groups(contract: dict[str, object], artifacts: list[dict[str, object]], include_optional: bool) -> list[str]:
     verification = contract.get("verification", {})
     if not isinstance(verification, dict):
         return []
 
     groups: list[str] = []
     workspace = contract.get("workspace", {})
-    multi_repo = (
-        bool(workspace.get("multi_repo")) if isinstance(workspace, dict) else False
-    )
+    multi_repo = bool(workspace.get("multi_repo")) if isinstance(workspace, dict) else False
     touched_repos: set[str] = set()
     has_changed_files = False
 
@@ -140,9 +120,7 @@ def infer_groups(
             touched_repos.add(repo)
 
         changed_files = artifact.get("changed_files")
-        if isinstance(changed_files, list) and any(
-            item and not str(item).startswith("<") for item in changed_files
-        ):
+        if isinstance(changed_files, list) and any(item and not str(item).startswith("<") for item in changed_files):
             has_changed_files = True
 
     if multi_repo:
@@ -194,13 +172,9 @@ def check_child_acceptance_cleanup(artifacts: list[dict[str, object]]) -> None:
         if delivery_method in {"", "not accepted"}:
             failures.append(f"{task_id}: accepted stream missing delivery_method")
         if accepted != "yes":
-            failures.append(
-                f"{task_id}: accepted stream missing accepted_by_orchestrator: yes"
-            )
+            failures.append(f"{task_id}: accepted stream missing accepted_by_orchestrator: yes")
         if cleanup_status not in {"cleaned", "blocked"}:
-            failures.append(
-                f"{task_id}: accepted stream cleanup_status must be cleaned or blocked"
-            )
+            failures.append(f"{task_id}: accepted stream cleanup_status must be cleaned or blocked")
         if not cleanup_notes:
             failures.append(f"{task_id}: accepted stream missing cleanup_notes")
 
@@ -208,10 +182,7 @@ def check_child_acceptance_cleanup(artifacts: list[dict[str, object]]) -> None:
         print("child acceptance cleanup OK")
         return
 
-    print(
-        "Accepted child streams require mini-closeout before stage close:",
-        file=sys.stderr,
-    )
+    print("Accepted child streams require mini-closeout before stage close:", file=sys.stderr)
     for failure in failures:
         print(f"- {failure}", file=sys.stderr)
     raise SystemExit(1)
@@ -243,15 +214,12 @@ def run_shell(command: str, cwd: pathlib.Path, dry_run: bool) -> None:
 
 
 def git_available(repo_root: pathlib.Path) -> bool:
-    return (
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=repo_root,
-            text=True,
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+    return subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+    ).returncode == 0
 
 
 def git_diff_text(repo_root: pathlib.Path) -> str:
@@ -305,9 +273,7 @@ def changed_line_debt_hits(repo_root: pathlib.Path) -> list[str]:
         if not path.is_file():
             continue
         try:
-            for line_number, line in enumerate(
-                path.read_text(errors="ignore").splitlines(), start=1
-            ):
+            for line_number, line in enumerate(path.read_text(errors="ignore").splitlines(), start=1):
                 if any(pattern in line for pattern in DEBT_POLICY_REFERENCE_PATTERNS):
                     continue
                 if DEBT_MARKER_PATTERN.search(line):
@@ -343,9 +309,7 @@ def git_changed_files(repo_root: pathlib.Path) -> list[str]:
         capture_output=True,
     )
     if result.returncode == 0:
-        changed.extend(
-            line.strip() for line in result.stdout.splitlines() if line.strip()
-        )
+        changed.extend(line.strip() for line in result.stdout.splitlines() if line.strip())
 
     untracked = subprocess.run(
         ["git", "ls-files", "--others", "--exclude-standard"],
@@ -354,9 +318,7 @@ def git_changed_files(repo_root: pathlib.Path) -> list[str]:
         capture_output=True,
     )
     if untracked.returncode == 0:
-        changed.extend(
-            line.strip() for line in untracked.stdout.splitlines() if line.strip()
-        )
+        changed.extend(line.strip() for line in untracked.stdout.splitlines() if line.strip())
 
     return sorted(set(changed))
 
@@ -368,12 +330,8 @@ def stage_summary_text(repo_root: pathlib.Path, stage_id: str) -> str:
     return summary.read_text(errors="ignore")
 
 
-def check_project_index_review(
-    repo_root: pathlib.Path, contract: dict[str, object], stage_id: str
-) -> None:
-    project_index_path = str(
-        contract.get("project_index_file", ".codex/project-index.md")
-    )
+def check_project_index_review(repo_root: pathlib.Path, contract: dict[str, object], stage_id: str) -> None:
+    project_index_path = str(contract.get("project_index_file", ".codex/project-index.md"))
     changed = git_changed_files(repo_root)
     if not changed:
         print("project index review OK (no changed files)")
@@ -398,10 +356,7 @@ def check_project_index_review(
         print("project index review OK (stage summary records no-change review)")
         return
 
-    print(
-        "Structural changes require project index review before stage close:",
-        file=sys.stderr,
-    )
+    print("Structural changes require project index review before stage close:", file=sys.stderr)
     for path in structural_changes[:20]:
         print(f"- {path}", file=sys.stderr)
     if len(structural_changes) > 20:
@@ -410,6 +365,83 @@ def check_project_index_review(
         f"Update {project_index_path} or add `{PROJECT_INDEX_REVIEW_MARKER}` to the stage summary with a brief reason.",
         file=sys.stderr,
     )
+    raise SystemExit(1)
+
+
+def documentation_impact(changed: list[str]) -> list[str]:
+    if not changed:
+        return ["none"]
+
+    categories: set[str] = set()
+    non_docs = [
+        path
+        for path in changed
+        if not (
+            path.endswith(".md")
+            or path.startswith("docs/")
+            or path.startswith(".codex/stages/")
+            or path == ".codex/handoff.md"
+        )
+    ]
+    if not non_docs:
+        return ["docs-only"]
+
+    if all(path.startswith("tests/") or "/tests/" in path or path.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", "_test.py")) for path in non_docs):
+        categories.add("tests-only")
+
+    structural = [
+        path
+        for path in non_docs
+        if path in STRUCTURAL_CHANGE_FILES
+        or any(path.startswith(prefix) for prefix in STRUCTURAL_CHANGE_PREFIXES)
+    ]
+    if structural:
+        categories.add("structural")
+
+    if any(path.startswith(("migrations/", "db/migrations/", "supabase/migrations/")) for path in non_docs):
+        categories.add("migration")
+
+    if any(
+        path in {"Dockerfile", "docker-compose.yml", "docker-compose.dev.yml"}
+        or path.startswith((".github/workflows/", "deploy/", "infra/", "ops/"))
+        for path in non_docs
+    ):
+        categories.add("ops-deploy")
+
+    if any(
+        path.startswith(("api/", "src/api/", "src/server/", "packages/shared", "packages/shared-types"))
+        or "contract" in path.lower()
+        or "schema" in path.lower()
+        for path in non_docs
+    ):
+        categories.add("api-contract")
+
+    if not categories:
+        categories.add("behavior")
+    return sorted(categories)
+
+
+def check_documentation_review(repo_root: pathlib.Path, stage_id: str) -> None:
+    changed = git_changed_files(repo_root)
+    if not changed:
+        print("documentation review OK (no changed files)")
+        return
+
+    summary = stage_summary_text(repo_root, stage_id).lower()
+    if DOCS_REVIEW_MARKER in summary:
+        impact = ", ".join(documentation_impact(changed))
+        print(f"documentation review OK ({impact})")
+        return
+
+    impact = documentation_impact(changed)
+    print("Stage close requires a documentation review marker:", file=sys.stderr)
+    print(f"- impact: {', '.join(impact)}", file=sys.stderr)
+    print(
+        "- add `docs-reviewed: updated - <what changed>` or "
+        "`docs-reviewed: no-change-needed - <reason>` to the stage summary",
+        file=sys.stderr,
+    )
+    print("- update stable docs first when the impact changes navigation, contracts, ops, migrations, integrations, or durable behavior", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -436,9 +468,7 @@ def check_debt_markers(repo_root: pathlib.Path, contract: dict[str, object]) -> 
         print("debt marker scan OK (tracked defer recorded)")
         return
 
-    print(
-        "Changed-line debt markers require action before stage close:", file=sys.stderr
-    )
+    print("Changed-line debt markers require action before stage close:", file=sys.stderr)
     for hit in hits[:20]:
         print(f"- {hit}", file=sys.stderr)
     if len(hits) > 20:
@@ -463,16 +493,11 @@ def main(argv: list[str]) -> int:
     repo_root = pathlib.Path.cwd()
     contract = tomllib.loads((repo_root / ".codex" / "orchestrator.toml").read_text())
     artifacts = load_stage_artifacts(repo_root, args.stage_id)
-    check_required_stage_artifacts(repo_root, args.stage_id, contract, artifacts)
     verification = contract.get("verification", {})
     if not isinstance(verification, dict):
         verification = {}
 
-    groups = (
-        list(args.verify_group)
-        if args.verify_group
-        else infer_groups(contract, artifacts, args.include_optional)
-    )
+    groups = list(args.verify_group) if args.verify_group else infer_groups(contract, artifacts, args.include_optional)
     if not groups and "stage_close_commands" in verification:
         groups = ["stage_close_commands"]
     groups = add_e2e_group_when_requested(
@@ -483,6 +508,7 @@ def main(argv: list[str]) -> int:
 
     check_child_acceptance_cleanup(artifacts)
     check_project_index_review(repo_root, contract, args.stage_id)
+    check_documentation_review(repo_root, args.stage_id)
     check_debt_markers(repo_root, contract)
 
     for group in groups:
@@ -497,10 +523,7 @@ def main(argv: list[str]) -> int:
         enforcement = contract.get("enforcement", {})
         if not isinstance(enforcement, dict):
             enforcement = {}
-        entrypoint = enforcement.get(
-            "process_verification_entrypoint",
-            "scripts/orchestration/run_process_verification.sh",
-        )
+        entrypoint = enforcement.get("process_verification_entrypoint", "scripts/orchestration/run_process_verification.sh")
         if not isinstance(entrypoint, str) or not entrypoint:
             raise SystemExit("Missing process_verification_entrypoint")
         cmd = [str(repo_root / entrypoint), "--stage", args.stage_id]

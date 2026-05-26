@@ -25,25 +25,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PYTHON_STDIN=(python3)
-if ! python3 - <<'PY' >/dev/null 2>&1
-import tomllib
-PY
-then
-  if command -v uv >/dev/null 2>&1; then
-    PYTHON_STDIN=(uv run --python 3.12 python)
-  else
-    echo "python3 lacks tomllib and uv is not available" >&2
-    exit 1
-  fi
-fi
-
-"${PYTHON_STDIN[@]}" - <<'PY'
+python3 - <<'PY'
 import pathlib
 import re
 import tomllib
 
-EXPECTED_PROFILE = "balanced-v2.7"
+EXPECTED_PROFILE = "balanced-v2.14"
 EXPECTED_SOURCE_SKILL = "orchestration-setup"
 
 orchestrator_path = pathlib.Path(".codex/orchestrator.toml")
@@ -58,6 +45,8 @@ required = [
     handoff_file,
     project_index_file,
     artifact_template,
+    pathlib.Path(".codex/subagent-task-contract.md"),
+    pathlib.Path(".codex/subagent-spawn-template.md"),
     pathlib.Path("scripts/orchestration/run_stage_closeout.py"),
     pathlib.Path("scripts/orchestration/cleanup_stage_workspace.py"),
     pathlib.Path("scripts/orchestration/report_child_completion.py"),
@@ -65,11 +54,68 @@ required = [
 ]
 
 workspace = contract.get("workspace", {})
-if isinstance(workspace, dict) and workspace.get("launch_mode") == "manual_user_launch":
+delegation = contract.get("delegation", {})
+launcher = "codex_subagents"
+if isinstance(delegation, dict) and isinstance(delegation.get("launcher"), str):
+    launcher = delegation["launcher"]
+elif isinstance(workspace, dict) and workspace.get("launch_mode") == "manual_user_launch":
+    launcher = "manual_user_launch"
+
+if launcher not in {"codex_subagents", "manual_user_launch", "none"}:
+    raise SystemExit(
+        "delegation.launcher must be one of codex_subagents, manual_user_launch, or none"
+    )
+
+if launcher == "codex_subagents":
+    visibility = delegation.get("subagent_visibility")
+    if visibility != "separate_spawned_threads":
+        raise SystemExit(
+            "delegation.subagent_visibility must be 'separate_spawned_threads' for codex_subagents"
+        )
+    if delegation.get("inline_subagents_allowed") is not False:
+        raise SystemExit(
+            "delegation.inline_subagents_allowed must be false for codex_subagents"
+        )
+    if delegation.get("requires_explicit_user_spawn_request") is not True:
+        raise SystemExit(
+            "delegation.requires_explicit_user_spawn_request must be true for codex_subagents"
+        )
+    if delegation.get("parallel_decomposition_matrix") != "required_for_medium_complex":
+        raise SystemExit(
+            "delegation.parallel_decomposition_matrix must be 'required_for_medium_complex'"
+        )
+    if delegation.get("parallel_execution_default") != "spawn_all_independent_streams":
+        raise SystemExit(
+            "delegation.parallel_execution_default must be 'spawn_all_independent_streams'"
+        )
+    if delegation.get("sequential_requires_reason") is not True:
+        raise SystemExit(
+            "delegation.sequential_requires_reason must be true"
+        )
+
+if launcher == "manual_user_launch":
     manual_prompt_template = pathlib.Path(
         contract.get("manual_prompt_template", ".codex/manual-agent-prompt-template.md")
     )
     required.append(manual_prompt_template)
+
+model_policy = contract.get("subagent_model_policy")
+if launcher == "codex_subagents":
+    if not isinstance(model_policy, dict):
+        raise SystemExit("Missing [subagent_model_policy] section for codex_subagents")
+    required_model_policy = {
+        "default_model": "inherit_orchestrator",
+        "default_reasoning_effort": "inherit_orchestrator",
+        "reasoning_policy": "complexity_based",
+        "model_override_requires_current_user_authorization": True,
+        "record_model_reasoning_rationale": True,
+    }
+    for key, expected in required_model_policy.items():
+        if model_policy.get(key) != expected:
+            raise SystemExit(f"subagent_model_policy.{key} must be {expected!r}")
+    triggers = model_policy.get("high_reasoning_triggers")
+    if not isinstance(triggers, list) or not triggers:
+        raise SystemExit("subagent_model_policy.high_reasoning_triggers must be a non-empty list")
 
 missing = [str(path) for path in required if not path.exists()]
 if missing:

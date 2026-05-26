@@ -31,7 +31,7 @@ Typical code-change gates in this repo include:
 - Keep one task per branch or dedicated worktree.
 - Prefer dedicated worktrees for delegated or parallel streams.
 - Keep canonical runtime triage, deploy drift, and product fixes in separate delivery streams.
-- If Beads needs recovery after clone or upgrade, use `bd bootstrap --yes`, `bd import`, `bd hooks install`, and `bd export -o .beads/issues.jsonl` as needed before push.
+- If Beads needs recovery after clone or upgrade, use `bd bootstrap --yes`, `bd import`, and `bd export -o .beads/issues.jsonl` as needed before push.
 - Do not leave silent technical debt. Fix in-scope issues before close; any justified defer must be explicit, bounded, tracked in Beads, and listed in `.codex/handoff.md` under `Explicit defers`.
 
 ## Operational State

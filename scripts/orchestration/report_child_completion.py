@@ -52,8 +52,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--commit", default="n/a")
     parser.add_argument("--verify", required=True, choices=sorted(ALLOWED_VERIFY))
     parser.add_argument("--clean", required=True, choices=sorted(ALLOWED_CLEAN))
-    parser.add_argument("--sender", default="manual-child")
+    parser.add_argument("--sender", default="codex-subagent")
     parser.add_argument("--note", default="")
+    parser.add_argument("--agent-type", default="")
+    parser.add_argument("--model", default="")
+    parser.add_argument("--reasoning-effort", default="")
+    parser.add_argument("--write-zone", action="append", default=[])
+    parser.add_argument("--selected-asset", action="append", default=[])
     args = parser.parse_args(argv[1:])
 
     repo_root = pathlib.Path.cwd()
@@ -82,6 +87,11 @@ def main(argv: list[str]) -> int:
         "clean": args.clean,
         "sender": args.sender,
         "note": args.note,
+        "agent_type": args.agent_type,
+        "model": args.model,
+        "reasoning_effort": args.reasoning_effort,
+        "write_zone": args.write_zone,
+        "selected_assets": args.selected_asset,
     }
 
     with events_file.open("a", encoding="utf-8") as handle:
