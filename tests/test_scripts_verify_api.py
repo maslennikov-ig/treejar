@@ -110,3 +110,59 @@ async def test_check_conversations_uses_api_key_when_configured(
             "headers": {"X-API-Key": "secret-key"},
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_check_admin_auth_guards_expects_dashboard_and_admin_api_denial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verify_api = _load_verify_api_module()
+    calls: list[dict[str, Any]] = []
+
+    async def fake_check_endpoint(
+        client: object,
+        method: str,
+        path: str,
+        name: str,
+        *,
+        expect_status: int = 200,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        del client
+        calls.append(
+            {
+                "method": method,
+                "path": path,
+                "name": name,
+                "expect_status": expect_status,
+                "headers": headers,
+            }
+        )
+
+    monkeypatch.setattr(verify_api, "check_endpoint", fake_check_endpoint)
+
+    await verify_api.check_admin_auth_guards(client=object(), api_key="secret-key")
+
+    assert calls == [
+        {
+            "method": "GET",
+            "path": "/dashboard/",
+            "name": "Dashboard auth guard",
+            "expect_status": 401,
+            "headers": {},
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/admin/metrics/",
+            "name": "Metrics API auth guard",
+            "expect_status": 401,
+            "headers": {},
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/admin/metrics/",
+            "name": "Metrics API rejects internal API key without admin session",
+            "expect_status": 401,
+            "headers": {"X-API-Key": "secret-key"},
+        },
+    ]

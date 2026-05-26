@@ -89,6 +89,36 @@ async def check_conversations(client: httpx.AsyncClient, api_key: str) -> None:
     )
 
 
+async def check_admin_auth_guards(client: httpx.AsyncClient, api_key: str) -> None:
+    """Check admin-only surfaces without requiring an admin session secret."""
+    headers = build_api_headers(api_key)
+    await check_endpoint(
+        client,
+        "GET",
+        "/dashboard/",
+        "Dashboard auth guard",
+        expect_status=401,
+        headers={},
+    )
+    await check_endpoint(
+        client,
+        "GET",
+        "/api/v1/admin/metrics/",
+        "Metrics API auth guard",
+        expect_status=401,
+        headers={},
+    )
+    if headers:
+        await check_endpoint(
+            client,
+            "GET",
+            "/api/v1/admin/metrics/",
+            "Metrics API rejects internal API key without admin session",
+            expect_status=401,
+            headers=headers,
+        )
+
+
 async def main(base_url: str, api_key: str) -> None:
     print("=" * 60)
     print("Script 11: Health & API Endpoints Verification")
@@ -146,15 +176,9 @@ async def main(base_url: str, api_key: str) -> None:
         except Exception as e:
             fail(f"Admin panel check failed: {e}")
 
-        # 7. Metrics/dashboard API (protected by admin session)
-        print("\n--- 11.7 Metrics ---")
-        await check_endpoint(
-            client,
-            "GET",
-            "/api/v1/admin/metrics/",
-            "Metrics API auth guard",
-            expect_status=401,
-        )
+        # 7. Admin and dashboard auth guards
+        print("\n--- 11.7 Admin auth guards ---")
+        await check_admin_auth_guards(client, api_key)
 
     print("\n" + "=" * 60)
     print(f"RESULT: {passed} passed, {failed} failed")

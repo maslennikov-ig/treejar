@@ -5990,14 +5990,15 @@ async def generate_referral_code(ctx: RunContext[SalesDeps]) -> str:
     Call this when the customer asks about referral programs or sharing deals.
     """
     logger.info("LLM Tool called: generate_referral_code()")
-    from src.services.referrals import generate_code
+    from src.services.referrals import generate_code, get_referral_policy_config
 
     phone = ctx.deps.conversation.phone
-    result = await generate_code(ctx.deps.db, phone)
+    policy = await get_referral_policy_config(ctx.deps.db)
+    result = await generate_code(ctx.deps.db, phone, policy=policy)
 
     if result.success:
         return result.message
-    return f"Could not generate referral code: {result.message}"
+    return f"Referral program is not launched: {result.message}"
 
 
 @sales_agent.tool
@@ -6009,14 +6010,15 @@ async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
         code: The referral code to apply (format: NOOR-XXXXX).
     """
     logger.info("LLM Tool called: apply_referral_code(code=%r)", code)
-    from src.services.referrals import apply_code
+    from src.services.referrals import apply_code, get_referral_policy_config
 
     phone = ctx.deps.conversation.phone
-    result = await apply_code(ctx.deps.db, code, phone)
+    policy = await get_referral_policy_config(ctx.deps.db)
+    result = await apply_code(ctx.deps.db, code, phone, policy=policy)
 
     if result.success:
         return result.message
-    return f"Referral code issue: {result.message}"
+    return f"Referral program is not launched or needs manager confirmation: {result.message}"
 
 
 @sales_agent.tool
@@ -6051,6 +6053,14 @@ async def save_feedback(
         raise ModelRetry(
             "Invalid ratings. Both rating_overall and rating_delivery must be between 1 and 5. "
             "Please ask the customer to clarify their rating."
+        )
+
+    from src.services.followup import feedback_context_allows_save
+
+    if not feedback_context_allows_save(ctx.deps.conversation):
+        raise ModelRetry(
+            "Feedback can only be recorded after a delivered order feedback request. "
+            "Please do not save feedback in a non-delivery context."
         )
 
     # Check for existing feedback (prevent duplicates)

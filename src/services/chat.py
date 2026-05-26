@@ -7,6 +7,7 @@ import re
 import traceback
 from collections.abc import Sequence
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -53,6 +54,34 @@ logger = logging.getLogger(__name__)
 # Maximum time to wait for LLM response (seconds)
 LLM_TIMEOUT = 120
 TYPING_REFRESH_INTERVAL_SECONDS = 4.0
+
+VOICE_TRANSCRIPTION_TOO_LARGE_MARKER = (
+    "[System: Unreadable voice message (file too large)]"
+)
+VOICE_TRANSCRIPTION_ERROR_MARKER = (
+    "[System: Unreadable voice message (error during processing)]"
+)
+VOICE_FALLBACK_MODEL = "voice_fallback"
+VOICE_FALLBACK_EN = (
+    "Sorry, I couldn't understand the voice message. Could you please type it instead?"
+)
+VOICE_FALLBACK_AR = "عذراً، لم أتمكن من فهم الرسالة الصوتية. هل يمكنك كتابتها من فضلك؟"
+
+
+@dataclass(frozen=True, slots=True)
+class _AudioProcessingResult:
+    url: str
+    transcription: str
+    failed: bool = False
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost: float | None = None
+    model: str | None = None
+
+
+def _voice_fallback_text(language: str | None) -> str:
+    return VOICE_FALLBACK_AR if language == "ar" else VOICE_FALLBACK_EN
+
 
 # WhatsApp Formatting Regexes
 WHATSAPP_HEADERS_RE = re.compile(
@@ -486,28 +515,33 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
     combined_text = "\n".join(m.text for m in messages if m.text)
 
     # Check for audio/voice messages and transcribe them
-    audio_results: dict[str, dict[str, str]] = {}
+    audio_results: dict[str, _AudioProcessingResult] = {}
     audio_messages = [
         m
         for m in messages
         if m.type in ("audio", "voice") and (m.contentUri or (m.media and m.media.url))
     ]
 
+    should_send_voice_fallback = False
+
     if audio_messages:
-        from src.integrations.voice.voxtral import MAX_AUDIO_SIZE, transcribe_audio
+        from src.integrations.voice.voxtral import (
+            MAX_AUDIO_SIZE,
+            transcribe_audio_with_metadata,
+        )
 
         async def _process_single_audio(
             audio_msg: Any,
             wazzup_dl: WazzupProvider,
             shared_client: httpx.AsyncClient,
-        ) -> tuple[str, str | None, str | None]:
+        ) -> tuple[str, _AudioProcessingResult | None]:
             msg_id = audio_msg.messageId or ""
             audio_url = audio_msg.contentUri or (
                 audio_msg.media.url if audio_msg.media else None
             )
 
             if not audio_url:
-                return msg_id, None, None
+                return msg_id, None
 
             try:
                 logger.info(
@@ -529,8 +563,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                     )
                     return (
                         msg_id,
-                        audio_url,
-                        "[System: Unreadable voice message (file too large)]",
+                        _AudioProcessingResult(
+                            url=audio_url,
+                            transcription=VOICE_TRANSCRIPTION_TOO_LARGE_MARKER,
+                            failed=True,
+                        ),
                     )
 
                 mime = (
@@ -548,14 +585,35 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 }
                 audio_format = format_map.get(mime, "mp3")
 
-                t = await transcribe_audio(
+                transcription = await transcribe_audio_with_metadata(
                     audio_bytes, audio_format=audio_format, client=shared_client
                 )
-                if t:
-                    logger.info("Transcription for %s: %s", chat_id, t[:200])
-                    return msg_id, audio_url, t
+                if transcription.text:
+                    logger.info(
+                        "Transcription for %s: %s",
+                        chat_id,
+                        transcription.text[:200],
+                    )
+                    return (
+                        msg_id,
+                        _AudioProcessingResult(
+                            url=audio_url,
+                            transcription=transcription.text,
+                            tokens_in=transcription.tokens_in,
+                            tokens_out=transcription.tokens_out,
+                            cost=transcription.cost,
+                            model=transcription.model,
+                        ),
+                    )
 
-                return msg_id, audio_url, None
+                return (
+                    msg_id,
+                    _AudioProcessingResult(
+                        url=audio_url,
+                        transcription=VOICE_TRANSCRIPTION_ERROR_MARKER,
+                        failed=True,
+                    ),
+                )
 
             except Exception:
                 logger.exception("Failed to process audio message for %s", chat_id)
@@ -564,8 +622,11 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 )
                 return (
                     msg_id,
-                    url,
-                    "[System: Unreadable voice message (error during processing)]",
+                    _AudioProcessingResult(
+                        url=url or "",
+                        transcription=VOICE_TRANSCRIPTION_ERROR_MARKER,
+                        failed=True,
+                    ),
                 )
 
         try:
@@ -580,11 +641,15 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 results = await asyncio.gather(*tasks)
 
             transcriptions: list[str] = []
-            for msg_id, url, t in results:
-                if msg_id:
-                    audio_results[msg_id] = {"url": url or "", "transcription": t or ""}
-                if t:
-                    transcriptions.append(t)
+            for msg_id, audio_result_item in results:
+                if msg_id and audio_result_item is not None:
+                    audio_results[msg_id] = audio_result_item
+                if (
+                    audio_result_item is not None
+                    and audio_result_item.transcription
+                    and not audio_result_item.failed
+                ):
+                    transcriptions.append(audio_result_item.transcription)
 
             if transcriptions:
                 transcription_text = "\n".join(transcriptions)
@@ -593,6 +658,18 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                     if not combined_text.strip()
                     else f"{combined_text}\n{transcription_text}"
                 )
+            failed_transcription_text = "\n".join(
+                audio_result.transcription
+                for audio_result in audio_results.values()
+                if audio_result.failed
+            )
+            if failed_transcription_text and not combined_text.strip():
+                combined_text = failed_transcription_text
+            should_send_voice_fallback = (
+                not has_manager_message
+                and bool(failed_transcription_text)
+                and combined_text == failed_transcription_text
+            )
 
         except Exception:
             logger.exception(
@@ -719,9 +796,18 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
 
                     audio_url = None
                     transcription = None
+                    tokens_in = None
+                    tokens_out = None
+                    cost = None
+                    model = None
                     if is_audio and m.messageId in audio_results:
-                        audio_url = audio_results[m.messageId].get("url")
-                        transcription = audio_results[m.messageId].get("transcription")
+                        audio_result = audio_results[m.messageId]
+                        audio_url = audio_result.url
+                        transcription = audio_result.transcription
+                        tokens_in = audio_result.tokens_in
+                        tokens_out = audio_result.tokens_out
+                        cost = audio_result.cost
+                        model = audio_result.model
 
                     new_msg = Message(
                         conversation_id=conv.id,
@@ -731,6 +817,10 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         else (m.text or ""),
                         message_type=m.type,
                         wazzup_message_id=m.messageId,
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        cost=cost,
+                        model=model,
                         audio_url=audio_url,
                         transcription=transcription,
                         created_at=created_at,
@@ -748,6 +838,33 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 )
 
             await db.commit()
+
+            if should_send_voice_fallback:
+                fallback_text = _voice_fallback_text(conv.language)
+                await send_wazzup_text_with_audit(
+                    db,
+                    provider=wazzup_provider,
+                    conversation_id=conv.id,
+                    chat_id=chat_id,
+                    text=fallback_text,
+                    source="voice_fallback",
+                    crm_message_id=deterministic_crm_message_id(
+                        "voice-fallback",
+                        conv.id,
+                        hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
+                    ),
+                )
+                db.add(
+                    Message(
+                        conversation_id=conv.id,
+                        role="assistant",
+                        content=fallback_text,
+                        model=VOICE_FALLBACK_MODEL,
+                        created_at=message_created_at_now(),
+                    )
+                )
+                await db.commit()
+                return
 
             # 4. Active human handoff: send fallback to client + re-notify manager.
             # Resolved escalations should not keep the bot in fallback mode.

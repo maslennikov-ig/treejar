@@ -8,10 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_db
 from src.services.referrals import (
+    ReferralPolicyResponse,
     ReferralResult,
     ReferralStats,
     apply_code,
+    build_referral_policy_response,
     generate_code,
+    get_referral_policy_config,
     get_referral_stats,
 )
 
@@ -37,8 +40,10 @@ async def generate_referral_code(
     db: AsyncSession = Depends(get_db),
 ) -> ReferralResult:
     """Generate a new referral code for a customer."""
-    result = await generate_code(db, request.phone)
-    await db.commit()
+    policy = await get_referral_policy_config(db)
+    result = await generate_code(db, request.phone, policy=policy)
+    if result.success:
+        await db.commit()
     return result
 
 
@@ -48,9 +53,24 @@ async def apply_referral_code(
     db: AsyncSession = Depends(get_db),
 ) -> ReferralResult:
     """Apply a referral code for a new customer."""
-    result = await apply_code(db, request.code, request.referee_phone)
-    await db.commit()
+    policy = await get_referral_policy_config(db)
+    result = await apply_code(
+        db,
+        request.code,
+        request.referee_phone,
+        policy=policy,
+    )
+    if result.success:
+        await db.commit()
     return result
+
+
+@router.get("/policy", response_model=ReferralPolicyResponse)
+async def referral_policy(
+    db: AsyncSession = Depends(get_db),
+) -> ReferralPolicyResponse:
+    """Get current referral launch policy status."""
+    return build_referral_policy_response(await get_referral_policy_config(db))
 
 
 @router.get("/{phone}/stats", response_model=ReferralStats)

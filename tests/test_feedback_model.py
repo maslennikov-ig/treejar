@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -96,6 +97,14 @@ def feedback_deps() -> tuple[
         language="en",
         escalation_status="none",
         zoho_deal_id="DEAL-999",
+        deal_status="delivered",
+        deal_delivered_at=datetime.now(UTC) - timedelta(hours=30),
+        metadata_={
+            "feedback_request": {
+                "status": "sent",
+                "crm_message_id": "feedback:test:request",
+            }
+        },
     )
     db.get.return_value = conv
 
@@ -325,4 +334,54 @@ class TestSaveFeedbackTool:
         )
 
         assert "already" in result.lower()
+        db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_save_feedback_rejects_non_feedback_context(
+        self,
+        feedback_deps: tuple[
+            AsyncMock,
+            Conversation,
+            AsyncMock,
+            AsyncMock,
+            AsyncMock,
+            AsyncMock,
+            AsyncMock,
+        ],
+    ) -> None:
+        """Feedback must only be saved after the delivery feedback request path."""
+        db, conv, engine, zoho, zoho_crm, redis, messaging = feedback_deps
+        conv.sales_stage = SalesStage.CLOSING.value
+        conv.metadata_ = {}
+        deps = SalesDeps(
+            db=db,
+            conversation=conv,
+            embedding_engine=engine,
+            zoho_inventory=zoho,
+            zoho_crm=zoho_crm,
+            messaging_client=messaging,
+            pii_map={},
+            redis=redis,
+        )
+        from pydantic_ai import ModelRetry, RunContext
+
+        from src.llm.engine import save_feedback
+
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+
+        with pytest.raises(ModelRetry, match="(?i)feedback request|delivered"):
+            await save_feedback(
+                ctx,
+                rating_overall=5,
+                rating_delivery=4,
+                recommend=True,
+            )
+
         db.add.assert_not_called()

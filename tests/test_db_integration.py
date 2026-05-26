@@ -254,6 +254,9 @@ async def test_dashboard_metrics_quality_uses_active_conversation_window() -> No
     fb_result = MagicMock()
     fb_result.one.return_value = (0, None, None, 0, 0)
 
+    recent_fb_result = MagicMock()
+    recent_fb_result.all.return_value = []
+
     mock_db.execute.side_effect = [
         conv_result,
         lang_result,
@@ -263,6 +266,7 @@ async def test_dashboard_metrics_quality_uses_active_conversation_window() -> No
         mgr_conv_result,
         lb_result,
         fb_result,
+        recent_fb_result,
     ]
     mock_db.scalar.side_effect = [0, 0, 0.0, 0.0, 22.5, 0.0]
 

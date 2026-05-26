@@ -6,9 +6,8 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
-from typing import TypeAlias
 
-YamlValue: TypeAlias = str | list[str]
+type YamlValue = str | list[str]
 
 REQUIRED_KEYS = {
     "schema_version",
@@ -33,7 +32,13 @@ REQUIRED_KEYS = {
 REQUIRED_LIST_KEYS = {"verification", "changed_files", "explicit_defers"}
 ALLOWED_SCHEMA_VERSIONS = {"orchestration-artifact/v1"}
 ALLOWED_STATUSES = {"returned", "accepted", "merged", "blocked"}
-ALLOWED_DELIVERY_METHODS = {"merge", "cherry-pick", "manual integration", "not accepted", "n/a"}
+ALLOWED_DELIVERY_METHODS = {
+    "merge",
+    "cherry-pick",
+    "manual integration",
+    "not accepted",
+    "n/a",
+}
 ALLOWED_ACCEPTED_BY_ORCHESTRATOR = {"yes", "no"}
 ALLOWED_CLEANUP_STATUSES = {"pending", "cleaned", "blocked", "not_applicable"}
 ALLOWED_RISK_LEVELS = {"low", "medium", "high"}
@@ -117,7 +122,9 @@ def validate_scalar(
     if is_placeholder(value):
         return [f"{path}: unresolved placeholder value: {key}"]
     if allowed is not None and value not in allowed:
-        return [f"{path}: invalid {key!r} value {value!r}; expected one of {sorted(allowed)}"]
+        return [
+            f"{path}: invalid {key!r} value {value!r}; expected one of {sorted(allowed)}"
+        ]
     return []
 
 
@@ -143,21 +150,36 @@ def validate_file(path: pathlib.Path) -> list[str]:
             errors.extend(validate_scalar(path, key, values))
 
     if "schema_version" in values:
-        errors.extend(validate_scalar(path, "schema_version", values, ALLOWED_SCHEMA_VERSIONS))
+        errors.extend(
+            validate_scalar(path, "schema_version", values, ALLOWED_SCHEMA_VERSIONS)
+        )
     if "status" in values:
         errors.extend(validate_scalar(path, "status", values, ALLOWED_STATUSES))
     if "delivery_method" in values:
-        errors.extend(validate_scalar(path, "delivery_method", values, ALLOWED_DELIVERY_METHODS))
+        errors.extend(
+            validate_scalar(path, "delivery_method", values, ALLOWED_DELIVERY_METHODS)
+        )
     if "accepted_by_orchestrator" in values:
-        errors.extend(validate_scalar(path, "accepted_by_orchestrator", values, ALLOWED_ACCEPTED_BY_ORCHESTRATOR))
+        errors.extend(
+            validate_scalar(
+                path,
+                "accepted_by_orchestrator",
+                values,
+                ALLOWED_ACCEPTED_BY_ORCHESTRATOR,
+            )
+        )
     if "cleanup_status" in values:
-        errors.extend(validate_scalar(path, "cleanup_status", values, ALLOWED_CLEANUP_STATUSES))
+        errors.extend(
+            validate_scalar(path, "cleanup_status", values, ALLOWED_CLEANUP_STATUSES)
+        )
     if "risk_level" in values:
         errors.extend(validate_scalar(path, "risk_level", values, ALLOWED_RISK_LEVELS))
 
     for key in sorted(REQUIRED_LIST_KEYS):
         if key in values and not list_is_meaningful(values.get(key)):
-            errors.append(f"{path}: frontmatter key {key!r} must contain at least one non-placeholder item")
+            errors.append(
+                f"{path}: frontmatter key {key!r} must contain at least one non-placeholder item"
+            )
 
     for heading in REQUIRED_HEADINGS:
         if heading not in body:
@@ -172,7 +194,10 @@ def validate_file(path: pathlib.Path) -> list[str]:
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("Usage: validate_artifact.py <artifact.md> [artifact.md ...]", file=sys.stderr)
+        print(
+            "Usage: validate_artifact.py <artifact.md> [artifact.md ...]",
+            file=sys.stderr,
+        )
         return 2
 
     all_errors: list[str] = []
