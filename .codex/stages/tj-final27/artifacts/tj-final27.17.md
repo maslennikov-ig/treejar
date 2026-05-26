@@ -37,8 +37,8 @@ parallel_decision: local
 status: merged
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: Fix is merged locally to main; keep branch until push, deploy, and production retest complete.
+cleanup_status: cleaned
+cleanup_notes: Source branch was merged into main and deleted locally; no remote feature branch was pushed.
 risk_level: medium
 docs_impact: behavior
 docs_reviewed: updated
@@ -52,11 +52,17 @@ verification:
   - uv run ruff format --check src/ tests/: passed
   - uv run mypy src/: passed
   - scripts/orchestration/run_process_verification.sh --stage tj-final27: passed
+  - git push origin main: passed, e3a4740..40ee692
+  - GitHub Actions CI run 26447466860: failed before project code on external codeload/actions checkout 403; deploy did not run
+  - manual scripts/vps-deploy.sh deploy to /opt/noor: passed, active release 40ee6928adfa60f3f3297cf6e52af63c6960fdd8
+  - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed, 8 passed / 0 failed
+  - controlled live retest on 79262810921#tj-final27-17-price-202605261219: passed, conversation 7da0bb42-0404-4f69-b2ad-3f7c6a0030db
+  - protected production readback for tj-final27.17: passed, no pending_quote_selection and fuzzy_17_pending=0
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - production retest of tj-final27.17 is pending CI/deploy completion after push
+  - none
 ---
 
 # Summary
@@ -81,8 +87,10 @@ Local verification passed:
 
 # Delivery / Cleanup
 
-The fix is merged locally to `main` but not pushed or deployed yet. Keep the feature branch until production retest is completed.
+The fix was pushed to `origin/main` and deployed manually with the repo-local `scripts/vps-deploy.sh` after GitHub Actions failed before project code on external GitHub/codeload `403` errors. Active runtime release is `40ee6928adfa60f3f3297cf6e52af63c6960fdd8`.
+
+The source branch `codex/tj-final27-price-objection-selection` was deleted locally after merge and successful production retest. No remote feature branch was pushed.
 
 # Risks / Follow-ups / Explicit Defers
 
-Production retest is still pending CI/deploy completion. Repeating the live price-objection scenario before deploy would only test the old runtime.
+`tj-final27.17` is closed. The wider final acceptance stage still has separate explicit defers for referrals, further live E2E scope, and approval-only voice/media/payment/referral/feedback branches.
