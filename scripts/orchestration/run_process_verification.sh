@@ -25,7 +25,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-python3 - <<'PY'
+PYTHON_STDIN=(python3)
+if ! python3 - <<'PY' >/dev/null 2>&1
+import tomllib
+PY
+then
+  if command -v uv >/dev/null 2>&1; then
+    PYTHON_STDIN=(uv run --python 3.12 python)
+  else
+    echo "python3 lacks tomllib and uv is not available" >&2
+    exit 1
+  fi
+fi
+
+"${PYTHON_STDIN[@]}" - <<'PY'
 import pathlib
 import re
 import tomllib

@@ -3,11 +3,20 @@
 
 from __future__ import annotations
 
-import argparse
 import pathlib
+import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
+
+from runtime_support import ensure_tomllib_runtime
+
+ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
+
+import argparse
 import re
 import subprocess
-import sys
 import tomllib
 
 DEBT_MARKER_PATTERN = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
@@ -101,6 +110,24 @@ def load_stage_artifacts(repo_root: pathlib.Path, stage_id: str) -> list[dict[st
         return []
 
     return [parse_artifact(path) for path in sorted(artifacts_dir.glob("*.md"))]
+
+
+def check_required_stage_artifacts(
+    repo_root: pathlib.Path,
+    contract: dict[str, object],
+    stage_id: str,
+    artifacts: list[dict[str, object]],
+) -> None:
+    enforcement = contract.get("enforcement", {})
+    artifacts_required = (
+        isinstance(enforcement, dict)
+        and enforcement.get("artifact_required_for_stage_close") is True
+    )
+    if not artifacts_required or artifacts:
+        return
+
+    artifacts_dir = repo_root / ".codex" / "stages" / stage_id / "artifacts"
+    raise SystemExit(f"missing stage artifacts: {artifacts_dir}")
 
 
 def infer_groups(contract: dict[str, object], artifacts: list[dict[str, object]], include_optional: bool) -> list[str]:
@@ -496,6 +523,8 @@ def main(argv: list[str]) -> int:
     verification = contract.get("verification", {})
     if not isinstance(verification, dict):
         verification = {}
+
+    check_required_stage_artifacts(repo_root, contract, args.stage_id, artifacts)
 
     groups = list(args.verify_group) if args.verify_group else infer_groups(contract, artifacts, args.include_optional)
     if not groups and "stage_close_commands" in verification:
