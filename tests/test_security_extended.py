@@ -12,9 +12,12 @@ signature verification (verify_wazzup_webhook, compute_signature).
 from __future__ import annotations
 
 import re
+from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 # =============================================================================
 # 1. No hardcoded secrets in source code
@@ -148,3 +151,121 @@ async def test_admin_panel_requires_authentication() -> None:
         assert any(indicator in body for indicator in login_indicators), (
             "Admin returned 200 but no login form detected — data may be exposed!"
         )
+
+
+@pytest.fixture
+def restore_auth_settings() -> Generator[None, None, None]:
+    from src.core.config import settings
+
+    original_env = settings.app_env
+    original_api_key = settings.api_key
+    yield
+    settings.app_env = original_env
+    settings.api_key = original_api_key
+
+
+@pytest.mark.asyncio
+async def test_admin_and_dashboard_reject_internal_api_key_without_session(
+    restore_auth_settings: None,
+) -> None:
+    from src.core.config import settings
+    from src.main import app
+
+    settings.app_env = "production"
+    settings.api_key = "internal-key"
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        dashboard = await ac.get("/dashboard/", headers={"X-API-Key": "internal-key"})
+        admin_api = await ac.get(
+            "/api/v1/admin/metrics/", headers={"X-API-Key": "internal-key"}
+        )
+
+    assert dashboard.status_code == 401
+    assert dashboard.json()["detail"] == "Admin authentication required"
+    assert admin_api.status_code == 401
+    assert admin_api.json()["detail"] == "Admin authentication required"
+
+
+@pytest.mark.asyncio
+async def test_product_sync_rejects_internal_api_key_without_admin_session(
+    restore_auth_settings: None,
+) -> None:
+    from src.core.config import settings
+    from src.main import app
+
+    settings.app_env = "production"
+    settings.api_key = "internal-key"
+    app.state.arq_pool = AsyncMock()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        direct_sync = await ac.post(
+            "/api/v1/products/sync",
+            json={"source": "treejar"},
+            headers={"X-API-Key": "internal-key"},
+        )
+        admin_sync = await ac.post(
+            "/api/v1/admin/products/sync",
+            json={"source": "treejar"},
+            headers={"X-API-Key": "internal-key"},
+        )
+
+    assert direct_sync.status_code == 401
+    assert direct_sync.json()["detail"] == "Admin authentication required"
+    assert admin_sync.status_code == 401
+    assert admin_sync.json()["detail"] == "Admin authentication required"
+    app.state.arq_pool.enqueue_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_conversation_routes_reject_missing_or_wrong_internal_api_key(
+    restore_auth_settings: None,
+) -> None:
+    from src.core.config import settings
+    from src.main import app
+
+    settings.app_env = "production"
+    settings.api_key = "internal-key"
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        missing = await ac.get("/api/v1/conversations/")
+        wrong = await ac.get(
+            "/api/v1/conversations/", headers={"X-API-Key": "wrong-key"}
+        )
+
+    assert missing.status_code == 403
+    assert missing.json()["detail"] == "Invalid or missing API key"
+    assert wrong.status_code == 403
+    assert wrong.json()["detail"] == "Invalid or missing API key"
+
+
+@pytest.mark.asyncio
+async def test_wazzup_allowlist_blocks_disallowed_origin_without_queueing() -> None:
+    import ipaddress
+
+    from src.main import app
+
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+
+    with patch(
+        "src.api.v1.webhook._parse_allowed_networks",
+        return_value=[ipaddress.ip_network("10.0.0.0/8")],
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.post(
+                "/api/v1/webhook/wazzup",
+                json={"messages": []},
+            )
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "forbidden"}
+    app.state.redis.rpush.assert_not_awaited()
+    app.state.arq_pool.enqueue_job.assert_not_awaited()
