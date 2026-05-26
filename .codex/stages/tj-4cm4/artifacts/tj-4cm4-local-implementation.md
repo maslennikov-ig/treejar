@@ -8,7 +8,7 @@ subagent_model: n/a
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: Single coupled bugfix in src/llm/engine.py; no independent parallel stream.
 repo: treejar
-branch: codex/tj-4cm4-exact-sku-resume
+branch: main
 base_branch: main
 base_commit: 57e4bd303494c5d822dcdfc4b8381a62cbf0ead8
 worktree: /home/me/code/treejar
@@ -36,11 +36,11 @@ parallel_group: local-single-stream
 depends_on_streams:
   - none
 parallel_decision: local
-status: accepted
-delivery_method: n/a
+status: merged
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: blocked
-cleanup_notes: Branch retained until explicit merge/deploy decision; no separate stage worktree was created.
+cleanup_status: cleaned
+cleanup_notes: Local feature branch codex/tj-4cm4-exact-sku-resume deleted after fast-forward merge to main and push/deploy success; no separate stage worktree was created.
 risk_level: medium
 docs_impact: behavior
 docs_reviewed: updated
@@ -54,13 +54,18 @@ verification:
   - uv run --extra dev mypy src/: passed
   - uv run --extra dev python -m pytest tests/ -q: failed, 7 frontend regressions blocked by missing frontend/admin node_modules esbuild
   - uv run --extra dev python -m pytest tests/ -q --ignore=tests/test_admin_dashboard_frontend.py: passed, 1168 passed, 19 skipped
+  - npm ci --prefix frontend/admin: passed; emitted Node engine warning because local Node v24.15.0 is outside project range >=22.12.0 <23
+  - scripts/orchestration/run_stage_closeout.py --stage tj-4cm4: passed, including full pytest 1179 passed / 19 skipped
   - scripts/orchestration/run_process_verification.sh --stage tj-4cm4: passed
-  - scripts/orchestration/run_stage_closeout.py --stage tj-4cm4: blocked because delivery/merge is intentionally deferred and the closeout script requires delivery mini-closeout for accepted streams
+  - git push origin main: passed, main 57e4bd3..77f96f3
+  - GitHub Actions CI run 26460815449: passed, including changes/lint/type-check/test/deploy
+  - production runtime readback: passed, /opt/noor/.release-sha=77f96f3a483b201a70c969177b8203585f6b5682 and .release-run-id=26460815449
+  - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed, 8 passed / 0 failed
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - Deploy, push, merge, and live WhatsApp E2E require explicit approval.
+  - Bounded live WhatsApp E2E retest of the original CH 620 grey clarification scenario was not run in this delivery turn.
   - Full pytest including tests/test_admin_dashboard_frontend.py requires installing frontend/admin node dependencies; skipped to avoid adding node_modules during disk cleanup work.
 ---
 
@@ -84,15 +89,17 @@ one coupled control path.
 
 The new regression failed before implementation with the existing
 `quote-resume-missing-items` answer, then passed after the fix. Full
-`tests/test_llm_engine.py`, ruff, format check, mypy, and all Python tests except
-the frontend dashboard regression file passed.
+`tests/test_llm_engine.py`, ruff, format check, mypy, process verification, and
+stage closeout passed. Local stage closeout required a temporary
+`npm ci --prefix frontend/admin` because the frontend regression scripts depend
+on `esbuild`.
 
 # Delivery / Cleanup
 
-Local implementation is accepted on branch `codex/tj-4cm4-exact-sku-resume`.
-Stage closeout is blocked until delivery is authorized because the closeout
-script requires accepted streams to have a delivery mini-closeout. No merge,
-push, deploy, live WhatsApp test, or branch cleanup was performed.
+Local implementation was fast-forward merged to `main@77f96f3`, pushed to
+`origin/main`, and deployed by GitHub Actions run `26460815449`. Production
+runtime readback and read-only API smoke passed. The local feature branch was
+deleted after merge. No live WhatsApp test was performed.
 
 # Risks / Follow-ups / Explicit Defers
 

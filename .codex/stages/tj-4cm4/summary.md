@@ -1,7 +1,7 @@
 # Stage tj-4cm4 Summary
 
-Status: local implementation complete; not merged, pushed, deployed, or live
-E2E retested.
+Status: merged, pushed, deployed, and production-smoked; live E2E retest not
+run.
 
 Scope: fix exact quotation SKU clarification resume discovered during Fr3309
 production E2E. The broken production path asked for `5 x CH 620`, received
@@ -33,16 +33,23 @@ Verification:
   is absent and Node cannot import `esbuild`.
 - `pytest tests/ -q --ignore=tests/test_admin_dashboard_frontend.py` passed:
   `1168 passed, 19 skipped`.
+- After temporary `npm ci --prefix frontend/admin`, full stage closeout passed
+  with full pytest: `1179 passed, 19 skipped`.
 - `scripts/orchestration/run_process_verification.sh --stage tj-4cm4`: passed.
-- `scripts/orchestration/run_stage_closeout.py --stage tj-4cm4`: blocked
-  because merge/delivery is intentionally deferred and the closeout script
-  requires accepted streams to have delivery mini-closeout.
+- `scripts/orchestration/run_stage_closeout.py --stage tj-4cm4`: passed.
+- GitHub Actions CI run `26460815449`: passed, including deploy.
+- Production runtime readback: `/opt/noor/.release-sha` =
+  `77f96f3a483b201a70c969177b8203585f6b5682`,
+  `/opt/noor/.release-run-id` = `26460815449`.
+- Production smoke: `uv run python scripts/verify_api.py --base-url
+  https://noor.starec.ai` -> `8 passed, 0 failed`.
 
 Delivery status:
-- Branch: `codex/tj-4cm4-exact-sku-resume`.
+- Branch: merged from `codex/tj-4cm4-exact-sku-resume` into `main`.
 - Base: `main@57e4bd303494c5d822dcdfc4b8381a62cbf0ead8`.
-- No push, merge, deploy, live WhatsApp E2E, or Beads closure was performed.
-- Stage closeout remains blocked until delivery approval.
+- Delivery commit: `main@77f96f3a483b201a70c969177b8203585f6b5682`.
+- Local feature branch was deleted after merge and successful deploy.
+- No live WhatsApp E2E or Beads closure was performed.
 
 Documentation:
 - docs-reviewed: updated - stage summary, artifact, and handoff were updated
@@ -53,5 +60,6 @@ Documentation:
   `graphify-out/GRAPH_REPORT.md` is absent.
 
 Residual / handoff:
-- Merge/push/deploy and bounded live E2E retest need explicit approval.
+- Bounded live E2E retest of the original CH 620 grey clarification scenario
+  remains pending explicit approval.
 - `tj-8ma2` and `tj-nzob` remain separate follow-up bugs.
