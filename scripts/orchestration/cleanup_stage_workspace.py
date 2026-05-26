@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Clean safe local branches and worktrees for accepted child streams."""
+# ruff: noqa: E402, I001
 
 from __future__ import annotations
 
@@ -19,7 +20,15 @@ import subprocess
 import tomllib
 
 
-PLACEHOLDERS = {"", "n/a", "<repo-or-n/a>", "<branch>", "<base-branch>", "<absolute-path-or-unknown>", "<base-commit-or-unknown>"}
+PLACEHOLDERS = {
+    "",
+    "n/a",
+    "<repo-or-n/a>",
+    "<branch>",
+    "<base-branch>",
+    "<absolute-path-or-unknown>",
+    "<base-commit-or-unknown>",
+}
 
 
 def parse_frontmatter(text: str) -> tuple[str, str]:
@@ -46,7 +55,9 @@ def parse_artifact(path: pathlib.Path) -> dict[str, str]:
     return values
 
 
-def run(cmd: list[str], cwd: pathlib.Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(
+    cmd: list[str], cwd: pathlib.Path, check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, check=check)
 
 
@@ -65,12 +76,15 @@ def ref_exists(git_root: pathlib.Path, ref: str) -> bool:
 def branch_merged_into_ref(git_root: pathlib.Path, branch: str, ref: str) -> bool:
     if ref in PLACEHOLDERS or not ref_exists(git_root, ref):
         return False
-    return subprocess.run(
-        ["git", "merge-base", "--is-ancestor", branch, ref],
-        cwd=git_root,
-        text=True,
-        capture_output=True,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", branch, ref],
+            cwd=git_root,
+            text=True,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def branch_merged_into(git_root: pathlib.Path, branch: str, target: str) -> bool:
@@ -92,7 +106,12 @@ def protected_names(contract: dict[str, object]) -> set[str]:
     names = {"main", "master", "develop", "dev"}
     delivery = contract.get("delivery", {})
     if isinstance(delivery, dict):
-        for key in ("primary_branch", "dev_branch", "staging_branch", "docs_direct_sync_branch"):
+        for key in (
+            "primary_branch",
+            "dev_branch",
+            "staging_branch",
+            "docs_direct_sync_branch",
+        ):
             value = delivery.get(key)
             if isinstance(value, str) and value:
                 names.add(value.split("/")[-1])
@@ -102,7 +121,9 @@ def protected_names(contract: dict[str, object]) -> set[str]:
     return names
 
 
-def git_root_for_artifact(repo_root: pathlib.Path, artifact: dict[str, str]) -> pathlib.Path:
+def git_root_for_artifact(
+    repo_root: pathlib.Path, artifact: dict[str, str]
+) -> pathlib.Path:
     repo = artifact.get("repo", "")
     if repo and repo not in PLACEHOLDERS:
         candidate = repo_root / repo
@@ -114,7 +135,10 @@ def git_root_for_artifact(repo_root: pathlib.Path, artifact: dict[str, str]) -> 
 
 
 def artifact_is_accepted(artifact: dict[str, str]) -> bool:
-    return artifact.get("status", "") in {"accepted", "merged"} or artifact.get("accepted_by_orchestrator", "") == "yes"
+    return (
+        artifact.get("status", "") in {"accepted", "merged"}
+        or artifact.get("accepted_by_orchestrator", "") == "yes"
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -127,9 +151,17 @@ def main(argv: list[str]) -> int:
     repo_root = pathlib.Path.cwd()
     contract = tomllib.loads((repo_root / ".codex" / "orchestrator.toml").read_text())
     artifacts_dir = repo_root / ".codex" / "stages" / args.stage_id / "artifacts"
-    artifacts = [parse_artifact(path) for path in sorted(artifacts_dir.glob("*.md"))] if artifacts_dir.exists() else []
+    artifacts = (
+        [parse_artifact(path) for path in sorted(artifacts_dir.glob("*.md"))]
+        if artifacts_dir.exists()
+        else []
+    )
     if args.task_id:
-        artifacts = [artifact for artifact in artifacts if artifact.get("task_id") == args.task_id]
+        artifacts = [
+            artifact
+            for artifact in artifacts
+            if artifact.get("task_id") == args.task_id
+        ]
     if not artifacts:
         print("workspace cleanup OK (no matching delegated artifacts)")
         return 0
@@ -157,7 +189,7 @@ def main(argv: list[str]) -> int:
             branches.add((git_root, branch, base_branch, delivery_method, task_id))
 
     for git_root, worktree, task_id in sorted(worktrees, key=lambda item: str(item[1])):
-        if worktree == git_root or worktree == repo_root:
+        if worktree in (git_root, repo_root):
             continue
         if not worktree.exists():
             continue
@@ -172,9 +204,13 @@ def main(argv: list[str]) -> int:
         if result.returncode == 0:
             cleaned.append(f"removed worktree {worktree}")
         else:
-            leftovers.append(f"could not remove worktree {worktree} ({task_id}): {result.stderr.strip() or result.stdout.strip()}")
+            leftovers.append(
+                f"could not remove worktree {worktree} ({task_id}): {result.stderr.strip() or result.stdout.strip()}"
+            )
 
-    for git_root, branch, base_branch, delivery_method, task_id in sorted(branches, key=lambda item: (str(item[0]), item[1])):
+    for git_root, branch, base_branch, delivery_method, task_id in sorted(
+        branches, key=lambda item: (str(item[0]), item[1])
+    ):
         if branch in protected or branch == base_branch:
             continue
         if branch == current_branch(git_root):
@@ -183,28 +219,43 @@ def main(argv: list[str]) -> int:
             continue
 
         delivered = branch_delivered_to_remote(git_root, branch)
-        merged = any(branch_merged_into(git_root, branch, target) for target in {base_branch, *protected})
+        merged = any(
+            branch_merged_into(git_root, branch, target)
+            for target in {base_branch, *protected}
+        )
         if not delivered and not merged:
             if delivery_method in {"cherry-pick", "manual integration"}:
                 leftovers.append(
                     f"{git_root}:{branch} ({task_id}): accepted-content, not-git-merged; manual cleanup required"
                 )
             else:
-                leftovers.append(f"local branch still needed or not delivered: {git_root}:{branch} ({task_id})")
+                leftovers.append(
+                    f"local branch still needed or not delivered: {git_root}:{branch} ({task_id})"
+                )
             continue
 
         print(f"branch candidate: {git_root}:{branch} ({task_id})")
         if args.dry_run:
             continue
 
-        result = subprocess.run(["git", "-C", str(git_root), "branch", "-d", branch], text=True, capture_output=True)
+        result = subprocess.run(
+            ["git", "-C", str(git_root), "branch", "-d", branch],
+            text=True,
+            capture_output=True,
+        )
         if result.returncode != 0 and (delivered or merged):
-            result = subprocess.run(["git", "-C", str(git_root), "branch", "-D", branch], text=True, capture_output=True)
+            result = subprocess.run(
+                ["git", "-C", str(git_root), "branch", "-D", branch],
+                text=True,
+                capture_output=True,
+            )
 
         if result.returncode == 0:
             cleaned.append(f"removed branch {git_root}:{branch} ({task_id})")
         else:
-            leftovers.append(f"could not remove branch {git_root}:{branch} ({task_id}): {result.stderr.strip() or result.stdout.strip()}")
+            leftovers.append(
+                f"could not remove branch {git_root}:{branch} ({task_id}): {result.stderr.strip() or result.stdout.strip()}"
+            )
 
     for item in cleaned:
         print(item)

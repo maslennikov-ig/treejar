@@ -82,6 +82,7 @@ class _AudioProcessingResult:
 def _voice_fallback_text(language: str | None) -> str:
     return VOICE_FALLBACK_AR if language == "ar" else VOICE_FALLBACK_EN
 
+
 # WhatsApp Formatting Regexes
 WHATSAPP_HEADERS_RE = re.compile(
     r"^#{1,6}\s*\*{0,3}\s*(.+?)\s*\*{0,3}\s*$", flags=re.MULTILINE
