@@ -529,6 +529,22 @@ _SALES_ORDER_QUANTITY_FIRST_RE = re.compile(
     r"(?<![\w.-])(?P<quantity>\d{1,4})\s*(?:x|×)?\s+",
     re.IGNORECASE,
 )
+_EXACT_QUOTE_CLARIFICATION_ITEM_SIGNAL_RE = re.compile(
+    r"\b(?:exact\s+)?(?:sku|item|model|product)(?:\s+(?:number|code))?\b",
+    re.IGNORECASE,
+)
+_EXACT_QUOTE_CLARIFICATION_PREFIX_RE = re.compile(
+    r"^\s*(?:the\s+|my\s+|our\s+)?"
+    r"(?:exact\s+)?(?:sku|item|model|product)(?:\s+(?:number|code))?\s*"
+    r"(?::|=|-|\bis\b|\bare\b)?\s*",
+    re.IGNORECASE,
+)
+_EXACT_QUOTE_CLARIFICATION_QUANTITY_RE = re.compile(
+    r"(?:[,;]\s*)?\b(?:quantity|qty|pcs?|pieces?|units?)\s*"
+    r"(?::|=|-|\bis\b)?\s*(?P<label_qty>\d{1,4})\b|"
+    r"\b(?P<leading_qty>\d{1,4})\s*(?:x|×|pcs?|pieces?|units?)\b",
+    re.IGNORECASE,
+)
 _NUMERIC_HYPHEN_SKU_RE = re.compile(r"\b\d{2,}(?:-\d{1,})+\b")
 _MIXED_SERVICE_TERMS = (
     "delivery",
@@ -4327,6 +4343,10 @@ def _is_pending_sales_order_quote(selection: Mapping[str, Any]) -> bool:
     return selection.get("source") == "sales_order_quote"
 
 
+def _is_pending_exact_quote(selection: Mapping[str, Any]) -> bool:
+    return selection.get("source") == "exact_quote"
+
+
 def _sales_order_unresolved_candidates_from_metadata(
     selection: Mapping[str, Any],
 ) -> tuple[ExactQuoteCandidate, ...]:
@@ -4355,6 +4375,44 @@ def _sales_order_unresolved_candidates_from_metadata(
             ExactQuoteCandidate(
                 quantity=quantity_int,
                 item_candidate=_clean_sales_order_item_candidate(item_candidate),
+                sku=(
+                    _normalize_sku_homoglyphs(sku).strip().upper()
+                    if isinstance(sku, str) and sku.strip()
+                    else None
+                ),
+            )
+        )
+    return tuple(candidates)
+
+
+def _exact_quote_unresolved_candidates_from_metadata(
+    selection: Mapping[str, Any],
+) -> tuple[ExactQuoteCandidate, ...]:
+    raw_items = selection.get("unresolved_items")
+    if not isinstance(raw_items, list):
+        return ()
+
+    candidates: list[ExactQuoteCandidate] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            continue
+        item_candidate = raw_item.get("item_candidate")
+        if not isinstance(item_candidate, str) or not item_candidate.strip():
+            continue
+        quantity = raw_item.get("quantity")
+        if quantity is None:
+            continue
+        try:
+            quantity_int = int(quantity)
+        except (TypeError, ValueError):
+            continue
+        if quantity_int <= 0:
+            continue
+        sku = raw_item.get("sku")
+        candidates.append(
+            ExactQuoteCandidate(
+                quantity=quantity_int,
+                item_candidate=_clean_exact_quote_item_candidate(item_candidate),
                 sku=(
                     _normalize_sku_homoglyphs(sku).strip().upper()
                     if isinstance(sku, str) and sku.strip()
@@ -4395,6 +4453,60 @@ def _sales_order_followup_candidates(
             sku=sku,
         ),
     )
+
+
+def _extract_exact_quote_clarification_candidate(
+    text: str,
+    *,
+    fallback_quantity: int,
+) -> ExactQuoteCandidate | None:
+    normalized_text = _normalize_sku_homoglyphs(text).strip()
+    if not normalized_text:
+        return None
+    if not (
+        _EXACT_QUOTE_CLARIFICATION_ITEM_SIGNAL_RE.search(normalized_text)
+        or _SKU_SIGNAL_RE.search(normalized_text)
+    ):
+        return None
+
+    quantity = fallback_quantity
+    for match in _EXACT_QUOTE_CLARIFICATION_QUANTITY_RE.finditer(normalized_text):
+        raw_quantity = match.group("label_qty") or match.group("leading_qty")
+        if raw_quantity is not None:
+            quantity = int(raw_quantity)
+
+    candidate_text = _EXACT_QUOTE_CLARIFICATION_QUANTITY_RE.sub(" ", normalized_text)
+    candidate_text = _EXACT_QUOTE_CLARIFICATION_PREFIX_RE.sub("", candidate_text)
+    item_candidate = _clean_exact_quote_item_candidate(candidate_text)
+    if not _looks_like_exact_item_candidate(item_candidate):
+        return None
+
+    return ExactQuoteCandidate(
+        quantity=quantity,
+        item_candidate=item_candidate,
+        sku=_extract_sku_signal(item_candidate),
+    )
+
+
+def _exact_quote_followup_candidates(
+    *,
+    selection: Mapping[str, Any],
+    combined_text: str,
+    masked_text: str,
+) -> tuple[ExactQuoteCandidate, ...]:
+    unresolved_items = _exact_quote_unresolved_candidates_from_metadata(selection)
+    if len(unresolved_items) != 1:
+        return ()
+
+    for text in (combined_text, masked_text):
+        candidate = _extract_exact_quote_clarification_candidate(
+            text,
+            fallback_quantity=unresolved_items[0].quantity,
+        )
+        if candidate is not None:
+            return (candidate,)
+
+    return ()
 
 
 def _has_affirmative_quote_resume_intent(text: str) -> bool:
@@ -6580,8 +6692,18 @@ async def process_message(
     )
     current_sales_memory_updates = _extract_sales_memory_updates(combined_text)
     pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
-    has_pending_quote_selection = (
-        _pending_quote_selection_from_metadata(conv) is not None
+    pending_quote_selection_at_start = _pending_quote_selection_from_metadata(conv)
+    has_pending_quote_selection = pending_quote_selection_at_start is not None
+    pending_exact_quote_followup_candidates = (
+        _exact_quote_followup_candidates(
+            selection=pending_quote_selection_at_start,
+            combined_text=combined_text,
+            masked_text=masked_text,
+        )
+        if pending_quote_selection_at_start is not None
+        and _is_pending_exact_quote(pending_quote_selection_at_start)
+        and _pending_quote_has_unresolved_items(pending_quote_selection_at_start)
+        else ()
     )
     assistant_asked_quote_details = _last_assistant_asked_quote_customer_details(
         recent_history
@@ -6626,8 +6748,10 @@ async def process_message(
             }
             await _clear_pending_quote_brief_confirmation(db, conv)
         else:
-            terse_quote_customer_details = _extract_terse_quote_customer_details(
-                combined_text
+            terse_quote_customer_details = (
+                {}
+                if pending_exact_quote_followup_candidates
+                else _extract_terse_quote_customer_details(combined_text)
             )
             if terse_quote_customer_details:
                 current_quote_customer_details = {
@@ -7194,6 +7318,101 @@ async def process_message(
                     db,
                     conv,
                     pending_quote_customer_details,
+                )
+            if (
+                pending_exact_quote_followup_candidates
+                and _is_pending_exact_quote(pending_quote_selection)
+                and _pending_quote_has_unresolved_items(pending_quote_selection)
+            ):
+                existing_quote_items = list(
+                    _pending_quote_items_from_metadata(pending_quote_selection)
+                )
+                resolved_exact_followup_items: list[QuotationItem] = []
+                still_unresolved_exact_items: list[ExactQuoteCandidate] = []
+                for item in pending_exact_quote_followup_candidates:
+                    resolved_sku = await _resolve_exact_quote_candidate_sku(
+                        deps.db,
+                        item,
+                    )
+                    if resolved_sku:
+                        resolved_exact_followup_items.append(
+                            QuotationItem(sku=resolved_sku, quantity=item.quantity)
+                        )
+                    else:
+                        still_unresolved_exact_items.append(item)
+
+                if still_unresolved_exact_items or not resolved_exact_followup_items:
+                    exact_followup_unresolved_to_store: tuple[ExactQuoteCandidate, ...]
+                    if still_unresolved_exact_items:
+                        exact_followup_unresolved_to_store = tuple(
+                            still_unresolved_exact_items
+                        )
+                    else:
+                        exact_followup_unresolved_to_store = (
+                            _exact_quote_unresolved_candidates_from_metadata(
+                                pending_quote_selection
+                            )
+                        )
+                    await _store_pending_exact_quote(
+                        db,
+                        conv,
+                        [*existing_quote_items, *resolved_exact_followup_items],
+                        unresolved_items=exact_followup_unresolved_to_store,
+                    )
+                    await _clear_verified_policy_repair_state()
+                    return _build_static_response(
+                        _exact_quote_unresolved_items_message(
+                            exact_followup_unresolved_to_store
+                        ),
+                        f"{db_model_main}|exact-quote-clarify-item",
+                        allow_product_media=False,
+                    )
+
+                resolved_exact_quote_items = [
+                    *existing_quote_items,
+                    *resolved_exact_followup_items,
+                ]
+                await _store_pending_exact_quote(db, conv, resolved_exact_quote_items)
+
+                from pydantic_ai.usage import RunUsage
+
+                missing_required = _quote_missing_required_details(
+                    deps,
+                    resolved_exact_quote_items,
+                )
+                if missing_required:
+                    await _clear_verified_policy_repair_state()
+                    return _build_static_response(
+                        _quote_missing_required_details_message(missing_required),
+                        f"{db_model_main}|quote-resume-missing-details",
+                        allow_product_media=False,
+                    )
+
+                quote_resume_deps = replace(
+                    deps,
+                    tool_mode="exact_quote",
+                    runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
+                )
+                quote_resume_ctx = RunContext(
+                    deps=quote_resume_deps,
+                    retry=0,
+                    messages=[],
+                    prompt=masked_text,
+                    model=dynamic_model,
+                    usage=RunUsage(),
+                )
+                quote_text = await create_quotation(
+                    quote_resume_ctx,
+                    resolved_exact_quote_items,
+                )
+                if quote_resume_deps.quotation_created:
+                    await _clear_pending_quote_selection(db, conv)
+                await _clear_verified_policy_repair_state()
+                return _build_static_response(
+                    quote_text,
+                    f"{db_model_main}|quote-resume",
+                    response_deps=quote_resume_deps,
+                    allow_product_media=False,
                 )
             if _should_resume_pending_quote_selection(
                 combined_text=combined_text,

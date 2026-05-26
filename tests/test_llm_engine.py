@@ -8123,6 +8123,100 @@ async def test_process_message_exact_quote_unresolved_item_clarifies_without_esc
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch(
+    "src.llm.engine._resolve_exact_quote_candidate_sku",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_exact_quote_unresolved_followup_resolves_sku_and_quantity(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    _set_required_quote_details(conv)
+    conv.language = "en"
+    conv.metadata_ = {
+        **(conv.metadata_ or {}),
+        "pending_quote_selection": {
+            "source": "exact_quote",
+            "items": [],
+            "unresolved_items": [
+                {"sku": None, "quantity": 5, "item_candidate": "CH 620"}
+            ],
+        },
+    }
+    text = "The exact SKU is CH 620 grey, quantity 5."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "I found the requested quantity, but I need the exact "
+                        "catalog item for 5 x CH 620 before I can prepare the "
+                        "quotation."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        assert candidate.item_candidate == "CH 620 grey"
+        assert candidate.quantity == 5
+        return "CH 620 grey"
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation Fr3309 has been prepared and sent to you."
+
+    mock_resolve_sku.side_effect = resolve_side_effect
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Quotation Fr3309 has been prepared and sent to you."
+    assert response.model == "mock-model|quote-resume"
+    assert "item(s) and quantity" not in response.text.lower()
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert quote_items == [QuotationItem(sku="CH 620 grey", quantity=5)]
+    assert conv.metadata_["quote_customer_details"]["address"] == (
+        "Dubai Marina, Tower A"
+    )
+    assert "pending_quote_selection" not in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)

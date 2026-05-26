@@ -1,40 +1,31 @@
 # Orchestrator Handoff
 Updated: 2026-05-26
-Current branch: `main`
+Current branch: `codex/tj-4cm4-exact-sku-resume`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
-- `main@000798e` includes the selective `tj-final27.4`-`.8` port and was pushed on 2026-05-26.
-- GitHub Actions run `26447020048` passed changes, lint, tests, type-check, and deploy for `000798e`.
-- Read-only production smoke after deploy passed: `/api/v1/health` OK with Redis OK, products `200`, conversations auth guard `403`, quality auth guard `403`, dashboard auth guard `401`, admin metrics auth guard `401`, webhook empty payload `200`, admin `200`.
-- `tj-mmj8` Fr3309 is merged, deployed, production-smoked, and live E2E verified on `+79262810921` with isolated suffixes `tj-mmj8-fr3309-*`.
-- Core evidence: slash `Fr3310`, multiline `Fr3311`, low-confidence confirm `Fr3312`, labeled fields `Fr3313`; PDFs preserve `Lilia`, `LLD`, `Lfdsf@kfsl.ru`, and expected address.
-- Later ambiguous `individual / dubay 2 street 7` did not overwrite company `LLD`.
-- All 7 synthetic Fr3309 conversations were closed; cleanup readback `active=0`, `escalated=0`.
-- `tj-mmj8` remains `in_progress` only pending explicit Beads closure approval; evidence lives in `.codex/stages/tj-mmj8/artifacts/tj-mmj8-production-e2e.md`.
-- Out-of-scope bugs opened: `tj-4cm4` exact SKU clarification resume, `tj-8ma2` sales-order quote resume, `tj-nzob` comma-separated brief company parsing.
-- `tj-gh20` remains production `shadow` only.
-- `tj-final27.4` through `.8` useful work has been selectively ported from stale `origin/codex/tj-final27-acceptance-integration` and merged to `main@000798e`; old handoff/orchestration drift was intentionally not ported.
-- Local final27 port verification passed: targeted suites `50+55+7+15`, combined targeted suite `127 passed`, backend `ruff`/format/`mypy`, frontend admin `npm ci`/lint/build, no-stage process verification, and full `pytest` (`1177 passed, 19 skipped`). Local `npm ci` emitted a Node engine warning because Node `v24.15.0` is outside `>=22.12.0 <23`.
-- Legacy `tj-final27` artifacts have been normalized; stage process verification now passes.
-- Referral search refresh on 2026-05-26 found no client-approved mechanics in client docs, stage artifacts, handoff notes, or Beads. Existing docs only define referral scope and request missing discount/bonus/activation parameters; internal implementation defaults are not approval.
-- Approved 2026-05-26 bounded text E2E started: smoke `8/0`, chat canary passed, SKU `00-07024023` returned `310.65 AED` and stock `12` after name-gate, then run stopped on `tj-final27.17` price-objection misread as selected item. Current suffix readback: `2` conversations, `0` pending.
-- `tj-final27.17` is closed and deployed at runtime `40ee6928adfa60f3f3297cf6e52af63c6960fdd8`; GitHub Actions run `26447466860` failed before code on external `403`, so deploy used repo-local `scripts/vps-deploy.sh`.
-- Production smoke passed `8/0`; live retest suffix `tj-final27-17-price-202605261219` routed the price objection to `z-ai/glm-5|sales-fallback`, with no `pending_quote_selection` and `fuzzy_17_pending=0`.
-- No production config mutation, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/audio/payment/referral/feedback branch, or real customer conversation has been run for this refresh.
+- Main branch: `main@57e4bd303494c5d822dcdfc4b8381a62cbf0ead8`, pushed on 2026-05-26.
+- Production runtime remains `40ee6928adfa60f3f3297cf6e52af63c6960fdd8` from `tj-final27.17`; smoke passed after manual deploy.
+- Current local stage `tj-4cm4` fixes exact quote clarification resume for pending `5 x CH 620` when the customer replies `The exact SKU is CH 620 grey, quantity 5.`
+- The fix resolves the clarified SKU, preserves quantity 5, avoids storing `quantity 5` as address, and resumes quote creation/detail gating instead of asking for item(s)/quantity again.
+- Local verification passed: targeted RED/GREEN, related exact quote/sales-order tests, `tests/test_llm_engine.py` (`219 passed`), ruff check, ruff format check, mypy.
+- Full Python suite excluding frontend dashboard regressions passed: `1168 passed, 19 skipped`.
+- Full `pytest tests/ -q` is blocked only by absent `frontend/admin/node_modules` / missing Node package `esbuild`; node deps were not installed to avoid disk growth during cleanup work.
+- Process verification passed; stage closeout is blocked until merge/delivery approval because accepted streams require delivery mini-closeout.
+- No merge, push, deploy, live WhatsApp E2E, or Beads closure was performed for `tj-4cm4`.
+- Stage evidence: `.codex/stages/tj-4cm4/summary.md` and `.codex/stages/tj-4cm4/artifacts/tj-4cm4-local-implementation.md`.
 
 ## Next recommended
-Next stage id: `tj-final27`.
-Recommended action: decide the next final E2E scope or referral exclusion/approval. Keep referrals blocked until the client approves rules or explicitly excludes the module.
+Next stage id: `tj-4cm4`.
+Recommended action: request explicit approval for merge/push/deploy and a bounded live E2E retest of the original CH 620 grey clarification scenario.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from local `main`; `tj-final27.17` is pushed, manually deployed, production-smoked, live-retested, and closed. Request approval before widening final E2E or running any referral/feedback/voice/payment branch.
+Use $orchestrator-stage. Continue from branch `codex/tj-4cm4-exact-sku-resume`; local exact SKU clarification fix is implemented and verified, but not merged, pushed, deployed, or live-tested.
 
 ## Explicit defers
-- `tj-mmj8`: Beads closure pending explicit owner approval only.
-- `tj-4cm4`, `tj-8ma2`, `tj-nzob`: production E2E follow-up bugs.
-- `tj-b4n` / GitHub #24 remains provider-blocked pending official Wazzup typing endpoint.
-- FU1/FU2/FU3 production follow-up matrix needs approved copy/templates.
+- `tj-4cm4`: merge/push/deploy/live WhatsApp E2E require explicit approval.
+- `tj-8ma2`: sales-order quote resume can reinterpret customer brief as unresolved item; handle separately.
+- `tj-nzob`: comma-separated ordered brief stores name/email/address but misses company; handle separately.
+- `tj-mmj8`: Fr3309 is deployed and verified; Beads closure was previously left pending explicit owner approval.
+- `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.
-- `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion; no approved mechanics found in repo evidence as of 2026-05-26.
-- `tj-final27.9`: final acceptance still needs further live E2E approval and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.
