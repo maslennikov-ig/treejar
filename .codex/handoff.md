@@ -1,26 +1,27 @@
 # Orchestrator Handoff
 Updated: 2026-05-26
-Current branch: `main`
+Current branch: `codex/tj-4xnf-zoho-customer-fallback`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
-- Local `main` matches `origin/main` at docs-only closeout commit `49670bbea9cfb54bc4c1fe6f51b2f90c8934a411`.
+- Base `main` / `origin/main`: `069e4f91bb5b2d1b4c4b1c6b45d1e5caac11bc94`.
 - Production runtime remains code commit `80e6f4371da44f163406f76f30f858e94d35da4a`: `.release-sha=80e6f4371da44f163406f76f30f858e94d35da4a`, `.release-run-id=26462939020`.
-- GitHub Actions run `26462939020` succeeded including deploy; smoke passed: `/api/v1/health` healthy and `verify_api.py --base-url https://noor.starec.ai` -> `8 passed, 0 failed`. Later `.codex`-only push `49670bb` was path-ignored and did not redeploy.
 - `tj-mmj8`, `tj-4cm4`, and `tj-8ma2` are merged, deployed, live-E2E verified/triaged, cleaned, and closed in Beads.
-- `tj-8ma2` target live evidence: conversation `bdee58ee-8b56-414e-96bc-55de1b659a77` preserved `CH 620 grey x5` in `pending_quote_selection` and stored `Lilia / LLD / Lfdsf@kfsl.ru / 2 street` as quote details without turning the brief into an unresolved item.
-- Four synthetic `tj-8ma2` conversations and two pending synthetic escalations were closed/resolved; merged local branches `codex/tj-8ma2-sales-order-brief-resume` and `codex/tj-final27-artifact-normalization` were deleted.
-- Stage evidence: `.codex/stages/tj-mmj8/summary.md`, `.codex/stages/tj-4cm4/summary.md`, `.codex/stages/tj-8ma2/summary.md`.
+- `tj-4xnf` is now the active local stage. Prior duplicate-name fallback commit `e97bbb4` is present, but fresh `tj-8ma2` live evidence showed a different remaining failure: synthetic phone suffix leaked into Zoho Inventory customer lookup/create.
+- Local `tj-4xnf` fix strips repo-owned `#...` suffixes only at the Zoho Inventory contact boundary, while preserving suffixed phones inside app conversation storage.
+- Local verification passed: RED/GREEN synthetic suffix regression, `tests/test_llm_quotation.py` plus Inventory tests (`20 passed`), relevant engine quote tests (`46 passed`), ruff, format check, mypy, and full stage closeout (`1181 passed, 19 skipped`).
+- `tj-nzob` was checked and is not solved: comma-separated brief parsing still misses `company=LLD`.
+- Stage evidence: `.codex/stages/tj-4xnf/summary.md` and `.codex/stages/tj-4xnf/artifacts/tj-4xnf-local-implementation.md`.
 
 ## Next recommended
-Next stage id: `tj-4xnf` or `tj-nzob`.
-Recommended action: fix `tj-4xnf` first if full quote creation after sales-order resume is more urgent; pick `tj-nzob` first if comma-separated brief parsing is more urgent.
+Next stage id: `tj-4xnf`.
+Recommended action: decide whether to merge/push/deploy and run bounded live E2E for the same sales-order quote path.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Start from clean `main` at `49670bbea9cfb54bc4c1fe6f51b2f90c8934a411`; production runtime is `80e6f4371da44f163406f76f30f858e94d35da4a`. For `tj-4xnf`, investigate why `resolve_inventory_customer_id` did not recover from Zoho Inventory `create_contact` HTTP 400 in live conversation `bdee58ee-8b56-414e-96bc-55de1b659a77` after `create_quotation` was called with `CH 620 grey x5`. Preserve exact quote fail-closed safety, add TDD coverage, run local gates, and do not deploy or send live WhatsApp without explicit owner approval.
+Use $orchestrator-stage. Continue from branch `codex/tj-4xnf-zoho-customer-fallback`. Local fix strips synthetic `#...` suffixes before Zoho Inventory customer lookup/create. Verify with repo gates, then if owner approves delivery, merge to `main`, push, wait for CI/deploy, smoke production, and live-E2E retest conversation shape `sales order 5 x CH 620` -> `5 x CH 620 grey` -> `Lilia / LLD / Lfdsf@kfsl.ru / 2 street`.
 
 ## Explicit defers
-- `tj-4xnf`: exact quotation can still fail closed when Zoho Inventory `create_contact` returns HTTP 400 and fallback does not recover.
+- `tj-4xnf`: merge/push/deploy/live E2E pending explicit owner approval.
 - `tj-nzob`: comma-separated ordered brief stores name/email/address but misses company; slash and multiline formats are already covered.
 - `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.

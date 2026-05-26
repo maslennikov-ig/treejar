@@ -599,6 +599,32 @@ async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
 
 
 @pytest.mark.asyncio
+async def test_resolve_inventory_customer_id_strips_synthetic_suffix_for_zoho() -> None:
+    mock_inventory = AsyncMock()
+    mock_inventory.find_customer_by_phone.return_value = None
+    mock_inventory.find_customer_by_email.return_value = None
+    mock_inventory.create_contact.return_value = {
+        "contact_id": "created-inventory-contact",
+        "contact_type": "customer",
+        "status": "active",
+    }
+
+    result = await resolve_inventory_customer_id(
+        phone="+79262810921#tj-8ma2-salesorder-mixed-20260526-200552",
+        customer_name="Lilia",
+        customer_email="Lfdsf@kfsl.ru",
+        customer_company="LLD",
+        zoho_inventory=mock_inventory,
+    )
+
+    assert result == "created-inventory-contact"
+    mock_inventory.find_customer_by_phone.assert_awaited_once_with("+79262810921")
+    payload = mock_inventory.create_contact.await_args.args[0]
+    assert payload["contact_persons"][0]["phone"] == "+79262810921"
+    assert payload["contact_persons"][0]["mobile"] == "+79262810921"
+
+
+@pytest.mark.asyncio
 async def test_resolve_inventory_customer_id_recovers_from_duplicate_name_conflict() -> (
     None
 ):

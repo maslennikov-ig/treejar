@@ -4953,6 +4953,14 @@ def _split_contact_name(name: str) -> tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
+def _external_inventory_phone(phone: str) -> str:
+    phone_value = _string_value(phone)
+    base_phone, _, suffix = phone_value.partition("#")
+    if suffix and base_phone:
+        return base_phone
+    return phone_value
+
+
 def _inventory_contact_id(contact: Mapping[str, Any] | None) -> str | None:
     if not isinstance(contact, Mapping):
         return None
@@ -5032,12 +5040,13 @@ async def resolve_inventory_customer_id(
     zoho_inventory: ZohoInventoryClient,
 ) -> str | None:
     """Resolve or create a valid Zoho Inventory customer contact for quotations."""
+    inventory_phone = _external_inventory_phone(phone)
     try:
-        existing_contact = await zoho_inventory.find_customer_by_phone(phone)
+        existing_contact = await zoho_inventory.find_customer_by_phone(inventory_phone)
     except Exception:
         logger.exception(
             "Failed to search Zoho Inventory customer by phone for %s",
-            phone,
+            inventory_phone,
         )
         return None
 
@@ -5062,7 +5071,7 @@ async def resolve_inventory_customer_id(
             return existing_by_email_id
 
     payload = _build_inventory_contact_payload(
-        phone=phone,
+        phone=inventory_phone,
         customer_name=customer_name,
         customer_email=customer_email,
         customer_company=customer_company,
@@ -5102,7 +5111,7 @@ async def resolve_inventory_customer_id(
 
         logger.exception(
             "Failed to create Zoho Inventory customer for phone %s",
-            phone,
+            inventory_phone,
         )
         return None
 
@@ -5110,7 +5119,7 @@ async def resolve_inventory_customer_id(
     if contact_id is None:
         logger.error(
             "Zoho Inventory create_contact returned no contact_id for phone %s: %s",
-            phone,
+            inventory_phone,
             created_contact,
         )
     return contact_id
