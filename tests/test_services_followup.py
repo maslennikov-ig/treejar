@@ -12,6 +12,7 @@ from src.services.followup import (
     PaymentReminderControlsConfig,
     _naive_utc_now,
     _run_payment_reminders_with_db,
+    build_feedback_request_candidate,
     build_payment_reminder_candidate,
     run_automatic_followups,
 )
@@ -369,3 +370,67 @@ def test_naive_utc_now_returns_naive_datetime() -> None:
     now = _naive_utc_now()
 
     assert now.tzinfo is None
+
+
+def _delivered_conversation(**overrides: object) -> Conversation:
+    now = _naive_utc_now()
+    data = {
+        "id": uuid.uuid4(),
+        "phone": "+971501234567",
+        "status": "active",
+        "sales_stage": "closing",
+        "deal_status": "delivered",
+        "deal_delivered_at": now - datetime.timedelta(hours=30),
+        "zoho_deal_id": "DEAL-001",
+        "escalation_status": EscalationStatus.NONE.value,
+        "metadata_": {"zoho_sale_order_id": "SO-001"},
+    }
+    data.update(overrides)
+    return Conversation(**data)
+
+
+def test_delivered_order_becomes_feedback_request_candidate_once() -> None:
+    """Delivered orders should produce one deterministic feedback request."""
+    now = _naive_utc_now()
+    conv = _delivered_conversation()
+
+    candidate = build_feedback_request_candidate(conv, now=now)
+
+    assert candidate is not None
+    assert candidate.conversation_id == conv.id
+    assert candidate.crm_message_id == f"feedback:{conv.id}:request"
+
+    metadata = dict(conv.metadata_ or {})
+    metadata["feedback_request"] = {
+        "status": "sent",
+        "crm_message_id": candidate.crm_message_id,
+    }
+    conv.metadata_ = metadata
+
+    assert build_feedback_request_candidate(conv, now=now) is None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "metadata_updates"),
+    [
+        ({"status": "inactive"}, {}),
+        ({"deal_status": "rejected"}, {}),
+        ({"deal_status": None, "zoho_deal_id": None}, {}),
+        ({"zoho_deal_id": None, "metadata_": {}}, {}),
+        ({}, {"quotation_decision_status": "rejected"}),
+        ({}, {"order_active": False}),
+        ({}, {"zoho_sale_order_active": False}),
+    ],
+)
+def test_feedback_request_candidate_excludes_non_delivery_contexts(
+    overrides: dict[str, object],
+    metadata_updates: dict[str, object],
+) -> None:
+    conv = _delivered_conversation(**overrides)
+    metadata = dict(conv.metadata_ or {})
+    metadata.update(metadata_updates)
+    conv.metadata_ = metadata
+
+    candidate = build_feedback_request_candidate(conv, now=_naive_utc_now())
+
+    assert candidate is None

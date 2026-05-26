@@ -8,14 +8,17 @@ from __future__ import annotations
 import logging
 import secrets
 import string
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.referral import Referral
+from src.models.system_config import SystemConfig
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,8 @@ logger = logging.getLogger(__name__)
 CODE_PREFIX = "NOOR-"
 CODE_LENGTH = 5
 CODE_ALPHABET = string.ascii_uppercase + string.digits
+REFERRAL_POLICY_KEY = "referral_policy"
+ReferralPolicyStatus = Literal["client_decision_required", "excluded", "approved"]
 
 
 def _generate_code() -> str:
@@ -49,9 +54,92 @@ class ReferralResult(BaseModel):
     discount_percent: float | None = None
 
 
+class ReferralPolicyConfig(BaseModel):
+    """SystemConfig JSON payload controlling referral launch readiness."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: ReferralPolicyStatus = "client_decision_required"
+    approved: bool = False
+    enabled: bool = False
+    confirmation_required: bool = True
+    decision_note: str = (
+        "Client decision required before referral generation or discounts can launch."
+    )
+    discount_policy: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def allows_launch(self) -> bool:
+        return self.status == "approved" and self.approved and self.enabled
+
+
+class ReferralPolicyResponse(BaseModel):
+    config: ReferralPolicyConfig
+    allows_launch: bool
+    message: str
+
+
+def parse_referral_policy(raw: Any) -> ReferralPolicyConfig:
+    if isinstance(raw, ReferralPolicyConfig):
+        return raw
+    if isinstance(raw, Mapping):
+        return ReferralPolicyConfig.model_validate(raw)
+    return ReferralPolicyConfig()
+
+
+async def get_referral_policy_config(db: AsyncSession) -> ReferralPolicyConfig:
+    result = await db.execute(
+        select(SystemConfig).where(SystemConfig.key == REFERRAL_POLICY_KEY)
+    )
+    row = result.scalar_one_or_none()
+    value = getattr(row, "value", None)
+    if value is None:
+        return ReferralPolicyConfig()
+    try:
+        return parse_referral_policy(value)
+    except ValidationError:
+        logger.warning(
+            "Invalid SystemConfig %s; using disabled defaults",
+            REFERRAL_POLICY_KEY,
+            exc_info=True,
+        )
+        return ReferralPolicyConfig()
+
+
+def referral_policy_message(policy: ReferralPolicyConfig) -> str:
+    if policy.allows_launch:
+        return "Referral policy is approved and enabled."
+    if policy.status == "excluded":
+        return "Referral program is explicitly excluded from final acceptance until the client reopens it."
+    return policy.decision_note
+
+
+def build_referral_policy_response(
+    policy: ReferralPolicyConfig,
+) -> ReferralPolicyResponse:
+    return ReferralPolicyResponse(
+        config=policy,
+        allows_launch=policy.allows_launch,
+        message=referral_policy_message(policy),
+    )
+
+
+def _policy_block_result(policy: ReferralPolicyConfig) -> ReferralResult:
+    return ReferralResult(
+        success=False,
+        code="",
+        message=(
+            f"{referral_policy_message(policy)} A manager must confirm the "
+            "customer-visible referral rules before any code or discount is applied."
+        ),
+    )
+
+
 async def generate_code(
     db: AsyncSession,
     phone: str,
+    *,
+    policy: ReferralPolicyConfig | None = None,
 ) -> ReferralResult:
     """Generate a unique referral code for a customer.
 
@@ -65,6 +153,9 @@ async def generate_code(
     Returns:
         ReferralResult with the generated code.
     """
+    if policy is not None and not policy.allows_launch:
+        return _policy_block_result(policy)
+
     for attempt in range(10):
         code = _generate_code()
         referral = Referral(
@@ -98,6 +189,8 @@ async def apply_code(
     db: AsyncSession,
     code: str,
     referee_phone: str,
+    *,
+    policy: ReferralPolicyConfig | None = None,
 ) -> ReferralResult:
     """Apply a referral code for a new customer.
 
@@ -115,6 +208,9 @@ async def apply_code(
     Returns:
         ReferralResult with the outcome.
     """
+    if policy is not None and not policy.allows_launch:
+        return _policy_block_result(policy)
+
     stmt = select(Referral).where(Referral.code == code.upper())
     result = await db.execute(stmt)
     referral = result.scalar_one_or_none()

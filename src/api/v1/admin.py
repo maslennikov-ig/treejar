@@ -52,6 +52,7 @@ from src.schemas import (
     SettingsUpdate,
     TimeseriesResponse,
 )
+from src.schemas.admin import RecentFeedbackRead
 from src.services.admin_crm import require_admin_ai_quality_manual_gate
 from src.services.client_self_test import format_client_self_test_summary
 from src.services.followup import (
@@ -64,6 +65,11 @@ from src.services.followup import (
     save_payment_reminder_controls_config,
 )
 from src.services.notifications import send_telegram_message
+from src.services.referrals import (
+    ReferralPolicyResponse,
+    build_referral_policy_response,
+    get_referral_policy_config,
+)
 
 
 async def require_admin_session(request: Request) -> None:
@@ -200,6 +206,26 @@ async def get_dashboard_timeseries(
     from src.services.dashboard_metrics import calculate_timeseries
 
     return await calculate_timeseries(db, period)
+
+
+@router.get("/feedback/recent", response_model=list[RecentFeedbackRead])
+async def get_admin_recent_feedback(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: PeriodType = "all_time",
+    limit: int = Query(5, ge=1, le=20),
+) -> list[RecentFeedbackRead]:
+    """List recent post-delivery feedback inside the admin session."""
+    from src.services.dashboard_metrics import list_recent_feedback
+
+    return await list_recent_feedback(db, period=period, limit=limit)
+
+
+@router.get("/referrals/policy", response_model=ReferralPolicyResponse)
+async def get_admin_referral_policy(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ReferralPolicyResponse:
+    """Expose referral launch policy status without applying discounts."""
+    return build_referral_policy_response(await get_referral_policy_config(db))
 
 
 @router.get("/notifications/config", response_model=NotificationConfigRead)

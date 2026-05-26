@@ -21,6 +21,7 @@ def test_dashboard_response_has_manager_fields() -> None:
     assert hasattr(response, "avg_rating_delivery")
     assert hasattr(response, "nps_score")
     assert hasattr(response, "recommend_rate")
+    assert hasattr(response, "recent_feedback")
 
     # Defaults
     assert response.avg_manager_score == 0.0
@@ -32,11 +33,14 @@ def test_dashboard_response_has_manager_fields() -> None:
     assert response.avg_rating_delivery == 0.0
     assert response.nps_score == 0.0
     assert response.recommend_rate == 0.0
+    assert response.recent_feedback == []
 
 
 def test_dashboard_response_with_manager_and_feedback_data() -> None:
     """DashboardMetricsResponse accepts manager and feedback KPI data."""
-    from src.schemas.admin import DashboardMetricsResponse
+    from datetime import UTC, datetime
+
+    from src.schemas.admin import DashboardMetricsResponse, RecentFeedbackRead
     from src.schemas.manager_review import ManagerLeaderboardEntry
 
     response = DashboardMetricsResponse(
@@ -53,6 +57,17 @@ def test_dashboard_response_with_manager_and_feedback_data() -> None:
         avg_rating_delivery=4.3,
         nps_score=58.3,
         recommend_rate=79.2,
+        recent_feedback=[
+            RecentFeedbackRead(
+                conversation_id="6a3288f5-6c9a-47c6-a35e-29ef8d061b0e",
+                phone="+971501234567",
+                rating_overall=5,
+                rating_delivery=4,
+                recommend=True,
+                comment="Great delivery",
+                created_at=datetime.now(UTC),
+            )
+        ],
     )
 
     assert response.avg_manager_score == 16.2
@@ -63,3 +78,5 @@ def test_dashboard_response_with_manager_and_feedback_data() -> None:
     assert response.avg_rating_delivery == 4.3
     assert response.nps_score == 58.3
     assert response.recommend_rate == 79.2
+    assert len(response.recent_feedback) == 1
+    assert response.recent_feedback[0].phone == "+971501234567"

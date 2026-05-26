@@ -42,6 +42,17 @@ class SalesMetrics(BaseModel):
     amount: float = 0.0
 
 
+class RecentFeedbackRead(BaseModel):
+    conversation_id: uuid.UUID
+    phone: str
+    customer_name: str | None = None
+    rating_overall: int
+    rating_delivery: int
+    recommend: bool
+    comment: str | None = None
+    created_at: datetime
+
+
 class DashboardMetricsResponse(BaseModel):
     """Admin dashboard payload described in docs/metrics.md."""
 
@@ -87,6 +98,7 @@ class DashboardMetricsResponse(BaseModel):
     avg_rating_delivery: float = 0.0
     nps_score: float = 0.0
     recommend_rate: float = 0.0
+    recent_feedback: list[RecentFeedbackRead] = Field(default_factory=list)
 
 
 class NotificationConfigRead(BaseModel):
