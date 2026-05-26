@@ -309,11 +309,17 @@ async def test_payment_reminder_within_24h_requires_explicit_configured_text() -
 
 @pytest.mark.asyncio
 async def test_feedback_request_normalizes_legacy_arabic_language_marker() -> None:
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     conv = Conversation(
         id=uuid.uuid4(),
         phone="+971501234567",
         language="Arabic",
         sales_stage=SalesStage.CLOSING.value,
+        status="active",
+        deal_status="delivered",
+        deal_delivered_at=now - datetime.timedelta(hours=30),
+        zoho_deal_id="DEAL-001",
+        metadata_={"zoho_sale_order_id": "SO-001"},
     )
     db = AsyncMock()
     provider = AsyncMock()
@@ -325,6 +331,10 @@ async def test_feedback_request_normalizes_legacy_arabic_language_marker() -> No
             new_callable=AsyncMock,
         ) as mock_send_text,
     ):
+        mock_send_text.return_value = SimpleNamespace(
+            skipped=False,
+            provider_message_id="wz-msg-1",
+        )
         await _send_feedback_request(db, conv)
 
     sent_text = mock_send_text.await_args.kwargs["text"]

@@ -58,14 +58,20 @@ Ported evidence:
 - `tj-final27.7`: final report fields for refusal, feedback, and LLM cost-control visibility plus QA/reporting runbook and report tests.
 - `tj-final27.8`: bounded local/mock load harness, admin/auth guard checks in `verify_api.py`, security/infra tests, tracked-secret evidence, and nonfunctional readiness documentation.
 
-Port verification so far:
+Port verification:
 
 - Voice/audio targeted suite: `50 passed`.
 - Feedback/referrals targeted suite: `55 passed`.
 - Reports targeted suite: `7 passed`.
 - Nonfunctional/security/script targeted suite: `15 passed`.
+- Combined targeted suite: `127 passed`.
+- Backend static checks: `uv run ruff check src/ tests/ scripts/`, `uv run ruff format --check src/ tests/ scripts/`, and `uv run mypy src/` passed.
+- Frontend admin checks: `npm --prefix frontend/admin ci`, `npm --prefix frontend/admin run lint`, and `npm --prefix frontend/admin run build` passed. `npm ci` warned that local Node `v24.15.0` is outside the package engine range `>=22.12.0 <23`.
+- Full test suite: `1177 passed, 19 skipped`.
+- Process verification: `scripts/orchestration/run_process_verification.sh` passed.
+- Stage-scoped process verification: `scripts/orchestration/run_process_verification.sh --stage tj-final27` is blocked by legacy `tj-final27` artifacts that predate the current v2.14 artifact schema; failures are missing frontmatter keys on older artifacts and legacy `status: deployed` in `tj-final27.11.md`.
 
-Remaining before main merge: repo-wide lint/format/mypy/pytest, frontend lint/build, artifact/process verification, CI, deployment approval if desired, and explicit client decision for referrals plus any requested live voice/media/final E2E or production nonfunctional drill.
+Remaining before main merge: push/review/CI, decision on whether to normalize legacy `tj-final27` artifacts for stage-scoped closeout, deployment approval if desired, and explicit client decision for referrals plus any requested live voice/media/final E2E or production nonfunctional drill.
 
 Telegram private admin login and CRM admin production-regression fixes are delivered through `main@3bad8cd` and verified in production. Authenticated CRM admin E2E run `20260511154258` passed guards, Telegram session consume, all dashboard nav sections, conversations 3-panel layout, KB editor/preview/save/reindex/soft-delete, Auto-FAQ approve/reject, bot rules preview/save/reindex/archive, catalog/report/settings/quality/queues read-only smoke, Support, and Audit evidence for `admin_login.telegram` / `telegram:166848328`.
 
