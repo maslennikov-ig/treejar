@@ -87,6 +87,8 @@ MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE = 2
 VERIFIED_POLICY_REPAIR_KEY = "verified_policy_repair"
 PENDING_QUOTE_SELECTION_KEY = "pending_quote_selection"
 PENDING_PRODUCT_REFERENCE_QUANTITY_KEY = "pending_product_reference_quantity"
+PENDING_QUOTE_BRIEF_CONFIRMATION_KEY = "pending_quote_brief_confirmation"
+QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY = "quote_brief_confirmed_address"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
 SALES_MEMORY_KEY = "sales_memory"
@@ -2962,6 +2964,17 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     return details
 
 
+def _is_individual_detail_value(value: str | None) -> bool:
+    normalized = _normalize_text(value or "")
+    return normalized in {
+        "individual",
+        "individual purchase",
+        "personal",
+        "private customer",
+        "частное лицо",
+    }
+
+
 def _quote_context_details_from_deps(deps: SalesDeps) -> dict[str, str]:
     conversation = deps.conversation
     details: dict[str, str] = {}
@@ -2987,6 +3000,187 @@ def _quote_context_details_from_deps(deps: SalesDeps) -> dict[str, str]:
     quote_details = _quote_customer_details_from_metadata(conversation)
     details.update(quote_details)
     return details
+
+
+@dataclass(frozen=True)
+class _UnlabeledQuoteBrief:
+    details: dict[str, str]
+    needs_confirmation: bool
+
+
+def _quote_brief_parts(text: str) -> list[str]:
+    raw = _strip_synthetic_test_marker(text).strip(" \t\r\n.;:!?")
+    if not raw or len(raw) > 260 or "?" in raw:
+        return []
+    if re.search(
+        r"\b(?:full name|name|customer name|company name|company|email|"
+        r"phone|delivery address|address|location)\s*(?::|：|=|\bis\b)",
+        raw,
+        flags=re.IGNORECASE,
+    ):
+        return []
+    if not re.search(r"[\n/;]", raw):
+        return []
+    return [
+        " ".join(part.strip(" \t\r\n,.;:-").split())
+        for part in re.split(r"[\n/;]+", raw)
+        if part.strip(" \t\r\n,.;:-")
+    ]
+
+
+def _unlabeled_company_or_customer_type(value: str) -> dict[str, str]:
+    part_details = _extract_quote_customer_details(value)
+    if part_details.get("customer_type") or _is_individual_detail_value(value):
+        return {"customer_type": "individual"}
+    if (
+        part_details.get("email")
+        or part_details.get("phone")
+        or _has_product_or_quote_routing_signal(value)
+        or _looks_like_terse_delivery_address(value)
+    ):
+        return {}
+    if not re.search(r"[^\W\d_]", value, flags=re.UNICODE):
+        return {}
+    if len(value) > 100:
+        return {}
+    return {"company": value}
+
+
+def _extract_ordered_unlabeled_quote_brief(
+    text: str,
+) -> _UnlabeledQuoteBrief | None:
+    parts = _quote_brief_parts(text)
+    if len(parts) != 4:
+        return None
+
+    name = _extract_bare_name_gate_reply(parts[0])
+    company_or_type = _unlabeled_company_or_customer_type(parts[1])
+    email_match = EMAIL_PATTERN.search(parts[2])
+    address = parts[3].strip(" \t\r\n,.;:-")
+    if not name or not company_or_type or not email_match or not address:
+        return None
+    if _has_product_or_quote_routing_signal(address):
+        return None
+
+    details = {
+        "name": name,
+        **company_or_type,
+        "email": email_match.group(0).strip(),
+        "address": address,
+    }
+    complete = (
+        bool(details.get("email"))
+        and bool(details.get("company") or details.get("customer_type"))
+        and _is_specific_delivery_address(details.get("address"))
+    )
+    return _UnlabeledQuoteBrief(details=details, needs_confirmation=not complete)
+
+
+def _quote_brief_confirmation_message(details: Mapping[str, str]) -> str:
+    lines = ["Please confirm I understood correctly:"]
+    if details.get("name"):
+        lines.append(f"Name: {details['name']}")
+    if details.get("company"):
+        lines.append(f"Company: {details['company']}")
+    elif details.get("customer_type"):
+        lines.append("Company: Individual")
+    if details.get("email"):
+        lines.append(f"Email: {details['email']}")
+    if details.get("address"):
+        lines.append(f"Address: {details['address']}")
+    lines.append("Reply yes to use these details, or send the corrected details.")
+    return "\n".join(lines)
+
+
+def _pending_quote_brief_confirmation_from_metadata(
+    conversation: Conversation,
+) -> dict[str, str]:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    raw = metadata.get(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY)
+    if not isinstance(raw, Mapping):
+        return {}
+    details: dict[str, str] = {}
+    for key in ("name", "company", "customer_type", "email", "phone", "address"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            details[key] = value.strip()
+    return details
+
+
+async def _store_pending_quote_brief_confirmation(
+    db: AsyncSession,
+    conversation: Conversation,
+    details: Mapping[str, str],
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata[PENDING_QUOTE_BRIEF_CONFIRMATION_KEY] = {
+        key: value.strip()
+        for key, value in details.items()
+        if key in {"name", "company", "customer_type", "email", "phone", "address"}
+        and isinstance(value, str)
+        and value.strip()
+    }
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush quote brief confirmation for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+async def _clear_pending_quote_brief_confirmation(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    if PENDING_QUOTE_BRIEF_CONFIRMATION_KEY not in metadata:
+        return
+    metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to clear quote brief confirmation for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+async def _store_confirmed_quote_brief_address(
+    db: AsyncSession,
+    conversation: Conversation,
+    address: str,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    clean_address = _string_value(address)
+    if not clean_address:
+        metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
+    else:
+        metadata[QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY] = clean_address
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush confirmed quote brief address for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+def _last_assistant_asked_quote_brief_confirmation(
+    recent_history: list[str] | None,
+) -> bool:
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    return "please confirm i understood correctly" in last_assistant and all(
+        term in last_assistant for term in ("name:", "email:", "address:")
+    )
 
 
 def _looks_like_terse_delivery_address(value: str) -> bool:
@@ -3026,8 +3220,8 @@ def _looks_like_terse_delivery_address(value: str) -> bool:
 
 
 def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
-    stripped = _strip_synthetic_test_marker(text)
-    stripped = " ".join(stripped.strip(" \t\r\n.;:!?").split())
+    raw = _strip_synthetic_test_marker(text).strip(" \t\r\n.;:!?")
+    stripped = " ".join(raw.split())
     if not stripped or len(stripped) > 220 or "?" in stripped:
         return {}
     if re.search(
@@ -3040,8 +3234,8 @@ def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
 
     details: dict[str, str] = {}
     parts = [
-        part.strip(" \t\r\n,.;:-")
-        for part in re.split(r"[,;\n/]+", stripped)
+        " ".join(part.strip(" \t\r\n,.;:-").split())
+        for part in re.split(r"[,;\n/]+", raw)
         if part.strip(" \t\r\n,.;:-")
     ]
     if len(parts) >= 2:
@@ -3510,18 +3704,11 @@ def _saved_sales_context_summary(deps: SalesDeps) -> str:
 
 
 def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
-    customer_type = _normalize_text(details.get("customer_type", ""))
-    company = _normalize_text(details.get("company", ""))
-    return customer_type in {
-        "individual",
-        "personal",
-        "private customer",
-    } or company in {
-        "individual",
-        "personal",
-        "private customer",
-        "частное лицо",
-    }
+    customer_type = details.get("customer_type", "")
+    company = details.get("company", "")
+    return _is_individual_detail_value(customer_type) or _is_individual_detail_value(
+        company
+    )
 
 
 def _is_specific_delivery_address(address: str | None) -> bool:
@@ -3555,9 +3742,21 @@ def _quote_missing_required_details(
     items: list[QuotationItem],
 ) -> list[str]:
     quote_details = _quote_customer_details_from_metadata(deps.conversation)
+    metadata = (
+        deps.conversation.metadata_
+        if isinstance(deps.conversation.metadata_, dict)
+        else {}
+    )
     customer_name = quote_details.get("name") or _string_value(
         getattr(deps.conversation, "customer_name", None)
     )
+    delivery_address = quote_details.get("address")
+    confirmed_brief_address = _string_value(
+        metadata.get(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY)
+    )
+    delivery_address_confirmed = bool(
+        _string_value(delivery_address)
+    ) and confirmed_brief_address == _string_value(delivery_address)
     missing: list[str] = []
     if not items or not all(item.quantity > 0 and item.sku.strip() for item in items):
         missing.append("items and quantities")
@@ -3567,7 +3766,9 @@ def _quote_missing_required_details(
         quote_details.get("company")
     ) and not _is_explicit_individual_customer(quote_details):
         missing.append("company name, or confirm you are buying as an individual")
-    if not _is_specific_delivery_address(quote_details.get("address")):
+    if not delivery_address_confirmed and not _is_specific_delivery_address(
+        delivery_address
+    ):
         missing.append("specific delivery address")
     if not _string_value(quote_details.get("email")):
         missing.append("customer email")
@@ -3604,7 +3805,20 @@ async def _store_extracted_quote_customer_details(
 
     metadata = dict(conversation.metadata_ or {})
     existing = _quote_customer_details_from_metadata(conversation)
-    details = {**existing, **extracted}
+    extracted_details = dict(extracted)
+    existing_company = existing.get("company")
+    if (
+        _string_value(existing_company)
+        and not _is_individual_detail_value(existing_company)
+        and _is_individual_detail_value(extracted_details.get("customer_type"))
+        and not _string_value(extracted_details.get("company"))
+    ):
+        extracted_details.pop("customer_type", None)
+    new_address = _string_value(extracted_details.get("address"))
+    confirmed_address = _string_value(metadata.get(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY))
+    if new_address and confirmed_address and confirmed_address != new_address:
+        metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
+    details = {**existing, **extracted_details}
     metadata[QUOTE_CUSTOMER_DETAILS_KEY] = details
     conversation.metadata_ = metadata
     if details.get("name") and not _string_value(conversation.customer_name):
@@ -5582,10 +5796,13 @@ async def create_quotation(
         getattr(ctx.deps.conversation, "customer_name", None)
     )
     customer_email = quote_customer_details.get("email", "")
-    if _is_explicit_individual_customer(quote_customer_details):
+    explicit_company = _string_value(quote_customer_details.get("company"))
+    if explicit_company and not _is_individual_detail_value(explicit_company):
+        customer_company = explicit_company
+    elif _is_explicit_individual_customer(quote_customer_details):
         customer_company = "Individual"
     else:
-        customer_company = quote_customer_details.get("company", "")
+        customer_company = explicit_company
     customer_phone = quote_customer_details.get("phone") or ctx.deps.conversation.phone
     customer_address = quote_customer_details.get("address", "")
 
@@ -6363,15 +6580,55 @@ async def process_message(
     assistant_supports_quote_resume = (
         assistant_asked_quote_details or assistant_offered_quote_selection
     )
-    if assistant_supports_quote_resume:
-        terse_quote_customer_details = _extract_terse_quote_customer_details(
-            combined_text
+    quote_detail_context_active = (
+        assistant_supports_quote_resume or has_pending_quote_selection
+    )
+    quote_brief_confirmation_details: dict[str, str] | None = None
+    confirmed_quote_brief_address: str | None = None
+    pending_quote_brief_confirmation = _pending_quote_brief_confirmation_from_metadata(
+        conv
+    )
+    if (
+        pending_quote_brief_confirmation
+        and _last_assistant_asked_quote_brief_confirmation(recent_history)
+        and _has_affirmative_quote_resume_intent(combined_text)
+    ):
+        current_quote_customer_details = {
+            **current_quote_customer_details,
+            **pending_quote_brief_confirmation,
+        }
+        confirmed_quote_brief_address = _string_value(
+            pending_quote_brief_confirmation.get("address")
         )
-        if terse_quote_customer_details:
+        await _clear_pending_quote_brief_confirmation(db, conv)
+    if quote_detail_context_active:
+        unlabeled_quote_brief = _extract_ordered_unlabeled_quote_brief(combined_text)
+        if unlabeled_quote_brief and unlabeled_quote_brief.needs_confirmation:
+            quote_brief_confirmation_details = unlabeled_quote_brief.details
+            current_quote_customer_details = {}
+        elif unlabeled_quote_brief:
+            terse_quote_customer_details = unlabeled_quote_brief.details
             current_quote_customer_details = {
                 **current_quote_customer_details,
                 **terse_quote_customer_details,
             }
+            await _clear_pending_quote_brief_confirmation(db, conv)
+        else:
+            terse_quote_customer_details = _extract_terse_quote_customer_details(
+                combined_text
+            )
+            if terse_quote_customer_details:
+                current_quote_customer_details = {
+                    **current_quote_customer_details,
+                    **terse_quote_customer_details,
+                }
+                await _clear_pending_quote_brief_confirmation(db, conv)
+    if (
+        not quote_detail_context_active
+        and current_quote_customer_details
+        and pending_quote_brief_confirmation
+    ):
+        await _clear_pending_quote_brief_confirmation(db, conv)
     if customer_name_was_unknown and pending_name_gate_request:
         bare_name = _extract_bare_name_gate_reply(combined_text)
         if bare_name and not current_quote_customer_details.get("name"):
@@ -6408,6 +6665,12 @@ async def process_message(
             conv,
             current_quote_customer_details,
         )
+        if confirmed_quote_brief_address:
+            await _store_confirmed_quote_brief_address(
+                db,
+                conv,
+                confirmed_quote_brief_address,
+            )
     if current_quote_intent_frame is not None:
         await _store_quote_intent_frame(db, conv, combined_text)
     if current_sales_memory_updates:
@@ -6519,6 +6782,19 @@ async def process_message(
             db, "openrouter_model_main", settings.openrouter_model_main
         )
         db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
+
+        if quote_brief_confirmation_details is not None:
+            await _store_pending_quote_brief_confirmation(
+                db,
+                conv,
+                quote_brief_confirmation_details,
+            )
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _quote_brief_confirmation_message(quote_brief_confirmation_details),
+                f"{db_model_main}|quote-brief-confirm",
+                allow_product_media=False,
+            )
 
         dynamic_model = OpenAIChatModel(
             db_model_main,
