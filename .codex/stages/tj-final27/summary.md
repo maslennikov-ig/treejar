@@ -1,9 +1,9 @@
 # Stage tj-final27: Final Delivery Completion
 
 Updated: 2026-05-26
-Status: active; `.4`-`.8` are ported to current `main` in review branch
-Branch: `codex/tj-final27-port-current`
-Source integration branch: `origin/codex/tj-final27-acceptance-integration`
+Status: active; `.4`-`.8` are merged to `main@000798e` and deployed
+Branch: `main`
+Source integration branch: deleted after selective port from `origin/codex/tj-final27-acceptance-integration`
 Plan: `docs/plans/2026-04-27-final-delivery-completion.md`
 
 ## Goal
@@ -48,7 +48,7 @@ The `tj-final27.9` final acceptance pack and controlled E2E runbook are now trac
 
 Commercial offer/proposal escalation routing fix `tj-jy5i` is also deployed on `main@1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`. Controlled text-only E2E on `79262810921` passed for proposal clarification and high-risk payment terms routing, and the synthetic test data was cleaned from production.
 
-On 2026-05-26, the useful `tj-final27.4` through `tj-final27.8` work was selectively ported from stale source branch `origin/codex/tj-final27-acceptance-integration` onto current `main@50a1b52`. Old handoff/orchestration-script drift from the source branch was intentionally not ported.
+On 2026-05-26, the useful `tj-final27.4` through `tj-final27.8` work was selectively ported from stale source branch `origin/codex/tj-final27-acceptance-integration` onto current `main@50a1b52`, merged as `main@000798e`, and deployed by GitHub Actions run `26447020048`. Old handoff/orchestration-script drift from the source branch was intentionally not ported; the stale source branch was deleted after merge.
 
 Ported evidence:
 
@@ -69,9 +69,12 @@ Port verification:
 - Frontend admin checks: `npm --prefix frontend/admin ci`, `npm --prefix frontend/admin run lint`, and `npm --prefix frontend/admin run build` passed. `npm ci` warned that local Node `v24.15.0` is outside the package engine range `>=22.12.0 <23`.
 - Full test suite: `1177 passed, 19 skipped`.
 - Process verification: `scripts/orchestration/run_process_verification.sh` passed.
+- Merge verification: merge tree `main@000798e` matched the verified port branch tree, and post-merge `scripts/orchestration/run_process_verification.sh` passed.
+- CI/deploy: GitHub Actions run `26447020048` passed changes, lint, test, type-check, and deploy.
+- Read-only production smoke: `/api/v1/health` OK with Redis OK, products `200`, conversations auth guard `403`, quality auth guard `403`, dashboard auth guard `401`, admin metrics auth guard `401`, webhook empty payload `200`, admin `200`. Public `/.release-sha` returned `404`, so SHA readback was unavailable via that path.
 - Stage-scoped process verification: `scripts/orchestration/run_process_verification.sh --stage tj-final27` is blocked by legacy `tj-final27` artifacts that predate the current v2.14 artifact schema; failures are missing frontmatter keys on older artifacts and legacy `status: deployed` in `tj-final27.11.md`.
 
-Remaining before main merge: push/review/CI, decision on whether to normalize legacy `tj-final27` artifacts for stage-scoped closeout, deployment approval if desired, and explicit client decision for referrals plus any requested live voice/media/final E2E or production nonfunctional drill.
+Remaining: decision on whether to normalize legacy `tj-final27` artifacts for stage-scoped closeout, explicit client decision for referrals, and approval for any requested live voice/media/final E2E or production nonfunctional drill.
 
 Telegram private admin login and CRM admin production-regression fixes are delivered through `main@3bad8cd` and verified in production. Authenticated CRM admin E2E run `20260511154258` passed guards, Telegram session consume, all dashboard nav sections, conversations 3-panel layout, KB editor/preview/save/reindex/soft-delete, Auto-FAQ approve/reject, bot rules preview/save/reindex/archive, catalog/report/settings/quality/queues read-only smoke, Support, and Audit evidence for `admin_login.telegram` / `telegram:166848328`.
 
