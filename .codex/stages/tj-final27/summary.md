@@ -1,8 +1,9 @@
 # Stage tj-final27: Final Delivery Completion
 
-Updated: 2026-05-11
-Status: active
-Branch: `codex/tj-final27-final-delivery-plan`
+Updated: 2026-05-26
+Status: active; `.4`-`.8` are ported to current `main` in review branch
+Branch: `codex/tj-final27-port-current`
+Source integration branch: `origin/codex/tj-final27-acceptance-integration`
 Plan: `docs/plans/2026-04-27-final-delivery-completion.md`
 
 ## Goal
@@ -47,7 +48,24 @@ The `tj-final27.9` final acceptance pack and controlled E2E runbook are now trac
 
 Commercial offer/proposal escalation routing fix `tj-jy5i` is also deployed on `main@1cce2aa4bdbc82b9a11ce2f7ce117103e6a3e6f0`. Controlled text-only E2E on `79262810921` passed for proposal clarification and high-risk payment terms routing, and the synthetic test data was cleaned from production.
 
-Remaining final-acceptance work is `tj-final27.4` through `tj-final27.8`, with media/voice and broader external tests requiring explicit scenario approval before execution.
+On 2026-05-26, the useful `tj-final27.4` through `tj-final27.8` work was selectively ported from stale source branch `origin/codex/tj-final27-acceptance-integration` onto current `main@50a1b52`. Old handoff/orchestration-script drift from the source branch was intentionally not ported.
+
+Ported evidence:
+
+- `tj-final27.4`: voice/audio transcription hardening, bounded non-core transcription policy, usage/cost metadata, deterministic fallback for oversized/unreadable audio, SQLAdmin message visibility, and local voice/audio tests.
+- `tj-final27.5`: deterministic post-delivery feedback candidate/dedupe metadata, audited feedback request sends, delivery-context guard, dashboard metrics/API, Operator Center recent feedback readout, and local feedback tests.
+- `tj-final27.6`: referral API and LLM tools are policy-gated behind disabled-safe `client_decision_required` defaults; Operator Center exposes referral policy state. Launch remains blocked pending written client referral policy or explicit exclusion.
+- `tj-final27.7`: final report fields for refusal, feedback, and LLM cost-control visibility plus QA/reporting runbook and report tests.
+- `tj-final27.8`: bounded local/mock load harness, admin/auth guard checks in `verify_api.py`, security/infra tests, tracked-secret evidence, and nonfunctional readiness documentation.
+
+Port verification so far:
+
+- Voice/audio targeted suite: `50 passed`.
+- Feedback/referrals targeted suite: `55 passed`.
+- Reports targeted suite: `7 passed`.
+- Nonfunctional/security/script targeted suite: `15 passed`.
+
+Remaining before main merge: repo-wide lint/format/mypy/pytest, frontend lint/build, artifact/process verification, CI, deployment approval if desired, and explicit client decision for referrals plus any requested live voice/media/final E2E or production nonfunctional drill.
 
 Telegram private admin login and CRM admin production-regression fixes are delivered through `main@3bad8cd` and verified in production. Authenticated CRM admin E2E run `20260511154258` passed guards, Telegram session consume, all dashboard nav sections, conversations 3-panel layout, KB editor/preview/save/reindex/soft-delete, Auto-FAQ approve/reject, bot rules preview/save/reindex/archive, catalog/report/settings/quality/queues read-only smoke, Support, and Audit evidence for `admin_login.telegram` / `telegram:166848328`.
 
