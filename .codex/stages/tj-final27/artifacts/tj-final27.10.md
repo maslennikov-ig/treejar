@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.10
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-catalog-zoho-truth
 base_branch: main
 base_commit: c67341f3482a677a7ad71dc3969c7db018d14234
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-catalog-zoho-truth
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - "uv run --extra dev python -m pytest -s tests/test_inventory_sync.py::test_normalize_treejar_product_uses_catalog_price_not_sale_price tests/test_llm_engine.py::test_tools_get_stock_does_not_alert_when_zoho_rate_differs_from_catalog_price -q: failed before implementation, 2 failed"
   - "uv run --extra dev python -m pytest -s tests/test_inventory_sync.py tests/test_llm_engine.py::test_tools_get_stock_catalog_price_remains_customer_truth_when_zoho_rate_differs tests/test_llm_engine.py::test_tools_get_stock_does_not_alert_when_zoho_rate_differs_from_catalog_price tests/test_llm_engine.py::test_tools_create_quotation_uses_catalog_line_rate_when_zoho_rate_differs tests/test_llm_engine.py::test_tools_create_quotation_blocks_when_catalog_line_rate_override_fails tests/test_llm_engine.py::test_tools_create_quotation_ignores_zoho_rate_diff_and_catalog_only_escalates tests/test_llm_engine.py::test_tools_create_quotation_blocks_catalog_only_item_and_escalates -q: passed, 18 passed"
@@ -24,6 +30,8 @@ changed_files:
   - tests/test_llm_engine.py
   - .codex/stages/tj-final27/artifacts/tj-final27.1.md
   - .codex/stages/tj-final27/artifacts/tj-final27.10.md
+explicit_defers:
+  - none
 ---
 
 # Summary

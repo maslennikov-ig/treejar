@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.4
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-4-voice-audio-acceptance
 base_branch: main
 base_commit: 10e128fab6958186dcfed079fa2e360129e5d43f
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-4-voice-audio-acceptance
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - "uv run --extra dev python -m pytest -s tests/test_voxtral.py tests/test_webhook_audio.py tests/test_services_chat.py tests/test_llm_safety.py -q: failed before implementation, 8 failed, 41 passed"
   - "uv run --extra dev python -m pytest -s tests/test_voxtral.py tests/test_webhook_audio.py tests/test_services_chat.py tests/test_llm_safety.py -q: passed, 49 passed"
@@ -29,6 +35,8 @@ changed_files:
   - docs/testing/manual-test-checklist.md
   - docs/prompts/2026-04-27-final-voice-e2e-agent.md
   - .codex/stages/tj-final27/artifacts/tj-final27.4.md
+explicit_defers:
+  - none
 ---
 
 # Summary

@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.7
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-7-qa-reporting
 base_branch: main
 base_commit: 10e128fab6958186dcfed079fa2e360129e5d43f
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-7-qa-reporting
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - uv run --extra dev python -m pytest -s tests/test_reports.py::test_report_data_defaults tests/test_reports.py::test_format_report_text_contains_final_acceptance_fields tests/test_reports.py::test_generate_report_populates_final_acceptance_fields -q: passed after expected RED
   - uv run --extra dev python -m pytest -s tests/test_quality_job.py tests/test_manager_job.py tests/test_reports.py tests/test_reports_manager.py -q: passed
@@ -21,6 +27,8 @@ changed_files:
   - tests/test_reports.py
   - docs/testing/final-qa-reporting-runbook.md
   - .codex/stages/tj-final27/artifacts/tj-final27.7.md
+explicit_defers:
+  - none
 ---
 
 # Summary

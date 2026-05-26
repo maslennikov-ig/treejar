@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.1
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-catalog-zoho-truth
 base_branch: main
 base_commit: c67341f3482a677a7ad71dc3969c7db018d14234
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-catalog-zoho-truth
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - "uv run --extra dev python -m pytest -s tests/test_llm_engine.py tests/test_treejar_catalog.py tests/test_order_review_flow.py tests/test_product_images.py -q: passed, 75 passed"
   - "uv run --extra dev python -m pytest -s tests/test_telegram_notifications.py -q: passed, 21 passed"
@@ -25,6 +31,8 @@ changed_files:
   - tests/test_product_images.py
   - .codex/stages/tj-final27/artifacts/tj-final27.1.md
   - .codex/stages/tj-final27/artifacts/tj-final27.10.md
+explicit_defers:
+  - none
 ---
 
 # Summary

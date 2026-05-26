@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.11
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-11-sales-fallback
 base_branch: origin/main
 base_commit: 93e9bc40f3c663a9f48fed6ab635064d7bbfa996
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-11-sales-fallback
-status: deployed
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - "bd delete tj-final27.12 --force: passed"
   - "bd update tj-final27.11 --status in_progress --append-notes ...: passed"
@@ -45,6 +51,8 @@ changed_files:
   - .codex/handoff.md
   - .codex/stages/tj-final27/summary.md
   - .codex/stages/tj-final27/artifacts/tj-final27.11.md
+explicit_defers:
+  - none
 ---
 
 # Summary

@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 Updated: 2026-05-26
-Current branch: `main`
+Current branch: `codex/tj-final27-artifact-normalization`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
@@ -18,15 +18,16 @@ Current branch: `main`
 - `tj-gh20` remains production `shadow` only.
 - `tj-final27.4` through `.8` useful work has been selectively ported from stale `origin/codex/tj-final27-acceptance-integration` and merged to `main@000798e`; old handoff/orchestration drift was intentionally not ported.
 - Local final27 port verification passed: targeted suites `50+55+7+15`, combined targeted suite `127 passed`, backend `ruff`/format/`mypy`, frontend admin `npm ci`/lint/build, no-stage process verification, and full `pytest` (`1177 passed, 19 skipped`). Local `npm ci` emitted a Node engine warning because Node `v24.15.0` is outside `>=22.12.0 <23`.
-- Stage-scoped process verification for `tj-final27` is blocked by legacy artifacts that predate the current v2.14 artifact schema; the command reports missing frontmatter keys on older artifacts and legacy `status: deployed` in `tj-final27.11.md`.
+- Legacy `tj-final27` artifacts have been normalized on branch `codex/tj-final27-artifact-normalization`; artifact validation and `scripts/orchestration/check_stage_ready.py tj-final27` now pass.
+- Referral search refresh on 2026-05-26 found no client-approved mechanics in client docs, stage artifacts, handoff notes, or Beads. Existing docs only define referral scope and request missing discount/bonus/activation parameters; internal implementation defaults are not approval.
 - Old remote branch `origin/codex/tj-final27-acceptance-integration` and local branch `codex/tj-final27-port-current` were deleted after merge. No production config mutation, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/media/payment/referral test, or real customer conversation has been run for this final27 port.
 
 ## Next recommended
 Next stage id: `tj-final27`.
-Recommended action: decide whether to normalize legacy `tj-final27` artifacts for stage-scoped closeout, then decide whether referrals are approved or explicitly excluded and whether any live voice/media/final E2E or production nonfunctional drill is approved.
+Recommended action: commit/merge the artifact normalization, then get exact approval for final live E2E phone/channel/suffix/scenario scope. Keep referrals blocked until the client approves rules or explicitly excludes the module.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from `main@000798e`. The selective final27 `.4`-`.8` port is merged and deployed; local targeted/backend/frontend/full pytest/no-stage process verification and CI/deploy run `26447020048` passed. Stage-scoped verification is blocked by legacy `tj-final27` artifact schema drift, not by the ported code. Request explicit authorization before live tests or production drills.
+Use $orchestrator-stage. Continue from branch `codex/tj-final27-artifact-normalization`. The selective final27 `.4`-`.8` port is merged and deployed; local targeted/backend/frontend/full pytest/no-stage process verification and CI/deploy run `26447020048` passed. Legacy final27 artifacts were normalized and stage readiness now passes locally. Request exact authorization before live tests or production drills.
 
 ## Explicit defers
 - `tj-mmj8`: Beads closure pending explicit owner approval only.
@@ -34,5 +35,5 @@ Use $orchestrator-stage. Continue from `main@000798e`. The selective final27 `.4
 - `tj-b4n` / GitHub #24 remains provider-blocked pending official Wazzup typing endpoint.
 - FU1/FU2/FU3 production follow-up matrix needs approved copy/templates.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.
-- `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion.
-- `tj-final27.9`: final acceptance still needs possible legacy artifact normalization for stage-scoped closeout and explicit approval for any live voice/media/final E2E or production nonfunctional drill.
+- `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion; no approved mechanics found in repo evidence as of 2026-05-26.
+- `tj-final27.9`: final acceptance still needs explicit approval for exact live E2E phone/channel/suffix/scenarios and any live voice/media/payment/referral/feedback branch or production nonfunctional drill.

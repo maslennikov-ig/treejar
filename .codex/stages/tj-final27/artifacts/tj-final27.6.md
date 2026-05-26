@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.6
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-5-6-feedback-referrals
 base_branch: main
 base_commit: 10e128fab6958186dcfed079fa2e360129e5d43f
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-5-6-feedback-referrals
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - uv run --extra dev python -m pytest -s tests/test_feedback_model.py tests/test_feedback_integration.py tests/test_dashboard_manager.py tests/test_services_followup.py tests/test_referrals.py -q: passed
   - uv run ruff check src/ tests/: passed
@@ -25,6 +31,8 @@ changed_files:
   - frontend/admin/src/types/operators.ts
   - tests/test_referrals.py
   - docs/client/final-feedback-referrals-acceptance.md
+explicit_defers:
+  - tj-final27.6 referral launch pending written client referral policy or explicit exclusion
 ---
 
 # Summary

@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.2
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-crm-completeness
 base_branch: main
 base_commit: c67341f3482a677a7ad71dc3969c7db018d14234
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-crm-completeness
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - uv run --extra dev python -m pytest -s tests/test_zoho_crm.py tests/test_customer_identity.py tests/test_llm_context.py tests/test_llm_engine.py tests/test_api_crm.py tests/test_services_chat_batch.py -q: passed
   - uv run ruff check src/ tests/: passed
@@ -28,6 +34,8 @@ changed_files:
   - tests/test_services_chat_batch.py
   - tests/test_zoho_crm.py
   - .codex/stages/tj-final27/artifacts/tj-final27.2.md
+explicit_defers:
+  - none
 ---
 
 # Summary

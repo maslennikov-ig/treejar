@@ -72,9 +72,14 @@ Port verification:
 - Merge verification: merge tree `main@000798e` matched the verified port branch tree, and post-merge `scripts/orchestration/run_process_verification.sh` passed.
 - CI/deploy: GitHub Actions run `26447020048` passed changes, lint, test, type-check, and deploy.
 - Read-only production smoke: `/api/v1/health` OK with Redis OK, products `200`, conversations auth guard `403`, quality auth guard `403`, dashboard auth guard `401`, admin metrics auth guard `401`, webhook empty payload `200`, admin `200`. Public `/.release-sha` returned `404`, so SHA readback was unavailable via that path.
-- Stage-scoped process verification: `scripts/orchestration/run_process_verification.sh --stage tj-final27` is blocked by legacy `tj-final27` artifacts that predate the current v2.14 artifact schema; failures are missing frontmatter keys on older artifacts and legacy `status: deployed` in `tj-final27.11.md`.
+- Stage-scoped artifact normalization: legacy `tj-final27` artifacts were updated to the current orchestration artifact schema on branch `codex/tj-final27-artifact-normalization`; accepted delivered artifacts now carry explicit delivery/cleanup/risk fields, `tj-final27.11.md` uses `status: merged`, and blocked work remains blocked with explicit defers.
+- Stage readiness after normalization: `python3 scripts/orchestration/validate_artifact.py .codex/stages/tj-final27/artifacts/*.md` and `scripts/orchestration/check_stage_ready.py tj-final27` passed.
 
-Remaining: decision on whether to normalize legacy `tj-final27` artifacts for stage-scoped closeout, explicit client decision for referrals, and approval for any requested live voice/media/final E2E or production nonfunctional drill.
+Referral search refresh, 2026-05-26: no client-approved referral mechanics were found in client docs, stage artifacts, handoff notes, or Beads. The durable client-facing materials only define referral scope and request the missing parameters: new-customer discount, referrer bonus, and activation conditions. Internal implementation defaults are not approval. Keep `tj-final27.6` blocked until the client approves rules or explicitly excludes referrals.
+
+E2E posture: final controlled E2E is appropriate to run, but the current runbook requires fresh explicit approval for exact phone/channel/suffix/scenarios before live WhatsApp messages. Referral/feedback/payment-send/voice/media branches need separate approval; until referral rules are approved, referral E2E can only assert disabled-safe/client-decision behavior.
+
+Remaining: explicit client decision for referrals, exact approval for final live E2E scenario scope, and approval for any live voice/media/payment/referral/feedback branch or production nonfunctional drill.
 
 Telegram private admin login and CRM admin production-regression fixes are delivered through `main@3bad8cd` and verified in production. Authenticated CRM admin E2E run `20260511154258` passed guards, Telegram session consume, all dashboard nav sections, conversations 3-panel layout, KB editor/preview/save/reindex/soft-delete, Auto-FAQ approve/reject, bot rules preview/save/reindex/archive, catalog/report/settings/quality/queues read-only smoke, Support, and Audit evidence for `admin_login.telegram` / `telegram:166848328`.
 

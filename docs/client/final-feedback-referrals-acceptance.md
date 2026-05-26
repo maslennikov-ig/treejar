@@ -21,6 +21,8 @@ No live WhatsApp feedback branch was run in this worker stream.
 
 No approved referral business policy was found in repo docs/config. The referral launch path is therefore explicitly blocked pending client decision.
 
+Search refresh, 2026-05-26: a repeat search across client docs, stage artifacts, handoff notes, and Beads found no client-approved referral mechanics. The durable client-facing materials only define referral scope and request the missing parameters: new-customer discount, referrer bonus, and activation conditions. Internal implementation defaults or prompts are not treated as client approval.
+
 Default referral policy state:
 
 - `status`: `client_decision_required`

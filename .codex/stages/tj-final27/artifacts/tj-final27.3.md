@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.3
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-payment-reminders
 base_branch: codex/tj-final27-crm-completeness
 base_commit: 8b7f9f8ff9b1d8d8609e9d2fd13f0cbfd0e72553
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-payment-reminders
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - "uv run --extra dev python -m pytest -s tests/test_services_followup.py::test_run_payment_reminders_scans_past_first_page_non_candidates tests/test_services_followup_details.py::test_payment_reminder_closes_locally_created_wazzup_provider -q: failed before review fixes, 2 failed"
   - "uv run --extra dev python -m pytest -s tests/test_services_followup.py::test_run_payment_reminders_scans_past_first_page_non_candidates tests/test_services_followup_details.py::test_payment_reminder_closes_locally_created_wazzup_provider -q: passed after review fixes, 2 passed"
@@ -25,6 +31,8 @@ changed_files:
   - tests/test_services_followup.py
   - tests/test_services_followup_details.py
   - .codex/stages/tj-final27/artifacts/tj-final27.3.md
+explicit_defers:
+  - FU1/FU2/FU3 production follow-up copy/templates require approval before live sends
 ---
 
 # Summary

@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.8
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/tj-final27-8-nonfunctional-readiness
 base_branch: main
 base_commit: 10e128fab6958186dcfed079fa2e360129e5d43f
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-8-nonfunctional-readiness
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - Context7 FastAPI docs for APIRouter dependencies and HTTPException guards: passed
   - Context7 pytest docs for focused tests, monkeypatch, pytest.raises: passed
@@ -31,6 +37,8 @@ changed_files:
   - tests/test_scripts_load_test_conversations.py
   - tests/test_scripts_verify_api.py
   - tests/test_security_extended.py
+explicit_defers:
+  - production nonfunctional drill requires explicit approval
 ---
 
 # Summary

@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-admin-regression-fixes
 stage_id: tj-final27
 repo: treejar
@@ -6,7 +7,12 @@ branch: codex/admin-regression-fixes
 base_branch: origin/main
 base_commit: 79538a2fdc7ddd47d28519dcb87e815861353216
 worktree: /home/me/code/treejar/.worktrees/codex-admin-regression-fixes
-status: returned
+status: merged
+delivery_method: manual integration
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Accepted content is preserved in main; source branch/worktree cleanup is complete or no longer applicable.
+risk_level: medium
 verification:
   - uv run ruff check src/ tests/: passed
   - uv run ruff format --check src/ tests/: passed
@@ -29,6 +35,8 @@ changed_files:
   - tests/test_admin_crm_api.py
   - tests/test_admin_knowledge_base_api.py
   - tests/test_api_admin.py
+explicit_defers:
+  - none
 ---
 
 # Summary

@@ -1,4 +1,5 @@
 ---
+schema_version: orchestration-artifact/v1
 task_id: tj-final27.9
 stage_id: tj-final27
 repo: treejar
@@ -7,6 +8,11 @@ base_branch: origin/main
 base_commit: 93e9bc40f3c663a9f48fed6ab635064d7bbfa996
 worktree: /home/me/code/treejar/.worktrees/codex-tj-final27-9-acceptance-pack
 status: blocked
+delivery_method: n/a
+accepted_by_orchestrator: no
+cleanup_status: not_applicable
+cleanup_notes: Blocked acceptance artifact remains tracked; no branch cleanup is required for this artifact.
+risk_level: medium
 verification:
   - "Context7 resolve pytest docs: passed"
   - "Context7 query pytest narrow selection/stop rules: passed after one timeout retry"
@@ -49,6 +55,8 @@ changed_files:
   - .codex/stages/tj-final27/artifacts/tj-final27.9.md
   - .codex/stages/tj-final27/summary.md
   - .codex/handoff.md
+explicit_defers:
+  - tj-final27.9 final acceptance requires approved live/final E2E and production drill decisions
 ---
 
 # Summary
