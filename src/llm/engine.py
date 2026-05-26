@@ -7014,10 +7014,18 @@ async def process_message(
                 model=dynamic_model,
                 usage=RunUsage(),
             )
+            await _store_pending_sales_order_quote(
+                db,
+                conv,
+                resolved_items=resolved_quote_items,
+                unresolved_items=(),
+            )
             quote_text = await create_quotation(
                 sales_order_ctx,
                 resolved_quote_items,
             )
+            if sales_order_deps.quotation_created:
+                await _clear_pending_quote_selection(db, conv)
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 quote_text,
@@ -7100,9 +7108,19 @@ async def process_message(
                 model=dynamic_model,
                 usage=RunUsage(),
             )
+            resolved_sales_order_items = [
+                *existing_quote_items,
+                *resolved_followup_items,
+            ]
+            await _store_pending_sales_order_quote(
+                db,
+                conv,
+                resolved_items=resolved_sales_order_items,
+                unresolved_items=(),
+            )
             quote_text = await create_quotation(
                 sales_order_resume_ctx,
-                [*existing_quote_items, *resolved_followup_items],
+                resolved_sales_order_items,
             )
             if sales_order_resume_deps.quotation_created:
                 await _clear_pending_quote_selection(db, conv)
