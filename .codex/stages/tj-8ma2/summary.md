@@ -28,6 +28,8 @@ Current decisions:
 
 Delivery:
 - Fix commit: `80e6f4371da44f163406f76f30f858e94d35da4a`.
+- Orchestration closeout commit:
+  `49670bbea9cfb54bc4c1fe6f51b2f90c8934a411`.
 - Branch `codex/tj-8ma2-sales-order-brief-resume` was fast-forwarded into
   `main`, pushed to `origin/main`, and deleted locally after merge.
 - GitHub Actions run `26462939020` succeeded, including deploy.
@@ -38,6 +40,9 @@ Delivery:
   `/api/v1/health` returned healthy Redis state and
   `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
   passed with `8 passed, 0 failed`.
+- The later `.codex`-only closeout push `49670bb` was path-ignored by CI and
+  did not redeploy; production intentionally remains on the code commit
+  `80e6f43`.
 
 Local verification:
 - RED regression:

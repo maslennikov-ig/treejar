@@ -56,6 +56,9 @@ stored as customer details and did not overwrite the item selection.
   - `/api/v1/health`: healthy.
   - `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`:
     `8 passed, 0 failed`.
+- Later closeout commit `49670bbea9cfb54bc4c1fe6f51b2f90c8934a411` changed
+  only `.codex` orchestration files. The push was path-ignored by CI and did
+  not redeploy; production remains on code commit `80e6f43`.
 
 # Live E2E Evidence
 
