@@ -65,8 +65,7 @@ changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - Bounded live WhatsApp E2E retest of the original CH 620 grey clarification scenario was not run in this delivery turn.
-  - Full pytest including tests/test_admin_dashboard_frontend.py requires installing frontend/admin node dependencies; skipped to avoid adding node_modules during disk cleanup work.
+  - Bounded live WhatsApp E2E retest was completed later in artifact tj-4cm4-production-e2e.md.
 ---
 
 # Summary
@@ -99,9 +98,10 @@ on `esbuild`.
 Local implementation was fast-forward merged to `main@77f96f3`, pushed to
 `origin/main`, and deployed by GitHub Actions run `26460815449`. Production
 runtime readback and read-only API smoke passed. The local feature branch was
-deleted after merge. No live WhatsApp test was performed.
+deleted after merge.
 
 # Risks / Follow-ups / Explicit Defers
 
-The remaining production confidence step is deployment plus a bounded live E2E
-retest for the original `CH 620 grey` clarification scenario after approval.
+The remaining production confidence step from the implementation pass was later
+completed in `tj-4cm4-production-e2e.md`. No in-scope blocker remains for
+`tj-4cm4`.
