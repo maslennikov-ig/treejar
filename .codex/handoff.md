@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 Updated: 2026-05-26
-Current branch: `codex/tj-final27-artifact-normalization`
+Current branch: `main`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
@@ -18,16 +18,16 @@ Current branch: `codex/tj-final27-artifact-normalization`
 - `tj-gh20` remains production `shadow` only.
 - `tj-final27.4` through `.8` useful work has been selectively ported from stale `origin/codex/tj-final27-acceptance-integration` and merged to `main@000798e`; old handoff/orchestration drift was intentionally not ported.
 - Local final27 port verification passed: targeted suites `50+55+7+15`, combined targeted suite `127 passed`, backend `ruff`/format/`mypy`, frontend admin `npm ci`/lint/build, no-stage process verification, and full `pytest` (`1177 passed, 19 skipped`). Local `npm ci` emitted a Node engine warning because Node `v24.15.0` is outside `>=22.12.0 <23`.
-- Legacy `tj-final27` artifacts have been normalized on branch `codex/tj-final27-artifact-normalization`; artifact validation and `scripts/orchestration/check_stage_ready.py tj-final27` now pass.
+- Legacy `tj-final27` artifacts have been normalized and merged locally to `main@183e31d`; artifact validation and `scripts/orchestration/check_stage_ready.py tj-final27` now pass.
 - Referral search refresh on 2026-05-26 found no client-approved mechanics in client docs, stage artifacts, handoff notes, or Beads. Existing docs only define referral scope and request missing discount/bonus/activation parameters; internal implementation defaults are not approval.
 - Old remote branch `origin/codex/tj-final27-acceptance-integration` and local branch `codex/tj-final27-port-current` were deleted after merge. No production config mutation, `scripts/verify_wazzup.py`, broad production suite, scheduled AI Quality Controls, live voice/media/payment/referral test, or real customer conversation has been run for this final27 port.
 
 ## Next recommended
 Next stage id: `tj-final27`.
-Recommended action: commit/merge the artifact normalization, then get exact approval for final live E2E phone/channel/suffix/scenario scope. Keep referrals blocked until the client approves rules or explicitly excludes the module.
+Recommended action: run the approved bounded final live E2E text-only scope, then record evidence. Keep referrals blocked until the client approves rules or explicitly excludes the module.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from branch `codex/tj-final27-artifact-normalization`. The selective final27 `.4`-`.8` port is merged and deployed; local targeted/backend/frontend/full pytest/no-stage process verification and CI/deploy run `26447020048` passed. Legacy final27 artifacts were normalized and stage readiness now passes locally. Request exact authorization before live tests or production drills.
+Use $orchestrator-stage. Continue from local `main@183e31d`. The selective final27 `.4`-`.8` port is merged and deployed; local targeted/backend/frontend/full pytest/no-stage process verification and CI/deploy run `26447020048` passed. Legacy final27 artifacts were normalized and stage readiness now passes locally. Request exact authorization before any scope beyond the approved bounded text-only E2E.
 
 ## Explicit defers
 - `tj-mmj8`: Beads closure pending explicit owner approval only.
