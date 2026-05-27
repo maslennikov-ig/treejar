@@ -4,24 +4,24 @@ Current branch: `main`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
-- Local `main` contains `tj-4xnf` merge commit `7782c4dc173a7bce07e5997e100581b1dc26e469`; push/deploy/live E2E are in progress.
-- Production runtime before this delivery was code commit `80e6f4371da44f163406f76f30f858e94d35da4a`: `.release-sha=80e6f4371da44f163406f76f30f858e94d35da4a`, `.release-run-id=26462939020`.
-- `tj-mmj8`, `tj-4cm4`, and `tj-8ma2` are merged, deployed, live-E2E verified/triaged, cleaned, and closed in Beads.
-- `tj-4xnf` is merged locally into `main`. Prior duplicate-name fallback commit `e97bbb4` is present, but fresh `tj-8ma2` live evidence showed a different remaining failure: synthetic phone suffix leaked into Zoho Inventory customer lookup/create.
+- `main` matches `origin/main` at delivery evidence commit `fba5df0a7c79e334b39ec4bd2dafa0cf4d6a2308`.
+- Production runtime is `fba5df0a7c79e334b39ec4bd2dafa0cf4d6a2308`: `.release-sha=fba5df0a7c79e334b39ec4bd2dafa0cf4d6a2308`, `.release-run-id=26497377622`.
+- `tj-mmj8`, `tj-4cm4`, `tj-8ma2`, and `tj-4xnf` are merged, deployed, live-E2E verified/triaged, cleaned, and closed in Beads.
+- `tj-4xnf` fixed the remaining Zoho Inventory customer-resolution failure after prior duplicate-name fallback commit `e97bbb4`: synthetic phone suffixes no longer leak into Inventory lookup/create.
 - Local `tj-4xnf` fix strips repo-owned `#...` suffixes only at the Zoho Inventory contact boundary, while preserving suffixed phones inside app conversation storage.
 - Local verification passed: RED/GREEN synthetic suffix regression, `tests/test_llm_quotation.py` plus Inventory tests (`20 passed`), relevant engine quote tests (`46 passed`), ruff, format check, mypy, and full stage closeout (`1181 passed, 19 skipped`).
 - `tj-nzob` was checked and is not solved: comma-separated brief parsing still misses `company=LLD`.
-- Stage evidence: `.codex/stages/tj-4xnf/summary.md` and `.codex/stages/tj-4xnf/artifacts/tj-4xnf-local-implementation.md`.
+- `tj-4xnf` production E2E conversation `4c2156c6-1763-435e-aa3d-7965631a96f3` created quotation `Fr3316` / sale order `378603000022228007`; synthetic conversations were closed after evidence.
+- Stage evidence: `.codex/stages/tj-4xnf/summary.md`, `.codex/stages/tj-4xnf/artifacts/tj-4xnf-local-implementation.md`, and `.codex/stages/tj-4xnf/artifacts/tj-4xnf-production-e2e.md`.
 
 ## Next recommended
-Next stage id: `tj-4xnf`.
-Recommended action: finish push/deploy/smoke/live E2E for the same sales-order quote path; then close `tj-4xnf` if production evidence passes.
+Next stage id: `tj-nzob`.
+Recommended action: fix comma-separated ordered quote brief parsing so `Lilia, LLD, Lfdsf@kfsl.ru, 2 street` preserves `company=LLD`.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from `main`. Local `tj-4xnf` fix strips synthetic `#...` suffixes before Zoho Inventory customer lookup/create and has passed stage closeout. Finish push/deploy, smoke production, and live-E2E retest conversation shape `sales order 5 x CH 620` -> `5 x CH 620 grey` -> `Lilia / LLD / Lfdsf@kfsl.ru / 2 street`.
+Use $orchestrator-stage. Continue from clean `main` at `fba5df0a7c79e334b39ec4bd2dafa0cf4d6a2308`; production runtime matches that SHA via GitHub Actions run `26497377622`. Start `tj-nzob`: verify prior parser work, add RED/GREEN coverage for comma-separated ordered quote brief `Lilia, LLD, Lfdsf@kfsl.ru, 2 street`, keep slash/multiline/labeled brief behavior intact, run local gates, and do not deploy/live-test without explicit approval.
 
 ## Explicit defers
-- `tj-4xnf`: local merge done; push/deploy/live E2E still in progress.
 - `tj-nzob`: comma-separated ordered brief stores name/email/address but misses company; slash and multiline formats are already covered.
 - `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.

@@ -1,7 +1,7 @@
 # Stage tj-4xnf Summary
 
-Status: merged locally to `main` on 2026-05-27. Push, deploy, and live E2E are
-in progress.
+Status: merged, pushed, deployed, production-smoked, live-E2E verified,
+cleaned, and closed in Beads.
 
 Scope: finish the exact quotation Inventory customer fallback gap. A previous
 partial fix in commit `e97bbb4` added duplicate-name recovery, but fresh
@@ -47,6 +47,26 @@ Verification:
 - `scripts/orchestration/run_stage_closeout.py --stage tj-4xnf`: passed
   with full suite `1181 passed, 19 skipped`, process verification, artifact
   validation, project-index review, documentation review, and debt marker scan.
+- GitHub Actions run `26497377622`: passed `changes`, `lint`, `test`,
+  `type-check`, and `deploy`.
+- Runtime readback: `/opt/noor/.release-sha` =
+  `fba5df0a7c79e334b39ec4bd2dafa0cf4d6a2308`; `/opt/noor/.release-run-id` =
+  `26497377622`.
+- Production smoke:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` ->
+  `8 passed, 0 failed`.
+- Live E2E on approved test number `+79262810921` with suffix
+  `tj-4xnf-clean-20260527-073550` passed:
+  - first-turn name gate asked for name and accepted `Lilia`;
+  - `sales order 5 x CH 620` asked to confirm exact catalog item;
+  - `5 x CH 620 grey` preserved `CH 620 grey x5` and asked for customer details;
+  - `Lilia / LLD / Lfdsf@kfsl.ru / 2 street` created quotation `Fr3316` and
+    Zoho sale order `378603000022228007`;
+  - readback showed `quote_customer_details.company=LLD`,
+    `quotation_decision_status=pending`, and `pending_escalations=0`.
+- Wazzup echo showed PDF caption `Your Treejar quotation: Fr3316` delivered to
+  base chat `79262810921`, confirming the synthetic suffix was stripped at the
+  outbound provider boundary too.
 
 Prior-work check:
 - `tj-4xnf`: not already fully solved. Commit `e97bbb4` is present in `main`
@@ -66,6 +86,11 @@ Documentation:
   `graphify-out/GRAPH_REPORT.md` is absent.
 
 Residual / handoff:
-- Owner approved delivery on 2026-05-27; push, deploy, and live WhatsApp E2E
-  are in progress.
+- Two synthetic `tj-4xnf` production conversations from this run were closed:
+  acceptance conversation `4c2156c6-1763-435e-aa3d-7965631a96f3` and polluted
+  smoke-marker attempt `9d8d700f-682a-4db4-9d9d-742455907935`. Cleanup readback:
+  `not_closed=0`, `pending_escalations=0`.
+- Local feature branch `codex/tj-4xnf-zoho-customer-fallback` was deleted after
+  successful merge, deploy, and live E2E.
+- `tj-4xnf` is closed in Beads as delivered and accepted.
 - `tj-nzob` remains a separate quote-brief parser bug.
