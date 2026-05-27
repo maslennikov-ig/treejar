@@ -42,11 +42,11 @@ parallel_group: parser-fix
 depends_on_streams:
   - none
 parallel_decision: local
-status: accepted
-delivery_method: manual integration
+status: merged
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: blocked
-cleanup_notes: current delivery branch must remain until user authorizes merge/push/deploy or cleanup
+cleanup_status: cleaned
+cleanup_notes: local feature branch codex/tj-nzob-comma-brief deleted after successful fast-forward merge, push, deploy, and production smoke
 risk_level: medium
 docs_impact: behavior
 docs_reviewed: updated
@@ -60,6 +60,10 @@ verification:
   - "uv run mypy src/": passed
   - "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" uv run pytest tests/ -v --tb=short": passed after npm ci --prefix frontend/admin
   - "scripts/orchestration/run_stage_closeout.py --stage tj-nzob": passed
+  - "scripts/orchestration/run_stage_closeout.py --stage tj-nzob on merged main": passed
+  - "gh run watch 26502776229 --exit-status": passed, including deploy
+  - "ssh noor-server 'cat /opt/noor/.release-sha && cat /opt/noor/.release-run-id'": cefea6e6f9f37f3554af1980a68861705f6bc8e6 / 26502776229
+  - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 8 passed / 0 failed
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
@@ -67,7 +71,7 @@ changed_files:
   - .codex/stages/tj-nzob/summary.md
   - .codex/stages/tj-nzob/artifacts/tj-nzob-local-implementation.md
 explicit_defers:
-  - merge/push/deploy/live E2E require explicit user approval
+  - live WhatsApp E2E was not run
 ---
 
 # Summary
@@ -95,9 +99,10 @@ the full test suite passed.
 
 # Delivery / Cleanup
 
-Local implementation is accepted on the feature branch. No merge, push, deploy,
-production smoke, live WhatsApp E2E, or branch cleanup has been performed.
+The implementation was fast-forward merged into `main`, pushed to `origin/main`,
+deployed by GitHub Actions run `26502776229`, and production-smoked
+successfully. The local feature branch was deleted after delivery.
 
 # Risks / Follow-ups / Explicit Defers
 
-Runtime delivery and live E2E require separate user approval.
+Live WhatsApp E2E was not run.

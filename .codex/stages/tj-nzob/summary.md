@@ -1,8 +1,7 @@
 # Stage tj-nzob Summary
 
-Status: local implementation complete on branch
-`codex/tj-nzob-comma-brief`; not merged, pushed, deployed, or live-E2E
-tested.
+Status: merged, pushed, deployed, production-smoked, locally cleaned, and
+closed in Beads. Live WhatsApp E2E was not run.
 
 Scope: fix the follow-up finding from `tj-mmj8` production E2E where a
 comma-separated ordered quote brief
@@ -47,6 +46,20 @@ Verification:
 - `scripts/orchestration/run_stage_closeout.py --stage tj-nzob`: passed,
   including process verification, artifact validation, project-index review,
   documentation review, debt marker scan, and full code-change gates.
+- After user delivery approval, `codex/tj-nzob-comma-brief` was fast-forwarded
+  into `main` at `cefea6e6f9f37f3554af1980a68861705f6bc8e6`.
+- Merged-result closeout passed on `main`:
+  `scripts/orchestration/run_stage_closeout.py --stage tj-nzob` ->
+  `1182 passed, 19 skipped` plus process verification.
+- `git push origin main` pushed `c6185f2..cefea6e`.
+- GitHub Actions run `26502776229` passed `changes`, `lint`, `test`,
+  `type-check`, and `deploy`.
+- Runtime readback:
+  `/opt/noor/.release-sha=cefea6e6f9f37f3554af1980a68861705f6bc8e6`;
+  `/opt/noor/.release-run-id=26502776229`.
+- Production smoke:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` ->
+  `8 passed, 0 failed`.
 
 Documentation:
 - docs-reviewed: updated - this stage summary, local implementation artifact,
@@ -57,5 +70,7 @@ Documentation:
   `graphify-out/GRAPH_REPORT.md` is absent.
 
 Residual / handoff:
-- No deploy, production smoke, live WhatsApp E2E, GitHub mutation, or Beads
-  closure has been performed for this stage.
+- Local feature branch `codex/tj-nzob-comma-brief` was deleted after successful
+  merge, push, deploy, and production smoke.
+- Bead `tj-nzob` was closed as delivered and accepted.
+- Live WhatsApp E2E was not run.
