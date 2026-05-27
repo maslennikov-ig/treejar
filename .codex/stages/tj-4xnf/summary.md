@@ -1,8 +1,7 @@
 # Stage tj-4xnf Summary
 
-Status: local implementation ready on branch
-`codex/tj-4xnf-zoho-customer-fallback`; not merged, pushed, deployed, or
-live-E2E tested.
+Status: merged locally to `main` on 2026-05-27. Push, deploy, and live E2E are
+in progress.
 
 Scope: finish the exact quotation Inventory customer fallback gap. A previous
 partial fix in commit `e97bbb4` added duplicate-name recovery, but fresh
@@ -67,5 +66,6 @@ Documentation:
   `graphify-out/GRAPH_REPORT.md` is absent.
 
 Residual / handoff:
-- Delivery, deploy, and live WhatsApp E2E still require explicit owner approval.
+- Owner approved delivery on 2026-05-27; push, deploy, and live WhatsApp E2E
+  are in progress.
 - `tj-nzob` remains a separate quote-brief parser bug.
