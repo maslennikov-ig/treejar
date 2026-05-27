@@ -3038,6 +3038,15 @@ def _quote_brief_parts(text: str) -> list[str]:
     ):
         return []
     if not re.search(r"[\n/;]", raw):
+        comma_parts = [
+            " ".join(part.strip(" \t\r\n,.;:-").split())
+            for part in raw.split(",", 3)
+            if part.strip(" \t\r\n,.;:-")
+        ]
+        if len(comma_parts) == 4 and any(
+            EMAIL_PATTERN.search(part) for part in comma_parts
+        ):
+            return comma_parts
         return []
     return [
         " ".join(part.strip(" \t\r\n,.;:-").split())

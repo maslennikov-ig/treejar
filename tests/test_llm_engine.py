@@ -6477,6 +6477,7 @@ async def test_process_message_terse_details_preserves_pending_quote_context(
     [
         "Lilia\nLLD\nLfdsf@kfsl.ru\n2 street",
         "Lilia / LLD / Lfdsf@kfsl.ru / 2 street",
+        "Lilia, LLD, Lfdsf@kfsl.ru, 2 street",
     ],
 )
 @patch(
