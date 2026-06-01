@@ -5,11 +5,14 @@ about LUMA/private vs NOVO/open workspaces, then escalated after the
 customer answered `I prefer more open for team`.
 
 Current state:
-- Branch: `codex/tj-gh47-preference-context` from `origin/main`
-  `23f504bc9f13781f93ed637a61075c1347a8497d`.
-- Beads task: `tj-gh47`, external ref `gh-47`, status `in_progress`.
-- GitHub #42/#43/#45/#46 were closed with prior `tj-m7wz` production
-  evidence; GitHub #47 remains open until delivery and production evidence.
+- Branch `codex/tj-gh47-preference-context` was merged into `main`.
+- Runtime commit: `70500e32e6206462b426b65dd8d7afc8e5ccda72`.
+- GitHub Actions run `26771029593` passed `changes`, `lint`, `test`,
+  `type-check`, and `deploy`; `/opt/noor/.release-sha` and
+  `/opt/noor/.release-run-id` match that runtime.
+- Beads task: `tj-gh47`, external ref `gh-47`, closed.
+- GitHub #47 was commented with release/E2E evidence and closed.
+- GitHub #42/#43/#45/#46 were closed with prior `tj-m7wz` production evidence.
 
 Implementation:
 - Added a context-aware product preference answer route in
@@ -44,6 +47,25 @@ Verification:
 - Full:
   `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short`
   passed, 1184 passed, 19 skipped.
+- Delivery:
+  branch pushed, fast-forward merged into `main`, and pushed to `origin/main`.
+- CI/deploy:
+  GitHub Actions run `26771029593` succeeded, including deploy.
+- Runtime readback:
+  `/opt/noor/.release-sha=70500e32e6206462b426b65dd8d7afc8e5ccda72`,
+  `/opt/noor/.release-run-id=26771029593`.
+- Production smoke:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  passed, 8 passed / 0 failed.
+- Production E2E:
+  seeded synthetic conversation
+  `6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee` on
+  `+79262810921#tj-gh47-pref-20260601173808` with the prior LUMA/NOVO
+  preference question, then sent `I prefer more open for team` via the normal
+  Wazzup webhook. Production replied with NOVO/open-team product options,
+  model `z-ai/glm-5`, `escalation_status=none`, pending escalations `0`, no
+  manager-handoff wording, and the synthetic conversation was closed after
+  evidence capture.
 
 Environment note:
 - The first full pytest run failed only because fresh local frontend admin
@@ -59,6 +81,4 @@ Docs review:
   `[knowledge_graph]` configuration is present in this worktree.
 
 Open delivery:
-- Not merged, pushed, deployed, or production-E2E verified yet.
-- Do not close GitHub #47 until merged/deployed and production evidence is
-  available.
+- none.

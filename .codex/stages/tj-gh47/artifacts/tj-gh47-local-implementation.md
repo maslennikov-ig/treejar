@@ -38,10 +38,10 @@ depends_on_streams:
   - none
 parallel_decision: local
 status: accepted
-delivery_method: n/a
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: branch remains active for delivery
+cleanup_status: cleaned
+cleanup_notes: No delegated worktree was used. Branch was merged into main and the synthetic production E2E conversation 6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee was closed after evidence capture.
 risk_level: medium
 docs_impact: behavior
 docs_reviewed: no-change-needed
@@ -54,13 +54,19 @@ verification:
   - uv run ruff format --check src/ tests/: passed
   - uv run mypy src/: passed
   - env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short: passed
+  - git push origin codex/tj-gh47-preference-context: passed
+  - fast-forward merge into main and git push origin main: passed
+  - GitHub Actions run 26771029593: passed changes, lint, test, type-check, deploy
+  - ssh noor-server cat /opt/noor/.release-sha and .release-run-id: passed, 70500e32e6206462b426b65dd8d7afc8e5ccda72 / 26771029593
+  - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed, 8 passed / 0 failed
+  - production E2E +79262810921#tj-gh47-pref-20260601173808: passed, conversation 6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee, model z-ai/glm-5, escalation_status none, pending_escalations 0, no manager handoff
 changed_files:
   - src/llm/engine.py
   - src/llm/verified_answers.py
   - tests/test_llm_engine.py
   - tests/test_verified_answers.py
 explicit_defers:
-  - tj-gh47 delivery - merge/deploy/live E2E and GitHub #47 closure require delivery step
+  - none
 ---
 
 # Summary
@@ -91,10 +97,19 @@ passed.
 
 # Delivery / Cleanup
 
-No merge, push, deploy, production E2E, or GitHub #47 closure has been done in
-this artifact. The branch remains active for delivery.
+The branch was pushed, fast-forward merged into `main`, and deployed by GitHub
+Actions run `26771029593`. Production runtime readback matched
+`70500e32e6206462b426b65dd8d7afc8e5ccda72`.
+
+Production E2E seeded the original #47 context in a synthetic conversation on
+`+79262810921#tj-gh47-pref-20260601173808`, then sent
+`I prefer more open for team` through the normal Wazzup webhook. The production
+reply stayed in the product path, returned NOVO/open-team options, used model
+`z-ai/glm-5`, kept `escalation_status=none`, created zero escalation rows, and
+did not include manager-handoff wording. The synthetic conversation was closed
+after readback.
 
 # Risks / Follow-ups / Explicit Defers
 
-Remaining tracked work: merge/push/deploy, production smoke/E2E, then comment
-and close GitHub #47 with release evidence.
+No in-scope blocker remains. GitHub #47 and Beads `tj-gh47` were closed with
+release and production E2E evidence.
