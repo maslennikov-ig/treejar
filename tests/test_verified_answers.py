@@ -364,6 +364,19 @@ def test_policy_treats_short_benign_no_match_as_clarify() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_treats_preference_statement_as_clarify_without_handoff() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="I prefer more open for team",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "service_low_risk"
+    assert decision.social_intent is None
+    assert decision.faq_support == "missing"
+    assert decision.policy_action == "clarify"
+    assert decision.requires_manager_handoff is False
+
+
 def test_policy_routes_price_objection_to_sales_fallback() -> None:
     decision = evaluate_verified_answer_policy(
         query="This is too expensive. A competitor says they can do cheaper.",

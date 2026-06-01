@@ -261,6 +261,12 @@ MIXED_PRODUCT_SERVICE_DIRECTIVES = (
     "after product options are clear, ask only for missing details needed for a formal quotation",
     "do not escalate only because the same message mentions delivery, installation, or assembly",
 )
+PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
+    "customer is answering the assistant's product preference question",
+    "treat the reply as product preference context for the current catalog discussion",
+    "continue the product discovery or quotation path and ask only the next missing product or quantity detail",
+    "do not hand off to manager unless the customer explicitly requests a human or asks a high-risk commercial or service commitment",
+)
 SELECTION_CONFIRMATION_DIRECTIVES = (
     "the customer has selected specific product(s) and quantities",
     "do not search or recommend alternatives",
@@ -1345,6 +1351,77 @@ def _is_service_confirmation_reply(
     if "?" not in last_assistant and "would you like" not in last_assistant:
         return False
     return any(term in last_assistant for term in _SERVICE_CONFIRMATION_TERMS)
+
+
+def _last_assistant_asked_product_preference(
+    recent_history: list[str] | None,
+) -> bool:
+    last_assistant = _last_assistant_message(recent_history)
+    normalized = _normalize_text(_normalize_sku_homoglyphs(last_assistant))
+    if not normalized or not _asks_customer_facing_question(last_assistant):
+        return False
+    if not _has_product_or_quote_routing_signal(last_assistant):
+        return False
+    preference_question_terms = (
+        "prefer",
+        "would you like",
+        "which",
+        "option",
+        "better for",
+        "private",
+        "open",
+        "collaborative",
+        "privacy",
+        "luma",
+        "novo",
+    )
+    return any(term in normalized for term in preference_question_terms)
+
+
+def _is_product_preference_answer(
+    text: str,
+    recent_history: list[str] | None,
+) -> bool:
+    if not _last_assistant_asked_product_preference(recent_history):
+        return False
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    if not normalized or len(normalized) > 220 or "?" in text:
+        return False
+    blocker_terms = (
+        "manager",
+        "human",
+        "complaint",
+        "refund",
+        "return",
+        "exchange",
+        "discount",
+        "special price",
+        "payment term",
+        "payment terms",
+        "credit",
+        "warranty",
+        "guarantee",
+    )
+    if any(term in normalized for term in blocker_terms):
+        return False
+    answer_terms = (
+        "prefer",
+        "more open",
+        "open",
+        "private",
+        "collaborative",
+        "team",
+        "privacy",
+        "luma",
+        "novo",
+        "first option",
+        "second option",
+        "first one",
+        "second one",
+        "option one",
+        "option two",
+    )
+    return any(term in normalized for term in answer_terms)
 
 
 def _service_confirmation_handoff_text() -> str:
@@ -7599,6 +7676,27 @@ async def process_message(
                 f"{db_model_main}|showroom-location",
                 allow_product_media=False,
             )
+
+        if (
+            not policy_decision.is_order_status
+            and policy_decision.sales_fallback_intent is None
+            and (
+                _is_product_preference_answer(combined_text, deps.recent_history)
+                or _is_product_preference_answer(masked_text, deps.recent_history)
+            )
+        ):
+            result = await _run_agent(
+                replace(
+                    deps,
+                    tool_mode="full",
+                    runtime_directives=(
+                        *deps.runtime_directives,
+                        *PRODUCT_PREFERENCE_ANSWER_DIRECTIVES,
+                    ),
+                )
+            )
+            await _clear_verified_policy_repair_state()
+            return _build_llm_response(result, db_model_main)
 
         policy_action = policy_decision.policy_action
         if not policy_decision.is_order_status and policy_action == "clarify":

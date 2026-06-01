@@ -8962,6 +8962,82 @@ async def test_process_message_brand_quantity_selection_stays_on_product_path(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_product_preference_answer_continues_without_manager_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    text = "I prefer more open for team"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content="I need workstation options for the team with drawers."
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Would you prefer a more private workspace with individual "
+                        "drawer pedestals (LUMA), or is a more open, collaborative "
+                        "setup with privacy panels (NOVO) better for your team?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Noted, I will continue with the more open NOVO workspace option."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model"
+    assert "NOVO" in response.text
+    assert "manager will confirm" not in response.text.lower()
+    assert "our manager" not in response.text.lower()
+    assert conv.escalation_status == "none"
+    mock_run.assert_awaited_once()
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "full"
+    assert any(
+        "customer is answering the assistant's product preference question" in directive
+        for directive in call["deps"].runtime_directives
+    )
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_short_yes_after_assembly_question_escalates_without_generic_fallback(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,

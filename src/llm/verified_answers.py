@@ -136,6 +136,23 @@ _PRODUCT_DISCOVERY_PHRASES = (
     "stock",
     "catalog",
 )
+_BENIGN_PREFERENCE_PHRASES = (
+    "i prefer",
+    "we prefer",
+    "prefer more",
+    "prefer the",
+    "more open",
+    "more private",
+    "open for team",
+    "private workspace",
+    "collaborative setup",
+    "first option",
+    "second option",
+    "first one",
+    "second one",
+    "option one",
+    "option two",
+)
 _ORDER_STATUS_SIGNALS = (
     "order status",
     "track my order",
@@ -594,6 +611,10 @@ def _is_benign_no_match(query: str) -> bool:
         return False
 
     tokens = _unicode_tokens(query)
+    if 0 < len(tokens) <= 8 and any(
+        phrase in normalized for phrase in _BENIGN_PREFERENCE_PHRASES
+    ):
+        return True
     return 0 < len(tokens) <= 3
 
 

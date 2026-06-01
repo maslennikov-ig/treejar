@@ -1,6 +1,6 @@
 # Orchestrator Handoff
-Updated: 2026-05-27
-Current branch: `main`
+Updated: 2026-06-01
+Current branch: `codex/tj-gh47-preference-context`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
@@ -14,15 +14,17 @@ Current branch: `main`
 - `tj-4xnf` production E2E conversation `4c2156c6-1763-435e-aa3d-7965631a96f3` created quotation `Fr3316` / sale order `378603000022228007`; synthetic conversations were closed after evidence.
 - Stage evidence: `.codex/stages/tj-4xnf/summary.md`, `.codex/stages/tj-4xnf/artifacts/tj-4xnf-local-implementation.md`, and `.codex/stages/tj-4xnf/artifacts/tj-4xnf-production-e2e.md`.
 - Current `tj-nzob` evidence: `.codex/stages/tj-nzob/summary.md` and `.codex/stages/tj-nzob/artifacts/tj-nzob-local-implementation.md`.
+- Active local stage `tj-gh47` fixes GitHub #47 preference-answer over-escalation on branch `codex/tj-gh47-preference-context`; local implementation and tests passed, but it is not merged, pushed, deployed, production-E2E verified, or closed in GitHub yet.
 
 ## Next recommended
-Next stage id: none selected.
-Recommended action: optionally run a controlled live WhatsApp E2E for `tj-nzob` if real-model production evidence is desired; otherwise continue with the next open Beads priority.
+Next stage id: `tj-gh47`.
+Recommended action: deliver `tj-gh47` after review: commit, push/merge, deploy, production smoke/E2E for GitHub #47, then comment and close #47 only with release evidence.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from clean `main` after delivered runtime commit `cefea6e6f9f37f3554af1980a68861705f6bc8e6` and GitHub Actions deploy run `26502776229`. `tj-nzob` is merged, deployed, production-smoked, and the local feature branch was deleted. Do not run live WhatsApp E2E unless explicitly authorized for the current turn.
+Use $orchestrator-stage. Continue `tj-gh47` from branch `codex/tj-gh47-preference-context`. The local fix for GitHub #47 is implemented and verified locally; do not close GitHub #47 until merge/deploy/production evidence exists. `tj-nzob` remains the latest deployed runtime from commit `cefea6e6f9f37f3554af1980a68861705f6bc8e6` and GitHub Actions run `26502776229`.
 
 ## Explicit defers
 - `tj-nzob`: live WhatsApp E2E was not run; local/parser tests and production API smoke passed after deploy.
 - `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.
+- `tj-gh47`: delivery and live production evidence are pending; GitHub #47 remains open.
