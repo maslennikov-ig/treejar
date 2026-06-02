@@ -1,6 +1,6 @@
 # Orchestrator Handoff
-Updated: 2026-06-01
-Current branch: `main`
+Updated: 2026-06-02
+Current branch: `codex/tj-gh48-expected-answer-frames`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
@@ -16,15 +16,19 @@ Current branch: `main`
 - Current `tj-nzob` evidence: `.codex/stages/tj-nzob/summary.md` and `.codex/stages/tj-nzob/artifacts/tj-nzob-local-implementation.md`.
 - Stage `tj-gh47` fixed GitHub #47 preference-answer over-escalation; implementation is merged, pushed, deployed, production-smoked, production-E2E verified, and closed in GitHub/Beads.
 - `tj-gh47` production E2E conversation `6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee` on `+79262810921#tj-gh47-pref-20260601173808` proved that `I prefer more open for team` after Noor's LUMA/NOVO question returns NOVO/open product options with `escalation_status=none`, `pending_escalations=0`, no manager-handoff wording; the synthetic conversation was closed.
+- Active planning stage `tj-gh48` prepares the fundamental fix: expected-answer frames in the existing Dialogue State Kernel, so Noor remembers answer expectations across bounded interruptions instead of relying only on the latest assistant question.
+- `tj-gh48` docs/spec package is on branch `codex/tj-gh48-expected-answer-frames`: updated `docs/specs/dialogue-state-kernel.md`, `docs/specs/dialogue-state-kernel-evals.md`, and added `docs/superpowers/plans/2026-06-02-expected-answer-frames.md`.
+- Beads `tj-gh48` epic and dependent tasks `tj-gh48.1` through `tj-gh48.7` exist; implementation remains pending and must start from these tasks.
 
 ## Next recommended
-Next stage id: `tj-gh47`.
-Recommended action: monitor for new Liliya/GitHub issues; no active implementation stage is open.
+Next stage id: `tj-gh48`.
+Recommended action: review the expected-answer frames spec/package, then execute implementation through Beads `tj-gh48.2` through `tj-gh48.7` using a dedicated worktree/branch from fresh `origin/main`.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Start from `main`. Latest delivered runtime is `70500e32e6206462b426b65dd8d7afc8e5ccda72`, deployed by GitHub Actions run `26771029593`; production smoke and `tj-gh47` E2E passed. GitHub #47 and Beads `tj-gh47` are closed.
+Use $orchestrator-stage. Continue `tj-gh48` expected-answer frames. Read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, `.codex/stages/tj-gh48/summary.md`, `docs/specs/dialogue-state-kernel.md`, `docs/specs/dialogue-state-kernel-evals.md`, and `docs/superpowers/plans/2026-06-02-expected-answer-frames.md`. Start implementation from fresh `origin/main` in a dedicated branch/worktree. Use Beads `tj-gh48.2` through `tj-gh48.7`; do not create duplicate tasks. Keep production in `dialogue_kernel_mode=shadow` unless explicit approval enables a narrow enforce rollout. Do not deploy, mutate production, run live WhatsApp E2E, or close #11 without explicit current-task approval.
 
 ## Explicit defers
 - `tj-nzob`: live WhatsApp E2E was not run; local/parser tests and production API smoke passed after deploy.
 - `tj-final27.6`: referral launch remains blocked pending written client referral policy or explicit exclusion.
 - Dialogue kernel `enforce` rollout remains deferred; production is intentionally `shadow` only.
+- `tj-gh48`: implementation is deferred to the next orchestrator; this pass only prepared docs, Beads, and prompt.

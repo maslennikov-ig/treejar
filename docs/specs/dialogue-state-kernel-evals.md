@@ -98,6 +98,78 @@ Expected:
 - only missing fields are requested;
 - no generic opener and no quotation creation until all required fields exist.
 
+### GitHub #47: product preference answer after an interruption
+
+Replay:
+
+1. Assistant asks a product preference question, for example LUMA/private vs
+   NOVO/open team workspace.
+2. Customer asks a bounded interruption, such as `Can delivery be arranged?`.
+3. Bot answers the delivery question without closing the product-preference
+   frame.
+4. Customer says `I prefer more open for team`.
+
+Expected:
+
+- route `product_preference_answer`;
+- flow `product_discovery`;
+- slot `workspace_preference=open`;
+- active product-preference frame is marked `fulfilled`;
+- bot continues NOVO/open product handling;
+- no manager handoff and no pending escalation.
+
+Single-turn regression:
+
+- If the preference reply immediately follows the assistant question, the route
+  must still pass; this protects the #47 hotfix while the durable frame path is
+  rolled out.
+
+### Expected-answer frame ambiguity
+
+Replay:
+
+1. Assistant asks a product preference question.
+2. Assistant later asks a quantity question without the preference frame being
+   fulfilled.
+3. Customer says `the second one`.
+
+Expected:
+
+- if both frames can plausibly interpret the answer, route
+  `expected_answer_clarify`;
+- response asks which pending question the customer is answering;
+- no frame is fulfilled by guessing;
+- no manager handoff.
+
+### Expected-answer frame expiry
+
+Replay:
+
+1. Assistant asks a product preference question.
+2. More than the configured max customer turns or TTL passes.
+3. Customer sends a terse ambiguous phrase such as `open`.
+
+Expected:
+
+- expired frame is not used for routing;
+- route falls back to legacy/product clarification;
+- expired frame is retained only in bounded history with `status=expired`;
+- no stale product preference is silently applied.
+
+### Expected-answer hard blocker override
+
+Replay:
+
+1. Assistant asks a product preference question.
+2. Customer replies `I prefer open but I need a manager for a refund complaint`.
+
+Expected:
+
+- hard escalation blocker wins over the frame match;
+- frame remains active or interrupted according to implementation policy;
+- manager/hard escalation path remains available;
+- no product route suppresses complaint/refund handling.
+
 ### GitHub #11: post-quotation hold
 
 Replay a post-quotation or late-stage customer flow that involves a bulk order,
@@ -120,6 +192,8 @@ question, quote detail collection, and a later short follow-up.
 Expected:
 
 - durable slots survive across turns;
+- active expected-answer frames survive bounded interruptions;
+- expected-answer frames expire after configured TTL or max customer turns;
 - exact model numbers are not misread as quantities;
 - quote context is not lost after unrelated delivery/assembly questions;
 - no manager handoff unless a true escalation trigger appears.
@@ -152,6 +226,8 @@ Expected:
 - Shadow mode writes bounded traces with zero kernel side effects.
 - Enforce mode handles only allowlisted flows and falls back to legacy for
   exact SKU+quantity selection until a later stage owns quote side effects.
+- Expected-answer frame fixtures cover immediate answers, delayed answers after
+  interruption, ambiguous answers, expired frames, and hard escalation blockers.
 
 ## Out Of Scope
 
