@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, cast
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 DIALOGUE_KERNEL_METADATA_KEY = "dialogue_kernel"
 DIALOGUE_STATE_METADATA_KEY = "dialogue_state"
@@ -26,6 +26,31 @@ class LastQuestion(BaseModel):
     prompt_key: str
     asked_at: str | datetime | None = None
     expected_slots: list[str] = Field(default_factory=list)
+
+
+class ExpectedSlot(BaseModel):
+    slot: str
+    required: bool = True
+    accepted_values: list[str] = Field(default_factory=list)
+    aliases: dict[str, list[str]] = Field(default_factory=dict)
+    validator: str | None = None
+
+
+class ExpectedAnswerFrame(BaseModel):
+    frame_id: str
+    flow: str
+    question_kind: str
+    prompt_key: str | None = None
+    status: str = "active"
+    priority: int = 50
+    asked_at: str | datetime | None = None
+    expires_at: str | datetime | None = None
+    max_customer_turns: int | None = None
+    turns_seen: int = 0
+    expected_slots: list[ExpectedSlot] = Field(default_factory=list)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    filled_slots: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class DialogueDecision(BaseModel):
@@ -63,7 +88,28 @@ class DialogueState(BaseModel):
     active_flow: str | None = None
     slots: DialogueSlots = Field(default_factory=DialogueSlots)
     last_question: LastQuestion | None = None
+    expected_answer_frames: list[ExpectedAnswerFrame] = Field(default_factory=list)
     trace_history: list[DialogueTrace] = Field(default_factory=list)
+
+    @field_validator("expected_answer_frames", mode="before")
+    @classmethod
+    def _load_valid_expected_answer_frames(
+        cls, value: Any
+    ) -> list[ExpectedAnswerFrame]:
+        if not isinstance(value, list):
+            return []
+        frames: list[ExpectedAnswerFrame] = []
+        for item in value:
+            if isinstance(item, ExpectedAnswerFrame):
+                frames.append(item)
+                continue
+            if not isinstance(item, Mapping):
+                continue
+            try:
+                frames.append(ExpectedAnswerFrame.model_validate(item))
+            except ValidationError:
+                continue
+        return frames
 
     @classmethod
     def from_conversation_metadata(

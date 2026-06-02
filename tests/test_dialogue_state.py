@@ -6,13 +6,19 @@ from src.dialogue.reducer import (
     append_trace_bounded,
     apply_extracted_details,
     build_trace,
+    expire_expected_answer_frames,
+    mark_frame_fulfilled,
+    mark_frame_interrupted,
     mark_quote_sent,
+    push_expected_answer_frame,
     set_last_question,
 )
 from src.dialogue.state import (
     DialogueDecision,
     DialogueSlots,
     DialogueState,
+    ExpectedAnswerFrame,
+    ExpectedSlot,
     LastQuestion,
 )
 
@@ -85,6 +91,195 @@ def test_dialogue_state_falls_back_to_legacy_state_when_kernel_state_missing() -
     assert state.thread_id == "conversation:fixture"
     assert state.active_flow == "quotation"
     assert state.slots.customer_name == "Mira"
+
+
+def test_dialogue_state_loads_expected_answer_frames() -> None:
+    metadata = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 1,
+                "active_flow": "product_selection",
+                "expected_answer_frames": [
+                    {
+                        "frame_id": "product_preference:test",
+                        "flow": "product_selection",
+                        "question_kind": "product_preference",
+                        "prompt_key": "workspace_luma_novo_preference",
+                        "status": "active",
+                        "priority": 80,
+                        "asked_at": "2026-06-02T10:00:00+00:00",
+                        "expires_at": "2026-06-02T10:30:00+00:00",
+                        "max_customer_turns": 6,
+                        "turns_seen": 1,
+                        "expected_slots": [
+                            {
+                                "slot": "workspace_preference",
+                                "required": True,
+                                "accepted_values": ["open", "private"],
+                                "aliases": {"open": ["more open", "for team", "novo"]},
+                            }
+                        ],
+                        "source_refs": [
+                            {"kind": "product_family", "value": "SKYLAND NOVO"}
+                        ],
+                        "filled_slots": {"workspace_preference": "open"},
+                        "metadata": {"origin": "legacy_bridge"},
+                    }
+                ],
+            }
+        }
+    }
+
+    state = DialogueState.load(metadata)
+
+    frame = state.expected_answer_frames[0]
+    assert frame.frame_id == "product_preference:test"
+    assert frame.flow == "product_selection"
+    assert frame.question_kind == "product_preference"
+    assert frame.priority == 80
+    assert frame.turns_seen == 1
+    assert frame.expected_slots[0].slot == "workspace_preference"
+    assert frame.expected_slots[0].aliases["open"] == [
+        "more open",
+        "for team",
+        "novo",
+    ]
+    assert frame.source_refs == [{"kind": "product_family", "value": "SKYLAND NOVO"}]
+    assert frame.filled_slots == {"workspace_preference": "open"}
+    assert (
+        state.to_metadata_patch()["dialogue_kernel"]["state"]["expected_answer_frames"][
+            0
+        ]["frame_id"]
+        == "product_preference:test"
+    )
+
+
+def test_dialogue_state_ignores_invalid_expected_answer_frames_only() -> None:
+    metadata = {
+        "dialogue_kernel": {
+            "thread_id": "conversation:fixture",
+            "state": {
+                "version": 1,
+                "active_flow": "quote_details",
+                "slots": {"customer_name": "Mira"},
+                "expected_answer_frames": [
+                    {"frame_id": "missing-required-fields"},
+                    {
+                        "frame_id": "quote_details:test",
+                        "flow": "quotation_build",
+                        "question_kind": "quote_details",
+                        "prompt_key": "ask_quote_details",
+                        "expected_slots": [{"slot": "delivery_address"}],
+                    },
+                ],
+            },
+        }
+    }
+
+    state = DialogueState.load(metadata)
+
+    assert state.thread_id == "conversation:fixture"
+    assert state.active_flow == "quote_details"
+    assert state.slots.customer_name == "Mira"
+    assert [frame.frame_id for frame in state.expected_answer_frames] == [
+        "quote_details:test"
+    ]
+
+
+def test_expected_answer_frame_reducers_manage_lifecycle() -> None:
+    original = DialogueState(active_flow="intake")
+    frame = ExpectedAnswerFrame(
+        frame_id="product_preference:test",
+        flow="product_selection",
+        question_kind="product_preference",
+        prompt_key="workspace_luma_novo_preference",
+        priority=80,
+        max_customer_turns=1,
+        expected_slots=[
+            ExpectedSlot(
+                slot="workspace_preference",
+                accepted_values=["open", "private"],
+                aliases={"open": ["more open"]},
+            )
+        ],
+    )
+
+    pushed = push_expected_answer_frame(original, frame)
+    fulfilled = mark_frame_fulfilled(
+        pushed,
+        "product_preference:test",
+        filled_slots={"workspace_preference": "open"},
+    )
+    interrupted = mark_frame_interrupted(pushed, "product_preference:test")
+    expired = expire_expected_answer_frames(pushed)
+    expired = expire_expected_answer_frames(expired)
+
+    assert original.expected_answer_frames == []
+    assert pushed.active_flow == "product_selection"
+    assert pushed.expected_answer_frames[0].status == "active"
+    assert fulfilled.expected_answer_frames[0].status == "fulfilled"
+    assert fulfilled.expected_answer_frames[0].filled_slots == {
+        "workspace_preference": "open"
+    }
+    assert interrupted.expected_answer_frames[0].status == "interrupted"
+    assert expired.expected_answer_frames[0].status == "expired"
+    assert expired.expected_answer_frames[0].turns_seen == 2
+
+
+def test_expected_answer_frame_push_replaces_duplicates_and_bounds_frames() -> None:
+    state = DialogueState()
+
+    for index in range(10):
+        state = push_expected_answer_frame(
+            state,
+            ExpectedAnswerFrame(
+                frame_id=f"active:{index}",
+                flow="product_selection",
+                question_kind="product_preference",
+                prompt_key="workspace_luma_novo_preference",
+                priority=index,
+                expected_slots=[ExpectedSlot(slot="workspace_preference")],
+            ),
+        )
+    state = push_expected_answer_frame(
+        state,
+        ExpectedAnswerFrame(
+            frame_id="active:9",
+            flow="product_selection",
+            question_kind="product_preference",
+            prompt_key="workspace_luma_novo_preference",
+            priority=100,
+            expected_slots=[ExpectedSlot(slot="workspace_preference")],
+            metadata={"retried": True},
+        ),
+    )
+    for index in range(22):
+        state = push_expected_answer_frame(
+            state,
+            ExpectedAnswerFrame(
+                frame_id=f"history:{index}",
+                flow="quote_details",
+                question_kind="quote_details",
+                prompt_key="ask_quote_details",
+                status="fulfilled",
+                expected_slots=[ExpectedSlot(slot="delivery_address")],
+            ),
+        )
+
+    active_frames = [
+        frame for frame in state.expected_answer_frames if frame.status == "active"
+    ]
+    history_frames = [
+        frame for frame in state.expected_answer_frames if frame.status != "active"
+    ]
+
+    assert len(active_frames) == 8
+    assert active_frames[0].frame_id == "active:9"
+    assert active_frames[0].metadata == {"retried": True}
+    assert len({frame.frame_id for frame in active_frames}) == 8
+    assert len(history_frames) == 20
+    assert history_frames[0].frame_id == "history:2"
+    assert history_frames[-1].frame_id == "history:21"
 
 
 def test_reducer_functions_return_new_state_without_mutating_original() -> None:
