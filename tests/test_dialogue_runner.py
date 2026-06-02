@@ -24,38 +24,40 @@ def _conversation(*, customer_name: str | None = None) -> Conversation:
 def _product_preference_kernel_state(
     *,
     frame_id: str = "product_preference:test",
+    expires_at: str | None = None,
     max_customer_turns: int = 6,
     turns_seen: int = 0,
 ) -> dict[str, Any]:
+    frame: dict[str, Any] = {
+        "frame_id": frame_id,
+        "flow": "product_selection",
+        "question_kind": "product_preference",
+        "prompt_key": "workspace_luma_novo_preference",
+        "status": "active",
+        "priority": 80,
+        "max_customer_turns": max_customer_turns,
+        "turns_seen": turns_seen,
+        "expected_slots": [
+            {
+                "slot": "workspace_preference",
+                "accepted_values": ["open", "private"],
+                "aliases": {
+                    "open": ["more open", "for team", "novo"],
+                },
+            }
+        ],
+        "source_refs": [
+            {"kind": "product_family", "value": "SKYLAND NOVO"},
+            {"kind": "product_family", "value": "LUMA"},
+        ],
+    }
+    if expires_at is not None:
+        frame["expires_at"] = expires_at
     return {
         "version": 1,
         "active_flow": "product_selection",
         "slots": {"customer_name": "Lili"},
-        "expected_answer_frames": [
-            {
-                "frame_id": frame_id,
-                "flow": "product_selection",
-                "question_kind": "product_preference",
-                "prompt_key": "workspace_luma_novo_preference",
-                "status": "active",
-                "priority": 80,
-                "max_customer_turns": max_customer_turns,
-                "turns_seen": turns_seen,
-                "expected_slots": [
-                    {
-                        "slot": "workspace_preference",
-                        "accepted_values": ["open", "private"],
-                        "aliases": {
-                            "open": ["more open", "for team", "novo"],
-                        },
-                    }
-                ],
-                "source_refs": [
-                    {"kind": "product_family", "value": "SKYLAND NOVO"},
-                    {"kind": "product_family", "value": "LUMA"},
-                ],
-            }
-        ],
+        "expected_answer_frames": [frame],
     }
 
 
@@ -340,6 +342,41 @@ async def test_dialogue_kernel_enforce_handles_allowlisted_expected_answer_match
     frame = result.state.expected_answer_frames[0]
     assert frame.status == "fulfilled"
     assert frame.filled_slots == {"workspace_preference": "open"}
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_uses_real_expected_answer_matcher_with_expiring_frame() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": _product_preference_kernel_state(
+                expires_at="2999-06-02T10:30:00+00:00"
+            )
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="I prefer more open for team",
+        recent_history=[
+            "assistant: Would you prefer a private LUMA setup or open NOVO for team?"
+        ],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is True
+    assert result.decision.action == "product_preference_answer"
+    assert result.state.expected_answer_frames[0].status == "fulfilled"
+    assert result.state.expected_answer_frames[0].filled_slots == {
+        "workspace_preference": "open"
+    }
 
 
 @pytest.mark.asyncio

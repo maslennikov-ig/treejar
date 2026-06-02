@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import import_module
+from inspect import signature
 from typing import Any, Literal, TypedDict, cast
 
 from langgraph.graph import StateGraph
@@ -502,20 +503,22 @@ def _match_expected_answer(
         return {"matched": False}
 
     try:
-        return match_expected_answer(
-            dialogue_state=dialogue_state,
-            text=text,
-            recent_history=recent_history,
-        )
-    except TypeError:
-        try:
-            return match_expected_answer(
-                state=dialogue_state,
-                text=text,
-                recent_history=recent_history,
-            )
-        except TypeError:
-            return match_expected_answer(dialogue_state, text, recent_history)
+        parameters = signature(match_expected_answer).parameters
+    except (TypeError, ValueError):
+        return match_expected_answer(dialogue_state, text)
+
+    kwargs: dict[str, Any] = {}
+    if "dialogue_state" in parameters:
+        kwargs["dialogue_state"] = dialogue_state
+    elif "state" in parameters:
+        kwargs["state"] = dialogue_state
+    else:
+        return match_expected_answer(dialogue_state, text)
+    if "text" in parameters:
+        kwargs["text"] = text
+    if "recent_history" in parameters:
+        kwargs["recent_history"] = recent_history
+    return match_expected_answer(**kwargs)
 
 
 def _normalize_expected_answer_match(match: Any) -> dict[str, Any]:
