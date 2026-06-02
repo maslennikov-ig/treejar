@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any, Literal, TypedDict, cast
 
 from langgraph.graph import StateGraph
@@ -11,6 +13,8 @@ from src.dialogue.reducer import (
     append_trace_bounded,
     apply_extracted_details,
     build_trace,
+    expire_expected_answer_frames,
+    mark_frame_fulfilled,
     mark_quote_sent,
 )
 from src.dialogue.state import DialogueDecision, DialogueState
@@ -21,6 +25,8 @@ SUPPORTED_FLOWS = frozenset(
     {"name_gate", "product_selection", "quote_details", "post_quotation_hold"}
 )
 TRACE_LIMIT = 20
+EXPECTED_ANSWER_TRACE_TEXT_LIMIT = 240
+EXPECTED_ANSWER_TRACE_ITEM_LIMIT = 12
 
 
 @dataclass(frozen=True)
@@ -40,6 +46,7 @@ class _GraphInput(TypedDict):
 class _GraphOutput(_GraphInput, total=False):
     decision: DialogueDecision
     after_state: DialogueState
+    expected_answer_match: dict[str, Any]
 
 
 def parse_enforced_flows(
@@ -106,7 +113,7 @@ async def run_dialogue_kernel(
             decision=decision,
             before_state=before_state,
             after_state=after_state,
-            kernel_route=decision.flow,
+            kernel_route=_trace_kernel_route(decision),
         )
         traced_state = append_trace_bounded(after_state, trace, limit=TRACE_LIMIT)
         conversation.metadata_ = traced_state.to_metadata(conversation.metadata_)
@@ -154,15 +161,61 @@ def _normalize_mode(mode: str) -> DialogueKernelMode:
 
 def _build_graph() -> StateGraph[_GraphOutput]:
     graph: StateGraph[_GraphOutput] = StateGraph(_GraphOutput)
+    graph.add_node("expire_frames", _expire_frames_node)
+    graph.add_node("match_expected_answer", _match_expected_answer_node)
     graph.add_node("decide", _decide_node)
-    graph.set_entry_point("decide")
+    graph.set_entry_point("expire_frames")
+    graph.add_edge("expire_frames", "match_expected_answer")
+    graph.add_edge("match_expected_answer", "decide")
     graph.set_finish_point("decide")
     return graph
 
 
-def _decide_node(state: _GraphInput) -> _GraphOutput:
+def _expire_frames_node(state: _GraphInput) -> _GraphOutput:
+    return {
+        "state": expire_expected_answer_frames(state["state"]),
+        "text": state["text"],
+        "recent_history": state["recent_history"],
+        "is_first_turn": state["is_first_turn"],
+    }
+
+
+def _match_expected_answer_node(state: _GraphInput) -> _GraphOutput:
+    return {
+        "state": state["state"],
+        "text": state["text"],
+        "recent_history": state["recent_history"],
+        "is_first_turn": state["is_first_turn"],
+        "expected_answer_match": _normalize_expected_answer_match(
+            _match_expected_answer(
+                dialogue_state=state["state"],
+                text=state["text"],
+                recent_history=state["recent_history"],
+            )
+        ),
+    }
+
+
+def _decide_node(state: _GraphOutput) -> _GraphOutput:
     dialogue_state = state["state"]
     text = state["text"]
+    expected_answer_decision = _expected_answer_decision(
+        dialogue_state,
+        state.get("expected_answer_match"),
+    )
+    if expected_answer_decision:
+        after_state = mark_frame_fulfilled(
+            dialogue_state,
+            expected_answer_decision.metadata["expected_answer"]["match"]["frame_id"],
+            filled_slots=expected_answer_decision.metadata["expected_answer"][
+                "match"
+            ].get("filled_slots"),
+        )
+        return {
+            **state,
+            "decision": expected_answer_decision,
+            "after_state": after_state,
+        }
 
     if (
         dialogue_state.active_flow == "name_gate"
@@ -432,6 +485,170 @@ def _mismatch_reason(*, legacy_route: str, kernel_route: str | None) -> str | No
     if not kernel_route:
         return None
     return None if kernel_route in legacy_route else "route_diff"
+
+
+def _match_expected_answer(
+    *,
+    dialogue_state: DialogueState,
+    text: str,
+    recent_history: list[str],
+) -> Any:
+    try:
+        matcher_module = import_module("src.dialogue.expected_answers")
+    except ImportError:
+        return {"matched": False}
+    match_expected_answer = getattr(matcher_module, "match_expected_answer", None)
+    if not callable(match_expected_answer):
+        return {"matched": False}
+
+    try:
+        return match_expected_answer(
+            dialogue_state=dialogue_state,
+            text=text,
+            recent_history=recent_history,
+        )
+    except TypeError:
+        try:
+            return match_expected_answer(
+                state=dialogue_state,
+                text=text,
+                recent_history=recent_history,
+            )
+        except TypeError:
+            return match_expected_answer(dialogue_state, text, recent_history)
+
+
+def _normalize_expected_answer_match(match: Any) -> dict[str, Any]:
+    if match is None:
+        return {"matched": False}
+    if isinstance(match, Mapping):
+        payload = dict(match)
+    elif hasattr(match, "model_dump"):
+        payload = cast("dict[str, Any]", match.model_dump())
+    else:
+        payload = {
+            key: getattr(match, key)
+            for key in (
+                "matched",
+                "frame_id",
+                "confidence",
+                "filled_slots",
+                "route",
+                "interruption",
+                "ambiguous_frame_ids",
+                "blocker",
+                "flow",
+            )
+            if hasattr(match, key)
+        }
+    normalized = {str(key): value for key, value in payload.items()}
+    normalized["matched"] = bool(normalized.get("matched"))
+    normalized.setdefault("confidence", "none")
+    normalized.setdefault("route", "legacy_fallback")
+    normalized.setdefault("interruption", False)
+    normalized.setdefault("blocker", None)
+    if not isinstance(normalized.get("filled_slots"), dict):
+        normalized["filled_slots"] = {}
+    if not isinstance(normalized.get("ambiguous_frame_ids"), list):
+        normalized["ambiguous_frame_ids"] = []
+    return normalized
+
+
+def _expected_answer_decision(
+    state: DialogueState,
+    match: dict[str, Any] | None,
+) -> DialogueDecision | None:
+    if not _is_high_confidence_expected_answer(match):
+        return None
+    assert match is not None
+    flow = _expected_answer_flow(state, match)
+    metadata = {
+        "expected_answer": {
+            "match": _bounded_expected_answer_payload(
+                {
+                    "matched": match["matched"],
+                    "frame_id": match.get("frame_id"),
+                    "confidence": match.get("confidence"),
+                    "route": match.get("route"),
+                    "filled_slots": match.get("filled_slots", {}),
+                    "interruption": match.get("interruption", False),
+                    "blocker": match.get("blocker"),
+                    "ambiguous_frame_ids": match.get("ambiguous_frame_ids", []),
+                }
+            ),
+            "proposal": {
+                "action": match["route"],
+                "flow": flow,
+                "handled": True,
+            },
+        }
+    }
+    return DialogueDecision(
+        action=match["route"],
+        flow=flow,
+        response_text=(
+            "Thank you, I noted your preference and will continue with matching "
+            "products."
+        ),
+        handled=True,
+        metadata=metadata,
+    )
+
+
+def _is_high_confidence_expected_answer(match: dict[str, Any] | None) -> bool:
+    if not match or not match.get("matched"):
+        return False
+    return (
+        match.get("route") == "product_preference_answer"
+        and match.get("confidence") == "high"
+        and not match.get("interruption")
+        and not match.get("blocker")
+        and bool(match.get("frame_id"))
+    )
+
+
+def _expected_answer_flow(state: DialogueState, match: dict[str, Any]) -> str:
+    flow = match.get("flow")
+    if isinstance(flow, str) and flow.strip():
+        return flow.strip()
+    frame_id = match.get("frame_id")
+    for frame in state.expected_answer_frames:
+        if frame.frame_id == frame_id and frame.flow:
+            return frame.flow
+    if match.get("route") == "product_preference_answer":
+        return "product_selection"
+    return state.active_flow or "legacy_fallback"
+
+
+def _bounded_expected_answer_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        if len(value) <= EXPECTED_ANSWER_TRACE_TEXT_LIMIT:
+            return value
+        return f"{value[: EXPECTED_ANSWER_TRACE_TEXT_LIMIT - 3]}..."
+    if isinstance(value, list):
+        return [
+            _bounded_expected_answer_payload(item)
+            for item in value[:EXPECTED_ANSWER_TRACE_ITEM_LIMIT]
+        ]
+    if isinstance(value, dict):
+        bounded: dict[str, Any] = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= EXPECTED_ANSWER_TRACE_ITEM_LIMIT:
+                break
+            bounded[str(key)] = _bounded_expected_answer_payload(item)
+        return bounded
+    return value
+
+
+def _trace_kernel_route(decision: DialogueDecision) -> str:
+    expected_answer = decision.metadata.get("expected_answer")
+    if isinstance(expected_answer, dict):
+        match = expected_answer.get("match")
+        if isinstance(match, dict):
+            route = match.get("route")
+            if isinstance(route, str) and route:
+                return route
+    return decision.flow
 
 
 _COMPILED_GRAPH: Any = _build_graph().compile()
