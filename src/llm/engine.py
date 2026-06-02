@@ -23,11 +23,13 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
     DialogueKernelResult,
     record_legacy_route,
     run_dialogue_kernel,
 )
+from src.dialogue.state import DialogueState, ExpectedAnswerFrame, ExpectedSlot
 from src.integrations.crm.zoho_crm import (
     ZohoCRMClient,
     apply_zoho_attribution_mapping,
@@ -267,6 +269,8 @@ PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
     "continue the product discovery or quotation path and ask only the next missing product or quantity detail",
     "do not hand off to manager unless the customer explicitly requests a human or asks a high-risk commercial or service commitment",
 )
+PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"
+PRODUCT_PREFERENCE_FRAME_TTL_MINUTES = 30
 SELECTION_CONFIRMATION_DIRECTIVES = (
     "the customer has selected specific product(s) and quantities",
     "do not search or recommend alternatives",
@@ -1422,6 +1426,96 @@ def _is_product_preference_answer(
         "option two",
     )
     return any(term in normalized for term in answer_terms)
+
+
+def _dialogue_kernel_mode_allows_expected_answer_frames(mode: str) -> bool:
+    return str(mode or "").strip().casefold() in {"shadow", "enforce"}
+
+
+def _build_product_preference_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+    asked_at = datetime.datetime.now(datetime.UTC)
+    expires_at = asked_at + datetime.timedelta(
+        minutes=PRODUCT_PREFERENCE_FRAME_TTL_MINUTES
+    )
+    return ExpectedAnswerFrame(
+        frame_id=f"product_preference:{conversation.id}:{PRODUCT_PREFERENCE_PROMPT_KEY}",
+        flow="product_selection",
+        question_kind="product_preference",
+        prompt_key=PRODUCT_PREFERENCE_PROMPT_KEY,
+        status="active",
+        priority=80,
+        asked_at=asked_at,
+        expires_at=expires_at,
+        max_customer_turns=6,
+        expected_slots=[
+            ExpectedSlot(
+                slot="workspace_preference",
+                accepted_values=["open", "private", "novo", "luma"],
+                aliases={
+                    "open": ["more open", "for team", "collaborative", "novo"],
+                    "private": ["private", "more privacy", "luma", "individual"],
+                },
+            )
+        ],
+        source_refs=[
+            {"kind": "product_family", "value": "LUMA", "ordinal": 1},
+            {"kind": "product_family", "value": "SKYLAND NOVO", "ordinal": 2},
+        ],
+        metadata={"origin": "legacy_bridge"},
+    )
+
+
+def _capture_expected_answer_frames_from_assistant_response(
+    conversation: Conversation,
+    *,
+    response_text: str,
+    dialogue_kernel_mode: str,
+) -> None:
+    if not _dialogue_kernel_mode_allows_expected_answer_frames(dialogue_kernel_mode):
+        return
+    if not _last_assistant_asked_product_preference([f"assistant: {response_text}"]):
+        return
+    state = DialogueState.from_conversation(conversation)
+    state = push_expected_answer_frame(
+        state,
+        _build_product_preference_frame(conversation),
+    )
+    conversation.metadata_ = state.to_metadata(conversation.metadata_)
+
+
+def _dialogue_kernel_product_preference_match(
+    result: DialogueKernelResult | None,
+) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    expected_answer = result.decision.metadata.get("expected_answer")
+    if not isinstance(expected_answer, Mapping):
+        return None
+    match = expected_answer.get("match")
+    if not isinstance(match, Mapping):
+        return None
+    if match.get("route") != "product_preference_answer":
+        return None
+    if match.get("confidence") != "high":
+        return None
+    if match.get("interruption") or match.get("blocker"):
+        return None
+    if not isinstance(match.get("filled_slots"), Mapping):
+        return None
+    return dict(match)
+
+
+def _product_preference_frame_directives(match: Mapping[str, Any]) -> tuple[str, ...]:
+    filled_slots = match.get("filled_slots")
+    if not isinstance(filled_slots, Mapping):
+        return ()
+    workspace_preference = filled_slots.get("workspace_preference")
+    if not isinstance(workspace_preference, str) or not workspace_preference.strip():
+        return ()
+    return (
+        "expected-answer frame matched workspace_preference="
+        f"{workspace_preference.strip()}",
+    )
 
 
 def _service_confirmation_handoff_text() -> str:
@@ -6541,6 +6635,11 @@ async def process_message(
                 dialogue_kernel_result,
                 legacy_route=model_name,
             )
+            _capture_expected_answer_frames_from_assistant_response(
+                conv,
+                response_text=final_text,
+                dialogue_kernel_mode=dialogue_kernel_mode,
+            )
         return LLMResponse(
             text=final_text,
             tokens_in=usage.input_tokens if usage else None,
@@ -6568,6 +6667,11 @@ async def process_message(
                 conv,
                 dialogue_kernel_result,
                 legacy_route=model_name,
+            )
+            _capture_expected_answer_frames_from_assistant_response(
+                conv,
+                response_text=final_text,
+                dialogue_kernel_mode=dialogue_kernel_mode,
             )
         return LLMResponse(
             text=final_text,
@@ -7004,6 +7108,9 @@ async def process_message(
 
     policy_decision = evaluate_verified_answer_policy(
         masked_text, deps.faq_context or []
+    )
+    product_preference_frame_match = _dialogue_kernel_product_preference_match(
+        dialogue_kernel_result
     )
 
     try:
@@ -7681,10 +7788,16 @@ async def process_message(
             not policy_decision.is_order_status
             and policy_decision.sales_fallback_intent is None
             and (
-                _is_product_preference_answer(combined_text, deps.recent_history)
+                product_preference_frame_match is not None
+                or _is_product_preference_answer(combined_text, deps.recent_history)
                 or _is_product_preference_answer(masked_text, deps.recent_history)
             )
         ):
+            frame_directives = (
+                _product_preference_frame_directives(product_preference_frame_match)
+                if product_preference_frame_match is not None
+                else ()
+            )
             result = await _run_agent(
                 replace(
                     deps,
@@ -7692,6 +7805,7 @@ async def process_message(
                     runtime_directives=(
                         *deps.runtime_directives,
                         *PRODUCT_PREFERENCE_ANSWER_DIRECTIVES,
+                        *frame_directives,
                     ),
                 )
             )

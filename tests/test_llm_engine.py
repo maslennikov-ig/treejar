@@ -157,6 +157,44 @@ def _active_product_planning_history(
     ]
 
 
+def _product_preference_frame_state() -> dict[str, object]:
+    return {
+        "version": 1,
+        "active_flow": "product_selection",
+        "slots": {"customer_name": "Lili"},
+        "expected_answer_frames": [
+            {
+                "frame_id": "product_preference:test",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 6,
+                "turns_seen": 0,
+                "expected_slots": [
+                    {
+                        "slot": "workspace_preference",
+                        "accepted_values": ["open", "private"],
+                        "aliases": {
+                            "open": ["more open", "for team", "novo"],
+                            "private": ["private", "more privacy", "luma"],
+                        },
+                    }
+                ],
+                "source_refs": [
+                    {"kind": "product_family", "value": "LUMA", "ordinal": 1},
+                    {
+                        "kind": "product_family",
+                        "value": "SKYLAND NOVO",
+                        "ordinal": 2,
+                    },
+                ],
+            }
+        ],
+    }
+
+
 @pytest.mark.asyncio
 @patch("src.integrations.notifications.escalation.notify_manager_escalation")
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
@@ -9025,6 +9063,162 @@ async def test_process_message_product_preference_answer_continues_without_manag
         "customer is answering the assistant's product preference question" in directive
         for directive in call["deps"].runtime_directives
     )
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_captures_product_preference_frame_from_assistant_question(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    text = "I need workstation options for the team with drawers."
+    mock_build_history.return_value = _first_turn_history(text)
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock-model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Would you prefer a more private workspace with individual drawer "
+        "pedestals (LUMA), or is a more open, collaborative setup with "
+        "privacy panels (NOVO) better for your team?"
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "LUMA" in response.text
+    frames = conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"]
+    assert frames[0]["frame_id"].startswith("product_preference:")
+    assert frames[0]["status"] == "active"
+    assert frames[0]["question_kind"] == "product_preference"
+    assert frames[0]["expected_slots"][0]["slot"] == "workspace_preference"
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_product_preference_answer_after_interruption_uses_frame(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_frame_state()}}
+    text = "I prefer more open for team"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content="I need workstation options for the team with drawers."
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Would you prefer a more private workspace with individual "
+                        "drawer pedestals (LUMA), or is a more open, collaborative "
+                        "setup with privacy panels (NOVO) better for your team?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="Can delivery be arranged?")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=("Yes, delivery and installation can be arranged in Dubai.")
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock-model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Noted, I will continue with the more open NOVO workspace option."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "NOVO" in response.text
+    assert "manager will confirm" not in response.text.lower()
+    assert conv.escalation_status == "none"
+    call = mock_run.await_args_list[0].kwargs
+    assert call["deps"].tool_mode == "full"
+    assert any(
+        "customer is answering the assistant's product preference question" in directive
+        for directive in call["deps"].runtime_directives
+    )
+    frames = conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"]
+    assert frames[0]["status"] == "fulfilled"
+    assert frames[0]["filled_slots"] == {"workspace_preference": "open"}
+    trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
+    assert trace["kernel_route"] == "product_preference_answer"
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
