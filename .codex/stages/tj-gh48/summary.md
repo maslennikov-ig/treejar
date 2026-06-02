@@ -1,10 +1,12 @@
 # Stage tj-gh48: Expected Answer Frames
 
 Updated: 2026-06-02
-Status: implementation complete locally; stage closeout verification passed
-Branch: `codex/tj-gh48-expected-answer-frames-impl`
-Base: fresh `origin/main` at `428deed`
-Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.7`
+Status: expected-answer implementation delivered; live E2E found a follow-up
+service-interruption hotfix that is local-ready and not deployed yet
+Branch: `codex/tj-gh48-e2e-service-interruption-fix`
+Delivered runtime: `a1775a7be2ffa75536051a9baa52fc2b77df3771`
+Hotfix base: fresh `origin/main` at `a1775a7be2ffa75536051a9baa52fc2b77df3771`
+Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.8`
 
 docs-reviewed: updated - refreshed tj-gh48 handoff, summary, artifacts, kernel
 spec, eval plan, and project-index navigation/rationale for implemented
@@ -22,6 +24,26 @@ Replace narrow last-question-only routing with durable expected-answer frames in
 the existing Dialogue State Kernel. The implementation teaches Noor to remember
 bounded expected answers across interruptions while preserving hard escalation
 paths, legacy fallback, and production shadow safety.
+
+## Delivery / Live E2E Update
+
+- `codex/tj-gh48-expected-answer-frames-impl` was pushed, fast-forwarded to
+  `main`, and deployed by GitHub Actions run `26834632024`.
+- Production smoke after deploy passed: `uv run python scripts/verify_api.py
+  --base-url https://noor.starec.ai` -> `8 passed, 0 failed`.
+- Live E2E on approved synthetic profile
+  `+79262810921#tj-gh48-eaf-20260602172558` failed before the preference-answer
+  turn: `Can delivery and assembly be arranged in Dubai?` returned
+  `z-ai/glm-5|verified-policy` and created a pending escalation.
+- The synthetic conversation
+  `a1decf1a-b37d-492a-ae50-25dfc02a1962` was closed and the synthetic
+  escalation was resolved; the real base phone conversation was not mutated.
+- New Beads task `tj-gh48.8` tracks the hotfix. Local branch
+  `codex/tj-gh48-e2e-service-interruption-fix` adds a narrow
+  service-availability guard for active product-selection/expected-answer
+  contexts.
+- The hotfix is not deployed. Production retest is pending explicit approval for
+  push/merge/deploy.
 
 ## Implementation Completed
 
@@ -219,19 +241,44 @@ Canonical stage closeout:
 - `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh48`
   -> passed; full pytest inside closeout reported `1223 passed, 19 skipped`.
 
+Hotfix `tj-gh48.8` local evidence:
+
+- RED production: live E2E on
+  `+79262810921#tj-gh48-eaf-20260602172558` returned
+  `z-ai/glm-5|verified-policy` for a low-risk delivery/assembly interruption and
+  created a pending escalation.
+- RED/GREEN local regression:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_delivery_assembly_interruption_in_expected_frame_answers_without_handoff -v --tb=short`
+  failed before fix with `mock_model|verified-policy`, then passed.
+- Neighbor policy checks:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_dialogue_kernel_shadow_records_verified_policy_handoff_route tests/test_llm_engine.py::test_process_message_high_risk_partial_bypasses_agent_with_handoff tests/test_llm_engine.py::test_process_message_high_risk_verified_uses_service_policy_mode tests/test_verified_answers.py -v --tb=short`
+  -> `40 passed`.
+- Targeted:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py -k "dialogue_kernel or service or product_preference" -v --tb=short`
+  -> `18 passed`.
+- `uv run ruff check src/ tests/` -> passed.
+- `uv run ruff format --check src/ tests/` -> passed.
+- `uv run mypy src/` -> passed.
+- Full:
+  `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short`
+  -> `1224 passed, 19 skipped`.
+- `scripts/orchestration/run_process_verification.sh` -> passed.
+
 ## Current Constraints
 
 - Do not remove the legacy runtime.
 - Keep production `dialogue_kernel_mode=shadow` unless explicit approval enables
   a narrow enforce rollout.
 - Do not close #11; it remains blocked on policy answers.
-- No deploy, production mutation, live WhatsApp test, production config change,
-  remote merge, PR creation, or remote branch push without explicit current-task
-  approval.
+- Hotfix `tj-gh48.8` needs explicit approval before push, merge, deploy, and
+  production retest.
+- Do not enable enforce broadly; production remains `shadow` unless explicit
+  approval enables a narrow flow.
 
 ## Explicit Defers
 
-- `tj-gh48.7`: production deploy, production smoke, production shadow E2E, live
-  WhatsApp E2E, and any enforce rollout are deferred because this task did not
-  authorize those external actions.
+- `tj-gh48.8`: push/merge/deploy and production retest are pending explicit
+  approval for the local hotfix branch
+  `codex/tj-gh48-e2e-service-interruption-fix`.
+- `tj-gh48.7`: enforce rollout is still deferred pending production evidence.
 - GitHub #11 remains open and blocked on policy answers.

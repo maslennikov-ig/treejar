@@ -711,6 +711,87 @@ async def test_dialogue_kernel_shadow_records_verified_policy_handoff_route(
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_delivery_assembly_interruption_in_expected_frame_answers_without_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "E2E Tester"
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_frame_state()}}
+    text = "Can delivery and assembly be arranged in Dubai?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content="I need workstation options for a 6 person team."
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Would you prefer a more private workspace with individual "
+                        "drawer pedestals (LUMA), or is a more open, collaborative "
+                        "setup with privacy panels (NOVO) better for your team?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock_model|service-availability"
+    assert "delivery" in response.text.lower()
+    assert (
+        "assembly" in response.text.lower() or "installation" in response.text.lower()
+    )
+    assert "manager" not in response.text.lower()
+    assert conv.escalation_status == "none"
+    trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
+    assert trace["legacy_route"] == "mock_model|service-availability"
+    mock_notify.assert_not_awaited()
+    mock_run.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)

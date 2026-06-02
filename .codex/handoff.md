@@ -1,40 +1,40 @@
 # Orchestrator Handoff
 Updated: 2026-06-02
-Current branch: `codex/tj-gh48-expected-answer-frames-impl`
+Current branch: `codex/tj-gh48-e2e-service-interruption-fix`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
-- `tj-gh48` is local-only: no deploy, prod mutation/config change, live
-  WhatsApp E2E, push, PR, merge to `main`, or #11 close was performed.
-- Production remains `dialogue_kernel_mode=shadow` unless a later approved
-  rollout enables a narrow enforce flow.
-- Implementation branch is based on `origin/main` commit `428deed`; it contains
-  expected-answer frame schema/reducers, matcher, runner graph, engine bridge,
-  replay fixtures, and review fixes.
-- Engine captures frames for product preference, SKU quantity, quote details,
-  post-quote approval, and name gate prompts.
-- Product-preference frame matches steer the customer-visible path only for
-  usable `enforce` + allowlisted `product_selection`; the final answer still
-  comes from the normal agent/product path with frame-derived directives.
-- `shadow` kernel failures fail open to legacy; enforce failures remain explicit.
-- Reviewer fixes covered shadow gating, plural blockers, ordinal source refs,
-  required-slot fulfillment, typed payload extraction, broader frame capture,
-  trace-disabled frame persistence, stale quote-context guards, negation and
-  blocker precision, canonical workspace-preference slots, and docs/project-index
-  drift.
-- Stage evidence is in `.codex/stages/tj-gh48/summary.md` and artifacts.
-- Beads `.2`-`.6` are closed; `tj-gh48.7` is deferred for rollout/prod E2E.
+- `tj-gh48` expected-answer implementation is deployed at runtime commit
+  `a1775a7be2ffa75536051a9baa52fc2b77df3771`; Actions run `26834632024`
+  and production smoke passed.
+- Production remains `dialogue_kernel_mode=shadow`; do not enable enforce without
+  explicit approval and production evidence.
+- Live E2E on approved synthetic profile
+  `+79262810921#tj-gh48-eaf-20260602172558` found blocker `tj-gh48.8`:
+  low-risk delivery/assembly interruption returned `verified-policy` handoff.
+- Synthetic conversation `a1decf1a-b37d-492a-ae50-25dfc02a1962` was closed and
+  its synthetic escalation resolved; real base phone conversation was not
+  mutated.
+- Current local branch `codex/tj-gh48-e2e-service-interruption-fix` fixes
+  `tj-gh48.8`; local gates passed, but push/merge/deploy/retest are pending
+  approval.
+- Stage evidence is in `.codex/stages/tj-gh48/summary.md` and
+  `.codex/stages/tj-gh48/artifacts/`.
+- Beads `.2`-`.6` are closed; `tj-gh48.7` deferred for enforce rollout;
+  `tj-gh48.8` in progress pending delivery/retest.
 ## Next recommended
 Next stage id: `tj-gh48`.
-Recommended action: review local diff, then delivery/rollout only with explicit
-approval: merge, push, deploy, prod/live E2E, or enforce rollout.
+Recommended action: approve push/merge/deploy of `codex/tj-gh48-e2e-service-interruption-fix`, then rerun live E2E on `+79262810921`.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage. Continue `tj-gh48` from
 `/home/me/code/treejar/.worktrees/tj-gh48-impl`; read repo contracts, summary,
-and artifacts. Do not deploy, mutate prod, push, PR, enable enforce, or close #11.
+and artifacts. Current branch is `codex/tj-gh48-e2e-service-interruption-fix`.
+Do not deploy, push, enable enforce, or close #11 without explicit approval.
 
 ## Explicit defers
-- Beads `tj-gh48.7`: prod deploy/smoke, shadow E2E, live WhatsApp E2E,
-  and enforce rollout are deferred.
+- Beads `tj-gh48.8`: push/merge/deploy and production retest are pending
+  explicit approval.
+- Beads `tj-gh48.7`: enforce rollout remains deferred pending production
+  evidence.
 - GitHub #11 remains open and blocked on policy answers.

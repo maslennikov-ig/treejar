@@ -1699,6 +1699,106 @@ def _product_preference_frame_directives(match: Mapping[str, Any]) -> tuple[str,
     )
 
 
+_SERVICE_AVAILABILITY_QUESTION_RE = re.compile(
+    r"\b(?:can|could|do|does|is|are|will|would)\b"
+    r"[\w\s,.;:!?'-]{0,120}"
+    r"\b(?:delivery|deliver|delivered|installation|install|assembly|assemble)\b",
+    flags=re.IGNORECASE,
+)
+_SERVICE_AVAILABILITY_ARRANGE_RE = re.compile(
+    r"\b(?:arrange|arranged|provide|provided|available|include|included)\b"
+    r"[\w\s,.;:!?'-]{0,120}"
+    r"\b(?:delivery|deliver|installation|install|assembly|assemble)\b|"
+    r"\b(?:delivery|installation|assembly)\b"
+    r"[\w\s,.;:!?'-]{0,80}"
+    r"\b(?:arrange|arranged|available|included)\b",
+    flags=re.IGNORECASE,
+)
+_SERVICE_AVAILABILITY_HIGH_RISK_RE = re.compile(
+    r"\b(?:today|tomorrow|same\s+day|urgent|guarantee|guaranteed|commit|"
+    r"deadline|exact\s+time|specific\s+time|next\s+(?:monday|tuesday|"
+    r"wednesday|thursday|friday|saturday|sunday)|outside\s+uae|saudi|qatar|"
+    r"oman|kuwait|bahrain)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _has_active_product_selection_context(
+    conversation: Conversation,
+    recent_history: list[str] | None,
+) -> bool:
+    state = DialogueState.from_conversation(conversation)
+    if state.active_flow == "product_selection":
+        return True
+    if any(
+        frame.status == "active" and frame.flow == "product_selection"
+        for frame in state.expected_answer_frames
+    ):
+        return True
+
+    last_assistant = _last_assistant_message(recent_history)
+    normalized_last = _normalize_text(last_assistant)
+    return bool(
+        normalized_last
+        and (
+            "which" in normalized_last
+            or "prefer" in normalized_last
+            or "option" in normalized_last
+        )
+        and any(
+            product_term in normalized_last
+            for product_term in (
+                "luma",
+                "novo",
+                "workstation",
+                "workspace",
+                "chair",
+                "table",
+                "drawer",
+            )
+        )
+    )
+
+
+def _is_low_risk_service_availability_interruption(
+    text: str,
+    policy_decision: Any,
+    conversation: Conversation,
+    recent_history: list[str] | None,
+) -> bool:
+    if policy_decision.question_class not in {"service_low_risk", "service_high_risk"}:
+        return False
+    if policy_decision.policy_action != "handoff":
+        return False
+    if policy_decision.is_order_status:
+        return False
+    topics = set(policy_decision.matched_topics)
+    if not topics or not topics.issubset({"delivery", "installation"}):
+        return False
+    if _SERVICE_AVAILABILITY_HIGH_RISK_RE.search(text):
+        return False
+    if not (
+        _SERVICE_AVAILABILITY_QUESTION_RE.search(text)
+        or _SERVICE_AVAILABILITY_ARRANGE_RE.search(text)
+    ):
+        return False
+    return _has_active_product_selection_context(conversation, recent_history)
+
+
+def _service_availability_interruption_response(language: str) -> str:
+    if is_arabic_customer_language(language):
+        return (
+            "نعم، يمكن ترتيب التوصيل والتركيب داخل دبي/الإمارات. "
+            "يعتمد التوقيت النهائي والشروط على المنتجات والكمية والعنوان، "
+            "وسأتابع معك اختيار المنتجات أولاً."
+        )
+    return (
+        "Yes, delivery and assembly can be arranged in Dubai/UAE. "
+        "Exact timing and conditions depend on the selected items, quantity, "
+        "and address, so I will keep helping you choose the products first."
+    )
+
+
 def _service_confirmation_handoff_text() -> str:
     return (
         "Got it, I will note that you want assembly service included. "
@@ -8040,6 +8140,21 @@ async def process_message(
                     str(deps.conversation.language),
                 ),
                 f"{db_model_main}|sales-fallback",
+            )
+
+        if _is_low_risk_service_availability_interruption(
+            combined_text,
+            policy_decision,
+            deps.conversation,
+            deps.recent_history,
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _service_availability_interruption_response(
+                    str(deps.conversation.language)
+                ),
+                f"{db_model_main}|service-availability",
+                allow_product_media=False,
             )
 
         if not policy_decision.is_order_status and policy_action == "handoff":
