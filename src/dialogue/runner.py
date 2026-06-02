@@ -205,13 +205,18 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
         state.get("expected_answer_match"),
     )
     if expected_answer_decision:
-        after_state = mark_frame_fulfilled(
-            dialogue_state,
-            expected_answer_decision.metadata["expected_answer"]["match"]["frame_id"],
-            filled_slots=expected_answer_decision.metadata["expected_answer"][
-                "match"
-            ].get("filled_slots"),
+        after_state = dialogue_state
+        expected_answer = expected_answer_decision.metadata.get("expected_answer")
+        match = (
+            expected_answer.get("match") if isinstance(expected_answer, dict) else {}
         )
+        frame_id = match.get("frame_id") if isinstance(match, dict) else None
+        if isinstance(frame_id, str) and frame_id:
+            after_state = mark_frame_fulfilled(
+                dialogue_state,
+                frame_id,
+                filled_slots=match.get("filled_slots"),
+            )
         return {
             **state,
             "decision": expected_answer_decision,
@@ -561,6 +566,40 @@ def _expected_answer_decision(
     state: DialogueState,
     match: dict[str, Any] | None,
 ) -> DialogueDecision | None:
+    if _is_expected_answer_clarification(match):
+        assert match is not None
+        flow = state.active_flow or "product_selection"
+        metadata = {
+            "expected_answer": {
+                "match": _bounded_expected_answer_payload(
+                    {
+                        "matched": False,
+                        "frame_id": None,
+                        "confidence": match.get("confidence"),
+                        "route": "expected_answer_clarify",
+                        "filled_slots": {},
+                        "interruption": False,
+                        "blocker": None,
+                        "ambiguous_frame_ids": match.get("ambiguous_frame_ids", []),
+                    }
+                ),
+                "proposal": {
+                    "action": "expected_answer_clarify",
+                    "flow": flow,
+                    "handled": True,
+                },
+            }
+        }
+        return DialogueDecision(
+            action="expected_answer_clarify",
+            flow=flow,
+            response_text=(
+                "I have a couple of pending questions. Please clarify which one "
+                "you are answering."
+            ),
+            handled=True,
+            metadata=metadata,
+        )
     if not _is_high_confidence_expected_answer(match):
         return None
     assert match is not None
@@ -607,6 +646,17 @@ def _is_high_confidence_expected_answer(match: dict[str, Any] | None) -> bool:
         and not match.get("interruption")
         and not match.get("blocker")
         and bool(match.get("frame_id"))
+    )
+
+
+def _is_expected_answer_clarification(match: dict[str, Any] | None) -> bool:
+    if not match:
+        return False
+    return (
+        match.get("route") == "expected_answer_clarify"
+        and match.get("confidence") == "ambiguous"
+        and bool(match.get("ambiguous_frame_ids"))
+        and not match.get("blocker")
     )
 
 

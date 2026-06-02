@@ -11,7 +11,9 @@
   "cases": [
     {
       "id": "gh36_name_gate_resume_bare_name",
-      "issue_refs": ["gh-36"],
+      "issue_refs": [
+        "gh-36"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-gh36-name-gate",
       "initial_metadata": {
@@ -52,12 +54,17 @@
         "side_effects_allowed": false,
         "allowed_side_effects": [],
         "fallback_to_legacy": false,
-        "forbidden_routes": ["manager_handoff", "order_confirmation"]
+        "forbidden_routes": [
+          "manager_handoff",
+          "order_confirmation"
+        ]
       }
     },
     {
       "id": "gh37_product_quantity_without_fulfillment_no_handoff",
-      "issue_refs": ["gh-37"],
+      "issue_refs": [
+        "gh-37"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-gh37-product-quantity",
       "initial_metadata": {
@@ -100,13 +107,21 @@
         "side_effects_allowed": false,
         "allowed_side_effects": [],
         "fallback_to_legacy": false,
-        "forbidden_routes": ["order_confirmation", "manager_handoff"],
-        "forbidden_side_effects": ["manager_escalation", "telegram_notification"]
+        "forbidden_routes": [
+          "order_confirmation",
+          "manager_handoff"
+        ],
+        "forbidden_side_effects": [
+          "manager_escalation",
+          "telegram_notification"
+        ]
       }
     },
     {
       "id": "gh39_ch616_selection_after_product_choice",
-      "issue_refs": ["gh-39"],
+      "issue_refs": [
+        "gh-39"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-gh39-ch616-selection",
       "initial_metadata": {
@@ -147,12 +162,17 @@
         "side_effects_allowed": false,
         "allowed_side_effects": [],
         "fallback_to_legacy": true,
-        "forbidden_routes": ["manager_handoff", "policy_escalation"]
+        "forbidden_routes": [
+          "manager_handoff",
+          "policy_escalation"
+        ]
       }
     },
     {
       "id": "gh40_terse_quote_details_preserve_context",
-      "issue_refs": ["gh-40"],
+      "issue_refs": [
+        "gh-40"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-gh40-quote-context",
       "initial_metadata": {
@@ -203,18 +223,637 @@
               }
             ]
           },
-          "missing_quote_fields": ["company_or_individual"]
+          "missing_quote_fields": [
+            "company_or_individual"
+          ]
         },
         "side_effects_allowed": false,
         "allowed_side_effects": [],
         "fallback_to_legacy": false,
-        "forbidden_routes": ["generic_opener", "create_quotation"],
-        "forbidden_side_effects": ["zoho_sale_order", "quotation_pdf", "whatsapp_media"]
+        "forbidden_routes": [
+          "generic_opener",
+          "create_quotation"
+        ],
+        "forbidden_side_effects": [
+          "zoho_sale_order",
+          "quotation_pdf",
+          "whatsapp_media"
+        ]
+      }
+    },
+    {
+      "id": "gh47_product_preference_immediate_expected_frame",
+      "issue_refs": [
+        "gh-47"
+      ],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh47-preference-immediate",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "thread_id": "conversation:fixture-gh47-preference-immediate",
+          "state": {
+            "version": 1,
+            "active_flow": "product_selection",
+            "slots": {
+              "customer_name": "Lili"
+            },
+            "expected_answer_frames": [
+              {
+                "frame_id": "product_preference:fixture-immediate",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 6,
+                "turns_seen": 0,
+                "expected_slots": [
+                  {
+                    "slot": "workspace_preference",
+                    "accepted_values": [
+                      "open",
+                      "private"
+                    ],
+                    "aliases": {
+                      "open": [
+                        "more open",
+                        "for team",
+                        "novo"
+                      ],
+                      "private": [
+                        "private",
+                        "luma"
+                      ]
+                    }
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "product_family",
+                    "value": "LUMA",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "product_family",
+                    "value": "SKYLAND NOVO",
+                    "ordinal": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+        },
+        {
+          "role": "user",
+          "content": "I prefer more open for team"
+        }
+      ],
+      "expected": {
+        "route": "product_preference_answer",
+        "flow": "product_selection",
+        "slots": {
+          "workspace_preference": "open",
+          "frame_status": "fulfilled"
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true,
+        "forbidden_routes": [
+          "manager_handoff",
+          "verified_policy_clarify"
+        ]
+      }
+    },
+    {
+      "id": "gh47_product_preference_delayed_after_delivery_interruption",
+      "issue_refs": [
+        "gh-47"
+      ],
+      "mode": "shadow",
+      "conversation_id": "fixture-gh47-preference-delayed",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "thread_id": "conversation:fixture-gh47-preference-delayed",
+          "state": {
+            "version": 1,
+            "active_flow": "product_selection",
+            "slots": {
+              "customer_name": "Lili"
+            },
+            "expected_answer_frames": [
+              {
+                "frame_id": "product_preference:fixture-delayed",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 6,
+                "turns_seen": 2,
+                "expected_slots": [
+                  {
+                    "slot": "workspace_preference",
+                    "accepted_values": [
+                      "open",
+                      "private"
+                    ],
+                    "aliases": {
+                      "open": [
+                        "more open",
+                        "for team",
+                        "novo"
+                      ],
+                      "private": [
+                        "private",
+                        "luma"
+                      ]
+                    }
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "product_family",
+                    "value": "LUMA",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "product_family",
+                    "value": "SKYLAND NOVO",
+                    "ordinal": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Would you prefer a more private workspace with individual drawer pedestals (LUMA), or is a more open, collaborative setup with privacy panels (NOVO) better for your team?"
+        },
+        {
+          "role": "user",
+          "content": "Can delivery be arranged?"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes, delivery and installation can be arranged in Dubai."
+        },
+        {
+          "role": "user",
+          "content": "I prefer more open for team"
+        }
+      ],
+      "expected": {
+        "route": "product_preference_answer",
+        "flow": "product_selection",
+        "slots": {
+          "workspace_preference": "open",
+          "frame_status": "fulfilled"
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true,
+        "forbidden_routes": [
+          "manager_handoff",
+          "verified_policy_clarify"
+        ]
+      }
+    },
+    {
+      "id": "expected_answer_frame_ambiguity",
+      "issue_refs": [
+        "gh-47",
+        "expected-answer"
+      ],
+      "mode": "shadow",
+      "conversation_id": "fixture-expected-answer-ambiguity",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "thread_id": "conversation:fixture-expected-answer-ambiguity",
+          "state": {
+            "version": 1,
+            "active_flow": "product_selection",
+            "slots": {
+              "customer_name": "Lili"
+            },
+            "expected_answer_frames": [
+              {
+                "frame_id": "product_preference:fixture-ambiguity",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 6,
+                "turns_seen": 0,
+                "expected_slots": [
+                  {
+                    "slot": "workspace_preference",
+                    "accepted_values": [
+                      "open",
+                      "private"
+                    ]
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "product_family",
+                    "value": "LUMA",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "product_family",
+                    "value": "SKYLAND NOVO",
+                    "ordinal": 2
+                  }
+                ]
+              },
+              {
+                "frame_id": "quantity:fixture-ambiguity",
+                "flow": "product_selection",
+                "question_kind": "sku_quantity",
+                "prompt_key": "ask_quantity_for_choice",
+                "status": "active",
+                "priority": 70,
+                "expected_slots": [
+                  {
+                    "slot": "selected_option"
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "sku",
+                    "value": "CH 616",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "sku",
+                    "value": "CH 620",
+                    "ordinal": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Would you prefer LUMA private or NOVO open?"
+        },
+        {
+          "role": "assistant",
+          "content": "For chairs, do you mean CH 616 first or CH 620 second?"
+        },
+        {
+          "role": "user",
+          "content": "the second one"
+        }
+      ],
+      "expected": {
+        "route": "expected_answer_clarify",
+        "flow": "product_selection",
+        "slots": {
+          "ambiguous_frame_count": 2,
+          "no_frame_fulfilled": true
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": false
+      }
+    },
+    {
+      "id": "expected_answer_frame_expiry",
+      "issue_refs": [
+        "gh-47",
+        "expected-answer"
+      ],
+      "mode": "shadow",
+      "conversation_id": "fixture-expected-answer-expiry",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "thread_id": "conversation:fixture-expected-answer-expiry",
+          "state": {
+            "version": 1,
+            "active_flow": "product_selection",
+            "slots": {
+              "customer_name": "Lili"
+            },
+            "expected_answer_frames": [
+              {
+                "frame_id": "product_preference:fixture-expired",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 0,
+                "turns_seen": 0,
+                "expected_slots": [
+                  {
+                    "slot": "workspace_preference",
+                    "accepted_values": [
+                      "open",
+                      "private"
+                    ],
+                    "aliases": {
+                      "open": [
+                        "more open",
+                        "for team",
+                        "novo"
+                      ],
+                      "private": [
+                        "private",
+                        "luma"
+                      ]
+                    }
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "product_family",
+                    "value": "LUMA",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "product_family",
+                    "value": "SKYLAND NOVO",
+                    "ordinal": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Would you prefer LUMA private or NOVO open?"
+        },
+        {
+          "role": "user",
+          "content": "open"
+        }
+      ],
+      "expected": {
+        "route": "legacy_fallback",
+        "flow": "legacy_fallback",
+        "slots": {
+          "frame_status": "expired"
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true
+      }
+    },
+    {
+      "id": "expected_answer_hard_blocker_override",
+      "issue_refs": [
+        "gh-47",
+        "expected-answer"
+      ],
+      "mode": "shadow",
+      "conversation_id": "fixture-expected-answer-hard-blocker",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "thread_id": "conversation:fixture-expected-answer-hard-blocker",
+          "state": {
+            "version": 1,
+            "active_flow": "product_selection",
+            "slots": {
+              "customer_name": "Lili"
+            },
+            "expected_answer_frames": [
+              {
+                "frame_id": "product_preference:fixture-blocker",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 6,
+                "turns_seen": 0,
+                "expected_slots": [
+                  {
+                    "slot": "workspace_preference",
+                    "accepted_values": [
+                      "open",
+                      "private"
+                    ],
+                    "aliases": {
+                      "open": [
+                        "more open",
+                        "for team",
+                        "novo"
+                      ],
+                      "private": [
+                        "private",
+                        "luma"
+                      ]
+                    }
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "product_family",
+                    "value": "LUMA",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "product_family",
+                    "value": "SKYLAND NOVO",
+                    "ordinal": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Would you prefer LUMA private or NOVO open?"
+        },
+        {
+          "role": "user",
+          "content": "I prefer open but I need a manager for a refund complaint"
+        }
+      ],
+      "expected": {
+        "route": "legacy_fallback",
+        "flow": "legacy_fallback",
+        "slots": {
+          "blocker": "human_request",
+          "frame_status": "active"
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true,
+        "forbidden_routes": [
+          "product_preference_answer"
+        ]
+      }
+    },
+    {
+      "id": "long_dialog_expected_answer_frame_stress",
+      "issue_refs": [
+        "gh-36",
+        "gh-37",
+        "gh-39",
+        "gh-40",
+        "gh-47"
+      ],
+      "mode": "shadow",
+      "conversation_id": "fixture-long-dialog-expected-answer-stress",
+      "initial_metadata": {
+        "customer_name": "Lili",
+        "dialogue_kernel": {
+          "thread_id": "conversation:fixture-long-dialog-expected-answer-stress",
+          "state": {
+            "version": 1,
+            "active_flow": "product_selection",
+            "slots": {
+              "customer_name": "Lili"
+            },
+            "expected_answer_frames": [
+              {
+                "frame_id": "product_preference:fixture-stress",
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": 6,
+                "turns_seen": 4,
+                "expected_slots": [
+                  {
+                    "slot": "workspace_preference",
+                    "accepted_values": [
+                      "open",
+                      "private"
+                    ],
+                    "aliases": {
+                      "open": [
+                        "more open",
+                        "for team",
+                        "novo"
+                      ],
+                      "private": [
+                        "private",
+                        "luma"
+                      ]
+                    }
+                  }
+                ],
+                "source_refs": [
+                  {
+                    "kind": "product_family",
+                    "value": "LUMA",
+                    "ordinal": 1
+                  },
+                  {
+                    "kind": "product_family",
+                    "value": "SKYLAND NOVO",
+                    "ordinal": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hi, need desks and chairs for new office"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello, this is Noor from Treejar. May I have your name first?"
+        },
+        {
+          "role": "user",
+          "content": "Ameer"
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks Ameer. Do you prefer LUMA private workstations or NOVO open team workstations?"
+        },
+        {
+          "role": "user",
+          "content": "Can delivery to Dubai be arranged?"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes, delivery can be arranged. I will still keep the workstation preference question open."
+        },
+        {
+          "role": "user",
+          "content": "Also need 6 CH 616 chairs"
+        },
+        {
+          "role": "assistant",
+          "content": "Noted. I can prepare a quotation once the workstation direction is clear."
+        },
+        {
+          "role": "user",
+          "content": "What about assembly?"
+        },
+        {
+          "role": "assistant",
+          "content": "Assembly can be included depending on the order and schedule."
+        },
+        {
+          "role": "user",
+          "content": "Please keep it individual for the quote"
+        },
+        {
+          "role": "assistant",
+          "content": "Noted. Which workstation direction should I continue with?"
+        },
+        {
+          "role": "user",
+          "content": "I prefer more open for team"
+        }
+      ],
+      "expected": {
+        "route": "product_preference_answer",
+        "flow": "product_selection",
+        "slots": {
+          "workspace_preference": "open",
+          "frame_status": "fulfilled",
+          "turn_count": 13
+        },
+        "side_effects_allowed": false,
+        "allowed_side_effects": [],
+        "fallback_to_legacy": true,
+        "forbidden_routes": [
+          "manager_handoff",
+          "verified_policy_clarify"
+        ]
       }
     },
     {
       "id": "gh11_post_quotation_bulk_sample_discount_hold",
-      "issue_refs": ["gh-11"],
+      "issue_refs": [
+        "gh-11"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-gh11-post-quotation-hold",
       "initial_metadata": {
@@ -265,7 +904,12 @@
     },
     {
       "id": "long_dialog_quote_memory_stress",
-      "issue_refs": ["gh-36", "gh-37", "gh-39", "gh-40"],
+      "issue_refs": [
+        "gh-36",
+        "gh-37",
+        "gh-39",
+        "gh-40"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-long-dialog-stress",
       "initial_metadata": {
@@ -279,19 +923,58 @@
         }
       },
       "messages": [
-        {"role": "user", "content": "Hi, need desks and chairs for new office"},
-        {"role": "assistant", "content": "Hello, this is Noor from Treejar. May I have your name first?"},
-        {"role": "user", "content": "Ameer"},
-        {"role": "assistant", "content": "Thanks Ameer. How many workstations and chairs do you need?"},
-        {"role": "user", "content": "2 SKYLAND NOVO 2400 meeting tables and 6 ergonomic chairs"},
-        {"role": "assistant", "content": "For ergonomic chairs we can offer CH 616 NEW black, CH-190, or CH 620."},
-        {"role": "user", "content": "I need 6 CH 616"},
-        {"role": "assistant", "content": "I can prepare a quotation for 2 SKYLAND NOVO 2400 meeting tables and 6 CH 616 chairs. Please share company or individual status and delivery address."},
-        {"role": "user", "content": "Is delivery to Dubai possible this week?"},
-        {"role": "assistant", "content": "Delivery timing depends on stock and schedule. Please share the exact address for the quotation."},
-        {"role": "user", "content": "Ameer, Business Bay Dubai"},
-        {"role": "assistant", "content": "Should the quotation be under a company or individual name?"},
-        {"role": "user", "content": "individual"}
+        {
+          "role": "user",
+          "content": "Hi, need desks and chairs for new office"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello, this is Noor from Treejar. May I have your name first?"
+        },
+        {
+          "role": "user",
+          "content": "Ameer"
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks Ameer. How many workstations and chairs do you need?"
+        },
+        {
+          "role": "user",
+          "content": "2 SKYLAND NOVO 2400 meeting tables and 6 ergonomic chairs"
+        },
+        {
+          "role": "assistant",
+          "content": "For ergonomic chairs we can offer CH 616 NEW black, CH-190, or CH 620."
+        },
+        {
+          "role": "user",
+          "content": "I need 6 CH 616"
+        },
+        {
+          "role": "assistant",
+          "content": "I can prepare a quotation for 2 SKYLAND NOVO 2400 meeting tables and 6 CH 616 chairs. Please share company or individual status and delivery address."
+        },
+        {
+          "role": "user",
+          "content": "Is delivery to Dubai possible this week?"
+        },
+        {
+          "role": "assistant",
+          "content": "Delivery timing depends on stock and schedule. Please share the exact address for the quotation."
+        },
+        {
+          "role": "user",
+          "content": "Ameer, Business Bay Dubai"
+        },
+        {
+          "role": "assistant",
+          "content": "Should the quotation be under a company or individual name?"
+        },
+        {
+          "role": "user",
+          "content": "individual"
+        }
       ],
       "expected": {
         "route": "quote_resume_missing_details",
@@ -321,13 +1004,22 @@
         "side_effects_allowed": false,
         "allowed_side_effects": [],
         "fallback_to_legacy": false,
-        "forbidden_routes": ["manager_handoff", "generic_opener"],
-        "forbidden_side_effects": ["manager_escalation", "zoho_sale_order", "quotation_pdf"]
+        "forbidden_routes": [
+          "manager_handoff",
+          "generic_opener"
+        ],
+        "forbidden_side_effects": [
+          "manager_escalation",
+          "zoho_sale_order",
+          "quotation_pdf"
+        ]
       }
     },
     {
       "id": "multilingual_mixed_latin_cyrillic_sku_variants",
-      "issue_refs": ["gh-39"],
+      "issue_refs": [
+        "gh-39"
+      ],
       "mode": "shadow",
       "conversation_id": "fixture-mixed-sku-variants",
       "initial_metadata": {
@@ -401,7 +1093,9 @@
         "side_effects_allowed": false,
         "allowed_side_effects": [],
         "fallback_to_legacy": true,
-        "forbidden_routes": ["manager_handoff"]
+        "forbidden_routes": [
+          "manager_handoff"
+        ]
       }
     }
   ]

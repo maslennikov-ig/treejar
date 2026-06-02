@@ -21,13 +21,19 @@ def test_dialogue_replay_fixture_contract() -> None:
         "gh37_product_quantity_without_fulfillment_no_handoff",
         "gh39_ch616_selection_after_product_choice",
         "gh40_terse_quote_details_preserve_context",
+        "gh47_product_preference_immediate_expected_frame",
+        "gh47_product_preference_delayed_after_delivery_interruption",
+        "expected_answer_frame_ambiguity",
+        "expected_answer_frame_expiry",
+        "expected_answer_hard_blocker_override",
         "gh11_post_quotation_bulk_sample_discount_hold",
+        "long_dialog_expected_answer_frame_stress",
         "long_dialog_quote_memory_stress",
         "multilingual_mixed_latin_cyrillic_sku_variants",
     }
 
     issue_refs = {ref for case in cases for ref in case["issue_refs"]}
-    assert {"gh-11", "gh-36", "gh-37", "gh-39", "gh-40"}.issubset(issue_refs)
+    assert {"gh-11", "gh-36", "gh-37", "gh-39", "gh-40", "gh-47"}.issubset(issue_refs)
 
     for case in cases:
         assert case["mode"] in {"shadow", "enforce", "legacy"}
@@ -92,4 +98,91 @@ async def test_dialogue_replay_cases_run_through_kernel(
     assert result.decision.flow == expected_kernel_route
     assert result.should_use_kernel is expected_should_use_kernel
     assert trace["kernel_route"] == expected_kernel_route
+    assert trace["decision"]["side_effects_allowed"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    (
+        "case_id",
+        "expected_trace_route",
+        "expected_flow",
+        "expected_should_use_kernel",
+    ),
+    [
+        (
+            "gh47_product_preference_immediate_expected_frame",
+            "product_preference_answer",
+            "product_selection",
+            False,
+        ),
+        (
+            "gh47_product_preference_delayed_after_delivery_interruption",
+            "product_preference_answer",
+            "product_selection",
+            False,
+        ),
+        (
+            "expected_answer_frame_ambiguity",
+            "expected_answer_clarify",
+            "product_selection",
+            False,
+        ),
+        (
+            "expected_answer_frame_expiry",
+            "legacy_fallback",
+            "legacy_fallback",
+            False,
+        ),
+        (
+            "expected_answer_hard_blocker_override",
+            "legacy_fallback",
+            "legacy_fallback",
+            False,
+        ),
+        (
+            "long_dialog_expected_answer_frame_stress",
+            "product_preference_answer",
+            "product_selection",
+            False,
+        ),
+    ],
+)
+async def test_expected_answer_replay_cases_run_through_kernel(
+    case_id: str,
+    expected_trace_route: str,
+    expected_flow: str,
+    expected_should_use_kernel: bool,
+) -> None:
+    payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    case = next(item for item in payload["cases"] if item["id"] == case_id)
+    metadata = dict(case["initial_metadata"])
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        phone="+971500000001",
+        customer_name=metadata.pop("customer_name", None),
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+        metadata_=metadata,
+    )
+    history = [
+        f"{message['role']}: {message['content']}" for message in case["messages"][:-1]
+    ]
+    user_message = str(case["messages"][-1]["content"])
+
+    result = await run_dialogue_kernel(
+        conversation=conversation,
+        text=user_message,
+        recent_history=[*history, f"user: {user_message}"],
+        is_first_turn=False,
+        mode=case["mode"],
+        enforced_flows=("product_selection", "quote_details", "post_quotation_hold"),
+        trace_enabled=True,
+    )
+
+    trace = conversation.metadata_["dialogue_kernel"]["traces"][-1]
+    assert trace["kernel_route"] == expected_trace_route
+    assert result.decision.flow == expected_flow
+    assert result.should_use_kernel is expected_should_use_kernel
     assert trace["decision"]["side_effects_allowed"] is False
