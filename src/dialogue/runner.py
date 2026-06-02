@@ -207,15 +207,18 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
     if expected_answer_decision:
         after_state = dialogue_state
         expected_answer = expected_answer_decision.metadata.get("expected_answer")
-        match = (
-            expected_answer.get("match") if isinstance(expected_answer, dict) else {}
+        raw_match = (
+            expected_answer.get("match") if isinstance(expected_answer, dict) else None
         )
-        frame_id = match.get("frame_id") if isinstance(match, dict) else None
+        match_payload: dict[str, Any] = raw_match if isinstance(raw_match, dict) else {}
+        frame_id = match_payload.get("frame_id")
+        raw_filled_slots = match_payload.get("filled_slots")
+        filled_slots = raw_filled_slots if isinstance(raw_filled_slots, dict) else None
         if isinstance(frame_id, str) and frame_id:
             after_state = mark_frame_fulfilled(
                 dialogue_state,
                 frame_id,
-                filled_slots=match.get("filled_slots"),
+                filled_slots=filled_slots,
             )
         return {
             **state,
