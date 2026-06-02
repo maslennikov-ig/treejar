@@ -1,7 +1,7 @@
 # Stage tj-gh48: Expected Answer Frames
 
 Updated: 2026-06-02
-Status: implementation complete locally; closeout verification pending
+Status: implementation complete locally; stage closeout verification passed
 Branch: `codex/tj-gh48-expected-answer-frames-impl`
 Base: fresh `origin/main` at `428deed`
 Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.7`
@@ -143,6 +143,11 @@ Passed after review fixes:
   -> passed.
 - `uv run --extra dev mypy src/dialogue src/llm/engine.py`
   -> passed.
+
+Canonical stage closeout:
+
+- `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh48`
+  -> passed; full pytest inside closeout reported `1216 passed, 19 skipped`.
 
 ## Current Constraints
 
