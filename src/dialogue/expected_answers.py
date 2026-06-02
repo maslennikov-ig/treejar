@@ -15,6 +15,8 @@ class ExpectedAnswerMatch(BaseModel):
     frame_id: str | None = None
     confidence: str = "none"
     filled_slots: dict[str, Any] = Field(default_factory=dict)
+    fulfilled: bool = False
+    missing_required_slots: list[str] = Field(default_factory=list)
     route: str = "legacy_fallback"
     interruption: bool = False
     ambiguous_frame_ids: list[str] = Field(default_factory=list)
@@ -39,15 +41,20 @@ def match_expected_answer(
         return ExpectedAnswerMatch()
 
     if _is_terse_ordinal_reference(normalized):
-        ambiguous_frame_ids = [
-            frame.frame_id for frame in active_frames if _frame_accepts_ordinal(frame)
+        ordinal_frames = [
+            frame for frame in active_frames if _frame_accepts_ordinal(frame)
         ]
-        if len(ambiguous_frame_ids) > 1:
+        if len(ordinal_frames) > 1:
             return ExpectedAnswerMatch(
                 confidence="ambiguous",
                 route="expected_answer_clarify",
-                ambiguous_frame_ids=ambiguous_frame_ids,
+                ambiguous_frame_ids=[frame.frame_id for frame in ordinal_frames],
             )
+        ordinal = _ordinal_from_text(normalized)
+        if ordinal is not None and ordinal_frames:
+            ordinal_match = _match_ordinal_frame(ordinal_frames[0], ordinal)
+            if ordinal_match.matched:
+                return ordinal_match
 
     candidates = [
         candidate
@@ -107,13 +114,98 @@ def _match_frame(
         return ExpectedAnswerMatch()
 
     score = max(confidence_scores)
+    missing_required_slots = _missing_required_slots(frame, filled_slots)
     return ExpectedAnswerMatch(
         matched=True,
         frame_id=frame.frame_id,
         confidence="high" if score >= 2 else "medium",
         filled_slots=filled_slots,
+        fulfilled=not missing_required_slots,
+        missing_required_slots=missing_required_slots,
         route=_route_for_frame(frame),
     )
+
+
+def _match_ordinal_frame(
+    frame: ExpectedAnswerFrame,
+    ordinal: int,
+) -> ExpectedAnswerMatch:
+    source_ref = _source_ref_for_ordinal(frame, ordinal)
+    if not source_ref:
+        return ExpectedAnswerMatch()
+    raw_source_value = source_ref.get("value")
+    if not isinstance(raw_source_value, str) or not raw_source_value.strip():
+        return ExpectedAnswerMatch()
+
+    filled_slots: dict[str, Any] = {}
+    for expected_slot in frame.expected_slots:
+        canonical_value = _slot_value_for_source_ref(expected_slot, raw_source_value)
+        if canonical_value is not None:
+            filled_slots[expected_slot.slot] = canonical_value
+
+    if not filled_slots:
+        return ExpectedAnswerMatch()
+
+    missing_required_slots = _missing_required_slots(frame, filled_slots)
+    return ExpectedAnswerMatch(
+        matched=True,
+        frame_id=frame.frame_id,
+        confidence="high",
+        filled_slots=filled_slots,
+        fulfilled=not missing_required_slots,
+        missing_required_slots=missing_required_slots,
+        route=_route_for_frame(frame),
+    )
+
+
+def _source_ref_for_ordinal(
+    frame: ExpectedAnswerFrame,
+    ordinal: int,
+) -> dict[str, Any] | None:
+    for source_ref in frame.source_refs:
+        raw_ordinal = source_ref.get("ordinal")
+        if isinstance(raw_ordinal, int):
+            source_ordinal = raw_ordinal
+        elif isinstance(raw_ordinal, str) and raw_ordinal.strip():
+            try:
+                source_ordinal = int(raw_ordinal)
+            except ValueError:
+                continue
+        else:
+            continue
+        if source_ordinal == ordinal:
+            return source_ref
+    index = ordinal - 1
+    if 0 <= index < len(frame.source_refs):
+        return frame.source_refs[index]
+    return None
+
+
+def _slot_value_for_source_ref(
+    expected_slot: ExpectedSlot,
+    source_value: str,
+) -> str | None:
+    normalized_source = _normalize_text(source_value)
+    for value in expected_slot.accepted_values:
+        if _contains_phrase(normalized_source, value):
+            return value
+    for value, aliases in expected_slot.aliases.items():
+        if _contains_phrase(normalized_source, value):
+            return value
+        if any(_contains_phrase(normalized_source, alias) for alias in aliases):
+            return value
+    return None
+
+
+def _missing_required_slots(
+    frame: ExpectedAnswerFrame,
+    filled_slots: dict[str, Any],
+) -> list[str]:
+    return [
+        expected_slot.slot
+        for expected_slot in frame.expected_slots
+        if expected_slot.required and expected_slot.slot not in filled_slots
+    ]
 
 
 def _match_slot(
@@ -162,11 +254,27 @@ def _hard_blocker(normalized_text: str) -> str | None:
             ),
         ),
         ("complaint", ("complaint", "complain", "unhappy", "dissatisfied")),
-        ("refund", ("refund", "return", "exchange", "money back")),
+        (
+            "complaint",
+            ("complaints", "complains"),
+        ),
+        (
+            "refund",
+            (
+                "refund",
+                "refunds",
+                "return",
+                "returns",
+                "exchange",
+                "exchanges",
+                "money back",
+            ),
+        ),
         (
             "discount",
             (
                 "discount",
+                "discounts",
                 "special price",
                 "better price",
                 "cheaper",
@@ -184,10 +292,11 @@ def _hard_blocker(normalized_text: str) -> str | None:
                 "net 30",
                 "net30",
                 "installment",
+                "installments",
                 "pay later",
             ),
         ),
-        ("warranty", ("warranty", "guarantee")),
+        ("warranty", ("warranty", "warranties", "guarantee", "guarantees")),
     ]
     for blocker, terms in blockers:
         if any(_contains_phrase(normalized_text, term) for term in terms):
@@ -229,6 +338,16 @@ def _is_terse_ordinal_reference(normalized_text: str) -> bool:
     if len(normalized_text.split()) > 5:
         return False
     return any(_contains_phrase(normalized_text, term) for term in ordinal_terms)
+
+
+def _ordinal_from_text(normalized_text: str) -> int | None:
+    first_terms = ("first", "1st", "number 1", "option 1", "the 1")
+    second_terms = ("second", "2nd", "number 2", "option 2", "the 2")
+    if any(_contains_phrase(normalized_text, term) for term in first_terms):
+        return 1
+    if any(_contains_phrase(normalized_text, term) for term in second_terms):
+        return 2
+    return None
 
 
 def _frame_accepts_ordinal(frame: ExpectedAnswerFrame) -> bool:

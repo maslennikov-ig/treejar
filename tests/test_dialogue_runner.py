@@ -65,6 +65,8 @@ def _product_preference_match(
     *,
     frame_id: str = "product_preference:test",
     extra_note: str | None = None,
+    fulfilled: bool = True,
+    missing_required_slots: list[str] | None = None,
 ) -> dict[str, Any]:
     filled_slots: dict[str, Any] = {"workspace_preference": "open"}
     if extra_note is not None:
@@ -77,6 +79,8 @@ def _product_preference_match(
         "route": "product_preference_answer",
         "interruption": False,
         "blocker": None,
+        "fulfilled": fulfilled,
+        "missing_required_slots": missing_required_slots or [],
     }
 
 
@@ -377,6 +381,40 @@ async def test_dialogue_kernel_uses_real_expected_answer_matcher_with_expiring_f
     assert result.state.expected_answer_frames[0].filled_slots == {
         "workspace_preference": "open"
     }
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_does_not_fulfill_partial_required_slot_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        lambda **_kwargs: _product_preference_match(
+            fulfilled=False,
+            missing_required_slots=["delivery_address"],
+        ),
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_kernel_state()}}
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="I prefer more open for team",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.flow == "legacy_fallback"
+    assert result.state.expected_answer_frames[0].status == "active"
+    assert result.state.expected_answer_frames[0].filled_slots == {}
 
 
 @pytest.mark.asyncio

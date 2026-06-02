@@ -53,11 +53,17 @@ def test_hard_blockers_override_expected_answer_frames() -> None:
         ("I prefer open but I need a human to help", "human_request"),
         ("I prefer open but I need a manager", "human_request"),
         ("I prefer open but this is a complaint", "complaint"),
+        ("I prefer open but these are complaints", "complaint"),
         ("I prefer open but I need a refund", "refund"),
+        ("I prefer open but I need refunds", "refund"),
+        ("I prefer open but I need returns", "refund"),
         ("I prefer open but need a discount", "discount"),
+        ("I prefer open but need discounts", "discount"),
         ("I prefer open but can you do net 30 payment terms", "payment_terms"),
         ("I prefer open but can we use credit terms", "payment_terms"),
         ("I prefer open but what about warranty", "warranty"),
+        ("I prefer open but what about warranties", "warranty"),
+        ("I prefer open but do you provide guarantees", "warranty"),
     ]:
         match = match_expected_answer(state, text)
 
@@ -67,6 +73,55 @@ def test_hard_blockers_override_expected_answer_frames() -> None:
         assert match.route == "legacy_fallback"
         assert match.interruption is False
         assert match.blocker == blocker
+
+
+def test_single_frame_ordinal_answer_matches_source_ref() -> None:
+    state = DialogueState(
+        active_flow="product_selection",
+        expected_answer_frames=[_product_preference_frame()],
+    )
+
+    match = match_expected_answer(state, "the second option")
+
+    assert match.matched is True
+    assert match.frame_id == "product_preference:test"
+    assert match.confidence == "high"
+    assert match.filled_slots == {"workspace_preference": "open"}
+    assert match.route == "product_preference_answer"
+    assert match.fulfilled is True
+    assert match.missing_required_slots == []
+
+
+def test_partial_required_slot_match_is_not_fulfilled() -> None:
+    state = DialogueState(
+        active_flow="quote_details",
+        expected_answer_frames=[
+            ExpectedAnswerFrame(
+                frame_id="quote_details:test",
+                flow="quote_details",
+                question_kind="quote_details",
+                prompt_key="ask_quote_details",
+                expected_slots=[
+                    ExpectedSlot(
+                        slot="customer_type",
+                        accepted_values=["individual", "company"],
+                    ),
+                    ExpectedSlot(
+                        slot="delivery_address",
+                        accepted_values=["office 1202"],
+                    ),
+                ],
+            )
+        ],
+    )
+
+    match = match_expected_answer(state, "individual")
+
+    assert match.matched is True
+    assert match.frame_id == "quote_details:test"
+    assert match.filled_slots == {"customer_type": "individual"}
+    assert match.fulfilled is False
+    assert match.missing_required_slots == ["delivery_address"]
 
 
 def test_terse_ordinal_across_multiple_frames_routes_to_clarification() -> None:

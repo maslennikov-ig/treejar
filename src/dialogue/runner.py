@@ -37,6 +37,33 @@ class DialogueKernelResult:
     should_use_kernel: bool
 
 
+def expected_answer_match_payload(
+    result: DialogueKernelResult | None,
+    *,
+    route: str | None = None,
+    confidence: str | None = None,
+    require_usable_kernel: bool = True,
+) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    if require_usable_kernel and not (
+        result.should_use_kernel and result.decision.side_effects_allowed
+    ):
+        return None
+    expected_answer = result.decision.metadata.get("expected_answer")
+    if not isinstance(expected_answer, Mapping):
+        return None
+    match = expected_answer.get("match")
+    if not isinstance(match, Mapping):
+        return None
+    payload = dict(match)
+    if route is not None and payload.get("route") != route:
+        return None
+    if confidence is not None and payload.get("confidence") != confidence:
+        return None
+    return payload
+
+
 class _GraphInput(TypedDict):
     state: DialogueState
     text: str
@@ -214,7 +241,7 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
         frame_id = match_payload.get("frame_id")
         raw_filled_slots = match_payload.get("filled_slots")
         filled_slots = raw_filled_slots if isinstance(raw_filled_slots, dict) else None
-        if isinstance(frame_id, str) and frame_id:
+        if isinstance(frame_id, str) and frame_id and match_payload.get("fulfilled"):
             after_state = mark_frame_fulfilled(
                 dialogue_state,
                 frame_id,
@@ -558,8 +585,11 @@ def _normalize_expected_answer_match(match: Any) -> dict[str, Any]:
     normalized.setdefault("route", "legacy_fallback")
     normalized.setdefault("interruption", False)
     normalized.setdefault("blocker", None)
+    normalized["fulfilled"] = bool(normalized.get("fulfilled"))
     if not isinstance(normalized.get("filled_slots"), dict):
         normalized["filled_slots"] = {}
+    if not isinstance(normalized.get("missing_required_slots"), list):
+        normalized["missing_required_slots"] = []
     if not isinstance(normalized.get("ambiguous_frame_ids"), list):
         normalized["ambiguous_frame_ids"] = []
     return normalized
@@ -581,6 +611,8 @@ def _expected_answer_decision(
                         "confidence": match.get("confidence"),
                         "route": "expected_answer_clarify",
                         "filled_slots": {},
+                        "fulfilled": False,
+                        "missing_required_slots": [],
                         "interruption": False,
                         "blocker": None,
                         "ambiguous_frame_ids": match.get("ambiguous_frame_ids", []),
@@ -616,6 +648,8 @@ def _expected_answer_decision(
                     "confidence": match.get("confidence"),
                     "route": match.get("route"),
                     "filled_slots": match.get("filled_slots", {}),
+                    "fulfilled": match.get("fulfilled", False),
+                    "missing_required_slots": match.get("missing_required_slots", []),
                     "interruption": match.get("interruption", False),
                     "blocker": match.get("blocker"),
                     "ambiguous_frame_ids": match.get("ambiguous_frame_ids", []),
@@ -646,6 +680,8 @@ def _is_high_confidence_expected_answer(match: dict[str, Any] | None) -> bool:
     return (
         match.get("route") == "product_preference_answer"
         and match.get("confidence") == "high"
+        and match.get("fulfilled") is True
+        and not match.get("missing_required_slots")
         and not match.get("interruption")
         and not match.get("blocker")
         and bool(match.get("frame_id"))

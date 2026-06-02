@@ -26,6 +26,7 @@ from src.core.config import settings
 from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
     DialogueKernelResult,
+    expected_answer_match_payload,
     record_legacy_route,
     run_dialogue_kernel,
 )
@@ -271,6 +272,11 @@ PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
 )
 PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"
 PRODUCT_PREFERENCE_FRAME_TTL_MINUTES = 30
+SKU_QUANTITY_PROMPT_KEY = "product_reference_quantity"
+QUOTE_DETAILS_PROMPT_KEY = "quote_details_required"
+POST_QUOTE_APPROVAL_PROMPT_KEY = "post_quote_approval"
+NAME_GATE_PROMPT_KEY = "customer_name_gate"
+EXPECTED_ANSWER_FRAME_TTL_MINUTES = 30
 SELECTION_CONFIRMATION_DIRECTIVES = (
     "the customer has selected specific product(s) and quantities",
     "do not search or recommend alternatives",
@@ -1432,21 +1438,43 @@ def _dialogue_kernel_mode_allows_expected_answer_frames(mode: str) -> bool:
     return str(mode or "").strip().casefold() in {"shadow", "enforce"}
 
 
-def _build_product_preference_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+def _build_expected_answer_frame(
+    conversation: Conversation,
+    *,
+    flow: str,
+    question_kind: str,
+    prompt_key: str,
+    expected_slots: list[ExpectedSlot],
+    priority: int,
+    source_refs: list[dict[str, Any]] | None = None,
+    max_customer_turns: int = 6,
+    ttl_minutes: int = EXPECTED_ANSWER_FRAME_TTL_MINUTES,
+) -> ExpectedAnswerFrame:
     asked_at = datetime.datetime.now(datetime.UTC)
-    expires_at = asked_at + datetime.timedelta(
-        minutes=PRODUCT_PREFERENCE_FRAME_TTL_MINUTES
-    )
+    expires_at = asked_at + datetime.timedelta(minutes=ttl_minutes)
     return ExpectedAnswerFrame(
-        frame_id=f"product_preference:{conversation.id}:{PRODUCT_PREFERENCE_PROMPT_KEY}",
+        frame_id=f"{question_kind}:{conversation.id}:{prompt_key}",
+        flow=flow,
+        question_kind=question_kind,
+        prompt_key=prompt_key,
+        status="active",
+        priority=priority,
+        asked_at=asked_at,
+        expires_at=expires_at,
+        max_customer_turns=max_customer_turns,
+        expected_slots=expected_slots,
+        source_refs=source_refs or [],
+        metadata={"origin": "legacy_bridge"},
+    )
+
+
+def _build_product_preference_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+    return _build_expected_answer_frame(
+        conversation,
         flow="product_selection",
         question_kind="product_preference",
         prompt_key=PRODUCT_PREFERENCE_PROMPT_KEY,
-        status="active",
         priority=80,
-        asked_at=asked_at,
-        expires_at=expires_at,
-        max_customer_turns=6,
         expected_slots=[
             ExpectedSlot(
                 slot="workspace_preference",
@@ -1461,8 +1489,163 @@ def _build_product_preference_frame(conversation: Conversation) -> ExpectedAnswe
             {"kind": "product_family", "value": "LUMA", "ordinal": 1},
             {"kind": "product_family", "value": "SKYLAND NOVO", "ordinal": 2},
         ],
-        metadata={"origin": "legacy_bridge"},
+        ttl_minutes=PRODUCT_PREFERENCE_FRAME_TTL_MINUTES,
     )
+
+
+def _build_sku_quantity_frame(
+    conversation: Conversation,
+    response_text: str,
+) -> ExpectedAnswerFrame:
+    source_refs = [
+        {"kind": "product_reference", "value": reference, "ordinal": index}
+        for index, reference in enumerate(
+            _quantity_prompt_references(response_text), start=1
+        )
+    ]
+    return _build_expected_answer_frame(
+        conversation,
+        flow="product_selection",
+        question_kind="sku_quantity",
+        prompt_key=SKU_QUANTITY_PROMPT_KEY,
+        priority=70,
+        expected_slots=[
+            ExpectedSlot(
+                slot="quantity",
+                accepted_values=[str(value) for value in range(1, 101)],
+                validator="positive_integer",
+            )
+        ],
+        source_refs=source_refs,
+    )
+
+
+def _build_quote_details_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+    return _build_expected_answer_frame(
+        conversation,
+        flow="quote_details",
+        question_kind="quote_details",
+        prompt_key=QUOTE_DETAILS_PROMPT_KEY,
+        priority=65,
+        expected_slots=[
+            ExpectedSlot(slot="company", validator="free_text"),
+            ExpectedSlot(
+                slot="customer_type",
+                accepted_values=["individual", "company"],
+                aliases={"individual": ["for myself", "personal", "private customer"]},
+            ),
+            ExpectedSlot(slot="delivery_address", validator="delivery_address"),
+            ExpectedSlot(slot="email", validator="email"),
+        ],
+    )
+
+
+def _build_post_quote_approval_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+    return _build_expected_answer_frame(
+        conversation,
+        flow="post_quotation_hold",
+        question_kind="post_quote_approval",
+        prompt_key=POST_QUOTE_APPROVAL_PROMPT_KEY,
+        priority=75,
+        expected_slots=[
+            ExpectedSlot(
+                slot="quotation_approval",
+                accepted_values=["accepted", "rejected", "needs_changes"],
+                aliases={
+                    "accepted": ["yes", "approved", "works", "proceed", "go ahead"],
+                    "rejected": ["no", "reject", "not suitable"],
+                    "needs_changes": ["change", "revise", "different"],
+                },
+            )
+        ],
+    )
+
+
+def _build_name_gate_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+    return _build_expected_answer_frame(
+        conversation,
+        flow="name_gate",
+        question_kind="name_gate",
+        prompt_key=NAME_GATE_PROMPT_KEY,
+        priority=90,
+        expected_slots=[ExpectedSlot(slot="customer_name", validator="person_name")],
+        max_customer_turns=4,
+    )
+
+
+def _expected_answer_frame_from_assistant_response(
+    conversation: Conversation,
+    response_text: str,
+) -> ExpectedAnswerFrame | None:
+    response_history = [f"assistant: {response_text}"]
+    if _last_assistant_asked_product_preference(response_history):
+        return _build_product_preference_frame(conversation)
+    if _response_asks_sku_quantity(response_text):
+        return _build_sku_quantity_frame(conversation, response_text)
+    if _last_assistant_asked_quote_customer_details(response_history):
+        return _build_quote_details_frame(conversation)
+    if _response_asks_post_quote_approval(response_text):
+        return _build_post_quote_approval_frame(conversation)
+    if _response_asks_customer_name(response_text):
+        return _build_name_gate_frame(conversation)
+    return None
+
+
+def _response_asks_sku_quantity(response_text: str) -> bool:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(response_text))
+    if not normalized or "quantity" not in normalized:
+        return False
+    return any(
+        phrase in normalized
+        for phrase in (
+            "confirm the quantity",
+            "quantity for each item",
+            "how many",
+        )
+    ) and any(
+        phrase in normalized
+        for phrase in (
+            "product reference",
+            "product references",
+            "these products",
+            "each item",
+        )
+    )
+
+
+def _quantity_prompt_references(response_text: str) -> tuple[str, ...]:
+    match = re.search(
+        r"product references?:\s*(?P<refs>[^.?!]+)",
+        response_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return ()
+    refs = [
+        ref.strip(" \t\r\n,;")
+        for ref in re.split(r",|\band\b", match.group("refs"))
+        if ref.strip(" \t\r\n,;")
+    ]
+    return tuple(refs[:8])
+
+
+def _response_asks_post_quote_approval(response_text: str) -> bool:
+    normalized = _normalize_text(response_text)
+    return any(cue in normalized for cue in _POST_QUOTATION_APPROVAL_PROMPT_CUES)
+
+
+def _response_asks_customer_name(response_text: str) -> bool:
+    normalized = _normalize_text(response_text)
+    if not normalized:
+        return False
+    name_terms = (
+        "may i know your name",
+        "can i have your name",
+        "please share your name",
+        "what is your name",
+        "your name so i can address you",
+    )
+    return any(term in normalized for term in name_terms)
 
 
 def _capture_expected_answer_frames_from_assistant_response(
@@ -1473,32 +1656,30 @@ def _capture_expected_answer_frames_from_assistant_response(
 ) -> None:
     if not _dialogue_kernel_mode_allows_expected_answer_frames(dialogue_kernel_mode):
         return
-    if not _last_assistant_asked_product_preference([f"assistant: {response_text}"]):
+    frame = _expected_answer_frame_from_assistant_response(conversation, response_text)
+    if frame is None:
         return
     state = DialogueState.from_conversation(conversation)
-    state = push_expected_answer_frame(
-        state,
-        _build_product_preference_frame(conversation),
-    )
+    state = push_expected_answer_frame(state, frame)
     conversation.metadata_ = state.to_metadata(conversation.metadata_)
 
 
 def _dialogue_kernel_product_preference_match(
     result: DialogueKernelResult | None,
 ) -> dict[str, Any] | None:
-    if result is None:
-        return None
-    expected_answer = result.decision.metadata.get("expected_answer")
-    if not isinstance(expected_answer, Mapping):
-        return None
-    match = expected_answer.get("match")
-    if not isinstance(match, Mapping):
-        return None
-    if match.get("route") != "product_preference_answer":
-        return None
-    if match.get("confidence") != "high":
+    match = expected_answer_match_payload(
+        result,
+        route="product_preference_answer",
+        confidence="high",
+        require_usable_kernel=True,
+    )
+    if match is None:
         return None
     if match.get("interruption") or match.get("blocker"):
+        return None
+    if match.get("fulfilled") is not True:
+        return None
+    if match.get("missing_required_slots"):
         return None
     if not isinstance(match.get("filled_slots"), Mapping):
         return None
