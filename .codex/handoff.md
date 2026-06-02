@@ -18,7 +18,7 @@ Current branch: `codex/tj-gh48-expected-answer-frames-impl`
   `enforce` stay telemetry-only.
 - Reviewer fixes covered shadow gating, plural blockers, ordinal source refs,
   required-slot fulfillment, typed payload extraction, broader frame capture,
-  and docs drift.
+  trace-disabled frame persistence, and docs/project-index drift.
 - Stage evidence is in `.codex/stages/tj-gh48/summary.md` and artifacts.
 - Beads `.2`-`.6` are closed; `tj-gh48.7` is deferred for rollout/prod E2E.
 

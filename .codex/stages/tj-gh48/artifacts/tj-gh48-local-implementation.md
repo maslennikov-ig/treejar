@@ -61,9 +61,12 @@ cleanup_notes: Local orchestrator stream used the implementation worktree direct
 risk_level: medium
 docs_impact: structural
 docs_reviewed: updated
-docs_review_notes: Specs, eval plan, stage summary, handoff, and artifact metadata refreshed for implemented expected-answer frames.
+docs_review_notes: Specs, eval plan, stage summary, handoff, artifact metadata, and project-index closeout rationale refreshed for implemented expected-answer frames.
 verification:
   - "RED matcher/runner/engine review regressions": failed_expected
+  - "RED trace-disabled expected-answer persistence regressions": failed_expected
+  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_runner.py::test_dialogue_kernel_persists_expired_frame_state_without_trace tests/test_dialogue_runner.py::test_dialogue_kernel_persists_fulfilled_frame_state_without_trace -v --tb=short": passed
+  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_runner.py -v --tb=short": passed
   - "OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_llm_engine.py -v --tb=short -k expected_answer or product_preference or dialogue_kernel": passed
   - "OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/test_dialogue_state.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_dialogue_replay_fixtures.py tests/test_llm_engine.py -v --tb=short": passed
   - "uv run --extra dev ruff check src/ tests/": passed
@@ -118,6 +121,10 @@ Accepted reviewer findings:
 - Frame capture was narrower than task acceptance; fixed with deterministic
   capture for product preference, SKU quantity, quote details, post-quote
   approval, and name gate prompts.
+- Trace-disabled expected-answer frame updates must still persist durable state;
+  fixed by saving `after_state` regardless of optional trace collection.
+- Stage project-index rationale must not claim the repo index is absent; fixed
+  to reference the existing `.codex/project-index.md` coverage for `src/dialogue/`.
 
 Rejected reviewer finding:
 
@@ -131,6 +138,10 @@ RED tests were added and observed failing for the review issues before the
 fixes. Focused GREEN verification passed for matcher, runner, and engine
 expected-answer paths. Full local gates passed after frontend admin dependencies
 were restored with `npm ci` in `frontend/admin`.
+
+Additional RED/GREEN coverage was added for `trace_enabled=false`: expired and
+fulfilled expected-answer frames now persist to `conversation.metadata_` even
+when no trace is appended.
 
 # Delivery / Cleanup
 

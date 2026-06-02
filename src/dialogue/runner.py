@@ -144,8 +144,8 @@ async def run_dialogue_kernel(
             kernel_route=_trace_kernel_route(decision),
         )
         traced_state = append_trace_bounded(after_state, trace, limit=TRACE_LIMIT)
-        conversation.metadata_ = traced_state.to_metadata(conversation.metadata_)
         after_state = traced_state
+    conversation.metadata_ = after_state.to_metadata(conversation.metadata_)
 
     return DialogueKernelResult(
         decision=decision,

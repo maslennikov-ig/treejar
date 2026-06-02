@@ -7,11 +7,14 @@ Base: fresh `origin/main` at `428deed`
 Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.7`
 
 docs-reviewed: updated - refreshed tj-gh48 handoff, summary, artifacts, kernel
-spec, and eval plan for implemented expected-answer frames.
+spec, eval plan, and project-index closeout rationale for implemented
+expected-answer frames.
 graph-reviewed: no-change-needed - Graphify is not configured; no
 `graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
-project-index: reviewed-no-change - no repo project index exists; durable
-behavior changes are documented in the kernel specs and stage artifacts.
+project-index: reviewed-no-change - `.codex/project-index.md` already covers
+`src/dialogue/` as the dialogue-state kernel area; no new stable entrypoint,
+route surface, integration, verification command, or ownership boundary required
+an index update.
 
 ## Goal
 
@@ -100,6 +103,13 @@ Accepted and fixed:
   deterministic capture for product preference, SKU quantity, quote details,
   post-quote approval, and name gate prompts.
 - Stage docs and artifacts were stale after implementation. Updated.
+- Trace-disabled expected-answer state changes were not persisted to durable
+  `conversation.metadata_`. Fixed by persisting `after_state` independently of
+  optional trace collection, with RED/GREEN coverage for fulfilled and expired
+  frames when `trace_enabled=false`.
+- The project-index closeout note falsely said no project index existed. Fixed
+  the rationale to state that `.codex/project-index.md` already covers
+  `src/dialogue/` and does not need a stable navigation update.
 
 Rejected:
 
@@ -135,6 +145,15 @@ Passed after dependency repair:
 Passed after review fixes:
 
 - RED matcher/runner/engine review regressions failed as expected before fixes.
+- RED trace-disabled persistence regressions failed as expected before fix:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_runner.py::test_dialogue_kernel_persists_expired_frame_state_without_trace tests/test_dialogue_runner.py::test_dialogue_kernel_persists_fulfilled_frame_state_without_trace -v --tb=short`
+  -> failed with persisted frame status `active` instead of `expired` or
+  `fulfilled`.
+- GREEN trace-disabled persistence regressions:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_runner.py::test_dialogue_kernel_persists_expired_frame_state_without_trace tests/test_dialogue_runner.py::test_dialogue_kernel_persists_fulfilled_frame_state_without_trace -v --tb=short`
+  -> `2 passed`.
+- `OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_runner.py -v --tb=short`
+  -> `17 passed`.
 - `OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_llm_engine.py -v --tb=short -k "expected_answer or product_preference or dialogue_kernel"`
   -> `36 passed, 216 deselected`.
 - `uv run --extra dev ruff check src/dialogue/expected_answers.py src/dialogue/runner.py src/llm/engine.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_llm_engine.py`
@@ -147,7 +166,7 @@ Passed after review fixes:
 Canonical stage closeout:
 
 - `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh48`
-  -> passed; full pytest inside closeout reported `1216 passed, 19 skipped`.
+  -> passed; full pytest inside closeout reported `1218 passed, 19 skipped`.
 
 ## Current Constraints
 

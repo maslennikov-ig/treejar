@@ -315,6 +315,45 @@ async def test_dialogue_kernel_expires_expected_answer_frames_before_match(
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_persists_expired_frame_state_without_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        lambda **_kwargs: {"matched": False},
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": _product_preference_kernel_state(max_customer_turns=0)
+        }
+    }
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="open",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="shadow",
+        enforced_flows=("product_selection",),
+        trace_enabled=False,
+    )
+
+    assert result.state.expected_answer_frames[0].status == "expired"
+    assert (
+        conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"][0][
+            "status"
+        ]
+        == "expired"
+    )
+    assert conv.metadata_["dialogue_kernel"]["traces"] == []
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_enforce_handles_allowlisted_expected_answer_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -346,6 +385,41 @@ async def test_dialogue_kernel_enforce_handles_allowlisted_expected_answer_match
     frame = result.state.expected_answer_frames[0]
     assert frame.status == "fulfilled"
     assert frame.filled_slots == {"workspace_preference": "open"}
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_persists_fulfilled_frame_state_without_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        lambda **_kwargs: _product_preference_match(),
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_kernel_state()}}
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="I prefer more open for team",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is True
+    assert result.state.expected_answer_frames[0].status == "fulfilled"
+    persisted_frame = conv.metadata_["dialogue_kernel"]["state"][
+        "expected_answer_frames"
+    ][0]
+    assert persisted_frame["status"] == "fulfilled"
+    assert persisted_frame["filled_slots"] == {"workspace_preference": "open"}
+    assert conv.metadata_["dialogue_kernel"]["traces"] == []
 
 
 @pytest.mark.asyncio
