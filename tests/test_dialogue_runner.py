@@ -1,8 +1,10 @@
 import uuid
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
+from src.dialogue.state import DialogueState
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 
@@ -17,6 +19,77 @@ def _conversation(*, customer_name: str | None = None) -> Conversation:
         escalation_status="none",
         metadata_=None,
     )
+
+
+def _product_preference_kernel_state(
+    *,
+    frame_id: str = "product_preference:test",
+    max_customer_turns: int = 6,
+    turns_seen: int = 0,
+) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "active_flow": "product_selection",
+        "slots": {"customer_name": "Lili"},
+        "expected_answer_frames": [
+            {
+                "frame_id": frame_id,
+                "flow": "product_selection",
+                "question_kind": "product_preference",
+                "prompt_key": "workspace_luma_novo_preference",
+                "status": "active",
+                "priority": 80,
+                "max_customer_turns": max_customer_turns,
+                "turns_seen": turns_seen,
+                "expected_slots": [
+                    {
+                        "slot": "workspace_preference",
+                        "accepted_values": ["open", "private"],
+                        "aliases": {
+                            "open": ["more open", "for team", "novo"],
+                        },
+                    }
+                ],
+                "source_refs": [
+                    {"kind": "product_family", "value": "SKYLAND NOVO"},
+                    {"kind": "product_family", "value": "LUMA"},
+                ],
+            }
+        ],
+    }
+
+
+def _product_preference_match(
+    *,
+    frame_id: str = "product_preference:test",
+    extra_note: str | None = None,
+) -> dict[str, Any]:
+    filled_slots: dict[str, Any] = {"workspace_preference": "open"}
+    if extra_note is not None:
+        filled_slots["note"] = extra_note
+    return {
+        "matched": True,
+        "frame_id": frame_id,
+        "confidence": "high",
+        "filled_slots": filled_slots,
+        "route": "product_preference_answer",
+        "interruption": False,
+        "blocker": None,
+    }
+
+
+def test_dialogue_kernel_graph_orders_expected_answer_steps() -> None:
+    from src.dialogue.runner import _build_graph
+
+    graph = _build_graph()
+
+    assert set(graph.nodes) >= {"expire_frames", "match_expected_answer", "decide"}
+    assert graph.edges == {
+        ("__start__", "expire_frames"),
+        ("expire_frames", "match_expected_answer"),
+        ("match_expected_answer", "decide"),
+        ("decide", "__end__"),
+    }
 
 
 @pytest.mark.asyncio
@@ -110,6 +183,7 @@ async def test_dialogue_kernel_shadow_records_bounded_trace_without_handling() -
 
     record_legacy_route(conv, result, legacy_route="mock-model|name-gate")
 
+    assert conv.metadata_ is not None
     traces = conv.metadata_["dialogue_kernel"]["traces"]
     assert len(traces) == 1
     assert traces[0]["mode"] == "shadow"
@@ -176,6 +250,165 @@ async def test_dialogue_kernel_quantity_selection_delegates_to_legacy_when_allow
     assert result.decision.handled is False
     assert result.should_use_kernel is False
     assert result.decision.metadata["refs"][0]["quantity"] == 6
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_expires_expected_answer_frames_before_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    seen_frame_statuses: list[str] = []
+
+    def fake_match_expected_answer(
+        *,
+        dialogue_state: DialogueState,
+        text: str,
+        recent_history: list[str],
+    ) -> dict[str, Any]:
+        assert text == "open"
+        assert recent_history == [
+            "assistant: Would you prefer NOVO/open or LUMA/private?"
+        ]
+        seen_frame_statuses.extend(
+            frame.status for frame in dialogue_state.expected_answer_frames
+        )
+        return {"matched": False}
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        fake_match_expected_answer,
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": _product_preference_kernel_state(max_customer_turns=0)
+        }
+    }
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="open",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="shadow",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert seen_frame_statuses == ["expired"]
+    assert result.decision.flow == "legacy_fallback"
+    assert (
+        conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"][0][
+            "status"
+        ]
+        == "expired"
+    )
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_enforce_handles_allowlisted_expected_answer_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        lambda **_kwargs: _product_preference_match(),
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_kernel_state()}}
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="I prefer more open for team",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is True
+    assert result.decision.action == "product_preference_answer"
+    assert result.decision.flow == "product_selection"
+    assert result.decision.side_effects_allowed is True
+    frame = result.state.expected_answer_frames[0]
+    assert frame.status == "fulfilled"
+    assert frame.filled_slots == {"workspace_preference": "open"}
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_unallowlisted_expected_answer_match_falls_back_to_legacy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        lambda **_kwargs: _product_preference_match(),
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_kernel_state()}}
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="I prefer more open for team",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("name_gate",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.action == "product_preference_answer"
+    assert result.decision.side_effects_allowed is False
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_shadow_records_bounded_expected_answer_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.dialogue import runner
+
+    monkeypatch.setattr(
+        runner,
+        "_match_expected_answer",
+        lambda **_kwargs: _product_preference_match(extra_note="x" * 500),
+        raising=False,
+    )
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {"dialogue_kernel": {"state": _product_preference_kernel_state()}}
+
+    result = await runner.run_dialogue_kernel(
+        conversation=conv,
+        text="I prefer more open for team",
+        recent_history=["assistant: Would you prefer NOVO/open or LUMA/private?"],
+        is_first_turn=False,
+        mode="shadow",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.side_effects_allowed is False
+    trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
+    expected_answer = trace["decision"]["metadata"]["expected_answer"]
+    assert expected_answer["match"]["frame_id"] == "product_preference:test"
+    assert expected_answer["proposal"] == {
+        "action": "product_preference_answer",
+        "flow": "product_selection",
+        "handled": True,
+    }
+    assert len(expected_answer["match"]["filled_slots"]["note"]) == 240
+    assert expected_answer["match"]["filled_slots"]["note"].endswith("...")
 
 
 @pytest.mark.asyncio
