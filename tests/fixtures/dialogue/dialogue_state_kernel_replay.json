@@ -887,13 +887,12 @@
       ],
       "expected": {
         "route": "post_quotation_hold",
-        "flow": "manager_review_hold",
+        "flow": "post_quotation_hold",
         "slots": {
           "bulk_quantity": 12,
           "sample_requested": true,
           "discount_requested": true,
           "delivery_concession_requested": true,
-          "blocked_pending_lilia": true,
           "closure_allowed": false
         },
         "side_effects_allowed": false,

@@ -1,6 +1,6 @@
 # Dialogue State Kernel Specification
 
-Status: draft for stage `tj-gh20`
+Status: v1 kernel spec extended by stage `tj-gh48` for expected-answer frames
 Owner: Dialogue State Kernel stream
 
 ## Goal
@@ -48,9 +48,10 @@ allowlisted flows.
   - no quotation/PDF/SaleOrder creation;
   - no mutation outside the shadow namespace in `Conversation.metadata_`;
   - no GitHub, Beads, deploy, or production-control mutation.
-- Shadow output is persisted only as diagnostic metadata under
-  `metadata_["dialogue_kernel"]["traces"]`, with bounded entries and redacted
-  message excerpts where needed.
+- Shadow output may persist bounded diagnostic kernel state and traces under
+  `metadata_["dialogue_kernel"]`, including `state.expected_answer_frames` and
+  `traces`. Shadow must still avoid mutation outside that namespace and must not
+  create customer-visible or provider side effects.
 - Shadow mismatches are telemetry/eval findings, not runtime failures.
 
 ### `enforce`
@@ -225,27 +226,27 @@ to the model or letting stale messages distract routing.
 
 ## LangGraph Shape
 
-The initial graph is a small `StateGraph` over the persisted kernel state:
+The implemented runner loads state before graph execution, then runs a small
+compiled `StateGraph`:
 
-1. `load_state`: read legacy metadata and normalize slots.
-2. `expire_frames`: age active `ExpectedAnswerFrame` entries and mark expired
+1. `expire_frames`: age active `ExpectedAnswerFrame` entries and mark expired
    frames before route matching.
-3. `match_expected_answer`: check the new customer message against active
-   frames, fill slots, and produce a frame-aware route when confidence is high.
-4. `classify_turn`: infer the route candidate from the new user message,
-   recent history, durable slots, and expected-answer match result.
-5. `guard_side_effects`: derive allowed side-effect families for the selected
-   route and mode.
-6. `route_flow`: produce the next route/flow and slot updates.
-7. `persist_shadow_or_enforce`: write bounded diagnostic state in shadow mode
-   or allowed durable state in enforce mode.
+2. `match_expected_answer`: check the new customer message against active
+   frames and produce a bounded match payload.
+3. `decide`: choose the route, fill required slots only when the match is
+   fulfilled, and fall back to legacy when the route is not handled by the
+   kernel.
+
+After graph output, `run_dialogue_kernel` applies mode/allowlist gating, sets
+`side_effects_allowed`, and persists bounded trace metadata when tracing is
+enabled.
 
 The graph output is a decision object:
 
 ```json
 {
   "route": "product_selection_legacy_delegate",
-  "flow": "product_discovery",
+  "flow": "product_selection",
   "slots": {},
   "side_effects_allowed": false,
   "allowed_side_effects": [],
@@ -268,8 +269,8 @@ them.
 | `selection_confirmation` | `quotation_build` | Future route for kernel-owned selected SKU/model and quantity confirmation. |
 | `quote_resume_missing_details` | `quotation_build` | Preserve pending quote context and ask only for missing quote details. |
 | `policy_no_handoff` | `product_discovery` | Veto manager handoff when product + quantity alone lacks fulfillment intent. |
-| `post_quotation_hold` | `manager_review_hold` | Hold #11-like bulk/sample/discount ambiguity until Lilia answers. |
-| `product_preference_answer` | `product_discovery` | Fill a product preference frame such as open/NOVO vs private/LUMA and continue product handling without manager handoff. |
+| `post_quotation_hold` | `post_quotation_hold` | Hold #11-like bulk/sample/discount ambiguity until Lilia answers. |
+| `product_preference_answer` | `product_selection` | Fill a product preference frame such as open/NOVO vs private/LUMA and continue product handling without manager handoff. |
 | `expected_answer_clarify` | current active flow | Ask which pending question the customer is answering when multiple active frames match. |
 | `legacy_fallback` | `legacy` | Defer to the existing runtime. |
 

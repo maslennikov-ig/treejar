@@ -1,94 +1,162 @@
 # Stage tj-gh48: Expected Answer Frames
 
 Updated: 2026-06-02
-Status: planning package prepared; `tj-gh48.1` closed
-Branch: `codex/tj-gh48-expected-answer-frames`
-Base: `origin/main` at `428deed` or later current `main`
+Status: implementation complete locally; closeout verification pending
+Branch: `codex/tj-gh48-expected-answer-frames-impl`
+Base: fresh `origin/main` at `428deed`
 Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.7`
+
+docs-reviewed: updated - refreshed tj-gh48 handoff, summary, artifacts, kernel
+spec, and eval plan for implemented expected-answer frames.
+graph-reviewed: no-change-needed - Graphify is not configured; no
+`graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
+project-index: reviewed-no-change - no repo project index exists; durable
+behavior changes are documented in the kernel specs and stage artifacts.
 
 ## Goal
 
 Replace narrow last-question-only routing with durable expected-answer frames in
-the existing Dialogue State Kernel. This is the fundamental follow-up to the
-GitHub #47 hotfix: Noor should remember what answer it is waiting for across a
-bounded number of turns and interruptions, while still preserving hard
-escalation paths and legacy fallback.
+the existing Dialogue State Kernel. The implementation teaches Noor to remember
+bounded expected answers across interruptions while preserving hard escalation
+paths, legacy fallback, and production shadow safety.
+
+## Implementation Completed
+
+Runtime files:
+
+- `src/dialogue/state.py`: `ExpectedSlot` and `ExpectedAnswerFrame` schema,
+  frame loading, and invalid-frame recovery.
+- `src/dialogue/reducer.py`: push, fulfill, interrupt, expire, and bounded
+  active/history reducers.
+- `src/dialogue/expected_answers.py`: deterministic matcher with blockers,
+  interruption detection, ambiguity handling, expiry filtering, ordinal
+  source-ref matching, and required-slot fulfillment semantics.
+- `src/dialogue/runner.py`: `expire_frames -> match_expected_answer -> decide`
+  graph, expected-answer route/proposal trace metadata, safe payload helper,
+  and fulfillment guard.
+- `src/llm/engine.py`: expected-answer frame capture for product preference,
+  SKU quantity, quote details, post-quote approval, and name gate prompts;
+  product-preference expected-answer bridge gated to usable kernel decisions.
+
+Tests and fixtures:
+
+- `tests/test_dialogue_state.py`
+- `tests/test_dialogue_expected_answers.py`
+- `tests/test_dialogue_runner.py`
+- `tests/test_dialogue_replay_fixtures.py`
+- `tests/test_llm_engine.py`
+- `tests/fixtures/dialogue/dialogue_state_kernel_replay.json`
+
+Documentation:
+
+- `docs/specs/dialogue-state-kernel.md`
+- `docs/specs/dialogue-state-kernel-evals.md`
+- `docs/superpowers/plans/2026-06-02-expected-answer-frames.md`
+- `.codex/stages/tj-gh48/artifacts/*.md`
+- `.codex/handoff.md`
 
 ## Routing Result
 
-- Documentation: prior docs research used first-party LangGraph memory and
-  persistence docs, Rasa Forms slot-filling/unhappy paths, Microsoft Bot
-  Framework dialog state/waterfall dialogs, and OpenAI Structured Outputs. No
-  additional version-sensitive lookup was needed for this planning-only pass.
-- Knowledge Graph: not configured/not relevant - no `graphify-out/GRAPH_REPORT.md`
-  or `[knowledge_graph]` configuration is present.
-- Selected skills: `orchestrator-stage`, `task-router`, `writing-plans`,
-  `senior-prompt-engineer`, `verification-before-completion`.
-- Selected agents/personas for the next executor: built-in `worker` for state,
-  matcher, runner, and eval streams; orchestrator sequential owner for
-  `src/llm/engine.py`; read-only `correctness_reviewer` and
-  `improvement_reviewer` after local green.
-- Catalog candidates: none - installed repo skills and built-in roles are
-  sufficient.
+- Documentation: no new version-sensitive external lookup was needed during
+  implementation; prior planning docs remain sufficient.
+- Knowledge Graph: not configured/not relevant.
+- Selected skills: `orchestrator-stage`, `task-router`,
+  `superpowers:test-driven-development`,
+  `superpowers:receiving-code-review`,
+  `superpowers:verification-before-completion`, and `orchestration-closeout`.
+- Selected agents/personas: visible `worker` subagents for matcher and runner,
+  then read-only `correctness_reviewer`, `improvement_reviewer`, and
+  `docs_reviewer`.
+- Catalog candidates: none.
 
 ## Parallel Decomposition Matrix
 
-| Stream | Beads | Goal | Owner | Write zone | Dependencies | Verification | Decision |
+| Stream | Beads | Goal | Owner | Write zone | Dependencies | Verification | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A | `tj-gh48.2` | State schema and reducers | worker high reasoning | `src/dialogue/state.py`, `src/dialogue/reducer.py`, state tests | `tj-gh48.1` | `tests/test_dialogue_state.py` | parallel after spec |
-| B | `tj-gh48.4` | Matcher/interruption policy | worker high reasoning | `src/dialogue/expected_answers.py`, matcher tests | A interface | matcher tests | parallel after A |
-| C | `tj-gh48.3` | Frame capture/proposals | worker high reasoning | `src/dialogue/runner.py`, runner tests | A interface | runner tests | parallel after A |
-| D | `tj-gh48.5` | `process_message` integration | orchestrator sequential | `src/llm/engine.py`, engine tests | B+C | targeted LLM tests | sequential due central routing |
-| E | `tj-gh48.6` | Replay/stress suite | worker/local | fixtures and replay tests | B plus docs | replay tests | parallel after B |
-| F | `tj-gh48.7` | Review, delivery, shadow E2E decision | orchestrator + reviewers | artifacts, handoff, read-only review | D+E | full gates, smoke/E2E if approved | sequential final |
+| A | `tj-gh48.2` | State schema and reducers | local | `src/dialogue/state.py`, `src/dialogue/reducer.py`, state tests | `tj-gh48.1` | state tests, targeted suite | complete |
+| B | `tj-gh48.4` | Matcher/interruption policy | Huygens worker | `src/dialogue/expected_answers.py`, matcher tests | A interface | matcher tests, artifact validation | merged |
+| C | `tj-gh48.3` | Runner graph/capture support | Rawls worker | `src/dialogue/runner.py`, runner tests | A interface | runner tests, artifact validation | merged |
+| D | `tj-gh48.5` | `process_message` integration | local | `src/llm/engine.py`, engine tests | B+C | targeted engine tests | complete |
+| E | `tj-gh48.6` | Replay/stress suite | local | fixtures and replay tests | B+D | replay tests, JSON validation | complete |
+| F | `tj-gh48.7` | Review and closeout | local + reviewers | artifacts, docs, Beads | D+E | reviewer pass, full gates, closeout | local review complete; production E2E deferred |
 
-## Documentation Updated
+## Review Findings
 
-- `docs/specs/dialogue-state-kernel.md`: added `ExpectedAnswerFrame` durable
-  state, frame lifecycle, matcher contract, graph steps, route contract,
-  side-effect policy, #47 coverage, and rollout gates.
-- `docs/specs/dialogue-state-kernel-evals.md`: added #47 delayed-answer replay,
-  ambiguity, expiry, hard-blocker override, and long-dialog expected-frame
-  acceptance requirements.
-- `docs/superpowers/plans/2026-06-02-expected-answer-frames.md`: implementation
-  plan for the next agent.
+Accepted and fixed:
 
-## Beads Created
+- Shadow and unallowlisted enforce frame matches must not change
+  customer-visible legacy behavior. Fixed by gating frame extraction on
+  `result.should_use_kernel` and `decision.side_effects_allowed`.
+- Plural hard-blocker terms such as `discounts`, `returns`, `refunds`,
+  `warranties`, and `guarantees` must override expected-answer frames. Fixed in
+  matcher blocker terms.
+- Single active-frame ordinal answers such as `the second option` must resolve
+  through frame `source_refs`. Fixed with ordinal source-ref matching.
+- Required slots must not be marked fulfilled after partial matches. Fixed with
+  `fulfilled` and `missing_required_slots` payload fields and runner guard.
+- Engine should not duplicate nested expected-answer metadata parsing. Fixed via
+  `expected_answer_match_payload`.
+- Frame capture was narrower than the Beads acceptance criteria. Fixed with
+  deterministic capture for product preference, SKU quantity, quote details,
+  post-quote approval, and name gate prompts.
+- Stage docs and artifacts were stale after implementation. Updated.
 
-- `tj-gh48`: epic.
-- `tj-gh48.1`: spec/eval/docs planning, closed.
-- `tj-gh48.2`: state schema and reducers.
-- `tj-gh48.3`: frame capture from assistant decisions.
-- `tj-gh48.4`: answer matcher and interruption policy.
-- `tj-gh48.5`: legacy bridge / `process_message` integration.
-- `tj-gh48.6`: replay fixtures and stress suite.
-- `tj-gh48.7`: review, delivery, production shadow E2E, decision report.
+Rejected:
 
-Dependency chain:
+- Direct matcher import in the runner was not adopted. The lazy adapter remains
+  as a compatibility/test seam; the unsafe call shape and payload handling were
+  fixed and covered.
 
-- `tj-gh48.2` depends on `tj-gh48.1`.
-- `tj-gh48.3` and `tj-gh48.4` depend on `tj-gh48.2`.
-- `tj-gh48.5` depends on `tj-gh48.3` and `tj-gh48.4`.
-- `tj-gh48.6` depends on `tj-gh48.1` and `tj-gh48.4`.
-- `tj-gh48.7` depends on `tj-gh48.5` and `tj-gh48.6`.
+## Verification Evidence
 
-## Constraints
+Passed before review fixes:
+
+- `OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/test_dialogue_state.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_dialogue_replay_fixtures.py tests/test_llm_engine.py -v --tb=short`
+  -> `264 passed`.
+- `uv run --extra dev ruff check src/ tests/` -> passed.
+- `uv run --extra dev ruff format --check src/ tests/` -> passed.
+- `uv run --extra dev mypy src/` -> passed after type payload fix.
+- Full suite initially failed only because `frontend/admin/node_modules/esbuild`
+  was absent.
+
+Environment repair:
+
+- `npm ci` in `frontend/admin` restored frontend test dependencies; npm warned
+  that local Node `v24.16.0` is outside the package engine range
+  `>=22.12.0 <23`.
+
+Passed after dependency repair:
+
+- `OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/test_admin_dashboard_frontend.py -v --tb=short`
+  -> `11 passed`.
+- `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/ -v --tb=short`
+  -> `1207 passed, 19 skipped`.
+
+Passed after review fixes:
+
+- RED matcher/runner/engine review regressions failed as expected before fixes.
+- `OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_llm_engine.py -v --tb=short -k "expected_answer or product_preference or dialogue_kernel"`
+  -> `36 passed, 216 deselected`.
+- `uv run --extra dev ruff check src/dialogue/expected_answers.py src/dialogue/runner.py src/llm/engine.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_llm_engine.py`
+  -> passed.
+- `uv run --extra dev ruff format --check src/dialogue/expected_answers.py src/dialogue/runner.py src/llm/engine.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_llm_engine.py`
+  -> passed.
+- `uv run --extra dev mypy src/dialogue src/llm/engine.py`
+  -> passed.
+
+## Current Constraints
 
 - Do not remove the legacy runtime.
 - Keep production `dialogue_kernel_mode=shadow` unless explicit approval enables
   a narrow enforce rollout.
 - Do not close #11; it remains blocked on policy answers.
-- No deploy, production mutation, live WhatsApp test, or production config change
-  without explicit current-task approval.
+- No deploy, production mutation, live WhatsApp test, production config change,
+  remote merge, PR creation, or remote branch push without explicit current-task
+  approval.
 
-## Verification
+## Explicit Defers
 
-Completed for this planning branch:
-
-- `python3 -m json.tool tests/fixtures/dialogue/dialogue_state_kernel_replay.json`
-  passed.
-- `uv run python scripts/orchestration/validate_artifact.py .codex/stages/tj-gh48/artifacts/tj-gh48.1-planning.md`
-  passed.
-- `bd dep cycles` passed, no dependency cycles detected.
-- `scripts/orchestration/run_process_verification.sh` passed.
-- `git diff --check` passed.
+- `tj-gh48.7`: production deploy, production smoke, production shadow E2E, live
+  WhatsApp E2E, and any enforce rollout are deferred because this task did not
+  authorize those external actions.
+- GitHub #11 remains open and blocked on policy answers.

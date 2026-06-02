@@ -39,11 +39,11 @@ parallel_group: C
 depends_on_streams:
   - B matcher module sibling stream at merge time
 parallel_decision: parallel
-status: returned
-delivery_method: n/a
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: child branch returned for orchestrator review; no cleanup performed by worker
+status: merged
+delivery_method: merge
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Merged into codex/tj-gh48-expected-answer-frames-impl; child worktree removed after clean status.
 risk_level: medium
 docs_impact: none
 docs_reviewed: no-change-needed
@@ -59,7 +59,7 @@ changed_files:
   - tests/test_dialogue_runner.py
   - .codex/stages/tj-gh48/artifacts/tj-gh48.3-runner.md
 explicit_defers:
-  - Matcher implementation remains in sibling stream B; runner uses a lazy private adapter and safe no-match fallback until merge.
+  - none
 ---
 
 # Summary
@@ -78,8 +78,11 @@ GREEN verification passed with the full runner test file, ruff check, ruff forma
 
 # Delivery / Cleanup
 
-Returned on branch `codex/tj-gh48-runner` for orchestrator review and integration. Cleanup is pending orchestrator acceptance.
+Merged into `codex/tj-gh48-expected-answer-frames-impl` with merge commit
+`8d3380c`. The child worktree was clean and was removed after integration.
 
 # Risks / Follow-ups / Explicit Defers
 
-The real matcher is intentionally deferred to sibling stream B. Merge integration must confirm the sibling `match_expected_answer` callable returns fields compatible with the adapter contract: `matched`, `frame_id`, `confidence`, `filled_slots`, `route`, `interruption`, and `blocker`.
+No explicit defers remain for this stream. Integration confirmed the matcher
+payload contract, then review fixes added `fulfilled` and
+`missing_required_slots` to prevent premature frame fulfillment.

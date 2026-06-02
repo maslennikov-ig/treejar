@@ -39,11 +39,11 @@ parallel_group: B
 depends_on_streams:
   - A
 parallel_decision: local
-status: returned
-delivery_method: n/a
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: stream returned for orchestrator review
+status: merged
+delivery_method: merge
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: Merged into codex/tj-gh48-expected-answer-frames-impl; child worktree removed after clean status.
 risk_level: medium
 docs_impact: api-contract
 docs_reviewed: no-change-needed
@@ -84,8 +84,10 @@ GREEN and formatting checks were run after implementation:
 
 # Delivery / Cleanup
 
-Stream is ready for orchestrator review on branch `codex/tj-gh48-matcher`. Cleanup is pending orchestrator acceptance.
+Merged into `codex/tj-gh48-expected-answer-frames-impl` with merge commit
+`b66b4df`. The child worktree was clean and was removed after integration.
 
 # Risks / Follow-ups / Explicit Defers
 
-No explicit defers. Integration with runner/engine/state mutation belongs to sibling/sequential streams and was intentionally not implemented here.
+No explicit defers remain for this stream. Integration with runner and engine
+is complete on the implementation branch.

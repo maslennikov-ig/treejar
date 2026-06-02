@@ -42,7 +42,7 @@ depends_on_streams:
   - none
 parallel_decision: local
 status: accepted
-delivery_method: n/a
+delivery_method: manual integration
 accepted_by_orchestrator: yes
 cleanup_status: cleaned
 cleanup_notes: No delegated worktree was created for the planning package.

@@ -1,6 +1,6 @@
 # Dialogue State Kernel Eval Plan
 
-Status: draft for stage `tj-gh20`
+Status: v1 kernel eval plan extended by stage `tj-gh48` for expected-answer frames
 
 ## Purpose
 
@@ -112,7 +112,7 @@ Replay:
 Expected:
 
 - route `product_preference_answer`;
-- flow `product_discovery`;
+- flow `product_selection`;
 - slot `workspace_preference=open`;
 - active product-preference frame is marked `fulfilled`;
 - bot continues NOVO/open product handling;
@@ -178,8 +178,8 @@ sample request, delivery concession, discount negotiation, or showroom visit.
 Expected:
 
 - route `post_quotation_hold`;
-- flow `manager_review_hold`;
-- decision records `blocked_pending_lilia=true`;
+- flow `post_quotation_hold`;
+- decision preserves the post-quotation hold context without closing #11;
 - side effects remain disabled in shadow;
 - issue #11 is not closable from kernel evidence alone.
 
@@ -216,7 +216,7 @@ Expected:
 - bare SKU quantity without product-choice context remains guarded;
 - non-SKU Cyrillic text is not forced into SKU parsing.
 
-## Acceptance For tj-gh20 v1
+## Acceptance For tj-gh48 Expected-Answer Frame Extension
 
 - The spec documents legacy/shadow/enforce modes and side-effect constraints.
 - The eval doc names all required issue scenarios.
