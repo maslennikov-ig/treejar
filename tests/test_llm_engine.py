@@ -195,6 +195,33 @@ def _product_preference_frame_state() -> dict[str, object]:
     }
 
 
+def test_product_preference_frame_builder_keeps_workspace_preference_canonical() -> (
+    None
+):
+    from src.dialogue.expected_answers import match_expected_answer
+    from src.dialogue.state import DialogueState
+
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971500000002",
+        customer_name="Lili",
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+    )
+    frame = engine_module._build_product_preference_frame(conv)
+    state = DialogueState(
+        active_flow="product_selection",
+        expected_answer_frames=[frame],
+    )
+
+    first = match_expected_answer(state, "the first option")
+    second = match_expected_answer(state, "the second option")
+
+    assert first.filled_slots == {"workspace_preference": "private"}
+    assert second.filled_slots == {"workspace_preference": "open"}
+
+
 @pytest.mark.parametrize(
     ("response_text", "question_kind", "flow", "slot_names"),
     [
@@ -510,6 +537,60 @@ async def test_process_message_dialogue_kernel_shadow_records_trace_and_uses_leg
     assert trace["legacy_route"] == "name-gate"
     assert trace["decision"]["side_effects_allowed"] is False
     mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_dialogue_kernel_shadow_fail_open_uses_legacy(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_dialogue_kernel: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {}
+    text = "I need workstation options"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Hello")]),
+        ModelResponse(parts=[TextPart(content="Hello, how can I help?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_dialogue_kernel.side_effect = RuntimeError("kernel failure")
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_run.return_value = _FakeAgentResult("Here are workstation options.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock_model"
+    assert "workstation options" in response.text.lower()
+    mock_dialogue_kernel.assert_awaited_once()
+    mock_run.assert_awaited_once()
+    messaging.send_media.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -9269,11 +9350,16 @@ async def test_process_message_product_preference_answer_after_interruption_uses
         messaging_client=messaging,
     )
 
-    assert response.model == "dialogue-kernel|product_selection"
-    assert "preference" in response.text.lower()
+    assert response.model == "mock-model"
+    assert "novo workspace" in response.text.lower()
     assert "manager will confirm" not in response.text.lower()
     assert conv.escalation_status == "none"
-    mock_run.assert_not_awaited()
+    mock_run.assert_awaited_once()
+    call = mock_run.await_args_list[0].kwargs
+    assert any(
+        "customer is answering the assistant's product preference question" in directive
+        for directive in call["deps"].runtime_directives
+    )
     frames = conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"]
     assert frames[0]["status"] == "fulfilled"
     assert frames[0]["filled_slots"] == {"workspace_preference": "open"}

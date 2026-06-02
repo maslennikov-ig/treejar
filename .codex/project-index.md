@@ -20,7 +20,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
 - `src/llm/engine.py`, `src/llm/prompts.py`, and `src/llm/communication_policy.py` - sales-agent tools, guarded routing, and prompt policy.
-- `src/dialogue/` - LangGraph dialogue-state kernel, slot state, trace reducer, and catalog reference parsing.
+- `src/dialogue/` - LangGraph dialogue-state kernel, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
 
 ## Core Subsystems

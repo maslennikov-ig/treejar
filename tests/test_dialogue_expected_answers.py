@@ -27,6 +27,25 @@ def test_product_preference_frame_matches_open_workspace_answer() -> None:
     assert match.blocker is None
 
 
+def test_product_preference_frame_rejects_negated_or_conflicting_answer() -> None:
+    state = DialogueState(
+        active_flow="product_selection",
+        expected_answer_frames=[_product_preference_frame()],
+    )
+
+    for text in [
+        "not open, private please",
+        "not NOVO, I prefer LUMA",
+        "open or private could work",
+    ]:
+        match = match_expected_answer(state, text)
+
+        assert match.matched is False
+        assert match.frame_id is None
+        assert match.route == "expected_answer_clarify"
+        assert match.confidence == "ambiguous"
+
+
 def test_bounded_delivery_question_is_interruption_without_frame_fulfillment() -> None:
     state = DialogueState(
         active_flow="product_selection",
@@ -51,6 +70,7 @@ def test_hard_blockers_override_expected_answer_frames() -> None:
 
     for text, blocker in [
         ("I prefer open but I need a human to help", "human_request"),
+        ("I prefer open but I need to talk to a person", "human_request"),
         ("I prefer open but I need a manager", "human_request"),
         ("I prefer open but this is a complaint", "complaint"),
         ("I prefer open but these are complaints", "complaint"),
@@ -73,6 +93,19 @@ def test_hard_blockers_override_expected_answer_frames() -> None:
         assert match.route == "legacy_fallback"
         assert match.interruption is False
         assert match.blocker == blocker
+
+
+def test_person_capacity_terms_do_not_block_expected_answer_frame() -> None:
+    state = DialogueState(
+        active_flow="product_selection",
+        expected_answer_frames=[_product_preference_frame()],
+    )
+
+    match = match_expected_answer(state, "open setup for a 6 person team")
+
+    assert match.matched is True
+    assert match.filled_slots == {"workspace_preference": "open"}
+    assert match.blocker is None
 
 
 def test_single_frame_ordinal_answer_matches_source_ref() -> None:

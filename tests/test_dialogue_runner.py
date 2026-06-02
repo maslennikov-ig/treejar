@@ -354,6 +354,56 @@ async def test_dialogue_kernel_persists_expired_frame_state_without_trace(
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_expired_quote_details_frame_does_not_hijack_product_request() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Lili")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 1,
+                "active_flow": "quote_details",
+                "slots": {"customer_name": "Lili"},
+                "expected_answer_frames": [
+                    {
+                        "frame_id": "quote_details:test",
+                        "flow": "quote_details",
+                        "question_kind": "quote_details",
+                        "prompt_key": "quote_details_required",
+                        "status": "active",
+                        "priority": 65,
+                        "max_customer_turns": 0,
+                        "expected_slots": [{"slot": "company"}],
+                    }
+                ],
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="I need CH 616",
+        recent_history=[],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("quote_details",),
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.flow == "product_selection"
+    assert result.decision.action == "clarify_product_selection"
+    assert (
+        conv.metadata_["dialogue_kernel"]["state"]["expected_answer_frames"][0][
+            "status"
+        ]
+        == "expired"
+    )
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_enforce_handles_allowlisted_expected_answer_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

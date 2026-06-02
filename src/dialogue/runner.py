@@ -436,7 +436,11 @@ def _is_quote_details_context(
     state: DialogueState,
     recent_history: list[str],
 ) -> bool:
-    if state.active_flow == "quote_details" or state.slots.selected_items:
+    if state.slots.selected_items:
+        return True
+    if state.active_flow == "quote_details" and _has_active_flow_frame(
+        state, "quote_details"
+    ):
         return True
     last_assistant = next(
         (
@@ -448,6 +452,13 @@ def _is_quote_details_context(
     )
     return "quotation" in last_assistant and (
         "company" in last_assistant or "address" in last_assistant
+    )
+
+
+def _has_active_flow_frame(state: DialogueState, flow: str) -> bool:
+    return any(
+        frame.status == "active" and frame.flow == flow
+        for frame in state.expected_answer_frames
     )
 
 

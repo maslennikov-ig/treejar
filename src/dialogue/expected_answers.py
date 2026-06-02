@@ -56,11 +56,25 @@ def match_expected_answer(
             if ordinal_match.matched:
                 return ordinal_match
 
-    candidates = [
+    frame_matches = [_match_frame(frame, normalized) for frame in active_frames]
+    ambiguous_candidates = [
         candidate
-        for candidate in (_match_frame(frame, normalized) for frame in active_frames)
-        if candidate.matched
+        for candidate in frame_matches
+        if candidate.route == "expected_answer_clarify"
+        and candidate.confidence == "ambiguous"
+        and candidate.ambiguous_frame_ids
     ]
+    if ambiguous_candidates:
+        ambiguous_frame_ids: list[str] = []
+        for candidate in ambiguous_candidates:
+            ambiguous_frame_ids.extend(candidate.ambiguous_frame_ids)
+        return ExpectedAnswerMatch(
+            confidence="ambiguous",
+            route="expected_answer_clarify",
+            ambiguous_frame_ids=_unique(ambiguous_frame_ids),
+        )
+
+    candidates = [candidate for candidate in frame_matches if candidate.matched]
     if len(candidates) > 1:
         top_confidence = candidates[0].confidence
         ambiguous_frame_ids = [
@@ -107,6 +121,12 @@ def _match_frame(
         if not slot_match:
             continue
         value, score = slot_match
+        if value is None:
+            return ExpectedAnswerMatch(
+                confidence="ambiguous",
+                route="expected_answer_clarify",
+                ambiguous_frame_ids=[frame.frame_id],
+            )
         filled_slots[expected_slot.slot] = value
         confidence_scores.append(score)
 
@@ -211,24 +231,33 @@ def _missing_required_slots(
 def _match_slot(
     expected_slot: ExpectedSlot,
     normalized_text: str,
-) -> tuple[str, int] | None:
+) -> tuple[str | None, int] | None:
     matches: list[tuple[str, int]] = []
     for value in expected_slot.accepted_values:
         normalized_value = _normalize_text(value)
         if normalized_value and _contains_phrase(normalized_text, normalized_value):
+            if _has_nearby_negation(normalized_text, normalized_value):
+                return (None, 0)
             matches.append((value, 2))
 
     for value, aliases in expected_slot.aliases.items():
         normalized_value = _normalize_text(value)
         if normalized_value and _contains_phrase(normalized_text, normalized_value):
+            if _has_nearby_negation(normalized_text, normalized_value):
+                return (None, 0)
             matches.append((value, 2))
         for alias in aliases:
             normalized_alias = _normalize_text(alias)
             if normalized_alias and _contains_phrase(normalized_text, normalized_alias):
+                if _has_nearby_negation(normalized_text, normalized_alias):
+                    return (None, 0)
                 matches.append((value, 2))
 
     if not matches:
         return None
+    canonical_values = {value for value, _score in matches}
+    if len(canonical_values) > 1:
+        return (None, 0)
     matches.sort(key=lambda item: item[1], reverse=True)
     return matches[0]
 
@@ -244,8 +273,20 @@ def _hard_blocker(normalized_text: str) -> str | None:
         (
             "human_request",
             (
-                "human",
-                "person",
+                "human agent",
+                "human representative",
+                "need a human",
+                "need human",
+                "human help",
+                "human to help",
+                "talk to a human",
+                "talk to human",
+                "speak to a human",
+                "speak with a human",
+                "talk to a person",
+                "talk to person",
+                "speak to a person",
+                "speak with a person",
                 "representative",
                 "agent",
                 "manager",
@@ -392,8 +433,34 @@ def _contains_phrase(text: str, phrase: str) -> bool:
     return re.search(pattern, text) is not None
 
 
+def _has_nearby_negation(text: str, phrase: str) -> bool:
+    normalized_phrase = _normalize_text(phrase)
+    if not normalized_phrase:
+        return False
+    negation_terms = ("not", "no", "don't", "dont", "do not")
+    pattern = (
+        r"(?:^|(?<![a-z0-9]))(?:"
+        + "|".join(re.escape(term) for term in negation_terms)
+        + r")\s+(?:\w+\s+){0,2}"
+        + re.escape(normalized_phrase)
+        + r"(?![a-z0-9])"
+    )
+    return re.search(pattern, text) is not None
+
+
 def _normalize_text(text: str) -> str:
     normalized = unicodedata.normalize("NFKC", text).casefold()
     normalized = re.sub(r"[^\w\s?]", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result

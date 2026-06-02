@@ -61,7 +61,7 @@ cleanup_notes: Local orchestrator stream used the implementation worktree direct
 risk_level: medium
 docs_impact: structural
 docs_reviewed: updated
-docs_review_notes: Specs, eval plan, stage summary, handoff, artifact metadata, and project-index closeout rationale refreshed for implemented expected-answer frames.
+docs_review_notes: Specs, eval plan, stage summary, handoff, artifact metadata, and project-index navigation/rationale refreshed for implemented expected-answer frames.
 verification:
   - "RED matcher/runner/engine review regressions": failed_expected
   - "RED trace-disabled expected-answer persistence regressions": failed_expected
@@ -73,6 +73,15 @@ verification:
   - "uv run --extra dev ruff format --check src/ tests/": passed
   - "uv run --extra dev mypy src/": passed
   - "env DYLD_FALLBACK_LIBRARY_PATH=${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib} OPENROUTER_API_KEY=dummy uv run --extra dev python -m pytest tests/ -v --tb=short": passed
+  - "fresh review RED/GREEN: shadow kernel fail-open": passed
+  - "fresh review RED/GREEN: expired quote_details frame does not hijack product request": passed
+  - "fresh review RED/GREEN: negated/conflicting preference answers clarify": passed
+  - "fresh review RED/GREEN: person capacity terms do not trigger human blocker": passed
+  - "fresh review RED/GREEN: product-preference builder emits canonical open/private slots": passed
+  - "fresh review RED/GREEN: enforce product-preference answer continues via agent path": passed
+  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_state.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_dialogue_replay_fixtures.py tests/test_llm_engine.py -v --tb=short": "280 passed"
+  - "env DYLD_FALLBACK_LIBRARY_PATH=${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib} OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short": "1223 passed, 19 skipped"
+  - "scripts/orchestration/run_process_verification.sh": passed
 changed_files:
   - src/dialogue/state.py
   - src/dialogue/reducer.py
@@ -85,9 +94,10 @@ changed_files:
   - tests/test_dialogue_replay_fixtures.py
   - tests/test_llm_engine.py
   - tests/fixtures/dialogue/dialogue_state_kernel_replay.json
-  - docs/specs/dialogue-state-kernel.md
-  - docs/specs/dialogue-state-kernel-evals.md
-  - docs/superpowers/plans/2026-06-02-expected-answer-frames.md
+	  - docs/specs/dialogue-state-kernel.md
+	  - docs/specs/dialogue-state-kernel-evals.md
+	  - docs/superpowers/plans/2026-06-02-expected-answer-frames.md
+	  - .codex/project-index.md
 explicit_defers:
   - tj-gh48.7 rollout follow-up: no deploy, production mutation, live WhatsApp E2E, or #11 close was performed without explicit approval.
 ---
@@ -124,7 +134,21 @@ Accepted reviewer findings:
 - Trace-disabled expected-answer frame updates must still persist durable state;
   fixed by saving `after_state` regardless of optional trace collection.
 - Stage project-index rationale must not claim the repo index is absent; fixed
-  to reference the existing `.codex/project-index.md` coverage for `src/dialogue/`.
+  `.codex/project-index.md` to include expected-answer frame matching under
+  `src/dialogue/` and refreshed the stage rationale.
+- Shadow kernel failures must fail open to legacy; fixed with shadow-only
+  exception handling and a regression test.
+- Expired quote-details frames must not keep stale context active; fixed the
+  runner quote-details context predicate.
+- Negated or conflicting preference answers must not fulfill a frame; fixed
+  matcher ambiguity handling and nearby negation detection.
+- Furniture capacity phrases such as `6 person team` must not trigger human
+  handoff blockers; narrowed human-request cues.
+- Product-preference frame slot values must stay canonical (`open`/`private`);
+  product family names remain aliases.
+- Enforced product-preference matches must continue the product path instead of
+  returning a static acknowledgement; fixed the engine bridge to pass frame
+  directives into the normal agent path.
 
 Rejected reviewer finding:
 

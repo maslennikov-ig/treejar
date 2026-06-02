@@ -1478,7 +1478,7 @@ def _build_product_preference_frame(conversation: Conversation) -> ExpectedAnswe
         expected_slots=[
             ExpectedSlot(
                 slot="workspace_preference",
-                accepted_values=["open", "private", "novo", "luma"],
+                accepted_values=["open", "private"],
                 aliases={
                     "open": ["more open", "for team", "collaborative", "novo"],
                     "private": ["private", "more privacy", "luma", "individual"],
@@ -7028,16 +7028,31 @@ async def process_message(
             allow_product_media=False,
         )
 
-    dialogue_kernel_result = await run_dialogue_kernel(
-        conversation=conv,
-        text=combined_text,
-        recent_history=recent_history,
-        is_first_turn=is_first_turn,
-        mode=dialogue_kernel_mode,
-        enforced_flows=dialogue_kernel_enforced_flows,
-        trace_enabled=dialogue_kernel_trace_enabled,
-    )
-    if dialogue_kernel_result.should_use_kernel:
+    try:
+        dialogue_kernel_result = await run_dialogue_kernel(
+            conversation=conv,
+            text=combined_text,
+            recent_history=recent_history,
+            is_first_turn=is_first_turn,
+            mode=dialogue_kernel_mode,
+            enforced_flows=dialogue_kernel_enforced_flows,
+            trace_enabled=dialogue_kernel_trace_enabled,
+        )
+    except Exception:
+        if str(dialogue_kernel_mode or "").strip().casefold() != "shadow":
+            raise
+        logger.warning(
+            "Dialogue kernel shadow run failed for conversation %s; "
+            "continuing legacy path",
+            conv.id,
+            exc_info=True,
+        )
+        dialogue_kernel_result = None
+    if (
+        dialogue_kernel_result is not None
+        and dialogue_kernel_result.should_use_kernel
+        and dialogue_kernel_result.decision.action != "product_preference_answer"
+    ):
         if dialogue_kernel_result.decision.flow == "name_gate":
             await _store_name_gate_pending_request(db, conv, combined_text)
         if dialogue_kernel_result.decision.flow == "quote_details":

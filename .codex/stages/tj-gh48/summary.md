@@ -7,14 +7,14 @@ Base: fresh `origin/main` at `428deed`
 Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.7`
 
 docs-reviewed: updated - refreshed tj-gh48 handoff, summary, artifacts, kernel
-spec, eval plan, and project-index closeout rationale for implemented
+spec, eval plan, and project-index navigation/rationale for implemented
 expected-answer frames.
 graph-reviewed: no-change-needed - Graphify is not configured; no
 `graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
-project-index: reviewed-no-change - `.codex/project-index.md` already covers
-`src/dialogue/` as the dialogue-state kernel area; no new stable entrypoint,
-route surface, integration, verification command, or ownership boundary required
-an index update.
+project-index: updated - `.codex/project-index.md` now names the
+expected-answer frame matcher under `src/dialogue/`; no new route surface,
+integration, verification command, or ownership boundary required a broader
+index update.
 
 ## Goal
 
@@ -108,14 +108,38 @@ Accepted and fixed:
   optional trace collection, with RED/GREEN coverage for fulfilled and expired
   frames when `trace_enabled=false`.
 - The project-index closeout note falsely said no project index existed. Fixed
-  the rationale to state that `.codex/project-index.md` already covers
-  `src/dialogue/` and does not need a stable navigation update.
+  the index and rationale so `.codex/project-index.md` covers expected-answer
+  frame matching under `src/dialogue/`.
+- Fresh review found that a shadow kernel exception would crash before the
+  legacy path. Fixed with shadow-only fail-open logging and RED/GREEN coverage.
+- Expired `quote_details` frames could leave stale `active_flow` and hijack a new
+  product request under allowlisted enforce. Fixed by requiring a live
+  quote-details context, selected items, or current assistant quote-detail prompt.
+- Product-preference slot matching could fulfill negated/conflicting answers and
+  the generic word `person` could falsely block capacity phrases such as
+  `6 person team`. Fixed with ambiguity propagation, nearby-negation checks, and
+  narrower human-request blocker phrases.
+- Real product-preference frames could store `workspace_preference` as `luma` or
+  `novo` instead of canonical `private` or `open`. Fixed by keeping product
+  family names as aliases only.
+- Allowlisted enforce product-preference answers previously returned a static
+  kernel acknowledgement. Fixed so the normal agent/product path continues with
+  frame-derived directives.
 
 Rejected:
 
 - Direct matcher import in the runner was not adopted. The lazy adapter remains
   as a compatibility/test seam; the unsafe call shape and payload handling were
   fixed and covered.
+- Capturing only `product_preference` frames or marking other frame kinds
+  `observed_only` was not adopted for this stage; bounded shadow telemetry for
+  future frame kinds is intentional and remains guarded from customer-visible
+  effects.
+- Moving unallowlisted/shadow frame lifecycle updates into trace-only proposed
+  state was not adopted; durable lifecycle telemetry is part of the shadow
+  evaluation contract, with customer-visible behavior still gated.
+- Adding a LangGraph checkpointer was not adopted; v1 persistence remains in
+  `Conversation.metadata_` by design.
 
 ## Verification Evidence
 
@@ -162,11 +186,38 @@ Passed after review fixes:
   -> passed.
 - `uv run --extra dev mypy src/dialogue src/llm/engine.py`
   -> passed.
+- Fresh review-and-fix pass:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_dialogue_kernel_shadow_fail_open_uses_legacy -v --tb=short`
+  failed before fix with `RuntimeError: kernel failure`, then passed.
+- Fresh review-and-fix pass:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_runner.py::test_dialogue_kernel_expired_quote_details_frame_does_not_hijack_product_request -v --tb=short`
+  failed before fix with `should_use_kernel=True`, then passed.
+- Fresh review-and-fix pass:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_expected_answers.py::test_product_preference_frame_rejects_negated_or_conflicting_answer tests/test_dialogue_expected_answers.py::test_person_capacity_terms_do_not_block_expected_answer_frame -v --tb=short`
+  failed before fix, then `tests/test_dialogue_expected_answers.py` passed with
+  `9 passed`.
+- Fresh review-and-fix pass:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_product_preference_frame_builder_keeps_workspace_preference_canonical -v --tb=short`
+  failed before fix with `luma` instead of `private`, then passed.
+- Fresh review-and-fix pass:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_product_preference_answer_after_interruption_uses_frame_when_enforced -v --tb=short`
+  failed before fix with `dialogue-kernel|product_selection`, then passed through
+  the normal `mock-model` path.
+- Fresh targeted suite:
+  `OPENROUTER_API_KEY=dummy uv run pytest tests/test_dialogue_state.py tests/test_dialogue_expected_answers.py tests/test_dialogue_runner.py tests/test_dialogue_replay_fixtures.py tests/test_llm_engine.py -v --tb=short`
+  -> `280 passed`.
+- `uv run ruff check src/ tests/` -> passed.
+- `uv run ruff format --check src/ tests/` -> passed after formatting
+  `tests/test_llm_engine.py`.
+- `uv run mypy src/` -> passed.
+- `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short`
+  -> `1223 passed, 19 skipped`.
+- `scripts/orchestration/run_process_verification.sh` -> passed.
 
 Canonical stage closeout:
 
 - `OPENROUTER_API_KEY=dummy scripts/orchestration/run_stage_closeout.py --stage tj-gh48`
-  -> passed; full pytest inside closeout reported `1218 passed, 19 skipped`.
+  -> passed; full pytest inside closeout reported `1223 passed, 19 skipped`.
 
 ## Current Constraints
 
