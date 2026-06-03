@@ -1,8 +1,8 @@
 # Stage tj-gh48: Expected Answer Frames
 
 Updated: 2026-06-03
-Status: expected-answer implementation delivered; follow-up service-interruption
-hotfix delivered and production-retested
+Status: expected-answer implementation delivered; product-selection enforce
+enabled and production-retested
 Branch: `codex/tj-gh48-e2e-service-interruption-fix`
 Delivered runtime: `3d91e54a8de36fa379ac6e2ec1bfcf778cace11e`
 Hotfix base: fresh `origin/main` at `a1775a7be2ffa75536051a9baa52fc2b77df3771`
@@ -56,6 +56,16 @@ paths, legacy fallback, and production shadow safety.
   (`workspace_preference=open`) on `I prefer more open for team`; the
   customer-visible response remained legacy/generic because production is still
   `dialogue_kernel_mode=shadow`, not enforce.
+- On 2026-06-03 the owner approved narrow enforce rollout. Production config was
+  changed to `dialogue_kernel_mode=enforce` with only
+  `dialogue_kernel_enforced_flows=product_selection`.
+- Production E2E on synthetic identities
+  `+79262810921#tj-gh48-enforce-20260603081129-*` passed for:
+  product preference after a delivery interruption, exact SKU with price/stock,
+  ambiguous SKU without escalation, NOVO 2400 quantity guard, name gate resume,
+  and explicit manager request.
+- All synthetic conversations were closed after evidence capture; the one
+  intentional synthetic manager escalation was resolved.
 
 ## Implementation Completed
 
@@ -115,7 +125,7 @@ Documentation:
 | C | `tj-gh48.3` | Runner graph/capture support | Rawls worker | `src/dialogue/runner.py`, runner tests | A interface | runner tests, artifact validation | merged |
 | D | `tj-gh48.5` | `process_message` integration | local | `src/llm/engine.py`, engine tests | B+C | targeted engine tests | complete |
 | E | `tj-gh48.6` | Replay/stress suite | local | fixtures and replay tests | B+D | replay tests, JSON validation | complete |
-| F | `tj-gh48.7` | Review and closeout | local + reviewers | artifacts, docs, Beads | D+E | reviewer pass, full gates, closeout | local review complete; production E2E deferred |
+| F | `tj-gh48.7` | Review, rollout, production E2E | local + reviewers | artifacts, docs, Beads | D+E | reviewer pass, full gates, production E2E | product-selection enforce enabled and production-retested |
 
 ## Review Findings
 
@@ -292,17 +302,42 @@ Hotfix `tj-gh48.8` local evidence:
   `I prefer more open for team` -> kernel route `product_preference_answer`,
   frame fulfilled with `workspace_preference=open`; visible legacy reply stayed
   generic while mode remains `shadow`.
+- Production config rollout:
+  `dialogue_kernel_mode=enforce`,
+  `dialogue_kernel_enforced_flows=product_selection`,
+  `dialogue_kernel_trace_enabled=true`.
+- Production E2E product preference after interruption:
+  `Can delivery and assembly be arranged in Dubai?` -> service availability
+  answer, no escalation; then `I prefer more open for team` -> NOVO options with
+  price and stock, no escalation.
+- Production E2E exact SKU:
+  `I need 6 CH 616 NEW black` -> `CH 616 NEW black`, `295.00 AED`, stock `94`,
+  no escalation.
+- Production E2E generic SKU:
+  `I need 6 CH 616` -> no escalation; asks for manager verification because
+  current catalog has multiple `CH 616` variants.
+- Production E2E quantity guard:
+  `I need SKYLAND NOVO 2400 Meeting Table and CH 616` -> asks quantity for each
+  item; `2400` was not treated as quantity.
+- Production E2E name gate:
+  first product request without name -> name question only; `Lili` -> original
+  workstation request resumed with product options.
+- Production E2E true manager request:
+  `I want to talk to a manager` while a product frame was active -> manager
+  handoff still triggered; synthetic escalation was later resolved.
+- Cleanup readback:
+  six synthetic conversations closed; pending synthetic escalations `0`.
 
 ## Current Constraints
 
 - Do not remove the legacy runtime.
-- Keep production `dialogue_kernel_mode=shadow` unless explicit approval enables
-  a narrow enforce rollout.
-- Do not close #11; it remains blocked on policy answers.
-- Do not enable enforce broadly; production remains `shadow` unless explicit
-  approval enables a narrow flow.
+- Production `dialogue_kernel_mode=enforce` is allowed only for
+  `product_selection`; do not enable other flows without separate approval and
+  E2E evidence.
+- GitHub #11 is already closed; the remaining internal task is Wazzup WABA
+  template setup for follow-ups outside 24 hours.
 
 ## Explicit Defers
 
-- `tj-gh48.7`: enforce rollout is still deferred pending production evidence.
-- GitHub #11 remains open and blocked on policy answers.
+- `tj-gh21`: blocked until the client provides approved Wazzup WABA EN/AR
+  template ids/codes and variable mapping.
