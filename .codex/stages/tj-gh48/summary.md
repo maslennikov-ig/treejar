@@ -1,10 +1,10 @@
 # Stage tj-gh48: Expected Answer Frames
 
-Updated: 2026-06-02
-Status: expected-answer implementation delivered; live E2E found a follow-up
-service-interruption hotfix that is local-ready and not deployed yet
+Updated: 2026-06-03
+Status: expected-answer implementation delivered; follow-up service-interruption
+hotfix delivered and production-retested
 Branch: `codex/tj-gh48-e2e-service-interruption-fix`
-Delivered runtime: `a1775a7be2ffa75536051a9baa52fc2b77df3771`
+Delivered runtime: `3d91e54a8de36fa379ac6e2ec1bfcf778cace11e`
 Hotfix base: fresh `origin/main` at `a1775a7be2ffa75536051a9baa52fc2b77df3771`
 Beads: `tj-gh48`, `tj-gh48.1` through `tj-gh48.8`
 
@@ -42,8 +42,20 @@ paths, legacy fallback, and production shadow safety.
   `codex/tj-gh48-e2e-service-interruption-fix` adds a narrow
   service-availability guard for active product-selection/expected-answer
   contexts.
-- The hotfix is not deployed. Production retest is pending explicit approval for
-  push/merge/deploy.
+- The hotfix was pushed, fast-forwarded to `main`, and deployed by GitHub
+  Actions run `26841843489`.
+- Runtime readback after deploy: `/opt/noor/.release-sha` is
+  `3d91e54a8de36fa379ac6e2ec1bfcf778cace11e`; production smoke passed with
+  `8 passed, 0 failed`.
+- Post-deploy live E2E on synthetic profile
+  `+79262810921#tj-gh48-eaf-20260603055821`, conversation
+  `ec3c9c10-4677-4a0b-9a7b-d0e8e51c5fef`, verified the delivery/assembly
+  interruption now returns `z-ai/glm-5|service-availability` with no
+  escalation.
+- The same E2E confirmed the shadow kernel fulfilled the expected-answer frame
+  (`workspace_preference=open`) on `I prefer more open for team`; the
+  customer-visible response remained legacy/generic because production is still
+  `dialogue_kernel_mode=shadow`, not enforce.
 
 ## Implementation Completed
 
@@ -263,6 +275,23 @@ Hotfix `tj-gh48.8` local evidence:
   `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short`
   -> `1224 passed, 19 skipped`.
 - `scripts/orchestration/run_process_verification.sh` -> passed.
+- Feature branch push:
+  `git push origin codex/tj-gh48-e2e-service-interruption-fix` -> passed.
+- Main fast-forward push: `git push origin HEAD:main` -> passed.
+- GitHub Actions run `26841843489` -> completed successfully, including deploy.
+- Runtime readback: `/opt/noor/.release-sha` ->
+  `3d91e54a8de36fa379ac6e2ec1bfcf778cace11e`.
+- Production smoke:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  -> `8 passed, 0 failed`.
+- Post-deploy E2E:
+  `Can delivery and assembly be arranged in Dubai?` on
+  `+79262810921#tj-gh48-eaf-20260603055821` -> model
+  `z-ai/glm-5|service-availability`, no escalation.
+- Post-deploy shadow trace:
+  `I prefer more open for team` -> kernel route `product_preference_answer`,
+  frame fulfilled with `workspace_preference=open`; visible legacy reply stayed
+  generic while mode remains `shadow`.
 
 ## Current Constraints
 
@@ -270,15 +299,10 @@ Hotfix `tj-gh48.8` local evidence:
 - Keep production `dialogue_kernel_mode=shadow` unless explicit approval enables
   a narrow enforce rollout.
 - Do not close #11; it remains blocked on policy answers.
-- Hotfix `tj-gh48.8` needs explicit approval before push, merge, deploy, and
-  production retest.
 - Do not enable enforce broadly; production remains `shadow` unless explicit
   approval enables a narrow flow.
 
 ## Explicit Defers
 
-- `tj-gh48.8`: push/merge/deploy and production retest are pending explicit
-  approval for the local hotfix branch
-  `codex/tj-gh48-e2e-service-interruption-fix`.
 - `tj-gh48.7`: enforce rollout is still deferred pending production evidence.
 - GitHub #11 remains open and blocked on policy answers.
