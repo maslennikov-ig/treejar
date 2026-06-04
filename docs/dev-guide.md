@@ -431,7 +431,7 @@ src/integrations/
 | **OAuth distributed lock** | `SET zoho_refresh_lock NX EX 30`. Один воркер обновляет токен | Zoho integration |
 | **Rolling context window** | System prompt + резюме старых сообщений + последние 5 raw | LLM engine |
 | **24h WhatsApp rule** | >24ч с последнего сообщения -> только template messages | Messaging layer |
-| **PII masking** | UUID вместо реальных данных в LLM-контексте | LLM engine |
+| **PII masking** | Опционально; по умолчанию выключено, чтобы LLM видел телефоны/email для sales-фактов | LLM engine |
 | **Multi-model routing** | Haiku для extraction/intent, Sonnet для генерации ответа | LLM engine |
 | **English system prompts** | LLM думает на EN, отвечает на языке клиента | Prompts |
 | **FSM в PostgreSQL** | Столбец `sales_stage` в conversations. LLM получает правила текущего этапа | Models + LLM |

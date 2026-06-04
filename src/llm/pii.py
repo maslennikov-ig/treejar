@@ -15,11 +15,23 @@ def _is_labeled_product_code(text: str, match: re.Match[str]) -> bool:
     return PRODUCT_CODE_LABEL_PATTERN.search(prefix) is not None
 
 
-def mask_pii(text: str) -> tuple[str, dict[str, str]]:
+def _masking_enabled(enabled: bool | None) -> bool:
+    if enabled is not None:
+        return enabled
+
+    from src.core.config import settings
+
+    return settings.pii_masking_enabled
+
+
+def mask_pii(text: str, *, enabled: bool | None = None) -> tuple[str, dict[str, str]]:
     """
     Masks emails and phone numbers in the given text.
     Returns the masked text and a mapping of placeholders to original values.
     """
+    if not _masking_enabled(enabled):
+        return text, {}
+
     pii_map: dict[str, str] = {}
     masked_text = text
 

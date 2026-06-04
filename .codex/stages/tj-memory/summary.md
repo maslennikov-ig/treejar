@@ -1,10 +1,10 @@
 # Stage tj-memory: Customer Facts And Order Memory Layer
 
 Updated: 2026-06-04
-Status: deployed; production E2E passed under temporary enforce; rollout config gated
+Status: deployed; production E2E passed under temporary enforce; rollout config gated; PII masking disable branch pending delivery
 Branch: `main`
 Base: `origin/main` at `d49abcfc0606102b2098880245723e6fda999193`
-Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.8`
+Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.9`
 
 docs-reviewed: updated - architecture spec, plan, stage artifacts, and handoff
 cover the delivered memory layer and production E2E evidence.
@@ -37,6 +37,10 @@ and past orders, and avoids re-asking or losing already-provided facts.
 - Production E2E hotfixes are applied: `2 CH 616 chairs` keeps quantity `2`,
   ignores PII placeholders as SKU candidates, does not repeat already supplied
   quote details, and does not store `Hi Noor` as a customer name fact.
+- Branch `codex/tj-memory-disable-pii-masking` disables runtime PII masking by
+  default because it was not a client requirement and can block
+  phone/email/address/SKU fact extraction. It remains available only via
+  explicit `PII_MASKING_ENABLED=true`; this branch is not deployed yet.
 
 ## Decisions
 

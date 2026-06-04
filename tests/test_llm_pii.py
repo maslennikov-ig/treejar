@@ -1,9 +1,17 @@
 from src.llm.pii import mask_pii, unmask_pii
 
 
-def test_mask_pii_emails() -> None:
-    text = "My email is test@example.com and secondary is foo.bar@domain.co.uk"
+def test_mask_pii_is_disabled_by_default() -> None:
+    text = "My email is test@example.com and phone is +1 (555) 123-4567"
     masked, pii_map = mask_pii(text)
+
+    assert masked == text
+    assert pii_map == {}
+
+
+def test_mask_pii_emails_when_explicitly_enabled() -> None:
+    text = "My email is test@example.com and secondary is foo.bar@domain.co.uk"
+    masked, pii_map = mask_pii(text, enabled=True)
 
     assert "test@example.com" not in masked
     assert "foo.bar@domain.co.uk" not in masked
@@ -12,9 +20,9 @@ def test_mask_pii_emails() -> None:
     assert "test@example.com" in pii_map.values()
 
 
-def test_mask_pii_phones() -> None:
+def test_mask_pii_phones_when_explicitly_enabled() -> None:
     text = "Call me at +1 (555) 123-4567 or 8-800-555-35-35"
-    masked, pii_map = mask_pii(text)
+    masked, pii_map = mask_pii(text, enabled=True)
 
     assert "[PII-" in masked
     assert len(pii_map) == 2
@@ -22,15 +30,15 @@ def test_mask_pii_phones() -> None:
 
 def test_mask_pii_keeps_numeric_sku_when_labeled() -> None:
     text = "Do you have SKU 00-07024023 in stock?"
-    masked, pii_map = mask_pii(text)
+    masked, pii_map = mask_pii(text, enabled=True)
 
     assert "00-07024023" in masked
     assert not pii_map
 
 
-def test_mask_pii_mixed() -> None:
+def test_mask_pii_mixed_when_explicitly_enabled() -> None:
     text = "Contact 88005553535 or admin@treejar.com"
-    masked, pii_map = mask_pii(text)
+    masked, pii_map = mask_pii(text, enabled=True)
 
     assert "[PII-" in masked
     assert "admin@treejar.com" in pii_map.values()

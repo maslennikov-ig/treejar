@@ -128,8 +128,8 @@ async def test_build_message_history_long_dialog_with_summary_injected_first() -
     assert isinstance(summary_message, ModelRequest)
     assert isinstance(summary_message.parts[0], SystemPromptPart)
     assert "[EARLIER CONVERSATION SUMMARY - FACTS ONLY]" in _content(summary_message)
-    assert "buyer@example.com" not in _content(summary_message)
-    assert "[PII-" in _content(summary_message)
+    assert "buyer@example.com" in _content(summary_message)
+    assert "[PII-" not in _content(summary_message)
 
     raw_history = history[1:]
     raw_contents = [_content(model_message) for model_message in raw_history]
@@ -213,7 +213,7 @@ async def test_build_message_history_limits_raw_tail_by_char_budget() -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_message_history_masks_pii_in_raw_messages_and_summary() -> None:
+async def test_build_message_history_preserves_contacts_by_default() -> None:
     conv_id = uuid.uuid4()
     messages = [
         _build_message(
@@ -249,12 +249,11 @@ async def test_build_message_history_masks_pii_in_raw_messages_and_summary() -> 
     summary_text = _content(history[0])
     user_text = _content(history[1])
 
-    assert "+971501234567" not in summary_text
-    assert "[PII-" in summary_text
-    assert "sales@example.com" not in user_text
-    assert "[PII-" in user_text
-    assert "sales@example.com" in pii_map.values()
-    assert "+971501234567" in pii_map.values()
+    assert "+971501234567" in summary_text
+    assert "[PII-" not in summary_text
+    assert "sales@example.com" in user_text
+    assert "[PII-" not in user_text
+    assert pii_map == {}
 
 
 @pytest.mark.asyncio

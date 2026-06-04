@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     customer_facts_fast_extractor_enabled: bool = True
     customer_facts_max_context_orders: int = 3
 
+    # Privacy controls
+    pii_masking_enabled: bool = False
+
     # Wazzup (WhatsApp Gateway)
     wazzup_api_key: str = ""
     wazzup_api_url: str = "https://api.wazzup24.com/v3"

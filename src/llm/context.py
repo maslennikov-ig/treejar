@@ -1,7 +1,7 @@
 """Context window manager.
 
 Responsible for building the message history passed to the LLM agent,
-including PII masking and context truncation.
+including optional PII masking and context truncation.
 """
 
 from __future__ import annotations
@@ -85,13 +85,13 @@ async def build_message_history(
     conversation_id: uuid.UUID | str,
     pii_map: dict[str, str],
 ) -> list[ModelMessage]:
-    """Retrieve history from DB and format it for pydantic-ai, masking PII.
+    """Retrieve history from DB and format it for pydantic-ai.
 
     This function:
     1. Fetches previous messages for the conversation, ordered by creation time.
     2. Converts them into pydantic-ai ModelMessage objects.
     3. Truncates older history to prevent blowing the context window.
-    4. Masks any PII in user messages.
+    4. Applies optional PII masking when enabled by runtime config.
 
     Args:
         db: Active database session.
@@ -130,7 +130,7 @@ async def build_message_history(
         _messages_newer_than_summary_boundary(db_messages, summary)
     )
 
-    # 4. Convert and mask
+    # 4. Convert and optionally mask
     history: list[ModelMessage] = []
 
     if summary and summary.summary_text:
@@ -148,7 +148,6 @@ async def build_message_history(
 
     for msg in selected_messages:
         if msg.role == "user":
-            # Mask PII in incoming texts before AI sees it
             masked_text, new_pii_map = mask_pii(msg.content)
             # Update the global map passed in from the current turn
             pii_map.update(new_pii_map)

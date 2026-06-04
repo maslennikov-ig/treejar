@@ -7321,10 +7321,10 @@ async def process_message(
     """Process an incoming message through the PydanticAI agent.
 
     1. Loads conversation
-    2. Masks PII
+    2. Applies optional PII masking
     3. Builds message history
     4. Runs LLM agent
-    5. Unmasks PII in response
+    5. Unmasks PII in response when masking was enabled
     """
 
     dialogue_kernel_result: DialogueKernelResult | None = None
@@ -7563,13 +7563,13 @@ async def process_message(
             else:
                 crm_context = build_bounded_returning_customer_context(None)
 
-    # Optional shared dict for PII placeholders across history
+    # Optional shared dict for PII placeholders across history.
     pii_map: dict[str, str] = {}
 
-    # Process history (also populates pii_map with past messages' PII)
+    # Process history (also populates pii_map when PII masking is enabled).
     history = await build_message_history(db, conversation_id, pii_map)
 
-    # Mask current incoming text
+    # Keep contact details visible by default for deterministic fact extraction.
     masked_text, new_piis = mask_pii(combined_text)
     pii_map.update(new_piis)
     is_first_turn = _is_first_turn(history)
@@ -8269,9 +8269,8 @@ async def process_message(
         if exact_quote_candidate is None:
             exact_quote_candidate = extract_exact_quote_candidate(masked_text)
         if exact_quote_candidate is None:
-            # Numeric SKUs such as 00-07024023 can look like phone numbers to
-            # the PII masker. Keep the LLM prompt masked, but use the original
-            # customer text for deterministic exact-quote routing.
+            # Keep this fallback for optional masking mode: numeric SKUs such as
+            # 00-07024023 can look like phone numbers to a generic PII matcher.
             exact_quote_candidate = extract_exact_quote_candidate(combined_text)
         if exact_quote_candidate:
             exact_quote_deps = replace(

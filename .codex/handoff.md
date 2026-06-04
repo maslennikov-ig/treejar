@@ -1,6 +1,6 @@
 # Orchestrator Handoff
 Updated: 2026-06-04
-Current branch: `main`
+Current branch: `codex/tj-memory-disable-pii-masking`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
@@ -18,6 +18,8 @@ Current branch: `main`
   and created no escalation.
 - `customer_facts_mode` is restored to default disabled/UNSET after E2E; Bead
   `tj-memory.7` tracks the remaining global rollout enable decision.
+- Current branch disables PII masking by default (`PII_MASKING_ENABLED=false`);
+  it is not deployed yet.
 - Production still runs `dialogue_kernel_mode=enforce` only for
   `dialogue_kernel_enforced_flows=product_selection`.
 - Detailed evidence: `.codex/stages/tj-memory/summary.md` and

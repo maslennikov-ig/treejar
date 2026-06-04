@@ -63,7 +63,7 @@
   - [x] Промпт для extraction (intent + structured filters)
   - [x] Правила из анализа реальных диалогов: избегать 8 типичных ошибок менеджеров (см. `docs/dialogue-examples/README.md`)
   - [x] Идеальный цикл продажи (9 шагов): запрос → приветствие → уточнение → показ товара → аналог → sample/шоурум → КП → follow-up → оплата → доставка
-  - [x] PII masking: UUID вместо реальных данных в LLM-контексте
+  - [x] PII masking: реализовано как опциональный режим; по умолчанию выключено
   - [x] WhatsApp-совместимое форматирование (жирный, курсив, моно, цитаты)
 - [x] Wazzup интеграция
   - [x] `src/integrations/messaging/wazzup.py` -- реализация `MessagingProvider`

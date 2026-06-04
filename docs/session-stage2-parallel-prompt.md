@@ -16,7 +16,7 @@
 
 Всё ниже реализовано, протестировано и задеплоено на VPS (`noor.starec.ai`):
 
-- **Ядро бота:** FastAPI + PydanticAI (OpenRouter/DeepSeek). 6 stages продажи (FSM), tool calling (search_products, check_stock, lookup_customer, create_deal, create_quotation). PII masking. Rolling context (system prompt + резюме + последние 5 сообщений).
+- **Ядро бота:** FastAPI + PydanticAI (OpenRouter/DeepSeek). 6 stages продажи (FSM), tool calling (search_products, check_stock, lookup_customer, create_deal, create_quotation). PII masking опционален и по умолчанию выключен. Rolling context (system prompt + резюме + последние 5 сообщений).
 - **RAG:** pgvector cosine similarity + BGE-M3 embeddings через FastEmbed. Индексация: 856 SKU товаров + FAQ + правила диалогов + ценности компании.
 - **Интеграции:** Wazzup (WhatsApp gateway — приём/отправка, debouncing, idempotency), Zoho CRM (EU, 12 этапов воронки, 9 сегментов), Zoho Inventory (sync каждые 6ч).
 - **Генерация КП:** WeasyPrint + Jinja2 → PDF прямо в WhatsApp.

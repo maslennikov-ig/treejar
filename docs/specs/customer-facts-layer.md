@@ -288,7 +288,14 @@ responses must normalize to the supported customer-facing language policy.
 
 - Store only sales-relevant facts.
 - Keep source excerpts short.
-- Avoid logging full PII payloads.
+- Runtime PII masking is disabled by default because it is not a current client
+  requirement and it can block deterministic extraction of phone numbers,
+  emails, addresses, and SKU-like numeric facts.
+- If a future privacy requirement needs masking before LLM calls, enable it
+  explicitly with `PII_MASKING_ENABLED=true` and rerun contact/SKU extraction
+  evals before rollout.
+- Avoid logging full contact-detail payloads outside normal app/database
+  boundaries.
 - Use existing DB and app auth boundaries.
 - Do not send fact traces to external systems except the configured LLM
   extraction call.
