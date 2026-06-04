@@ -3203,6 +3203,83 @@ def _is_name_only_customer_detail_reply(
     return False
 
 
+def _join_customer_facing_items(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
+
+
+def _name_gate_resume_repair_response(
+    *,
+    customer_name: str | None,
+    pending_request: str,
+    language: str,
+) -> str:
+    """Fallback when the model repeats the name gate after the slot is filled."""
+    name = _string_value(customer_name)
+    normalized = _normalize_text(_normalize_sku_homoglyphs(pending_request))
+    is_arabic = is_arabic_customer_language(language)
+
+    if is_arabic:
+        greeting = f"شكرًا، {name}." if name else "شكرًا."
+        return (
+            f"{greeting} سأتابع طلبك الآن. يمكنني مساعدتك في اختيار الأثاث المطلوب، "
+            "ويمكن ترتيب التوصيل والتركيب حسب المنتجات والكمية والعنوان."
+        )
+
+    items: list[str] = []
+    if re.search(r"\bwork\s*stations?\b|\bworkstations?\b", normalized):
+        people_match = re.search(r"\bfor\s+(\d+)\s+people\b", normalized)
+        if people_match:
+            items.append(f"workstations for {people_match.group(1)} people")
+        else:
+            items.append("workstations")
+
+    if "storage" in normalized and re.search(r"\bcabinets?\b", normalized):
+        items.append("storage cabinets")
+    elif re.search(r"\bcabinets?\b", normalized):
+        items.append("cabinets")
+
+    if "mobile drawer" in normalized:
+        items.append("mobile drawers")
+    elif re.search(r"\bdrawers?\b", normalized):
+        items.append("drawers")
+
+    if re.search(r"\bchairs?\b", normalized):
+        items.append("chairs")
+
+    greeting = f"Thank you, {name}." if name else "Thank you."
+    item_text = _join_customer_facing_items(items)
+    if item_text:
+        response = f"{greeting} I can help with {item_text}."
+    else:
+        response = f"{greeting} I will continue with your request."
+
+    mentions_assembly = bool(
+        re.search(r"\b(?:assembly|assemble|installation|install)\b", normalized)
+    )
+    mentions_delivery = bool(re.search(r"\b(?:delivery|deliver)\b", normalized))
+    if mentions_assembly and mentions_delivery:
+        response += (
+            " Delivery and assembly can be arranged depending on the selected "
+            "items, quantity, and address."
+        )
+    elif mentions_assembly:
+        response += " Assembly can be arranged after the products are selected."
+    elif mentions_delivery:
+        response += " Delivery can be arranged after the products are selected."
+
+    response += (
+        " Please share any preferred size, color, or budget, and I will suggest "
+        "suitable options."
+    )
+    return response
+
+
 def _is_substantive_name_gate_request(text: str) -> bool:
     stripped = " ".join(_strip_synthetic_test_marker(text).split())
     if not stripped:
@@ -6899,6 +6976,27 @@ async def process_message(
             )
         return ()
 
+    name_gate_resume_request_text: str | None = None
+    name_gate_resume_customer_name: str | None = None
+
+    def _apply_name_gate_resume_guard(text: str) -> str:
+        assert conv is not None
+        if not name_gate_resume_request_text:
+            return text
+        if not _response_asks_customer_name(text):
+            return text
+
+        logger.warning(
+            "Repaired repeated name-gate prompt after customer name was captured "
+            "for conversation %s",
+            conv.id,
+        )
+        return _name_gate_resume_repair_response(
+            customer_name=name_gate_resume_customer_name or conv.customer_name,
+            pending_request=name_gate_resume_request_text,
+            language=str(conv.language),
+        )
+
     def _build_llm_response(
         result: Any,
         model_name: str,
@@ -6909,6 +7007,7 @@ async def process_message(
         response_deps = response_deps or deps
         final_text = unmask_pii(result.output, pii_map)
         final_text = _apply_first_turn_opening_guard(final_text)
+        final_text = _apply_name_gate_resume_guard(final_text)
         usage = result.usage()
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
@@ -6943,6 +7042,7 @@ async def process_message(
         response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
         final_text = _apply_first_turn_opening_guard(final_text)
+        final_text = _apply_name_gate_resume_guard(final_text)
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
                 conv,
@@ -7311,8 +7411,11 @@ async def process_message(
         combined_text,
         current_quote_customer_details,
     ):
+        captured_customer_name = _string_value(current_quote_customer_details["name"])
         pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
         if pending_name_gate_request:
+            name_gate_resume_request_text = pending_name_gate_request
+            name_gate_resume_customer_name = captured_customer_name
             combined_text = pending_name_gate_request
             masked_text, pending_piis = mask_pii(combined_text)
             pii_map.update(pending_piis)
@@ -7326,8 +7429,10 @@ async def process_message(
                 recent_history=recent_history,
                 runtime_directives=(
                     *deps.runtime_directives,
-                    "Continue the customer's prior request now that their name is known. "
-                    "Acknowledge the name briefly; do not ask what they need again.",
+                    f"Customer name is {captured_customer_name}. Continue the "
+                    "customer's prior request now that their name is known. "
+                    "Acknowledge the name briefly. Do not ask for their name "
+                    "again, and do not ask what they need again.",
                 ),
             )
             current_quote_customer_details = {}

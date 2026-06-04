@@ -2648,6 +2648,97 @@ async def test_process_message_bare_name_reply_resumes_pending_name_gate_request
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_bare_name_resume_repairs_duplicate_name_prompt(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = (
+        "Hi! I need a workstation for 4 people and storage cabinets. "
+        "Do you also offer assembly?"
+    )
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "Lili"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = [
+        {
+            "title": "Delivery and installation",
+            "content": (
+                "Q: Do you provide installation?\n"
+                "A: Yes, we provide professional delivery and installation services."
+            ),
+        }
+    ]
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        assert deps.user_query == pending_text
+        assert any(
+            "Customer name is Lili" in directive
+            and "Do not ask for their name again" in directive
+            for directive in deps.runtime_directives
+        )
+        return _FakeAgentResult(
+            "By the way, may I have your name so I can address you properly?"
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    normalized = response.text.casefold()
+    assert conv.customer_name == "Lili"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert "may i know your name" not in normalized
+    assert "may i have your name" not in normalized
+    assert "your name so i can address" not in normalized
+    assert "workstation" in normalized
+    assert "storage" in normalized
+    assert "assembly" in normalized
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_bare_name_resume_exact_refs_asks_quantities(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
