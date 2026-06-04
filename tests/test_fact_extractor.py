@@ -156,6 +156,20 @@ async def test_deterministic_does_not_treat_spaced_sku_number_as_plain_quantity(
 
 
 @pytest.mark.asyncio
+async def test_deterministic_labeled_name_with_details_has_no_name_conflict() -> None:
+    result = await extract_customer_facts(
+        "I need 2 CH 616 black chairs. My name is Victor Memory Final, "
+        "individual, delivery address Office 1204, One Business Bay, Dubai, "
+        "email victor.memory.final@example.com, phone +971501112233",
+        use_fast_model=False,
+    )
+
+    names = _facts_by_key(result, "customer.name")
+    assert [name.value for name in names] == ["Victor Memory Final"]
+    assert all(name.confidence == "high" for name in names)
+
+
+@pytest.mark.asyncio
 async def test_deterministic_extracts_past_order_query() -> None:
     result = await extract_customer_facts(
         "What did I order last time?",

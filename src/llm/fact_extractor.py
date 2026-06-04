@@ -781,6 +781,8 @@ def _compact_name_part_candidate(value: str) -> str | None:
     for candidate in reversed(candidates):
         if _ASSISTANT_GREETING_PATTERN.fullmatch(candidate):
             continue
+        if _LABELED_NAME_PATTERN.search(candidate):
+            continue
         name = _clean_person_name(candidate)
         if name and _looks_like_person_name(name):
             return name
