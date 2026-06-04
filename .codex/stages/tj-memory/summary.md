@@ -1,10 +1,10 @@
 # Stage tj-memory: Customer Facts And Order Memory Layer
 
 Updated: 2026-06-04
-Status: deployed; production E2E passed under temporary enforce; rollout config gated; PII masking disable branch pending delivery
+Status: deployed; production E2E passed; rollout config gated; PII masking disabled by default
 Branch: `main`
 Base: `origin/main` at `d49abcfc0606102b2098880245723e6fda999193`
-Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.9`
+Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.10`
 
 docs-reviewed: updated - architecture spec, plan, stage artifacts, and handoff
 cover the delivered memory layer and production E2E evidence.
@@ -37,10 +37,14 @@ and past orders, and avoids re-asking or losing already-provided facts.
 - Production E2E hotfixes are applied: `2 CH 616 chairs` keeps quantity `2`,
   ignores PII placeholders as SKU candidates, does not repeat already supplied
   quote details, and does not store `Hi Noor` as a customer name fact.
-- Branch `codex/tj-memory-disable-pii-masking` disables runtime PII masking by
-  default because it was not a client requirement and can block
-  phone/email/address/SKU fact extraction. It remains available only via
-  explicit `PII_MASKING_ENABLED=true`; this branch is not deployed yet.
+- Runtime PII masking is disabled by default in production because it was not a
+  client requirement and can block phone/email/address/SKU fact extraction. It
+  remains available only via explicit `PII_MASKING_ENABLED=true`.
+- Delivery E2E for the PII/default-off change passed after two blocking fixes:
+  first-turn messages that already include a name now skip name-gate, and
+  name-gate replies with extra customer details such as
+  `Victor PII Test, individual` resume the stored request instead of being
+  treated as a generic detail update.
 
 ## Decisions
 
@@ -95,6 +99,33 @@ Additional delivery and E2E checkpoint:
   `Office 1905, JLT Dubai`, and `individual`; customer facts trace has
   `accepted_count=7`, `conflict_count=0`, `fast_model_called=false`;
   `customer_facts_mode`, trace, and fast extractor overrides restored to `UNSET`.
+
+PII masking default-off delivery checkpoint:
+
+- Commits delivered to `main`: `1421cf91fe2e24a2fee0fd4ebb7c2eb826b1b335`
+  (disable masking by default), `ae36633bad5f32fd6be0f1a9cebc96e2487f1c75`
+  (honor first-turn customer details), and
+  `e4e7ecff52d71434e5f0c179bc166c9e325f05bc` (resume name-gate replies with
+  extra customer details).
+- GitHub Actions deploy run `26956771039` succeeded; production
+  `/opt/noor/.release-sha` is
+  `e4e7ecff52d71434e5f0c179bc166c9e325f05bc`.
+- `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -
+  8 passed, 0 failed.
+- Final E2E scenario 1:
+  `+79262810921#tj-pii-off-e2e-20260604170643`, conversation
+  `20bf6801-e24a-4474-a015-2c4be31bc50e`; first message included SKU,
+  quantity, name, individual, address, email, and phone; Noor returned
+  `selection-confirmation`, saved all details, kept escalation `none`, and
+  stored no `[PII-...]` placeholders.
+- Final E2E scenario 2:
+  `+79262810921#tj-pii-off-e2e-resume-20260604170643`, conversation
+  `f9e669ef-b46e-43cf-9096-bd0e50167819`; first message without a name triggered
+  `name-gate`, then `Victor PII Test, individual` resumed the original
+  `2 x CH 616` request, consumed `name_gate_pending_request`, saved all details,
+  kept escalation `none`, and stored no `[PII-...]` placeholders.
+- Synthetic E2E conversations from this delivery were closed/resolved after
+  readback. The real unsuffixed test phone thread was not mutated.
 
 ## Explicit Defers
 
