@@ -19,8 +19,9 @@ Stable navigation map for this repository. Keep operational state in
 - `README.md` - product/runtime overview and developer quick start.
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
-- `src/llm/engine.py`, `src/llm/prompts.py`, `src/llm/communication_policy.py`, and `src/llm/closed_question_guard.py` - sales-agent tools, guarded routing, prompt policy, and closed-question repair.
+- `src/llm/engine.py`, `src/llm/prompts.py`, `src/llm/communication_policy.py`, `src/llm/fact_extractor.py`, and `src/llm/closed_question_guard.py` - sales-agent tools, guarded routing, prompt policy, customer-fact extraction, and closed-question repair.
 - `src/dialogue/` - LangGraph dialogue-state kernel, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
+- `src/services/customer_memory.py` and `src/models/customer_memory.py` - durable customer profile facts, current-order memory, past-order history, and compact prompt context.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
 
 ## Core Subsystems
@@ -32,7 +33,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/dialogue/` - explicit dialogue state kernel used for legacy/shadow/enforce rollout modes.
 - `src/rag/` - knowledge/product search and embedding pipeline.
 - `src/integrations/` - Wazzup messaging, Zoho CRM, Zoho Inventory, Telegram notification clients.
-- `src/services/` - business services for chat, notifications, follow-up, reports, media, PDF, referrals.
+- `src/services/` - business services for chat, customer memory, notifications, follow-up, reports, media, PDF, referrals.
 - `src/quality/` - AI and manager quality evaluation jobs, schemas, and transcript handling.
 - `migrations/` - Alembic database migrations.
 - `frontend/admin/` - admin/dashboard frontend build assets used by regression tests.

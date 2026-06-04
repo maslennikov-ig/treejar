@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import logging
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from html import escape
@@ -45,6 +47,11 @@ from src.llm.closed_question_guard import (
     response_asks_customer_name,
 )
 from src.llm.context import build_message_history
+from src.llm.fact_extractor import (
+    CustomerFactExtractionResult,
+    ExtractedCustomerFact,
+    extract_customer_facts,
+)
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.order_status import format_order_status
@@ -83,6 +90,16 @@ from src.services.customer_identity import (
     format_llm_crm_context,
 )
 from src.services.customer_language import is_arabic_customer_language
+from src.services.customer_memory import (
+    CustomerFactsContext,
+    FactMergeResult,
+    apply_extracted_facts,
+    build_customer_facts_context,
+    close_order,
+    get_or_create_active_order,
+    get_or_create_customer_profile,
+    mark_order_quoted,
+)
 from src.services.escalation_state import is_active_human_handoff
 from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
@@ -99,6 +116,9 @@ QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY = "quote_brief_confirmed_address"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
 SALES_MEMORY_KEY = "sales_memory"
+CUSTOMER_FACTS_METADATA_KEY = "customer_facts"
+CUSTOMER_FACTS_TRACE_LIMIT = 20
+CUSTOMER_FACTS_TRACE_FACT_LIMIT = 12
 NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
@@ -848,6 +868,7 @@ class SalesDeps:
         "selection_confirmation",
     ] = "full"
     runtime_directives: tuple[str, ...] = ()
+    customer_facts_context: str | None = None
     inventory_confirmed: bool = False
     quotation_created: bool = False
     catalog_mismatch_alerted: bool = False
@@ -874,6 +895,37 @@ class LLMResponse:
     cost: float | None
     model: str
     deferred_product_media: tuple[ProductMediaPayload, ...] = ()
+
+
+@dataclass(frozen=True)
+class CustomerFactsRun:
+    context_text: str | None = None
+    past_order_response: str | None = None
+
+
+@asynccontextmanager
+async def _customer_facts_write_scope(db: Any) -> AsyncIterator[None]:
+    """Isolate optional memory writes so failures do not poison legacy handling."""
+
+    begin_nested = getattr(db, "begin_nested", None)
+    if not callable(begin_nested):
+        yield
+        return
+
+    transaction = begin_nested()
+    if inspect.isawaitable(transaction):
+        close = getattr(transaction, "close", None)
+        if callable(close):
+            close()
+        yield
+        return
+
+    if hasattr(transaction, "__aenter__") and hasattr(transaction, "__aexit__"):
+        async with transaction:
+            yield
+        return
+
+    yield
 
 
 @dataclass(frozen=True)
@@ -942,6 +994,27 @@ def _dialogue_kernel_bool_config(value: str, *, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off", "disabled"}:
         return False
     return default
+
+
+def _normalize_customer_facts_mode(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    if normalized in {"shadow", "enforce"}:
+        return normalized
+    return "disabled"
+
+
+def _customer_facts_int_config(
+    value: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
 
 
 def _normalize_sku_homoglyphs(text: str) -> str:
@@ -3864,6 +3937,334 @@ async def _store_sales_memory_updates(
     return memory
 
 
+def _fact_value_as_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _quote_details_from_customer_facts(
+    facts: Iterable[Any],
+) -> dict[str, str]:
+    details: dict[str, str] = {}
+    for fact in facts:
+        scope = str(getattr(fact, "scope", ""))
+        key = str(getattr(fact, "key", ""))
+        value = _fact_value_as_text(getattr(fact, "value", None))
+        if not value:
+            continue
+        if scope == "persistent_profile":
+            if key == "customer.name":
+                details["name"] = value
+            elif key == "customer.email":
+                details["email"] = value
+            elif key == "customer.phone":
+                details["phone"] = value
+            elif key == "customer.company":
+                details["company"] = value
+        elif scope == "current_order":
+            if key == "customer.type":
+                details["customer_type"] = value
+            elif key == "delivery.address":
+                details["address"] = value
+    return details
+
+
+async def _apply_customer_facts_to_legacy_quote_details(
+    db: AsyncSession,
+    conversation: Conversation,
+    facts: Iterable[Any],
+) -> None:
+    details = _quote_details_from_customer_facts(facts)
+    if details:
+        await _store_extracted_quote_customer_details(db, conversation, details)
+
+
+def _customer_facts_trace_fact(fact: ExtractedCustomerFact) -> dict[str, Any]:
+    return {
+        "scope": fact.scope,
+        "key": fact.key,
+        "confidence": fact.confidence,
+        "source": fact.source,
+        "needs_confirmation": fact.needs_confirmation,
+    }
+
+
+def _record_customer_facts_trace(
+    conversation: Conversation,
+    *,
+    mode: str,
+    extraction: CustomerFactExtractionResult | None = None,
+    merge_result: FactMergeResult | None = None,
+    context: CustomerFactsContext | None = None,
+    error: str | None = None,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    state = metadata.get(CUSTOMER_FACTS_METADATA_KEY)
+    if not isinstance(state, dict):
+        state = {}
+    traces = state.get("traces")
+    if not isinstance(traces, list):
+        traces = []
+
+    trace: dict[str, Any] = {
+        "mode": mode,
+        "error": _captured_context_value(error) if error else None,
+    }
+    if extraction is not None:
+        trace["deterministic_fact_count"] = extraction.trace.deterministic_fact_count
+        trace["fast_model_called"] = extraction.trace.fast_model_called
+        trace["fast_model_failed"] = extraction.trace.fast_model_failed
+        if extraction.trace.fast_model_model:
+            trace["fast_model_model"] = extraction.trace.fast_model_model
+        if extraction.trace.fast_model_skipped_reason:
+            trace["fast_model_skipped_reason"] = (
+                extraction.trace.fast_model_skipped_reason
+            )
+        trace["facts"] = [
+            _customer_facts_trace_fact(fact)
+            for fact in extraction.facts[:CUSTOMER_FACTS_TRACE_FACT_LIMIT]
+        ]
+    if merge_result is not None:
+        trace["accepted_count"] = len(merge_result.accepted)
+        trace["proposed_count"] = len(merge_result.proposed)
+        trace["conflict_count"] = len(merge_result.conflicts)
+        trace["confirmation_required_count"] = len(merge_result.confirmation_required)
+    if context is not None:
+        trace["context_sections"] = {
+            "profile": bool(context.profile_lines),
+            "current_order": bool(context.current_order_lines),
+            "past_orders": bool(context.past_order_lines),
+            "missing_quote_fields": len(context.missing_quote_fields),
+        }
+
+    state["traces"] = [*traces, trace][-CUSTOMER_FACTS_TRACE_LIMIT:]
+    metadata[CUSTOMER_FACTS_METADATA_KEY] = state
+    conversation.metadata_ = metadata
+
+
+def _customer_facts_has_fact(
+    extraction: CustomerFactExtractionResult,
+    *,
+    scope: str,
+    key: str,
+) -> bool:
+    return any(fact.scope == scope and fact.key == key for fact in extraction.facts)
+
+
+def _customer_facts_past_order_response(
+    context: CustomerFactsContext,
+    *,
+    language: str,
+    reuse_requested: bool,
+) -> str | None:
+    if not context.past_order_lines:
+        if is_arabic_customer_language(language):
+            return (
+                "لا أرى طلباً سابقاً مكتملاً لهذا الرقم. "
+                "أرسل لي المنتجات والكميات المطلوبة وسأساعدك."
+            )
+        return (
+            "I do not see a previous completed order for this number. "
+            "Please send the products and quantities you need, and I’ll help."
+        )
+
+    summary = context.past_order_lines[0].removeprefix("- ").strip()
+    if reuse_requested:
+        if is_arabic_customer_language(language):
+            return (
+                f"آخر طلب سابق لدي هو: {summary}. "
+                "هل تريد استخدام نفس المنتجات والكميات لهذا العرض الجديد؟"
+            )
+        return (
+            f"I found this previous completed order: {summary}. "
+            "Please confirm if you want to use the same items and quantities "
+            "for this new quotation."
+        )
+    if is_arabic_customer_language(language):
+        return f"آخر طلب سابق لدي هو: {summary}."
+    return f"Your latest previous completed order was: {summary}."
+
+
+async def _sync_customer_order_lifecycle_from_facts(
+    db: AsyncSession,
+    *,
+    order: Any,
+    facts: Iterable[Any],
+) -> None:
+    quote_statuses = [
+        _fact_value_as_text(getattr(fact, "value", None)).casefold()
+        for fact in facts
+        if getattr(fact, "scope", None) == "current_order"
+        and getattr(fact, "key", None) == "quote.status"
+    ]
+    if not quote_statuses or getattr(order, "status", None) != "quoted_snapshot":
+        return
+    if "accepted" in quote_statuses:
+        await close_order(db, order=order, status="accepted")
+    elif "refused" in quote_statuses:
+        await close_order(db, order=order, status="closed_refused")
+
+
+async def _mark_customer_order_quoted_if_enabled(
+    ctx: RunContext[SalesDeps],
+    *,
+    items: list[QuotationItem],
+    quote_number: str,
+    sale_order_id: str,
+    quote_details: Mapping[str, str],
+) -> None:
+    from src.core.config import get_system_config
+
+    mode = _normalize_customer_facts_mode(
+        await get_system_config(
+            ctx.deps.db,
+            "customer_facts_mode",
+            settings.customer_facts_mode,
+        )
+    )
+    if mode != "enforce":
+        return
+    try:
+        async with _customer_facts_write_scope(ctx.deps.db):
+            profile = await get_or_create_customer_profile(
+                ctx.deps.db,
+                phone=ctx.deps.conversation.phone,
+                conversation=ctx.deps.conversation,
+            )
+            order = await get_or_create_active_order(
+                ctx.deps.db,
+                profile=profile,
+                conversation=ctx.deps.conversation,
+            )
+            await mark_order_quoted(
+                ctx.deps.db,
+                order=order,
+                snapshot={
+                    "items": [
+                        {"sku": item.sku, "quantity": item.quantity} for item in items
+                    ],
+                    "quote_number": quote_number,
+                    "zoho_sale_order_id": sale_order_id,
+                    "quote_customer_details": dict(quote_details),
+                },
+            )
+    except Exception:
+        logger.warning(
+            "Failed to sync customer order quoted state for conversation %s",
+            ctx.deps.conversation.id,
+            exc_info=True,
+        )
+
+
+async def _run_customer_facts_layer(
+    db: AsyncSession,
+    *,
+    conversation: Conversation,
+    text: str,
+    mode: str,
+    trace_enabled: bool,
+    fast_extractor_enabled: bool,
+    max_context_orders: int,
+    source_message_id: str | None = None,
+) -> CustomerFactsRun:
+    normalized_mode = _normalize_customer_facts_mode(mode)
+    if normalized_mode == "disabled":
+        return CustomerFactsRun()
+
+    try:
+        extraction = await extract_customer_facts(
+            text,
+            source_message_id=source_message_id,
+            use_fast_model=fast_extractor_enabled,
+        )
+        if normalized_mode == "shadow":
+            if trace_enabled:
+                async with _customer_facts_write_scope(db):
+                    _record_customer_facts_trace(
+                        conversation,
+                        mode=normalized_mode,
+                        extraction=extraction,
+                    )
+                    await db.flush()
+            return CustomerFactsRun()
+
+        async with _customer_facts_write_scope(db):
+            profile = await get_or_create_customer_profile(
+                db,
+                phone=conversation.phone,
+                conversation=conversation,
+            )
+            order = await get_or_create_active_order(
+                db,
+                profile=profile,
+                conversation=conversation,
+            )
+            merge_result = await apply_extracted_facts(
+                db,
+                profile=profile,
+                order=order,
+                message=None,
+                facts=extraction.facts,
+            )
+            await _apply_customer_facts_to_legacy_quote_details(
+                db,
+                conversation,
+                merge_result.accepted,
+            )
+            await _sync_customer_order_lifecycle_from_facts(
+                db,
+                order=order,
+                facts=merge_result.accepted,
+            )
+            context = await build_customer_facts_context(
+                db,
+                profile=profile,
+                active_order=order,
+                max_past_orders=max_context_orders,
+            )
+            if trace_enabled:
+                _record_customer_facts_trace(
+                    conversation,
+                    mode=normalized_mode,
+                    extraction=extraction,
+                    merge_result=merge_result,
+                    context=context,
+                )
+                await db.flush()
+
+        has_past_query = _customer_facts_has_fact(
+            extraction,
+            scope="past_order_reference",
+            key="past_order.query",
+        )
+        has_reuse_request = _customer_facts_has_fact(
+            extraction,
+            scope="past_order_reference",
+            key="past_order.reuse_request",
+        )
+        past_order_response = None
+        if has_past_query or has_reuse_request:
+            past_order_response = _customer_facts_past_order_response(
+                context,
+                language=str(conversation.language),
+                reuse_requested=has_reuse_request,
+            )
+        return CustomerFactsRun(
+            context_text=context.render(),
+            past_order_response=past_order_response,
+        )
+    except Exception:
+        logger.warning(
+            "Customer facts layer failed for conversation %s; using legacy path",
+            conversation.id,
+            exc_info=True,
+        )
+        return CustomerFactsRun()
+
+
 def _format_captured_sales_context(deps: SalesDeps) -> str:
     details = _quote_context_details_from_deps(deps)
     memory = _sales_memory_from_metadata(deps.conversation)
@@ -5832,6 +6233,15 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
     if captured_sales_context:
         base_prompt += f"\n\n{captured_sales_context}\n"
 
+    if ctx.deps.customer_facts_context:
+        base_prompt += (
+            "\n\n[CUSTOMER FACTS MEMORY]\n"
+            "Use these accepted facts as compact context. Past orders are "
+            "historical; do not reuse them for a new quotation unless the "
+            "customer confirms reuse.\n"
+            f"{ctx.deps.customer_facts_context}\n"
+        )
+
     if ctx.deps.runtime_directives:
         directives_block = "\n".join(
             f"- {directive}" for directive in ctx.deps.runtime_directives
@@ -6482,13 +6892,23 @@ async def create_quotation(
         quote_number=quote_number,
         sale_order_id=sale_order_id,
     )
+    proposal_metadata_persisted = False
     try:
         await ctx.deps.db.flush()
+        proposal_metadata_persisted = True
     except Exception as flush_err:
         logger.warning(
             "Failed to persist proposal follow-up metadata for %s: %s",
             quote_number,
             flush_err,
+        )
+    if proposal_metadata_persisted:
+        await _mark_customer_order_quoted_if_enabled(
+            ctx,
+            items=items,
+            quote_number=quote_number,
+            sale_order_id=sale_order_id,
+            quote_details=quote_customer_details,
         )
 
     ctx.deps.quotation_created = True
@@ -6798,6 +7218,7 @@ async def process_message(
     zoho_client: ZohoInventoryClient,
     messaging_client: MessagingProvider,
     crm_client: ZohoCRMClient | None = None,
+    source_message_id: str | None = None,
 ) -> LLMResponse:
     """Process an incoming message through the PydanticAI agent.
 
@@ -7090,6 +7511,39 @@ async def process_message(
 
     from src.core.config import get_system_config
 
+    customer_facts_mode = _normalize_customer_facts_mode(
+        await get_system_config(
+            db,
+            "customer_facts_mode",
+            settings.customer_facts_mode,
+        )
+    )
+    customer_facts_trace_enabled = _dialogue_kernel_bool_config(
+        await get_system_config(
+            db,
+            "customer_facts_trace_enabled",
+            str(settings.customer_facts_trace_enabled).lower(),
+        ),
+        default=settings.customer_facts_trace_enabled,
+    )
+    customer_facts_fast_extractor_enabled = _dialogue_kernel_bool_config(
+        await get_system_config(
+            db,
+            "customer_facts_fast_extractor_enabled",
+            str(settings.customer_facts_fast_extractor_enabled).lower(),
+        ),
+        default=settings.customer_facts_fast_extractor_enabled,
+    )
+    customer_facts_max_context_orders = _customer_facts_int_config(
+        await get_system_config(
+            db,
+            "customer_facts_max_context_orders",
+            str(settings.customer_facts_max_context_orders),
+        ),
+        default=settings.customer_facts_max_context_orders,
+        minimum=0,
+        maximum=10,
+    )
     dialogue_kernel_mode = await get_system_config(
         db,
         "dialogue_kernel_mode",
@@ -7108,6 +7562,29 @@ async def process_message(
         "dialogue_kernel_enforced_flows",
         settings.dialogue_kernel_enforced_flows,
     )
+
+    customer_facts_run = await _run_customer_facts_layer(
+        db,
+        conversation=conv,
+        text=combined_text,
+        mode=customer_facts_mode,
+        trace_enabled=customer_facts_trace_enabled,
+        fast_extractor_enabled=customer_facts_fast_extractor_enabled,
+        max_context_orders=customer_facts_max_context_orders,
+        source_message_id=source_message_id,
+    )
+    if customer_facts_run.context_text:
+        deps = replace(deps, customer_facts_context=customer_facts_run.context_text)
+    if customer_facts_run.past_order_response:
+        db_model_main = await get_system_config(
+            db, "openrouter_model_main", settings.openrouter_model_main
+        )
+        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
+        return _build_static_response(
+            customer_facts_run.past_order_response,
+            f"{db_model_main}|customer-facts-past-order",
+            allow_product_media=False,
+        )
 
     if _has_pending_proposal_decision(conv) and _is_post_quotation_acceptance(
         combined_text,

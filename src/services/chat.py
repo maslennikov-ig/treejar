@@ -513,6 +513,14 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
         None,
     )
     combined_text = "\n".join(m.text for m in messages if m.text)
+    source_message_id = next(
+        (
+            m.messageId
+            for m in reversed(messages)
+            if m.messageId and _determine_role(m) == "user"
+        ),
+        None,
+    )
 
     # Check for audio/voice messages and transcribe them
     audio_results: dict[str, _AudioProcessingResult] = {}
@@ -911,6 +919,7 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                                 zoho_client=zoho_client,
                                 crm_client=crm_client,
                                 messaging_client=wazzup_provider,
+                                source_message_id=source_message_id,
                             ),
                             timeout=LLM_TIMEOUT,
                         )

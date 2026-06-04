@@ -1,12 +1,13 @@
 # Stage tj-memory: Customer Facts And Order Memory Layer
 
 Updated: 2026-06-04
-Status: spec and task graph created; implementation pending
+Status: foundation implemented after review hardening; rollout/evidence pending
 Branch: `codex/tj-memory-customer-facts-layer`
 Base: `origin/main` at `d49abcfc0606102b2098880245723e6fda999193`
 Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.7`
 
-docs-reviewed: updated - new architecture spec and implementation plan added.
+docs-reviewed: updated - architecture spec, plan, project index, and stage
+artifacts cover the new memory layer.
 graph-reviewed: no-change-needed - Graphify is not configured; no
 `graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
 
@@ -21,8 +22,14 @@ and past orders, and avoids re-asking or losing already-provided facts.
 - GitHub #48/tj-gh49 is closed and delivered.
 - Production still runs the dialogue kernel in enforce mode only for
   `product_selection`.
-- This stage starts a new architecture stream. It does not change production
-  behavior yet.
+- Customer facts mode defaults to `disabled`; no customer-visible production
+  behavior changes until config is explicitly enabled.
+- Implemented DB models/migration, memory service, deterministic/fast extractor,
+  engine prompt integration, past-order answer path, quotation snapshot sync,
+  source message id propagation, and savepoint-backed fail-open handling.
+- Review hardening is applied: current-order `individual/company` satisfies the
+  quote details gate, price objections stay non-terminal, and optional memory
+  writes do not reuse a failed DB transaction.
 
 ## Decisions
 
@@ -40,21 +47,29 @@ and past orders, and avoids re-asking or losing already-provided facts.
 | Stream | Beads | Goal | Owner | Write zone | Dependencies | Verification | Decision | Reason |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | A | `tj-memory.1` | Spec and plan | local | docs/specs, docs/superpowers/plans, stage docs | none | artifact/process verification | local | Simple orchestration/docs |
-| B | `tj-memory.2` | Persistence and memory service skeleton | db specialist/worker | models, migration, service tests | A | model/migration tests | parallel later | Disjoint from extractor |
-| C | `tj-memory.3` | Fact extractor | worker | `src/llm/fact_extractor.py`, tests | A | extractor tests | parallel later | Pure extraction boundary |
-| D | `tj-memory.4` | Order lifecycle | worker | `src/services/customer_memory.py`, lifecycle tests | B interface | service tests | parallel later | Service-level boundary |
-| E | `tj-memory.5` | Engine/prompt integration | orchestrator | `src/llm/engine.py`, prompt/context tests | B+C+D | targeted LLM tests | sequential | Central routing file |
-| F | `tj-memory.6` | Regression/eval suite | worker/local | fixtures/tests | C+E | replay + engine tests | parallel later | Test-only after interfaces |
-| G | `tj-memory.7` | Rollout and production evidence | orchestrator/deploy specialist | config/artifacts | full green | smoke/E2E | sequential final | External delivery |
+| B | `tj-memory.2` | Persistence and memory service skeleton | db specialist/worker | models, migration, service tests | A | model/migration tests | parallel | Complete |
+| C | `tj-memory.3` | Fact extractor | worker | `src/llm/fact_extractor.py`, tests | A | extractor tests | parallel | Complete |
+| D | `tj-memory.4` | Order lifecycle | local | service + engine quotation sync | B interface | service/engine tests | sequential | Complete enough for v1 |
+| E | `tj-memory.5` | Engine/prompt integration | orchestrator | `src/llm/engine.py`, prompt/context tests | B+C+D | targeted LLM tests | sequential | Complete for disabled/shadow/enforce v1 |
+| F | `tj-memory.6` | Regression/eval suite | local | focused tests | C+E | targeted tests | sequential | Focused coverage added; broad replay remains rollout work |
+| G | `tj-memory.7` | Rollout and production evidence | orchestrator/deploy specialist | config/artifacts | full green | smoke/E2E | sequential final | Pending explicit deploy/config decision |
 
 ## Verification
 
-Passed for this spec-only step:
+Passed for this implementation checkpoint:
 
 - `uv run python scripts/orchestration/validate_artifact.py .codex/stages/tj-memory/artifacts/tj-memory.1-spec.md`
+- `uv run python scripts/orchestration/validate_artifact.py .codex/stages/tj-memory/artifacts/tj-memory.2-db.md`
+- `uv run python scripts/orchestration/validate_artifact.py .codex/stages/tj-memory/artifacts/tj-memory.3-extractor.md`
+- `OPENROUTER_API_KEY=dummy uv run pytest tests/test_customer_memory_models.py tests/test_customer_memory_service.py tests/test_fact_extractor.py tests/test_llm_engine_customer_facts.py tests/test_dialogue_config.py -v --tb=short`
+- `uv run ruff check ...targeted files...`
+- `uv run ruff format --check ...targeted files...`
+- `uv run mypy src/`
+- `OPENROUTER_API_KEY=dummy uv run pytest tests/test_customer_memory_service.py tests/test_fact_extractor.py tests/test_llm_engine_customer_facts.py tests/test_services_chat_batch.py -v --tb=short` - 46 passed
+- `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short` - 1271 passed, 19 skipped
 - `scripts/orchestration/run_process_verification.sh`
 
-Full code gates will run after implementation starts.
+Stage closeout and production rollout evidence remain before merge/deploy.
 
 ## Explicit Defers
 

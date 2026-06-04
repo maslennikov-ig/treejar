@@ -3,6 +3,11 @@ from src.models.base import Base
 from src.models.bot_behavior_rule import BotBehaviorRule
 from src.models.conversation import Conversation
 from src.models.conversation_summary import ConversationSummary
+from src.models.customer_memory import (
+    CustomerFact,
+    CustomerOrderMemory,
+    CustomerProfile,
+)
 from src.models.escalation import Escalation
 from src.models.feedback import Feedback
 from src.models.knowledge_base import KnowledgeBase
@@ -24,6 +29,9 @@ __all__ = [
     "BotBehaviorRule",
     "Conversation",
     "ConversationSummary",
+    "CustomerFact",
+    "CustomerOrderMemory",
+    "CustomerProfile",
     "Escalation",
     "Feedback",
     "KnowledgeBase",

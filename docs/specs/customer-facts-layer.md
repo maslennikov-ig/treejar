@@ -53,6 +53,8 @@ Facts for the active order or quote only:
 - quote customer details: name, company or explicit individual status, email,
   phone, address;
 - quotation status: collecting details, quoted, accepted, refused, no response.
+- quote objections such as price concerns or discount requests; these are not
+  terminal refusals unless the customer also explicitly declines the proposal.
 
 Current order state is the primary source for quote generation. Profile facts may
 prefill a prompt, but a quote must still use the current order state or an
@@ -95,6 +97,11 @@ Recommended lifecycle:
 Past-order memory is created when the order reaches `accepted`,
 `closed_refused`, `closed_no_response`, or `superseded`. A quotation send creates
 a snapshot but does not by itself make the order "past".
+
+Price objections such as "too expensive" or "need discount" keep the order in
+the current flow. They may be used for sales handling, but must not close the
+order as `closed_refused` unless the customer also uses an explicit refusal such
+as "no thanks", "decline", or equivalent Arabic wording.
 
 ## Fact Extraction Pipeline
 
@@ -158,6 +165,9 @@ Rules:
   question. They do not overwrite accepted facts silently.
 - facts from past orders are scoped as `past_order_reference` until the customer
   confirms reuse for the active order.
+- `source_message_id` should be populated from the inbound WhatsApp message when
+  available. Batched text may use the latest customer message id as the current
+  batch anchor.
 
 ## Persistence Shape
 
@@ -217,6 +227,11 @@ Suggested fields:
 
 This schema allows queries such as "what do we know about this customer?" and
 "what was the last closed order?" without scanning raw messages.
+
+Optional writes from this layer must be isolated from the normal reply path. If
+fact persistence, quote snapshot sync, or trace persistence fails, the bot should
+log the error and continue through the legacy response path without reusing a
+failed database transaction for more writes.
 
 ## Prompt Context Contract
 

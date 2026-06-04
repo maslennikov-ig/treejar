@@ -176,6 +176,7 @@ async def test_process_incoming_batch_new_conversation(
     # Assertions
     mock_session.commit.assert_awaited()
     mock_process_message.assert_awaited_once()
+    assert mock_process_message.await_args.kwargs["source_message_id"] == "msg-1"
     _assert_bot_reply_sent(
         mock_wazzup,
         chat_id=chat_id,
