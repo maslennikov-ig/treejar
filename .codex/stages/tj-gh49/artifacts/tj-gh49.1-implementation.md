@@ -45,7 +45,7 @@ docs_impact: behavior
 docs_reviewed: no-change-needed
 docs_review_notes: Narrow runtime guard; stage summary and handoff updated.
 verification:
-  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_bare_name_resume_repairs_duplicate_name_prompt -v --tb=short": passed
+  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_bare_name_resume_repairs_duplicate_name_prompt -v --tb=short": passed before tj-gh49.3 refactor
   - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py -v --tb=short": passed
   - "uv run ruff check src/llm/engine.py tests/test_llm_engine.py": passed
   - "uv run ruff format --check src/llm/engine.py tests/test_llm_engine.py": passed
@@ -64,10 +64,9 @@ explicit_defers:
 
 # Summary
 
-Implemented the local fix for GitHub #48. The issue was that the name slot could
-be stored and the original request could be replayed, but the model still had no
-hard stop if it generated another name question. The fix gives the model the
-captured name explicitly and repairs only this narrow repeated-name response.
+Implemented the first local fix for GitHub #48. This artifact is superseded by
+`tj-gh49.3`, which replaced the narrow repeated-name repair with a shared
+closed-question guard.
 
 # Verification
 

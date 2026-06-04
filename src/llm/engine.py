@@ -40,6 +40,10 @@ from src.integrations.inventory.zoho_inventory import (
     extract_sale_order_data,
 )
 from src.integrations.messaging.base import MessagingProvider
+from src.llm.closed_question_guard import (
+    apply_closed_question_guard,
+    response_asks_customer_name,
+)
 from src.llm.context import build_message_history
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_handoff import is_high_confidence_first_turn_order
@@ -1635,17 +1639,7 @@ def _response_asks_post_quote_approval(response_text: str) -> bool:
 
 
 def _response_asks_customer_name(response_text: str) -> bool:
-    normalized = _normalize_text(response_text)
-    if not normalized:
-        return False
-    name_terms = (
-        "may i know your name",
-        "can i have your name",
-        "please share your name",
-        "what is your name",
-        "your name so i can address you",
-    )
-    return any(term in normalized for term in name_terms)
+    return response_asks_customer_name(response_text)
 
 
 def _capture_expected_answer_frames_from_assistant_response(
@@ -3201,83 +3195,6 @@ def _is_name_only_customer_detail_reply(
         return before_is_social and after_is_social
 
     return False
-
-
-def _join_customer_facing_items(items: list[str]) -> str:
-    if not items:
-        return ""
-    if len(items) == 1:
-        return items[0]
-    if len(items) == 2:
-        return f"{items[0]} and {items[1]}"
-    return f"{', '.join(items[:-1])}, and {items[-1]}"
-
-
-def _name_gate_resume_repair_response(
-    *,
-    customer_name: str | None,
-    pending_request: str,
-    language: str,
-) -> str:
-    """Fallback when the model repeats the name gate after the slot is filled."""
-    name = _string_value(customer_name)
-    normalized = _normalize_text(_normalize_sku_homoglyphs(pending_request))
-    is_arabic = is_arabic_customer_language(language)
-
-    if is_arabic:
-        greeting = f"شكرًا، {name}." if name else "شكرًا."
-        return (
-            f"{greeting} سأتابع طلبك الآن. يمكنني مساعدتك في اختيار الأثاث المطلوب، "
-            "ويمكن ترتيب التوصيل والتركيب حسب المنتجات والكمية والعنوان."
-        )
-
-    items: list[str] = []
-    if re.search(r"\bwork\s*stations?\b|\bworkstations?\b", normalized):
-        people_match = re.search(r"\bfor\s+(\d+)\s+people\b", normalized)
-        if people_match:
-            items.append(f"workstations for {people_match.group(1)} people")
-        else:
-            items.append("workstations")
-
-    if "storage" in normalized and re.search(r"\bcabinets?\b", normalized):
-        items.append("storage cabinets")
-    elif re.search(r"\bcabinets?\b", normalized):
-        items.append("cabinets")
-
-    if "mobile drawer" in normalized:
-        items.append("mobile drawers")
-    elif re.search(r"\bdrawers?\b", normalized):
-        items.append("drawers")
-
-    if re.search(r"\bchairs?\b", normalized):
-        items.append("chairs")
-
-    greeting = f"Thank you, {name}." if name else "Thank you."
-    item_text = _join_customer_facing_items(items)
-    if item_text:
-        response = f"{greeting} I can help with {item_text}."
-    else:
-        response = f"{greeting} I will continue with your request."
-
-    mentions_assembly = bool(
-        re.search(r"\b(?:assembly|assemble|installation|install)\b", normalized)
-    )
-    mentions_delivery = bool(re.search(r"\b(?:delivery|deliver)\b", normalized))
-    if mentions_assembly and mentions_delivery:
-        response += (
-            " Delivery and assembly can be arranged depending on the selected "
-            "items, quantity, and address."
-        )
-    elif mentions_assembly:
-        response += " Assembly can be arranged after the products are selected."
-    elif mentions_delivery:
-        response += " Delivery can be arranged after the products are selected."
-
-    response += (
-        " Please share any preferred size, color, or budget, and I will suggest "
-        "suitable options."
-    )
-    return response
 
 
 def _is_substantive_name_gate_request(text: str) -> bool:
@@ -6946,7 +6863,7 @@ async def process_message(
             text,
             language=str(conv.language),
             is_first_turn=is_first_turn,
-            customer_name=conv.customer_name,
+            customer_name=_known_customer_name_for_guards(),
         )
 
     def _deferred_product_media_for_response(
@@ -6976,26 +6893,41 @@ async def process_message(
             )
         return ()
 
-    name_gate_resume_request_text: str | None = None
     name_gate_resume_customer_name: str | None = None
 
-    def _apply_name_gate_resume_guard(text: str) -> str:
+    def _known_customer_name_for_guards() -> str:
         assert conv is not None
-        if not name_gate_resume_request_text:
-            return text
-        if not _response_asks_customer_name(text):
+        quote_details = _quote_customer_details_from_metadata(conv)
+        return (
+            _string_value(name_gate_resume_customer_name)
+            or _string_value(quote_details.get("name"))
+            or _string_value(conv.customer_name)
+        )
+
+    def _repair_closed_questions(text: str) -> str:
+        assert conv is not None
+        customer_name = _known_customer_name_for_guards()
+        quote_details = _quote_customer_details_from_metadata(conv)
+        delivery_address = _string_value(quote_details.get("address"))
+        if delivery_address and not _is_specific_delivery_address(delivery_address):
+            delivery_address = ""
+        result = apply_closed_question_guard(
+            text,
+            language=str(conv.language),
+            customer_name=customer_name,
+            company=quote_details.get("company"),
+            customer_type=quote_details.get("customer_type"),
+            delivery_address=delivery_address,
+        )
+        if not result.repaired:
             return text
 
         logger.warning(
-            "Repaired repeated name-gate prompt after customer name was captured "
-            "for conversation %s",
+            "Repaired closed customer question for conversation %s: %s",
             conv.id,
+            result.reason,
         )
-        return _name_gate_resume_repair_response(
-            customer_name=name_gate_resume_customer_name or conv.customer_name,
-            pending_request=name_gate_resume_request_text,
-            language=str(conv.language),
-        )
+        return result.text
 
     def _build_llm_response(
         result: Any,
@@ -7006,8 +6938,8 @@ async def process_message(
     ) -> LLMResponse:
         response_deps = response_deps or deps
         final_text = unmask_pii(result.output, pii_map)
+        final_text = _repair_closed_questions(final_text)
         final_text = _apply_first_turn_opening_guard(final_text)
-        final_text = _apply_name_gate_resume_guard(final_text)
         usage = result.usage()
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
@@ -7041,8 +6973,8 @@ async def process_message(
     ) -> LLMResponse:
         response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
+        final_text = _repair_closed_questions(final_text)
         final_text = _apply_first_turn_opening_guard(final_text)
-        final_text = _apply_name_gate_resume_guard(final_text)
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
                 conv,
@@ -7414,7 +7346,6 @@ async def process_message(
         captured_customer_name = _string_value(current_quote_customer_details["name"])
         pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
         if pending_name_gate_request:
-            name_gate_resume_request_text = pending_name_gate_request
             name_gate_resume_customer_name = captured_customer_name
             combined_text = pending_name_gate_request
             masked_text, pending_piis = mask_pii(combined_text)

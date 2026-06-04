@@ -2037,6 +2037,66 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_repairs_quote_detail_questions_when_details_are_known(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {
+        "quote_customer_details": {
+            "name": "Lili",
+            "company": "LLD",
+            "address": "1 dubay",
+        }
+    }
+    text = "Do you have ergonomic chair options?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Before I prepare the quotation, please share your company name and "
+        "delivery address."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    normalized = response.text.casefold()
+    assert "please share your company name" not in normalized
+    assert "already have your company or individual status" in normalized
+    assert "your delivery address" in normalized
+    assert "continue with your request" in normalized
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_name_only_reply_after_name_gate_does_not_escalate(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -2648,7 +2708,7 @@ async def test_process_message_bare_name_reply_resumes_pending_name_gate_request
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_bare_name_resume_repairs_duplicate_name_prompt(
+async def test_process_message_bare_name_resume_repairs_duplicate_name_prompt_generically(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -2722,9 +2782,67 @@ async def test_process_message_bare_name_resume_repairs_duplicate_name_prompt(
     assert "may i know your name" not in normalized
     assert "may i have your name" not in normalized
     assert "your name so i can address" not in normalized
-    assert "workstation" in normalized
-    assert "storage" in normalized
-    assert "assembly" in normalized
+    assert "already have your name" in normalized
+    assert "continue with your request" in normalized
+    assert "workstation" not in normalized
+    assert "storage" not in normalized
+    assert "assembly" not in normalized
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_repairs_name_question_whenever_name_is_known(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {}
+    text = "Do you have ergonomic chair options?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="Hello")]),
+        ModelResponse(parts=[TextPart(content="Hello, Lili. How can I help?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Sure, may I know your name so I can address you properly?"
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    normalized = response.text.casefold()
+    assert conv.customer_name == "Lili"
+    assert "may i know your name" not in normalized
+    assert "your name so i can address" not in normalized
+    assert "already have your name" in normalized
+    assert "continue with your request" in normalized
     assert mock_run.await_count == 1
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
