@@ -66,6 +66,21 @@ def _deps() -> tuple[
     return db, conv, embedding, zoho, redis, messaging, crm
 
 
+def _unknown_name_deps() -> tuple[
+    AsyncMock,
+    Conversation,
+    AsyncMock,
+    AsyncMock,
+    AsyncMock,
+    AsyncMock,
+    AsyncMock,
+]:
+    db, conv, embedding, zoho, redis, messaging, crm = _deps()
+    conv.customer_name = None
+    conv.metadata_ = {}
+    return db, conv, embedding, zoho, redis, messaging, crm
+
+
 async def _config(_db: object, key: str, default: str) -> str:
     return {
         "customer_facts_mode": "enforce",
@@ -235,6 +250,119 @@ async def test_process_message_customer_facts_enforce_persists_and_injects_conte
     trace = conv.metadata_["customer_facts"]["traces"][-1]
     assert trace["mode"] == "enforce"
     assert trace["accepted_count"] >= 4
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_customer_facts_name_gate_details_reply_resumes_pending_request(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+) -> None:
+    db, conv, embedding, zoho, redis, messaging, crm = _unknown_name_deps()
+    conv.metadata_ = {
+        engine_module.NAME_GATE_PENDING_REQUEST_KEY: {
+            "text": "Please recommend ergonomic chairs.",
+            "source": "first_turn_name_gate",
+        }
+    }
+    profile = CustomerProfile(canonical_phone=conv.phone)
+    profile.id = uuid.uuid4()
+    order = CustomerOrderMemory(
+        customer_profile_id=profile.id,
+        conversation_id=conv.id,
+        status="active",
+    )
+    order.id = uuid.uuid4()
+    context = CustomerFactsContext(
+        profile_lines=["- Name: Victor Memory Test"],
+        current_order_lines=[
+            "- Delivery address: Office 1905, JLT Dubai",
+            "- Customer type: individual",
+        ],
+        past_order_lines=[],
+        missing_quote_fields=[],
+    )
+
+    async def apply_side_effect(
+        _db: object,
+        *,
+        profile: CustomerProfile,
+        order: CustomerOrderMemory,
+        message: object,
+        facts: list[object],
+    ) -> object:
+        return SimpleNamespace(
+            accepted=list(facts),
+            proposed=[],
+            conflicts=[],
+            confirmation_required=[],
+        )
+
+    mock_build_history.return_value = [
+        ModelRequest(
+            parts=[UserPromptPart(content="Please recommend ergonomic chairs.")]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. May I know your name so I "
+                        "can address you properly?"
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.side_effect = _config
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Continuing the chair request.")
+
+    with (
+        patch.object(
+            engine_module,
+            "get_or_create_customer_profile",
+            AsyncMock(return_value=profile),
+        ),
+        patch.object(
+            engine_module,
+            "get_or_create_active_order",
+            AsyncMock(return_value=order),
+        ),
+        patch.object(
+            engine_module,
+            "apply_extracted_facts",
+            AsyncMock(side_effect=apply_side_effect),
+        ),
+        patch.object(
+            engine_module,
+            "build_customer_facts_context",
+            AsyncMock(return_value=context),
+        ),
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=(
+                "Victor Memory Test, individual, delivery address Office 1905, "
+                "JLT Dubai, email victor.memory.e2e@example.com, phone +79262810921."
+            ),
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+            crm_client=crm,
+        )
+
+    assert response.text == "Continuing the chair request."
+    assert response.model != "detail-capture"
+    assert conv.customer_name == "Victor Memory Test"
+    assert engine_module.NAME_GATE_PENDING_REQUEST_KEY not in conv.metadata_
+    mock_run.assert_awaited_once()
 
 
 @pytest.mark.asyncio

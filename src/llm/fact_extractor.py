@@ -128,6 +128,12 @@ _ASSISTANT_GREETING_PATTERN = re.compile(
     r"\s+(?:noor|siyyad|treejar|bot|assistant)\s*$",
     re.IGNORECASE,
 )
+_PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN = re.compile(
+    r"\b(?:need|needs|want|wants|would\s+like|looking\s+for|quote|quotation|"
+    r"chair|chairs|desk|desks|table|tables|workstation|workstations|sku|"
+    r"assembly|installation)\b",
+    re.IGNORECASE,
+)
 _QUOTE_ACCEPTANCE_PATTERNS = (
     re.compile(
         r"\b(?:i\s+agree|agreed|agree|accepted|approve|approved|go\s+ahead"
@@ -830,6 +836,10 @@ def _clean_person_name(value: str) -> str | None:
 def _looks_like_address(value: str) -> bool:
     lowered = value.lower()
     if EMAIL_PATTERN.search(value) or PHONE_PATTERN.search(value):
+        return False
+    if _GENERIC_SPACED_SKU_PATTERN.search(value):
+        return False
+    if _PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN.search(value):
         return False
     normalized = re.sub(r"[\W_]+", " ", lowered).strip()
     if normalized in {"dubai", "uae", "united arab emirates"}:

@@ -7954,7 +7954,7 @@ async def process_message(
         and pending_quote_brief_confirmation
     ):
         await _clear_pending_quote_brief_confirmation(db, conv)
-    if customer_name_was_unknown and pending_name_gate_request:
+    if pending_name_gate_request:
         pending_reply_name = _extract_pending_name_gate_reply_name(
             combined_text,
             current_quote_customer_details,

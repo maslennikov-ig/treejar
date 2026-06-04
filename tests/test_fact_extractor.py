@@ -104,6 +104,20 @@ async def test_deterministic_does_not_treat_plain_city_as_specific_address() -> 
 
 
 @pytest.mark.asyncio
+async def test_deterministic_does_not_treat_product_delivery_need_as_address() -> None:
+    result = await extract_customer_facts(
+        "Hi Noor, I need 2 CH 616 chairs with delivery and assembly.",
+        use_fast_model=False,
+    )
+
+    assert _facts_by_key(result, "delivery.address") == []
+    items = _facts_by_key(result, "order.item")
+    assert {"sku": "CH 616", "quantity": 2} in [item.value for item in items]
+    assert _fact_by_key(result, "order.delivery_required").value is True
+    assert _fact_by_key(result, "order.assembly_required").value is True
+
+
+@pytest.mark.asyncio
 async def test_deterministic_extracts_sku_quantity_and_plain_quantity() -> None:
     result = await extract_customer_facts(
         "same as last time but 8 chairs. Also I need 6 CH 616",
