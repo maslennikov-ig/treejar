@@ -7875,7 +7875,11 @@ async def process_message(
                 "name": bare_name,
             }
 
-    if is_first_turn and customer_name_was_unknown:
+    if (
+        is_first_turn
+        and customer_name_was_unknown
+        and not _string_value(current_quote_customer_details.get("name"))
+    ):
         await _store_name_gate_pending_request(db, conv, combined_text)
         response = _build_static_response(
             "Hello",
@@ -7925,6 +7929,20 @@ async def process_message(
             combined_text = pending_name_gate_request
             masked_text, pending_piis = mask_pii(combined_text)
             pii_map.update(pending_piis)
+            resumed_quote_customer_details = _extract_quote_customer_details(
+                combined_text
+            )
+            if resumed_quote_customer_details:
+                if not _string_value(resumed_quote_customer_details.get("name")):
+                    resumed_quote_customer_details = {
+                        **resumed_quote_customer_details,
+                        "name": captured_customer_name,
+                    }
+                await _store_extracted_quote_customer_details(
+                    db,
+                    conv,
+                    resumed_quote_customer_details,
+                )
             pending_user_entry = f"user: {masked_text}"
             if pending_user_entry not in recent_history:
                 recent_history.append(pending_user_entry)
@@ -7941,7 +7959,7 @@ async def process_message(
                     "again, and do not ask what they need again.",
                 ),
             )
-            current_quote_customer_details = {}
+            current_quote_customer_details = resumed_quote_customer_details
             current_quote_intent_frame = _quote_intent_frame_from_metadata(
                 conv
             ) or _quote_intent_frame_from_text(combined_text)
