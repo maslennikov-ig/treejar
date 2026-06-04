@@ -122,6 +122,24 @@ async def test_deterministic_extracts_sku_quantity_and_plain_quantity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_deterministic_does_not_treat_spaced_sku_number_as_plain_quantity() -> (
+    None
+):
+    result = await extract_customer_facts(
+        "Hi Noor, I need 2 CH 616 chairs with delivery and assembly. "
+        "My name is Victor, individual, delivery address Office 1905, JLT Dubai, "
+        "email victor.memory.e2e@example.com.",
+        use_fast_model=False,
+    )
+
+    items = _facts_by_key(result, "order.item")
+    assert {"sku": "CH 616", "quantity": 2} in [item.value for item in items]
+    assert {"description": "chairs", "quantity": 616} not in [
+        item.value for item in items
+    ]
+
+
+@pytest.mark.asyncio
 async def test_deterministic_extracts_past_order_query() -> None:
     result = await extract_customer_facts(
         "What did I order last time?",

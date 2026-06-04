@@ -57,6 +57,21 @@ _PLAIN_QUANTITY_PATTERN = re.compile(
     r"(?P<description>chairs?|desks?|tables?|workstations?|pods?|items?)\b",
     re.IGNORECASE,
 )
+_GENERIC_SPACED_SKU_PATTERN = re.compile(r"\b[A-Z]{1,4}\s*[- ]\s*\d{2,8}\b")
+_SKU_NUMERIC_PREFIX_STOPWORDS = frozenset(
+    {
+        "and",
+        "buy",
+        "for",
+        "from",
+        "have",
+        "like",
+        "need",
+        "take",
+        "want",
+        "with",
+    }
+)
 _BUDGET_PATTERN = re.compile(
     r"\b(?:budget\s*(?P<q1>under|below|up\s+to|around|about|approx(?:imately)?)?"
     r"|(?P<q2>under|below|up\s+to|around|about|approx(?:imately)?))"
@@ -521,6 +536,8 @@ def _extract_order_item_facts(
         )
 
     for match in _PLAIN_QUANTITY_PATTERN.finditer(message_text):
+        if _plain_quantity_is_sku_numeric_component(message_text, match):
+            continue
         facts.append(
             _fact(
                 scope="current_order",
@@ -536,6 +553,27 @@ def _extract_order_item_facts(
         )
 
     return facts
+
+
+def _plain_quantity_is_sku_numeric_component(
+    message_text: str,
+    match: re.Match[str],
+) -> bool:
+    prefix = message_text[max(0, match.start() - 12) : match.start()]
+    prefix_match = re.search(
+        r"(?<![A-Z])(?P<prefix>[A-Z]{1,4})\s*[- ]\s*$",
+        prefix,
+        flags=re.IGNORECASE,
+    )
+    if prefix_match is None:
+        return False
+    if prefix_match.group("prefix").casefold() in _SKU_NUMERIC_PREFIX_STOPWORDS:
+        return False
+
+    window = message_text[
+        max(0, match.start() - 12) : min(len(message_text), match.end() + 12)
+    ]
+    return _GENERIC_SPACED_SKU_PATTERN.search(window) is not None
 
 
 def _extract_preference_facts(

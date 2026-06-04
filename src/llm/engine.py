@@ -123,6 +123,7 @@ NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(r"\s*\[smoke:[^\]]+\]\s*", re.I)
+PII_PLACEHOLDER_RE = re.compile(r"\[PII-[0-9A-Fa-f]+\]")
 BARE_NAME_GATE_REPLY_RE = re.compile(
     r"[^\W\d_]+(?:[ '\-][^\W\d_]+){0,3}",
     re.UNICODE,
@@ -1991,13 +1992,16 @@ def is_exact_quote_request(text: str) -> bool:
 
 def _best_selection_sku(fragment: str) -> str | None:
     fragment = _normalize_sku_homoglyphs(fragment)
-    email_spans = [
+    excluded_spans = [
         (match.start(), match.end()) for match in EMAIL_PATTERN.finditer(fragment)
     ]
+    excluded_spans.extend(
+        (match.start(), match.end()) for match in PII_PLACEHOLDER_RE.finditer(fragment)
+    )
     candidates: list[str] = []
     for pattern in (_SELECTION_SKU_RE, _SKU_SIGNAL_RE):
         for match in pattern.finditer(fragment):
-            if _match_overlaps_spans(match, email_spans):
+            if _match_overlaps_spans(match, excluded_spans):
                 continue
             candidate = match.group(0)
             if _looks_like_price_phrase_sku_match(fragment, match):

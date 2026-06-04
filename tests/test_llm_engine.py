@@ -6135,6 +6135,17 @@ def test_extract_purchase_selection_keeps_spaced_sku_number_with_details() -> No
     assert [(item.quantity, item.sku) for item in selection.items] == [(2, "CH-616")]
 
 
+def test_extract_purchase_selection_ignores_pii_placeholder_as_sku() -> None:
+    selection = engine_module._extract_purchase_selection(
+        "Hi Noor, I need 2 CH 616 chairs with delivery and assembly. "
+        "My name is Victor, individual, delivery address Office 1905, JLT Dubai, "
+        "email [PII-0f77]."
+    )
+
+    assert selection is not None
+    assert [(item.quantity, item.sku) for item in selection.items] == [(2, "CH-616")]
+
+
 def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choice() -> (
     None
 ):
