@@ -137,6 +137,8 @@ async def test_deterministic_does_not_treat_spaced_sku_number_as_plain_quantity(
     assert {"description": "chairs", "quantity": 616} not in [
         item.value for item in items
     ]
+    names = _facts_by_key(result, "customer.name")
+    assert [name.value for name in names] == ["Victor"]
 
 
 @pytest.mark.asyncio

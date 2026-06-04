@@ -123,6 +123,11 @@ _PAST_ORDER_REUSE_PATTERN = re.compile(
     r"|like\s+last\s+time)\b",
     re.IGNORECASE,
 )
+_ASSISTANT_GREETING_PATTERN = re.compile(
+    r"^\s*(?:hi|hello|hey|dear|good\s+morning|good\s+afternoon|good\s+evening)"
+    r"\s+(?:noor|siyyad|treejar|bot|assistant)\s*$",
+    re.IGNORECASE,
+)
 _QUOTE_ACCEPTANCE_PATTERNS = (
     re.compile(
         r"\b(?:i\s+agree|agreed|agree|accepted|approve|approved|go\s+ahead"
@@ -768,6 +773,8 @@ def _compact_name_part_candidate(value: str) -> str | None:
     candidates = [segment.strip() for segment in re.split(r"[.!?]", value)]
     candidates.append(value.strip())
     for candidate in reversed(candidates):
+        if _ASSISTANT_GREETING_PATTERN.fullmatch(candidate):
+            continue
         name = _clean_person_name(candidate)
         if name and _looks_like_person_name(name):
             return name
