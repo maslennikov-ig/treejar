@@ -2987,8 +2987,53 @@ def _product_display_name(product: Any) -> str:
     return str(sku or "Selected item")
 
 
+def _missing_quote_details_for_selection_confirmation(
+    quote_details: Mapping[str, str] | None,
+    *,
+    customer_name: str | None,
+) -> list[str]:
+    details = dict(quote_details or {})
+    name = details.get("name") or _string_value(customer_name)
+    missing: list[str] = []
+    if not _string_value(name):
+        missing.append("full name")
+    if not _string_value(
+        details.get("company")
+    ) and not _is_explicit_individual_customer(details):
+        missing.append("company name, or confirm you are buying as an individual")
+    if not _string_value(details.get("email")):
+        missing.append("email")
+    if not _is_specific_delivery_address(details.get("address")):
+        missing.append("specific delivery address")
+    return missing
+
+
+def _selection_confirmation_quote_prompt(
+    *,
+    quote_details: Mapping[str, str] | None,
+    customer_name: str | None,
+) -> str:
+    missing = _missing_quote_details_for_selection_confirmation(
+        quote_details,
+        customer_name=customer_name,
+    )
+    if not missing:
+        return (
+            "Would you like me to prepare a formal quotation for these selected "
+            "items using the details you already shared?"
+        )
+    return (
+        "Would you like me to prepare a formal quotation for these selected "
+        "items? I can use this WhatsApp number for the draft. To make the PDF "
+        f"complete, please share: {'; '.join(missing)}."
+    )
+
+
 def _build_purchase_selection_confirmation_text(
     resolution: PurchaseSelectionResolution,
+    *,
+    quote_details: Mapping[str, str] | None = None,
+    customer_name: str | None = None,
 ) -> str:
     lines: list[str] = []
     total = 0.0
@@ -3054,11 +3099,10 @@ def _build_purchase_selection_confirmation_text(
         )
     elif resolution.resolved:
         lines.append(
-            "Would you like me to prepare a formal quotation for these selected "
-            "items? I can use this WhatsApp number for the draft. To make the PDF "
-            "complete, please share any details you want shown on it: full name, "
-            "company name, email, delivery address, and a different phone number "
-            "if needed."
+            _selection_confirmation_quote_prompt(
+                quote_details=quote_details,
+                customer_name=customer_name,
+            )
         )
     else:
         lines.append(
@@ -3468,6 +3512,7 @@ def _looks_like_natural_delivery_address(value: str) -> bool:
 def _extract_natural_delivery_address(text: str) -> str:
     pattern = re.compile(
         r"\b(?:delivered\s+to|deliver\s+to|delivery\s+to|with\s+delivery\s+to|"
+        r"delivery\s+address(?:\s+is)?|"
         r"ship\s+to|shipped\s+to|shipping\s+to|send\s+to)\s+"
         r"(?P<value>.+?)"
         r"(?=$|[.!?;]\s|\b(?:i\s+am|i'm|we\s+are|company|name|email|phone)\b)",
@@ -8343,7 +8388,11 @@ async def process_message(
             await _store_pending_quote_selection(db, conv, resolution)
             if pending_reference_selection is not None:
                 await _clear_pending_product_reference_quantity(db, conv)
-            confirmation_text = _build_purchase_selection_confirmation_text(resolution)
+            confirmation_text = _build_purchase_selection_confirmation_text(
+                resolution,
+                quote_details=_quote_customer_details_from_metadata(conv),
+                customer_name=conv.customer_name,
+            )
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 confirmation_text,

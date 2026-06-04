@@ -2276,6 +2276,11 @@ def test_extract_quote_customer_details_accepts_natural_company_and_address() ->
             "Please prepare a quotation and ship to Office 1204, Business Bay, Dubai.",
             "Office 1204, Business Bay, Dubai",
         ),
+        (
+            "My name is Victor, individual, delivery address Office 1905, JLT Dubai, "
+            "email victor.memory.e2e@example.com.",
+            "Office 1905, JLT Dubai",
+        ),
     ],
 )
 def test_extract_quote_customer_details_accepts_natural_delivery_address(
@@ -6641,6 +6646,10 @@ async def test_process_message_ch616_spaced_sku_with_details_uses_leading_quanti
     assert response.model == "mock-model|selection-confirmation"
     assert "Quantity: 2" in response.text
     assert "616 x chairs" not in response.text
+    assert "please share any details" not in response.text.lower()
+    assert "full name" not in response.text.lower()
+    assert "delivery address" not in response.text.lower()
+    assert "using the details" in response.text.lower()
     assert response.deferred_product_media == ()
     assert conv.escalation_status == "none"
     pending_quote = conv.metadata_["pending_quote_selection"]
