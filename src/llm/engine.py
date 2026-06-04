@@ -3334,6 +3334,93 @@ def _extract_bare_name_gate_reply(text: str) -> str:
     return stripped
 
 
+def _is_name_gate_customer_detail_remainder(value: str) -> bool:
+    remainder = " ".join(value.strip(" \t\r\n.,;:!?-").split())
+    if not remainder:
+        return False
+    if _has_product_or_quote_routing_signal(remainder):
+        return False
+    return bool(_extract_quote_customer_details(remainder))
+
+
+def _extract_pending_name_gate_reply_name(
+    text: str,
+    details: Mapping[str, str],
+) -> str:
+    existing_name = _string_value(details.get("name"))
+    if existing_name:
+        return existing_name
+
+    stripped = _strip_synthetic_test_marker(text)
+    stripped = " ".join(stripped.strip(" \t\r\n.,;:!?").split())
+    if not stripped:
+        return ""
+
+    split_parts = [
+        part.strip(" \t\r\n.,;:!?-")
+        for part in re.split(r"[,;\n/]+", stripped, maxsplit=1)
+        if part.strip(" \t\r\n.,;:!?-")
+    ]
+    if len(split_parts) == 2:
+        candidate = _extract_bare_name_gate_reply(split_parts[0])
+        if candidate and _is_name_gate_customer_detail_remainder(split_parts[1]):
+            return candidate
+
+    customer_type_suffix = re.search(
+        r"\b(?:individual|personal|private customer|for myself)\s*$",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    if customer_type_suffix:
+        candidate_text = stripped[: customer_type_suffix.start()]
+        candidate = _extract_bare_name_gate_reply(candidate_text)
+        if candidate:
+            return candidate
+
+    if not _extract_quote_customer_details(stripped):
+        return _extract_bare_name_gate_reply(stripped)
+
+    return ""
+
+
+def _is_name_gate_completion_reply(
+    text: str,
+    details: Mapping[str, str],
+    *,
+    pending_request_exists: bool,
+) -> bool:
+    if _is_name_only_customer_detail_reply(text, details):
+        return True
+    if not pending_request_exists:
+        return False
+
+    name = _string_value(details.get("name"))
+    if not name:
+        return False
+
+    stripped = _strip_synthetic_test_marker(text)
+    stripped = " ".join(stripped.strip(" \t\r\n.,;:!?").split())
+    if not stripped:
+        return False
+
+    if stripped.casefold().startswith(name.casefold()):
+        remainder = stripped[len(name) :]
+        return _is_name_gate_customer_detail_remainder(remainder)
+
+    for pattern in NATURAL_NAME_PATTERNS:
+        match = pattern.search(stripped)
+        if not match:
+            continue
+        captured = _clean_natural_customer_name(match.group("value"))
+        if captured.casefold() != name.casefold():
+            continue
+        remainder = stripped[match.end() :]
+        if _is_name_gate_customer_detail_remainder(remainder):
+            return True
+
+    return False
+
+
 def _is_name_only_customer_detail_reply(
     text: str,
     details: Mapping[str, str],
@@ -7868,11 +7955,14 @@ async def process_message(
     ):
         await _clear_pending_quote_brief_confirmation(db, conv)
     if customer_name_was_unknown and pending_name_gate_request:
-        bare_name = _extract_bare_name_gate_reply(combined_text)
-        if bare_name and not current_quote_customer_details.get("name"):
+        pending_reply_name = _extract_pending_name_gate_reply_name(
+            combined_text,
+            current_quote_customer_details,
+        )
+        if pending_reply_name and not current_quote_customer_details.get("name"):
             current_quote_customer_details = {
                 **current_quote_customer_details,
-                "name": bare_name,
+                "name": pending_reply_name,
             }
 
     if (
@@ -7918,9 +8008,10 @@ async def process_message(
     if current_sales_memory_updates:
         await _store_sales_memory_updates(db, conv, current_sales_memory_updates)
 
-    if _is_name_only_customer_detail_reply(
+    if _is_name_gate_completion_reply(
         combined_text,
         current_quote_customer_details,
+        pending_request_exists=bool(pending_name_gate_request),
     ):
         captured_customer_name = _string_value(current_quote_customer_details["name"])
         pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
@@ -7959,7 +8050,7 @@ async def process_message(
                     "again, and do not ask what they need again.",
                 ),
             )
-            current_quote_customer_details = resumed_quote_customer_details
+            current_quote_customer_details = _quote_customer_details_from_metadata(conv)
             current_quote_intent_frame = _quote_intent_frame_from_metadata(
                 conv
             ) or _quote_intent_frame_from_text(combined_text)

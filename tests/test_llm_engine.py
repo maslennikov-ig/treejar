@@ -6576,6 +6576,111 @@ async def test_process_message_ch616_selection_confirms_without_manager_handoff(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_name_gate_resume_accepts_name_plus_customer_type(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.language = "en"
+    pending_text = (
+        "Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, "
+        "JLT Dubai, email victor.pii.e2e@example.com, phone +79262810921. "
+        "Please confirm these selected items."
+    )
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "Victor PII Test, individual"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH-616",
+        zoho_item_id="zoho-ch-616",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        description_en="Skyland Operative Chair CH 616 NEW black",
+        price=199.0,
+        currency="AED",
+        stock=12,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    execute_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": "CH-616",
+        "stock_on_hand": 12,
+        "rate": 199.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "Quantity: 2" in response.text
+    assert conv.customer_name == "Victor PII Test"
+    assert conv.escalation_status == "none"
+    assert conv.metadata_["quote_customer_details"] == {
+        "email": "victor.pii.e2e@example.com",
+        "phone": "+79262810921",
+        "name": "Victor PII Test",
+        "address": "Office 1905, JLT Dubai",
+        "customer_type": "individual",
+    }
+    assert "name_gate_pending_request" not in conv.metadata_
+    mock_notify_manager.assert_not_awaited()
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_ch616_spaced_sku_with_details_uses_leading_quantity(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
