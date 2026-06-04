@@ -408,6 +408,20 @@ _SELECTION_MODEL_PREFIX_STOPWORDS = frozenset(
         "xten",
     }
 )
+_SKU_NUMERIC_PREFIX_STOPWORDS = frozenset(
+    {
+        "and",
+        "buy",
+        "for",
+        "from",
+        "have",
+        "like",
+        "need",
+        "take",
+        "want",
+        "with",
+    }
+)
 _SKU_FOLLOWING_CURRENCY_RE = re.compile(
     r"\s*(?:aed|dhs?|dirhams?|dirham|درهم|د\.إ)\b",
     re.IGNORECASE,
@@ -1147,6 +1161,24 @@ def _looks_like_model_number_quantity(text: str, match: re.Match[str]) -> bool:
     if not tokens:
         return False
     return tokens[-1] in _SELECTION_MODEL_PREFIX_STOPWORDS
+
+
+def _looks_like_sku_numeric_component(text: str, match: re.Match[str]) -> bool:
+    prefix = _normalize_sku_homoglyphs(text[max(0, match.start() - 12) : match.start()])
+    prefix_match = re.search(
+        r"(?<![A-Z])(?P<prefix>[A-Z]{1,4})\s*[- ]\s*$",
+        prefix,
+        flags=re.IGNORECASE,
+    )
+    if prefix_match is None:
+        return False
+    if prefix_match.group("prefix").casefold() in _SKU_NUMERIC_PREFIX_STOPWORDS:
+        return False
+
+    window = _normalize_sku_homoglyphs(
+        text[max(0, match.start() - 12) : min(len(text), match.end() + 12)]
+    )
+    return _SKU_SIGNAL_RE.search(window) is not None
 
 
 def _extract_bare_quantity_sku_candidate(text: str) -> ExactQuoteCandidate | None:
@@ -1959,9 +1991,14 @@ def is_exact_quote_request(text: str) -> bool:
 
 def _best_selection_sku(fragment: str) -> str | None:
     fragment = _normalize_sku_homoglyphs(fragment)
+    email_spans = [
+        (match.start(), match.end()) for match in EMAIL_PATTERN.finditer(fragment)
+    ]
     candidates: list[str] = []
     for pattern in (_SELECTION_SKU_RE, _SKU_SIGNAL_RE):
         for match in pattern.finditer(fragment):
+            if _match_overlaps_spans(match, email_spans):
+                continue
             candidate = match.group(0)
             if _looks_like_price_phrase_sku_match(fragment, match):
                 continue
@@ -1975,6 +2012,13 @@ def _best_selection_sku(fragment: str) -> str | None:
         if any(char.isdigit() for char in candidate):
             return _canonicalize_sku_signal(candidate)
     return _canonicalize_sku_signal(candidates[-1])
+
+
+def _match_overlaps_spans(
+    match: re.Match[str],
+    spans: Iterable[tuple[int, int]],
+) -> bool:
+    return any(match.start() < end and match.end() > start for start, end in spans)
 
 
 def _extract_stated_price(fragment: str) -> tuple[float | None, str | None]:
@@ -2008,14 +2052,19 @@ def _extract_purchase_selection(
     if any(blocker in normalized for blocker in _PURCHASE_SELECTION_BLOCKERS):
         return None
 
-    quantity_matches = list(_SELECTION_QUANTITY_START_RE.finditer(text))
+    quantity_matches = [
+        match
+        for match in _SELECTION_QUANTITY_START_RE.finditer(text)
+        if not (
+            _looks_like_model_number_quantity(text, match)
+            or _looks_like_sku_numeric_component(text, match)
+        )
+    ]
     if not quantity_matches:
         return None
 
     items: list[PurchaseSelectionItem] = []
     for index, match in enumerate(quantity_matches):
-        if _looks_like_model_number_quantity(text, match):
-            continue
         start = match.start()
         end = (
             quantity_matches[index + 1].start()
