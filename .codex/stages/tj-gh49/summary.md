@@ -1,11 +1,10 @@
 # Stage tj-gh49: GitHub #48 Name Gate Duplicate Prompt
 
 Updated: 2026-06-04
-Status: local implementation complete with fundamental closed-question guard; delivery pending
-Branch: `codex/tj-gh49-name-gate-duplicate-fix`
+Status: delivered, production E2E verified, GitHub #48 closed
+Branch: `codex/tj-gh49-name-gate-duplicate-fix` -> `main`
 Base: fresh `origin/main` at `ac78d6a3b1f17d8ecd03a38201ddd2ab54b44933`
-Beads: `tj-gh49`, `tj-gh49.1` closed locally, `tj-gh49.2` open for delivery,
-`tj-gh49.3` closed locally for the closed-question guard refactor
+Beads: `tj-gh49`, `tj-gh49.1`, `tj-gh49.2`, and `tj-gh49.3` closed
 
 docs-reviewed: updated - project index now names `src/llm/closed_question_guard.py`
 as the shared closed-question repair module.
@@ -56,9 +55,29 @@ Passed:
 Local implementation closeout passed. Remaining work is external delivery and
 production evidence under `tj-gh49.2`.
 
-Remaining before GitHub closure:
+## Delivery
 
-- Beads `tj-gh49.2`: merge/deploy approval;
-- production smoke;
-- synthetic/live evidence for the #48 flow;
-- comment on and close GitHub #48 only after production evidence.
+Delivered:
+
+- Fast-forwarded `main` to
+  `5bd91b9013cedcc7d3101f7a6c64d2c71b35ab7f`.
+- Pushed `main` to GitHub.
+- GitHub Actions deploy run `26942597892` passed.
+- `/opt/noor/.release-sha` on the server matches
+  `5bd91b9013cedcc7d3101f7a6c64d2c71b35ab7f`.
+- Production smoke passed:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  -> `8 passed, 0 failed`.
+
+Production E2E:
+
+- Synthetic chat id:
+  `+79262810921-tjgh49-20260604092424`.
+- Conversation id: `25e10461-0121-4bc2-b259-df637d0ac64a`.
+- Flow: customer asks for 4-person workstation, storage cabinets, and assembly;
+  Noor asks for name; customer replies `Lili`; Noor stores `customer_name=Lili`
+  and answers the original workstation/storage/assembly request.
+- Result: no repeated name question, no generic opener, no pending escalation,
+  `escalation_status=none`.
+
+GitHub #48 was commented with this evidence and closed.
