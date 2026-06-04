@@ -7,30 +7,30 @@ Current branch: `main`
 - Current stage: `tj-memory` for Customer Facts and Order Memory Layer.
 - Spec/plan: `docs/specs/customer-facts-layer.md` and
   `docs/superpowers/plans/2026-06-04-customer-facts-layer.md`.
-- Production runtime: `e4e7ecff52d71434e5f0c179bc166c9e325f05bc`,
-  deploy run `26956771039`, smoke `8 passed, 0 failed`.
-- Customer facts v1 is deployed but globally gated; `tj-memory.7` tracks the
-  remaining decision to enable `customer_facts_mode=shadow|enforce`.
+- Production runtime: `e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`,
+  deploy run `26964467543`, smoke `8 passed, 0 failed`.
+- Customer facts v1 is globally enabled in production:
+  `customer_facts_mode=enforce`, trace enabled, fast extractor enabled.
 - PII masking is disabled by default in production because it was not a client
   requirement and blocked extraction of phones/emails/facts; opt-in remains via
   `PII_MASKING_ENABLED=true`.
-- Final PII/default-off E2E passed:
-  `20bf6801-e24a-4474-a015-2c4be31bc50e` and
-  `f9e669ef-b46e-43cf-9096-bd0e50167819`. Noor kept `2 x CH 616`, saved
-  name/email/phone/address/customer type, created no escalation, consumed
-  name-gate pending request, and stored no `[PII-...]` placeholders.
+- Final customer facts enforce E2E passed:
+  `70838bd7-8f4c-4ee0-8a4a-a0dd5ab92d7c` and
+  `89d614de-cd72-412c-9964-9554ed995ebc`. Noor kept `2 x CH 616`, saved
+  name/email/phone/address/customer type, consumed name-gate pending request,
+  created no escalation, and produced fact traces with `conflict_count=0`.
 - Synthetic E2E conversations were closed/resolved after readback; the real
   unsuffixed `+79262810921` thread was not touched.
 - Production still runs `dialogue_kernel_mode=enforce` only for
   `dialogue_kernel_enforced_flows=product_selection`.
-- Evidence: `.codex/stages/tj-memory/summary.md`,
-  `.codex/stages/tj-memory/artifacts/tj-memory.7-delivery-e2e.md`, and
-  `.codex/stages/tj-memory/artifacts/tj-memory.10-delivery-e2e.md`.
+- Evidence: `tj-memory` summary plus artifacts
+  `tj-memory.7-global-enable-e2e.md`, `tj-memory.7-delivery-e2e.md`, and
+  `tj-memory.10-delivery-e2e.md`.
 
 ## Next recommended
-Next stage id: `tj-memory`.
-Recommended action: decide whether to enable `customer_facts_mode=shadow` first
-or move selected flows to `enforce` after reviewing E2E evidence.
+Next stage id: choose from the next GitHub issue or Wazzup follow-up work.
+Recommended action: monitor real customer conversations for customer facts
+trace anomalies; rollback is config-only by setting `customer_facts_mode=disabled`.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage. Continue from `/home/me/code/treejar`; read repo

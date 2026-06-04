@@ -1,7 +1,7 @@
 # Stage tj-memory: Customer Facts And Order Memory Layer
 
 Updated: 2026-06-04
-Status: deployed; production E2E passed; rollout config gated; PII masking disabled by default
+Status: deployed; customer facts enforce enabled; production E2E passed; PII masking disabled by default
 Branch: `main`
 Base: `origin/main` at `d49abcfc0606102b2098880245723e6fda999193`
 Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.10`
@@ -25,9 +25,9 @@ and past orders, and avoids re-asking or losing already-provided facts.
 - GitHub #48/tj-gh49 is closed and delivered.
 - Production still runs the dialogue kernel in enforce mode only for
   `product_selection`.
-- Customer facts mode is deployed and config-gated. Production E2E passed with
-  temporary `customer_facts_mode=enforce`; after the test, the override was
-  deleted and the effective prod value returned to default `disabled`.
+- Customer facts mode is globally enabled in production:
+  `customer_facts_mode=enforce`, `customer_facts_trace_enabled=true`, and
+  `customer_facts_fast_extractor_enabled=true`.
 - Implemented DB models/migration, memory service, deterministic/fast extractor,
   engine prompt integration, past-order answer path, quotation snapshot sync,
   source message id propagation, and savepoint-backed fail-open handling.
@@ -45,6 +45,10 @@ and past orders, and avoids re-asking or losing already-provided facts.
   name-gate replies with extra customer details such as
   `Victor PII Test, individual` resume the stored request instead of being
   treated as a generic detail update.
+- Global customer facts enforce rollout passed after two rollout blockers were
+  fixed: product delivery/assembly requests no longer become delivery addresses,
+  and name-gate replies with extra customer details now consume the pending
+  request before generic detail-capture.
 
 ## Decisions
 
@@ -127,9 +131,31 @@ PII masking default-off delivery checkpoint:
 - Synthetic E2E conversations from this delivery were closed/resolved after
   readback. The real unsuffixed test phone thread was not mutated.
 
+Customer facts enforce rollout checkpoint:
+
+- Commit delivered to `main`: `e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`.
+- GitHub Actions deploy run `26964467543` succeeded; production
+  `/opt/noor/.release-sha` is
+  `e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`.
+- Production config now has `customer_facts_mode=enforce`,
+  `customer_facts_trace_enabled=true`, and
+  `customer_facts_fast_extractor_enabled=true`.
+- `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -
+  8 passed, 0 failed.
+- Final E2E scenario 1:
+  `+79262810921#tj-memory-enforce-final-all-20260604162026`, conversation
+  `70838bd7-8f4c-4ee0-8a4a-a0dd5ab92d7c`; first message included SKU,
+  quantity, name, individual status, address, email, and phone; Noor returned
+  `selection-confirmation`, saved all details, kept `2 x CH 616 black`, had
+  `conflict_count=0`, no escalation, and no `[PII-...]` placeholders.
+- Final E2E scenario 2:
+  `+79262810921#tj-memory-enforce-final-resume-20260604162026`, conversation
+  `89d614de-cd72-412c-9964-9554ed995ebc`; first message triggered
+  `name-gate`, second message provided name/details, Noor consumed
+  `name_gate_pending_request`, resumed the original product request, saved
+  `2 x CH 616 black`, had `conflict_count=0`, no escalation, and no
+  `[PII-...]` placeholders.
+
 ## Explicit Defers
 
 - `tj-gh21` remains blocked on approved Wazzup WABA EN/AR templates.
-- Global production `customer_facts_mode=shadow|enforce` remains a separate
-  config decision. The deployed code was verified under temporary enforce and
-  then restored to default disabled.
