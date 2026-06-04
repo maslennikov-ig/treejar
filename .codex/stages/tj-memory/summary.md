@@ -1,15 +1,18 @@
 # Stage tj-memory: Customer Facts And Order Memory Layer
 
 Updated: 2026-06-04
-Status: foundation implemented after review hardening; rollout/evidence pending
-Branch: `codex/tj-memory-customer-facts-layer`
+Status: deployed; production E2E passed under temporary enforce; rollout config gated
+Branch: `main`
 Base: `origin/main` at `d49abcfc0606102b2098880245723e6fda999193`
-Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.7`
+Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.8`
 
-docs-reviewed: updated - architecture spec, plan, project index, and stage
-artifacts cover the new memory layer.
+docs-reviewed: updated - architecture spec, plan, stage artifacts, and handoff
+cover the delivered memory layer and production E2E evidence.
 graph-reviewed: no-change-needed - Graphify is not configured; no
 `graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
+project-index: reviewed-no-change - this closeout changed behavior and rollout
+evidence, not stable entrypoints, directories, integrations, or verification
+commands.
 
 ## Goal
 
@@ -22,14 +25,18 @@ and past orders, and avoids re-asking or losing already-provided facts.
 - GitHub #48/tj-gh49 is closed and delivered.
 - Production still runs the dialogue kernel in enforce mode only for
   `product_selection`.
-- Customer facts mode defaults to `disabled`; no customer-visible production
-  behavior changes until config is explicitly enabled.
+- Customer facts mode is deployed and config-gated. Production E2E passed with
+  temporary `customer_facts_mode=enforce`; after the test, the override was
+  deleted and the effective prod value returned to default `disabled`.
 - Implemented DB models/migration, memory service, deterministic/fast extractor,
   engine prompt integration, past-order answer path, quotation snapshot sync,
   source message id propagation, and savepoint-backed fail-open handling.
 - Review hardening is applied: current-order `individual/company` satisfies the
   quote details gate, price objections stay non-terminal, and optional memory
   writes do not reuse a failed DB transaction.
+- Production E2E hotfixes are applied: `2 CH 616 chairs` keeps quantity `2`,
+  ignores PII placeholders as SKU candidates, does not repeat already supplied
+  quote details, and does not store `Hi Noor` as a customer name fact.
 
 ## Decisions
 
@@ -52,7 +59,7 @@ and past orders, and avoids re-asking or losing already-provided facts.
 | D | `tj-memory.4` | Order lifecycle | local | service + engine quotation sync | B interface | service/engine tests | sequential | Complete enough for v1 |
 | E | `tj-memory.5` | Engine/prompt integration | orchestrator | `src/llm/engine.py`, prompt/context tests | B+C+D | targeted LLM tests | sequential | Complete for disabled/shadow/enforce v1 |
 | F | `tj-memory.6` | Regression/eval suite | local | focused tests | C+E | targeted tests | sequential | Focused coverage added; broad replay remains rollout work |
-| G | `tj-memory.7` | Rollout and production evidence | orchestrator/deploy specialist | config/artifacts | full green | smoke/E2E | sequential final | Pending explicit deploy/config decision |
+| G | `tj-memory.7` | Rollout and production evidence | orchestrator/deploy specialist | config/artifacts | full green | smoke/E2E | sequential final | Production evidence captured; global enable remains an explicit config decision |
 
 ## Verification
 
@@ -69,10 +76,25 @@ Passed for this implementation checkpoint:
 - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short` - 1271 passed, 19 skipped
 - `scripts/orchestration/run_process_verification.sh`
 
-Stage closeout and production rollout evidence remain before merge/deploy.
+Additional delivery and E2E checkpoint:
+
+- Runtime release `ccd8b094b521ed7f899240feaf739c12d4e0ba83`, GitHub Actions
+  run `26951658369`, deploy succeeded.
+- `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -
+  8 passed, 0 failed.
+- Final production E2E conversation
+  `0e1feaa8-5922-49b9-abb6-9ab111607d92` on
+  `+79262810921#tj-memory-e2e-20260604-1231`: Noor confirmed `2 x CH 616 black`,
+  no `616 x chairs`, no repeated full name/email/address request, no escalation,
+  pending quote unresolved items empty.
+- DB readback for the E2E: `quote_customer_details` contains Victor, email,
+  `Office 1905, JLT Dubai`, and `individual`; customer facts trace has
+  `accepted_count=7`, `conflict_count=0`, `fast_model_called=false`;
+  `customer_facts_mode`, trace, and fast extractor overrides restored to `UNSET`.
 
 ## Explicit Defers
 
 - `tj-gh21` remains blocked on approved Wazzup WABA EN/AR templates.
-- Production deploy/enforce mode for this layer requires separate approval and
-  production evidence.
+- Global production `customer_facts_mode=shadow|enforce` remains a separate
+  config decision. The deployed code was verified under temporary enforce and
+  then restored to default disabled.
