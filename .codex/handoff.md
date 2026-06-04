@@ -7,16 +7,16 @@ Current branch: `main`
 - Current stage: `tj-memory` for Customer Facts and Order Memory Layer.
 - Spec/plan: `docs/specs/customer-facts-layer.md` and
   `docs/superpowers/plans/2026-06-04-customer-facts-layer.md`.
-- Production runtime: `e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`,
-  deploy run `26964467543`, smoke `8 passed, 0 failed`.
+- Production runtime: `455693cb26cf45ae5255dc07ad1732c52a3e8124`,
+  deploy run `26965492878`, smoke `8 passed, 0 failed`.
 - Customer facts v1 is globally enabled in production:
   `customer_facts_mode=enforce`, trace enabled, fast extractor enabled.
 - PII masking is disabled by default in production because it was not a client
   requirement and blocked extraction of phones/emails/facts; opt-in remains via
   `PII_MASKING_ENABLED=true`.
 - Final customer facts enforce E2E passed:
-  `70838bd7-8f4c-4ee0-8a4a-a0dd5ab92d7c` and
-  `89d614de-cd72-412c-9964-9554ed995ebc`. Noor kept `2 x CH 616`, saved
+  `4983dc17-c27c-4756-8a65-3afc0a25b447` and
+  `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`. Noor kept `2 x CH 616`, saved
   name/email/phone/address/customer type, consumed name-gate pending request,
   created no escalation, and produced fact traces with `conflict_count=0`.
 - Synthetic E2E conversations were closed/resolved after readback; the real

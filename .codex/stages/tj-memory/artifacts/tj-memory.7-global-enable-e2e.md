@@ -23,6 +23,7 @@ success_criteria:
   - production customer facts mode is globally enabled in enforce
   - product delivery/assembly text is not stored as a delivery address
   - name-gate replies with extra customer details resume the pending request
+  - labeled names with other details do not create duplicate name conflicts
   - production E2E passes with no escalation, no fact conflicts, and no PII placeholders
 selected_docs:
   - no dependency documentation lookup needed; rollout used existing repo config and runtime state
@@ -55,15 +56,16 @@ docs_review_notes: handoff and stage summary record enforce rollout and final ev
 verification:
   - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_fact_extractor.py::test_deterministic_does_not_treat_product_delivery_need_as_address -v --tb=short": failed before fix, passed after fix
   - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine_customer_facts.py::test_customer_facts_name_gate_details_reply_resumes_pending_request -v --tb=short": failed before fix, passed after fix
-  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_fact_extractor.py tests/test_llm_engine_customer_facts.py tests/test_dialogue_config.py -v --tb=short": passed, 25 passed
+  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_fact_extractor.py::test_deterministic_labeled_name_with_details_has_no_name_conflict -v --tb=short": failed before fix, passed after fix
+  - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_fact_extractor.py tests/test_llm_engine_customer_facts.py tests/test_dialogue_config.py -v --tb=short": passed, 26 passed
   - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py -k \"name_gate or ch616_spaced_sku_with_details or customer_details\" -v --tb=short": passed, 29 passed
   - "uv run ruff check src/ tests/": passed
   - "uv run ruff format --check src/ tests/": passed
   - "uv run mypy src/": passed
-  - "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short": passed, 1283 passed, 19 skipped
-  - "GitHub Actions run 26964467543": passed and deployed
+  - "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short": passed, 1284 passed, 19 skipped
+  - "GitHub Actions run 26965492878": passed and deployed
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 8 passed, 0 failed
-  - "production E2E on +79262810921#tj-memory-enforce-final-*": passed
+  - "production E2E on +79262810921#tj-memory-455-*": passed
 changed_files:
   - src/llm/fact_extractor.py
   - src/llm/engine.py
@@ -82,20 +84,23 @@ The customer facts layer is now globally enabled in production with
 `customer_facts_fast_extractor_enabled=true`.
 
 Runtime release:
-`e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`.
+`455693cb26cf45ae5255dc07ad1732c52a3e8124`.
 
 Deploy run:
-`26964467543`.
+`26965492878`.
 
 # Blockers Found During Rollout
 
-The first enforce E2E found two blockers before final enablement:
+The enforce E2E found three blockers before final acceptance:
 
 - `I need 2 CH 616 chairs with delivery and assembly` was incorrectly stored as
   `delivery.address`.
 - A reply like `Victor Memory Test, individual, delivery address ...` after
   name-gate could be handled as `detail-capture` before consuming
   `name_gate_pending_request`.
+- A labeled name inside an all-details message could be saved twice: once as the
+  correct cleaned name and once as a duplicate compact name such as
+  `My name is Victor Memory Final`, creating `conflict_count=1`.
 
 The production flag was temporarily returned to `disabled` while the fix was
 implemented and deployed.
@@ -107,6 +112,8 @@ implemented and deployed.
 - Pending name-gate replies always get a chance to extract a compact name from
   `name + details`, even if the customer facts layer has already set
   `conversation.customer_name`.
+- Compact-name extraction skips fragments that already contain an explicit
+  labeled-name prefix, so `My name is ...` is handled only by the labeled parser.
 
 # Verification
 
@@ -114,7 +121,7 @@ Local and CI verification passed before final production E2E:
 
 - Targeted RED/GREEN tests for false address extraction and name-gate resume.
 - `ruff`, `ruff format --check`, `mypy`, and full pytest.
-- GitHub Actions run `26964467543` deployed the fix.
+- GitHub Actions run `26965492878` deployed the final fix.
 - Production smoke passed with 8 checks and 0 failures.
 
 # Final E2E
@@ -132,19 +139,20 @@ Production config after deploy:
 ```
 
 Scenario 1:
-`+79262810921#tj-memory-enforce-final-all-20260604162026`
+`+79262810921#tj-memory-455-all-20260604164115`
 
-- Conversation: `70838bd7-8f4c-4ee0-8a4a-a0dd5ab92d7c`.
+- Conversation: `4983dc17-c27c-4756-8a65-3afc0a25b447`.
 - Message included SKU, quantity, name, individual status, address, email, and
   phone in one turn.
 - Result: `z-ai/glm-5|selection-confirmation`.
-- Readback: `2 x CH 616 black`, no unresolved items, `conflict_count=0`, no
-  escalation, no PII placeholders.
+- Readback: `2 x CH 616 black`, one accepted `customer.name` fact
+  (`Victor Memory Final`), no unresolved items, `conflict_count=0`, no
+  escalation, and no PII placeholders.
 
 Scenario 2:
-`+79262810921#tj-memory-enforce-final-resume-20260604162026`
+`+79262810921#tj-memory-455-resume-20260604164115`
 
-- Conversation: `89d614de-cd72-412c-9964-9554ed995ebc`.
+- Conversation: `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`.
 - First turn without name returned `name-gate`.
 - Second turn provided name, individual status, address, email, and phone.
 - Result: `z-ai/glm-5|selection-confirmation`.

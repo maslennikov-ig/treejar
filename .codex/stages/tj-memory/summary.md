@@ -4,7 +4,7 @@ Updated: 2026-06-04
 Status: deployed; customer facts enforce enabled; production E2E passed; PII masking disabled by default
 Branch: `main`
 Base: `origin/main` at `d49abcfc0606102b2098880245723e6fda999193`
-Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.10`
+Beads: `tj-memory` epic with child tasks `tj-memory.1` through `tj-memory.11`
 
 docs-reviewed: updated - architecture spec, plan, stage artifacts, and handoff
 cover the delivered memory layer and production E2E evidence.
@@ -49,6 +49,9 @@ and past orders, and avoids re-asking or losing already-provided facts.
   fixed: product delivery/assembly requests no longer become delivery addresses,
   and name-gate replies with extra customer details now consume the pending
   request before generic detail-capture.
+- Final enforce E2E then found and fixed one more trace-quality blocker:
+  labeled names such as `My name is Victor Memory Final` no longer create a
+  duplicate compact-name conflict fact.
 
 ## Decisions
 
@@ -133,24 +136,25 @@ PII masking default-off delivery checkpoint:
 
 Customer facts enforce rollout checkpoint:
 
-- Commit delivered to `main`: `e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`.
-- GitHub Actions deploy run `26964467543` succeeded; production
+- Final commit delivered to `main`: `455693cb26cf45ae5255dc07ad1732c52a3e8124`.
+- GitHub Actions deploy run `26965492878` succeeded; production
   `/opt/noor/.release-sha` is
-  `e70e1d8c7d9796ec9142cfe55b724e6ed524a1d1`.
+  `455693cb26cf45ae5255dc07ad1732c52a3e8124`.
 - Production config now has `customer_facts_mode=enforce`,
   `customer_facts_trace_enabled=true`, and
   `customer_facts_fast_extractor_enabled=true`.
 - `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -
   8 passed, 0 failed.
 - Final E2E scenario 1:
-  `+79262810921#tj-memory-enforce-final-all-20260604162026`, conversation
-  `70838bd7-8f4c-4ee0-8a4a-a0dd5ab92d7c`; first message included SKU,
+  `+79262810921#tj-memory-455-all-20260604164115`, conversation
+  `4983dc17-c27c-4756-8a65-3afc0a25b447`; first message included SKU,
   quantity, name, individual status, address, email, and phone; Noor returned
   `selection-confirmation`, saved all details, kept `2 x CH 616 black`, had
-  `conflict_count=0`, no escalation, and no `[PII-...]` placeholders.
+  only one accepted `customer.name` fact, `conflict_count=0`, no escalation, and
+  no `[PII-...]` placeholders.
 - Final E2E scenario 2:
-  `+79262810921#tj-memory-enforce-final-resume-20260604162026`, conversation
-  `89d614de-cd72-412c-9964-9554ed995ebc`; first message triggered
+  `+79262810921#tj-memory-455-resume-20260604164115`, conversation
+  `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`; first message triggered
   `name-gate`, second message provided name/details, Noor consumed
   `name_gate_pending_request`, resumed the original product request, saved
   `2 x CH 616 black`, had `conflict_count=0`, no escalation, and no
