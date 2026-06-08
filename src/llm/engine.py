@@ -3454,8 +3454,6 @@ def _extract_bare_name_gate_reply(text: str) -> str:
     tokens = re.findall(r"[^\W\d_]+", normalized, flags=re.UNICODE)
     if any(token in BARE_NAME_GATE_REJECT_TOKENS for token in tokens):
         return ""
-    if any(phrase in normalized for phrase in BARE_NAME_GATE_REJECT_TOKENS):
-        return ""
     return stripped
 
 

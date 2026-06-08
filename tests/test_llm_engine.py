@@ -2272,6 +2272,7 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
     ("text", "expected"),
     [
         ("Lili", "Lili"),
+        ("Lilia Orderstate", "Lilia Orderstate"),
         ("Лилия", "Лилия"),
         ("ليلى", "ليلى"),
         ("My name is Jio", ""),
@@ -7621,6 +7622,80 @@ async def test_process_message_unlabeled_quote_brief_completes_pdf_details(
         "name": "Lilia",
         "company": "LLD",
         "address": "2 street",
+    }
+    mock_create_quotation.assert_awaited_once()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_unlabeled_quote_brief_keeps_order_named_customer_and_full_address(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "lili"
+    conv.language = "en"
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH 620 grey", "quantity": 5}],
+            "unresolved_items": [],
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Would you like me to prepare a formal quotation for "
+                        "these selected items? To make the PDF complete, please "
+                        "share full name, company name, email, delivery address."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_create_quotation.return_value = "Quotation Fr-test has been prepared."
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Lilia Orderstate / Del company / lilia.orderstate.e2e@example.com / "
+            "Office 1208, JLT Dubai"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|quote-resume"
+    assert conv.metadata_["quote_customer_details"] == {
+        "email": "lilia.orderstate.e2e@example.com",
+        "name": "Lilia Orderstate",
+        "company": "Del company",
+        "address": "Office 1208, JLT Dubai",
     }
     mock_create_quotation.assert_awaited_once()
     mock_run.assert_not_awaited()
