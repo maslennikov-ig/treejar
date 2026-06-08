@@ -7396,6 +7396,170 @@ async def test_process_message_missing_quantity_reference_then_bare_number_resol
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_pending_quantity_descriptor_followup_resolves_novo_table(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia Orderstate"
+    conv.language = "en"
+    conv.metadata_ = {}
+    first_text = (
+        "My name is Lilia Orderstate. I need SKYLAND NOVO 2400 Meeting Table. "
+        "Please confirm this selected item."
+    )
+    second_text = "Only SKYLAND NOVO 2400 2 position"
+    mock_build_history.side_effect = [
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+        ],
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content=(
+                            "I have these product references: SKYLAND NOVO 2400 "
+                            "Meeting Table. Please confirm the quantity for each item."
+                        )
+                    )
+                ]
+            ),
+            ModelRequest(parts=[UserPromptPart(content=second_text)]),
+        ],
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=first_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "mock-model|product-quantity-clarify"
+    assert conv.metadata_["pending_product_reference_quantity"]["references"] == [
+        "SKYLAND NOVO 2400 Meeting Table"
+    ]
+    assert "My name is" not in first_response.text
+
+    liner = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="OF-YED-NOVO-Table-63LW-1.2T-3-white",
+        zoho_item_id="zoho-liner",
+        name_en="Two person liner table SKYLAND NOVO 2400",
+        description_en="2P liner table SKYLAND NOVO 2400",
+        price=1532.0,
+        currency="AED",
+        stock=11,
+        attributes={},
+    )
+    meeting = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="OF-YED-NOVO-Table-63LW-1.2T-9-white",
+        zoho_item_id="zoho-meeting",
+        name_en="MEETING TABLE SKYLAND NOVO 2400",
+        description_en="Elegant and Functional Meeting Table. NOVO 2400 meeting table.",
+        price=1740.0,
+        currency="AED",
+        stock=22,
+        attributes={},
+    )
+    workstation = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+        zoho_item_id="zoho-workstation",
+        name_en="SKYLAND NOVO 2400 4-Person Workstation Desk with Privacy Panels",
+        description_en="SKYLAND NOVO 2400 4-Person Workstation",
+        price=1813.0,
+        currency="AED",
+        stock=39,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product:
+            return {
+                liner.id: liner,
+                meeting.id: meeting,
+                workstation.id: workstation,
+            }.get(key)
+        return None
+
+    caption_result = MagicMock()
+    caption_result.scalars.return_value.all.return_value = []
+    sku_result = MagicMock()
+    sku_result.scalar_one_or_none.return_value = None
+    catalog_result = MagicMock()
+    catalog_result.scalars.return_value.all.return_value = [
+        liner,
+        meeting,
+        workstation,
+    ]
+    db.get.side_effect = get_side_effect
+    db.execute.side_effect = [caption_result, sku_result, catalog_result]
+    zoho.get_item.return_value = {
+        "sku": meeting.sku,
+        "stock_on_hand": 22,
+        "rate": 1740.0,
+        "currency_code": "AED",
+    }
+
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=second_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert second_response.model == "mock-model|selection-confirmation"
+    assert "MEETING TABLE SKYLAND NOVO 2400" in second_response.text
+    assert "manager verification" not in second_response.text.lower()
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["items"] == [
+        {
+            "sku": meeting.sku,
+            "quantity": 2,
+            "product_id": str(meeting.id),
+            "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+            "unit_price": 1740.0,
+            "currency": "AED",
+        }
+    ]
+    assert pending_quote["unresolved_items"] == []
+    assert "pending_product_reference_quantity" not in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_stale_pending_quantity_does_not_consume_later_number(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,

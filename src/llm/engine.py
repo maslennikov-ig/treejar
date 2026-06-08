@@ -2387,6 +2387,10 @@ def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
     ):
         return ()
 
+    runtime_references = _missing_quantity_product_references_from_order_runtime(text)
+    if runtime_references:
+        return runtime_references
+
     references: list[str] = []
     for raw_segment in _PRODUCT_REFERENCE_SPLIT_RE.split(text):
         segment = _clean_product_reference_segment(raw_segment)
@@ -2395,6 +2399,25 @@ def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
         if segment not in references:
             references.append(segment)
 
+    return tuple(references)
+
+
+def _missing_quantity_product_references_from_order_runtime(
+    text: str,
+) -> tuple[str, ...]:
+    result = run_order_runtime(text=text, metadata={})
+    if result.decision.route != "quantity_clarification" or not result.decision.handled:
+        return ()
+
+    references: list[str] = []
+    for line in result.state.lines:
+        if line.status != "needs_quantity":
+            continue
+        reference = " ".join((line.source_text or line.catalog_ref).split()).strip(
+            " ,.;:-"
+        )
+        if reference and reference not in references:
+            references.append(reference)
     return tuple(references)
 
 
@@ -2549,6 +2572,68 @@ def _purchase_selection_from_pending_product_references(
     if not items:
         return None
     return PurchaseSelection(items=tuple(items))
+
+
+def _purchase_selection_from_pending_product_reference_followup(
+    text: str,
+    references: tuple[str, ...],
+) -> PurchaseSelection | None:
+    if not references:
+        return None
+
+    selection = _extract_purchase_selection(
+        text,
+        require_trigger=False,
+    ) or _extract_word_quantity_purchase_selection(text)
+    if selection is None or len(selection.items) != len(references):
+        return None
+
+    items: list[PurchaseSelectionItem] = []
+    for reference, item in zip(references, selection.items, strict=True):
+        if not _pending_product_reference_matches_selection(reference, item):
+            return None
+        sku = (
+            item.sku or _best_selection_sku(reference) or _extract_sku_signal(reference)
+        )
+        if not sku:
+            return None
+        items.append(
+            PurchaseSelectionItem(
+                quantity=item.quantity,
+                item_candidate=reference,
+                sku=sku,
+            )
+        )
+
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
+def _pending_product_reference_matches_selection(
+    reference: str,
+    item: PurchaseSelectionItem,
+) -> bool:
+    normalized_reference = _normalize_text(_normalize_sku_homoglyphs(reference))
+    normalized_candidate = _normalize_text(
+        _normalize_sku_homoglyphs(item.item_candidate)
+    )
+    if normalized_candidate and (
+        normalized_candidate in normalized_reference
+        or normalized_reference in normalized_candidate
+    ):
+        return True
+
+    reference_sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
+    normalized_reference_sku = _normalize_text(
+        _normalize_sku_homoglyphs(reference_sku or "")
+    )
+    normalized_item_sku = _normalize_text(_normalize_sku_homoglyphs(item.sku))
+    return bool(
+        normalized_reference_sku
+        and normalized_item_sku
+        and normalized_reference_sku == normalized_item_sku
+    )
 
 
 def _selection_runtime_directives(
@@ -8308,7 +8393,41 @@ async def process_message(
     if pending_reference_quantity is None:
         pending_reference_quantity = _extract_bare_quantity_reply(masked_text)
     pending_reference_selection = None
-    if pending_reference_quantity is not None:
+    pending_reference_quantity_refs = _pending_product_reference_quantity_from_metadata(
+        conv
+    )
+    pending_reference_context_active = bool(
+        pending_reference_quantity_refs
+    ) and _last_assistant_asked_pending_product_reference_quantity(
+        deps.recent_history,
+        pending_reference_quantity_refs,
+    )
+    if pending_reference_context_active:
+        if pending_reference_quantity is not None:
+            pending_reference_selection = (
+                _purchase_selection_from_pending_product_references(
+                    pending_reference_quantity_refs,
+                    pending_reference_quantity,
+                )
+            )
+        else:
+            pending_reference_selection = (
+                _purchase_selection_from_pending_product_reference_followup(
+                    combined_text,
+                    pending_reference_quantity_refs,
+                )
+            )
+            if pending_reference_selection is None:
+                pending_reference_selection = (
+                    _purchase_selection_from_pending_product_reference_followup(
+                        masked_text,
+                        pending_reference_quantity_refs,
+                    )
+                )
+    elif pending_reference_quantity is not None and pending_reference_quantity_refs:
+        await _clear_pending_product_reference_quantity(db, conv)
+
+    if pending_reference_quantity is not None and pending_reference_selection is None:
         pending_reference_quantity_refs = (
             _pending_product_reference_quantity_from_metadata(conv)
         )
@@ -8322,8 +8441,6 @@ async def process_message(
                     pending_reference_quantity,
                 )
             )
-        elif pending_reference_quantity_refs:
-            await _clear_pending_product_reference_quantity(db, conv)
 
     early_purchase_selection = None
     if (
