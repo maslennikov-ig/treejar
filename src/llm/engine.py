@@ -2295,8 +2295,8 @@ _OPTION_SKU_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?\*{0,2}\s*SKU\s*:\s*\*{0,2}\s*(?P<sku>[^\r\n]+)"
 )
 _NUMBERED_OPTION_HEADING_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:[*_`]+)?(?P<ordinal>\d{1,2})\s*[.)]\s*"
-    r"(?P<heading>.+?)\s*(?:[*_`]+)?\s*$",
+    r"^\s*(?:[-*]\s*)?(?:[*_`]+)?(?:option\s*)?"
+    r"(?P<ordinal>\d{1,2})\s*[.):]\s*(?P<heading>.+?)\s*(?:[*_`]+)?\s*$",
     re.IGNORECASE,
 )
 
@@ -2320,7 +2320,12 @@ def _ordinal_option_from_reply(text: str) -> int | None:
 
 def _clean_numbered_option_heading(line: str) -> str:
     cleaned = re.sub(r"[*_`]+", "", line).strip(" \t\r\n-")
-    cleaned = re.sub(r"^\d{1,2}\s*[.)]\s*", "", cleaned).strip(" \t\r\n-")
+    cleaned = re.sub(
+        r"^(?:option\s*)?\d{1,2}\s*[.):]\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip(" \t\r\n-")
     return cleaned
 
 

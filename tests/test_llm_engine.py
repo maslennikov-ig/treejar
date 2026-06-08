@@ -6702,10 +6702,10 @@ async def test_process_message_confirms_ordinal_selection_from_prior_sku_options
     )
     previous_assistant = (
         "I found two CH 616 chair options for you:\n\n"
-        "**1. SkyLand Workstation Chair CH 616 black**\n"
+        "**Option 1: SkyLand Workstation Chair CH 616 black**\n"
         "- **Price:** 220 AED each\n"
         "- **Stock:** 3 units available\n\n"
-        "**2. Skyland Operative Chair CH 616 NEW black**\n"
+        "**Option 2: Skyland Operative Chair CH 616 NEW black**\n"
         "- **Price:** 295 AED each\n"
         "- **Stock:** 93 units available\n\n"
         "Would you like me to prepare a quote for 2 units of either model?"
