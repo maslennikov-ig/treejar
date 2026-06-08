@@ -81,6 +81,8 @@ class CatalogParsedRef:
     raw: str
     normalized: str
     quantity: int | None = None
+    start: int | None = None
+    end: int | None = None
 
 
 @dataclass(frozen=True)
@@ -183,6 +185,8 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
                 normalized=normalize_catalog_ref(raw),
                 quantity=_quantity_before_ref(normalized_text, start)
                 or _quantity_after_ref(normalized_text, end),
+                start=start,
+                end=end,
             )
         )
     return refs

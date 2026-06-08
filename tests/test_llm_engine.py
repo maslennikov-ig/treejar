@@ -6188,8 +6188,8 @@ def test_extract_purchase_selection_preserves_mixed_model_and_sku_items() -> Non
     assert [
         (item.quantity, item.item_candidate, item.sku) for item in selection.items
     ] == [
-        (2, "SKYLAND NOVO 2400", "SKYLAND NOVO 2400"),
-        (4, "CH 616", "CH-616"),
+        (2, "SKYLAND NOVO 2400 Meeting Table", "SKYLAND NOVO 2400"),
+        (4, "CH 616 chairs", "CH-616"),
     ]
 
 
@@ -6216,7 +6216,7 @@ def test_extract_purchase_selection_rejects_connector_false_sku_fallbacks() -> N
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("4 position CH 616 chairs", [(4, "CH 616", "CH-616")]),
+        ("4 position CH 616 chairs", [(4, "CH 616 chairs", "CH-616")]),
         (
             "Only SKYLAND NOVO 2400 2 position",
             [(2, "SKYLAND NOVO 2400", "SKYLAND NOVO 2400")],
@@ -6740,6 +6740,130 @@ async def test_process_message_ch616_selection_confirms_without_manager_handoff(
     mock_search_knowledge.assert_not_awaited()
     mock_search_behavior_rules.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_clean_context_disambiguates_novo_meeting_table(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.language = "en"
+    conv.metadata_ = {}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")])
+    ]
+
+    async def get_system_config_side_effect(
+        _db: object,
+        key: str,
+        default: object,
+    ) -> object:
+        if key == "openrouter_model_main":
+            return "mock-model"
+        if key == "dialogue_kernel_trace_enabled":
+            return "true"
+        if key == "dialogue_kernel_mode":
+            return "disabled"
+        if key == "dialogue_kernel_enforced_flows":
+            return ""
+        return default
+
+    mock_get_system_config.side_effect = get_system_config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_search_behavior_rules.return_value = []
+
+    liner = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="OF-YED-NOVO-Table-63LW-1.2T-3-white",
+        zoho_item_id="zoho-liner",
+        name_en="Two person liner table SKYLAND NOVO 2400",
+        description_en="2P liner table SKYLAND NOVO 2400",
+        price=1532.0,
+        currency="AED",
+        stock=11,
+        attributes={},
+    )
+    meeting = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="OF-YED-NOVO-Table-63LW-1.2T-9-white",
+        zoho_item_id="zoho-meeting",
+        name_en="MEETING TABLE SKYLAND NOVO 2400",
+        description_en="Elegant and Functional Meeting Table. NOVO 2400 meeting table.",
+        price=1740.0,
+        currency="AED",
+        stock=22,
+        attributes={},
+    )
+    workstation = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="OF-YED-NOVO-Workstation-63LW-1.2T-6-white",
+        zoho_item_id="zoho-workstation",
+        name_en="SKYLAND NOVO 2400 4-Person Workstation Desk with Privacy Panels",
+        description_en="SKYLAND NOVO 2400 4-Person Workstation",
+        price=1813.0,
+        currency="AED",
+        stock=39,
+        attributes={},
+    )
+
+    caption_result = MagicMock()
+    caption_result.scalars.return_value.all.return_value = []
+    sku_result = MagicMock()
+    sku_result.scalar_one_or_none.return_value = None
+    catalog_result = MagicMock()
+    catalog_result.scalars.return_value.all.return_value = [
+        liner,
+        meeting,
+        workstation,
+    ]
+    db.execute.side_effect = [caption_result, sku_result, catalog_result]
+
+    zoho.get_item.return_value = {
+        "sku": meeting.sku,
+        "stock_on_hand": 22,
+        "rate": 1740.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="I need 2 SKYLAND NOVO 2400 Meeting Table",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "MEETING TABLE SKYLAND NOVO 2400" in response.text
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["items"] == [
+        {
+            "sku": meeting.sku,
+            "quantity": 2,
+            "product_id": str(meeting.id),
+            "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+            "unit_price": 1740.0,
+            "currency": "AED",
+        }
+    ]
+    assert pending_quote["unresolved_items"] == []
+    mock_search_knowledge.assert_not_awaited()
+    mock_search_behavior_rules.assert_not_awaited()
     mock_run.assert_not_awaited()
 
 

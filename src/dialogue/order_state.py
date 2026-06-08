@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any, Literal
 
@@ -101,13 +102,30 @@ class OrderRuntimeTrace(BaseModel):
     phase_ms: dict[str, float] = Field(default_factory=dict)
 
 
+_QUANTITY_WORD_PATTERN = "ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN"
+_NEXT_ORDER_LINE_RE = re.compile(
+    rf"\s+(?:and|or)\s+(?=(?:\d{{1,3}}|{_QUANTITY_WORD_PATTERN})\b)",
+    flags=re.IGNORECASE,
+)
+_TRAILING_QUANTITY_AFTER_REF_RE = re.compile(
+    rf"\s+(?=(?:\d{{1,3}}|{_QUANTITY_WORD_PATTERN})"
+    r"\s+(?:x|pcs?|pieces?|units?|positions?)\b)",
+    flags=re.IGNORECASE,
+)
+_PRODUCT_SEGMENT_STOP_RE = re.compile(
+    r"[.;!?\n]|\bwith\s+(?:delivery|assembly)\b|"
+    r"\b(?:delivery|assembly|please|confirm|quote|quotation|prepare)\b",
+    flags=re.IGNORECASE,
+)
+
+
 def extract_order_intent_from_text(text: str) -> OrderIntent:
     refs = extract_catalog_references(text)
     lines = [
         OrderLine(
             catalog_ref=ref.normalized,
             quantity=ref.quantity,
-            source_text=ref.raw,
+            source_text=_source_text_for_catalog_ref(text, ref),
             sku=ref.normalized,
             status="unresolved" if ref.quantity is not None else "needs_quantity",
         )
@@ -129,6 +147,59 @@ def order_lines_snapshot(intent: OrderIntent) -> list[dict[str, object]]:
             }
         )
     return snapshot
+
+
+def _source_text_for_catalog_ref(text: str, ref: Any) -> str:
+    raw = str(getattr(ref, "raw", "") or "").strip()
+    start = getattr(ref, "start", None)
+    end = getattr(ref, "end", None)
+    if not isinstance(start, int) or not isinstance(end, int):
+        return raw
+    if start < 0 or end <= start or end > len(text):
+        return raw
+
+    left = _source_text_left_bound(text, start, getattr(ref, "quantity", None))
+    right = _source_text_right_bound(text, end)
+    candidate = " ".join(text[left:right].strip(" \t\r\n,;:-").split())
+    return candidate or raw
+
+
+def _source_text_left_bound(
+    text: str,
+    ref_start: int,
+    quantity: int | None,
+) -> int:
+    if quantity is None:
+        return ref_start
+
+    prefix_start = max(0, ref_start - 64)
+    prefix = text[prefix_start:ref_start]
+    quantity_re = re.compile(
+        rf"(?:^|[^\w])(?:{quantity}|{_QUANTITY_WORD_PATTERN})"
+        r"(?:\s+(?:x|pcs?|pieces?|units?|positions?))?\s*$",
+        flags=re.IGNORECASE,
+    )
+    match = quantity_re.search(prefix)
+    if match is None:
+        return ref_start
+
+    return prefix_start + match.end()
+
+
+def _source_text_right_bound(text: str, ref_end: int) -> int:
+    window = text[ref_end : ref_end + 96]
+    candidates: list[int] = []
+    for pattern in (
+        _NEXT_ORDER_LINE_RE,
+        _TRAILING_QUANTITY_AFTER_REF_RE,
+        _PRODUCT_SEGMENT_STOP_RE,
+    ):
+        match = pattern.search(window)
+        if match is not None:
+            candidates.append(ref_end + match.start())
+    if not candidates:
+        return min(len(text), ref_end + len(window))
+    return min(candidates)
 
 
 def _line_from_legacy_item(item: Any) -> OrderLine | None:

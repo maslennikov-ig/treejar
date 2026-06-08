@@ -116,7 +116,7 @@ async def test_deterministic_does_not_treat_product_delivery_need_as_address() -
         {
             "catalog_ref": "CH-616",
             "quantity": 2,
-            "source_text": "CH 616",
+            "source_text": "CH 616 chairs",
         }
     ]
     assert _facts_by_key(result, "order.item") == []
@@ -138,12 +138,12 @@ async def test_deterministic_extracts_repeatable_order_items_snapshot() -> None:
         {
             "catalog_ref": "SKYLAND NOVO 2400",
             "quantity": 2,
-            "source_text": "SKYLAND NOVO 2400",
+            "source_text": "SKYLAND NOVO 2400 Meeting Table",
         },
         {
             "catalog_ref": "CH-616",
             "quantity": 4,
-            "source_text": "CH 616",
+            "source_text": "CH 616 chairs",
         },
     ]
     assert _facts_by_key(result, "order.item") == []
@@ -262,7 +262,7 @@ async def test_deterministic_does_not_treat_spaced_sku_number_as_plain_quantity(
         {
             "catalog_ref": "CH-616",
             "quantity": 2,
-            "source_text": "CH 616",
+            "source_text": "CH 616 chairs",
         }
     ]
     assert _facts_by_key(result, "order.item") == []

@@ -12,8 +12,13 @@ def test_extract_order_intent_preserves_multi_item_lines() -> None:
         (line.catalog_ref, line.quantity, line.source_text, line.sku)
         for line in intent.lines
     ] == [
-        ("SKYLAND NOVO 2400", 2, "SKYLAND NOVO 2400", "SKYLAND NOVO 2400"),
-        ("CH-616", 4, "CH 616", "CH-616"),
+        (
+            "SKYLAND NOVO 2400",
+            2,
+            "SKYLAND NOVO 2400 Meeting Table",
+            "SKYLAND NOVO 2400",
+        ),
+        ("CH-616", 4, "CH 616 chairs", "CH-616"),
     ]
 
 

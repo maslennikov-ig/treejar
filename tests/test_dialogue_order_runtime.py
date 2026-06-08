@@ -17,6 +17,10 @@ def test_order_runtime_selects_product_route_for_complete_order_lines() -> None:
         ("SKYLAND NOVO 2400", 2, "SKYLAND NOVO 2400"),
         ("CH-616", 4, "CH-616"),
     ]
+    assert [(line.catalog_ref, line.source_text) for line in result.state.lines] == [
+        ("SKYLAND NOVO 2400", "SKYLAND NOVO 2400 Meeting Table"),
+        ("CH-616", "CH 616 chairs"),
+    ]
 
 
 def test_order_runtime_trace_is_bounded_and_records_phase_latency() -> None:
