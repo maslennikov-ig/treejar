@@ -49,6 +49,42 @@ def test_extract_catalog_references_captures_quantity_before_sku() -> None:
     ]
 
 
+def test_extract_catalog_references_preserves_multi_item_quantities() -> None:
+    refs = extract_catalog_references(
+        "I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs"
+    )
+
+    assert [(ref.normalized, ref.quantity) for ref in refs] == [
+        ("SKYLAND NOVO 2400", 2),
+        ("CH-616", 4),
+    ]
+
+
+def test_extract_catalog_references_rejects_connector_or_as_sku() -> None:
+    refs = extract_catalog_references("I need 2 CH 616 or 4 CH 620")
+
+    assert [(ref.normalized, ref.quantity) for ref in refs] == [
+        ("CH-616", 2),
+        ("CH-620", 4),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("4 position CH 616 chairs", [("CH-616", 4)]),
+        ("Only SKYLAND NOVO 2400 2 position", [("SKYLAND NOVO 2400", 2)]),
+    ],
+)
+def test_extract_catalog_references_accepts_position_quantity_phrases(
+    text: str,
+    expected: list[tuple[str, int]],
+) -> None:
+    refs = extract_catalog_references(text)
+
+    assert [(ref.normalized, ref.quantity) for ref in refs] == expected
+
+
 def test_extract_catalog_references_finds_supported_sku_and_model_refs() -> None:
     refs = extract_catalog_references(
         "Quote CH616, CP-2.1S, 00-07024023 and SKYLAND NOVO 2400 please"

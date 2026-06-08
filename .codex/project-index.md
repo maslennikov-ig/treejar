@@ -20,7 +20,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/main.py` - FastAPI application wiring.
 - `src/api/v1/router.py` and `src/api/telegram_webhook.py` - public API and Telegram callback surfaces.
 - `src/llm/engine.py`, `src/llm/prompts.py`, `src/llm/communication_policy.py`, `src/llm/fact_extractor.py`, and `src/llm/closed_question_guard.py` - sales-agent tools, guarded routing, prompt policy, customer-fact extraction, and closed-question repair.
-- `src/dialogue/` - LangGraph dialogue-state kernel, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
+- `src/dialogue/` - LangGraph dialogue-state kernel, side-effect-free typed order-state runtime, slot state, trace reducer, expected-answer frame matcher, and catalog reference parsing.
 - `src/services/customer_memory.py` and `src/models/customer_memory.py` - durable customer profile facts, current-order memory, past-order history, and compact prompt context.
 - `scripts/orchestration/run_process_verification.sh` - process-contract verification entrypoint.
 
@@ -30,7 +30,7 @@ Stable navigation map for this repository. Keep operational state in
 - `src/core/` - settings, database, Redis, security, cache, discount helpers.
 - `src/models/` and `src/schemas/` - SQLAlchemy persistence and Pydantic contracts.
 - `src/llm/` - PydanticAI agent, tool routing, safety, verified answers, order handoff.
-- `src/dialogue/` - explicit dialogue state kernel used for legacy/shadow/enforce rollout modes.
+- `src/dialogue/` - explicit dialogue state kernel plus typed product/quantity extraction contract; rollout modes are dialogue-kernel owned, while order runtime feeds engine/facts/memory adapters.
 - `src/rag/` - knowledge/product search and embedding pipeline.
 - `src/integrations/` - Wazzup messaging, Zoho CRM, Zoho Inventory, Telegram notification clients.
 - `src/services/` - business services for chat, customer memory, notifications, follow-up, reports, media, PDF, referrals.

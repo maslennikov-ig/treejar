@@ -111,14 +111,120 @@ async def test_deterministic_does_not_treat_product_delivery_need_as_address() -
     )
 
     assert _facts_by_key(result, "delivery.address") == []
-    items = _facts_by_key(result, "order.item")
-    assert {"sku": "CH 616", "quantity": 2} in [item.value for item in items]
+    order_items = _fact_by_key(result, "order.items")
+    assert order_items.value == [
+        {
+            "catalog_ref": "CH-616",
+            "quantity": 2,
+            "source_text": "CH 616",
+        }
+    ]
+    assert _facts_by_key(result, "order.item") == []
     assert _fact_by_key(result, "order.delivery_required").value is True
     assert _fact_by_key(result, "order.assembly_required").value is True
 
 
 @pytest.mark.asyncio
-async def test_deterministic_extracts_sku_quantity_and_plain_quantity() -> None:
+async def test_deterministic_extracts_repeatable_order_items_snapshot() -> None:
+    result = await extract_customer_facts(
+        "I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs",
+        use_fast_model=False,
+    )
+
+    order_items = _fact_by_key(result, "order.items")
+
+    assert order_items.scope == "current_order"
+    assert order_items.value == [
+        {
+            "catalog_ref": "SKYLAND NOVO 2400",
+            "quantity": 2,
+            "source_text": "SKYLAND NOVO 2400",
+        },
+        {
+            "catalog_ref": "CH-616",
+            "quantity": 4,
+            "source_text": "CH 616",
+        },
+    ]
+    assert _facts_by_key(result, "order.item") == []
+
+
+@pytest.mark.asyncio
+async def test_deterministic_extracts_single_runtime_order_item_snapshot() -> None:
+    result = await extract_customer_facts(
+        "I need 2 SKYLAND NOVO 2400",
+        use_fast_model=False,
+    )
+
+    order_items = _fact_by_key(result, "order.items")
+
+    assert order_items.value == [
+        {
+            "catalog_ref": "SKYLAND NOVO 2400",
+            "quantity": 2,
+            "source_text": "SKYLAND NOVO 2400",
+        }
+    ]
+    assert _facts_by_key(result, "order.item") == []
+
+
+@pytest.mark.asyncio
+async def test_deterministic_order_items_evidence_is_item_only() -> None:
+    result = await extract_customer_facts(
+        "Victor, email victor@example.com, delivery address 2 street. "
+        "I need 2 SKYLAND NOVO 2400 and 4 CH 616",
+        use_fast_model=False,
+    )
+
+    order_items = _fact_by_key(result, "order.items")
+
+    assert order_items.evidence == "2 x SKYLAND NOVO 2400; 4 x CH-616"
+    assert "victor@example.com" not in order_items.evidence
+    assert "2 street" not in order_items.evidence
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "How much is 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs?",
+        "Do you have availability for 2 SKYLAND NOVO 2400 and 4 CH 616?",
+        "What is the stock for 2 SKYLAND NOVO 2400 and 4 CH 616?",
+        "Please check price for 2 CH 616 chairs",
+    ],
+)
+async def test_deterministic_does_not_store_order_items_for_stock_price_inquiries(
+    text: str,
+) -> None:
+    result = await extract_customer_facts(text, use_fast_model=False)
+
+    assert _facts_by_key(result, "order.items") == []
+    assert _facts_by_key(result, "order.item") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can you compare 2 CH 616 and 4 CH 620?",
+        "ما هو سعر 2 CH 616؟",
+        "هل يتوفر 2 CH 616 في المخزون؟",
+        "Сколько стоит 2 CH 616?",
+    ],
+)
+async def test_deterministic_does_not_store_order_items_for_comparison_or_localized_inquiries(
+    text: str,
+) -> None:
+    result = await extract_customer_facts(text, use_fast_model=False)
+
+    assert _facts_by_key(result, "order.items") == []
+    assert _facts_by_key(result, "order.item") == []
+
+
+@pytest.mark.asyncio
+async def test_deterministic_extracts_runtime_sku_and_skips_ambiguous_plain_quantity() -> (
+    None
+):
     result = await extract_customer_facts(
         "same as last time but 8 chairs. Also I need 6 CH 616",
         use_fast_model=False,
@@ -129,10 +235,15 @@ async def test_deterministic_extracts_sku_quantity_and_plain_quantity() -> None:
     assert past_order.value == {"reference": "last_order"}
     assert past_order.needs_confirmation is True
 
-    items = _facts_by_key(result, "order.item")
-    assert {"description": "chairs", "quantity": 8} in [item.value for item in items]
-    assert {"sku": "CH 616", "quantity": 6} in [item.value for item in items]
-    assert all(item.scope == "current_order" for item in items)
+    order_items = _fact_by_key(result, "order.items")
+    assert order_items.value == [
+        {
+            "catalog_ref": "CH-616",
+            "quantity": 6,
+            "source_text": "CH 616",
+        }
+    ]
+    assert _facts_by_key(result, "order.item") == []
 
 
 @pytest.mark.asyncio
@@ -146,11 +257,15 @@ async def test_deterministic_does_not_treat_spaced_sku_number_as_plain_quantity(
         use_fast_model=False,
     )
 
-    items = _facts_by_key(result, "order.item")
-    assert {"sku": "CH 616", "quantity": 2} in [item.value for item in items]
-    assert {"description": "chairs", "quantity": 616} not in [
-        item.value for item in items
+    order_items = _fact_by_key(result, "order.items")
+    assert order_items.value == [
+        {
+            "catalog_ref": "CH-616",
+            "quantity": 2,
+            "source_text": "CH 616",
+        }
     ]
+    assert _facts_by_key(result, "order.item") == []
     names = _facts_by_key(result, "customer.name")
     assert [name.value for name in names] == ["Victor"]
 
@@ -274,6 +389,65 @@ async def test_fast_extractor_boundary_uses_fast_model_and_merges_structured_fac
     assert result.trace.fast_model_model == settings.openrouter_model_fast
     assert result.trace.fast_model_failed is False
     assert result.trace.fast_model_note == "parsed compact unlabeled company"
+
+
+@pytest.mark.asyncio
+async def test_fast_extractor_prompt_redacts_contact_pii() -> None:
+    seen_requests: list[FastCustomerFactExtractionRequest] = []
+
+    async def fake_fast_extractor(
+        request: FastCustomerFactExtractionRequest,
+    ) -> FastCustomerFactExtractionOutput:
+        seen_requests.append(request)
+        return FastCustomerFactExtractionOutput(facts=[])
+
+    await extract_customer_facts(
+        "Lili from LLD, email lili@example.com, phone +971 55 123 4567",
+        fast_extractor=fake_fast_extractor,
+    )
+
+    assert len(seen_requests) == 1
+    request = seen_requests[0]
+    request_dump = request.model_dump_json()
+    assert "lili@example.com" not in request.message_text
+    assert "+971 55 123 4567" not in request.message_text
+    assert "lili@example.com" not in request_dump
+    assert "+971551234567" not in request_dump
+
+
+@pytest.mark.asyncio
+async def test_fast_extractor_drops_authoritative_order_items() -> None:
+    async def fake_fast_extractor(
+        request: FastCustomerFactExtractionRequest,
+    ) -> FastCustomerFactExtractionOutput:
+        return FastCustomerFactExtractionOutput(
+            facts=[
+                ExtractedCustomerFact(
+                    scope="current_order",
+                    key="order.items",
+                    value=[{"catalog_ref": "BAD-SKU", "quantity": 99}],
+                    confidence="high",
+                    source="fast_model",
+                    evidence="hallucinated order",
+                ),
+                ExtractedCustomerFact(
+                    scope="persistent_profile",
+                    key="customer.company",
+                    value="LLD",
+                    confidence="medium",
+                    source="fast_model",
+                    evidence="LLD",
+                ),
+            ]
+        )
+
+    result = await extract_customer_facts(
+        "Lili from LLD",
+        fast_extractor=fake_fast_extractor,
+    )
+
+    assert _facts_by_key(result, "order.items") == []
+    assert _fact_by_key(result, "customer.company").value == "LLD"
 
 
 @pytest.mark.asyncio

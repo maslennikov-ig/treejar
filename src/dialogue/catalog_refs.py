@@ -46,6 +46,22 @@ _MODEL_RE = re.compile(r"\bSKYLAND\s+NOVO\s+\d+\b", re.IGNORECASE)
 _NORMALIZED_ALPHA_RE = re.compile(
     r"^(?P<prefix>[A-Z]{2,3})[-\s]?(?P<number>\d+(?:\.\d+)?[A-Z]?)$"
 )
+_ALPHA_SKU_PREFIX_STOPWORDS = frozenset(
+    {
+        "AND",
+        "ARE",
+        "BUT",
+        "BUY",
+        "FOR",
+        "GET",
+        "HAS",
+        "NEED",
+        "ONLY",
+        "OR",
+        "THE",
+        "WANT",
+    }
+)
 _QUANTITY_WORDS = {
     "ONE": 1,
     "TWO": 2,
@@ -134,16 +150,25 @@ def parse_catalog_reference(text: str) -> CatalogParsedRef:
 
 def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
     normalized_text = text.translate(_HOMOGLYPHS)
-    matches: list[tuple[int, int, str]] = []
+    matches: list[tuple[int, int, str, re.Match[str] | None]] = []
     for pattern in (_MODEL_RE, _NUMERIC_SKU_RE, _ALPHA_SKU_RE):
         for match in pattern.finditer(normalized_text):
+            if pattern is _ALPHA_SKU_RE:
+                prefix = match.group("prefix").translate(_HOMOGLYPHS).upper()
+                if prefix in _ALPHA_SKU_PREFIX_STOPWORDS:
+                    continue
             matches.append(
-                (match.start(), match.end(), text[match.start() : match.end()])
+                (
+                    match.start(),
+                    match.end(),
+                    text[match.start() : match.end()],
+                    match,
+                )
             )
 
     refs: list[CatalogParsedRef] = []
     occupied: list[tuple[int, int]] = []
-    for start, end, raw in sorted(
+    for start, end, raw, _ in sorted(
         matches, key=lambda item: (item[0], -(item[1] - item[0]))
     ):
         if any(
@@ -156,7 +181,8 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
             CatalogParsedRef(
                 raw=raw,
                 normalized=normalize_catalog_ref(raw),
-                quantity=_quantity_before_ref(normalized_text, start),
+                quantity=_quantity_before_ref(normalized_text, start)
+                or _quantity_after_ref(normalized_text, end),
             )
         )
     return refs
@@ -280,7 +306,8 @@ def _text_attr(item: Any, attr: str) -> str | None:
 def _quantity_before_ref(normalized_text: str, ref_start: int) -> int | None:
     prefix = normalized_text[max(0, ref_start - 32) : ref_start]
     match = re.search(
-        r"(?:^|[^A-Z0-9])(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\s*$",
+        r"(?:^|[^A-Z0-9])(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+        r"(?:\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?))?\s*$",
         prefix,
         flags=re.IGNORECASE,
     )
@@ -292,6 +319,27 @@ def _quantity_before_ref(normalized_text: str, ref_start: int) -> int | None:
         quantity = int(raw_quantity)
     else:
         quantity = _QUANTITY_WORDS.get(raw_quantity)
+    if quantity is None or quantity <= 0:
+        return None
+    return quantity
+
+
+def _quantity_after_ref(normalized_text: str, ref_end: int) -> int | None:
+    suffix = normalized_text[ref_end : ref_end + 32]
+    match = re.match(
+        r"\s*(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+        r"\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?)\b",
+        suffix,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    raw_quantity = match.group("qty").upper()
+    quantity = (
+        int(raw_quantity)
+        if raw_quantity.isdigit()
+        else _QUANTITY_WORDS.get(raw_quantity)
+    )
     if quantity is None or quantity <= 0:
         return None
     return quantity

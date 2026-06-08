@@ -134,9 +134,11 @@ async def apply_extracted_facts(
         )
         status = _merge_status(
             existing=existing,
+            key=key,
             value=value,
             confidence=confidence,
             scope=scope,
+            source=str(fact_data["source"]),
             needs_confirmation=needs_confirmation,
         )
 
@@ -158,6 +160,12 @@ async def apply_extracted_facts(
         db.add(saved)
 
         if status == "accepted":
+            if existing is not None and _is_replaceable_current_order_fact(
+                scope=scope,
+                key=key,
+            ):
+                existing.status = "superseded"
+                existing.superseded_at = _now()
             result.accepted.append(saved)
             _apply_profile_projection(profile, saved)
         elif status == "conflict":
@@ -358,12 +366,22 @@ def _normalize_fact_input(raw_fact: Any, *, message: Message | None) -> dict[str
 def _merge_status(
     *,
     existing: CustomerFact | None,
+    key: str,
     value: FactValue,
     confidence: str,
     scope: str,
+    source: str,
     needs_confirmation: bool,
 ) -> str:
     if scope == "past_order_reference" or needs_confirmation:
+        return "proposed"
+    if scope == "current_order" and key == "order.items":
+        if (
+            source == "deterministic"
+            and confidence in {"high", "medium"}
+            and _is_valid_order_items_value(value)
+        ):
+            return "accepted"
         return "proposed"
     if existing is not None and existing.value != value:
         return "conflict"
@@ -372,6 +390,28 @@ def _merge_status(
     if confidence == "medium" and existing is None:
         return "accepted"
     return "proposed"
+
+
+def _is_replaceable_current_order_fact(*, scope: str, key: str) -> bool:
+    return scope == "current_order" and key == "order.items"
+
+
+def _is_valid_order_items_value(value: FactValue) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    for item in value:
+        if not isinstance(item, dict):
+            return False
+        quantity = item.get("quantity")
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
+            return False
+        catalog_ref = item.get("catalog_ref") or item.get("sku") or item.get("name")
+        if not isinstance(catalog_ref, str) or not catalog_ref.strip():
+            return False
+        source_text = item.get("source_text")
+        if source_text is not None and not isinstance(source_text, str):
+            return False
+    return True
 
 
 def _apply_profile_projection(profile: CustomerProfile, fact: CustomerFact) -> None:
@@ -510,7 +550,12 @@ def _format_items(value: FactValue) -> str:
         for item in value:
             if isinstance(item, dict):
                 quantity = item.get("quantity", "?")
-                sku = item.get("sku") or item.get("name") or "item"
+                sku = (
+                    item.get("sku")
+                    or item.get("catalog_ref")
+                    or item.get("name")
+                    or "item"
+                )
                 rendered.append(f"{quantity} x {sku}")
             else:
                 rendered.append(str(item))

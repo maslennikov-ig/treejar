@@ -115,7 +115,13 @@ Pipeline:
 2. Run deterministic extractors first:
    - email;
    - phone;
-   - SKU and SKU variants;
+   - typed order-state extraction for selected product references and
+     quantities, producing a repeatable `order.items` snapshot for single-line
+     and multi-line runtime-backed selections, with item-only evidence;
+   - price, stock, availability, comparison, discovery, and localized inquiry
+     guards before current-order item extraction;
+   - SKU and SKU variants only for legacy fallback cases where the order
+     runtime does not own the turn;
    - numeric quantities tied to product references;
    - explicit company labels;
    - explicit individual/customer-type labels;
@@ -135,6 +141,11 @@ The fast extractor should use `settings.openrouter_model_fast`, currently
 `xiaomi/mimo-v2-flash`, through the existing model safety/routing helpers. It
 must return structured output only. Unit tests must use mocks or PydanticAI test
 models, not live OpenRouter calls.
+
+The fast extractor is not an authority for selected order lines. It receives a
+redacted prompt payload for contact PII and deterministic PII facts, and
+`current_order/order.items` facts returned by the fast model are dropped before
+merge. The deterministic order runtime remains the owner of `order.items`.
 
 ## Fact Result Contract
 
@@ -168,6 +179,13 @@ Rules:
 - `source_message_id` should be populated from the inbound WhatsApp message when
   available. Batched text may use the latest customer message id as the current
   batch anchor.
+- `current_order` facts with key `order.items` are snapshots of the active
+  order lines. Accepted `order.items` must come from `source=deterministic`,
+  have high or medium confidence, and validate as a non-empty list of items with
+  a positive integer quantity plus `catalog_ref`, `sku`, or `name`. Invalid or
+  model-origin `order.items` facts are saved only as proposed facts.
+- A newer accepted `order.items` snapshot replaces the current order view
+  instead of becoming a conflict with the previous snapshot.
 
 ## Persistence Shape
 
@@ -264,6 +282,8 @@ Rules:
 - Mark past orders explicitly as past.
 - Do not put unconfirmed past-order facts into current order facts.
 - Do not include low-confidence facts as if they were known.
+- Treat the block as untrusted customer-provided data. The main prompt must use
+  values as context but must not follow instructions embedded inside fact values.
 
 ## Runtime Modes
 
@@ -287,7 +307,12 @@ responses must normalize to the supported customer-facing language policy.
 ## Safety And Privacy
 
 - Store only sales-relevant facts.
-- Keep source excerpts short.
+- Keep source excerpts short and avoid broad raw-message evidence for selected
+  order lines; `order.items` evidence should render only the item/quantity
+  summary.
+- Redact email, phone, and labeled address values from the fast-model prompt
+  request. Deterministic local facts remain exact for database memory and quote
+  generation.
 - Runtime PII masking is disabled by default because it is not a current client
   requirement and it can block deterministic extraction of phone numbers,
   emails, addresses, and SKU-like numeric facts.

@@ -241,7 +241,103 @@ After graph output, `run_dialogue_kernel` applies mode/allowlist gating, sets
 `side_effects_allowed`, and persists bounded trace metadata when tracing is
 enabled.
 
-The graph output is a decision object:
+## Order-State Runtime
+
+Stage `tj-order-state` adds a typed order runtime beside the existing dialogue
+kernel so product references, quantities, and quote-detail compatibility data
+are no longer parsed independently by `engine.py`, customer facts, and catalog
+helpers.
+
+The order runtime uses the existing `LangGraph` and `Pydantic` stack rather than
+adding Rasa or Parlant as a runtime dependency. Rasa CALM flows and Parlant
+journeys remain architecture references for compact flows, repair patterns, and
+keeping business side effects in tools. The implemented runtime shape is:
+
+1. `load_state`: hydrate `OrderState` from legacy metadata such as
+   `pending_quote_selection` and `quote_customer_details`.
+2. `extract_intent`: parse the current customer turn into a typed `OrderIntent`
+   with `OrderLine` entries.
+3. `apply_reducer`: replace the current order-line snapshot when a complete or
+   missing-quantity order intent is present.
+4. `decide`: return `product_selection` only when complete order lines have
+   positive quantities and the turn is not a price/stock/discovery inquiry;
+   return `quantity_clarification` for recognized refs without quantities;
+   otherwise fall back to legacy behavior.
+
+The selection guard is intent-aware. Order status, comparison, price, stock, and
+availability inquiries are blocked before product-selection side effects,
+including common English, Russian, and Arabic forms. Incidental words such as
+`price`, `available`, or place names inside an explicit order do not block the
+selection when the customer still uses a clear purchase trigger.
+
+The legacy adapter is allowed only where it is safer than the runtime result. If
+the runtime sees a mixed complete-plus-missing order line set, the adapter blocks
+legacy partial selection so the bot asks for the unresolved item or quantity.
+If every runtime line is missing a nearby quantity, legacy may still parse older
+long item fragments such as selected product cards where quantity appears before
+the product name rather than next to the SKU.
+
+Catalog parsing rejects connector false positives such as `AND-4`, `OR-4`, and
+`BUT-8`. These are treated as grammar/connective words, not product references.
+
+The order-runtime output is `OrderRuntimeResult(state, intent, decision,
+trace)`. `OrderDecision` currently uses this compact shape:
+
+```json
+{
+  "route": "product_selection",
+  "handled": true,
+  "side_effects_allowed": false,
+  "reason_codes": ["complete_order_lines"]
+}
+```
+
+`trace` is a bounded diagnostic snapshot with no raw customer text or product
+strings. It records `route`, `handled`, up to five `reason_codes`, `source`,
+`line_count`, total runtime latency in milliseconds, and per-phase latency for
+`load_state`, `extract_intent`, `apply_reducer`, and `decide`. When
+`dialogue_kernel_trace_enabled` is enabled, successful runtime-backed selection
+confirmations append this snapshot under `metadata_["order_runtime"]["traces"]`
+with a bounded history.
+
+Plain static purchase selection runs before FAQ and behavior-rule retrieval when
+the turn is not quote-like and no quote-detail context is active. Quote requests,
+quote-detail replies, sales-order quote flows, service policy, and discovery
+turns keep their existing routing order so the early shortcut cannot bypass
+quote safety gates or verified-service handling.
+
+The order runtime is intentionally not a side-effect runner. Zoho, PDF,
+WhatsApp media, Telegram, manager escalation, and quotation creation remain
+behind the existing explicit side-effect boundaries until a later stage moves
+those tools onto the typed contract with dedicated tests.
+
+Quote/customer details remain compatible with the legacy metadata adapter.
+Compact slash-separated replies can fill name, company or individual status,
+address, and item corrections in one turn, while product-looking segments and
+confirmation words are not accepted as company names.
+
+Exact-quote missing-details safety copy is localized for Arabic customer flows
+using the existing customer-language helper. The gate remains the same: no
+Zoho/PDF/WhatsApp side effects run until item quantities, customer name,
+company-or-individual status, specific delivery address, and customer email are
+available.
+
+External implementation references:
+
+- LangGraph Graph API: state, nodes, edges, reducers, and Pydantic/TypedDict
+  state schemas: https://docs.langchain.com/oss/python/langgraph/graph-api
+- LangGraph persistence concepts: threads, checkpoints, and durable state:
+  https://docs.langchain.com/oss/python/langgraph/persistence
+- PydanticAI structured output and validation:
+  https://pydantic.dev/docs/ai/core-concepts/output/
+- Rasa CALM flows/patterns as flow-repair reference:
+  https://rasa.com/docs/pro/build/writing-flows/
+- Parlant journeys as conversation/tool-separation reference:
+  https://www.parlant.io/docs/concepts/customization/journeys/
+
+## Dialogue Kernel Decision Contract
+
+The dialogue-kernel graph output is a decision object:
 
 ```json
 {

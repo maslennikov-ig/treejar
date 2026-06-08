@@ -258,6 +258,230 @@ async def test_current_order_fact_remains_order_scoped(
 
 
 @pytest.mark.asyncio
+async def test_current_order_items_snapshot_updates_without_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services import customer_memory
+
+    db = _FakeDb()
+    profile = _profile()
+    conversation = _conversation()
+    order = _order(profile, conversation)
+    existing = CustomerFact(
+        profile=profile,
+        order_memory=order,
+        customer_profile_id=profile.id,
+        order_memory_id=order.id,
+        scope="current_order",
+        key="order.items",
+        value=[{"catalog_ref": "CH-616", "quantity": 4}],
+        confidence="high",
+        status="accepted",
+        source="deterministic",
+    )
+    monkeypatch.setattr(
+        customer_memory,
+        "_fetch_accepted_fact",
+        AsyncMock(return_value=existing),
+    )
+
+    result = await customer_memory.apply_extracted_facts(
+        db,  # type: ignore[arg-type]
+        profile=profile,
+        order=order,
+        message=None,
+        facts=[
+            _fact_input(
+                scope="current_order",
+                key="order.items",
+                value=[
+                    {"catalog_ref": "SKYLAND NOVO 2400", "quantity": 2},
+                    {"catalog_ref": "CH-616", "quantity": 4},
+                ],
+                evidence="I need 2 SKYLAND NOVO 2400 and 4 CH 616",
+            )
+        ],
+    )
+
+    saved = db.added[0]
+    assert isinstance(saved, CustomerFact)
+    assert saved.status == "accepted"
+    assert saved.order_memory_id == order.id
+    assert existing.status == "superseded"
+    assert existing.superseded_at is not None
+    assert result.accepted == [saved]
+    assert result.conflicts == []
+
+
+@pytest.mark.asyncio
+async def test_current_order_single_item_snapshot_supersedes_previous_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services import customer_memory
+
+    db = _FakeDb()
+    profile = _profile()
+    conversation = _conversation()
+    order = _order(profile, conversation)
+    existing = CustomerFact(
+        profile=profile,
+        order_memory=order,
+        customer_profile_id=profile.id,
+        order_memory_id=order.id,
+        scope="current_order",
+        key="order.items",
+        value=[
+            {"catalog_ref": "SKYLAND NOVO 2400", "quantity": 2},
+            {"catalog_ref": "CH-616", "quantity": 4},
+        ],
+        confidence="high",
+        status="accepted",
+        source="deterministic",
+    )
+    monkeypatch.setattr(
+        customer_memory,
+        "_fetch_accepted_fact",
+        AsyncMock(return_value=existing),
+    )
+
+    result = await customer_memory.apply_extracted_facts(
+        db,  # type: ignore[arg-type]
+        profile=profile,
+        order=order,
+        message=None,
+        facts=[
+            _fact_input(
+                scope="current_order",
+                key="order.items",
+                value=[{"catalog_ref": "CH-616", "quantity": 4}],
+                evidence="4 x CH-616",
+            )
+        ],
+    )
+
+    saved = db.added[0]
+    assert isinstance(saved, CustomerFact)
+    assert saved.status == "accepted"
+    assert existing.status == "superseded"
+    assert result.accepted == [saved]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fact",
+    [
+        _fact_input(
+            scope="current_order",
+            key="order.items",
+            value="not a list",
+            source="deterministic",
+            evidence="bad shape",
+        ),
+        _fact_input(
+            scope="current_order",
+            key="order.items",
+            value=[{"catalog_ref": "CH-616", "quantity": 2}],
+            source="fast_model",
+            evidence="model-origin order",
+        ),
+    ],
+)
+async def test_current_order_items_requires_deterministic_valid_shape(
+    monkeypatch: pytest.MonkeyPatch,
+    fact: SimpleNamespace,
+) -> None:
+    from src.services import customer_memory
+
+    db = _FakeDb()
+    profile = _profile()
+    conversation = _conversation()
+    order = _order(profile, conversation)
+    existing = CustomerFact(
+        profile=profile,
+        order_memory=order,
+        customer_profile_id=profile.id,
+        order_memory_id=order.id,
+        scope="current_order",
+        key="order.items",
+        value=[{"catalog_ref": "CH-616", "quantity": 1}],
+        confidence="high",
+        status="accepted",
+        source="deterministic",
+    )
+    monkeypatch.setattr(
+        customer_memory,
+        "_fetch_accepted_fact",
+        AsyncMock(return_value=existing),
+    )
+
+    result = await customer_memory.apply_extracted_facts(
+        db,  # type: ignore[arg-type]
+        profile=profile,
+        order=order,
+        message=None,
+        facts=[fact],
+    )
+
+    saved = db.added[0]
+    assert isinstance(saved, CustomerFact)
+    assert saved.status == "proposed"
+    assert existing.status == "accepted"
+    assert result.accepted == []
+    assert result.proposed == [saved]
+
+
+@pytest.mark.asyncio
+async def test_build_customer_facts_context_renders_catalog_ref_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services import customer_memory
+
+    profile = _profile()
+    conversation = _conversation()
+    active_order = _order(profile, conversation)
+
+    monkeypatch.setattr(
+        customer_memory,
+        "_fetch_context_profile_facts",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        customer_memory,
+        "_fetch_context_order_facts",
+        AsyncMock(
+            return_value=[
+                CustomerFact(
+                    profile=profile,
+                    order_memory=active_order,
+                    scope="current_order",
+                    key="order.items",
+                    value=[
+                        {"catalog_ref": "SKYLAND NOVO 2400", "quantity": 2},
+                        {"catalog_ref": "CH-616", "quantity": 4},
+                    ],
+                    confidence="high",
+                    status="accepted",
+                    source="deterministic",
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        customer_memory, "_fetch_past_orders", AsyncMock(return_value=[])
+    )
+
+    context = await customer_memory.build_customer_facts_context(
+        _FakeDb(),  # type: ignore[arg-type]
+        profile=profile,
+        active_order=active_order,
+        max_past_orders=1,
+    )
+
+    assert "- Items: 2 x SKYLAND NOVO 2400, 4 x CH-616" in context.current_order_lines
+    assert "2 x item" not in context.render()
+
+
+@pytest.mark.asyncio
 async def test_past_order_reference_requires_confirmation_not_order_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

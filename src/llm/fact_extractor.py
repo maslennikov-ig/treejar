@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from pydantic import BaseModel, Field
 
 from src.core.config import settings
+from src.dialogue.order_guards import is_order_selection_blocked
+from src.dialogue.order_runtime import run_order_runtime
+from src.dialogue.order_state import order_lines_snapshot
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN
 
 if TYPE_CHECKING:
@@ -61,6 +64,7 @@ _GENERIC_SPACED_SKU_PATTERN = re.compile(r"\b[A-Z]{1,4}\s*[- ]\s*\d{2,8}\b")
 _SKU_NUMERIC_PREFIX_STOPWORDS = frozenset(
     {
         "and",
+        "but",
         "buy",
         "for",
         "from",
@@ -132,6 +136,11 @@ _PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN = re.compile(
     r"\b(?:need|needs|want|wants|would\s+like|looking\s+for|quote|quotation|"
     r"chair|chairs|desk|desks|table|tables|workstation|workstations|sku|"
     r"assembly|installation)\b",
+    re.IGNORECASE,
+)
+_ADDRESS_REDACTION_PATTERN = re.compile(
+    r"\b(?:delivery\s+address|address|deliver\s+to|ship\s+to)"
+    r"\s*(?:is|:|-)?\s*(?P<value>[^,.;\n/]+)",
     re.IGNORECASE,
 )
 _QUOTE_ACCEPTANCE_PATTERNS = (
@@ -301,9 +310,9 @@ async def extract_customer_facts(
 
     model_name = getattr(runner, "model_name", settings.openrouter_model_fast)
     request = FastCustomerFactExtractionRequest(
-        message_text=message_text,
+        message_text=_redact_fast_model_text(message_text),
         source_message_id=source_message_id,
-        deterministic_facts=facts,
+        deterministic_facts=[_sanitize_fact_for_fast_model(fact) for fact in facts],
         expected_labels=list(expected_labels),
         model=model_name,
     )
@@ -339,6 +348,7 @@ def _extract_deterministic_facts(
     facts.extend(_extract_company_facts(message_text, source_message_id))
     facts.extend(_extract_customer_type_facts(message_text, source_message_id))
     facts.extend(_extract_address_facts(message_text, source_message_id))
+    facts.extend(_extract_compact_slash_quote_facts(message_text, source_message_id))
     facts.extend(_extract_order_item_facts(message_text, source_message_id))
     facts.extend(_extract_preference_facts(message_text, source_message_id))
     facts.extend(_extract_quote_status_facts(message_text, source_message_id))
@@ -531,6 +541,30 @@ def _extract_order_item_facts(
     source_message_id: str | None,
 ) -> list[ExtractedCustomerFact]:
     facts: list[ExtractedCustomerFact] = []
+    if is_order_selection_blocked(message_text):
+        return facts
+
+    order_runtime = run_order_runtime(text=message_text, metadata={})
+    order_snapshot = order_lines_snapshot(order_runtime.intent)
+    if (
+        order_runtime.decision.route == "product_selection"
+        and order_runtime.decision.handled
+        and order_snapshot
+    ):
+        facts.append(
+            _fact(
+                scope="current_order",
+                key="order.items",
+                value=order_snapshot,
+                confidence="high",
+                evidence=_order_items_evidence(order_snapshot),
+                source_message_id=source_message_id,
+            )
+        )
+        return facts
+    if order_runtime.intent.lines:
+        return facts
+
     for match in _SKU_ITEM_PATTERN.finditer(message_text):
         facts.append(
             _fact(
@@ -564,6 +598,16 @@ def _extract_order_item_facts(
         )
 
     return facts
+
+
+def _order_items_evidence(snapshot: list[dict[str, object]]) -> str:
+    parts: list[str] = []
+    for item in snapshot:
+        quantity = item.get("quantity")
+        catalog_ref = item.get("catalog_ref") or item.get("sku") or item.get("name")
+        if quantity and catalog_ref:
+            parts.append(f"{quantity} x {catalog_ref}")
+    return "; ".join(parts) or "order.items"
 
 
 def _plain_quantity_is_sku_numeric_component(
@@ -755,7 +799,7 @@ def _fact(
 
 
 def _compact_name_candidate(message_text: str) -> str | None:
-    parts = _comma_parts(message_text)
+    parts = _detail_parts(message_text)
     if len(parts) < 2:
         return None
 
@@ -769,6 +813,7 @@ def _compact_name_candidate(message_text: str) -> str | None:
         or PHONE_PATTERN.search(message_text)
         or _INDIVIDUAL_PATTERN.search(rest)
         or _COMPANY_TYPE_PATTERN.search(rest)
+        or "company" in rest
         or _looks_like_address(" ".join(parts[1:]))
     ):
         return first
@@ -792,11 +837,57 @@ def _compact_name_part_candidate(value: str) -> str | None:
 def _compact_address_candidate(message_text: str) -> str | None:
     if _ADDRESS_PATTERN.search(message_text):
         return None
-    for part in _comma_parts(message_text):
+    for part in _detail_parts(message_text):
         candidate = _clean_value(part)
         if _looks_like_address(candidate):
             return candidate
     return None
+
+
+def _extract_compact_slash_quote_facts(
+    message_text: str,
+    source_message_id: str | None,
+) -> list[ExtractedCustomerFact]:
+    if "/" not in message_text:
+        return []
+    parts = _detail_parts(message_text)
+    if len(parts) < 3:
+        return []
+
+    company = _compact_company_part_candidate(parts[1])
+    if not company:
+        return []
+    return [
+        _fact(
+            scope="persistent_profile",
+            key="customer.company",
+            value=company,
+            confidence="medium",
+            evidence=company,
+            source_message_id=source_message_id,
+        )
+    ]
+
+
+def _compact_company_part_candidate(value: str) -> str | None:
+    candidate = _clean_value(value)
+    if not candidate or len(candidate) > 100:
+        return None
+    if EMAIL_PATTERN.search(candidate) or PHONE_PATTERN.search(candidate):
+        return None
+    if _looks_like_address(candidate):
+        return None
+    if _PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN.search(candidate):
+        return None
+    if not re.search(r"[^\W\d_]", candidate, flags=re.UNICODE):
+        return None
+    return candidate
+
+
+def _detail_parts(message_text: str) -> list[str]:
+    if "/" in message_text:
+        return [part.strip() for part in re.split(r"/+", message_text) if part.strip()]
+    return _comma_parts(message_text)
 
 
 def _comma_parts(message_text: str) -> list[str]:
@@ -917,6 +1008,8 @@ def _normalize_fast_facts(
 ) -> list[ExtractedCustomerFact]:
     normalized: list[ExtractedCustomerFact] = []
     for fact in facts:
+        if fact.scope == "current_order" and fact.key == "order.items":
+            continue
         normalized.append(
             ExtractedCustomerFact(
                 scope=fact.scope,
@@ -931,6 +1024,53 @@ def _normalize_fast_facts(
             )
         )
     return normalized
+
+
+def _sanitize_fact_for_fast_model(fact: ExtractedCustomerFact) -> ExtractedCustomerFact:
+    if fact.key == "delivery.address":
+        return fact.model_copy(
+            update={
+                "value": "[REDACTED_ADDRESS]",
+                "evidence": "[REDACTED_ADDRESS]",
+            }
+        )
+    return fact.model_copy(
+        update={
+            "value": _redact_fast_model_value(fact.value),
+            "evidence": _redact_fast_model_text(fact.evidence),
+        }
+    )
+
+
+def _redact_fast_model_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _redact_fast_model_text(value)
+    if isinstance(value, list):
+        return [_redact_fast_model_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_fast_model_value(item) for key, item in value.items()}
+    return value
+
+
+def _redact_fast_model_text(text: str) -> str:
+    redacted = EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
+
+    def redact_phone(match: re.Match[str]) -> str:
+        raw = match.group(0)
+        prefix = redacted[max(0, match.start() - 24) : match.start()].casefold()
+        if raw.strip().startswith("+") or re.search(
+            r"\b(?:phone|mobile|whatsapp|tel)\b\s*[:：=-]?\s*$",
+            prefix,
+        ):
+            return "[REDACTED_PHONE]"
+        return raw
+
+    redacted = PHONE_PATTERN.sub(redact_phone, redacted)
+
+    def redact_address(match: re.Match[str]) -> str:
+        return match.group(0).replace(match.group("value"), "[REDACTED_ADDRESS]")
+
+    return _ADDRESS_REDACTION_PATTERN.sub(redact_address, redacted)
 
 
 def _dedupe_facts(

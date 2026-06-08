@@ -1,40 +1,40 @@
 # Orchestrator Handoff
-Updated: 2026-06-04
-Current branch: `main`
+Updated: 2026-06-08
+Current branch: `codex/tj-order-state-refactor`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
-- Current stage: `tj-memory` for Customer Facts and Order Memory Layer.
-- Spec/plan: `docs/specs/customer-facts-layer.md` and
-  `docs/superpowers/plans/2026-06-04-customer-facts-layer.md`.
+- Current stage: `tj-order-state`; local implementation, review-fix, follow-up
+  fixes, and full local verification are complete.
+- Spec/plan: `docs/specs/dialogue-state-kernel.md`,
+  `docs/specs/customer-facts-layer.md`, and
+  `docs/superpowers/plans/2026-06-08-order-state-runtime.md`.
 - Production runtime: `455693cb26cf45ae5255dc07ad1732c52a3e8124`,
   deploy run `26965492878`, smoke `8 passed, 0 failed`.
-- Customer facts v1 is globally enabled in production:
-  `customer_facts_mode=enforce`, trace enabled, fast extractor enabled.
-- PII masking is disabled by default in production because it was not a client
-  requirement and blocked extraction of phones/emails/facts; opt-in remains via
-  `PII_MASKING_ENABLED=true`.
-- Final customer facts enforce E2E passed:
+- Customer facts v1 is globally enabled in production
+  (`customer_facts_mode=enforce`); PII masking remains opt-in.
+- Final customer facts enforce E2E passed for synthetic conversations
   `4983dc17-c27c-4756-8a65-3afc0a25b447` and
-  `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`. Noor kept `2 x CH 616`, saved
-  name/email/phone/address/customer type, consumed name-gate pending request,
-  created no escalation, and produced fact traces with `conflict_count=0`.
-- Synthetic E2E conversations were closed/resolved after readback; the real
-  unsuffixed `+79262810921` thread was not touched.
+  `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`; the real unsuffixed
+  `+79262810921` thread was not touched.
 - Production still runs `dialogue_kernel_mode=enforce` only for
   `dialogue_kernel_enforced_flows=product_selection`.
-- Evidence: `tj-memory` summary plus artifacts
-  `tj-memory.7-global-enable-e2e.md`, `tj-memory.7-delivery-e2e.md`, and
-  `tj-memory.10-delivery-e2e.md`.
+- New local stage evidence: `.codex/stages/tj-order-state/summary.md` plus
+  artifacts under `.codex/stages/tj-order-state/artifacts/`; latest full local
+  pytest result is `1335 passed, 19 skipped`.
+- Previous production evidence lives in the `tj-memory` stage summary/artifacts.
 
 ## Next recommended
-Next stage id: choose from the next GitHub issue or Wazzup follow-up work.
-Recommended action: monitor real customer conversations for customer facts
-trace anomalies; rollback is config-only by setting `customer_facts_mode=disabled`.
+Next stage id: `tj-order-state`.
+Recommended action: decide delivery for `codex/tj-order-state-refactor`; do not
+deploy, run live WhatsApp/API E2E, close GitHub issues, or mutate production
+without explicit approval.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage. Continue from `/home/me/code/treejar`; read repo
-contracts, `tj-memory` summary, spec, plan, and delivery E2E artifact.
+contracts, `tj-order-state` summary/artifacts, specs, plan, Beads state, git
+status/diff, and active subagents/worktrees before deciding delivery, live E2E,
+or follow-up implementation.
 
 ## Explicit defers
 - `tj-gh21`: outside-24h follow-ups wait for approved Wazzup WABA EN/AR templates.
