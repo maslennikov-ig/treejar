@@ -3403,6 +3403,140 @@ def _product_display_name(product: Any) -> str:
     return str(sku or "Selected item")
 
 
+def _is_stock_price_catalog_inquiry(text: str) -> bool:
+    normalized = _normalize_text(_strip_synthetic_test_marker(text))
+    if not normalized:
+        return False
+    has_stock = any(
+        term in normalized
+        for term in (
+            "stock",
+            "availability",
+            "available",
+            "in stock",
+        )
+    )
+    has_price = any(
+        term in normalized
+        for term in (
+            "price",
+            "how much",
+            "cost",
+            "rate",
+        )
+    )
+    return has_stock and has_price
+
+
+async def _stock_price_resolved_options(
+    *,
+    db: AsyncSession,
+    zoho_client: ZohoInventoryClient,
+    crm_context: Mapping[str, Any] | None,
+    text: str,
+) -> tuple[ResolvedPurchaseSelectionItem, ...]:
+    if not _is_stock_price_catalog_inquiry(text):
+        return ()
+
+    refs = extract_catalog_references(text)
+    if not refs:
+        return ()
+
+    segment = crm_context.get("Segment", "Unknown") if crm_context else "Unknown"
+    resolved: list[ResolvedPurchaseSelectionItem] = []
+    seen_skus: set[str] = set()
+
+    for ref in refs[:3]:
+        products = await _find_catalog_products_by_sku_stem(db, ref.normalized)
+        if not products:
+            product = await _find_catalog_product_by_sku(db, ref.normalized)
+            products = [product] if product is not None else []
+        quantity = ref.quantity if ref.quantity is not None and ref.quantity > 0 else 1
+
+        for product in products[:5]:
+            product_sku = str(getattr(product, "sku", "") or "").strip()
+            if not product_sku or product_sku in seen_skus:
+                continue
+            seen_skus.add(product_sku)
+            (
+                inventory_item,
+                availability_source,
+            ) = await _resolve_purchase_selection_inventory(zoho_client, product)
+            price_decision = _commercial_price_decision(
+                catalog_product=product,
+                zoho_item=inventory_item or {},
+                segment=str(segment),
+            )
+            availability: int | None = None
+            if inventory_item is not None:
+                stock_on_hand = inventory_item.get("stock_on_hand")
+                try:
+                    availability = (
+                        int(stock_on_hand) if stock_on_hand is not None else None
+                    )
+                except (TypeError, ValueError):
+                    availability = None
+            resolved.append(
+                ResolvedPurchaseSelectionItem(
+                    requested=PurchaseSelectionItem(
+                        quantity=quantity,
+                        item_candidate=_product_display_name(product),
+                        sku=product_sku,
+                    ),
+                    product=product,
+                    availability=availability,
+                    unit_price=(
+                        price_decision.unit_price
+                        if price_decision.source != "unavailable"
+                        else None
+                    ),
+                    currency=price_decision.currency,
+                    availability_source=availability_source,
+                )
+            )
+    return tuple(resolved)
+
+
+def _stock_price_options_response(
+    options: tuple[ResolvedPurchaseSelectionItem, ...],
+    *,
+    language: str,
+) -> str:
+    if not options:
+        return ""
+
+    requested_quantity = options[0].requested.quantity
+    option_names = " ".join(_product_display_name(option.product) for option in options)
+    item_label = "chair" if "chair" in _normalize_text(option_names) else "item"
+    lines = [
+        f"I found these options for {requested_quantity} {item_label}"
+        f"{'' if requested_quantity == 1 else 's'}:",
+        "",
+    ]
+    for index, option in enumerate(options, start=1):
+        lines.append(f"Option {index}: {_product_display_name(option.product)}")
+        lines.append(f"- SKU: {getattr(option.product, 'sku', option.requested.sku)}")
+        if option.unit_price is None:
+            lines.append("- Price: needs manager confirmation")
+        else:
+            lines.append(
+                f"- Price: {_format_commercial_amount(option.unit_price, option.currency)} each"
+            )
+        if option.availability is None:
+            lines.append("- Stock: needs manager confirmation")
+        else:
+            lines.append(f"- Stock: {option.availability} available")
+        lines.append("")
+
+    if is_arabic_customer_language(language):
+        lines.append("أي خيار تفضل؟ أستطيع بعدها تجهيز عرض سعر رسمي.")
+    else:
+        lines.append(
+            "Which option would you prefer? I can prepare a formal quotation after that."
+        )
+    return "\n".join(lines).strip()
+
+
 def _missing_quote_details_for_selection_confirmation(
     quote_details: Mapping[str, str] | None,
     *,
@@ -8565,6 +8699,34 @@ async def process_message(
                 "name-capture",
                 allow_product_media=False,
             )
+
+    stock_price_options = await _stock_price_resolved_options(
+        db=db,
+        zoho_client=zoho_client,
+        crm_context=crm_context,
+        text=combined_text,
+    )
+    if not stock_price_options and masked_text != combined_text:
+        stock_price_options = await _stock_price_resolved_options(
+            db=db,
+            zoho_client=zoho_client,
+            crm_context=crm_context,
+            text=masked_text,
+        )
+    if stock_price_options:
+        db_model_main = await get_system_config(
+            db, "openrouter_model_main", settings.openrouter_model_main
+        )
+        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
+        await _clear_verified_policy_repair_state()
+        return _build_static_response(
+            _stock_price_options_response(
+                stock_price_options,
+                language=str(conv.language),
+            ),
+            f"{db_model_main}|stock-price-options",
+            allow_product_media=False,
+        )
 
     if (
         _pending_quote_selection_from_metadata(conv) is None
