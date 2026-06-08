@@ -5750,6 +5750,61 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
     assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
 
 
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_stock_and_price_question_does_not_start_exact_quote(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "My name is Lilia Orderstate. What is the stock and price for 2 CH 616 chairs?"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I can check stock and price once we confirm the exact CH 616 variant."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    mock_create_quotation.assert_not_awaited()
+    assert mock_run.await_count == 1
+    assert "exact-quote" not in response.model
+    assert "prepare the quotation" not in response.text.casefold()
+    metadata = conv.metadata_ or {}
+    assert "pending_quote_selection" not in metadata
+
+
+def test_extract_exact_quote_candidate_rejects_stock_price_inquiry_without_exact_signal() -> (
+    None
+):
+    candidate = extract_exact_quote_candidate(
+        "What is the stock and price for 2 CH 616 chairs?"
+    )
+
+    assert candidate is None
+
+
 def test_extract_exact_quote_candidate_accepts_exact_named_item_without_quote_terms() -> (
     None
 ):

@@ -1278,17 +1278,7 @@ def _has_exact_commitment_intent(normalized: str) -> bool:
         term in normalized for term in _EXACT_COMMITMENT_QUALIFIERS
     )
 
-    return has_commitment_target and (
-        has_exactness_signal
-        or (
-            "price" in normalized
-            and (
-                "availability" in normalized
-                or "stock" in normalized
-                or "available" in normalized
-            )
-        )
-    )
+    return has_commitment_target and has_exactness_signal
 
 
 def _looks_like_exact_item_candidate(candidate: str) -> bool:
