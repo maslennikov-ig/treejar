@@ -25,6 +25,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.dialogue.catalog_refs import extract_catalog_references
 from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.reducer import push_expected_answer_frame
@@ -1478,6 +1479,12 @@ def _last_assistant_asked_product_preference(
         return False
     if not _has_product_or_quote_routing_signal(last_assistant):
         return False
+    has_workspace_tradeoff = ("luma" in normalized and "novo" in normalized) or (
+        any(term in normalized for term in ("private", "privacy"))
+        and any(term in normalized for term in ("open", "collaborative", "team"))
+    )
+    if not has_workspace_tradeoff:
+        return False
     preference_question_terms = (
         "prefer",
         "would you like",
@@ -2284,11 +2291,132 @@ def _last_assistant_asked_product_selection(recent_history: list[str] | None) ->
     )
 
 
+_OPTION_SKU_LINE_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?\*{0,2}\s*SKU\s*:\s*\*{0,2}\s*(?P<sku>[^\r\n]+)"
+)
+
+
+def _ordinal_option_from_reply(text: str) -> int | None:
+    normalized = _normalize_text(_strip_synthetic_test_marker(text))
+    if not normalized or len(normalized.split()) > 8 or "?" in normalized:
+        return None
+    if any(
+        phrase in normalized
+        for phrase in ("first", "1st", "option 1", "option one", "number 1")
+    ):
+        return 1
+    if any(
+        phrase in normalized
+        for phrase in ("second", "2nd", "option 2", "option two", "number 2")
+    ):
+        return 2
+    return None
+
+
+def _clean_numbered_option_heading(line: str) -> str:
+    cleaned = re.sub(r"[*_`]+", "", line).strip(" \t\r\n-")
+    cleaned = re.sub(r"^\d{1,2}\s*[.)]\s*", "", cleaned).strip(" \t\r\n-")
+    return cleaned
+
+
+def _prior_user_message_before_last_assistant(
+    recent_history: list[str] | None,
+) -> str:
+    if not recent_history:
+        return ""
+    last_assistant_index: int | None = None
+    for index in range(len(recent_history) - 1, -1, -1):
+        if recent_history[index].startswith("assistant: "):
+            last_assistant_index = index
+            break
+    if last_assistant_index is None:
+        return ""
+    for index in range(last_assistant_index - 1, -1, -1):
+        entry = recent_history[index]
+        if entry.startswith("user: "):
+            return entry.removeprefix("user: ").strip()
+    return ""
+
+
+def _quantity_from_prior_product_request(recent_history: list[str] | None) -> int:
+    prior_user = _prior_user_message_before_last_assistant(recent_history)
+    if prior_user:
+        quantities = {
+            ref.quantity
+            for ref in extract_catalog_references(prior_user)
+            if ref.quantity is not None and ref.quantity > 0
+        }
+        if len(quantities) == 1:
+            return next(iter(quantities))
+    return 1
+
+
+def _numbered_sku_options_from_assistant(
+    assistant_text: str,
+) -> list[tuple[int, str, str]]:
+    options: list[tuple[int, str, str]] = []
+    lines_before: list[str] = []
+    for ordinal, match in enumerate(
+        _OPTION_SKU_LINE_RE.finditer(assistant_text), start=1
+    ):
+        raw_sku = re.sub(r"[*_`]+", "", match.group("sku")).strip(" \t\r\n,.;:-")
+        if not raw_sku:
+            continue
+        heading = ""
+        lines_before = assistant_text[: match.start()].splitlines()
+        for line in reversed(lines_before):
+            cleaned = _clean_numbered_option_heading(line)
+            if not cleaned:
+                continue
+            normalized = _normalize_text(cleaned)
+            if normalized.startswith(("sku", "price", "stock", "availability")):
+                continue
+            heading = cleaned
+            break
+        options.append((ordinal, raw_sku, heading or raw_sku))
+    return options
+
+
+def _extract_ordinal_option_purchase_selection(
+    text: str,
+    recent_history: list[str] | None,
+) -> PurchaseSelection | None:
+    ordinal = _ordinal_option_from_reply(text)
+    if ordinal is None:
+        return None
+
+    last_assistant = _last_assistant_message(recent_history)
+    if not last_assistant or not _last_assistant_asked_product_selection(
+        recent_history
+    ):
+        return None
+
+    for option_ordinal, sku, heading in _numbered_sku_options_from_assistant(
+        last_assistant
+    ):
+        if option_ordinal != ordinal:
+            continue
+        quantity = _quantity_from_prior_product_request(recent_history)
+        return PurchaseSelection(
+            items=(
+                PurchaseSelectionItem(
+                    quantity=quantity,
+                    item_candidate=heading,
+                    sku=sku,
+                ),
+            )
+        )
+    return None
+
+
 def _extract_purchase_selection_for_context(
     text: str,
     recent_history: list[str] | None,
 ) -> PurchaseSelection | None:
     selection = _extract_purchase_selection(text)
+    if selection is not None:
+        return selection
+    selection = _extract_ordinal_option_purchase_selection(text, recent_history)
     if selection is not None:
         return selection
     if not _last_assistant_asked_product_selection(recent_history):

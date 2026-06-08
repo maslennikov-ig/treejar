@@ -222,6 +222,31 @@ def test_product_preference_frame_builder_keeps_workspace_preference_canonical()
     assert second.filled_slots == {"workspace_preference": "open"}
 
 
+def test_stock_price_option_list_does_not_create_workspace_preference_frame() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971500000002",
+        customer_name="Lili",
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+    )
+
+    frame = engine_module._expected_answer_frame_from_assistant_response(
+        conv,
+        (
+            "I found two CH 616 chair options available:\n\n"
+            "**1. SkyLand Workstation Chair CH 616 Black**\n"
+            "- **SKU:** CH 616 black\n\n"
+            "**2. Skyland Operative Chair CH 616 NEW Black**\n"
+            "- **SKU:** CH 616 NEW black\n\n"
+            "Which of these two would you prefer?"
+        ),
+    )
+
+    assert frame is None
+
+
 @pytest.mark.parametrize(
     ("response_text", "question_kind", "flow", "slot_names"),
     [
@@ -6650,6 +6675,98 @@ async def test_process_message_confirms_selection_from_prior_product_media_capti
     assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
         ("00-07024022", 10),
         ("00-07023896", 5),
+    ]
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_confirms_ordinal_selection_from_prior_sku_options(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia Orderstate"
+    conv.metadata_ = {"quote_customer_details": {"name": "Lilia Orderstate"}}
+    text = "The first option please."
+    previous_user = (
+        "My name is Lilia Orderstate. What is the stock and price for 2 CH 616 chairs?"
+    )
+    previous_assistant = (
+        "I found two CH 616 chair options available:\n\n"
+        "**1. SkyLand Workstation Chair CH 616 Black**\n"
+        "- **SKU:** CH 616 black\n"
+        "- **Price:** 220.00 AED each\n"
+        "- **Stock:** 3 units available\n\n"
+        "**2. Skyland Operative Chair CH 616 NEW Black**\n"
+        "- **SKU:** CH 616 NEW black\n"
+        "- **Price:** 295.00 AED each\n"
+        "- **Stock:** 93 units available\n\n"
+        "Which of these two would you prefer?"
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=previous_user)]),
+        ModelResponse(parts=[TextPart(content=previous_assistant)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    ch616_product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 black",
+        zoho_item_id="zoho-ch-616-black",
+        name_en="SkyLand Workstation Chair CH 616 Black",
+        price=220.0,
+        currency="AED",
+        stock=3,
+        attributes={},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = []
+    execute_result.scalar_one_or_none.return_value = ch616_product
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": "CH 616 black",
+        "stock_on_hand": 3,
+        "rate": 220.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "SkyLand Workstation Chair CH 616 Black" in response.text
+    assert "Quantity: 2" in response.text
+    assert "440.00 AED" in response.text
+    assert "Let me know these details" not in response.text
+    pending = conv.metadata_["pending_quote_selection"]
+    assert pending["items"] == [
+        {
+            "sku": "CH 616 black",
+            "quantity": 2,
+            "product_id": str(ch616_product.id),
+            "display_name": "SkyLand Workstation Chair CH 616 Black",
+            "unit_price": 220.0,
+            "currency": "AED",
+        }
     ]
     mock_run.assert_not_awaited()
 
