@@ -2197,6 +2197,30 @@ async def _resolve_purchase_selection_confirmation(
         zoho_client=zoho_client,
         crm_context=crm_context,
     )
+    variant_options: tuple[ResolvedPurchaseSelectionItem, ...] = ()
+    if resolution.unresolved and not resolution.resolved:
+        variant_options = await _selection_variant_resolved_options(
+            db=db,
+            zoho_client=zoho_client,
+            crm_context=crm_context,
+            items=resolution.unresolved,
+        )
+    if variant_options:
+        if clear_pending_reference_quantity:
+            await _clear_pending_product_reference_quantity(db, conversation)
+        if trace_enabled:
+            _record_order_runtime_trace(
+                conversation,
+                purchase_selection.order_runtime_trace,
+            )
+        await _clear_pending_quote_selection(db, conversation)
+        return (
+            selection_deps,
+            _stock_price_options_response(
+                variant_options,
+                language=str(conversation.language),
+            ),
+        )
     await _store_pending_quote_selection(db, conversation, resolution)
     if clear_pending_reference_quantity:
         await _clear_pending_product_reference_quantity(db, conversation)
@@ -3428,6 +3452,57 @@ def _is_stock_price_catalog_inquiry(text: str) -> bool:
     return has_stock and has_price
 
 
+async def _resolved_catalog_options_from_products(
+    *,
+    products: Iterable[Any],
+    quantity: int,
+    zoho_client: ZohoInventoryClient,
+    segment: str,
+    seen_skus: set[str],
+) -> list[ResolvedPurchaseSelectionItem]:
+    resolved: list[ResolvedPurchaseSelectionItem] = []
+    for product in products:
+        product_sku = str(getattr(product, "sku", "") or "").strip()
+        if not product_sku or product_sku in seen_skus:
+            continue
+        seen_skus.add(product_sku)
+        (
+            inventory_item,
+            availability_source,
+        ) = await _resolve_purchase_selection_inventory(zoho_client, product)
+        price_decision = _commercial_price_decision(
+            catalog_product=product,
+            zoho_item=inventory_item or {},
+            segment=segment,
+        )
+        availability: int | None = None
+        if inventory_item is not None:
+            stock_on_hand = inventory_item.get("stock_on_hand")
+            try:
+                availability = int(stock_on_hand) if stock_on_hand is not None else None
+            except (TypeError, ValueError):
+                availability = None
+        resolved.append(
+            ResolvedPurchaseSelectionItem(
+                requested=PurchaseSelectionItem(
+                    quantity=quantity,
+                    item_candidate=_product_display_name(product),
+                    sku=product_sku,
+                ),
+                product=product,
+                availability=availability,
+                unit_price=(
+                    price_decision.unit_price
+                    if price_decision.source != "unavailable"
+                    else None
+                ),
+                currency=price_decision.currency,
+                availability_source=availability_source,
+            )
+        )
+    return resolved
+
+
 async def _stock_price_resolved_options(
     *,
     db: AsyncSession,
@@ -3453,47 +3528,45 @@ async def _stock_price_resolved_options(
             products = [product] if product is not None else []
         quantity = ref.quantity if ref.quantity is not None and ref.quantity > 0 else 1
 
-        for product in products[:5]:
-            product_sku = str(getattr(product, "sku", "") or "").strip()
-            if not product_sku or product_sku in seen_skus:
-                continue
-            seen_skus.add(product_sku)
-            (
-                inventory_item,
-                availability_source,
-            ) = await _resolve_purchase_selection_inventory(zoho_client, product)
-            price_decision = _commercial_price_decision(
-                catalog_product=product,
-                zoho_item=inventory_item or {},
+        resolved.extend(
+            await _resolved_catalog_options_from_products(
+                products=products[:5],
+                quantity=quantity,
+                zoho_client=zoho_client,
                 segment=str(segment),
+                seen_skus=seen_skus,
             )
-            availability: int | None = None
-            if inventory_item is not None:
-                stock_on_hand = inventory_item.get("stock_on_hand")
-                try:
-                    availability = (
-                        int(stock_on_hand) if stock_on_hand is not None else None
-                    )
-                except (TypeError, ValueError):
-                    availability = None
-            resolved.append(
-                ResolvedPurchaseSelectionItem(
-                    requested=PurchaseSelectionItem(
-                        quantity=quantity,
-                        item_candidate=_product_display_name(product),
-                        sku=product_sku,
-                    ),
-                    product=product,
-                    availability=availability,
-                    unit_price=(
-                        price_decision.unit_price
-                        if price_decision.source != "unavailable"
-                        else None
-                    ),
-                    currency=price_decision.currency,
-                    availability_source=availability_source,
-                )
+        )
+    return tuple(resolved)
+
+
+async def _selection_variant_resolved_options(
+    *,
+    db: AsyncSession,
+    zoho_client: ZohoInventoryClient,
+    crm_context: Mapping[str, Any] | None,
+    items: Iterable[PurchaseSelectionItem],
+) -> tuple[ResolvedPurchaseSelectionItem, ...]:
+    segment = crm_context.get("Segment", "Unknown") if crm_context else "Unknown"
+    resolved: list[ResolvedPurchaseSelectionItem] = []
+    seen_skus: set[str] = set()
+
+    for item in items:
+        products = await _find_catalog_products_by_sku_stem(
+            db,
+            item.sku or item.item_candidate,
+        )
+        if len(products) < 2:
+            continue
+        resolved.extend(
+            await _resolved_catalog_options_from_products(
+                products=products[:5],
+                quantity=item.quantity,
+                zoho_client=zoho_client,
+                segment=str(segment),
+                seen_skus=seen_skus,
             )
+        )
     return tuple(resolved)
 
 

@@ -5904,6 +5904,90 @@ async def test_process_message_stock_price_question_returns_catalog_option_list(
     assert "pending_quote_selection" not in (conv.metadata_ or {})
 
 
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_ambiguous_ch616_selection_returns_catalog_options(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "My name is Lilia Orderstate. I need 4 CH 616 chairs."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    ch616 = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 black",
+        zoho_item_id="zoho-ch-616-black",
+        name_en="SkyLand Workstation Chair CH 616 black",
+        price=220.0,
+        currency="AED",
+        stock=3,
+        attributes={},
+        is_active=True,
+    )
+    ch616_new = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 NEW black",
+        zoho_item_id="zoho-ch-616-new-black",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        price=295.0,
+        currency="AED",
+        stock=93,
+        attributes={},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    execute_result.scalars.return_value.all.return_value = [ch616, ch616_new]
+    db.execute.return_value = execute_result
+    zoho.get_item.side_effect = [
+        {
+            "sku": "CH 616 black",
+            "stock_on_hand": 3,
+            "rate": 220.0,
+            "currency_code": "AED",
+        },
+        {
+            "sku": "CH 616 NEW black",
+            "stock_on_hand": 93,
+            "rate": 295.0,
+            "currency_code": "AED",
+        },
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "SkyLand Workstation Chair CH 616 black" in response.text
+    assert "Skyland Operative Chair CH 616 NEW black" in response.text
+    assert "220.00 AED" in response.text
+    assert "295.00 AED" in response.text
+    assert "3 available" in response.text
+    assert "93 available" in response.text
+    assert "4 chairs" in response.text
+    assert "manager verification" not in response.text.lower()
+    mock_run.assert_not_awaited()
+    assert "pending_quote_selection" not in (conv.metadata_ or {})
+
+
 def test_extract_exact_quote_candidate_rejects_stock_price_inquiry_without_exact_signal() -> (
     None
 ):
