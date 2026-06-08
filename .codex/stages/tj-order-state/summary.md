@@ -1,17 +1,18 @@
 # Stage tj-order-state: Full Order-State Runtime Refactor
 
 Updated: 2026-06-08
-Status: closed locally; follow-up implementation and stage closeout verification passed
-Branch: `codex/tj-order-state-refactor`
+Status: delivered to production; final live E2E passed
+Branch: `main`
 Base: `main` at `5c85a5b46d28320a1790196b48651ad6bc01a41f`
 Beads: `tj-order-state` with children `tj-order-state.1` through
 `tj-order-state.9.6`
 
 docs-reviewed: updated - dialogue kernel spec, customer facts spec, project
-index, plan file, stage artifacts, and handoff now describe the typed
-order-state runtime, bounded runtime trace, inquiry guard, deterministic
-`order.items` ownership, prompt privacy boundary, Arabic exact-quote
-missing-details copy, and external framework decision.
+index, plan file, stage artifacts, live E2E artifact, and handoff now describe
+the typed order-state runtime, bounded runtime trace, inquiry guard,
+deterministic `order.items` ownership, prompt privacy boundary, Arabic
+exact-quote missing-details copy, production deployment, live E2E, and external
+framework decision.
 graph-reviewed: no-change-needed - Graphify is not configured; no
 `graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
 project-index: updated - `src/dialogue/` now names the typed order-state runtime
@@ -60,6 +61,10 @@ without adding a new heavy conversation framework.
 - Compact quote-detail replies can combine slash-separated name/company/address
   details with item corrections; product-looking segments and confirmation
   words are not accepted as company names.
+- Stock+price catalog inquiries now bypass free-form LLM answer composition and
+  return deterministic Product/Zoho-backed option lists.
+- Ambiguous catalog-stem selections such as `4 CH 616 chairs` now return the
+  same Product/Zoho-backed option list instead of manager-verification text.
 - Zoho, quotation PDF, WhatsApp media, Telegram, and manager escalation side
   effects remain legacy-owned.
 
@@ -178,6 +183,48 @@ GREEN evidence:
   `mypy`, full pytest `1335 passed, 19 skipped`, artifact validation, stage
   readiness, process verification, docs review, and debt marker scan. Repo E2E
   command is not configured, so live/API E2E was skipped by closeout.
+- Live-fix RED stock/price regression:
+  `uv run pytest tests/test_llm_engine.py::test_process_message_stock_price_question_returns_catalog_option_list -q`
+  -> failed before the first live fix because the response omitted catalog
+  options.
+- Live-fix GREEN stock/price regression:
+  `uv run pytest tests/test_llm_engine.py::test_process_message_stock_price_question_returns_catalog_option_list tests/test_llm_engine.py::test_process_message_stock_and_price_question_does_not_start_exact_quote tests/test_llm_engine.py::test_process_message_confirms_ordinal_selection_from_prior_sku_options -q`
+  -> `3 passed`.
+- Live-fix RED ambiguous CH616 regression:
+  `uv run pytest tests/test_llm_engine.py::test_process_message_ambiguous_ch616_selection_returns_catalog_options -q`
+  -> failed before the second live fix because `4 CH 616 chairs` produced
+  manager-verification text.
+- Live-fix GREEN ambiguous CH616 regression:
+  `uv run pytest tests/test_llm_engine.py::test_process_message_ambiguous_ch616_selection_returns_catalog_options tests/test_llm_engine.py::test_process_message_stock_price_question_returns_catalog_option_list tests/test_llm_engine.py::test_process_message_confirms_ordinal_selection_from_prior_sku_options -q`
+  -> `3 passed`.
+- Final high-signal order regression pack:
+  `uv run pytest tests/test_llm_engine.py -k 'stock_price or stock_and_price or ordinal_selection or purchase_selection or ch616 or pending_quantity_descriptor or missing_quantity_reference or quote_details_only_model_position or captures_product_preference or product_preference_frame' -q`
+  -> `50 passed, 221 deselected`.
+- Final local quality gates:
+  - `uv run ruff check src/ tests/` -> `All checks passed!`
+  - `uv run ruff format --check src/ tests/` -> `293 files already formatted`
+  - `uv run mypy src/` -> `Success: no issues found in 157 source files`
+  - `uv run pytest tests/ -v --tb=short` -> `1345 passed, 19 skipped`
+- Final delivery:
+  - Commit `84bf3421607c09474da4aaefdabc690bc27bad77`
+    (`fix(llm): answer stock price option lists deterministically`) deployed by
+    run `27145342529`.
+  - Commit `770da1721837496c70a5e28902c26e8f275cafc9`
+    (`fix(llm): clarify ambiguous catalog variant selections`) deployed by run
+    `27146046204`.
+  - Production marker after final deploy:
+    `/opt/noor/.release-sha` -> `770da1721837496c70a5e28902c26e8f275cafc9`;
+    `/opt/noor/.release-run-id` -> `27146046204`.
+  - Production API smoke:
+    `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+    -> `8 passed, 0 failed`.
+- Final live WhatsApp E2E on the approved phone ending `0921`:
+  D stock+price option list, D ordinal selection, A multi-item selection,
+  B compact quote details/quote resume, C missing quantity resume, E ambiguous
+  CH616 option list, and E ordinal selection all passed against final SHA
+  `770da1721837496c70a5e28902c26e8f275cafc9`. Quote `Fr3362` was created in
+  Zoho during the final run. The live phone was reset afterwards to blank active
+  conversation `48e0ab68-cc4f-43a6-a3fd-87be8c3609b7`.
 
 ## Review Findings
 
@@ -200,5 +247,4 @@ GREEN evidence:
 ## Explicit Defers
 
 - No explicit `tj-order-state` code defers remain.
-- Live WhatsApp/API E2E, deployment, GitHub issue closure, and production
-  mutation were not run without explicit approval.
+- GitHub issue closure was not performed in this run.
