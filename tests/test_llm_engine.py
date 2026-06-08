@@ -6701,16 +6701,14 @@ async def test_process_message_confirms_ordinal_selection_from_prior_sku_options
         "My name is Lilia Orderstate. What is the stock and price for 2 CH 616 chairs?"
     )
     previous_assistant = (
-        "I found two CH 616 chair options available:\n\n"
-        "**1. SkyLand Workstation Chair CH 616 Black**\n"
-        "- **SKU:** CH 616 black\n"
-        "- **Price:** 220.00 AED each\n"
+        "I found two CH 616 chair options for you:\n\n"
+        "**1. SkyLand Workstation Chair CH 616 black**\n"
+        "- **Price:** 220 AED each\n"
         "- **Stock:** 3 units available\n\n"
-        "**2. Skyland Operative Chair CH 616 NEW Black**\n"
-        "- **SKU:** CH 616 NEW black\n"
-        "- **Price:** 295.00 AED each\n"
+        "**2. Skyland Operative Chair CH 616 NEW black**\n"
+        "- **Price:** 295 AED each\n"
         "- **Stock:** 93 units available\n\n"
-        "Which of these two would you prefer?"
+        "Would you like me to prepare a quote for 2 units of either model?"
     )
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),

@@ -2294,6 +2294,11 @@ def _last_assistant_asked_product_selection(recent_history: list[str] | None) ->
 _OPTION_SKU_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?\*{0,2}\s*SKU\s*:\s*\*{0,2}\s*(?P<sku>[^\r\n]+)"
 )
+_NUMBERED_OPTION_HEADING_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:[*_`]+)?(?P<ordinal>\d{1,2})\s*[.)]\s*"
+    r"(?P<heading>.+?)\s*(?:[*_`]+)?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _ordinal_option_from_reply(text: str) -> int | None:
@@ -2317,6 +2322,76 @@ def _clean_numbered_option_heading(line: str) -> str:
     cleaned = re.sub(r"[*_`]+", "", line).strip(" \t\r\n-")
     cleaned = re.sub(r"^\d{1,2}\s*[.)]\s*", "", cleaned).strip(" \t\r\n-")
     return cleaned
+
+
+def _numbered_option_heading_match(line: str) -> tuple[int, str] | None:
+    match = _NUMBERED_OPTION_HEADING_RE.match(line)
+    if match is None:
+        return None
+    heading = _clean_numbered_option_heading(line)
+    if not heading:
+        return None
+    normalized = _normalize_text(heading)
+    if normalized.startswith(("sku", "price", "stock", "availability")):
+        return None
+    try:
+        ordinal = int(match.group("ordinal"))
+    except ValueError:
+        return None
+    return ordinal, heading
+
+
+def _numbered_option_blocks_from_assistant(
+    assistant_text: str,
+) -> list[tuple[int, str, str]]:
+    options: list[tuple[int, str, str]] = []
+    current_ordinal: int | None = None
+    current_heading = ""
+    current_lines: list[str] = []
+
+    for line in assistant_text.splitlines():
+        heading_match = _numbered_option_heading_match(line)
+        if heading_match is not None:
+            if current_ordinal is not None:
+                options.append(
+                    (
+                        current_ordinal,
+                        current_heading,
+                        "\n".join(current_lines).strip(),
+                    )
+                )
+            current_ordinal, current_heading = heading_match
+            current_lines = [line]
+            continue
+        if current_ordinal is not None:
+            current_lines.append(line)
+
+    if current_ordinal is not None:
+        options.append(
+            (
+                current_ordinal,
+                current_heading,
+                "\n".join(current_lines).strip(),
+            )
+        )
+    return options
+
+
+def _sku_from_numbered_option_text(option_text: str) -> str | None:
+    sku_match = _OPTION_SKU_LINE_RE.search(option_text)
+    if sku_match is not None:
+        raw_sku = re.sub(r"[*_`]+", "", sku_match.group("sku")).strip(" \t\r\n,.;:-")
+        if raw_sku:
+            return raw_sku
+
+    sku = _best_selection_sku(option_text) or _extract_sku_signal(option_text)
+    if sku:
+        return sku
+
+    refs = extract_catalog_references(option_text)
+    if refs:
+        return refs[0].normalized
+    return None
 
 
 def _prior_user_message_before_last_assistant(
@@ -2355,7 +2430,15 @@ def _numbered_sku_options_from_assistant(
     assistant_text: str,
 ) -> list[tuple[int, str, str]]:
     options: list[tuple[int, str, str]] = []
-    lines_before: list[str] = []
+    for ordinal, heading, option_text in _numbered_option_blocks_from_assistant(
+        assistant_text
+    ):
+        sku = _sku_from_numbered_option_text(option_text)
+        if sku:
+            options.append((ordinal, sku, heading))
+    if options:
+        return options
+
     for ordinal, match in enumerate(
         _OPTION_SKU_LINE_RE.finditer(assistant_text), start=1
     ):
