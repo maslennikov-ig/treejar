@@ -517,7 +517,7 @@ _PURCHASE_SELECTION_TRIGGER_RE = re.compile(
     re.IGNORECASE,
 )
 _ORDER_INTENT_SELECTION_CONTEXT_RE = re.compile(
-    r"\b(?:only|chair|chairs|table|tables|desk|desks|position|positions|pcs?|pieces?|units?)\b",
+    r"\b(?:only|chair|chairs|table|tables|position|positions|pcs?|pieces?|units?)\b",
     re.IGNORECASE,
 )
 _PRODUCT_QUANTITY_CLARIFY_BLOCKERS = (
@@ -594,6 +594,13 @@ _ITEM_BEFORE_QUANTITY_RE = re.compile(
     r"(?P<quantity>\d{1,4})\s*"
     r"(?:pcs?|pieces?|piece|units?|unit|qty)?\b"
     r"(?=\s*(?:and\b|,|$))",
+    re.IGNORECASE,
+)
+_ITEM_BEFORE_UNIT_COUNT_RE = re.compile(
+    r"(?P<item>[^?.!,;\n]+?)\s+"
+    r"(?P<quantity>\d{1,4})\s*"
+    r"(?:positions?|pcs?|pieces?|piece|units?|unit)\b"
+    r"(?=\s*(?:and\b|,|[.;]|$))",
     re.IGNORECASE,
 )
 _SALES_ORDER_QUANTITY_FIRST_RE = re.compile(
@@ -2078,7 +2085,11 @@ def _extract_purchase_selection(
         return None
     if is_order_selection_blocked(text):
         return None
-    if require_trigger and not _PURCHASE_SELECTION_TRIGGER_RE.search(text):
+    if (
+        require_trigger
+        and not _PURCHASE_SELECTION_TRIGGER_RE.search(text)
+        and not _ORDER_INTENT_SELECTION_CONTEXT_RE.search(text)
+    ):
         order_intent_selection = _purchase_selection_from_order_runtime(
             text,
             require_trigger=require_trigger,
@@ -2091,8 +2102,16 @@ def _extract_purchase_selection(
         text,
         require_trigger=require_trigger,
     )
+    trailing_unit_selection = _extract_item_before_unit_count_purchase_selection(text)
     if order_intent_selection.selection is not None:
+        if trailing_unit_selection is not None and len(
+            trailing_unit_selection.items
+        ) > len(order_intent_selection.selection.items):
+            return trailing_unit_selection
         return order_intent_selection.selection
+
+    if trailing_unit_selection is not None:
+        return trailing_unit_selection
     if order_intent_selection.block_legacy:
         return None
 
@@ -2135,6 +2154,58 @@ def _extract_purchase_selection(
                 sku=sku,
                 stated_unit_price=stated_unit_price,
                 stated_currency=stated_currency,
+            )
+        )
+
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
+def _clean_item_before_unit_count_candidate(value: str) -> str:
+    cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", value)
+    cleaned = re.sub(
+        r"^\s*(?:only|and|plus|with|please|kindly)\b",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\s+(?:and|or|plus|with)\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return " ".join(cleaned.strip(" \t\r\n,.;:-").split())
+
+
+def _extract_item_before_unit_count_purchase_selection(
+    text: str,
+) -> PurchaseSelection | None:
+    items: list[PurchaseSelectionItem] = []
+    for match in _ITEM_BEFORE_UNIT_COUNT_RE.finditer(text):
+        quantity = int(match.group("quantity"))
+        if quantity <= 0:
+            continue
+        item_candidate = _clean_item_before_unit_count_candidate(match.group("item"))
+        if not item_candidate:
+            continue
+        sku = _best_selection_sku(item_candidate)
+        if not sku:
+            named_model_match = _NAMED_MODEL_REFERENCE_RE.search(item_candidate)
+            if named_model_match is not None:
+                sku = " ".join(
+                    _normalize_sku_homoglyphs(named_model_match.group(0))
+                    .upper()
+                    .split()
+                )
+        if not sku:
+            continue
+        items.append(
+            PurchaseSelectionItem(
+                quantity=quantity,
+                item_candidate=item_candidate,
+                sku=sku,
             )
         )
 
@@ -4635,13 +4706,18 @@ def _extract_ordered_unlabeled_quote_brief(
     text: str,
 ) -> _UnlabeledQuoteBrief | None:
     parts = _quote_brief_parts(text)
-    if len(parts) != 4:
+    if len(parts) < 4:
         return None
 
     name = _extract_bare_name_gate_reply(parts[0])
     company_or_type = _unlabeled_company_or_customer_type(parts[1])
     email_match = EMAIL_PATTERN.search(parts[2])
-    address = parts[3].strip(" \t\r\n,.;:-")
+    address_parts = [parts[3].strip(" \t\r\n,.;:-")]
+    for tail_part in parts[4:]:
+        if _has_product_or_quote_routing_signal(tail_part):
+            continue
+        address_parts.append(tail_part.strip(" \t\r\n,.;:-"))
+    address = ", ".join(part for part in address_parts if part)
     if not name or not company_or_type or not email_match or not address:
         return None
     if _has_product_or_quote_routing_signal(address):

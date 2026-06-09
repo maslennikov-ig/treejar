@@ -6596,9 +6596,22 @@ def test_extract_purchase_selection_rejects_connector_false_sku_fallbacks() -> N
     ("text", "expected"),
     [
         ("4 position CH 616 chairs", [(4, "CH 616 chairs", "CH-616")]),
+        ("CH 616 NEW black 4 position", [(4, "CH 616 NEW black", "CH-616")]),
         (
             "Only SKYLAND NOVO 2400 2 position",
             [(2, "SKYLAND NOVO 2400", "SKYLAND NOVO 2400")],
+        ),
+        (
+            "Only MEETING TABLE SKYLAND NOVO 2400 2 position and "
+            "CH 616 NEW black 4 position.",
+            [
+                (
+                    2,
+                    "MEETING TABLE SKYLAND NOVO 2400",
+                    "SKYLAND NOVO 2400",
+                ),
+                (4, "CH 616 NEW black", "CH-616"),
+            ],
         ),
     ],
 )
@@ -8742,6 +8755,7 @@ async def test_process_message_terse_details_preserves_pending_quote_context(
     [
         "Lilia\nLLD\nLfdsf@kfsl.ru\n2 street",
         "Lilia / LLD / Lfdsf@kfsl.ru / 2 street",
+        "Lilia / LLD / Lfdsf@kfsl.ru / 2 street / office table and chairs",
         "Lilia, LLD, Lfdsf@kfsl.ru, 2 street",
     ],
 )
