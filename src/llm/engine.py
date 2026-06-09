@@ -7050,6 +7050,61 @@ def _post_quotation_acknowledgement_response(language: str) -> str:
     return "Noted."
 
 
+def _post_quotation_context_acknowledgement_response(language: str) -> str:
+    if is_arabic_customer_language(language):
+        return "تم. سأُبقي بيانات العميل والمنتجات المذكورة في عرض السعر كما هي."
+    return (
+        "Noted. I’ll keep the same company, delivery address, and quoted items. "
+        "The existing quotation remains unchanged."
+    )
+
+
+def _has_quoted_quote_frame(conversation: Conversation) -> bool:
+    frame = _quote_frame_from_conversation(conversation)
+    return frame is not None and frame.has_valid_lines and frame.status == "quoted"
+
+
+def _is_post_quotation_context_preserving_reply(text: str) -> bool:
+    stripped = _strip_synthetic_test_marker(text)
+    normalized = _normalize_text(stripped)
+    if not normalized:
+        return False
+    if (
+        _extract_purchase_selection(stripped) is not None
+        or _extract_sales_order_quote_items(stripped) is not None
+        or extract_exact_quote_candidate(stripped) is not None
+    ):
+        return False
+
+    same_context = bool(re.search(r"\b(?:use|keep)\s+(?:the\s+)?same\b", normalized))
+    same_detail = any(
+        term in normalized
+        for term in (
+            "same company",
+            "same address",
+            "same delivery address",
+            "same details",
+            "same information",
+            "same customer",
+        )
+    )
+    no_item_change = bool(
+        re.search(
+            r"\b(?:don'?t|do\s+not|dont|not)\s+"
+            r"(?:change|modify|update|replace)\s+(?:the\s+)?"
+            r"(?:items?|products?|order|quotation|quote)\b",
+            normalized,
+        )
+    )
+    no_changes = bool(
+        re.search(
+            r"\b(?:no|without)\s+(?:changes?|modifications?|updates?)\b",
+            normalized,
+        )
+    )
+    return no_item_change or no_changes or (same_context and same_detail)
+
+
 def _mark_quotation_accepted(
     conversation: Conversation,
     *,
@@ -8948,6 +9003,19 @@ async def process_message(
         return _build_static_response(
             _post_quotation_acknowledgement_response(str(conv.language)),
             f"{db_model_main}|post-quotation-ack",
+            allow_product_media=False,
+        )
+
+    if _has_quoted_quote_frame(conv) and _is_post_quotation_context_preserving_reply(
+        combined_text
+    ):
+        db_model_main = await get_system_config(
+            db, "openrouter_model_main", settings.openrouter_model_main
+        )
+        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
+        return _build_static_response(
+            _post_quotation_context_acknowledgement_response(str(conv.language)),
+            f"{db_model_main}|post-quotation-context-ack",
             allow_product_media=False,
         )
 

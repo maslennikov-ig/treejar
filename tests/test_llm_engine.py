@@ -8633,6 +8633,83 @@ async def test_process_message_quoted_frame_ignores_diagnostic_marker_reference(
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quoted_frame_same_details_does_not_restart_items(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.metadata_ = {
+        "quote_customer_details": {
+            "name": "Lilia",
+            "company": "Del company",
+            "email": "lilia@example.com",
+            "address": "2 Test Street Dubai",
+        },
+        "order_runtime": {
+            "quote_frame": {
+                "source": "selection_confirmation",
+                "status": "quoted",
+                "lines": [
+                    {"sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white", "quantity": 2},
+                    {"sku": "CH 616 NEW black", "quantity": 4},
+                ],
+            }
+        },
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Quotation Fr3367 has been prepared and sent to you. "
+                        "Please let me know if the quotation works for you."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I can prepare a quotation or proforma invoice. Please confirm the "
+        "item(s) and quantity for each item you want included."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Use the same company and address, please. Do not change the items."
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|post-quotation-context-ack"
+    assert "confirm the quantity" not in response.text.lower()
+    assert "item(s) and quantity" not in response.text.lower()
+    assert "unchanged" in response.text.lower()
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
