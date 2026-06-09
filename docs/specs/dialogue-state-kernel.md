@@ -1,7 +1,8 @@
 # Dialogue State Kernel Specification
 
-Status: v1 kernel spec extended by stages `tj-gh48` and `tj-gh51` for
-expected-answer frames and canonical quote frames
+Status: v1 kernel spec extended by stages `tj-gh48`, `tj-gh51`, and
+`tj-order-cutover` for expected-answer frames, canonical quote frames, and the
+planned full order/quote flow cutover
 Owner: Dialogue State Kernel stream
 
 ## Goal
@@ -176,6 +177,11 @@ Rules:
   `pending_quote_selection`, and `quote_customer_details` remain supported for
   migration and rollback. New order/quote routing must write and read
   `order_runtime.quote_frame` first.
+- `pending_product_reference_quantity`, `pending_quote_selection`,
+  `quote_customer_details`, assistant-prose quote recovery, and recent-history
+  question matching are not allowed to remain independent order/quote policy
+  owners after `tj-order-cutover`. They may be read for migration or diagnostic
+  fallback only. New writes must target the typed runtime frame first.
 - `last_question` remains supported as a legacy compatibility field. New
   routing must prefer `expected_answer_frames` when present.
 - The kernel may mirror legacy keys into `dialogue_kernel.state.slots`, but v1 must
@@ -193,6 +199,64 @@ Rules:
   migrated into an active quote frame. Its `source_refs` must include quote-line
   SKU and quantity references so compact replies fill the existing frame instead
   of restarting item clarification. `quoted` frames are explicitly non-active.
+
+## Order/Quote Cutover Requirements
+
+Stage `tj-order-cutover` finishes the migration started by `tj-order-state` and
+`tj-gh51-order-quote-cutover`. The target is not another patch around one
+reported phrase. The target is to remove the mixed ownership that lets issues
+#40-#51 reappear through adjacent message shapes.
+
+The typed order runtime must become the single owner for these order/quote
+states:
+
+- selected product lines, catalog refs, resolved SKU/product id, display name,
+  quantity, price snapshot, and item candidate text;
+- missing-quantity questions such as `SK 45 White` followed by bare `2`;
+- unresolved catalog/SKU repair such as `4 x CH 616 chairs` followed by
+  `CH 616 NEW black`;
+- quote customer details such as compact replies
+  `Lilia / Del company / 2 street / Only table`;
+- quote lifecycle: `collecting_details`, `repair_required`, `quoted`,
+  `accepted`, `refused`, `superseded`, and explicit manager/human handoff;
+- side-effect intent: ask customer, update frame, create quotation, hold after
+  quote, escalate, or fall back to non-order legacy behavior.
+
+The runtime must expose one typed decision to `src/llm/engine.py`. The engine may
+adapt that decision to existing Zoho/PDF/WhatsApp/Telegram side effects, but it
+must not keep a second order/quote policy layer through branch ordering.
+
+Forbidden post-cutover behavior:
+
+- A valid active frame with selected item(s) and quantities must never produce
+  "I still need the exact item(s) and quantity" unless the frame explicitly
+  carries unresolved item candidates.
+- A bare quantity reply must never require the exact previous assistant wording
+  when a durable active quantity frame exists. Recent assistant prose may help
+  diagnostics, but it cannot be the only authority.
+- Assistant prose must not recreate quote items as an authoritative state source.
+  It may be retained as a bounded diagnostic fallback only when no valid frame
+  exists, and such use must be traceable.
+- `pending_product_reference_quantity`, `pending_quote_selection`, and
+  `quote_customer_details` must not be updated as primary state by new
+  order/quote code paths. If rollback mirrors are kept, they must be written
+  from the typed frame and covered by tests that prove the typed frame remains
+  authoritative.
+
+Required invariants:
+
+- If a frame contains valid resolved lines, quote-details replies fill that
+  frame; they do not restart product clarification.
+- If a frame contains unresolved items, an exact SKU/model follow-up resolves
+  those unresolved entries and preserves already resolved lines.
+- If a frame is `quoted`, it is non-resumable for quote creation but remains
+  available for post-quotation context and follow-up decisions.
+- If the runtime cannot decide safely, the fallback response must be a bounded
+  clarification or non-order legacy fallback, not a generic opener that drops
+  active order state.
+- Every order/quote decision trace must include bounded, non-PII fields:
+  `frame_id`, `status`, `decision`, `reason_codes`, counts of resolved and
+  unresolved lines, and whether a legacy migration fallback was read.
 
 ## Expected Answer Frames
 

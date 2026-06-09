@@ -150,6 +150,20 @@ by the fast model are dropped before merge. The deterministic order runtime and
 the canonical `order_runtime.quote_frame` remain the owners of selected products
 and quantities.
 
+After `tj-order-cutover`, customer facts and memory must consume the runtime
+snapshot instead of reparsing order items:
+
+- accepted `current_order/order.items` snapshots are emitted only from the typed
+  runtime frame;
+- `pending_product_reference_quantity`, `pending_quote_selection`, assistant
+  prose, and model-generated item facts are not order-line authorities;
+- compact customer detail replies fill `QuoteDetails` on the active runtime
+  frame before being mirrored into facts;
+- fact conflicts may ask clarifying questions about profile/order details, but
+  they must not invalidate already resolved item and quantity lines;
+- post-quotation facts read the `quoted` frame as a snapshot and must not
+  reactivate quote creation without an explicit new customer request.
+
 ## Fact Result Contract
 
 Each extracted fact should carry enough information for safe merging:
@@ -191,6 +205,9 @@ Rules:
   not be produced by deterministic or fast-model extractors.
 - A newer accepted `order.items` snapshot replaces the current order view
   instead of becoming a conflict with the previous snapshot.
+- The facts layer may store diagnostic/proposed order facts when the runtime
+  does not own a turn, but those facts must be excluded from quote creation,
+  quantity repair, SKU repair, and quote-details resume.
 
 ## Persistence Shape
 
