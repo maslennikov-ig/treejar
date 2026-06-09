@@ -54,12 +54,23 @@ class QuoteLine(BaseModel):
         return bool(self.sku.strip()) and self.quantity > 0
 
 
+class QuoteUnresolvedLine(BaseModel):
+    sku: str | None = None
+    quantity: int
+    item_candidate: str
+
+    @property
+    def is_valid(self) -> bool:
+        return self.quantity > 0 and bool(self.item_candidate.strip())
+
+
 class QuoteFrame(BaseModel):
     version: int = 1
     frame_id: str | None = None
     source: str = "unknown"
     status: str = "collecting_details"
     lines: list[QuoteLine] = Field(default_factory=list)
+    unresolved_items: list[QuoteUnresolvedLine] = Field(default_factory=list)
     quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
     missing_quote_fields: list[str] = Field(default_factory=list)
 
@@ -224,12 +235,19 @@ def quote_frame_from_legacy_metadata(
         return None
 
     source = _mapping_text(selection, "source") or "legacy_pending_quote_selection"
+    unresolved_items: list[QuoteUnresolvedLine] = []
     raw_unresolved = selection.get("unresolved_items")
+    if isinstance(raw_unresolved, list):
+        for raw_item in raw_unresolved:
+            unresolved_item = _quote_unresolved_line_from_legacy_item(raw_item)
+            if unresolved_item is not None:
+                unresolved_items.append(unresolved_item)
     has_unresolved = isinstance(raw_unresolved, list) and bool(raw_unresolved)
     return QuoteFrame(
         source=source,
         status="repair_required" if has_unresolved else "collecting_details",
         lines=lines,
+        unresolved_items=unresolved_items,
         quote_details=_quote_details_from_metadata(metadata),
         missing_quote_fields=["items and quantities"] if has_unresolved else [],
     )
@@ -390,6 +408,29 @@ def _quote_line_from_legacy_item(item: Any) -> QuoteLine | None:
             or _mapping_text(item, "display_name")
             or sku
         ),
+    )
+
+
+def _quote_unresolved_line_from_legacy_item(item: Any) -> QuoteUnresolvedLine | None:
+    if not isinstance(item, Mapping):
+        return None
+    raw_quantity = item.get("quantity")
+    if raw_quantity is None:
+        return None
+    try:
+        quantity = int(raw_quantity)
+    except (TypeError, ValueError):
+        return None
+    if quantity <= 0:
+        return None
+
+    item_candidate = _mapping_text(item, "item_candidate")
+    if not item_candidate:
+        return None
+    return QuoteUnresolvedLine(
+        sku=_mapping_text(item, "sku"),
+        quantity=quantity,
+        item_candidate=item_candidate,
     )
 
 

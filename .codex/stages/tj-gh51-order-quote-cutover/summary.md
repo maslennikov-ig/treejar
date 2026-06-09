@@ -1,8 +1,8 @@
 # Stage tj-gh51-order-quote-cutover: GH #51 Order/Quote Frame Cutover
 
 Updated: 2026-06-09
-Status: delivered to main and deployed; final live WhatsApp E2E blocked on
-isolated test channel after personal-number repeat delivery incident
+Status: post-live fix verified locally; pending push, deploy, and final live
+WhatsApp E2E retest on approved personal number
 Branch: `codex/tj-gh51-order-quote-cutover`
 Base: `origin/main` at `f41aba6`
 Beads: `tj-oq7a`
@@ -68,6 +68,19 @@ migration/rollback fallback.
   preserves multi-item quote requests on the first turn by routing them through
   the existing purchase-selection resolver instead of the exact-quote single
   item path.
+- Added post-live regression fixes for the approved personal-number retest:
+  `1aa4769` blocks quote-detail prompts while selection confirmation still has
+  unresolved items, and `c78309d` lets `selection_confirmation` unresolved-item
+  follow-ups resume the quote path.
+- Latest live retest on deployed `c78309d` still failed on the second step:
+  `CH 616 NEW black` returned `quote-resume-missing-items`. Prod metadata showed
+  canonical `order_runtime.quote_frame` had `status=repair_required` but did not
+  store the unresolved `4 x CH 616 chairs` candidate, so frame-first reading hid
+  the legacy mirror.
+- Added typed `QuoteUnresolvedLine` / `QuoteFrame.unresolved_items`, updated
+  frame writers for selection confirmation, sales-order quote, and exact-quote
+  repair, and kept a migration fallback from legacy unresolved metadata for
+  already-created old conversations.
 
 ## Verification
 
@@ -106,14 +119,24 @@ Post-delivery verification:
   `7049107ad04fa67513efb559a6fb2a00115eb9ce`.
 - Production API smoke after deploy passed: `scripts/verify_api.py --base-url
   https://noor.starec.ai` reported `8 passed, 0 failed`.
+- Latest local post-live fix verification:
+  - `uv run pytest tests/test_llm_engine.py::test_store_pending_quote_selection_writes_quote_frame_unresolved_items tests/test_llm_engine.py::test_process_message_selection_unresolved_followup_resumes_from_canonical_quote_frame -q`
+    (`2 passed`, RED before fix)
+  - `uv run pytest tests/test_llm_engine.py -k "quote_frame or pending_quote_selection or selection_unresolved_followup or quote_resume or exact_quote or selection_confirmation" -q`
+    (`58 passed`)
+  - `uv run ruff check src/ tests/`
+  - `uv run ruff format --check src/ tests/`
+  - `uv run mypy src/`
+  - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`
+    (`1372 passed, 19 skipped`)
 
 Live E2E status:
 
-- Full live WhatsApp E2E was started on the approved personal phone ending
-  `0921`, but stopped when repeated test attempts delivered multiple real
-  assistant messages to the physical WhatsApp number. The repeated messages are
-  not expected customer behavior; they were caused by repeated live E2E sends
-  against the same real number/test channel.
-- No further live sends should be made to that personal number. Final full live
-  WhatsApp E2E remains blocked pending an isolated test number or
-  outbound-disabled production-like harness.
+- Full live WhatsApp E2E is authorized on the approved personal phone ending
+  `0921`.
+- Retest on deployed `c78309d` with suffix
+  `tj-gh51-live-multi-20260609T111625Z` passed step 1 (asked exact SKU before
+  quote details) but failed step 2 (`CH 616 NEW black` still returned
+  `quote-resume-missing-items`).
+- Final live WhatsApp E2E remains pending until this latest local fix is pushed,
+  deployed, smoke-tested, and rerun with a fresh suffix.

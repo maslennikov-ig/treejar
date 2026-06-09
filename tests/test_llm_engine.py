@@ -8374,6 +8374,54 @@ async def test_store_pending_quote_selection_writes_canonical_quote_frame(
     ]
 
 
+@pytest.mark.asyncio
+async def test_store_pending_quote_selection_writes_quote_frame_unresolved_items(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    conv.metadata_ = {}
+    product_id = uuid.uuid4()
+    resolution = engine_module.PurchaseSelectionResolution(
+        resolved=(
+            engine_module.ResolvedPurchaseSelectionItem(
+                requested=engine_module.PurchaseSelectionItem(
+                    quantity=2,
+                    item_candidate="SKYLAND NOVO 2400 Meeting Table",
+                    sku="SKYLAND-NOVO-2400",
+                ),
+                product=SimpleNamespace(
+                    id=product_id,
+                    sku="SKYLAND-NOVO-2400",
+                    name_en="MEETING TABLE SKYLAND NOVO 2400",
+                ),
+                availability=8,
+                unit_price=1740.0,
+                currency="AED",
+                availability_source="catalog",
+            ),
+        ),
+        unresolved=(
+            engine_module.PurchaseSelectionItem(
+                quantity=4,
+                item_candidate="CH 616 chairs",
+                sku="CH-616",
+            ),
+        ),
+    )
+
+    await engine_module._store_pending_quote_selection(db, conv, resolution)
+
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["source"] == "selection_confirmation"
+    assert quote_frame["status"] == "repair_required"
+    assert quote_frame["missing_quote_fields"] == ["items and quantities"]
+    assert quote_frame["unresolved_items"] == [
+        {"sku": "CH-616", "quantity": 4, "item_candidate": "CH 616 chairs"}
+    ]
+
+
 def test_purchase_selection_confirmation_blocks_quote_details_when_items_unresolved() -> (
     None
 ):
@@ -10229,6 +10277,104 @@ async def test_process_message_selection_unresolved_followup_resumes_quote(
     assert "company" in response.text.lower()
     assert conv.metadata_["pending_quote_selection"]["items"] == [
         {"sku": "SKYLAND NOVO 2400", "quantity": 2},
+        {"sku": "CH-616-NEW-BLACK", "quantity": 4},
+    ]
+    assert conv.metadata_["pending_quote_selection"]["unresolved_items"] == []
+    mock_create_quotation.assert_not_awaited()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_selection_unresolved_followup_resumes_from_canonical_quote_frame(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Igor"
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_frame": {
+                "source": "selection_confirmation",
+                "status": "repair_required",
+                "lines": [
+                    {
+                        "sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white",
+                        "quantity": 2,
+                        "product_id": str(uuid.uuid4()),
+                        "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+                        "unit_price": 1740.0,
+                        "currency": "AED",
+                        "item_candidate": "SKYLAND NOVO 2400 Meeting Table",
+                    }
+                ],
+                "quote_details": {},
+                "missing_quote_fields": ["items and quantities"],
+            }
+        },
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [
+                {
+                    "sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white",
+                    "quantity": 2,
+                }
+            ],
+            "unresolved_items": [
+                {"sku": "CH-616", "quantity": 4, "item_candidate": "CH 616 chairs"}
+            ],
+        },
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Before I prepare the quotation, please confirm the exact "
+                        "catalog item or SKU for: 4 x CH 616 chairs."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_resolve_sku.return_value = "CH-616-NEW-BLACK"
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="CH 616 NEW black",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|quote-resume-missing-details"
+    assert "exact item(s) and quantity" not in response.text.lower()
+    assert "company" in response.text.lower()
+    assert conv.metadata_["pending_quote_selection"]["items"] == [
+        {"sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white", "quantity": 2},
         {"sku": "CH-616-NEW-BLACK", "quantity": 4},
     ]
     assert conv.metadata_["pending_quote_selection"]["unresolved_items"] == []

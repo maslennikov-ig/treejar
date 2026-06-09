@@ -131,6 +131,13 @@ customer quote details, and quote-resume status:
           "item_candidate": "SKYLAND NOVO 2400 Meeting Table"
         }
       ],
+      "unresolved_items": [
+        {
+          "sku": "CH-616",
+          "quantity": 4,
+          "item_candidate": "CH 616 chairs"
+        }
+      ],
       "quote_details": {
         "name": "Lilia",
         "company": "DAO company",
@@ -150,7 +157,10 @@ Quote-frame lifecycle:
 - `collecting_details`: active/resumable; selected lines may be used to collect
   missing quote details and create a quotation.
 - `repair_required`: active/resumable only for explicit repair; lines/details
-  must not be treated as complete until missing fields are resolved.
+  must not be treated as complete until missing fields are resolved. The frame
+  must carry unresolved item candidates with quantity in `unresolved_items` so
+  exact SKU follow-ups can resume the same quote without falling back to
+  assistant prose or legacy metadata.
 - `quoted`: retained post-quotation state for audit and follow-up context, but
   non-resumable. It must not synthesize `pending_quote_selection`, import
   `DialogueState.slots.selected_items`, or create a `quote_details`

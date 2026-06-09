@@ -32,6 +32,7 @@ from src.dialogue.order_state import (
     QuoteDetails,
     QuoteFrame,
     QuoteLine,
+    QuoteUnresolvedLine,
     quote_frame_cleared_metadata,
     quote_frame_from_metadata,
     quote_frame_is_active,
@@ -3894,12 +3895,16 @@ def _metadata_has_canonical_quote_frame(metadata: Mapping[str, Any]) -> bool:
 def _active_pending_quote_selection_from_conversation(
     conversation: Conversation,
 ) -> Mapping[str, Any] | None:
+    legacy_selection = _pending_quote_selection_from_metadata(conversation)
     if _conversation_has_canonical_quote_frame(conversation):
         quote_frame = _quote_frame_from_conversation(conversation)
         if quote_frame_is_active(quote_frame):
-            return _pending_quote_selection_from_quote_frame(quote_frame)
+            return _pending_quote_selection_from_quote_frame(
+                quote_frame,
+                legacy_selection=legacy_selection,
+            )
         return None
-    return _pending_quote_selection_from_metadata(conversation)
+    return legacy_selection
 
 
 def _quote_line_from_resolved_selection(
@@ -3956,22 +3961,54 @@ def _quote_line_from_quotation_item(
     )
 
 
+def _quote_unresolved_line_from_purchase_selection_item(
+    item: PurchaseSelectionItem,
+) -> QuoteUnresolvedLine | None:
+    item_candidate = item.item_candidate.strip()
+    if item.quantity <= 0 or not item_candidate:
+        return None
+    return QuoteUnresolvedLine(
+        sku=item.sku.strip() if item.sku else None,
+        quantity=item.quantity,
+        item_candidate=item_candidate,
+    )
+
+
+def _quote_unresolved_line_from_exact_candidate(
+    item: ExactQuoteCandidate,
+) -> QuoteUnresolvedLine | None:
+    item_candidate = item.item_candidate.strip()
+    if item.quantity <= 0 or not item_candidate:
+        return None
+    return QuoteUnresolvedLine(
+        sku=item.sku.strip() if item.sku else None,
+        quantity=item.quantity,
+        item_candidate=item_candidate,
+    )
+
+
 def _build_quote_frame(
     *,
     conversation: Conversation,
     source: str,
     lines: Iterable[QuoteLine | None],
+    unresolved_items: Iterable[QuoteUnresolvedLine | None] = (),
     has_unresolved_items: bool = False,
 ) -> QuoteFrame | None:
     valid_lines = [line for line in lines if line is not None and line.is_valid]
     if not valid_lines:
         return None
+    valid_unresolved_items = [
+        item for item in unresolved_items if item is not None and item.is_valid
+    ]
+    has_unresolved = has_unresolved_items or bool(valid_unresolved_items)
     return QuoteFrame(
         source=source,
-        status="repair_required" if has_unresolved_items else "collecting_details",
+        status="repair_required" if has_unresolved else "collecting_details",
         lines=valid_lines,
+        unresolved_items=valid_unresolved_items,
         quote_details=_quote_details_model_from_metadata(conversation),
-        missing_quote_fields=["items and quantities"] if has_unresolved_items else [],
+        missing_quote_fields=["items and quantities"] if has_unresolved else [],
     )
 
 
@@ -4058,6 +4095,10 @@ async def _store_pending_quote_selection(
                 _quote_line_from_resolved_selection(resolved_item)
                 for resolved_item in resolution.resolved
             ),
+            unresolved_items=(
+                _quote_unresolved_line_from_purchase_selection_item(unresolved_item)
+                for unresolved_item in resolution.unresolved
+            ),
             has_unresolved_items=bool(resolution.unresolved),
         ),
     )
@@ -4112,6 +4153,10 @@ async def _store_pending_sales_order_quote(
                 )
                 for item in resolved_items
             ),
+            unresolved_items=(
+                _quote_unresolved_line_from_exact_candidate(item)
+                for item in unresolved_items
+            ),
             has_unresolved_items=bool(unresolved_items),
         ),
     )
@@ -4156,6 +4201,10 @@ async def _store_pending_exact_quote(
             conversation=conversation,
             source="exact_quote",
             lines=(_quote_line_from_quotation_item(item) for item in items),
+            unresolved_items=(
+                _quote_unresolved_line_from_exact_candidate(item)
+                for item in unresolved_items
+            ),
             has_unresolved_items=bool(unresolved_items),
         ),
     )
@@ -6415,9 +6464,26 @@ def _pending_quote_selection_from_metadata(
 
 def _pending_quote_selection_from_quote_frame(
     frame: QuoteFrame | None,
+    *,
+    legacy_selection: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any] | None:
     if not quote_frame_is_active(frame):
         return None
+    unresolved_items = [
+        {
+            "sku": line.sku,
+            "quantity": line.quantity,
+            "item_candidate": line.item_candidate,
+        }
+        for line in frame.unresolved_items
+        if line.is_valid
+    ]
+    if not unresolved_items and _quote_frame_has_unresolved_items(frame):
+        unresolved_items = _pending_quote_unresolved_items_from_metadata(
+            legacy_selection
+        )
+    if not unresolved_items and _quote_frame_has_unresolved_items(frame):
+        unresolved_items = [{"item_candidate": "canonical quote frame repair required"}]
     return {
         "source": frame.source,
         "items": [
@@ -6425,20 +6491,19 @@ def _pending_quote_selection_from_quote_frame(
             for line in frame.lines
             if line.is_valid
         ],
-        "unresolved_items": (
-            [{"item_candidate": "canonical quote frame repair required"}]
-            if _quote_frame_has_unresolved_items(frame)
-            else []
-        ),
+        "unresolved_items": unresolved_items,
     }
 
 
 def _quote_frame_has_unresolved_items(frame: QuoteFrame | None) -> bool:
     if not quote_frame_is_active(frame):
         return False
-    return frame.status == "repair_required" or "items and quantities" in {
-        item.casefold() for item in frame.missing_quote_fields
-    }
+    return (
+        any(item.is_valid for item in frame.unresolved_items)
+        or frame.status == "repair_required"
+        or "items and quantities"
+        in {item.casefold() for item in frame.missing_quote_fields}
+    )
 
 
 def _active_quote_items(
@@ -6498,6 +6563,42 @@ def _pending_quote_items_from_metadata(
 def _pending_quote_has_unresolved_items(selection: Mapping[str, Any]) -> bool:
     raw_items = selection.get("unresolved_items")
     return isinstance(raw_items, list) and len(raw_items) > 0
+
+
+def _pending_quote_unresolved_items_from_metadata(
+    selection: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if selection is None:
+        return []
+    raw_items = selection.get("unresolved_items")
+    if not isinstance(raw_items, list):
+        return []
+
+    unresolved_items: list[dict[str, Any]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            continue
+        item_candidate = raw_item.get("item_candidate")
+        quantity = raw_item.get("quantity")
+        if not isinstance(item_candidate, str) or not item_candidate.strip():
+            continue
+        if quantity is None:
+            continue
+        try:
+            quantity_int = int(quantity)
+        except (TypeError, ValueError):
+            continue
+        if quantity_int <= 0:
+            continue
+        raw_sku = raw_item.get("sku")
+        unresolved_items.append(
+            {
+                "sku": raw_sku.strip() if isinstance(raw_sku, str) else None,
+                "quantity": quantity_int,
+                "item_candidate": item_candidate.strip(),
+            }
+        )
+    return unresolved_items
 
 
 def _is_pending_sales_order_quote(selection: Mapping[str, Any]) -> bool:
