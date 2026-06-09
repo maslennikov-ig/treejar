@@ -3749,6 +3749,19 @@ def _selection_confirmation_quote_prompt(
     )
 
 
+def _purchase_selection_unresolved_items_message(
+    items: tuple[PurchaseSelectionItem, ...],
+) -> str:
+    item_list = ", ".join(
+        f"{item.quantity} x {item.item_candidate or item.sku}" for item in items
+    )
+    return (
+        "Before I prepare the quotation, please confirm the exact catalog item "
+        f"or SKU for: {item_list}. I will use that to prepare the quotation "
+        "accurately."
+    )
+
+
 def _build_purchase_selection_confirmation_text(
     resolution: PurchaseSelectionResolution,
     *,
@@ -3816,6 +3829,10 @@ def _build_purchase_selection_confirmation_text(
             "Some requested quantities are above the confirmed available stock. "
             "Please confirm whether to adjust the quantities or wait for manager "
             "restock confirmation."
+        )
+    elif resolution.unresolved:
+        lines.append(
+            _purchase_selection_unresolved_items_message(resolution.unresolved)
         )
     elif resolution.resolved:
         lines.append(

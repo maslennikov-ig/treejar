@@ -8374,6 +8374,50 @@ async def test_store_pending_quote_selection_writes_canonical_quote_frame(
     ]
 
 
+def test_purchase_selection_confirmation_blocks_quote_details_when_items_unresolved() -> (
+    None
+):
+    product_id = uuid.uuid4()
+    resolution = engine_module.PurchaseSelectionResolution(
+        resolved=(
+            engine_module.ResolvedPurchaseSelectionItem(
+                requested=engine_module.PurchaseSelectionItem(
+                    quantity=2,
+                    item_candidate="SKYLAND NOVO 2400 Meeting Table",
+                    sku="SKYLAND-NOVO-2400",
+                ),
+                product=SimpleNamespace(
+                    id=product_id,
+                    sku="SKYLAND-NOVO-2400",
+                    name_en="MEETING TABLE SKYLAND NOVO 2400",
+                ),
+                availability=22,
+                unit_price=1740.0,
+                currency="AED",
+                availability_source="zoho",
+            ),
+        ),
+        unresolved=(
+            engine_module.PurchaseSelectionItem(
+                quantity=4,
+                item_candidate="CH 616 chairs",
+                sku="CH 616",
+            ),
+        ),
+    )
+
+    text = engine_module._build_purchase_selection_confirmation_text(resolution)
+
+    assert "MEETING TABLE SKYLAND NOVO 2400" in text
+    assert "Quantity: 2" in text
+    assert "4 x CH 616 chairs" in text
+    assert "Before I prepare the quotation" in text
+    assert "please confirm the exact catalog item or SKU" in text
+    assert "company name" not in text.lower()
+    assert "delivery address" not in text.lower()
+    assert "customer email" not in text.lower()
+
+
 def test_quoted_quote_frame_is_not_active_pending_selection() -> None:
     frame = engine_module.QuoteFrame(
         source="selection_confirmation",
