@@ -10691,6 +10691,138 @@ async def test_process_message_exact_quote_missing_details_returns_gate_without_
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quote_request_with_multiple_items_keeps_all_lines(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    text = (
+        "Hi, I'm Lilia. I need 2 SKYLAND NOVO 2400 Meeting Table and "
+        "4 CH 616 chairs. Please prepare a quotation."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "openrouter_model_main": "mock-model",
+            "dialogue_kernel_mode": "legacy",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_search_behavior_rules.return_value = []
+    table = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="SKYLAND NOVO 2400",
+        zoho_item_id="zoho-table",
+        name_en="MEETING TABLE SKYLAND NOVO 2400",
+        description_en="MEETING TABLE SKYLAND NOVO 2400",
+        price=1740.0,
+        currency="AED",
+        stock=22,
+        attributes={},
+    )
+    chair = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH-616",
+        zoho_item_id="zoho-chair",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        description_en="Skyland Operative Chair CH 616 NEW black",
+        price=295.0,
+        currency="AED",
+        stock=104,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == table.id:
+            return table
+        if model is Product and key == chair.id:
+            return chair
+        return None
+
+    caption_result = MagicMock()
+    caption_result.scalars.return_value.all.return_value = []
+    table_result = MagicMock()
+    table_result.scalar_one_or_none.return_value = table
+    chair_result = MagicMock()
+    chair_result.scalar_one_or_none.return_value = chair
+    db.get.side_effect = get_side_effect
+    db.execute.side_effect = [caption_result, table_result, chair_result]
+    zoho.get_item.side_effect = [
+        {
+            "sku": "SKYLAND NOVO 2400",
+            "stock_on_hand": 22,
+            "rate": 1740.0,
+            "currency_code": "AED",
+        },
+        {
+            "sku": "CH-616",
+            "stock_on_hand": 104,
+            "rate": 295.0,
+            "currency_code": "AED",
+        },
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "MEETING TABLE SKYLAND NOVO 2400" in response.text
+    assert "CH 616" in response.text
+    assert "Quantity: 2" in response.text
+    assert "Quantity: 4" in response.text
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote["source"] == "selection_confirmation"
+    assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
+        ("SKYLAND NOVO 2400", 2),
+        ("CH-616", 4),
+    ]
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["status"] == "collecting_details"
+    assert [(line["sku"], line["quantity"]) for line in quote_frame["lines"]] == [
+        ("SKYLAND NOVO 2400", 2),
+        ("CH-616", 4),
+    ]
+    assert quote_frame["quote_details"]["name"] == "Lilia"
+    assert "manager" not in response.text.lower()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)

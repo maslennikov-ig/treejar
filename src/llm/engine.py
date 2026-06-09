@@ -9680,6 +9680,44 @@ async def process_message(
             await _clear_verified_policy_repair_state()
             return _build_llm_response(second_result, db_model_main)
 
+        quote_multi_item_selection = None
+        if pending_quote_selection_at_start is None and (
+            is_quote_or_proposal_request(masked_text)
+            or is_quote_or_proposal_request(combined_text)
+        ):
+            for candidate_text in (masked_text, combined_text):
+                candidate_selection = _extract_purchase_selection_for_context(
+                    candidate_text,
+                    deps.recent_history,
+                )
+                if (
+                    candidate_selection is not None
+                    and len(candidate_selection.items) > 1
+                ):
+                    quote_multi_item_selection = candidate_selection
+                    break
+        if quote_multi_item_selection is not None:
+            (
+                selection_deps,
+                confirmation_text,
+            ) = await _resolve_purchase_selection_confirmation(
+                db=db,
+                conversation=conv,
+                deps=deps,
+                purchase_selection=quote_multi_item_selection,
+                zoho_client=zoho_client,
+                crm_context=crm_context,
+                trace_enabled=dialogue_kernel_trace_enabled,
+            )
+            await _clear_quote_intent_frame(db, conv)
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                confirmation_text,
+                f"{db_model_main}|selection-confirmation",
+                response_deps=selection_deps,
+                allow_product_media=False,
+            )
+
         exact_quote_candidate = _exact_quote_candidate_from_frame(
             current_quote_intent_frame
         )
