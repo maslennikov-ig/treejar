@@ -20,7 +20,7 @@ Model/Reasoning Rationale: <why this level is appropriate>
 - <observable acceptance check>
 
 ## Documentation
-- <Context7 / first-party docs source, or: No dependency documentation lookup needed.>
+- <Docs L1/L2 / first-party docs source, or: No dependency documentation lookup needed.>
 
 ## Asset Routing
 - Selected docs: <docs/source or none - reason>
