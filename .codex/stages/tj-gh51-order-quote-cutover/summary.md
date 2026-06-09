@@ -1,8 +1,8 @@
 # Stage tj-gh51-order-quote-cutover: GH #51 Order/Quote Frame Cutover
 
 Updated: 2026-06-09
-Status: post-live fix verified locally; pending push, deploy, and final live
-WhatsApp E2E retest on approved personal number
+Status: delivered to main, deployed, and live WhatsApp E2E passed on approved
+personal number
 Branch: `codex/tj-gh51-order-quote-cutover`
 Base: `origin/main` at `f41aba6`
 Beads: `tj-oq7a`
@@ -129,14 +129,33 @@ Post-delivery verification:
   - `uv run mypy src/`
   - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`
     (`1372 passed, 19 skipped`)
+- GitHub Actions run `27203026681` passed `changes`, `lint`, `test`,
+  `type-check`, and `deploy`; deploy job `80311779370` succeeded for
+  `785ad1a21b8b5f3fd16d7b5e75bcbdbef15521ba`.
+- Production release marker after deploy:
+  `.release-sha=785ad1a21b8b5f3fd16d7b5e75bcbdbef15521ba`,
+  `.release-run-id=27203026681`.
+- Production API smoke after latest deploy passed: `scripts/verify_api.py
+  --base-url https://noor.starec.ai` reported `8 passed, 0 failed`.
 
 Live E2E status:
 
-- Full live WhatsApp E2E is authorized on the approved personal phone ending
-  `0921`.
-- Retest on deployed `c78309d` with suffix
-  `tj-gh51-live-multi-20260609T111625Z` passed step 1 (asked exact SKU before
-  quote details) but failed step 2 (`CH 616 NEW black` still returned
-  `quote-resume-missing-items`).
-- Final live WhatsApp E2E remains pending until this latest local fix is pushed,
-  deployed, smoke-tested, and rerun with a fresh suffix.
+- Full live WhatsApp E2E was authorized and passed on the approved personal
+  phone ending `0921`.
+- Core GH51 flow with suffix `tj-gh51-live-multi-20260609T113051Z`:
+  - Step 1 confirmed `2 x SKYLAND NOVO 2400 Meeting Table` and asked for exact
+    SKU for `4 x CH 616 chairs`; no premature quote-details request.
+  - Step 2 `CH 616 NEW black` returned `quote-resume-missing-details`; no
+    repeated “exact item(s) and quantity” loop.
+  - Step 3 compact details `Lilia / Test company / 2 Street Dubai /
+    live-test@example.com` returned `quote-resume` and created quotation
+    `Fr3368` / sale order id `378603000022442270`.
+  - Prod metadata confirmed `quote_frame.status=quoted`, two quote lines, and
+    `unresolved_items=[]`.
+- Additional live edge checks passed:
+  - `tj-gh51-live-direct-20260609T113051Z`: direct `4 position CH 616 NEW black`
+    returned `exact-quote-missing-details`.
+  - `tj-gh51-live-qtyrepair-20260609T113051Z`: missing quantity prompt followed
+    by `Only SKYLAND NOVO 2400 2 position` returned valid selection summary.
+  - `tj-gh51-live-blocker-20260609T113051Z`: discount/payment terms request
+    escalated safely with `verified-policy` and `escalation_status=pending`.
