@@ -2384,6 +2384,78 @@ def test_extract_quote_customer_details_accepts_natural_company_and_address() ->
     ) == {"address": "Bay Square Building 3, Business Bay, Dubai"}
 
 
+def test_extract_quote_customer_details_accepts_inline_im_name() -> None:
+    details = _extract_quote_customer_details(
+        "Hi, I'm Lilia. I need 2 SKYLAND NOVO 2400 Meeting Table and "
+        "4 CH 616 chairs. Please prepare a quotation."
+    )
+
+    assert details["name"] == "Lilia"
+
+
+def test_extract_quote_customer_details_does_not_treat_individual_as_name() -> None:
+    details = _extract_quote_customer_details(
+        "I am an individual. Email: alex@example.com. Delivery address is "
+        "Office 1202, Business Bay, Dubai."
+    )
+
+    assert "name" not in details
+    assert details["customer_type"] == "individual"
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_first_turn_inline_name_continues_substantive_request(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    text = (
+        "Hi, I'm Lilia. I need ergonomic chair options for a small office. "
+        "Please help me choose."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Thank you, Lilia. I can help with ergonomic chair options."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.customer_name == "Lilia"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert response.model == "mock-model"
+    assert "may i know your name" not in response.text.casefold()
+    assert "ergonomic chair" in response.text
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("text", "expected_address"),
     [

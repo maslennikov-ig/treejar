@@ -246,6 +246,13 @@ NATURAL_NAME_PATTERNS = (
         re.I | re.S,
     ),
     re.compile(
+        r"\b(?:i\s+am|i'm)\s+"
+        r"(?!(?:an?\s+)?(?:individual|private\s+customer)\b)"
+        r"(?!(?:interested|looking|asking|checking|from)\b)"
+        r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
+        re.I | re.S,
+    ),
+    re.compile(
         r"\byou\s+can\s+call\s+me\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
         re.I | re.S,
     ),
