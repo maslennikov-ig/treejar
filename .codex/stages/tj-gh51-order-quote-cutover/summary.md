@@ -1,15 +1,15 @@
 # Stage tj-gh51-order-quote-cutover: GH #51 Order/Quote Frame Cutover
 
 Updated: 2026-06-09
-Status: local implementation and stage closeout green; delivery pending approval
+Status: delivered to main and deployed; final live WhatsApp E2E blocked on
+isolated test channel after personal-number repeat delivery incident
 Branch: `codex/tj-gh51-order-quote-cutover`
 Base: `origin/main` at `f41aba6`
 Beads: `tj-oq7a`
 
-docs-reviewed: updated - `docs/specs/dialogue-state-kernel.md` now defines
-`order_runtime.quote_frame`, active vs quoted frame lifecycle, and expected-frame
-gating; `docs/specs/customer-facts-layer.md` now forbids legacy singular
-`order.item` extraction.
+docs-reviewed: updated - durable specs already cover canonical quote frames;
+this stage summary and `.codex/handoff.md` now record delivery, deploy, smoke,
+and the live-test stop condition.
 graph-reviewed: no-change-needed - Graphify is not configured; no
 `graphify-out/GRAPH_REPORT.md` or `[knowledge_graph]` configuration exists.
 
@@ -61,6 +61,13 @@ migration/rollback fallback.
 - Completed read-only review streams: `code_mapper`, `correctness_reviewer`,
   `improvement_reviewer`, `llm_architect`, `qa_expert`, `docs_reviewer`, and
   `architect_reviewer`; accepted must-fix findings were implemented locally.
+- After delivery approval, pushed and merged the stage to `main`, then deployed
+  through GitHub Actions.
+- Added post-deploy regression fixes for live-test discoveries:
+  `a21db4f` strips synthetic test markers before runtime parsing and `7049107`
+  preserves multi-item quote requests on the first turn by routing them through
+  the existing purchase-selection resolver instead of the exact-quote single
+  item path.
 
 ## Verification
 
@@ -83,6 +90,30 @@ Passed:
 - `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`
   (`1357 passed, 19 skipped`)
 
-Pending after closeout:
+Post-delivery verification:
 
-- Delivery approval for push/merge/deploy and any live WhatsApp/prod E2E.
+- `uv run pytest tests/test_llm_engine.py::test_process_message_quote_request_with_multiple_items_keeps_all_lines tests/test_llm_engine.py::test_process_message_strips_synthetic_marker_before_order_runtime_layers tests/test_llm_engine.py::test_process_message_exact_quote_missing_details_returns_gate_without_escalation tests/test_llm_engine.py::test_extract_purchase_selection_preserves_mixed_model_and_sku_items tests/test_llm_engine.py::test_process_message_quoted_frame_same_details_does_not_restart_items -q`
+  (`5 passed`)
+- `uv run pytest tests/test_llm_engine.py -k "exact_quote or selection_confirmation or quote_request_with_multiple_items or synthetic_marker or quoted_frame or post_quotation" -q`
+  (`53 passed`)
+- `uv run ruff check src/ tests/`
+- `uv run ruff format --check src/ tests/`
+- `uv run mypy src/`
+- `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`
+  (`1368 passed, 19 skipped`)
+- GitHub Actions run `27200937145` passed `changes`, `lint`, `test`,
+  `type-check`, and `deploy`; deploy job `80304760664` succeeded for
+  `7049107ad04fa67513efb559a6fb2a00115eb9ce`.
+- Production API smoke after deploy passed: `scripts/verify_api.py --base-url
+  https://noor.starec.ai` reported `8 passed, 0 failed`.
+
+Live E2E status:
+
+- Full live WhatsApp E2E was started on the approved personal phone ending
+  `0921`, but stopped when repeated test attempts delivered multiple real
+  assistant messages to the physical WhatsApp number. The repeated messages are
+  not expected customer behavior; they were caused by repeated live E2E sends
+  against the same real number/test channel.
+- No further live sends should be made to that personal number. Final full live
+  WhatsApp E2E remains blocked pending an isolated test number or
+  outbound-disabled production-like harness.
