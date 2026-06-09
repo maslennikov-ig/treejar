@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from src.dialogue.reducer import (
     append_trace_bounded,
@@ -74,6 +75,56 @@ def test_dialogue_state_load_returns_defaults_for_missing_or_invalid_metadata() 
         DialogueState.load({"dialogue_state": {"slots": "bad"}}).slots
         == DialogueSlots()
     )
+
+
+def test_dialogue_state_imports_selected_items_from_canonical_quote_frame() -> None:
+    conversation = SimpleNamespace(
+        id="conv-quote-frame",
+        customer_name="Lilia",
+        metadata_={
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "collecting_details",
+                    "lines": [
+                        {"sku": "SKYLAND-NOVO-2400", "quantity": 2},
+                        {"sku": "CH-616-NEW-BLACK", "quantity": 4},
+                    ],
+                }
+            }
+        },
+    )
+
+    state = DialogueState.from_conversation(conversation)
+
+    assert state.active_flow == "quote_details"
+    assert state.slots.selected_items == [
+        {"sku": "SKYLAND-NOVO-2400", "quantity": 2},
+        {"sku": "CH-616-NEW-BLACK", "quantity": 4},
+    ]
+
+
+def test_dialogue_state_treats_quoted_quote_frame_as_post_quotation_hold() -> None:
+    conversation = SimpleNamespace(
+        id="conv-quoted-frame",
+        customer_name="Lilia",
+        metadata_={
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "quoted",
+                    "lines": [{"sku": "CH-616", "quantity": 2}],
+                }
+            }
+        },
+    )
+
+    state = DialogueState.from_conversation(conversation)
+
+    assert state.active_flow == "post_quotation_hold"
+    assert state.slots.quote_sent is True
+    assert state.slots.post_quotation_status == "sent"
+    assert state.slots.selected_items == []
 
 
 def test_dialogue_state_falls_back_to_legacy_state_when_kernel_state_missing() -> None:

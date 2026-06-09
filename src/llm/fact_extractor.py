@@ -51,31 +51,7 @@ _ADDRESS_PATTERN = re.compile(
     r"\s*(?:is|:|-)?\s*(?P<value>[^,.;\n]+)",
     re.IGNORECASE,
 )
-_SKU_ITEM_PATTERN = re.compile(
-    r"\b(?P<quantity>\d+)\s*(?:x|pcs?|pieces?|units?)?\s+"
-    r"(?P<sku>[A-Z]{2,}\s*[- ]?\s*\d{2,}(?:\s+[A-Z0-9-]+)?)\b"
-)
-_PLAIN_QUANTITY_PATTERN = re.compile(
-    r"\b(?P<quantity>\d+)\s+"
-    r"(?P<description>chairs?|desks?|tables?|workstations?|pods?|items?)\b",
-    re.IGNORECASE,
-)
 _GENERIC_SPACED_SKU_PATTERN = re.compile(r"\b[A-Z]{1,4}\s*[- ]\s*\d{2,8}\b")
-_SKU_NUMERIC_PREFIX_STOPWORDS = frozenset(
-    {
-        "and",
-        "but",
-        "buy",
-        "for",
-        "from",
-        "have",
-        "like",
-        "need",
-        "take",
-        "want",
-        "with",
-    }
-)
 _BUDGET_PATTERN = re.compile(
     r"\b(?:budget\s*(?P<q1>under|below|up\s+to|around|about|approx(?:imately)?)?"
     r"|(?P<q2>under|below|up\s+to|around|about|approx(?:imately)?))"
@@ -564,39 +540,6 @@ def _extract_order_item_facts(
         return facts
     if order_runtime.intent.lines:
         return facts
-
-    for match in _SKU_ITEM_PATTERN.finditer(message_text):
-        facts.append(
-            _fact(
-                scope="current_order",
-                key="order.item",
-                value={
-                    "sku": _normalize_sku(match.group("sku")),
-                    "quantity": int(match.group("quantity")),
-                },
-                confidence="high",
-                evidence=match.group(0),
-                source_message_id=source_message_id,
-            )
-        )
-
-    for match in _PLAIN_QUANTITY_PATTERN.finditer(message_text):
-        if _plain_quantity_is_sku_numeric_component(message_text, match):
-            continue
-        facts.append(
-            _fact(
-                scope="current_order",
-                key="order.item",
-                value={
-                    "description": match.group("description").lower(),
-                    "quantity": int(match.group("quantity")),
-                },
-                confidence="medium",
-                evidence=match.group(0),
-                source_message_id=source_message_id,
-            )
-        )
-
     return facts
 
 
@@ -608,27 +551,6 @@ def _order_items_evidence(snapshot: list[dict[str, object]]) -> str:
         if quantity and catalog_ref:
             parts.append(f"{quantity} x {catalog_ref}")
     return "; ".join(parts) or "order.items"
-
-
-def _plain_quantity_is_sku_numeric_component(
-    message_text: str,
-    match: re.Match[str],
-) -> bool:
-    prefix = message_text[max(0, match.start() - 12) : match.start()]
-    prefix_match = re.search(
-        r"(?<![A-Z])(?P<prefix>[A-Z]{1,4})\s*[- ]\s*$",
-        prefix,
-        flags=re.IGNORECASE,
-    )
-    if prefix_match is None:
-        return False
-    if prefix_match.group("prefix").casefold() in _SKU_NUMERIC_PREFIX_STOPWORDS:
-        return False
-
-    window = message_text[
-        max(0, match.start() - 12) : min(len(message_text), match.end() + 12)
-    ]
-    return _GENERIC_SPACED_SKU_PATTERN.search(window) is not None
 
 
 def _extract_preference_facts(
@@ -949,10 +871,6 @@ def _clean_value(value: str) -> str:
     return cleaned.rstrip(".")
 
 
-def _normalize_sku(value: str) -> str:
-    return re.sub(r"[\s-]+", " ", value).strip().upper()
-
-
 def _budget_value(match: re.Match[str]) -> dict[str, Any]:
     amount_text = match.group("amount").replace(",", "")
     amount = float(amount_text) if "." in amount_text else int(amount_text)
@@ -1008,7 +926,7 @@ def _normalize_fast_facts(
 ) -> list[ExtractedCustomerFact]:
     normalized: list[ExtractedCustomerFact] = []
     for fact in facts:
-        if fact.scope == "current_order" and fact.key == "order.items":
+        if fact.scope == "current_order" and fact.key in {"order.item", "order.items"}:
             continue
         normalized.append(
             ExtractedCustomerFact(

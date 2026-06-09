@@ -1,6 +1,7 @@
 # Dialogue State Kernel Specification
 
-Status: v1 kernel spec extended by stage `tj-gh48` for expected-answer frames
+Status: v1 kernel spec extended by stages `tj-gh48` and `tj-gh51` for
+expected-answer frames and canonical quote frames
 Owner: Dialogue State Kernel stream
 
 ## Goal
@@ -65,7 +66,10 @@ allowlisted flows.
   - product/SKU quantity selection telemetry after an assistant product-choice
     prompt, with legacy fallback until the kernel owns stock/price/quote side
     effects end to end;
-  - quotation detail collection while `pending_quote_selection` exists;
+  - quotation detail collection only while a canonical active
+    `metadata_["order_runtime"]["quote_frame"]` with valid quote lines exists
+    or a valid legacy `pending_quote_selection` can be migrated into an active
+    quote frame;
   - hold state for #11 bulk/sample/discount ambiguity.
 - Enforce mode must still block side effects unless the selected route declares
   the side-effect family and the family is allowlisted for that route.
@@ -104,10 +108,64 @@ The kernel state namespace is `dialogue_kernel`:
 }
 ```
 
+The order runtime namespace is `order_runtime`. For quotation-ready selections,
+`order_runtime.quote_frame` is the canonical owner of selected items, quantities,
+customer quote details, and quote-resume status:
+
+```json
+{
+  "order_runtime": {
+    "quote_frame": {
+      "version": 1,
+      "frame_id": null,
+      "source": "selection_confirmation",
+      "status": "collecting_details",
+      "lines": [
+        {
+          "sku": "SKYLAND-NOVO-2400",
+          "quantity": 2,
+          "product_id": "optional-product-uuid",
+          "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+          "unit_price": 1740.0,
+          "currency": "AED",
+          "item_candidate": "SKYLAND NOVO 2400 Meeting Table"
+        }
+      ],
+      "quote_details": {
+        "name": "Lilia",
+        "company": "DAO company",
+        "customer_type": null,
+        "email": "lilia@example.com",
+        "phone": null,
+        "address": "2 street"
+      },
+      "missing_quote_fields": []
+    }
+  }
+}
+```
+
+Quote-frame lifecycle:
+
+- `collecting_details`: active/resumable; selected lines may be used to collect
+  missing quote details and create a quotation.
+- `repair_required`: active/resumable only for explicit repair; lines/details
+  must not be treated as complete until missing fields are resolved.
+- `quoted`: retained post-quotation state for audit and follow-up context, but
+  non-resumable. It must not synthesize `pending_quote_selection`, import
+  `DialogueState.slots.selected_items`, or create a `quote_details`
+  expected-answer frame.
+
+Only active quote frames (`collecting_details` and `repair_required`) can drive
+quote-details resume. A frame with valid lines but `status="quoted"` is not an
+active quote selection.
+
 Rules:
 
 - Existing metadata keys such as `customer_name`, `name_gate_pending_request`,
-  `pending_quote_selection`, and `quote_customer_details` remain supported.
+  `pending_quote_selection`, and `quote_customer_details` remain supported for
+  migration and rollback. New order/quote routing must write and read
+  `order_runtime.quote_frame` first.
 - `last_question` remains supported as a legacy compatibility field. New
   routing must prefer `expected_answer_frames` when present.
 - The kernel may mirror legacy keys into `dialogue_kernel.state.slots`, but v1 must
@@ -119,6 +177,12 @@ Rules:
   require the Postgres LangGraph checkpointer package.
 - Metadata writes must be bounded and schema-versioned. Invalid or oversized
   kernel state is ignored and replaced from legacy metadata.
+- A `quote_details` expected-answer frame must not be created from assistant
+  prose alone. It may be created only when the conversation has an active
+  `order_runtime.quote_frame` or a valid legacy pending selection that can be
+  migrated into an active quote frame. Its `source_refs` must include quote-line
+  SKU and quantity references so compact replies fill the existing frame instead
+  of restarting item clarification. `quoted` frames are explicitly non-active.
 
 ## Expected Answer Frames
 
@@ -417,8 +481,9 @@ legacy-owned in v1 unless a later stage adds a dedicated allowlist and tests.
   `order_confirmation` manager handoff.
 - #39: SKU selection variants such as `CH 616`, `CH-616`, `CH616`, and mixed
   Latin/Cyrillic forms must preserve product/quote selection.
-- #40: terse quotation details must preserve `pending_quote_selection` and ask
-  only for missing required fields.
+- #40: terse quotation details must preserve the canonical active
+  `order_runtime.quote_frame` and ask only for missing required fields. Legacy
+  `pending_quote_selection` is migration fallback only.
 - #47: product preference answers such as `I prefer more open for team` must be
   treated as answers to an active product preference frame even after bounded
   interruptions, not as verified-policy manager handoff.

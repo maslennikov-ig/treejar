@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from src.dialogue.order_state import OrderState, extract_order_intent_from_text
+from src.dialogue.order_state import (
+    OrderState,
+    extract_order_intent_from_text,
+    quote_frame_from_metadata,
+)
 
 
 def test_extract_order_intent_preserves_multi_item_lines() -> None:
@@ -68,3 +72,54 @@ def test_order_state_loads_legacy_quote_metadata() -> None:
     assert state.quote_details.company == "Del company"
     assert state.quote_details.address == "2 street"
     assert state.quote_details.email == "lilia@example.com"
+    assert state.quote_frame is not None
+    assert state.quote_frame.source == "assistant_quote_summary"
+    assert [
+        (line.sku, line.quantity, line.item_candidate)
+        for line in state.quote_frame.lines
+    ] == [
+        (
+            "SKYLAND NOVO 2400",
+            4,
+            "Two-Person Liner Table SKYLAND NOVO 2400",
+        )
+    ]
+    assert state.quote_frame.quote_details.name == "Lilia"
+
+
+def test_quote_frame_from_metadata_prefers_canonical_runtime_frame() -> None:
+    frame = quote_frame_from_metadata(
+        {
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "collecting_details",
+                    "lines": [
+                        {
+                            "sku": "SKYLAND-NOVO-2400",
+                            "quantity": 2,
+                            "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+                        },
+                        {
+                            "sku": "CH-616-NEW-BLACK",
+                            "quantity": 4,
+                            "display_name": "Skyland Operative Chair CH 616 NEW black",
+                        },
+                    ],
+                    "quote_details": {"name": "Lilia"},
+                }
+            },
+            "pending_quote_selection": {
+                "source": "stale_legacy",
+                "items": [{"sku": "STALE", "quantity": 1}],
+            },
+        }
+    )
+
+    assert frame is not None
+    assert frame.source == "selection_confirmation"
+    assert [(line.sku, line.quantity) for line in frame.lines] == [
+        ("SKYLAND-NOVO-2400", 2),
+        ("CH-616-NEW-BLACK", 4),
+    ]
+    assert frame.quote_details.name == "Lilia"

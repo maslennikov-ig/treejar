@@ -28,6 +28,15 @@ from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
 from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_runtime import run_order_runtime
+from src.dialogue.order_state import (
+    QuoteDetails,
+    QuoteFrame,
+    QuoteLine,
+    quote_frame_cleared_metadata,
+    quote_frame_from_metadata,
+    quote_frame_is_active,
+    quote_frame_to_metadata,
+)
 from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
     DialogueKernelResult,
@@ -1633,7 +1642,12 @@ def _build_sku_quantity_frame(
     )
 
 
-def _build_quote_details_frame(conversation: Conversation) -> ExpectedAnswerFrame:
+def _build_quote_details_frame(
+    conversation: Conversation,
+) -> ExpectedAnswerFrame | None:
+    quote_frame = _quote_frame_from_conversation(conversation)
+    if not quote_frame_is_active(quote_frame):
+        return None
     return _build_expected_answer_frame(
         conversation,
         flow="quote_details",
@@ -1650,6 +1664,7 @@ def _build_quote_details_frame(conversation: Conversation) -> ExpectedAnswerFram
             ExpectedSlot(slot="delivery_address", validator="delivery_address"),
             ExpectedSlot(slot="email", validator="email"),
         ],
+        source_refs=_quote_frame_source_refs(quote_frame),
     )
 
 
@@ -3751,6 +3766,150 @@ def _pending_quote_item_from_resolved(
     }
 
 
+def _quote_details_model_from_metadata(conversation: Conversation) -> QuoteDetails:
+    return QuoteDetails(**_quote_customer_details_from_metadata(conversation))
+
+
+def _quote_frame_from_conversation(conversation: Conversation) -> QuoteFrame | None:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    return quote_frame_from_metadata(metadata)
+
+
+def _conversation_has_canonical_quote_frame(conversation: Conversation) -> bool:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    return _metadata_has_canonical_quote_frame(metadata)
+
+
+def _metadata_has_canonical_quote_frame(metadata: Mapping[str, Any]) -> bool:
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    return isinstance(runtime, Mapping) and isinstance(
+        runtime.get("quote_frame"),
+        Mapping,
+    )
+
+
+def _active_pending_quote_selection_from_conversation(
+    conversation: Conversation,
+) -> Mapping[str, Any] | None:
+    if _conversation_has_canonical_quote_frame(conversation):
+        quote_frame = _quote_frame_from_conversation(conversation)
+        if quote_frame_is_active(quote_frame):
+            return _pending_quote_selection_from_quote_frame(quote_frame)
+        return None
+    return _pending_quote_selection_from_metadata(conversation)
+
+
+def _quote_line_from_resolved_selection(
+    item: ResolvedPurchaseSelectionItem,
+) -> QuoteLine | None:
+    pending_item = _pending_quote_item_from_resolved(item)
+    sku = pending_item.get("sku")
+    quantity = pending_item.get("quantity")
+    if not isinstance(sku, str) or not sku.strip():
+        return None
+    if quantity is None:
+        return None
+    try:
+        quantity_int = int(quantity)
+    except (TypeError, ValueError):
+        return None
+    if quantity_int <= 0:
+        return None
+    return QuoteLine(
+        sku=sku.strip(),
+        quantity=quantity_int,
+        product_id=(
+            str(pending_item["product_id"]) if pending_item.get("product_id") else None
+        ),
+        display_name=(
+            str(pending_item["display_name"])
+            if pending_item.get("display_name")
+            else None
+        ),
+        unit_price=(
+            float(pending_item["unit_price"])
+            if pending_item.get("unit_price") is not None
+            else None
+        ),
+        currency=(
+            str(pending_item["currency"]) if pending_item.get("currency") else None
+        ),
+        item_candidate=item.requested.item_candidate or item.requested.sku,
+    )
+
+
+def _quote_line_from_quotation_item(
+    item: QuotationItem,
+    *,
+    item_candidate: str | None = None,
+) -> QuoteLine | None:
+    sku = item.sku.strip()
+    if not sku or item.quantity <= 0:
+        return None
+    return QuoteLine(
+        sku=sku,
+        quantity=item.quantity,
+        item_candidate=item_candidate or sku,
+    )
+
+
+def _build_quote_frame(
+    *,
+    conversation: Conversation,
+    source: str,
+    lines: Iterable[QuoteLine | None],
+    has_unresolved_items: bool = False,
+) -> QuoteFrame | None:
+    valid_lines = [line for line in lines if line is not None and line.is_valid]
+    if not valid_lines:
+        return None
+    return QuoteFrame(
+        source=source,
+        status="repair_required" if has_unresolved_items else "collecting_details",
+        lines=valid_lines,
+        quote_details=_quote_details_model_from_metadata(conversation),
+        missing_quote_fields=["items and quantities"] if has_unresolved_items else [],
+    )
+
+
+def _store_quote_frame_metadata(
+    conversation: Conversation,
+    frame: QuoteFrame | None,
+) -> None:
+    if frame is None:
+        conversation.metadata_ = quote_frame_cleared_metadata(conversation.metadata_)
+        return
+    conversation.metadata_ = quote_frame_to_metadata(conversation.metadata_, frame)
+
+
+def _quote_items_from_frame(frame: QuoteFrame | None) -> tuple[QuotationItem, ...]:
+    if not quote_frame_is_active(frame):
+        return ()
+    return tuple(
+        QuotationItem(sku=line.sku.strip(), quantity=line.quantity)
+        for line in frame.lines
+        if line.is_valid
+    )
+
+
+def _quote_frame_source_refs(frame: QuoteFrame) -> list[dict[str, Any]]:
+    return [
+        {
+            "kind": "quote_line",
+            "sku": line.sku,
+            "quantity": line.quantity,
+            "quote_frame_id": frame.frame_id,
+            "ordinal": index,
+        }
+        for index, line in enumerate(frame.lines, start=1)
+        if line.is_valid
+    ]
+
+
 async def _store_pending_quote_selection(
     db: AsyncSession,
     conversation: Conversation,
@@ -3760,6 +3919,15 @@ async def _store_pending_quote_selection(
     if not resolution.resolved and not resolution.unresolved:
         metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
         conversation.metadata_ = metadata
+        _store_quote_frame_metadata(conversation, None)
+        try:
+            await db.flush()
+        except Exception:
+            logger.warning(
+                "Failed to flush cleared pending quote selection for conversation %s",
+                conversation.id,
+                exc_info=True,
+            )
         return
 
     metadata[PENDING_QUOTE_SELECTION_KEY] = {
@@ -3782,6 +3950,18 @@ async def _store_pending_quote_selection(
         ],
     }
     conversation.metadata_ = metadata
+    _store_quote_frame_metadata(
+        conversation,
+        _build_quote_frame(
+            conversation=conversation,
+            source="selection_confirmation",
+            lines=(
+                _quote_line_from_resolved_selection(resolved_item)
+                for resolved_item in resolution.resolved
+            ),
+            has_unresolved_items=bool(resolution.unresolved),
+        ),
+    )
     try:
         await db.flush()
     except Exception:
@@ -3798,10 +3978,12 @@ async def _store_pending_sales_order_quote(
     *,
     resolved_items: list[QuotationItem],
     unresolved_items: tuple[ExactQuoteCandidate, ...],
+    source: str = "sales_order_quote",
+    item_candidates_by_sku: Mapping[str, str] | None = None,
 ) -> None:
     metadata = dict(conversation.metadata_ or {})
     metadata[PENDING_QUOTE_SELECTION_KEY] = {
-        "source": "sales_order_quote",
+        "source": source,
         "items": [
             {"sku": item.sku, "quantity": item.quantity}
             for item in resolved_items
@@ -3818,6 +4000,22 @@ async def _store_pending_sales_order_quote(
         ],
     }
     conversation.metadata_ = metadata
+    candidates_by_sku = dict(item_candidates_by_sku or {})
+    _store_quote_frame_metadata(
+        conversation,
+        _build_quote_frame(
+            conversation=conversation,
+            source=source,
+            lines=(
+                _quote_line_from_quotation_item(
+                    item,
+                    item_candidate=candidates_by_sku.get(item.sku.strip()),
+                )
+                for item in resolved_items
+            ),
+            has_unresolved_items=bool(unresolved_items),
+        ),
+    )
     try:
         await db.flush()
     except Exception:
@@ -3853,6 +4051,15 @@ async def _store_pending_exact_quote(
         ],
     }
     conversation.metadata_ = metadata
+    _store_quote_frame_metadata(
+        conversation,
+        _build_quote_frame(
+            conversation=conversation,
+            source="exact_quote",
+            lines=(_quote_line_from_quotation_item(item) for item in items),
+            has_unresolved_items=bool(unresolved_items),
+        ),
+    )
     try:
         await db.flush()
     except Exception:
@@ -3869,6 +4076,16 @@ def _quote_customer_details_from_metadata(
     metadata = (
         conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
     )
+    quote_frame = quote_frame_from_metadata(metadata)
+    if quote_frame is not None:
+        frame_details = {
+            key: value.strip()
+            for key, value in quote_frame.quote_details.model_dump().items()
+            if isinstance(value, str) and value.strip()
+        }
+        if frame_details:
+            return frame_details
+
     raw_details = metadata.get(QUOTE_CUSTOMER_DETAILS_KEY)
     if not isinstance(raw_details, Mapping):
         return {}
@@ -5277,7 +5494,7 @@ def _has_active_sales_detail_capture_context(
     conversation: Conversation,
     recent_history: list[str] | None,
 ) -> bool:
-    if _pending_quote_selection_from_metadata(conversation) is not None:
+    if _active_pending_quote_selection_from_conversation(conversation) is not None:
         return True
     if _sales_memory_from_metadata(conversation):
         return True
@@ -5585,6 +5802,18 @@ async def _store_extracted_quote_customer_details(
         metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
     details = {**existing, **extracted_details}
     metadata[QUOTE_CUSTOMER_DETAILS_KEY] = details
+    if _metadata_has_canonical_quote_frame(metadata):
+        quote_frame = quote_frame_from_metadata(metadata)
+    else:
+        quote_frame = None
+    if quote_frame is not None:
+        metadata = quote_frame_to_metadata(
+            metadata,
+            quote_frame.model_copy(
+                update={"quote_details": QuoteDetails(**details)},
+                deep=True,
+            ),
+        )
     conversation.metadata_ = metadata
     if details.get("name") and not _string_value(conversation.customer_name):
         conversation.customer_name = details["name"]
@@ -5732,6 +5961,29 @@ def _clean_assistant_selection_cell(value: str) -> str:
     return " ".join(cleaned.strip(" \t\r\n|").split())
 
 
+def _clean_assistant_quote_item_candidate(value: str) -> str:
+    cleaned = _clean_assistant_selection_cell(value)
+    cleaned = re.split(
+        r"\s+[–—-]\s*\d[\d,.]*(?:\.\d+)?\s*(?:aed|د\.إ)?\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    cleaned = re.split(
+        r"\s+\d[\d,.]*(?:\.\d+)?\s*(?:aed|د\.إ)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    cleaned = re.split(
+        r"\b(?:line\s+total|grand\s+total|total)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return cleaned.strip(" \t\r\n,.;:-–—")
+
+
 def _is_assistant_quote_attribute_line(value: str) -> bool:
     normalized = _normalize_text(value)
     if not normalized:
@@ -5828,7 +6080,7 @@ def _quote_candidates_from_last_assistant_selection(
         quantity = int(match.group("quantity"))
         if quantity <= 0:
             continue
-        item_candidate = _clean_assistant_selection_cell(match.group("item"))
+        item_candidate = _clean_assistant_quote_item_candidate(match.group("item"))
         item_candidate = re.split(
             r"\b(?:would|please|to prepare|before i prepare|if so)\b",
             item_candidate,
@@ -6022,12 +6274,14 @@ async def _store_pending_quote_from_last_assistant_selection(
 
     resolved_items: list[QuotationItem] = []
     unresolved_items: list[ExactQuoteCandidate] = []
+    item_candidates_by_sku: dict[str, str] = {}
     for candidate in candidates:
         resolved_sku = await _resolve_exact_quote_candidate_sku(db, candidate)
         if resolved_sku:
             resolved_items.append(
                 QuotationItem(sku=resolved_sku, quantity=candidate.quantity)
             )
+            item_candidates_by_sku[resolved_sku] = candidate.item_candidate
         else:
             unresolved_items.append(candidate)
 
@@ -6039,6 +6293,8 @@ async def _store_pending_quote_from_last_assistant_selection(
         conversation,
         resolved_items=resolved_items,
         unresolved_items=tuple(unresolved_items),
+        source="assistant_prose_repair",
+        item_candidates_by_sku=item_candidates_by_sku,
     )
     return _pending_quote_selection_from_metadata(conversation)
 
@@ -6051,6 +6307,60 @@ def _pending_quote_selection_from_metadata(
     )
     selection = metadata.get(PENDING_QUOTE_SELECTION_KEY)
     return selection if isinstance(selection, Mapping) else None
+
+
+def _pending_quote_selection_from_quote_frame(
+    frame: QuoteFrame | None,
+) -> Mapping[str, Any] | None:
+    if not quote_frame_is_active(frame):
+        return None
+    return {
+        "source": frame.source,
+        "items": [
+            {"sku": line.sku, "quantity": line.quantity}
+            for line in frame.lines
+            if line.is_valid
+        ],
+        "unresolved_items": (
+            [{"item_candidate": "canonical quote frame repair required"}]
+            if _quote_frame_has_unresolved_items(frame)
+            else []
+        ),
+    }
+
+
+def _quote_frame_has_unresolved_items(frame: QuoteFrame | None) -> bool:
+    if not quote_frame_is_active(frame):
+        return False
+    return frame.status == "repair_required" or "items and quantities" in {
+        item.casefold() for item in frame.missing_quote_fields
+    }
+
+
+def _active_quote_items(
+    conversation: Conversation,
+    selection: Mapping[str, Any] | None,
+) -> tuple[QuotationItem, ...]:
+    frame = _quote_frame_from_conversation(conversation)
+    if quote_frame_is_active(frame):
+        return _quote_items_from_frame(frame)
+    if frame is not None:
+        return ()
+    if selection is None:
+        return ()
+    return _pending_quote_items_from_metadata(selection)
+
+
+def _active_quote_has_unresolved_items(
+    conversation: Conversation,
+    selection: Mapping[str, Any] | None,
+) -> bool:
+    frame = _quote_frame_from_conversation(conversation)
+    if quote_frame_is_active(frame):
+        return _quote_frame_has_unresolved_items(frame)
+    if frame is not None:
+        return False
+    return selection is not None and _pending_quote_has_unresolved_items(selection)
 
 
 def _pending_quote_items_from_metadata(
@@ -6311,14 +6621,35 @@ def _pending_quote_missing_items_message(language: str) -> str:
     )
 
 
+def _quote_frame_repair_required_message(language: str) -> str:
+    if is_arabic_customer_language(language):
+        return (
+            "وصلتني بيانات العميل، لكنني لا أرى إطار عرض سعر محفوظًا للمنتجات "
+            "السابقة. يرجى تأكيد المنتجات والكميات من الملخص السابق كي لا أجهز "
+            "عرض سعر خاطئ."
+        )
+    return (
+        "I received the customer details, but I do not have a saved quote frame "
+        "for the previous items. Please confirm the products and quantities from "
+        "the summary so I do not prepare the wrong quotation."
+    )
+
+
 async def _clear_pending_quote_selection(
     db: AsyncSession,
     conversation: Conversation,
 ) -> None:
     metadata = dict(conversation.metadata_ or {})
-    if PENDING_QUOTE_SELECTION_KEY not in metadata:
-        return
+    has_pending_selection = PENDING_QUOTE_SELECTION_KEY in metadata
     metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
+    quote_frame = quote_frame_from_metadata(metadata)
+    if quote_frame is not None:
+        metadata = quote_frame_to_metadata(
+            metadata,
+            quote_frame.model_copy(update={"status": "quoted"}, deep=True),
+        )
+    if not has_pending_selection and quote_frame is None:
+        return
     conversation.metadata_ = metadata
     try:
         await db.flush()
@@ -8592,7 +8923,9 @@ async def process_message(
     )
     current_sales_memory_updates = _extract_sales_memory_updates(combined_text)
     pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
-    pending_quote_selection_at_start = _pending_quote_selection_from_metadata(conv)
+    pending_quote_selection_at_start = (
+        _active_pending_quote_selection_from_conversation(conv)
+    )
     has_pending_quote_selection = pending_quote_selection_at_start is not None
     pending_exact_quote_followup_candidates = (
         _exact_quote_followup_candidates(
@@ -8802,9 +9135,7 @@ async def process_message(
         )
 
     if (
-        _pending_quote_selection_from_metadata(conv) is None
-        and not assistant_asked_quote_details
-        and not assistant_offered_quote_selection
+        not quote_detail_context_active
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
         and _is_neutral_detail_capture_update(
             text=combined_text,
@@ -9071,7 +9402,9 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        pending_sales_order_quote = _pending_quote_selection_from_metadata(conv)
+        pending_sales_order_quote = _active_pending_quote_selection_from_conversation(
+            conv
+        )
         if (
             pending_sales_order_quote is not None
             and _is_pending_sales_order_quote(pending_sales_order_quote)
@@ -9348,7 +9681,9 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        pending_quote_selection = _pending_quote_selection_from_metadata(conv)
+        pending_quote_selection = _active_pending_quote_selection_from_conversation(
+            conv
+        )
         should_recover_last_assistant_quote = assistant_asked_quote_details or (
             assistant_offered_quote_selection
             and _should_resume_pending_quote_selection(
@@ -9377,10 +9712,13 @@ async def process_message(
             if (
                 pending_exact_quote_followup_candidates
                 and _is_pending_exact_quote(pending_quote_selection)
-                and _pending_quote_has_unresolved_items(pending_quote_selection)
+                and _active_quote_has_unresolved_items(
+                    conv,
+                    pending_quote_selection,
+                )
             ):
                 existing_quote_items = list(
-                    _pending_quote_items_from_metadata(pending_quote_selection)
+                    _active_quote_items(conv, pending_quote_selection)
                 )
                 resolved_exact_followup_items: list[QuotationItem] = []
                 still_unresolved_exact_items: list[ExactQuoteCandidate] = []
@@ -9477,11 +9815,10 @@ async def process_message(
                 masked_text=masked_text,
                 customer_details=pending_quote_customer_details,
             ):
-                quote_items = _pending_quote_items_from_metadata(
-                    pending_quote_selection
-                )
-                if not quote_items or _pending_quote_has_unresolved_items(
-                    pending_quote_selection
+                quote_items = _active_quote_items(conv, pending_quote_selection)
+                if not quote_items or _active_quote_has_unresolved_items(
+                    conv,
+                    pending_quote_selection,
                 ):
                     await _clear_verified_policy_repair_state()
                     return _build_static_response(
@@ -9533,9 +9870,7 @@ async def process_message(
                     allow_product_media=False,
                 )
             if _last_assistant_asked_quote_customer_details(deps.recent_history):
-                quote_items = _pending_quote_items_from_metadata(
-                    pending_quote_selection
-                )
+                quote_items = _active_quote_items(conv, pending_quote_selection)
                 missing_required = _quote_missing_required_details(
                     deps,
                     list(quote_items),
@@ -9553,8 +9888,8 @@ async def process_message(
         elif current_quote_customer_details and assistant_asked_quote_details:
             await _clear_verified_policy_repair_state()
             return _build_static_response(
-                _pending_quote_missing_items_message(str(conv.language)),
-                f"{db_model_main}|quote-resume-missing-items",
+                _quote_frame_repair_required_message(str(conv.language)),
+                f"{db_model_main}|quote-frame-repair-missing-items",
                 allow_product_media=False,
             )
 

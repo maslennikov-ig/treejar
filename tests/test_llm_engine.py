@@ -295,6 +295,19 @@ def test_capture_expected_answer_frames_from_customer_facing_questions(
         escalation_status="none",
         metadata_={},
     )
+    if question_kind == "quote_details":
+        conv.metadata_ = {
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "collecting_details",
+                    "lines": [
+                        {"sku": "CH-616", "quantity": 2},
+                        {"sku": "SKYLAND-NOVO-2400", "quantity": 1},
+                    ],
+                }
+            }
+        }
 
     engine_module._capture_expected_answer_frames_from_assistant_response(
         conv,
@@ -309,6 +322,52 @@ def test_capture_expected_answer_frames_from_customer_facing_questions(
     assert frame["question_kind"] == question_kind
     assert frame["flow"] == flow
     assert [slot["slot"] for slot in frame["expected_slots"]] == slot_names
+    if question_kind == "quote_details":
+        assert frame["source_refs"] == [
+            {
+                "kind": "quote_line",
+                "sku": "CH-616",
+                "quantity": 2,
+                "quote_frame_id": None,
+                "ordinal": 1,
+            },
+            {
+                "kind": "quote_line",
+                "sku": "SKYLAND-NOVO-2400",
+                "quantity": 1,
+                "quote_frame_id": None,
+                "ordinal": 2,
+            },
+        ]
+
+
+def test_quote_details_expected_frame_requires_durable_quote_items() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="12345",
+        customer_name="Lilia",
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+        metadata_={},
+    )
+    response_text = (
+        "Before I prepare the quotation, please share: company name, "
+        "specific delivery address, and customer email."
+    )
+
+    engine_module._capture_expected_answer_frames_from_assistant_response(
+        conv,
+        response_text=response_text,
+        dialogue_kernel_mode="shadow",
+    )
+
+    frames = (
+        conv.metadata_.get("dialogue_kernel", {})
+        .get("state", {})
+        .get("expected_answer_frames", [])
+    )
+    assert frames == []
 
 
 @pytest.mark.asyncio
@@ -8093,6 +8152,439 @@ async def test_process_message_customer_details_resume_pending_quote_selection(
         "phone": "+971501234567",
         "address": "Dubai Marina, Tower A",
     }
+
+
+@pytest.mark.asyncio
+async def test_store_pending_quote_selection_writes_canonical_quote_frame(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    conv.metadata_ = {}
+    product_id = uuid.uuid4()
+    resolution = engine_module.PurchaseSelectionResolution(
+        resolved=(
+            engine_module.ResolvedPurchaseSelectionItem(
+                requested=engine_module.PurchaseSelectionItem(
+                    quantity=2,
+                    item_candidate="SKYLAND NOVO 2400 Meeting Table",
+                    sku="SKYLAND-NOVO-2400",
+                ),
+                product=SimpleNamespace(
+                    id=product_id,
+                    sku="SKYLAND-NOVO-2400",
+                    name_en="MEETING TABLE SKYLAND NOVO 2400",
+                ),
+                availability=8,
+                unit_price=1740.0,
+                currency="AED",
+                availability_source="catalog",
+            ),
+        ),
+        unresolved=(),
+    )
+
+    await engine_module._store_pending_quote_selection(db, conv, resolution)
+
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["source"] == "selection_confirmation"
+    assert quote_frame["status"] == "collecting_details"
+    assert quote_frame["lines"] == [
+        {
+            "sku": "SKYLAND-NOVO-2400",
+            "quantity": 2,
+            "product_id": str(product_id),
+            "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+            "unit_price": 1740.0,
+            "currency": "AED",
+            "item_candidate": "SKYLAND NOVO 2400 Meeting Table",
+        }
+    ]
+    assert quote_frame["missing_quote_fields"] == []
+    assert conv.metadata_["pending_quote_selection"]["items"] == [
+        {
+            "sku": "SKYLAND-NOVO-2400",
+            "quantity": 2,
+            "product_id": str(product_id),
+            "display_name": "MEETING TABLE SKYLAND NOVO 2400",
+            "unit_price": 1740.0,
+            "currency": "AED",
+        }
+    ]
+
+
+def test_quoted_quote_frame_is_not_active_pending_selection() -> None:
+    frame = engine_module.QuoteFrame(
+        source="selection_confirmation",
+        status="quoted",
+        lines=[engine_module.QuoteLine(sku="CH-616", quantity=2)],
+    )
+
+    assert engine_module._pending_quote_selection_from_quote_frame(frame) is None
+    assert engine_module._quote_items_from_frame(frame) == ()
+
+
+@pytest.mark.asyncio
+async def test_store_pending_exact_quote_with_unresolved_items_clears_stale_quote_frame(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_frame": {
+                "source": "selection_confirmation",
+                "status": "collecting_details",
+                "lines": [{"sku": "OLD-SKU", "quantity": 3}],
+            }
+        }
+    }
+
+    await engine_module._store_pending_exact_quote(
+        db,
+        conv,
+        [],
+        unresolved_items=(
+            engine_module.ExactQuoteCandidate(
+                quantity=2,
+                item_candidate="NEW UNKNOWN TABLE",
+                sku=None,
+            ),
+        ),
+    )
+
+    assert engine_module._quote_frame_from_conversation(conv) is None
+    assert conv.metadata_["pending_quote_selection"] == {
+        "source": "exact_quote",
+        "items": [],
+        "unresolved_items": [
+            {
+                "sku": None,
+                "quantity": 2,
+                "item_candidate": "NEW UNKNOWN TABLE",
+            }
+        ],
+    }
+
+
+def test_canonical_quote_frame_details_are_read_before_legacy_metadata() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="12345",
+        customer_name=None,
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+        metadata_={
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "collecting_details",
+                    "lines": [{"sku": "CH-616", "quantity": 2}],
+                    "quote_details": {
+                        "name": "Frame Name",
+                        "company": "Frame Company",
+                        "email": "frame@example.com",
+                        "address": "2 Frame Street",
+                    },
+                }
+            },
+            "quote_customer_details": {
+                "name": "Legacy Name",
+                "company": "Legacy Company",
+                "email": "legacy@example.com",
+                "address": "1 Legacy Street",
+            },
+        },
+    )
+
+    assert engine_module._quote_customer_details_from_metadata(conv) == {
+        "name": "Frame Name",
+        "company": "Frame Company",
+        "email": "frame@example.com",
+        "address": "2 Frame Street",
+    }
+
+
+def test_canonical_quote_frame_unresolved_state_wins_over_stale_legacy_unresolved() -> (
+    None
+):
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="12345",
+        customer_name="Lilia",
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+        metadata_={
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "collecting_details",
+                    "lines": [{"sku": "CH-616", "quantity": 2}],
+                }
+            },
+            "pending_quote_selection": {
+                "source": "exact_quote",
+                "items": [],
+                "unresolved_items": [
+                    {
+                        "sku": None,
+                        "quantity": 1,
+                        "item_candidate": "stale unresolved item",
+                    }
+                ],
+            },
+        },
+    )
+    legacy_selection = conv.metadata_["pending_quote_selection"]
+
+    assert engine_module._active_quote_items(conv, legacy_selection) == (
+        QuotationItem(sku="CH-616", quantity=2),
+    )
+    assert (
+        engine_module._active_quote_has_unresolved_items(
+            conv,
+            legacy_selection,
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_canonical_only_quote_frame_resumes_without_assistant_prose(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.sales_stage = SalesStage.QUOTING.value
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_frame": {
+                "source": "selection_confirmation",
+                "status": "collecting_details",
+                "lines": [{"sku": "CH-616", "quantity": 2}],
+            }
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(parts=[TextPart(content="Thanks, I noted the selected items.")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SO-CANONICAL has been prepared and sent to you."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Company: DAO company\nEmail: lilia@example.com\nDelivery address: 2 street"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Quotation SO-CANONICAL has been prepared and sent to you."
+    assert response.model == "mock-model|quote-resume"
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert quote_items == [QuotationItem(sku="CH-616", quantity=2)]
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quoted_quote_frame_blocks_stale_legacy_pending_quote(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.sales_stage = SalesStage.QUOTING.value
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_frame": {
+                "source": "selection_confirmation",
+                "status": "quoted",
+                "lines": [{"sku": "CH-616", "quantity": 2}],
+            }
+        },
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "STALE-SKU", "quantity": 9}],
+            "unresolved_items": [],
+        },
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(parts=[TextPart(content="Quotation SO-OLD has been prepared.")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Thanks, I have noted the update.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Company: DAO company\nEmail: lilia@example.com\nDelivery address: 2 street"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model != "mock-model|quote-resume"
+    assert "STALE-SKU" not in response.text
+    mock_create_quotation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quote_details_after_bullet_summary_recovers_quote_frame_without_missing_items(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia Kustova"
+    conv.language = "en"
+    conv.metadata_ = {}
+    assistant_summary = (
+        "Here is your order summary:\n"
+        "- 2 x MEETING TABLE SKYLAND NOVO 2400 — 3,480.00 AED\n"
+        "- 4 x Skyland Operative Chair CH 616 NEW black — 1,180.00 AED\n"
+        "Grand Total: 4,660.00 AED\n"
+        "Please share company name, email address, and delivery address so I can "
+        "prepare the quotation."
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(parts=[TextPart(content=assistant_summary)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def resolve_sku_side_effect(
+        _db: object,
+        candidate: engine_module.ExactQuoteCandidate,
+    ) -> str | None:
+        candidate_text = candidate.item_candidate.casefold()
+        if "aed" in candidate_text or "—" in candidate.item_candidate:
+            return None
+        if "novo 2400" in candidate_text:
+            return "SKYLAND-NOVO-2400"
+        if "ch 616" in candidate_text:
+            return "CH-616-NEW-BLACK"
+        return None
+
+    mock_resolve_sku.side_effect = resolve_sku_side_effect
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SO-GH51 has been prepared and sent to you."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Full name: Lilia Kustova\n"
+            "Company: DAO company\n"
+            "Email: lilia@example.com\n"
+            "Delivery address: 2 street"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == "Quotation SO-GH51 has been prepared and sent to you."
+    assert "exact item" not in response.text.casefold()
+    assert "quantity" not in response.text.casefold()
+    assert response.model in {
+        "mock-model|quote-resume",
+        "mock-model|quote-frame-repair",
+    }
+    mock_run.assert_not_awaited()
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert quote_items == [
+        QuotationItem(sku="SKYLAND-NOVO-2400", quantity=2),
+        QuotationItem(sku="CH-616-NEW-BLACK", quantity=4),
+    ]
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["source"] == "assistant_prose_repair"
+    assert quote_frame["status"] == "quoted"
+    assert quote_frame["lines"] == [
+        {
+            "sku": "SKYLAND-NOVO-2400",
+            "quantity": 2,
+            "product_id": None,
+            "display_name": None,
+            "unit_price": None,
+            "currency": None,
+            "item_candidate": "MEETING TABLE SKYLAND NOVO 2400",
+        },
+        {
+            "sku": "CH-616-NEW-BLACK",
+            "quantity": 4,
+            "product_id": None,
+            "display_name": None,
+            "unit_price": None,
+            "currency": None,
+            "item_candidate": "Skyland Operative Chair CH 616 NEW black",
+        },
+    ]
+    assert "pending_quote_selection" not in conv.metadata_
 
 
 @pytest.mark.asyncio

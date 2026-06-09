@@ -431,6 +431,14 @@ async def test_fast_extractor_drops_authoritative_order_items() -> None:
                     evidence="hallucinated order",
                 ),
                 ExtractedCustomerFact(
+                    scope="current_order",
+                    key="order.item",
+                    value={"sku": "BAD-SKU", "quantity": 1},
+                    confidence="high",
+                    source="fast_model",
+                    evidence="legacy singular order item",
+                ),
+                ExtractedCustomerFact(
                     scope="persistent_profile",
                     key="customer.company",
                     value="LLD",
@@ -447,6 +455,7 @@ async def test_fast_extractor_drops_authoritative_order_items() -> None:
     )
 
     assert _facts_by_key(result, "order.items") == []
+    assert _facts_by_key(result, "order.item") == []
     assert _fact_by_key(result, "customer.company").value == "LLD"
 
 

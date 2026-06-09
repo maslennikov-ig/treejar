@@ -120,8 +120,9 @@ Pipeline:
      and multi-line runtime-backed selections, with item-only evidence;
    - price, stock, availability, comparison, discovery, and localized inquiry
      guards before current-order item extraction;
-   - SKU and SKU variants only for legacy fallback cases where the order
-     runtime does not own the turn;
+   - no standalone SKU/quantity regex fallback that creates singular
+     `order.item`; if the typed order runtime does not own the turn, the facts
+     layer must not invent order lines;
    - numeric quantities tied to product references;
    - explicit company labels;
    - explicit individual/customer-type labels;
@@ -143,9 +144,11 @@ must return structured output only. Unit tests must use mocks or PydanticAI test
 models, not live OpenRouter calls.
 
 The fast extractor is not an authority for selected order lines. It receives a
-redacted prompt payload for contact PII and deterministic PII facts, and
-`current_order/order.items` facts returned by the fast model are dropped before
-merge. The deterministic order runtime remains the owner of `order.items`.
+redacted prompt payload for contact PII and deterministic PII facts, and both
+`current_order/order.items` and legacy `current_order/order.item` facts returned
+by the fast model are dropped before merge. The deterministic order runtime and
+the canonical `order_runtime.quote_frame` remain the owners of selected products
+and quantities.
 
 ## Fact Result Contract
 
@@ -184,6 +187,8 @@ Rules:
   have high or medium confidence, and validate as a non-empty list of items with
   a positive integer quantity plus `catalog_ref`, `sku`, or `name`. Invalid or
   model-origin `order.items` facts are saved only as proposed facts.
+- `current_order` facts with key `order.item` are legacy singular facts and must
+  not be produced by deterministic or fast-model extractors.
 - A newer accepted `order.items` snapshot replaces the current order view
   instead of becoming a conflict with the previous snapshot.
 

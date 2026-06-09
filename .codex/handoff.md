@@ -1,38 +1,34 @@
 # Orchestrator Handoff
-Updated: 2026-06-08
-Current branch: `main`
+Updated: 2026-06-09
+Current branch: `codex/tj-gh51-order-quote-cutover`
 
 ## Current Truth
 - Canonical host: `https://noor.starec.ai`; runtime path: `/opt/noor`.
-- Current stage: `tj-order-state`; implementation, review-fix, deploy, API
-  smoke, and final live WhatsApp E2E are complete.
+- Current local stage: `tj-gh51-order-quote-cutover`; worktree:
+  `/home/me/code/treejar/.worktrees/tj-gh51-order-quote-cutover`.
+- No deploy, live WhatsApp test, GitHub close, remote merge, or production
+  mutation has been performed for this stage.
 - Spec/plan: `docs/specs/dialogue-state-kernel.md`,
   `docs/specs/customer-facts-layer.md`,
   `docs/superpowers/plans/2026-06-08-order-state-runtime.md`.
 - Production runtime: `770da1721837496c70a5e28902c26e8f275cafc9`,
   deploy run `27146046204`, smoke `8 passed, 0 failed`.
-- Customer facts v1 is globally enabled; production still runs
-  `dialogue_kernel_mode=enforce` only for `product_selection`.
-- Stage evidence: `.codex/stages/tj-order-state/summary.md` and
+- Active stage evidence: `.codex/stages/tj-gh51-order-quote-cutover/summary.md`.
+- Previous stage evidence: `.codex/stages/tj-order-state/summary.md` and
   `.codex/stages/tj-order-state/artifacts/tj-order-state-live-e2e.md`.
-- Latest full local pytest: `1345 passed, 19 skipped`; final CI run
-  `27146046204` passed lint/test/type-check/deploy.
-- Final live E2E passed on the approved phone ending `0921`: stock+price,
-  ordinal selection, multi-item selection, compact quote details, missing
-  quantity resume, ambiguous CH616 options, and ordinal selection after options.
-- Live quote artifacts remain in Zoho: at least `Fr3361` and `Fr3362`; the
-  live phone was reset to blank active conversation
-  `48e0ab68-cc4f-43a6-a3fd-87be8c3609b7`.
+- Previous stage `tj-order-state` remains production truth; final live E2E
+  passed on approved phone ending `0921`.
 
 ## Next recommended
-Next stage id: `tj-order-state`.
-Recommended action: monitor production normally; optionally close linked GitHub
-issues after human review of the recorded evidence.
+Next stage id: `tj-gh51-order-quote-cutover`.
+Recommended action: request explicit push/merge/deploy/live-E2E approval if
+delivery should proceed; local implementation and stage closeout are green.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from `/home/me/code/treejar`; read repo
+Use $orchestrator-stage. Continue from worktree
+`/home/me/code/treejar/.worktrees/tj-gh51-order-quote-cutover`; read repo
 contracts, stage artifacts, Beads, git status/diff, and active worktrees before
-follow-up implementation or issue closeout.
+follow-up implementation, review, delivery, or issue closeout.
 
 ## Explicit defers
 - `tj-gh21`: outside-24h follow-ups wait for approved Wazzup WABA EN/AR templates.

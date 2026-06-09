@@ -6,6 +6,12 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.dialogue.order_state import (
+    QuoteFrame,
+    quote_frame_from_metadata,
+    quote_frame_is_active,
+)
+
 DIALOGUE_KERNEL_METADATA_KEY = "dialogue_kernel"
 DIALOGUE_STATE_METADATA_KEY = "dialogue_state"
 
@@ -165,8 +171,11 @@ class DialogueState(BaseModel):
             if address and not state.slots.delivery_address:
                 slot_updates["delivery_address"] = address
 
+        quote_frame = quote_frame_from_metadata(metadata)
         selection = metadata.get("pending_quote_selection")
-        selected_items = _selection_items(selection)
+        selected_items = _quote_frame_selection_items(quote_frame) or _selection_items(
+            selection
+        )
         if selected_items and not state.slots.selected_items:
             slot_updates["selected_items"] = selected_items
         quote_status = _mapping_text(metadata, "last_quote_status")
@@ -176,6 +185,9 @@ class DialogueState(BaseModel):
             "shared",
             "delivered",
         }
+        quote_sent = quote_sent or (
+            quote_frame is not None and quote_frame.status == "quoted"
+        )
         quote_sent = quote_sent or selection_source == "quotation_sent"
         if quote_sent:
             slot_updates["quote_sent"] = True
@@ -276,3 +288,13 @@ def _selection_items(value: Any) -> list[dict[str, Any]]:
             continue
         items.append({"sku": sku, "quantity": quantity})
     return items
+
+
+def _quote_frame_selection_items(frame: QuoteFrame | None) -> list[dict[str, Any]]:
+    if not quote_frame_is_active(frame):
+        return []
+    return [
+        {"sku": line.sku, "quantity": line.quantity}
+        for line in frame.lines
+        if line.is_valid
+    ]

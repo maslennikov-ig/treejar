@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from src.dialogue.catalog_refs import extract_catalog_references
+
+ORDER_RUNTIME_METADATA_KEY = "order_runtime"
+QUOTE_FRAME_METADATA_KEY = "quote_frame"
+ACTIVE_QUOTE_FRAME_STATUSES = frozenset({"collecting_details", "repair_required"})
 
 OrderLineStatus = Literal["unresolved", "resolved", "needs_quantity"]
 OrderDecisionRoute = Literal[
@@ -36,6 +40,34 @@ class OrderLine(BaseModel):
     confidence: Literal["high", "medium", "low"] = "high"
 
 
+class QuoteLine(BaseModel):
+    sku: str
+    quantity: int
+    product_id: str | None = None
+    display_name: str | None = None
+    unit_price: float | None = None
+    currency: str | None = None
+    item_candidate: str | None = None
+
+    @property
+    def is_valid(self) -> bool:
+        return bool(self.sku.strip()) and self.quantity > 0
+
+
+class QuoteFrame(BaseModel):
+    version: int = 1
+    frame_id: str | None = None
+    source: str = "unknown"
+    status: str = "collecting_details"
+    lines: list[QuoteLine] = Field(default_factory=list)
+    quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
+    missing_quote_fields: list[str] = Field(default_factory=list)
+
+    @property
+    def has_valid_lines(self) -> bool:
+        return bool(self.lines) and all(line.is_valid for line in self.lines)
+
+
 class OrderIntent(BaseModel):
     lines: list[OrderLine] = Field(default_factory=list)
     quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
@@ -52,6 +84,7 @@ class OrderState(BaseModel):
     version: int = 1
     lines: list[OrderLine] = Field(default_factory=list)
     quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
+    quote_frame: QuoteFrame | None = None
     quote_status: str | None = None
     missing_quote_fields: list[str] = Field(default_factory=list)
 
@@ -82,7 +115,9 @@ class OrderState(BaseModel):
                 address=_mapping_text(raw_details, "address"),
             )
 
-        return cls(lines=lines, quote_details=quote_details)
+        quote_frame = quote_frame_from_metadata(metadata)
+
+        return cls(lines=lines, quote_details=quote_details, quote_frame=quote_frame)
 
 
 class OrderDecision(BaseModel):
@@ -147,6 +182,91 @@ def order_lines_snapshot(intent: OrderIntent) -> list[dict[str, object]]:
             }
         )
     return snapshot
+
+
+def quote_frame_from_metadata(metadata: Mapping[str, Any] | None) -> QuoteFrame | None:
+    if not isinstance(metadata, Mapping):
+        return None
+
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    if isinstance(runtime, Mapping):
+        raw_frame = runtime.get(QUOTE_FRAME_METADATA_KEY)
+        if isinstance(raw_frame, Mapping):
+            try:
+                frame = QuoteFrame.model_validate(raw_frame)
+            except ValidationError:
+                frame = None
+            if frame is not None and frame.has_valid_lines:
+                return frame
+
+    return quote_frame_from_legacy_metadata(metadata)
+
+
+def quote_frame_from_legacy_metadata(
+    metadata: Mapping[str, Any] | None,
+) -> QuoteFrame | None:
+    if not isinstance(metadata, Mapping):
+        return None
+
+    selection = metadata.get("pending_quote_selection")
+    if not isinstance(selection, Mapping):
+        return None
+
+    lines: list[QuoteLine] = []
+    raw_items = selection.get("items")
+    if isinstance(raw_items, list):
+        for raw_item in raw_items:
+            line = _quote_line_from_legacy_item(raw_item)
+            if line is not None:
+                lines.append(line)
+
+    if not lines:
+        return None
+
+    source = _mapping_text(selection, "source") or "legacy_pending_quote_selection"
+    raw_unresolved = selection.get("unresolved_items")
+    has_unresolved = isinstance(raw_unresolved, list) and bool(raw_unresolved)
+    return QuoteFrame(
+        source=source,
+        status="repair_required" if has_unresolved else "collecting_details",
+        lines=lines,
+        quote_details=_quote_details_from_metadata(metadata),
+        missing_quote_fields=["items and quantities"] if has_unresolved else [],
+    )
+
+
+def quote_frame_to_metadata(
+    metadata: Mapping[str, Any] | None,
+    frame: QuoteFrame,
+) -> dict[str, Any]:
+    updated = dict(metadata or {})
+    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
+    runtime_metadata = dict(runtime) if isinstance(runtime, Mapping) else {}
+    runtime_metadata[QUOTE_FRAME_METADATA_KEY] = frame.model_dump()
+    updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
+    return updated
+
+
+def quote_frame_is_active(frame: QuoteFrame | None) -> TypeGuard[QuoteFrame]:
+    return (
+        frame is not None
+        and frame.has_valid_lines
+        and frame.status in ACTIVE_QUOTE_FRAME_STATUSES
+    )
+
+
+def quote_frame_cleared_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    updated = dict(metadata or {})
+    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
+    if not isinstance(runtime, Mapping):
+        return updated
+    runtime_metadata = dict(runtime)
+    runtime_metadata.pop(QUOTE_FRAME_METADATA_KEY, None)
+    if runtime_metadata:
+        updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
+    else:
+        updated.pop(ORDER_RUNTIME_METADATA_KEY, None)
+    return updated
 
 
 def _source_text_for_catalog_ref(text: str, ref: Any) -> str:
@@ -230,6 +350,60 @@ def _line_from_legacy_item(item: Any) -> OrderLine | None:
         quantity=quantity,
         source_text=item_candidate or catalog_ref,
         sku=sku or catalog_ref,
+    )
+
+
+def _quote_line_from_legacy_item(item: Any) -> QuoteLine | None:
+    if not isinstance(item, Mapping):
+        return None
+    raw_quantity = item.get("quantity")
+    if raw_quantity is None:
+        return None
+    try:
+        quantity = int(raw_quantity)
+    except (TypeError, ValueError):
+        return None
+    if quantity <= 0:
+        return None
+
+    sku = _mapping_text(item, "sku")
+    if not sku:
+        return None
+
+    unit_price: float | None = None
+    raw_unit_price = item.get("unit_price")
+    if raw_unit_price is not None:
+        try:
+            unit_price = float(raw_unit_price)
+        except (TypeError, ValueError):
+            unit_price = None
+
+    return QuoteLine(
+        sku=sku,
+        quantity=quantity,
+        product_id=_mapping_text(item, "product_id"),
+        display_name=_mapping_text(item, "display_name"),
+        unit_price=unit_price,
+        currency=_mapping_text(item, "currency"),
+        item_candidate=(
+            _mapping_text(item, "item_candidate")
+            or _mapping_text(item, "display_name")
+            or sku
+        ),
+    )
+
+
+def _quote_details_from_metadata(metadata: Mapping[str, Any]) -> QuoteDetails:
+    raw_details = metadata.get("quote_customer_details")
+    if not isinstance(raw_details, Mapping):
+        return QuoteDetails()
+    return QuoteDetails(
+        name=_mapping_text(raw_details, "name"),
+        company=_mapping_text(raw_details, "company"),
+        customer_type=_mapping_text(raw_details, "customer_type"),
+        email=_mapping_text(raw_details, "email"),
+        phone=_mapping_text(raw_details, "phone"),
+        address=_mapping_text(raw_details, "address"),
     )
 
 
