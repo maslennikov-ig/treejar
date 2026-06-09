@@ -6638,6 +6638,17 @@ def test_extract_purchase_selection_ignores_pii_placeholder_as_sku() -> None:
     assert [(item.quantity, item.sku) for item in selection.items] == [(2, "CH-616")]
 
 
+def test_extract_missing_quantity_product_references_ignores_diagnostic_marker() -> (
+    None
+):
+    references = engine_module._extract_missing_quantity_product_references(
+        "Use the same company and address, please. Do not change the items. "
+        "[tj-gh51-final-20260609095856-post_quote_hold]"
+    )
+
+    assert references == ()
+
+
 def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choice() -> (
     None
 ):
@@ -8556,6 +8567,65 @@ async def test_process_message_quoted_quote_frame_blocks_stale_legacy_pending_qu
 
     assert response.model != "mock-model|quote-resume"
     assert "STALE-SKU" not in response.text
+    mock_create_quotation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quoted_frame_ignores_diagnostic_marker_reference(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.sales_stage = SalesStage.QUOTING.value
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_frame": {
+                "source": "selection_confirmation",
+                "status": "quoted",
+                "lines": [
+                    {"sku": "OF-YED-NOVO-Table-63LW-1.2T-9-white", "quantity": 2},
+                    {"sku": "CH 616 NEW black", "quantity": 4},
+                ],
+            }
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(parts=[TextPart(content="Quotation Fr3366 has been prepared.")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Thanks, I have noted the update.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Use the same company and address, please. Do not change the items. "
+            "[tj-gh51-final-20260609095856-post_quote_hold]"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model != "mock-model|product-quantity-clarify"
+    assert "confirm the quantity" not in response.text.lower()
+    assert "gh51-final" not in response.text
     mock_create_quotation.assert_not_awaited()
 
 

@@ -136,7 +136,10 @@ ORDER_RUNTIME_TRACE_LIMIT = 10
 NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
-BOT_TEST_MARKER_RE = re.compile(r"\s*\[smoke:[^\]]+\]\s*", re.I)
+BOT_TEST_MARKER_RE = re.compile(
+    r"\s*\[(?:smoke:[^\]]+|tj-[a-z0-9_-]*\d{8,}[a-z0-9_-]*)\]\s*",
+    re.I,
+)
 PII_PLACEHOLDER_RE = re.compile(r"\[PII-[0-9A-Fa-f]+\]")
 BARE_NAME_GATE_REPLY_RE = re.compile(
     r"[^\W\d_]+(?:[ '\-][^\W\d_]+){0,3}",
@@ -2691,6 +2694,7 @@ def _is_missing_quantity_product_reference(segment: str) -> bool:
 
 
 def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
+    text = _strip_synthetic_test_marker(text)
     normalized = _normalize_text(_normalize_sku_homoglyphs(text))
     if not normalized:
         return ()
