@@ -6508,6 +6508,10 @@ def _is_pending_exact_quote(selection: Mapping[str, Any]) -> bool:
     return selection.get("source") == "exact_quote"
 
 
+def _accepts_exact_item_quote_followup(selection: Mapping[str, Any]) -> bool:
+    return selection.get("source") in {"exact_quote", "selection_confirmation"}
+
+
 def _sales_order_unresolved_candidates_from_metadata(
     selection: Mapping[str, Any],
 ) -> tuple[ExactQuoteCandidate, ...]:
@@ -9107,7 +9111,7 @@ async def process_message(
             masked_text=masked_text,
         )
         if pending_quote_selection_at_start is not None
-        and _is_pending_exact_quote(pending_quote_selection_at_start)
+        and _accepts_exact_item_quote_followup(pending_quote_selection_at_start)
         and _pending_quote_has_unresolved_items(pending_quote_selection_at_start)
         else ()
     )
@@ -9922,7 +9926,7 @@ async def process_message(
                 )
             if (
                 pending_exact_quote_followup_candidates
-                and _is_pending_exact_quote(pending_quote_selection)
+                and _accepts_exact_item_quote_followup(pending_quote_selection)
                 and _active_quote_has_unresolved_items(
                     conv,
                     pending_quote_selection,
