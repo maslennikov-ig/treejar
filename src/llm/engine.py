@@ -8598,6 +8598,7 @@ async def process_message(
     5. Unmasks PII in response when masking was enabled
     """
 
+    combined_text = _strip_synthetic_test_marker(combined_text)
     dialogue_kernel_result: DialogueKernelResult | None = None
 
     def _is_first_turn(history_messages: list[ModelRequest | ModelResponse]) -> bool:

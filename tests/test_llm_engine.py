@@ -18,6 +18,8 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
+from src.dialogue.runner import DialogueKernelResult
+from src.dialogue.state import DialogueDecision, DialogueState
 from src.llm import engine as engine_module
 from src.llm.engine import (
     ProductMediaPayload,
@@ -674,6 +676,68 @@ async def test_process_message_dialogue_kernel_shadow_fail_open_uses_legacy(
     assert "workstation options" in response.text.lower()
     mock_dialogue_kernel.assert_awaited_once()
     mock_run.assert_awaited_once()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_strips_synthetic_marker_before_order_runtime_layers(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_dialogue_kernel: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {}
+    text = "I need workstation options.\n[tj-gh51-final3-20260609102045-initial]"
+    expected_text = "I need workstation options."
+    mock_build_history.return_value = _first_turn_history(expected_text)
+    mock_dialogue_kernel.return_value = DialogueKernelResult(
+        decision=DialogueDecision(
+            action="fallback_legacy",
+            flow="legacy_fallback",
+            handled=False,
+        ),
+        state=DialogueState.from_conversation(conv),
+        should_use_kernel=False,
+    )
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock_model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_run.return_value = _FakeAgentResult("I can prepare that quotation.")
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock_model"
+    kernel_call = mock_dialogue_kernel.await_args.kwargs
+    assert kernel_call["text"] == expected_text
+    assert "GH-51" not in kernel_call["text"].upper()
+    assert kernel_call["recent_history"][-1] == f"user: {expected_text}"
+    agent_call = mock_run.await_args.kwargs
+    assert agent_call["deps"].user_query == expected_text
+    assert agent_call["deps"].recent_history[-1] == f"user: {expected_text}"
     messaging.send_media.assert_not_called()
 
 
