@@ -43,17 +43,17 @@ parallel_group: planning
 depends_on_streams:
   - none
 parallel_decision: local
-status: returned
-delivery_method: n/a
+status: accepted
+delivery_method: manual integration
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: Planning artifact only.
+cleanup_status: cleaned
+cleanup_notes: Planning artifact was consumed by this local implementation stage; no child worktree or branch cleanup was required.
 risk_level: high
 docs_impact: structural
 docs_reviewed: updated
 docs_review_notes: Specs and plan updated for full cutover.
 verification:
-  - pending in planning closeout
+  - consumed by local implementation; final stage verification recorded in .codex/stages/tj-order-cutover/summary.md
 changed_files:
   - docs/specs/dialogue-state-kernel.md
   - docs/specs/customer-facts-layer.md

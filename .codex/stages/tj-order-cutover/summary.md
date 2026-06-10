@@ -1,83 +1,80 @@
 # Stage tj-order-cutover: Full Order/Quote Flow Cutover
 
 Updated: 2026-06-09
-Status: planned, not implemented
+Status: local implementation verified; deploy/live E2E deferred pending explicit
+approval
 Branch: `codex/tj-order-flow-cutover-plan`
-Base: `origin/main` at `3d37eb1cd6002aea6919ff07f01c7c03beeb8e10`
+Worktree: `/home/me/code/treejar/.worktrees/tj-gh51-order-quote-cutover`
 Beads: `tj-order-cutover`
 
-docs-reviewed: updated - `docs/specs/dialogue-state-kernel.md`,
-`docs/specs/customer-facts-layer.md`, and
-`docs/superpowers/plans/2026-06-09-order-flow-cutover.md` now define the full
-cutover.
+docs-reviewed: updated - `docs/specs/dialogue-state-kernel.md` now documents
+`order_runtime.pending_question_frame`, lifecycle, snapshot preservation, trace
+fields, and the no-assistant-prose quote recovery rule.
 graph-reviewed: no-change-needed - Graphify is not configured in this worktree;
 no `graphify-out/GRAPH_REPORT.md` exists.
 
 ## Goal
 
-Finish the migration from scattered order/quote branch logic to one typed
-runtime-owned frame. The direct motivation is the recurring issue family #40-#51,
-including the second #42 occurrence and open #49/#50/#51. The architectural goal
-is to stop similar regressions by removing mixed ownership, not by adding another
-phrase-specific patch.
+Finish the local order/quote cutover so #40-#51 class regressions cannot return
+through legacy metadata, recent-history-only matching, or assistant-prose quote
+recovery. Live WhatsApp E2E, deploy, push, and production mutations remain
+blocked without explicit approval.
 
-## Current Evidence
+## Implemented
 
-- Production currently points to `3d37eb1` after the GH51 deployment.
-- GH51 live E2E passed, but closed #42 received a second occurrence on
-  2026-06-08: `SK 45 White` -> quantity prompt -> `2` -> generic opener.
-- Code review found the remaining risk: `order_runtime` exists but does not own
-  the full order/quote transition. `src/llm/engine.py` still owns many
-  order/quote outcomes through branch order and legacy metadata.
+- Added canonical `order_runtime.pending_question_frame` with source refs,
+  order-line snapshot, lifecycle status, `turns_seen`, optional expiry, and
+  bounded trace fields.
+- Routed missing quantity prompts and bare quantity answers through typed
+  runtime state, including the second #42 occurrence:
+  `SK 45 White` -> quantity prompt -> `2`.
+- Preserved mixed complete + missing order lines across quantity clarification
+  turns so #50-style multi-item selections do not lose already resolved lines.
+- Added deterministic frame aging: non-answer turns increment `turns_seen`, and
+  exhausted or expired frames cannot consume later bare numbers.
+- Stopped new writes to `pending_product_reference_quantity` on quantity-frame
+  paths; new paths persist typed runtime metadata first.
+- Disabled assistant-prose quote item recovery. When customer quote details
+  arrive without a saved quote frame, the bot now asks for product/quantity
+  confirmation instead of resolving SKUs or creating a quotation from assistant
+  text.
+- Added bounded order-runtime trace persistence for `frame_id`, `frame_status`,
+  resolved/unresolved line counts, and legacy migration read status.
+- Updated customer facts documentation so facts/memory consume typed runtime
+  snapshots rather than model/prose item facts.
 
-## Root Cause
+## Review Gate
 
-The system has multiple order/quote state owners:
+- `code_mapper` and `qa_expert` mapped the order/quote conflict zones and replay
+  risks before implementation.
+- `correctness_reviewer` found two must-fix issues:
+  mixed complete + missing quantity line loss, and stale typed quantity frames.
+  Both were fixed and covered by tests.
+- `improvement_reviewer` found no blocking improvement findings. Accepted
+  improvements fixed in this stage: trace fields are persisted, frame lifecycle
+  is enforced, and snapshot context reduces pending-quantity ownership drift.
 
-- `order_runtime.quote_frame`;
-- `pending_product_reference_quantity`;
-- `pending_quote_selection`;
-- `quote_customer_details`;
-- expected-answer frames;
-- recent assistant prose and assistant-prose quote recovery;
-- branch ordering inside `src/llm/engine.py`.
+## Verification
 
-This lets one scenario pass while an adjacent customer wording follows a
-different owner and loses context. The fundamental fix is to make typed runtime
-state the only order/quote authority and leave legacy keys as migration or
-diagnostic fallback.
-
-## Planned Tasks
-
-- `tj-order-cutover.1`: RED replay matrix and failing invariants for #40-#51.
-- `tj-order-cutover.2`: final typed frame contract and migration rules.
-- `tj-order-cutover.3`: runtime-owned quantity frames.
-- `tj-order-cutover.4`: runtime-owned quote selection and SKU repair.
-- `tj-order-cutover.5`: side-effect adapter and order/quote branch removal from
-  `src/llm/engine.py`.
-- `tj-order-cutover.6`: customer facts, memory, and dialogue kernel alignment.
-- `tj-order-cutover.7`: observability and review-fix gate.
-- `tj-order-cutover.8`: full verification, delivery, live E2E, docs, and
-  closeout.
-
-## Required Verification
-
-- RED/GREEN replay tests for #40-#51, with explicit coverage for the second #42
-  occurrence.
-- `uv run ruff check src/ tests/`
-- `uv run ruff format --check src/ tests/`
-- `uv run mypy src/`
-- `env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short`
-- `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover`
-- Deploy and live WhatsApp E2E only after explicit user approval.
-
-## Prompt Pack
-
-The next orchestrator prompt is stored in
-`.codex/stages/tj-order-cutover/artifacts/next-orchestrator-prompt.md`.
+- RED replay checks were run before implementation:
+  - `tests/test_dialogue_order_runtime.py -k "typed_quantity_frame or bare_quantity_consumes_typed_frame"` failed on missing typed frames.
+  - `tests/test_llm_engine.py -k "order_cutover_gh42_second_occurrence or order_cutover_quote_details_do_not_recover_items_from_assistant_prose"` failed on generic opener / assistant-prose quote recovery.
+  - review RED checks later failed for mixed complete+missing line loss and
+    non-aging quantity frames.
+- GREEN verification:
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_dialogue_order_runtime.py -q` -> 13 passed.
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py -k "order_cutover or quote_resume or exact_quote or product_quantity_clarify or pending_quantity or quote_request_with_multiple_items or selection_unresolved_followup or gh49 or gh50 or gh51" -q` -> 51 passed.
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_dialogue_order_state.py tests/test_fact_extractor.py tests/test_customer_memory_service.py tests/test_dialogue_state.py -q` -> 65 passed.
+  - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` -> passed.
+  - `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` -> 293 files already formatted.
+  - `OPENROUTER_API_KEY=test uv run mypy src/` -> passed.
+  - `OPENROUTER_API_KEY=test env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short` -> 1382 passed, 19 skipped.
 
 ## Explicit Defers
 
-- No implementation, push, merge, deploy, or live WhatsApp testing was performed
-  in this planning stage.
+- No deploy, push, production mutation, or live WhatsApp E2E was run.
+- Full architectural removal of every remaining order/quote-specific branch in
+  `src/llm/engine.py` remains a follow-up hardening task. The implemented stage
+  blocks the requested regression class with typed metadata, replay coverage,
+  and quote-prose recovery removal.
 - `tj-gh21` remains blocked on approved Wazzup WABA EN/AR templates.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, Literal, TypeGuard
 
 from pydantic import BaseModel, Field, ValidationError
@@ -10,6 +11,7 @@ from src.dialogue.catalog_refs import extract_catalog_references
 
 ORDER_RUNTIME_METADATA_KEY = "order_runtime"
 QUOTE_FRAME_METADATA_KEY = "quote_frame"
+PENDING_QUESTION_FRAME_METADATA_KEY = "pending_question_frame"
 ACTIVE_QUOTE_FRAME_STATUSES = frozenset({"collecting_details", "repair_required"})
 
 OrderLineStatus = Literal["unresolved", "resolved", "needs_quantity"]
@@ -19,6 +21,8 @@ OrderDecisionRoute = Literal[
     "quote_details",
     "quantity_clarification",
 ]
+PendingQuestionKind = Literal["quantity"]
+PendingQuestionStatus = Literal["active", "answered", "expired"]
 
 
 class QuoteDetails(BaseModel):
@@ -38,6 +42,39 @@ class OrderLine(BaseModel):
     resolved_sku: str | None = None
     status: OrderLineStatus = "unresolved"
     confidence: Literal["high", "medium", "low"] = "high"
+
+
+class PendingQuestionSourceRef(BaseModel):
+    kind: Literal["order_line"] = "order_line"
+    catalog_ref: str
+    source_text: str
+    sku: str | None = None
+    ordinal: int
+
+
+class PendingQuestionFrame(BaseModel):
+    version: int = 1
+    frame_id: str | None = None
+    question_kind: PendingQuestionKind = "quantity"
+    status: PendingQuestionStatus = "active"
+    prompt_key: str = "ask_quantity_for_sku"
+    max_customer_turns: int = 2
+    turns_seen: int = 0
+    asked_turn_id: str | None = None
+    asked_message_id: str | None = None
+    expires_at: str | None = None
+    source_refs: list[PendingQuestionSourceRef] = Field(default_factory=list)
+    order_lines_snapshot: list[OrderLine] = Field(default_factory=list)
+
+    @property
+    def is_active(self) -> bool:
+        return (
+            self.status == "active"
+            and self.question_kind == "quantity"
+            and self.turns_seen < self.max_customer_turns
+            and _expires_at_is_active(self.expires_at)
+            and bool(self.source_refs)
+        )
 
 
 class QuoteLine(BaseModel):
@@ -94,6 +131,7 @@ class OrderIntent(BaseModel):
 class OrderState(BaseModel):
     version: int = 1
     lines: list[OrderLine] = Field(default_factory=list)
+    pending_question_frame: PendingQuestionFrame | None = None
     quote_details: QuoteDetails = Field(default_factory=QuoteDetails)
     quote_frame: QuoteFrame | None = None
     quote_status: str | None = None
@@ -127,8 +165,14 @@ class OrderState(BaseModel):
             )
 
         quote_frame = quote_frame_from_metadata(metadata)
+        pending_question_frame = pending_question_frame_from_metadata(metadata)
 
-        return cls(lines=lines, quote_details=quote_details, quote_frame=quote_frame)
+        return cls(
+            lines=lines,
+            pending_question_frame=pending_question_frame,
+            quote_details=quote_details,
+            quote_frame=quote_frame,
+        )
 
 
 class OrderDecision(BaseModel):
@@ -143,14 +187,50 @@ class OrderRuntimeTrace(BaseModel):
     handled: bool = False
     reason_codes: list[str] = Field(default_factory=list)
     source: str = "catalog_refs"
+    frame_id: str | None = None
+    frame_status: str | None = None
+    resolved_line_count: int = 0
+    unresolved_line_count: int = 0
+    legacy_migration_read: bool = False
     line_count: int = 0
     total_ms: float = 0.0
     phase_ms: dict[str, float] = Field(default_factory=dict)
 
 
+def age_pending_question_frame(frame: PendingQuestionFrame) -> PendingQuestionFrame:
+    if frame.status != "active":
+        return frame
+    turns_seen = min(max(frame.turns_seen, 0) + 1, max(frame.max_customer_turns, 0))
+    status: PendingQuestionStatus = (
+        "active"
+        if turns_seen < frame.max_customer_turns
+        and _expires_at_is_active(frame.expires_at)
+        else "expired"
+    )
+    return frame.model_copy(
+        update={"turns_seen": turns_seen, "status": status},
+        deep=True,
+    )
+
+
+def _expires_at_is_active(expires_at: str | None) -> bool:
+    if not expires_at:
+        return True
+    try:
+        parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed > datetime.now(UTC)
+
+
 _QUANTITY_WORD_PATTERN = "ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN"
 _NEXT_ORDER_LINE_RE = re.compile(
-    rf"\s+(?:and|or)\s+(?=(?:\d{{1,3}}|{_QUANTITY_WORD_PATTERN})\b)",
+    rf"\s+(?:and|or)\s+(?=(?:"
+    rf"\d{{1,3}}|{_QUANTITY_WORD_PATTERN}|"
+    r"[a-z]{1,4}[-\s]?\d{2,8}|skyland|novo|trend|xten|mobile|meeting"
+    r")\b)",
     flags=re.IGNORECASE,
 )
 _TRAILING_QUANTITY_AFTER_REF_RE = re.compile(
@@ -211,6 +291,54 @@ def quote_frame_from_metadata(metadata: Mapping[str, Any] | None) -> QuoteFrame 
                 return frame
 
     return quote_frame_from_legacy_metadata(metadata)
+
+
+def pending_question_frame_from_metadata(
+    metadata: Mapping[str, Any] | None,
+) -> PendingQuestionFrame | None:
+    if not isinstance(metadata, Mapping):
+        return None
+
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    if isinstance(runtime, Mapping):
+        raw_frame = runtime.get(PENDING_QUESTION_FRAME_METADATA_KEY)
+        if isinstance(raw_frame, Mapping):
+            try:
+                frame = PendingQuestionFrame.model_validate(raw_frame)
+            except ValidationError:
+                frame = None
+            if frame is not None and frame.source_refs:
+                return frame
+
+    return None
+
+
+def pending_question_frame_to_metadata(
+    metadata: Mapping[str, Any] | None,
+    frame: PendingQuestionFrame,
+) -> dict[str, Any]:
+    updated = dict(metadata or {})
+    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
+    runtime_metadata = dict(runtime) if isinstance(runtime, Mapping) else {}
+    runtime_metadata[PENDING_QUESTION_FRAME_METADATA_KEY] = frame.model_dump()
+    updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
+    return updated
+
+
+def pending_question_frame_cleared_metadata(
+    metadata: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    updated = dict(metadata or {})
+    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
+    if not isinstance(runtime, Mapping):
+        return updated
+    runtime_metadata = dict(runtime)
+    runtime_metadata.pop(PENDING_QUESTION_FRAME_METADATA_KEY, None)
+    if runtime_metadata:
+        updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
+    else:
+        updated.pop(ORDER_RUNTIME_METADATA_KEY, None)
+    return updated
 
 
 def quote_frame_from_legacy_metadata(

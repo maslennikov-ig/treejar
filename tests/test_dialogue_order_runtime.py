@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.dialogue.order_runtime import run_order_runtime
+from src.dialogue.order_state import pending_question_frame_to_metadata
 
 
 def test_order_runtime_selects_product_route_for_complete_order_lines() -> None:
@@ -79,6 +80,196 @@ def test_order_runtime_routes_missing_quantity_to_clarification() -> None:
     assert [
         (line.catalog_ref, line.quantity, line.status) for line in result.state.lines
     ] == [("SKYLAND NOVO 2400", None, "needs_quantity")]
+
+
+def test_order_runtime_creates_typed_quantity_frame_for_missing_sku_quantity() -> None:
+    result = run_order_runtime(
+        text="SK 45 White",
+        metadata={},
+    )
+
+    assert result.decision.route == "quantity_clarification"
+    state = result.state.model_dump(mode="json")
+    quantity_frame = state["pending_question_frame"]
+    assert quantity_frame["question_kind"] == "quantity"
+    assert quantity_frame["status"] == "active"
+    assert quantity_frame["max_customer_turns"] == 2
+    assert quantity_frame["source_refs"] == [
+        {
+            "kind": "order_line",
+            "catalog_ref": "SK-45",
+            "source_text": "SK 45 White",
+            "sku": "SK-45",
+            "ordinal": 1,
+        }
+    ]
+
+
+def test_order_runtime_bare_quantity_consumes_typed_frame_without_assistant_prose() -> (
+    None
+):
+    result = run_order_runtime(
+        text="2",
+        metadata={
+            "order_runtime": {
+                "pending_question_frame": {
+                    "version": 1,
+                    "frame_id": "quantity:sk45",
+                    "question_kind": "quantity",
+                    "status": "active",
+                    "prompt_key": "ask_quantity_for_sku",
+                    "max_customer_turns": 2,
+                    "turns_seen": 0,
+                    "source_refs": [
+                        {
+                            "kind": "order_line",
+                            "catalog_ref": "SK-45",
+                            "source_text": "SK 45 White",
+                            "ordinal": 1,
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.decision.route == "product_selection"
+    assert result.decision.handled is True
+    assert result.decision.reason_codes == ["quantity_frame_answered"]
+    assert [
+        (line.catalog_ref, line.quantity, line.source_text, line.status, line.sku)
+        for line in result.state.lines
+    ] == [("SK-45", 2, "SK 45 White", "resolved", "SK-45")]
+    assert (
+        result.state.model_dump(mode="json")["pending_question_frame"]["status"]
+        == "answered"
+    )
+
+
+def test_order_runtime_quantity_frame_preserves_resolved_lines_after_roundtrip() -> (
+    None
+):
+    first_result = run_order_runtime(
+        text="I need 2 CH 616 chairs and SKYLAND NOVO 2400 Meeting Table",
+        metadata={},
+    )
+
+    assert first_result.decision.route == "quantity_clarification"
+    assert [
+        (line.catalog_ref, line.quantity, line.status)
+        for line in first_result.state.lines
+    ] == [
+        ("CH-616", 2, "unresolved"),
+        ("SKYLAND NOVO 2400", None, "needs_quantity"),
+    ]
+    assert first_result.state.pending_question_frame is not None
+
+    second_result = run_order_runtime(
+        text="1",
+        metadata=pending_question_frame_to_metadata(
+            {},
+            first_result.state.pending_question_frame,
+        ),
+    )
+
+    assert second_result.decision.route == "product_selection"
+    assert second_result.decision.reason_codes == ["quantity_frame_answered"]
+    assert [
+        (line.catalog_ref, line.quantity, line.source_text, line.status, line.sku)
+        for line in second_result.state.lines
+    ] == [
+        ("CH-616", 2, "CH 616 chairs", "unresolved", "CH-616"),
+        (
+            "SKYLAND NOVO 2400",
+            1,
+            "SKYLAND NOVO 2400 Meeting Table",
+            "resolved",
+            "SKYLAND NOVO 2400",
+        ),
+    ]
+
+
+def test_order_runtime_exhausted_quantity_frame_does_not_capture_bare_number() -> None:
+    result = run_order_runtime(
+        text="2",
+        metadata={
+            "order_runtime": {
+                "pending_question_frame": {
+                    "version": 1,
+                    "frame_id": "quantity:sk45",
+                    "question_kind": "quantity",
+                    "status": "active",
+                    "prompt_key": "ask_quantity_for_sku",
+                    "max_customer_turns": 2,
+                    "turns_seen": 2,
+                    "source_refs": [
+                        {
+                            "kind": "order_line",
+                            "catalog_ref": "SK-45",
+                            "source_text": "SK 45 White",
+                            "ordinal": 1,
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.decision.route == "legacy_fallback"
+    assert result.decision.handled is False
+    assert result.state.lines == []
+
+
+def test_order_runtime_ages_quantity_frame_on_non_answer_turns() -> None:
+    frame_metadata = {
+        "order_runtime": {
+            "pending_question_frame": {
+                "version": 1,
+                "frame_id": "quantity:sk45",
+                "question_kind": "quantity",
+                "status": "active",
+                "prompt_key": "ask_quantity_for_sku",
+                "max_customer_turns": 2,
+                "turns_seen": 0,
+                "source_refs": [
+                    {
+                        "kind": "order_line",
+                        "catalog_ref": "SK-45",
+                        "source_text": "SK 45 White",
+                        "ordinal": 1,
+                    }
+                ],
+            }
+        }
+    }
+
+    first_result = run_order_runtime(
+        text="Do you deliver tomorrow?",
+        metadata=frame_metadata,
+    )
+
+    aged_frame = first_result.state.pending_question_frame
+    assert aged_frame is not None
+    assert aged_frame.status == "active"
+    assert aged_frame.turns_seen == 1
+
+    second_result = run_order_runtime(
+        text="What about assembly?",
+        metadata=pending_question_frame_to_metadata({}, aged_frame),
+    )
+
+    expired_frame = second_result.state.pending_question_frame
+    assert expired_frame is not None
+    assert expired_frame.status == "expired"
+    assert expired_frame.turns_seen == 2
+    assert second_result.decision.route == "legacy_fallback"
+
+    stale_answer_result = run_order_runtime(
+        text="2",
+        metadata=pending_question_frame_to_metadata({}, expired_frame),
+    )
+    assert stale_answer_result.decision.route == "legacy_fallback"
+    assert stale_answer_result.state.lines == []
 
 
 def test_order_runtime_routes_mixed_complete_and_missing_lines_to_clarification() -> (

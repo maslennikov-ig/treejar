@@ -155,6 +155,8 @@ snapshot instead of reparsing order items:
 
 - accepted `current_order/order.items` snapshots are emitted only from the typed
   runtime frame;
+- missing-quantity replies fill `order_runtime.pending_question_frame` first and
+  become facts only after the frame resolves into typed order lines;
 - `pending_product_reference_quantity`, `pending_quote_selection`, assistant
   prose, and model-generated item facts are not order-line authorities;
 - compact customer detail replies fill `QuoteDetails` on the active runtime

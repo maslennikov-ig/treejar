@@ -29,10 +29,15 @@ from src.dialogue.catalog_refs import extract_catalog_references
 from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import (
+    PendingQuestionFrame,
     QuoteDetails,
     QuoteFrame,
     QuoteLine,
     QuoteUnresolvedLine,
+    age_pending_question_frame,
+    pending_question_frame_cleared_metadata,
+    pending_question_frame_from_metadata,
+    pending_question_frame_to_metadata,
     quote_frame_cleared_metadata,
     quote_frame_from_metadata,
     quote_frame_is_active,
@@ -2281,6 +2286,7 @@ async def _resolve_purchase_selection_confirmation(
     crm_context: dict[str, Any] | None,
     trace_enabled: bool,
     clear_pending_reference_quantity: bool = False,
+    clear_pending_question_frame: bool = False,
 ) -> tuple[SalesDeps, str]:
     selection_deps = replace(
         deps,
@@ -2305,6 +2311,8 @@ async def _resolve_purchase_selection_confirmation(
     if variant_options:
         if clear_pending_reference_quantity:
             await _clear_pending_product_reference_quantity(db, conversation)
+        if clear_pending_question_frame:
+            await _clear_pending_question_frame(db, conversation)
         if trace_enabled:
             _record_order_runtime_trace(
                 conversation,
@@ -2321,6 +2329,8 @@ async def _resolve_purchase_selection_confirmation(
     await _store_pending_quote_selection(db, conversation, resolution)
     if clear_pending_reference_quantity:
         await _clear_pending_product_reference_quantity(db, conversation)
+    if clear_pending_question_frame:
+        await _clear_pending_question_frame(db, conversation)
     if trace_enabled:
         _record_order_runtime_trace(
             conversation,
@@ -2719,6 +2729,10 @@ def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
     if runtime_references:
         return runtime_references
 
+    return _missing_quantity_reference_segments_from_text(text)
+
+
+def _missing_quantity_reference_segments_from_text(text: str) -> tuple[str, ...]:
     references: list[str] = []
     for raw_segment in _PRODUCT_REFERENCE_SPLIT_RE.split(text):
         segment = _clean_product_reference_segment(raw_segment)
@@ -2733,7 +2747,58 @@ def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
 def _missing_quantity_product_references_from_order_runtime(
     text: str,
 ) -> tuple[str, ...]:
+    result = _missing_quantity_order_runtime_result(text)
+    if result is None:
+        return ()
+    return _missing_quantity_references_from_order_runtime_result(result)
+
+
+def _missing_quantity_order_runtime_result(text: str) -> Any | None:
+    if not _should_run_missing_quantity_order_runtime(text):
+        return None
+
     result = run_order_runtime(text=text, metadata={})
+    if result.decision.route != "quantity_clarification" or not result.decision.handled:
+        return None
+    return result
+
+
+def _should_run_missing_quantity_order_runtime(text: str) -> bool:
+    stripped = _strip_synthetic_test_marker(text).strip()
+    normalized = _normalize_text(_normalize_sku_homoglyphs(stripped))
+    if not normalized:
+        return False
+    if any(blocker in normalized for blocker in _PRODUCT_QUANTITY_CLARIFY_BLOCKERS):
+        return False
+    if any(blocker in normalized for blocker in _EXACT_QUOTE_HIGH_RISK_BLOCKERS):
+        return False
+    if (
+        _extract_purchase_selection(stripped) is not None
+        or _extract_sales_order_quote_items(stripped) is not None
+        or extract_exact_quote_candidate(stripped) is not None
+    ):
+        return False
+
+    references = _missing_quantity_reference_segments_from_text(stripped)
+    if not references:
+        return False
+    if _PURCHASE_SELECTION_TRIGGER_RE.search(stripped) or is_quote_or_proposal_request(
+        stripped
+    ):
+        return True
+
+    if len(stripped.split()) > 6:
+        return False
+    if _extract_quote_customer_details(stripped) or _extract_sales_memory_updates(
+        stripped
+    ):
+        return False
+    return not _asks_customer_facing_question(stripped)
+
+
+def _missing_quantity_references_from_order_runtime_result(
+    result: Any,
+) -> tuple[str, ...]:
     if result.decision.route != "quantity_clarification" or not result.decision.handled:
         return ()
 
@@ -2863,6 +2928,198 @@ async def _clear_pending_product_reference_quantity(
             conversation.id,
             exc_info=True,
         )
+
+
+async def _store_pending_question_frame(
+    db: AsyncSession,
+    conversation: Conversation,
+    frame: PendingQuestionFrame,
+) -> None:
+    conversation.metadata_ = pending_question_frame_to_metadata(
+        conversation.metadata_,
+        frame,
+    )
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to flush pending order runtime question frame for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+async def _clear_pending_question_frame(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> None:
+    metadata = pending_question_frame_cleared_metadata(conversation.metadata_)
+    if metadata == (conversation.metadata_ or {}):
+        return
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to clear pending order runtime question frame for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
+async def _age_pending_question_frame_for_turn(
+    db: AsyncSession,
+    conversation: Conversation,
+    frame: PendingQuestionFrame | None,
+) -> None:
+    if frame is None or frame.status != "active":
+        return
+    await _store_pending_question_frame(
+        db,
+        conversation,
+        age_pending_question_frame(frame),
+    )
+
+
+def _pending_question_frame_from_conversation(
+    conversation: Conversation,
+) -> PendingQuestionFrame | None:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    return pending_question_frame_from_metadata(metadata)
+
+
+def _purchase_selection_from_pending_question_frame(
+    frame: PendingQuestionFrame | None,
+    quantity: int,
+) -> PurchaseSelection | None:
+    if frame is None or not frame.is_active or quantity <= 0:
+        return None
+    items: list[PurchaseSelectionItem] = []
+    if frame.order_lines_snapshot:
+        for line in frame.order_lines_snapshot:
+            line_quantity = (
+                quantity if line.status == "needs_quantity" else line.quantity
+            )
+            if line_quantity is None or line_quantity <= 0:
+                continue
+            sku = line.sku or _best_selection_sku(line.source_text) or line.catalog_ref
+            if not sku:
+                continue
+            items.append(
+                PurchaseSelectionItem(
+                    quantity=line_quantity,
+                    item_candidate=line.source_text,
+                    sku=sku,
+                )
+            )
+        if items:
+            return PurchaseSelection(items=tuple(items))
+
+    for ref in frame.source_refs:
+        sku = ref.sku or _best_selection_sku(ref.source_text) or ref.catalog_ref
+        if not sku:
+            continue
+        items.append(
+            PurchaseSelectionItem(
+                quantity=quantity,
+                item_candidate=ref.source_text,
+                sku=sku,
+            )
+        )
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
+def _purchase_selection_from_pending_question_frame_followup(
+    frame: PendingQuestionFrame | None,
+    text: str,
+) -> PurchaseSelection | None:
+    if frame is None or not frame.is_active:
+        return None
+    selection = _extract_purchase_selection(
+        text,
+        require_trigger=False,
+    ) or _extract_word_quantity_purchase_selection(text)
+    if selection is None or len(selection.items) != len(frame.source_refs):
+        return None
+
+    resolved_ref_items: list[PurchaseSelectionItem] = []
+    for ref, item in zip(frame.source_refs, selection.items, strict=True):
+        if not _pending_product_reference_matches_selection(ref.source_text, item):
+            return None
+        sku = item.sku or ref.sku or _best_selection_sku(ref.source_text)
+        if not sku:
+            return None
+        resolved_ref_items.append(
+            PurchaseSelectionItem(
+                quantity=item.quantity,
+                item_candidate=ref.source_text,
+                sku=sku,
+            )
+        )
+    items: list[PurchaseSelectionItem] = []
+    if frame.order_lines_snapshot:
+        resolved_by_source = {
+            item.item_candidate.casefold(): item for item in resolved_ref_items
+        }
+        for line in frame.order_lines_snapshot:
+            if line.status == "needs_quantity":
+                resolved_item = resolved_by_source.get(line.source_text.casefold())
+                if resolved_item is None:
+                    return None
+                items.append(resolved_item)
+                continue
+            if line.quantity is None or line.quantity <= 0:
+                continue
+            sku = line.sku or _best_selection_sku(line.source_text) or line.catalog_ref
+            if not sku:
+                return None
+            items.append(
+                PurchaseSelectionItem(
+                    quantity=line.quantity,
+                    item_candidate=line.source_text,
+                    sku=sku,
+                )
+            )
+    else:
+        items = resolved_ref_items
+    if not items:
+        return None
+    return PurchaseSelection(items=tuple(items))
+
+
+def _pending_question_frame_from_references(
+    references: tuple[str, ...],
+) -> PendingQuestionFrame | None:
+    source_refs = []
+    for index, reference in enumerate(references, start=1):
+        sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
+        source_refs.append(
+            {
+                "kind": "order_line",
+                "catalog_ref": sku or reference,
+                "source_text": reference,
+                "sku": sku or reference,
+                "ordinal": index,
+            }
+        )
+    if not source_refs:
+        return None
+    return PendingQuestionFrame.model_validate(
+        {
+            "frame_id": "quantity:"
+            + ":".join(str(ref["catalog_ref"]) for ref in source_refs),
+            "question_kind": "quantity",
+            "status": "active",
+            "prompt_key": "ask_quantity_for_sku",
+            "max_customer_turns": 2,
+            "turns_seen": 0,
+            "source_refs": source_refs,
+        }
+    )
 
 
 def _extract_bare_quantity_reply(text: str) -> int | None:
@@ -5251,6 +5508,11 @@ def _bounded_order_runtime_trace(
         "route": str(trace.get("route") or "legacy_fallback")[:64],
         "handled": bool(trace.get("handled")),
         "source": str(trace.get("source") or "unknown")[:64],
+        "frame_id": str(trace.get("frame_id") or "")[:128] or None,
+        "frame_status": str(trace.get("frame_status") or "")[:32] or None,
+        "resolved_line_count": int(trace.get("resolved_line_count") or 0),
+        "unresolved_line_count": int(trace.get("unresolved_line_count") or 0),
+        "legacy_migration_read": bool(trace.get("legacy_migration_read")),
         "line_count": int(trace.get("line_count") or 0),
         "total_ms": round(max(float(trace.get("total_ms") or 0.0), 0.0), 3),
         "phase_ms": phase_ms,
@@ -9443,6 +9705,30 @@ async def process_message(
     if pending_reference_quantity is None:
         pending_reference_quantity = _extract_bare_quantity_reply(masked_text)
     pending_reference_selection = None
+    pending_question_frame = _pending_question_frame_from_conversation(conv)
+    pending_question_selection = (
+        _purchase_selection_from_pending_question_frame(
+            pending_question_frame,
+            pending_reference_quantity,
+        )
+        if pending_reference_quantity is not None
+        else None
+    )
+    if pending_question_selection is None:
+        pending_question_selection = (
+            _purchase_selection_from_pending_question_frame_followup(
+                pending_question_frame,
+                combined_text,
+            )
+            or _purchase_selection_from_pending_question_frame_followup(
+                pending_question_frame,
+                masked_text,
+            )
+        )
+    if pending_question_selection is not None:
+        pending_reference_selection = pending_question_selection
+    elif pending_question_frame is not None:
+        await _age_pending_question_frame_for_turn(db, conv, pending_question_frame)
     pending_reference_quantity_refs = _pending_product_reference_quantity_from_metadata(
         conv
     )
@@ -9452,7 +9738,7 @@ async def process_message(
         deps.recent_history,
         pending_reference_quantity_refs,
     )
-    if pending_reference_context_active:
+    if pending_reference_selection is None and pending_reference_context_active:
         if pending_reference_quantity is not None:
             pending_reference_selection = (
                 _purchase_selection_from_pending_product_references(
@@ -9532,6 +9818,7 @@ async def process_message(
             crm_context=crm_context,
             trace_enabled=dialogue_kernel_trace_enabled,
             clear_pending_reference_quantity=pending_reference_selection is not None,
+            clear_pending_question_frame=pending_question_selection is not None,
         )
         return _build_static_response(
             confirmation_text,
@@ -9966,6 +10253,7 @@ async def process_message(
                 trace_enabled=dialogue_kernel_trace_enabled,
                 clear_pending_reference_quantity=pending_reference_selection
                 is not None,
+                clear_pending_question_frame=pending_question_selection is not None,
             )
             return _build_static_response(
                 confirmation_text,
@@ -9974,19 +10262,47 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        missing_quantity_references = _extract_missing_quantity_product_references(
-            masked_text
-        )
-        if not missing_quantity_references:
-            missing_quantity_references = _extract_missing_quantity_product_references(
-                combined_text
+        missing_quantity_runtime_result = None
+        missing_quantity_references: tuple[str, ...] = ()
+        if not has_pending_quote_selection:
+            missing_quantity_runtime_result = _missing_quantity_order_runtime_result(
+                masked_text
             )
+            if missing_quantity_runtime_result is None and masked_text != combined_text:
+                missing_quantity_runtime_result = (
+                    _missing_quantity_order_runtime_result(combined_text)
+                )
+            if missing_quantity_runtime_result is not None:
+                missing_quantity_references = (
+                    _missing_quantity_references_from_order_runtime_result(
+                        missing_quantity_runtime_result
+                    )
+                )
+            else:
+                missing_quantity_references = (
+                    _extract_missing_quantity_product_references(masked_text)
+                )
+                if not missing_quantity_references:
+                    missing_quantity_references = (
+                        _extract_missing_quantity_product_references(combined_text)
+                    )
         if missing_quantity_references:
-            await _store_pending_product_reference_quantity(
-                db,
-                conv,
-                missing_quantity_references,
-            )
+            if (
+                missing_quantity_runtime_result is not None
+                and missing_quantity_runtime_result.state.pending_question_frame
+                is not None
+            ):
+                await _store_pending_question_frame(
+                    db,
+                    conv,
+                    missing_quantity_runtime_result.state.pending_question_frame,
+                )
+            else:
+                fallback_frame = _pending_question_frame_from_references(
+                    missing_quantity_references
+                )
+                if fallback_frame is not None:
+                    await _store_pending_question_frame(db, conv, fallback_frame)
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 _missing_quantity_product_references_message(
@@ -10000,22 +10316,6 @@ async def process_message(
         pending_quote_selection = _active_pending_quote_selection_from_conversation(
             conv
         )
-        should_recover_last_assistant_quote = assistant_asked_quote_details or (
-            assistant_offered_quote_selection
-            and _should_resume_pending_quote_selection(
-                combined_text=combined_text,
-                masked_text=masked_text,
-                customer_details=current_quote_customer_details,
-            )
-        )
-        if pending_quote_selection is None and should_recover_last_assistant_quote:
-            pending_quote_selection = (
-                await _store_pending_quote_from_last_assistant_selection(
-                    db,
-                    conv,
-                    deps.recent_history,
-                )
-            )
 
         if pending_quote_selection is not None:
             pending_quote_customer_details = current_quote_customer_details
@@ -10201,7 +10501,7 @@ async def process_message(
                         f"{db_model_main}|quote-resume-missing-details",
                         allow_product_media=False,
                     )
-        elif current_quote_customer_details and assistant_asked_quote_details:
+        elif current_quote_customer_details and assistant_supports_quote_resume:
             await _clear_verified_policy_repair_state()
             return _build_static_response(
                 _quote_frame_repair_required_message(str(conv.language)),

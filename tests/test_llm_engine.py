@@ -7284,6 +7284,11 @@ async def test_process_message_ch616_selection_confirms_without_manager_handoff(
     assert trace["route"] == "product_selection"
     assert trace["handled"] is True
     assert trace["line_count"] == 1
+    assert trace["frame_id"] is None
+    assert trace["frame_status"] is None
+    assert trace["resolved_line_count"] == 1
+    assert trace["unresolved_line_count"] == 0
+    assert trace["legacy_migration_read"] is False
     assert trace["source"] == "catalog_refs"
     assert trace["total_ms"] >= 0
     assert set(trace["phase_ms"]) == {
@@ -7298,6 +7303,50 @@ async def test_process_message_ch616_selection_confirms_without_manager_handoff(
     mock_search_behavior_rules.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
     mock_run.assert_not_awaited()
+
+
+def test_bounded_order_runtime_trace_keeps_typed_frame_fields() -> None:
+    trace = engine_module._bounded_order_runtime_trace(
+        {
+            "route": "product_selection",
+            "handled": True,
+            "reason_codes": ["quantity_frame_answered"],
+            "source": "catalog_refs",
+            "frame_id": "quantity:SK-45",
+            "frame_status": "answered",
+            "resolved_line_count": 2,
+            "unresolved_line_count": 0,
+            "legacy_migration_read": True,
+            "line_count": 2,
+            "total_ms": 1.23456,
+            "phase_ms": {
+                "load_state": 0.1,
+                "extract_intent": 0.2,
+                "apply_reducer": 0.3,
+                "decide": 0.4,
+            },
+        }
+    )
+
+    assert trace == {
+        "route": "product_selection",
+        "handled": True,
+        "source": "catalog_refs",
+        "frame_id": "quantity:SK-45",
+        "frame_status": "answered",
+        "resolved_line_count": 2,
+        "unresolved_line_count": 0,
+        "legacy_migration_read": True,
+        "line_count": 2,
+        "total_ms": 1.235,
+        "phase_ms": {
+            "load_state": 0.1,
+            "extract_intent": 0.2,
+            "apply_reducer": 0.3,
+            "decide": 0.4,
+        },
+        "reason_codes": ["quantity_frame_answered"],
+    }
 
 
 @pytest.mark.asyncio
@@ -7917,9 +7966,10 @@ async def test_process_message_missing_quantity_reference_then_bare_number_resol
     )
 
     assert first_response.model == "mock-model|product-quantity-clarify"
-    assert conv.metadata_["pending_product_reference_quantity"]["references"] == [
-        "CH 140"
-    ]
+    quantity_frame = conv.metadata_["order_runtime"]["pending_question_frame"]
+    assert quantity_frame["question_kind"] == "quantity"
+    assert quantity_frame["source_refs"][0]["source_text"] == "CH 140"
+    assert "pending_product_reference_quantity" not in conv.metadata_
 
     second_response = await process_message(
         conversation_id=conv.id,
@@ -7942,6 +7992,78 @@ async def test_process_message_missing_quantity_reference_then_bare_number_resol
     assert "pending_product_reference_quantity" not in conv.metadata_
     mock_run.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
+
+
+def test_pending_question_frame_selection_preserves_snapshot_context_lines() -> None:
+    frame = engine_module.PendingQuestionFrame.model_validate(
+        {
+            "frame_id": "quantity:SKYLAND NOVO 2400",
+            "question_kind": "quantity",
+            "status": "active",
+            "source_refs": [
+                {
+                    "kind": "order_line",
+                    "catalog_ref": "SKYLAND NOVO 2400",
+                    "source_text": "SKYLAND NOVO 2400 Meeting Table",
+                    "sku": "SKYLAND NOVO 2400",
+                    "ordinal": 2,
+                }
+            ],
+            "order_lines_snapshot": [
+                {
+                    "catalog_ref": "CH-616",
+                    "quantity": 2,
+                    "source_text": "CH 616 chairs",
+                    "sku": "CH-616",
+                    "status": "unresolved",
+                },
+                {
+                    "catalog_ref": "SKYLAND NOVO 2400",
+                    "quantity": None,
+                    "source_text": "SKYLAND NOVO 2400 Meeting Table",
+                    "sku": "SKYLAND NOVO 2400",
+                    "status": "needs_quantity",
+                },
+            ],
+        }
+    )
+
+    selection = engine_module._purchase_selection_from_pending_question_frame(
+        frame,
+        1,
+    )
+
+    assert selection is not None
+    assert [
+        (item.sku, item.quantity, item.item_candidate) for item in selection.items
+    ] == [
+        ("CH-616", 2, "CH 616 chairs"),
+        ("SKYLAND NOVO 2400", 1, "SKYLAND NOVO 2400 Meeting Table"),
+    ]
+
+
+def test_pending_question_frame_selection_ignores_expired_frame() -> None:
+    frame = engine_module.PendingQuestionFrame.model_validate(
+        {
+            "frame_id": "quantity:SK-45",
+            "question_kind": "quantity",
+            "status": "active",
+            "expires_at": "2000-01-01T00:00:00+00:00",
+            "source_refs": [
+                {
+                    "kind": "order_line",
+                    "catalog_ref": "SK-45",
+                    "source_text": "SK 45 White",
+                    "sku": "SK-45",
+                    "ordinal": 1,
+                }
+            ],
+        }
+    )
+
+    assert (
+        engine_module._purchase_selection_from_pending_question_frame(frame, 2) is None
+    )
 
 
 @pytest.mark.asyncio
@@ -8009,9 +8131,13 @@ async def test_process_message_pending_quantity_descriptor_followup_resolves_nov
     )
 
     assert first_response.model == "mock-model|product-quantity-clarify"
-    assert conv.metadata_["pending_product_reference_quantity"]["references"] == [
+    runtime = conv.metadata_["order_runtime"]
+    quantity_frame = runtime["pending_question_frame"]
+    assert quantity_frame["question_kind"] == "quantity"
+    assert quantity_frame["source_refs"][0]["source_text"] == (
         "SKYLAND NOVO 2400 Meeting Table"
-    ]
+    )
+    assert "pending_product_reference_quantity" not in conv.metadata_
     assert "My name is" not in first_response.text
 
     liner = SimpleNamespace(
@@ -8103,6 +8229,137 @@ async def test_process_message_pending_quantity_descriptor_followup_resolves_nov
         }
     ]
     assert pending_quote["unresolved_items"] == []
+    assert "pending_product_reference_quantity" not in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_frame_without_recent_assistant(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.metadata_ = {}
+    first_text = "SK 45 White"
+    second_text = "2"
+    mock_build_history.side_effect = [
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+        ],
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+            ModelRequest(parts=[UserPromptPart(content=second_text)]),
+        ],
+    ]
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "openrouter_model_main": "mock-model",
+            "dialogue_kernel_mode": "legacy",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_search_behavior_rules.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Hello, I'm Noor from Treejar. How can I help you today?"
+    )
+
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="SK-45",
+        zoho_item_id="zoho-sk-45",
+        name_en="SK 45 White Office Cabinet",
+        description_en="SK 45 White Office Cabinet",
+        price=620.0,
+        currency="AED",
+        stock=9,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    caption_result = MagicMock()
+    caption_result.scalars.return_value.all.return_value = []
+    sku_result = MagicMock()
+    sku_result.scalar_one_or_none.return_value = product
+    catalog_result = MagicMock()
+    catalog_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.side_effect = [caption_result, sku_result, catalog_result]
+    zoho.get_item.return_value = {
+        "sku": "SK-45",
+        "stock_on_hand": 9,
+        "rate": 620.0,
+        "currency_code": "AED",
+    }
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=first_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "mock-model|product-quantity-clarify"
+    runtime = conv.metadata_["order_runtime"]
+    assert runtime["pending_question_frame"]["question_kind"] == "quantity"
+    assert runtime["pending_question_frame"]["source_refs"][0]["source_text"] == (
+        "SK 45 White"
+    )
+    assert "pending_product_reference_quantity" not in conv.metadata_
+
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=second_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert second_response.model == "mock-model|selection-confirmation"
+    assert "how can i help" not in second_response.text.lower()
+    assert "SK 45 White" in second_response.text or "SK 45" in second_response.text
+    assert "Quantity: 2" in second_response.text
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert [(line["sku"], line["quantity"]) for line in quote_frame["lines"]] == [
+        ("SK-45", 2)
+    ]
     assert "pending_product_reference_quantity" not in conv.metadata_
     mock_run.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
@@ -8668,6 +8925,80 @@ async def test_process_message_canonical_only_quote_frame_resumes_without_assist
 
 
 @pytest.mark.asyncio
+@patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_order_cutover_quote_details_do_not_recover_items_from_assistant_prose(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.sales_stage = SalesStage.QUOTING.value
+    conv.metadata_ = {}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Summary of selected items:\n"
+                        "- 2 x CH 616 chairs\n\n"
+                        "Before I prepare the quotation, please share customer "
+                        "name, company name, customer email, and specific delivery "
+                        "address."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_resolve_sku.return_value = "CH-616"
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SO-PROSE has been prepared and sent to you."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Full name: Lilia Kustova\n"
+            "Company: Del company\n"
+            "Email: lilia@example.com\n"
+            "Phone: +971501234567\n"
+            "Delivery address: 2 street"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
+    mock_resolve_sku.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -8869,7 +9200,7 @@ async def test_process_message_quoted_frame_same_details_does_not_restart_items(
 @patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_quote_details_after_bullet_summary_recovers_quote_frame_without_missing_items(
+async def test_process_message_quote_details_after_bullet_summary_requires_saved_quote_frame(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_resolve_sku: AsyncMock,
@@ -8935,44 +9266,14 @@ async def test_process_message_quote_details_after_bullet_summary_recovers_quote
         messaging_client=messaging,
     )
 
-    assert response.text == "Quotation SO-GH51 has been prepared and sent to you."
-    assert "exact item" not in response.text.casefold()
-    assert "quantity" not in response.text.casefold()
-    assert response.model in {
-        "mock-model|quote-resume",
-        "mock-model|quote-frame-repair",
-    }
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
     mock_run.assert_not_awaited()
-    mock_create_quotation.assert_awaited_once()
-    _, quote_items = mock_create_quotation.await_args.args
-    assert quote_items == [
-        QuotationItem(sku="SKYLAND-NOVO-2400", quantity=2),
-        QuotationItem(sku="CH-616-NEW-BLACK", quantity=4),
-    ]
-    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
-    assert quote_frame["source"] == "assistant_prose_repair"
-    assert quote_frame["status"] == "quoted"
-    assert quote_frame["lines"] == [
-        {
-            "sku": "SKYLAND-NOVO-2400",
-            "quantity": 2,
-            "product_id": None,
-            "display_name": None,
-            "unit_price": None,
-            "currency": None,
-            "item_candidate": "MEETING TABLE SKYLAND NOVO 2400",
-        },
-        {
-            "sku": "CH-616-NEW-BLACK",
-            "quantity": 4,
-            "product_id": None,
-            "display_name": None,
-            "unit_price": None,
-            "currency": None,
-            "item_candidate": "Skyland Operative Chair CH 616 NEW black",
-        },
-    ]
+    mock_resolve_sku.assert_not_awaited()
+    mock_create_quotation.assert_not_awaited()
     assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
 
 
 @pytest.mark.asyncio
@@ -9456,7 +9757,7 @@ async def test_process_message_confirmed_quote_brief_generates_quotation(
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_terse_details_recovers_llm_selection_table(
+async def test_process_message_terse_details_blocks_llm_selection_table_recovery(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9505,23 +9806,18 @@ async def test_process_message_terse_details_recovers_llm_selection_table(
         messaging_client=messaging,
     )
 
-    assert "what do you need" not in response.text.lower()
-    assert "manager will confirm" not in response.text.lower()
-    assert "company name" in response.text.lower()
-    assert "individual" in response.text.lower()
-    assert "specific delivery address" not in response.text.lower()
-    assert response.model.endswith("|quote-resume-missing-details")
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
     assert conv.metadata_["quote_customer_details"] == {
         "name": "Lil",
         "address": "1 dubay",
     }
-    pending_items = conv.metadata_["pending_quote_selection"]["items"]
-    assert [(item["sku"], item["quantity"]) for item in pending_items] == [
-        ("SKY-NOVO-2400", 1),
-        ("CH-616", 1),
-    ]
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
     assert conv.escalation_status == "none"
     mock_run.assert_not_awaited()
+    mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
@@ -9540,7 +9836,7 @@ async def test_process_message_terse_details_recovers_llm_selection_table(
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_terse_details_recovers_llm_selection_prose_confirmation(
+async def test_process_message_terse_details_blocks_llm_selection_prose_confirmation_recovery(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9585,22 +9881,18 @@ async def test_process_message_terse_details_recovers_llm_selection_prose_confir
         messaging_client=messaging,
     )
 
-    assert "what do you need" not in response.text.lower()
-    assert "items and quantities" not in response.text.lower()
-    assert "company name" not in response.text.lower()
-    assert "specific delivery address" not in response.text.lower()
-    assert "email" in response.text.lower()
-    assert response.model.endswith("|quote-resume-missing-details")
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
     assert conv.metadata_["quote_customer_details"] == {
         "customer_type": "individual",
         "name": "Lil",
         "address": "2 street",
     }
-    pending_items = conv.metadata_["pending_quote_selection"]["items"]
-    assert [(item["sku"], item["quantity"]) for item in pending_items] == [
-        ("CH-140", 4)
-    ]
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
     mock_run.assert_not_awaited()
+    mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
@@ -9619,7 +9911,7 @@ async def test_process_message_terse_details_recovers_llm_selection_prose_confir
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_terse_details_recovers_availability_quote_context(
+async def test_process_message_terse_details_blocks_availability_quote_context_recovery(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9675,30 +9967,18 @@ async def test_process_message_terse_details_recovers_availability_quote_context
         messaging_client=messaging,
     )
 
-    assert "items and quantities" not in response.text.lower()
-    assert (
-        "street"
-        not in json.dumps(
-            conv.metadata_.get("pending_quote_selection", {}).get(
-                "unresolved_items", []
-            )
-        ).lower()
-    )
-    assert "email" in response.text.lower()
-    assert response.model.endswith("|quote-resume-missing-details")
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
     assert conv.metadata_["quote_customer_details"] == {
         "customer_type": "individual",
         "name": "Lil",
         "address": "2 street",
     }
-    assert conv.metadata_["pending_quote_selection"]["items"] == [
-        {"sku": "CH-140", "quantity": 4}
-    ]
-    resolved_candidate = mock_resolve_sku.await_args.args[1]
-    assert resolved_candidate.item_candidate == (
-        "Skyland Executive Office Chair CH 140 Black"
-    )
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
     mock_run.assert_not_awaited()
+    mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
@@ -9717,7 +9997,7 @@ async def test_process_message_terse_details_recovers_availability_quote_context
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_quote_confirmation_recovers_availability_offer_context(
+async def test_process_message_quote_confirmation_blocks_availability_offer_recovery(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9774,20 +10054,18 @@ async def test_process_message_quote_confirmation_recovers_availability_offer_co
         messaging_client=messaging,
     )
 
-    assert "item(s) and quantity" not in response.text.lower()
-    assert "email" in response.text.lower()
-    assert response.model.endswith("|quote-resume-missing-details")
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
     assert conv.metadata_["quote_customer_details"] == {
         "customer_type": "individual",
         "name": "Lil",
         "address": "2 street",
     }
-    assert conv.metadata_["pending_quote_selection"]["items"] == [
-        {"sku": "CH-140", "quantity": 4}
-    ]
-    resolved_candidate = mock_resolve_sku.await_args.args[1]
-    assert resolved_candidate.item_candidate == "CH 140 Black"
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
     mock_run.assert_not_awaited()
+    mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
@@ -9830,7 +10108,7 @@ def test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer() -
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_quote_details_recovers_proceed_with_units_context(
+async def test_process_message_quote_details_blocks_proceed_with_units_recovery(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9883,15 +10161,13 @@ async def test_process_message_quote_details_recovers_proceed_with_units_context
         messaging_client=messaging,
     )
 
-    assert "item(s) and quantity" not in response.text.lower()
-    assert "email" in response.text.lower()
-    assert response.model.endswith("|quote-resume-missing-details")
-    assert conv.metadata_["pending_quote_selection"]["items"] == [
-        {"sku": "CH-140", "quantity": 4}
-    ]
-    resolved_candidate = mock_resolve_sku.await_args.args[1]
-    assert resolved_candidate.item_candidate == "CH 140"
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
     mock_run.assert_not_awaited()
+    mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
@@ -9910,7 +10186,7 @@ async def test_process_message_quote_details_recovers_proceed_with_units_context
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_quote_offer_details_do_not_stop_at_detail_capture(
+async def test_process_message_quote_offer_details_blocks_assistant_prose_recovery(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9962,17 +10238,13 @@ async def test_process_message_quote_offer_details_do_not_stop_at_detail_capture
         messaging_client=messaging,
     )
 
-    assert response.model.endswith("|quote-resume-missing-details")
-    assert "email" in response.text.lower()
-    assert "item(s) and quantity" not in response.text.lower()
-    assert (
-        response.text
-        != "Thanks, I've noted delivery address: 2 street, customer type: individual."
-    )
-    assert conv.metadata_["pending_quote_selection"]["items"] == [
-        {"sku": "CH-140", "quantity": 4}
-    ]
+    assert response.model == "mock-model|quote-frame-repair-missing-items"
+    assert "saved quote frame" in response.text.lower()
+    assert "confirm the products and quantities" in response.text.lower()
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
     mock_run.assert_not_awaited()
+    mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_notify.assert_not_awaited()
 

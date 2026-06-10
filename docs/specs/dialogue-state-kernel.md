@@ -153,6 +153,47 @@ customer quote details, and quote-resume status:
 }
 ```
 
+For missing-quantity questions, `order_runtime.pending_question_frame` is the
+canonical owner. A customer reply such as `2` must be matched against this frame,
+not against the most recent assistant wording or legacy
+`pending_product_reference_quantity` metadata:
+
+```json
+{
+  "order_runtime": {
+    "pending_question_frame": {
+      "version": 1,
+      "frame_id": "quantity:SK-45",
+      "question_kind": "quantity",
+      "status": "active",
+      "prompt_key": "ask_quantity_for_sku",
+      "max_customer_turns": 2,
+      "turns_seen": 0,
+      "asked_turn_id": null,
+      "asked_message_id": null,
+      "expires_at": null,
+      "source_refs": [
+        {
+          "kind": "order_line",
+          "catalog_ref": "SK-45",
+          "source_text": "SK 45 White",
+          "sku": "SK-45",
+          "ordinal": 1
+        }
+      ]
+    }
+  }
+}
+```
+
+Pending-question lifecycle:
+
+- `active`: customer replies can answer the typed frame while
+  `turns_seen < max_customer_turns` and at least one `source_refs` entry exists.
+- `answered`: the frame was consumed to produce resolved order lines and must be
+  cleared or ignored by later turns.
+- `expired`: retained only for bounded diagnostics; it is not authoritative.
+
 Quote-frame lifecycle:
 
 - `collecting_details`: active/resumable; selected lines may be used to collect
@@ -235,8 +276,9 @@ Forbidden post-cutover behavior:
   when a durable active quantity frame exists. Recent assistant prose may help
   diagnostics, but it cannot be the only authority.
 - Assistant prose must not recreate quote items as an authoritative state source.
-  It may be retained as a bounded diagnostic fallback only when no valid frame
-  exists, and such use must be traceable.
+  When customer details arrive without an active saved quote frame, the runtime
+  must ask for product and quantity confirmation instead of resolving SKUs or
+  creating a quotation from assistant text.
 - `pending_product_reference_quantity`, `pending_quote_selection`, and
   `quote_customer_details` must not be updated as primary state by new
   order/quote code paths. If rollback mirrors are kept, they must be written
@@ -432,11 +474,12 @@ trace)`. `OrderDecision` currently uses this compact shape:
 
 `trace` is a bounded diagnostic snapshot with no raw customer text or product
 strings. It records `route`, `handled`, up to five `reason_codes`, `source`,
-`line_count`, total runtime latency in milliseconds, and per-phase latency for
-`load_state`, `extract_intent`, `apply_reducer`, and `decide`. When
-`dialogue_kernel_trace_enabled` is enabled, successful runtime-backed selection
-confirmations append this snapshot under `metadata_["order_runtime"]["traces"]`
-with a bounded history.
+`line_count`, `frame_id`, `frame_status`, resolved/unresolved line counts,
+whether legacy migration fallback was read, total runtime latency in
+milliseconds, and per-phase latency for `load_state`, `extract_intent`,
+`apply_reducer`, and `decide`. When `dialogue_kernel_trace_enabled` is enabled,
+successful runtime-backed selection confirmations append this snapshot under
+`metadata_["order_runtime"]["traces"]` with a bounded history.
 
 Plain static purchase selection runs before FAQ and behavior-rule retrieval when
 the turn is not quote-like and no quote-detail context is active. Quote requests,
