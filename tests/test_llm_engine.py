@@ -311,7 +311,11 @@ def test_stock_price_options_response_localizes_body_for_arabic() -> None:
     # scaffold with only the closing CTA translated.
     options = (
         _resolved_option(
-            "SkyLand Chair CH 616 black", "CH 616 black", quantity=2, price=220.0, stock=3
+            "SkyLand Chair CH 616 black",
+            "CH 616 black",
+            quantity=2,
+            price=220.0,
+            stock=3,
         ),
         _resolved_option(
             "Skyland Chair CH 616 NEW black",
@@ -355,7 +359,11 @@ def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> 
     # stock/price answer.
     options = (
         _resolved_option(
-            "SkyLand Chair CH 616 black", "CH 616 black", quantity=4, price=220.0, stock=3
+            "SkyLand Chair CH 616 black",
+            "CH 616 black",
+            quantity=4,
+            price=220.0,
+            stock=3,
         ),
         _resolved_option(
             "Skyland Chair CH 616 NEW black",
@@ -393,7 +401,9 @@ def test_ordinal_option_from_reply_supports_more_than_two_options() -> None:
     assert engine_module._ordinal_option_from_reply("2 chairs for the office") is None
 
 
-def test_pending_product_reference_match_rejects_generic_single_word_candidate() -> None:
+def test_pending_product_reference_match_rejects_generic_single_word_candidate() -> (
+    None
+):
     # n-2: a generic single-word candidate must not pair with a longer reference
     # when the SKU differs.
     spurious = engine_module.PurchaseSelectionItem(
@@ -425,6 +435,26 @@ def test_pending_product_reference_match_rejects_generic_single_word_candidate()
         )
         is True
     )
+
+
+def test_first_selection_over_texts_returns_first_hit_and_dedups() -> None:
+    # m-4: helper returns the first non-None resolution and avoids re-resolving an
+    # identical (already unmasked) text.
+    calls: list[str] = []
+
+    def resolve(text: str) -> str | None:
+        calls.append(text)
+        return "HIT" if text == "masked" else None
+
+    assert (
+        engine_module._first_selection_over_texts(resolve, "combined", "masked")
+        == "HIT"
+    )
+    assert calls == ["combined", "masked"]
+
+    calls.clear()
+    assert engine_module._first_selection_over_texts(resolve, "same", "same") is None
+    assert calls == ["same"]
 
 
 @pytest.mark.parametrize(

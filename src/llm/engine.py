@@ -5,7 +5,7 @@ import inspect
 import logging
 import math
 import re
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
@@ -3191,6 +3191,24 @@ def _purchase_selection_from_pending_product_references(
     if not items:
         return None
     return PurchaseSelection(items=tuple(items))
+
+
+def _first_selection_over_texts(
+    resolve: Callable[[str], PurchaseSelection | None],
+    *texts: str,
+) -> PurchaseSelection | None:
+    # Resolve a purchase selection from the first text that yields one, trying the
+    # original then the PII-masked variant. Deduplicates identical texts so the
+    # resolver runs once when masking is a no-op (m-4).
+    seen: set[str] = set()
+    for text in texts:
+        if text in seen:
+            continue
+        seen.add(text)
+        result = resolve(text)
+        if result is not None:
+            return result
+    return None
 
 
 def _purchase_selection_from_pending_product_reference_followup(
@@ -9862,19 +9880,16 @@ async def process_message(
                 )
             )
         else:
-            pending_reference_selection = (
-                _purchase_selection_from_pending_product_reference_followup(
-                    combined_text,
-                    pending_reference_quantity_refs,
-                )
-            )
-            if pending_reference_selection is None:
-                pending_reference_selection = (
+            pending_reference_selection = _first_selection_over_texts(
+                lambda text: (
                     _purchase_selection_from_pending_product_reference_followup(
-                        masked_text,
+                        text,
                         pending_reference_quantity_refs,
                     )
-                )
+                ),
+                combined_text,
+                masked_text,
+            )
     elif pending_reference_quantity is not None and pending_reference_quantity_refs:
         await _clear_pending_product_reference_quantity(db, conv)
 
@@ -9887,17 +9902,17 @@ async def process_message(
         and not is_quote_or_proposal_request(masked_text)
         and not is_quote_or_proposal_request(combined_text)
     ):
-        early_purchase_selection = pending_reference_selection
-        if early_purchase_selection is None:
-            early_purchase_selection = _extract_purchase_selection_for_context(
+        early_purchase_selection = (
+            pending_reference_selection
+            or _first_selection_over_texts(
+                lambda text: _extract_purchase_selection_for_context(
+                    text,
+                    deps.recent_history,
+                ),
                 masked_text,
-                deps.recent_history,
-            )
-        if early_purchase_selection is None:
-            early_purchase_selection = _extract_purchase_selection_for_context(
                 combined_text,
-                deps.recent_history,
             )
+        )
     if early_purchase_selection is not None:
         from src.core.config import get_system_config
 
