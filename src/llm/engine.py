@@ -1511,11 +1511,13 @@ def _last_assistant_asked_product_preference(
         return False
     if not _has_product_or_quote_routing_signal(last_assistant):
         return False
-    has_workspace_tradeoff = ("luma" in normalized and "novo" in normalized) or (
-        any(term in normalized for term in ("private", "privacy"))
-        and any(term in normalized for term in ("open", "collaborative", "team"))
-    )
-    if not has_workspace_tradeoff:
+    # A numbered SKU option list (e.g. "1. CH 616 ...\n- SKU: ...") is a catalog
+    # selection handled by the ordinal/numbered selection path, not a qualitative
+    # preference question. Excluding it structurally — instead of allow-listing
+    # specific product brands (LUMA/NOVO) — keeps preference detection working for
+    # every product line while preventing SKU lists from being mistaken for a
+    # preference question (M-2).
+    if _numbered_sku_options_from_assistant(last_assistant):
         return False
     preference_question_terms = (
         "prefer",
@@ -9646,19 +9648,24 @@ async def process_message(
                 allow_product_media=False,
             )
 
-    stock_price_options = await _stock_price_resolved_options(
-        db=db,
-        zoho_client=zoho_client,
-        crm_context=crm_context,
-        text=combined_text,
-    )
-    if not stock_price_options and masked_text != combined_text:
+    # Stock+price option shortcut must not hijack an active quote flow. When the
+    # customer is mid-quote (pending selection or the assistant just asked for
+    # quote details), let the normal quote handling own the turn instead (M-3).
+    stock_price_options: tuple[ResolvedPurchaseSelectionItem, ...] = ()
+    if not quote_detail_context_active:
         stock_price_options = await _stock_price_resolved_options(
             db=db,
             zoho_client=zoho_client,
             crm_context=crm_context,
-            text=masked_text,
+            text=combined_text,
         )
+        if not stock_price_options and masked_text != combined_text:
+            stock_price_options = await _stock_price_resolved_options(
+                db=db,
+                zoho_client=zoho_client,
+                crm_context=crm_context,
+                text=masked_text,
+            )
     if stock_price_options:
         db_model_main = await get_system_config(
             db, "openrouter_model_main", settings.openrouter_model_main

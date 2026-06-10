@@ -249,6 +249,39 @@ def test_stock_price_option_list_does_not_create_workspace_preference_frame() ->
     assert frame is None
 
 
+def test_last_assistant_asked_product_preference_is_structural_not_brand_specific() -> (
+    None
+):
+    # M-2: preference detection must be structural — a qualitative choice question
+    # that is NOT a numbered SKU option list — rather than hardcoded to the LUMA/NOVO
+    # workspace brands. Narrowing it to those brands silently broke detection for
+    # every other product line.
+    luma_novo = [
+        "assistant: Would you prefer a more private workspace with individual "
+        "drawer pedestals (LUMA), or a more open, collaborative setup with "
+        "privacy panels (NOVO) for your team?"
+    ]
+    other_product = [
+        "assistant: Would you prefer the executive mesh chair or the leather "
+        "managerial chair for your office?"
+    ]
+    numbered_sku_list = [
+        "assistant: I found two CH 616 chair options available:\n\n"
+        "**1. SkyLand Workstation Chair CH 616 Black**\n"
+        "- **SKU:** CH 616 black\n\n"
+        "**2. Skyland Operative Chair CH 616 NEW Black**\n"
+        "- **SKU:** CH 616 NEW black\n\n"
+        "Which of these two would you prefer?"
+    ]
+
+    assert engine_module._last_assistant_asked_product_preference(luma_novo) is True
+    assert engine_module._last_assistant_asked_product_preference(other_product) is True
+    assert (
+        engine_module._last_assistant_asked_product_preference(numbered_sku_list)
+        is False
+    )
+
+
 @pytest.mark.parametrize(
     ("response_text", "question_kind", "flow", "slot_names"),
     [
@@ -6097,6 +6130,107 @@ async def test_process_message_stock_price_question_returns_catalog_option_list(
     assert "2 chairs" in response.text
     mock_run.assert_not_awaited()
     assert "pending_quote_selection" not in (conv.metadata_ or {})
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_stock_price_inquiry_does_not_hijack_active_quote_flow(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    # Regression (M-3): a stock+price question asked while a quote is pending must
+    # not be hijacked by the deterministic stock-price option shortcut. The pending
+    # quote context must survive and the turn must flow through normal handling.
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH 616 black", "quantity": 2}],
+            "unresolved_items": [],
+        }
+    }
+    text = "What is the stock and price for 2 CH 616 chairs?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="I need 2 CH 616 chairs")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Please share your name, company or individual status, "
+                        "and the specific delivery address for the quotation."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Happy to help with the CH 616 details.")
+
+    ch616 = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 black",
+        zoho_item_id="zoho-ch-616-black",
+        name_en="SkyLand Workstation Chair CH 616 black",
+        price=220.0,
+        currency="AED",
+        stock=3,
+        attributes={},
+        is_active=True,
+    )
+    ch616_new = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 NEW black",
+        zoho_item_id="zoho-ch-616-new-black",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        price=295.0,
+        currency="AED",
+        stock=93,
+        attributes={},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    execute_result.scalars.return_value.all.return_value = [ch616, ch616_new]
+    db.execute.return_value = execute_result
+    zoho.get_item.side_effect = [
+        {
+            "sku": "CH 616 black",
+            "stock_on_hand": 3,
+            "rate": 220.0,
+            "currency_code": "AED",
+        },
+        {
+            "sku": "CH 616 NEW black",
+            "stock_on_hand": 93,
+            "rate": 295.0,
+            "currency_code": "AED",
+        },
+    ]
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert not response.model.endswith("|stock-price-options")
+    assert "I found these options" not in response.text
+    assert "pending_quote_selection" in (conv.metadata_ or {})
 
 
 @pytest.mark.asyncio
