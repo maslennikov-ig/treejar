@@ -376,6 +376,57 @@ def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> 
     assert "I found these options" in stock
 
 
+def test_ordinal_option_from_reply_supports_more_than_two_options() -> None:
+    # m-3: option lists can hold more than two entries, so ordinal parsing must
+    # generalise beyond first/second.
+    assert engine_module._ordinal_option_from_reply("the third one") == 3
+    assert engine_module._ordinal_option_from_reply("option 3") == 3
+    assert engine_module._ordinal_option_from_reply("number four") == 4
+    assert engine_module._ordinal_option_from_reply("the 5th") == 5
+    # 10 must not be misread as 1 via substring matching.
+    assert engine_module._ordinal_option_from_reply("option 10") == 10
+    # Existing first/second behaviour is preserved.
+    assert engine_module._ordinal_option_from_reply("the first option") == 1
+    assert engine_module._ordinal_option_from_reply("option two") == 2
+    # Non-ordinal replies stay None.
+    assert engine_module._ordinal_option_from_reply("I want a quotation please") is None
+    assert engine_module._ordinal_option_from_reply("2 chairs for the office") is None
+
+
+def test_pending_product_reference_match_rejects_generic_single_word_candidate() -> None:
+    # n-2: a generic single-word candidate must not pair with a longer reference
+    # when the SKU differs.
+    spurious = engine_module.PurchaseSelectionItem(
+        quantity=1, item_candidate="Meeting", sku="DIFFERENT-SKU-123"
+    )
+    assert (
+        engine_module._pending_product_reference_matches_selection(
+            "SKYLAND NOVO 2400 Meeting Table", spurious
+        )
+        is False
+    )
+    # A substantial multi-token candidate still matches by name.
+    substantial = engine_module.PurchaseSelectionItem(
+        quantity=2, item_candidate="SKYLAND NOVO 2400", sku="SOME-OTHER-SKU"
+    )
+    assert (
+        engine_module._pending_product_reference_matches_selection(
+            "SKYLAND NOVO 2400 Meeting Table", substantial
+        )
+        is True
+    )
+    # SKU equality is honoured even without a name overlap.
+    by_sku = engine_module.PurchaseSelectionItem(
+        quantity=1, item_candidate="x", sku="OF-YED-NOVO-Table-63LW"
+    )
+    assert (
+        engine_module._pending_product_reference_matches_selection(
+            "OF-YED-NOVO-Table-63LW", by_sku
+        )
+        is True
+    )
+
+
 @pytest.mark.parametrize(
     ("response_text", "question_kind", "flow", "slot_names"),
     [

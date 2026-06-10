@@ -2435,20 +2435,51 @@ _NUMBERED_OPTION_HEADING_RE = re.compile(
 )
 
 
+_ORDINAL_WORD_TO_NUMBER: dict[str, int] = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
+}
+_CARDINAL_WORD_TO_NUMBER: dict[str, int] = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
 def _ordinal_option_from_reply(text: str) -> int | None:
+    # Option lists can hold more than two entries. Parse ordinals generally up to
+    # ten using word boundaries so "option 10" is not misread as "option 1" (m-3).
     normalized = _normalize_text(_strip_synthetic_test_marker(text))
     if not normalized or len(normalized.split()) > 8 or "?" in normalized:
         return None
-    if any(
-        phrase in normalized
-        for phrase in ("first", "1st", "option 1", "option one", "number 1")
-    ):
-        return 1
-    if any(
-        phrase in normalized
-        for phrase in ("second", "2nd", "option 2", "option two", "number 2")
-    ):
-        return 2
+    digit_match = re.search(
+        r"\b(?:option|number)\s*(\d{1,2})\b|\b(\d{1,2})(?:st|nd|rd|th)\b",
+        normalized,
+    )
+    if digit_match:
+        value = int(digit_match.group(1) or digit_match.group(2))
+        return value if 1 <= value <= 10 else None
+    word_match = re.search(r"\b(?:option|number)\s+([a-z]+)\b", normalized)
+    if word_match and word_match.group(1) in _CARDINAL_WORD_TO_NUMBER:
+        return _CARDINAL_WORD_TO_NUMBER[word_match.group(1)]
+    for word, value in _ORDINAL_WORD_TO_NUMBER.items():
+        if re.search(rf"\b{word}\b", normalized):
+            return value
     return None
 
 
@@ -3202,25 +3233,33 @@ def _pending_product_reference_matches_selection(
     reference: str,
     item: PurchaseSelectionItem,
 ) -> bool:
-    normalized_reference = _normalize_text(_normalize_sku_homoglyphs(reference))
-    normalized_candidate = _normalize_text(
-        _normalize_sku_homoglyphs(item.item_candidate)
-    )
-    if normalized_candidate and (
-        normalized_candidate in normalized_reference
-        or normalized_reference in normalized_candidate
-    ):
-        return True
-
+    # SKU equality is the strongest signal — check it first.
     reference_sku = _best_selection_sku(reference) or _extract_sku_signal(reference)
     normalized_reference_sku = _normalize_text(
         _normalize_sku_homoglyphs(reference_sku or "")
     )
     normalized_item_sku = _normalize_text(_normalize_sku_homoglyphs(item.sku))
-    return bool(
+    if (
         normalized_reference_sku
         and normalized_item_sku
         and normalized_reference_sku == normalized_item_sku
+    ):
+        return True
+
+    normalized_reference = _normalize_text(_normalize_sku_homoglyphs(reference))
+    normalized_candidate = _normalize_text(
+        _normalize_sku_homoglyphs(item.item_candidate)
+    )
+    if not normalized_candidate or not normalized_reference:
+        return False
+    # A name-only match must be substantial: a single generic word (e.g. "Meeting")
+    # must not pair a selection item with a longer product reference (n-2).
+    shorter = min(normalized_candidate, normalized_reference, key=len)
+    if len(shorter.split()) < 2:
+        return False
+    return (
+        normalized_candidate in normalized_reference
+        or normalized_reference in normalized_candidate
     )
 
 
