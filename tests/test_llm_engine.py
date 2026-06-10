@@ -282,6 +282,100 @@ def test_last_assistant_asked_product_preference_is_structural_not_brand_specifi
     )
 
 
+def _resolved_option(
+    name_en: str,
+    sku: str,
+    *,
+    quantity: int,
+    price: float | None,
+    stock: int | None,
+    category: str | None = None,
+) -> "engine_module.ResolvedPurchaseSelectionItem":
+    product = SimpleNamespace(sku=sku, name_en=name_en, category=category)
+    return engine_module.ResolvedPurchaseSelectionItem(
+        requested=engine_module.PurchaseSelectionItem(
+            quantity=quantity,
+            item_candidate=name_en,
+            sku=sku,
+        ),
+        product=product,
+        availability=stock,
+        unit_price=price,
+        currency="AED",
+        availability_source="zoho",
+    )
+
+
+def test_stock_price_options_response_localizes_body_for_arabic() -> None:
+    # m-2: for an Arabic customer the whole body must be Arabic, not an English
+    # scaffold with only the closing CTA translated.
+    options = (
+        _resolved_option(
+            "SkyLand Chair CH 616 black", "CH 616 black", quantity=2, price=220.0, stock=3
+        ),
+        _resolved_option(
+            "Skyland Chair CH 616 NEW black",
+            "CH 616 NEW black",
+            quantity=2,
+            price=295.0,
+            stock=93,
+        ),
+    )
+    text = engine_module._stock_price_options_response(options, language="ar")
+    assert "I found these options" not in text
+    assert "Option 1" not in text
+    assert "SKU:" not in text
+    assert "available" not in text
+    assert "الخيار 1" in text
+    assert "المخزون" in text
+    assert "أي خيار تفضل" in text
+
+
+def test_stock_price_options_response_label_reflects_product_not_hardcoded_chair() -> (
+    None
+):
+    # m-1: the count noun must reflect the actual product, not a hardcoded "chair".
+    options = (
+        _resolved_option(
+            "SkyLand Executive Desk DK 200",
+            "DK 200",
+            quantity=2,
+            price=500.0,
+            stock=4,
+            category="Desks",
+        ),
+    )
+    text = engine_module._stock_price_options_response(options, language="en")
+    assert "2 desks" in text
+    assert "chair" not in text.lower()
+
+
+def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> None:
+    # m-5: the variant-disambiguation path must read as a variant choice, not as a
+    # stock/price answer.
+    options = (
+        _resolved_option(
+            "SkyLand Chair CH 616 black", "CH 616 black", quantity=4, price=220.0, stock=3
+        ),
+        _resolved_option(
+            "Skyland Chair CH 616 NEW black",
+            "CH 616 NEW black",
+            quantity=4,
+            price=295.0,
+            stock=93,
+        ),
+    )
+    variant = engine_module._stock_price_options_response(
+        options, language="en", purpose="variant"
+    )
+    stock = engine_module._stock_price_options_response(
+        options, language="en", purpose="stock_price"
+    )
+    assert "variant" in variant.lower()
+    assert "I found these options" not in variant
+    assert "I found these options" in stock
+
+
 @pytest.mark.parametrize(
     ("response_text", "question_kind", "flow", "slot_names"),
     [
@@ -6312,6 +6406,7 @@ async def test_process_message_ambiguous_ch616_selection_returns_catalog_options
     assert "3 available" in response.text
     assert "93 available" in response.text
     assert "4 chairs" in response.text
+    assert "variant" in response.text.lower()
     assert "manager verification" not in response.text.lower()
     mock_run.assert_not_awaited()
     assert "pending_quote_selection" not in (conv.metadata_ or {})

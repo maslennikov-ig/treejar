@@ -2326,6 +2326,7 @@ async def _resolve_purchase_selection_confirmation(
             _stock_price_options_response(
                 variant_options,
                 language=str(conversation.language),
+                purpose="variant",
             ),
         )
     await _store_pending_quote_selection(db, conversation, resolution)
@@ -3927,38 +3928,106 @@ async def _selection_variant_resolved_options(
     return tuple(resolved)
 
 
+_PRODUCT_NOUN_LABELS: tuple[str, ...] = (
+    "chair",
+    "desk",
+    "table",
+    "workstation",
+    "sofa",
+    "cabinet",
+    "pedestal",
+    "locker",
+    "pod",
+    "booth",
+)
+
+
+def _options_item_label(options: tuple[ResolvedPurchaseSelectionItem, ...]) -> str:
+    # Derive the EN count noun from the products' category/name instead of
+    # hardcoding "chair". Falls back to a neutral label when no known product noun
+    # is present, so non-chair catalogs (desks, tables, ...) read correctly (m-1).
+    haystack = _normalize_text(
+        " ".join(
+            f"{getattr(option.product, 'category', '') or ''} "
+            f"{getattr(option.product, 'subcategory', '') or ''} "
+            f"{_product_display_name(option.product)}"
+            for option in options
+        )
+    )
+    for noun in _PRODUCT_NOUN_LABELS:
+        if noun in haystack:
+            return noun
+    return "item"
+
+
 def _stock_price_options_response(
     options: tuple[ResolvedPurchaseSelectionItem, ...],
     *,
     language: str,
+    purpose: str = "stock_price",
 ) -> str:
     if not options:
         return ""
 
+    arabic = is_arabic_customer_language(language)
     requested_quantity = options[0].requested.quantity
-    option_names = " ".join(_product_display_name(option.product) for option in options)
-    item_label = "chair" if "chair" in _normalize_text(option_names) else "item"
-    lines = [
-        f"I found these options for {requested_quantity} {item_label}"
-        f"{'' if requested_quantity == 1 else 's'}:",
-        "",
-    ]
-    for index, option in enumerate(options, start=1):
-        lines.append(f"Option {index}: {_product_display_name(option.product)}")
-        lines.append(f"- SKU: {getattr(option.product, 'sku', option.requested.sku)}")
-        if option.unit_price is None:
-            lines.append("- Price: needs manager confirmation")
-        else:
-            lines.append(
-                f"- Price: {_format_commercial_amount(option.unit_price, option.currency)} each"
+    item_label = _options_item_label(options)
+    plural = "" if requested_quantity == 1 else "s"
+
+    if purpose == "variant":
+        intro = (
+            "هناك عدة خيارات متاحة لاختيارك. إليك الخيارات:"
+            if arabic
+            else (
+                "There are several variants for your "
+                f"{requested_quantity} {item_label}{plural}. Here are the options:"
             )
-        if option.availability is None:
-            lines.append("- Stock: needs manager confirmation")
+        )
+    else:
+        intro = (
+            "وجدت هذه الخيارات لطلبك:"
+            if arabic
+            else f"I found these options for {requested_quantity} {item_label}{plural}:"
+        )
+
+    lines = [intro, ""]
+    for index, option in enumerate(options, start=1):
+        product_name = _product_display_name(option.product)
+        sku = getattr(option.product, "sku", option.requested.sku)
+        price_text = (
+            _format_commercial_amount(option.unit_price, option.currency)
+            if option.unit_price is not None
+            else None
+        )
+        if arabic:
+            lines.append(f"الخيار {index}: {product_name}")
+            lines.append(f"- رمز المنتج: {sku}")
+            lines.append(
+                "- السعر: يحتاج تأكيد المدير"
+                if price_text is None
+                else f"- السعر: {price_text} للقطعة"
+            )
+            lines.append(
+                "- المخزون: يحتاج تأكيد المدير"
+                if option.availability is None
+                else f"- المخزون: {option.availability} متوفر"
+            )
         else:
-            lines.append(f"- Stock: {option.availability} available")
+            lines.append(f"Option {index}: {product_name}")
+            lines.append(f"- SKU: {sku}")
+            lines.append(
+                "- Price: needs manager confirmation"
+                if price_text is None
+                else f"- Price: {price_text} each"
+            )
+            lines.append(
+                "- Stock: needs manager confirmation"
+                if option.availability is None
+                else f"- Stock: {option.availability} available"
+            )
         lines.append("")
 
-    if is_arabic_customer_language(language):
+    if arabic:
         lines.append("أي خيار تفضل؟ أستطيع بعدها تجهيز عرض سعر رسمي.")
     else:
         lines.append(
@@ -9769,21 +9838,6 @@ async def process_message(
                 )
     elif pending_reference_quantity is not None and pending_reference_quantity_refs:
         await _clear_pending_product_reference_quantity(db, conv)
-
-    if pending_reference_quantity is not None and pending_reference_selection is None:
-        pending_reference_quantity_refs = (
-            _pending_product_reference_quantity_from_metadata(conv)
-        )
-        if _last_assistant_asked_pending_product_reference_quantity(
-            deps.recent_history,
-            pending_reference_quantity_refs,
-        ):
-            pending_reference_selection = (
-                _purchase_selection_from_pending_product_references(
-                    pending_reference_quantity_refs,
-                    pending_reference_quantity,
-                )
-            )
 
     early_purchase_selection = None
     if (
