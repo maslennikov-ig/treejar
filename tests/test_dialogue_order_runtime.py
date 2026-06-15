@@ -68,6 +68,20 @@ def test_order_runtime_merges_legacy_state_with_new_order_lines() -> None:
     ]
 
 
+def test_order_runtime_accepts_point_as_trailing_unit_count() -> None:
+    result = run_order_runtime(
+        text="CH 615 new 6 point",
+        metadata={},
+    )
+
+    assert result.decision.route == "product_selection"
+    assert result.decision.handled is True
+    assert [
+        (line.catalog_ref, line.quantity, line.source_text, line.status, line.sku)
+        for line in result.state.lines
+    ] == [("CH-615", 6, "CH 615 new", "unresolved", "CH-615")]
+
+
 def test_order_runtime_routes_missing_quantity_to_clarification() -> None:
     result = run_order_runtime(
         text="I need SKYLAND NOVO 2400 Meeting Table",

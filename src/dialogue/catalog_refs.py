@@ -56,6 +56,7 @@ _ALPHA_SKU_PREFIX_STOPWORDS = frozenset(
         "GET",
         "HAS",
         "NEED",
+        "NEW",
         "ONLY",
         "OR",
         "THE",
@@ -311,7 +312,7 @@ def _quantity_before_ref(normalized_text: str, ref_start: int) -> int | None:
     prefix = normalized_text[max(0, ref_start - 32) : ref_start]
     match = re.search(
         r"(?:^|[^A-Z0-9])(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
-        r"(?:\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?))?\s*$",
+        r"(?:\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?))?\s*$",
         prefix,
         flags=re.IGNORECASE,
     )
@@ -330,9 +331,10 @@ def _quantity_before_ref(normalized_text: str, ref_start: int) -> int | None:
 
 def _quantity_after_ref(normalized_text: str, ref_end: int) -> int | None:
     suffix = normalized_text[ref_end : ref_end + 32]
-    match = re.match(
-        r"\s*(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
-        r"\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?)\b",
+    match = re.search(
+        r"^(?:\s+(?!(?:AND|OR|PLUS|WITH)\b)[A-Z][A-Z0-9-]{1,20}){0,4}"
+        r"\s+(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+        r"\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?)\b",
         suffix,
         flags=re.IGNORECASE,
     )

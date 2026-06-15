@@ -6971,6 +6971,8 @@ def test_extract_purchase_selection_rejects_connector_false_sku_fallbacks() -> N
     [
         ("4 position CH 616 chairs", [(4, "CH 616 chairs", "CH-616")]),
         ("CH 616 NEW black 4 position", [(4, "CH 616 NEW black", "CH-616")]),
+        ("CH 615 NEW black 6 point", [(6, "CH 615 NEW black", "CH-615")]),
+        ("CH 615 NEW black 6 points", [(6, "CH 615 NEW black", "CH-615")]),
         (
             "Only SKYLAND NOVO 2400 2 position",
             [(2, "SKYLAND NOVO 2400", "SKYLAND NOVO 2400")],
@@ -8671,6 +8673,160 @@ async def test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_f
         ("SK-45", 2)
     ]
     assert "pending_product_reference_quantity" not in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_order_cutover_gh52_customer_details_resume_after_point_selection_confirmation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.metadata_ = {}
+    first_text = "CH 615 NEW black 6 point"
+    second_text = "Name company GHP / Address - 2 street / +79137704837"
+    mock_build_history.side_effect = [
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+        ],
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content=(
+                            "Great, I can confirm the selected items from our "
+                            "catalog:\n\n"
+                            "1. Skyland Operative Chair CH 615 NEW black\n"
+                            "   Quantity: 6\n"
+                            "   Availability: 20 available (Zoho-confirmed)\n"
+                            "   Unit price: 199.00 AED\n"
+                            "   Line total: 1,194.00 AED\n\n"
+                            "Would you like me to prepare a formal quotation for "
+                            "these selected items? I can use this WhatsApp number "
+                            "for the draft. To make the PDF complete, please share: "
+                            "company name, or confirm you are buying as an individual; "
+                            "email; specific delivery address."
+                        )
+                    )
+                ]
+            ),
+            ModelRequest(parts=[UserPromptPart(content=second_text)]),
+        ],
+    ]
+
+    async def get_system_config_side_effect(
+        _db: object,
+        key: str,
+        default: object,
+    ) -> object:
+        if key == "openrouter_model_main":
+            return "mock-model"
+        if key == "dialogue_kernel_trace_enabled":
+            return "true"
+        if key == "dialogue_kernel_mode":
+            return "disabled"
+        if key == "dialogue_kernel_enforced_flows":
+            return ""
+        return default
+
+    mock_get_system_config.side_effect = get_system_config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_search_behavior_rules.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I need the exact item(s) and quantity before preparing the quotation."
+    )
+
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 615 NEW black",
+        zoho_item_id="zoho-ch-615-new-black",
+        name_en="Skyland Operative Chair CH 615 NEW black",
+        description_en="Skyland Operative Chair CH 615 NEW black",
+        price=199.0,
+        currency="AED",
+        stock=20,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    execute_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": "CH 615 NEW black",
+        "stock_on_hand": 20,
+        "rate": 199.0,
+        "currency_code": "AED",
+    }
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=first_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "mock-model|selection-confirmation"
+    assert "CH 615" in first_response.text
+    assert "Quantity: 6" in first_response.text
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert [(line["sku"], line["quantity"]) for line in quote_frame["lines"]] == [
+        ("CH 615 NEW black", 6)
+    ]
+
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=second_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert second_response.model == "mock-model|quote-resume-missing-details"
+    assert "saved quote frame" not in second_response.text.lower()
+    assert "exact item" not in second_response.text.lower()
+    assert "quantity for each item" not in second_response.text.lower()
+    assert "customer email" in second_response.text.lower()
+    assert conv.metadata_["quote_customer_details"]["company"] == "GHP"
+    assert conv.metadata_["quote_customer_details"]["address"] == "2 street"
+    assert conv.metadata_["quote_customer_details"]["phone"] == "+79137704837"
     mock_run.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
 

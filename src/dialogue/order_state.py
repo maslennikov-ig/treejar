@@ -235,7 +235,7 @@ _NEXT_ORDER_LINE_RE = re.compile(
 )
 _TRAILING_QUANTITY_AFTER_REF_RE = re.compile(
     rf"\s+(?=(?:\d{{1,3}}|{_QUANTITY_WORD_PATTERN})"
-    r"\s+(?:x|pcs?|pieces?|units?|positions?)\b)",
+    r"\s+(?:x|pcs?|pieces?|units?|positions?|points?)\b)",
     flags=re.IGNORECASE,
 )
 _PRODUCT_SEGMENT_STOP_RE = re.compile(
@@ -442,7 +442,7 @@ def _source_text_left_bound(
     prefix = text[prefix_start:ref_start]
     quantity_re = re.compile(
         rf"(?:^|[^\w])(?:{quantity}|{_QUANTITY_WORD_PATTERN})"
-        r"(?:\s+(?:x|pcs?|pieces?|units?|positions?))?\s*$",
+        r"(?:\s+(?:x|pcs?|pieces?|units?|positions?|points?))?\s*$",
         flags=re.IGNORECASE,
     )
     match = quantity_re.search(prefix)

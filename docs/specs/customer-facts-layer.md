@@ -159,8 +159,9 @@ snapshot instead of reparsing order items:
   become facts only after the frame resolves into typed order lines;
 - `pending_product_reference_quantity`, `pending_quote_selection`, assistant
   prose, and model-generated item facts are not order-line authorities;
-- compact customer detail replies fill `QuoteDetails` on the active runtime
-  frame before being mirrored into facts;
+- compact customer detail replies, including slash-separated forms such as
+  `Name company GHP / Address - 2 street / +...`, fill `QuoteDetails` on the
+  active runtime frame before being mirrored into facts;
 - fact conflicts may ask clarifying questions about profile/order details, but
   they must not invalidate already resolved item and quantity lines;
 - post-quotation facts read the `quoted` frame as a snapshot and must not

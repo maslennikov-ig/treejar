@@ -526,7 +526,7 @@ _PURCHASE_SELECTION_TRIGGER_RE = re.compile(
     re.IGNORECASE,
 )
 _ORDER_INTENT_SELECTION_CONTEXT_RE = re.compile(
-    r"\b(?:only|chair|chairs|table|tables|position|positions|pcs?|pieces?|units?)\b",
+    r"\b(?:only|chair|chairs|table|tables|position|positions|points?|pcs?|pieces?|units?)\b",
     re.IGNORECASE,
 )
 _PRODUCT_QUANTITY_CLARIFY_BLOCKERS = (
@@ -601,14 +601,14 @@ _SALES_ORDER_TERM_RE = re.compile(r"\b(?:sales order|sale order)\b", re.IGNORECA
 _ITEM_BEFORE_QUANTITY_RE = re.compile(
     r"(?P<item>.*?)(?:\s*[-–—:]\s*|\s+)"
     r"(?P<quantity>\d{1,4})\s*"
-    r"(?:pcs?|pieces?|piece|units?|unit|qty)?\b"
+    r"(?:points?|pcs?|pieces?|piece|units?|unit|qty)?\b"
     r"(?=\s*(?:and\b|,|$))",
     re.IGNORECASE,
 )
 _ITEM_BEFORE_UNIT_COUNT_RE = re.compile(
     r"(?P<item>[^?.!,;\n]+?)\s+"
     r"(?P<quantity>\d{1,4})\s*"
-    r"(?:positions?|pcs?|pieces?|piece|units?|unit)\b"
+    r"(?:positions?|points?|pcs?|pieces?|piece|units?|unit)\b"
     r"(?=\s*(?:and\b|,|[.;]|$))",
     re.IGNORECASE,
 )
@@ -627,9 +627,9 @@ _EXACT_QUOTE_CLARIFICATION_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _EXACT_QUOTE_CLARIFICATION_QUANTITY_RE = re.compile(
-    r"(?:[,;]\s*)?\b(?:quantity|qty|pcs?|pieces?|units?)\s*"
+    r"(?:[,;]\s*)?\b(?:quantity|qty|points?|pcs?|pieces?|units?)\s*"
     r"(?::|=|-|\bis\b)?\s*(?P<label_qty>\d{1,4})\b|"
-    r"\b(?P<leading_qty>\d{1,4})\s*(?:x|×|pcs?|pieces?|units?)\b",
+    r"\b(?P<leading_qty>\d{1,4})\s*(?:x|×|points?|pcs?|pieces?|units?)\b",
     re.IGNORECASE,
 )
 _NUMERIC_HYPHEN_SKU_RE = re.compile(r"\b\d{2,}(?:-\d{1,})+\b")
@@ -2115,9 +2115,10 @@ def _extract_purchase_selection(
     )
     trailing_unit_selection = _extract_item_before_unit_count_purchase_selection(text)
     if order_intent_selection.selection is not None:
-        if trailing_unit_selection is not None and len(
-            trailing_unit_selection.items
-        ) > len(order_intent_selection.selection.items):
+        if _prefer_trailing_unit_selection(
+            trailing_unit_selection,
+            order_intent_selection.selection,
+        ):
             return trailing_unit_selection
         return order_intent_selection.selection
 
@@ -2171,6 +2172,34 @@ def _extract_purchase_selection(
     if not items:
         return None
     return PurchaseSelection(items=tuple(items))
+
+
+def _prefer_trailing_unit_selection(
+    trailing_selection: PurchaseSelection | None,
+    order_runtime_selection: PurchaseSelection,
+) -> bool:
+    if trailing_selection is None:
+        return False
+    if len(trailing_selection.items) > len(order_runtime_selection.items):
+        return True
+    if len(trailing_selection.items) != len(order_runtime_selection.items):
+        return False
+
+    trailing_score = 0
+    runtime_score = 0
+    for trailing_item, runtime_item in zip(
+        trailing_selection.items,
+        order_runtime_selection.items,
+        strict=True,
+    ):
+        if (
+            trailing_item.quantity != runtime_item.quantity
+            or trailing_item.sku != runtime_item.sku
+        ):
+            return False
+        trailing_score += len(trailing_item.item_candidate)
+        runtime_score += len(runtime_item.item_candidate)
+    return trailing_score > runtime_score
 
 
 def _clean_item_before_unit_count_candidate(value: str) -> str:
@@ -4650,6 +4679,52 @@ def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
     return value.strip(" \t,;.")
 
 
+def _extract_compact_labeled_quote_details(text: str) -> dict[str, str]:
+    details: dict[str, str] = {}
+    if not re.search(r"[/;\n]", text):
+        return details
+
+    label_separator = r"(?::|：|=|-|\bis\b|\bare\b)?"
+    patterns: tuple[tuple[str, str], ...] = (
+        (
+            "company",
+            rf"^(?:name\s+)?(?:company\s+name|company|organization|organisation)"
+            rf"\s*{label_separator}\s*(?P<value>.+)$",
+        ),
+        (
+            "name",
+            rf"^(?:full\s+name|customer\s+name|name)"
+            rf"\s*{label_separator}\s*(?P<value>.+)$",
+        ),
+        (
+            "address",
+            rf"^(?:delivery\s+address|address|location)"
+            rf"\s*{label_separator}\s*(?P<value>.+)$",
+        ),
+        (
+            "email",
+            rf"^(?:email|e-mail)\s*{label_separator}\s*(?P<value>.+)$",
+        ),
+        (
+            "phone",
+            rf"^(?:phone|mobile|telephone)\s*{label_separator}\s*(?P<value>.+)$",
+        ),
+    )
+    for raw_part in re.split(r"[/;\n]+", text):
+        part = " ".join(raw_part.strip(" \t\r\n,.;").split())
+        if not part:
+            continue
+        for key, pattern in patterns:
+            match = re.match(pattern, part, flags=re.IGNORECASE)
+            if match is None:
+                continue
+            value = match.group("value").strip(" \t\r\n,.;:-")
+            if value:
+                details[key] = value
+            break
+    return details
+
+
 def _strip_synthetic_test_marker(text: str) -> str:
     return BOT_TEST_MARKER_RE.sub(" ", text).strip()
 
@@ -5047,6 +5122,10 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     if natural_address:
         details["address"] = natural_address
 
+    compact_details = _extract_compact_labeled_quote_details(text)
+    if compact_details:
+        details.update(compact_details)
+
     normalized = _normalize_text(text)
     if re.search(
         r"\b(?:individual|personal|private customer|for myself)\b",
@@ -5362,6 +5441,15 @@ def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
                 continue
             if part_details.get("email"):
                 details["email"] = part_details["email"]
+                continue
+            if part_details.get("phone"):
+                details["phone"] = part_details["phone"]
+                continue
+            if part_details.get("company") and not details.get("company"):
+                details["company"] = part_details["company"]
+                continue
+            if part_details.get("address") and not details.get("address"):
+                details["address"] = part_details["address"]
                 continue
             if not details.get("name"):
                 name = _extract_bare_name_gate_reply(part)

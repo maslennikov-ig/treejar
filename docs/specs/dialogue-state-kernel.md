@@ -223,6 +223,11 @@ Rules:
   question matching are not allowed to remain independent order/quote policy
   owners after `tj-order-cutover`. They may be read for migration or diagnostic
   fallback only. New writes must target the typed runtime frame first.
+- Product quantity parsing treats explicit trailing unit words as quantity
+  markers. `point` and `points` are accepted as customer shorthand for
+  `position(s)` only in the same bounded quantity contexts as `pcs`, `pieces`,
+  and `units`; bare model numbers, prices, and assistant prose remain
+  non-authoritative.
 - `last_question` remains supported as a legacy compatibility field. New
   routing must prefer `expected_answer_frames` when present.
 - The kernel may mirror legacy keys into `dialogue_kernel.state.slots`, but v1 must
@@ -601,6 +606,11 @@ legacy-owned in v1 unless a later stage adds a dedicated allowlist and tests.
 - #40: terse quotation details must preserve the canonical active
   `order_runtime.quote_frame` and ask only for missing required fields. Legacy
   `pending_quote_selection` is migration fallback only.
+- #52: bot-owned selection confirmations for phrases such as
+  `CH 615 NEW black 6 point` must persist `order_runtime.quote_frame` before
+  asking quote details. Later compact customer details may resume the frame and
+  ask only for missing required quote fields; they must not create a quote from
+  assistant prose when the frame is absent.
 - #47: product preference answers such as `I prefer more open for team` must be
   treated as answers to an active product preference frame even after bounded
   interruptions, not as verified-policy manager handoff.
