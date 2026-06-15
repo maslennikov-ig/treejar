@@ -2177,6 +2177,58 @@ async def test_process_message_payment_terms_still_use_manager_handoff(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_payment_terms_percent_words_do_not_become_order_selection(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "My name is Lilia. I need 20 percent discount and net 30 payment terms "
+        "for office furniture."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def notify_side_effect(**kwargs: object) -> None:
+        kwargs["conversation"].escalation_status = "pending"
+
+    mock_notify.side_effect = notify_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert mock_run.await_count == 0
+    mock_notify.assert_awaited_once()
+    assert conv.escalation_status == "pending"
+    assert response.model == "mock-model|verified-policy"
+    assert "manager" in response.text.lower()
+    assert "selected items" not in response.text.lower()
+    assert "20 x" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_payment_terms_in_proposal_still_use_manager_handoff(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,

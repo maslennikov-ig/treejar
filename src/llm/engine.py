@@ -9855,12 +9855,13 @@ async def process_message(
                 conv
             ) or _quote_intent_frame_from_text(combined_text)
         else:
-            return _build_static_response(
-                f"Thank you, {current_quote_customer_details['name']}. "
-                "How can I help you with your office furniture requirement?",
-                "name-capture",
-                allow_product_media=False,
-            )
+            if not _has_detail_capture_handoff_blocker(combined_text):
+                return _build_static_response(
+                    f"Thank you, {current_quote_customer_details['name']}. "
+                    "How can I help you with your office furniture requirement?",
+                    "name-capture",
+                    allow_product_media=False,
+                )
 
     # Stock+price option shortcut must not hijack an active quote flow. When the
     # customer is mid-quote (pending selection or the assistant just asked for
@@ -10773,6 +10774,10 @@ async def process_message(
 
         if (
             not policy_decision.is_order_status
+            and not (
+                policy_decision.question_class == "service_high_risk"
+                and policy_decision.policy_action == "handoff"
+            )
             and "showroom" in policy_decision.matched_topics
         ):
             await _clear_verified_policy_repair_state()

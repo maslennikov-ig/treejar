@@ -635,12 +635,13 @@ def classify_question(query: str) -> QuestionClass:
         for keyword in _TOPIC_KEYWORDS[topic]
     )
 
+    if _has_commercial_terms_risk(normalized):
+        return "service_high_risk"
+
     if has_product_signal and (has_product_discovery or has_product_selection):
         return "product"
 
-    if is_quote_or_proposal_request(normalized) and not _has_commercial_terms_risk(
-        normalized
-    ):
+    if is_quote_or_proposal_request(normalized):
         return "service_low_risk"
 
     if has_product_signal and not has_high_risk_service_topic:

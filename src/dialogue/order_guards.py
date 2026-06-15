@@ -14,6 +14,14 @@ _DISCOVERY_RE = re.compile(
     r"\b(?:show\s+me|recommend(?:ation)?s?|ideas?|options?|similar|catalog)\b",
     re.IGNORECASE,
 )
+_COMMERCIAL_POLICY_RE = re.compile(
+    r"\b(?:"
+    r"net\s*30|net\s*60|deferred\s+payment|payment\s+terms?|"
+    r"credit\s+terms?|on\s+credit|postpaid|delayed\s+payment|"
+    r"discounts?|percent\s+discount|percent\s+off|%\s*off|special\s+price"
+    r")\b",
+    re.IGNORECASE,
+)
 _EN_INQUIRY_RE = re.compile(
     r"\b(?:how\s+much|check\s+(?:the\s+)?(?:price|stock|availability)|"
     r"what(?:'s|\s+is)?\s+(?:the\s+)?(?:price|stock|availability)|"
@@ -45,6 +53,8 @@ def is_order_selection_blocked(text: str) -> bool:
         return False
     explicit_selection = _EXPLICIT_SELECTION_RE.search(normalized) is not None
     if _ORDER_STATUS_RE.search(normalized):
+        return True
+    if _COMMERCIAL_POLICY_RE.search(normalized):
         return True
     if _COMPARISON_RE.search(normalized):
         return True
