@@ -63,9 +63,11 @@ recovery, or commercial-policy phrases misread as order quantities.
   `27533938721`.
 - Hotfix commit `4bcab4d1d9e91a7cfcc69ff940acec68ac54b913` deployed in CI run
   `27535297609`; deploy job `81383375571`.
-- Production release marker on `https://noor.starec.ai` reads
+- Production release marker read back from `/opt/noor` reads
   `.release-sha=4bcab4d1d9e91a7cfcc69ff940acec68ac54b913` and
-  `.release-run-id=27535297609`.
+  `.release-run-id=27535297609`. Public `/.release-sha` and
+  `/.release-run-id` return `404`, so the canonical proof path is SSH
+  readback plus API smoke.
 - Production API smoke passed:
   `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` ->
   8 passed, 0 failed.

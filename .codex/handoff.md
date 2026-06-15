@@ -4,7 +4,7 @@ Current branch: `codex/tj-order-cutover-rework`
 
 ## Current Truth
 - Stage `tj-order-cutover`; worktree `/home/me/code/treejar/.worktrees/tj-order-cutover-rework`.
-- Rework and hotfix are deployed. Production marker: `.release-sha=4bcab4d1d9e91a7cfcc69ff940acec68ac54b913`, `.release-run-id=27535297609`; deploy job `81383375571`.
+- Rework and hotfix are deployed. Production marker read back from `/opt/noor`: `.release-sha=4bcab4d1d9e91a7cfcc69ff940acec68ac54b913`, `.release-run-id=27535297609`; deploy job `81383375571`.
 - #52 point/points parsing, durable `order_runtime.quote_frame`, compact slash-labeled details, no assistant-prose quote recovery, and commercial blocker handoff are verified.
 - GitHub issues #49, #50, #51, and #52 were closed with production evidence comments.
 - Docs updated: `docs/specs/dialogue-state-kernel.md`, `docs/specs/customer-facts-layer.md`, and `.codex/stages/tj-order-cutover/summary.md`.
