@@ -1,7 +1,7 @@
 # Stage tj-order-cutover: Full Order/Quote Flow Cutover
 
 Updated: 2026-06-15
-Status: local #52 rework verified; deploy/live E2E pending
+Status: delivered to production; live E2E passed; GitHub #49-#52 closed
 Branch: `codex/tj-order-cutover-rework`
 Worktree: `/home/me/code/treejar/.worktrees/tj-order-cutover-rework`
 Beads: `tj-order-cutover`
@@ -15,10 +15,9 @@ no `graphify-out/GRAPH_REPORT.md` exists.
 
 ## Goal
 
-Finish the local order/quote cutover so #40-#51 class regressions cannot return
-through legacy metadata, recent-history-only matching, or assistant-prose quote
-recovery. Live WhatsApp E2E, deploy, push, and production mutations remain
-blocked without explicit approval.
+Finish the local order/quote cutover so #40-#52 class regressions cannot return
+through legacy metadata, recent-history-only matching, assistant-prose quote
+recovery, or commercial-policy phrases misread as order quantities.
 
 ## Implemented
 
@@ -52,6 +51,58 @@ blocked without explicit approval.
   resolved/unresolved line counts, and legacy migration read status.
 - Updated customer facts documentation so facts/memory consume typed runtime
   snapshots rather than model/prose item facts.
+- Added a production hotfix for commercial blockers: discount/payment terms are
+  blocked from deterministic order selection, classified as high-risk service
+  policy before product routing, and same-turn name capture no longer prevents
+  verified-policy handoff. Normal low-risk showroom questions still use the
+  static showroom answer.
+
+## Delivery
+
+- Rework commit `28453cf4ffd12de9605428b72d99f34082917c4e` deployed in CI run
+  `27533938721`.
+- Hotfix commit `4bcab4d1d9e91a7cfcc69ff940acec68ac54b913` deployed in CI run
+  `27535297609`; deploy job `81383375571`.
+- Production release marker on `https://noor.starec.ai` reads
+  `.release-sha=4bcab4d1d9e91a7cfcc69ff940acec68ac54b913` and
+  `.release-run-id=27535297609`.
+- Production API smoke passed:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` ->
+  8 passed, 0 failed.
+- GitHub issues #49, #50, #51, and #52 were closed with production evidence
+  comments.
+
+## Live WhatsApp E2E
+
+- #52 parse/stock path:
+  `+79262810921#tj-order-cutover-gh52-20260615T083802Z` parsed
+  `CH 615 NEW black 6 point` as qty 6, resolved CH 615 black, and hit a real
+  stock-shortage path instead of an item/quantity loop.
+- #52 quote resume:
+  `+79262810921#tj-order-cutover-gh52quote-20260615T083802Z` resolved
+  `CH 615 NEW black 1 point` as qty 1, then compact details
+  `Name company GHP / Address - 2 street / +79137704837` resumed
+  `order_runtime.quote_frame.status=collecting_details` and asked only for the
+  missing email.
+- #42 original phrase:
+  `+79262810921#tj-order-cutover-gh42-20260615T083802Z` returned catalog
+  options because production has two live SK 45 white products; no quantity
+  clarification loop occurred.
+- #42 production-valid equivalent:
+  `+79262810921#tj-order-cutover-gh42exact-20260615T083802Z` asked for quantity
+  for SK 45 white, consumed bare `2`, and stayed in selection confirmation
+  rather than a generic opener.
+- #49/#50/#51 combined flow:
+  `+79262810921#tj-order-cutover-gh50-20260615T083802Z` preserved
+  `2 x SKYLAND NOVO 2400 Meeting Table` plus unresolved `4 x CH 616 chairs`,
+  accepted `CH 616 NEW black`, collected details, and created quotation
+  `Fr3389`. DB readback shows `order_runtime.quote_frame.status=quoted`, two
+  quote lines, details `Lilia / GHP / live-order-cutover@example.com /
+  2 street Dubai`, and no consecutive duplicate assistant replies.
+- Commercial blocker hotfix:
+  `+79262810921#tj-order-cutover-blocker2-20260615T090126Z` returned
+  `z-ai/glm-5|verified-policy` with `escalation_status=pending` for
+  `20 percent discount and net 30 payment terms`; no bogus `20 x` selection.
 
 ## Review Gate
 
@@ -89,11 +140,27 @@ blocked without explicit approval.
     After local `npm ci` in `frontend/admin`, the canonical full test command
     passed.
   - `OPENROUTER_API_KEY=test env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short` -> 1394 passed, 19 skipped.
+  - Hotfix RED/GREEN:
+    `tests/test_llm_engine.py::test_process_message_payment_terms_percent_words_do_not_become_order_selection`
+    first failed before the fix, then passed.
+  - Hotfix targeted regression:
+    `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_payment_terms_still_use_manager_handoff tests/test_llm_engine.py::test_process_message_payment_terms_percent_words_do_not_become_order_selection tests/test_llm_engine.py::test_process_message_name_only_reply_after_name_gate_does_not_escalate tests/test_llm_engine.py::test_process_message_missing_low_risk_hands_off_without_agent_run tests/test_llm_engine.py::test_process_message_first_turn_service_handoff_gets_opening -q` -> 5 passed.
+  - Hotfix classifier regression:
+    `OPENROUTER_API_KEY=test uv run pytest tests/test_verified_answers.py -k "payment_terms or discount or showroom or office" -q` -> 6 passed.
+  - Hotfix rework regression:
+    `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py -k "payment_terms or verified_policy or order_cutover or quote_resume or gh49 or gh50 or gh51" -q` -> 9 passed.
+  - Final local gates after hotfix:
+    `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` -> passed;
+    `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` ->
+    293 files already formatted;
+    `OPENROUTER_API_KEY=test uv run mypy src/` -> passed;
+    `OPENROUTER_API_KEY=test env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short` ->
+    1395 passed, 19 skipped.
+  - GitHub Actions run `27535297609` passed: changes, lint, test,
+    type-check, deploy.
 
 ## Explicit Defers
 
-- Deploy, production smoke, GitHub issue updates, and live WhatsApp E2E are not
-  complete yet for the 2026-06-15 rework.
 - Full architectural removal of every remaining order/quote-specific branch in
   `src/llm/engine.py` remains a follow-up hardening task. The implemented stage
   blocks the requested regression class with typed metadata, replay coverage,
