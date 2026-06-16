@@ -88,6 +88,40 @@ def test_process_message_pending_reference_route_is_adapter_owned() -> None:
     assert "_purchase_selection_from_pending_product_references" not in call_names
 
 
+def test_process_message_order_quote_route_selection_is_adapter_owned() -> None:
+    source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    process_message_node = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "process_message"
+    )
+    call_names = {
+        node.func.id
+        for node in ast.walk(process_message_node)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+    assert "_order_quote_route_for_turn" in call_names
+    assert "_execute_order_quote_side_effect" not in call_names
+    assert "_extract_sales_order_quote_items" not in call_names
+    assert "_sales_order_followup_candidates" not in call_names
+    assert "_store_pending_sales_order_quote" not in call_names
+    assert "_exact_quote_candidate_from_frame" not in call_names
+    assert "extract_exact_quote_candidate" not in call_names
+    assert "_resolve_exact_quote_candidate_sku" not in call_names
+    assert "_store_pending_exact_quote" not in call_names
+    assert "_extract_purchase_selection_from_quote_details_reply" not in call_names
+    assert "_extract_purchase_selection_for_context" not in call_names
+    assert "_resolve_purchase_selection_confirmation" not in call_names
+    assert "_should_resume_pending_quote_selection" not in call_names
+    assert "_active_quote_items" not in call_names
+    assert "_quote_missing_required_details" not in call_names
+    assert "_missing_quantity_order_runtime_result" not in call_names
+    assert "_extract_missing_quantity_product_references" not in call_names
+    assert "_store_pending_question_frame" not in call_names
+
+
 @pytest.fixture
 def mock_deps() -> tuple[
     AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock

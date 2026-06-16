@@ -1,31 +1,31 @@
 # Orchestrator Handoff
 Updated: 2026-06-16
-Current branch: `codex/tj-order-cutover-review-fix`
+Current branch: `codex/tj-order-route-adapter`
 
 ## Current Truth
-- Stage `tj-order-cutover-review-fix`; worktree `/home/me/code/treejar/.worktrees/tj-order-cutover-review-fix`.
-- Delivery to `main` completed for order/quote hardening plus follow-up fixes `03cd075` and `16a2dfe`.
-- Latest runtime code deployed by GitHub Actions run `27614021694`; production marker readback showed `.release-sha=16a2dfe8de30b79a81cb53f73279c629eaa70499`.
-- Production health and `scripts/verify_api.py --base-url https://noor.starec.ai` passed after deploy.
-- Live synthetic E2E passed for name-gate quote resume, SKU variant resume, customer-label name extraction, and strict all-details first-turn quote flow.
-- Synthetic test conversations, profiles, messages, audits, facts, order memories, escalations, and Redis Wazzup idempotency keys were cleaned; post-clean exact target count was zero.
-- Beads covered by this stage are closed: `tj-s1qi`, `tj-1ha9`, `tj-hqsa`, `tj-v2k9`.
-- `tj-order-cutover.10` remains open only for the broader P2 route-family extraction from `process_message`.
+- Stage `tj-order-cutover-route-adapter`; worktree `/home/me/code/treejar/.worktrees/tj-order-route-adapter`.
+- `tj-order-cutover.10` local implementation is complete and verified: remaining deterministic order/quote route families now delegate from `process_message` to `_order_quote_route_for_turn`.
+- `create_quotation` remains directly callable only through `_execute_order_quote_side_effect`; structural regression coverage was added.
+- Beads `tj-order-cutover.10` is closed; Beads export was written to the shared `/home/me/code/treejar/.beads/issues.jsonl`.
+- Local full gates passed after `npm ci` restored fresh-worktree frontend dependencies: ruff check, ruff format check, mypy, and `pytest tests/ -q` with 1413 passed, 19 skipped.
+- Stage closeout passed for `tj-order-cutover-route-adapter`.
+- Delivery to `main`, GitHub Actions/deploy monitoring, production marker/smoke, live order/quote E2E, and synthetic data cleanup are pending.
 - Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
 
 ## Verification
-- Full local gates after latest code fix: ruff check, ruff format check, mypy, and `pytest tests/ -q` passed with `1412 passed, 19 skipped`.
-- CI run `27614021694` passed changes, lint, test, type-check, and deploy jobs.
-- Production smoke passed: `/api/v1/health` OK and `verify_api.py` reported `8 passed, 0 failed`.
-- E2E matrix run `0616112830` passed; strict all-details run for `+70016416113202` also passed.
+- `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` passed.
+- `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` passed.
+- `OPENROUTER_API_KEY=test uv run mypy src/` passed.
+- `OPENROUTER_API_KEY=test uv run pytest tests/ -q` passed: 1413 passed, 19 skipped.
+- `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-route-adapter` passed.
 
 ## Next recommended
-Next stage id: `tj-order-cutover-followup`
-Recommended action: monitor production conversations; take `tj-order-cutover.10` only as a separate P2 refactor, not as a blocker.
+Next stage id: `tj-order-cutover-route-adapter-delivery`
+Recommended action: commit, push to `main`, wait for GitHub Actions/deploy, verify production marker/smoke, run the requested live order/quote E2E matrix, and clean synthetic PostgreSQL/Redis data.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage only for new medium/complex work. Read this handoff, `.codex/stages/tj-order-cutover-review-fix/summary.md`, Beads `tj-order-cutover.10`, and production release markers before changing runtime behavior.
+Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-route-adapter`; read `.codex/stages/tj-order-cutover-route-adapter/summary.md`, Beads `tj-order-cutover.10`, git status/diff, and do not add GitHub issue comments without explicit authorization.
 
 ## Explicit defers
-- Beads task `tj-order-cutover.10`: full extraction of sales-order, exact-quote SKU repair, selection-confirmation, and quote-detail resume route families from `process_message` remains a P2 architecture follow-up.
+- No in-scope defers remain for `tj-order-cutover.10` after local verification.
 - GitHub issue #42 second-occurrence comment still lacks a separate production evidence reply; adding one is externally visible and was not separately authorized.
