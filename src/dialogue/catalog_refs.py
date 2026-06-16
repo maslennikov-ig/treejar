@@ -46,6 +46,7 @@ _MODEL_RE = re.compile(r"\bSKYLAND\s+NOVO\s+\d+\b", re.IGNORECASE)
 _NORMALIZED_ALPHA_RE = re.compile(
     r"^(?P<prefix>[A-Z]{2,3})[-\s]?(?P<number>\d+(?:\.\d+)?[A-Z]?)$"
 )
+_TREEJAR_ALPHA_SKU_PREFIXES = frozenset({"CH", "CP", "SK"})
 _ALPHA_SKU_PREFIX_STOPWORDS = frozenset(
     {
         "AND",
@@ -55,12 +56,15 @@ _ALPHA_SKU_PREFIX_STOPWORDS = frozenset(
         "FOR",
         "GET",
         "HAS",
+        "LOW",
         "NEED",
         "NEW",
+        "NO",
         "ONLY",
         "OR",
         "THE",
         "WANT",
+        "YES",
     }
 )
 _QUANTITY_WORDS = {
@@ -158,10 +162,8 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
         for match in pattern.finditer(normalized_text):
             if _inside_email_like_token(normalized_text, match.start(), match.end()):
                 continue
-            if pattern is _ALPHA_SKU_RE:
-                prefix = match.group("prefix").translate(_HOMOGLYPHS).upper()
-                if prefix in _ALPHA_SKU_PREFIX_STOPWORDS:
-                    continue
+            if pattern is _ALPHA_SKU_RE and not _is_supported_alpha_sku_match(match):
+                continue
             matches.append(
                 (
                     match.start(),
@@ -193,6 +195,15 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
             )
         )
     return refs
+
+
+def _is_supported_alpha_sku_match(match: re.Match[str]) -> bool:
+    prefix = match.group("prefix").translate(_HOMOGLYPHS).upper()
+    if prefix in _ALPHA_SKU_PREFIX_STOPWORDS:
+        return False
+    if prefix not in _TREEJAR_ALPHA_SKU_PREFIXES:
+        return False
+    return "\n" not in match.group(0) and "\r" not in match.group(0)
 
 
 def _inside_email_like_token(text: str, start: int, end: int) -> bool:

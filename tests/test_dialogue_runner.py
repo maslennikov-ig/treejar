@@ -404,6 +404,42 @@ async def test_dialogue_kernel_expired_quote_details_frame_does_not_hijack_produ
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_qualifying_numbered_answers_do_not_create_product_ref() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Lilia")
+    text = "1. Tables\n2. 5\n3. No\n4. For commercial office space"
+    recent_history = [
+        (
+            "assistant: To better assist you, could you tell me a bit more about "
+            "what you're looking for?\n"
+            "1. What type of furniture are you interested in?\n"
+            "2. How many people will be using the furniture?\n"
+            "3. Do you have a budget range in mind?\n"
+            "4. Is this for a home office or a commercial office space?"
+        )
+    ]
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text=text,
+        recent_history=recent_history,
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.action == "fallback_legacy"
+    assert not result.decision.response_text
+    assert result.state.slots.pending_product_refs == []
+    assert "NO-4" not in str(conv.metadata_)
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_enforce_handles_allowlisted_expected_answer_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

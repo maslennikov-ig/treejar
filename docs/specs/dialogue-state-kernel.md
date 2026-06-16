@@ -463,7 +463,11 @@ long item fragments such as selected product cards where quantity appears before
 the product name rather than next to the SKU.
 
 Catalog parsing rejects connector false positives such as `AND-4`, `OR-4`, and
-`BUT-8`. These are treated as grammar/connective words, not product references.
+`BUT-8`, and numbered-answer false positives such as `NO-4` from qualifying
+question replies. These are treated as grammar/connective or answer-list text,
+not product references. Alpha-SKU extraction is intentionally limited to the
+current Treejar SKU prefixes used by the dialogue grammar (`CH`, `CP`, `SK`);
+future prefixes must be added deliberately with regression coverage.
 
 The order-runtime output is `OrderRuntimeResult(state, intent, decision,
 trace)`. `OrderDecision` currently uses this compact shape:
