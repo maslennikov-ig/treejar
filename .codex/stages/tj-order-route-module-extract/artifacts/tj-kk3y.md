@@ -20,6 +20,7 @@ write_zone:
   - .codex/handoff.md
   - .codex/stages/tj-order-route-module-extract
   - docs/superpowers/plans/2026-06-16-order-route-module-extract.md
+  - CLAUDE.md
 success_criteria:
   - src/llm/order_quote_routes.py owns _order_quote_route_for_turn
   - src/llm/engine.py no longer defines _order_quote_route_for_turn
@@ -77,8 +78,9 @@ changed_files:
   - .codex/stages/tj-order-route-module-extract/summary.md
   - .codex/stages/tj-order-route-module-extract/artifacts/tj-kk3y.md
   - docs/superpowers/plans/2026-06-16-order-route-module-extract.md
+  - CLAUDE.md
 explicit_defers:
-  - none for local implementation
+  - none for local implementation or delivery
 ---
 
 # Summary
@@ -105,11 +107,13 @@ semantics; the adapter now refreshes helper bindings on each route entry.
 
 # Delivery / Cleanup
 
-Local implementation accepted. No delegated child workspace exists. Delivery to
-`main`, CI/deploy monitoring, production marker/smoke, and focused live E2E are
-still pending for this stage.
+Local implementation accepted. Delivery commit
+`29c1dc5913dadf513a388b7220cd15b2f084e697` was pushed to `main`, deployed by
+GitHub Actions run `27632173569`, and production-smoked successfully. Focused
+live E2E passed for exact quote resume (`Fr3419`) and bare ordinal
+selection-confirmation continuation. Both synthetic conversations were closed
+through the protected conversation API.
 
 # Risks / Follow-ups / Explicit Defers
 
-No in-scope implementation defers remain. Live E2E is still pending because this
-stage has not yet been delivered to production.
+No in-scope implementation, delivery, or live E2E defers remain.

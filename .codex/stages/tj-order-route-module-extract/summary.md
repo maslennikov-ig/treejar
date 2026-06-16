@@ -1,13 +1,14 @@
 # Stage tj-order-route-module-extract: Order/Quote Route Module Extraction
 
 Updated: 2026-06-16
-Status: stage closeout passed; delivery pending
+Status: delivered to production; focused live E2E passed; synthetic cleanup complete
 Branch: `codex/tj-order-route-module-extract`
 Worktree: `/home/me/code/treejar/.worktrees/tj-order-route-module-extract`
 Beads: `tj-kk3y` closed
 
 docs-reviewed: updated - `.codex/project-index.md` now lists
-`src/llm/order_quote_routes.py` as the deterministic order/quote route adapter.
+`src/llm/order_quote_routes.py` as the deterministic order/quote route adapter;
+delivery evidence was recorded in this stage summary and handoff.
 graph-reviewed: no-change-needed - Graphify is not configured in this worktree;
 no `graphify-out/GRAPH_REPORT.md` exists.
 project-index: updated - stable `src/llm/` ownership boundary changed.
@@ -85,6 +86,7 @@ risk and no independent parallel stream.
 - `src/llm/order_quote_routes.py`
 - `src/llm/engine.py`
 - `tests/test_llm_engine.py`
+- `CLAUDE.md`
 - `.codex/project-index.md`
 - `.codex/handoff.md`
 - `.codex/stages/tj-order-route-module-extract/summary.md`
@@ -93,12 +95,52 @@ risk and no independent parallel stream.
 
 ## Delivery
 
-Delivery is pending. This stage has passed local gates and stage closeout, and
-still needs commit, delivery to `main`, CI/deploy monitoring, production
-marker/smoke, and a focused live order/quote E2E sanity pass before tester
-handoff.
+Delivery commit `29c1dc5913dadf513a388b7220cd15b2f084e697` was pushed to
+`main` and deployed to `https://noor.starec.ai` via GitHub Actions run
+`27632173569`.
+
+GitHub Actions passed all jobs for the delivery run:
+
+- `changes`
+- `lint`
+- `test`
+- `type-check`
+- `deploy`
+
+Post-deploy production verification passed:
+
+- release marker readback matched
+  `release-sha=29c1dc5913dadf513a388b7220cd15b2f084e697` and
+  `release-run-id=27632173569`.
+- `curl -fsS https://noor.starec.ai/api/v1/health` returned `status=ok` with
+  Redis `ok`.
+- `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  passed: 8 passed, 0 failed.
+
+Focused live E2E passed after deploy:
+
+- Exact quote resume conversation `dd1c0018-2bd5-4f74-9269-d7a8afacdc0d`
+  on synthetic phone suffix `+79262810921#tj-route-module-20260616-163230`:
+  `name-gate` -> `exact-quote-clarify-item` ->
+  `quote-resume-missing-details` -> `quote-resume`, quotation `Fr3419`.
+  Protected metadata readback confirmed `quote_customer_details` for
+  `Victor Test`, `TJ Route Module LLC`,
+  `tj-route-module-20260616@example.com`, and `Dubai test street 16`.
+- Bare ordinal continuation conversation
+  `1be20b9b-ce24-4006-bfc2-c5dff8a1994e` on synthetic phone suffix
+  `+79262810921#tj-route-module-ordinal-20260616-163230`: `name-gate` ->
+  `selection-confirmation`; bare `2` kept the pending catalog choice and
+  selected `CH 616 black`, quantity 2.
+
+Synthetic cleanup completed through the protected conversation API. Both exact
+phone suffixes returned `total=1` and `non_closed_or_escalated=0` after PATCHing
+the conversations to `closed`.
+
+The separate visible `CLAUDE.md` change from the stale root checkout was carried
+forward as a docs/config delivery follow-up so all observed local changes are
+represented on `main`.
 
 ## Explicit Defers
 
 - No code defers for `tj-kk3y`.
-- Deployment and live E2E are intentionally pending until after closeout/commit.
+- No delivery or live E2E defers remain for this stage.

@@ -3,35 +3,27 @@ Updated: 2026-06-16
 Current branch: `codex/tj-order-route-module-extract`
 
 ## Current Truth
-- Stage `tj-order-route-module-extract`; worktree `/home/me/code/treejar/.worktrees/tj-order-route-module-extract`.
-- Beads task `tj-kk3y` is closed for the physical module extraction after route adapter delivery.
-- `src/llm/order_quote_routes.py` now owns `QuotationItem`, `_execute_order_quote_side_effect`, `_append_quote_effect_trace`, and `_order_quote_route_for_turn`.
-- `src/llm/engine.py::process_message` still prepares turn context and calls `_order_quote_route_for_turn`, but no longer defines the order/quote route adapter.
-- This stage is behavior-preserving: no customer-facing text, route suffix, metadata key, quotation side effect, or API contract was intentionally changed.
-- Full local verification passed after installing fresh `frontend/admin` Node dependencies with `npm ci`; npm reported the existing local Node engine warning (`v24.16.0` vs package `>=22.12.0 <23`) and 0 vulnerabilities.
+- Stage `tj-order-route-module-extract`; Beads task `tj-kk3y` is closed.
+- Delivery commit `29c1dc5913dadf513a388b7220cd15b2f084e697` is on `main` and deployed to `https://noor.starec.ai` via GitHub Actions run `27632173569`.
+- `src/llm/order_quote_routes.py` owns the deterministic order/quote route adapter; `engine.py::process_message` delegates to it and no longer defines `_order_quote_route_for_turn`.
+- This was behavior-preserving: no intentional customer-facing copy, route suffix, metadata key, quotation side effect, or API contract change.
+- The visible `CLAUDE.md` Claude Code CLI adapter note from the stale root checkout was carried forward as a docs/config delivery follow-up.
 - Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
-- Stage closeout passed for `tj-order-route-module-extract`.
-- No deploy, production mutation, or live WhatsApp E2E has been run for this module-extraction stage yet.
 
 ## Verification
 - RED: `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_order_quote_route_adapter_is_in_dedicated_module -q` failed with `ModuleNotFoundError: No module named 'src.llm.order_quote_routes'`.
-- `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_order_quote_route_adapter_is_in_dedicated_module tests/test_llm_engine.py::test_order_quote_create_quotation_calls_are_adapter_owned tests/test_llm_engine.py::test_process_message_order_quote_route_selection_is_adapter_owned -q` passed: 3 passed.
-- `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_quotation.py tests/test_e2e_tools.py -q` passed: 24 passed.
-- `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py -q` passed: 329 passed.
-- `OPENROUTER_API_KEY=test uv run pytest tests/test_admin_dashboard_frontend.py -q` passed after `npm ci`: 11 passed.
-- `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` passed.
-- `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` passed.
-- `OPENROUTER_API_KEY=test uv run mypy src/` passed: no issues in 158 source files.
-- `OPENROUTER_API_KEY=test env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short` passed: 1419 passed, 19 skipped.
-- `scripts/orchestration/run_stage_closeout.py --stage tj-order-route-module-extract` passed.
+- Local gates passed: structural tests, quotation/e2e tools, `tests/test_llm_engine.py`, admin frontend tests after `npm ci`, ruff, format, mypy, and full pytest `1419 passed, 19 skipped`.
+- Stage closeout passed before delivery; post-delivery rerun exposed only this handoff length limit and otherwise ran ruff/format/mypy plus pytest `1418 passed, 19 skipped`.
+- CI/deploy run `27632173569` passed; production marker matched `release-sha=29c1dc5913dadf513a388b7220cd15b2f084e697`, health Redis was `ok`, and `verify_api.py --base-url https://noor.starec.ai` passed 8/0.
+- Live E2E passed: exact quote resume created `Fr3419` in conversation `dd1c0018-2bd5-4f74-9269-d7a8afacdc0d`; bare ordinal `2` selected `CH 616 black`, quantity 2 in conversation `1be20b9b-ce24-4006-bfc2-c5dff8a1994e`.
+- Synthetic cleanup readback passed for both exact phone suffixes: total 1 each, non-closed or escalated 0.
 
 ## Next recommended
-Next stage id: `tj-order-route-module-extract-delivery`
-Recommended action: commit the closed stage, deliver to `main`, wait for CI/deploy, verify production marker/smoke, and run a focused live order/quote E2E sanity pass before tester handoff.
+Next stage id: none.
+Recommended action: hand the deployed build to testers; start any new work from current `main`.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-route-module-extract`; read `.codex/stages/tj-order-route-module-extract/summary.md`, artifact `tj-kk3y`, Beads `tj-kk3y`, git status/diff, and ask before any deploy or production/live WhatsApp mutation if not already explicitly authorized in the current task.
+Use $orchestrator-stage. Start from current `main`; read `.codex/stages/tj-order-route-module-extract/summary.md` plus artifact `tj-kk3y` for history.
 
 ## Explicit defers
-- No in-scope code defers for `tj-kk3y`.
-- Deployment and live E2E remain pending for this module-extraction stage.
+- None for code, delivery, or live E2E.
