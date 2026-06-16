@@ -2582,6 +2582,15 @@ def _ordinal_option_from_reply(text: str) -> int | None:
     return None
 
 
+def _bare_ordinal_option_from_reply(text: str) -> int | None:
+    normalized = _normalize_text(_strip_synthetic_test_marker(text))
+    match = re.fullmatch(r"\d{1,2}", normalized)
+    if match is None:
+        return None
+    value = int(match.group(0))
+    return value if 1 <= value <= 10 else None
+
+
 def _clean_numbered_option_heading(line: str) -> str:
     cleaned = re.sub(r"[*_`]+", "", line).strip(" \t\r\n-")
     cleaned = re.sub(
@@ -2734,8 +2743,6 @@ def _extract_ordinal_option_purchase_selection(
     recent_history: list[str] | None,
 ) -> PurchaseSelection | None:
     ordinal = _ordinal_option_from_reply(text)
-    if ordinal is None:
-        return None
 
     last_assistant = _last_assistant_message(recent_history)
     if not last_assistant or not _last_assistant_asked_product_selection(
@@ -2743,9 +2750,13 @@ def _extract_ordinal_option_purchase_selection(
     ):
         return None
 
-    for option_ordinal, sku, heading in _numbered_sku_options_from_assistant(
-        last_assistant
-    ):
+    numbered_options = _numbered_sku_options_from_assistant(last_assistant)
+    if ordinal is None and numbered_options:
+        ordinal = _bare_ordinal_option_from_reply(text)
+    if ordinal is None:
+        return None
+
+    for option_ordinal, sku, heading in numbered_options:
         if option_ordinal != ordinal:
             continue
         quantity = _quantity_from_prior_product_request(recent_history)

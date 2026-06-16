@@ -7,7 +7,8 @@ Worktree: `/home/me/code/treejar/.worktrees/tj-order-route-adapter`
 Beads: `tj-order-cutover.10` closed
 
 docs-reviewed: no-change-needed - refactor preserves documented customer-facing
-behavior and existing runtime ownership; no public API, operator workflow,
+runtime ownership; the live-E2E bare ordinal repair is internal route parsing
+for an already asked SKU option question; no public API, operator workflow,
 deployment contract, integration contract, or durable doc contract changed.
 graph-reviewed: no-change-needed - Graphify is not configured in this worktree;
 no `graphify-out/GRAPH_REPORT.md` exists.
@@ -36,6 +37,10 @@ behavior.
   and behavior-compatible.
 - Preserved `create_quotation` ownership: direct calls still exist only inside
   `_execute_order_quote_side_effect`.
+- During first production E2E after `ab865b3`, bare `2` after a numbered SKU
+  option list fell through to `verified-policy-clarify`. Added a context-gated
+  bare-ordinal parser path that only activates when the last assistant message
+  contains numbered SKU options.
 
 ## Verification
 
@@ -43,6 +48,9 @@ behavior.
   - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_order_quote_route_selection_is_adapter_owned -q`
     failed because `_order_quote_route_for_turn` did not exist and
     `process_message` still called deterministic route helpers directly.
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_confirms_bare_ordinal_from_prior_sku_options -q`
+    failed with `mock-model|verified-policy-clarify`, matching the production
+    E2E gap for `2` after numbered SKU options.
 - GREEN / targeted:
   - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_order_quote_route_selection_is_adapter_owned -q`
     -> 1 passed.
@@ -50,6 +58,8 @@ behavior.
     -> 13 passed.
   - `OPENROUTER_API_KEY=test uv run pytest tests/test_dialogue_order_runtime.py tests/test_llm_engine.py -q`
     -> 339 passed.
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_confirms_bare_ordinal_from_prior_sku_options tests/test_llm_engine.py::test_process_message_confirms_ordinal_selection_from_prior_sku_options tests/test_llm_engine.py::test_ordinal_option_from_reply_supports_more_than_two_options -q`
+    -> 3 passed after the bare-ordinal fix.
 - Full local gates:
   - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` -> passed.
   - `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` -> passed.
@@ -62,11 +72,14 @@ behavior.
     (`v24.16.0` vs package `>=22.12.0 <23`).
   - Final `OPENROUTER_API_KEY=test uv run pytest tests/ -q` passed:
     1413 passed, 19 skipped.
+  - Final post-bare-ordinal-fix `OPENROUTER_API_KEY=test uv run pytest tests/ -q`
+    passed: 1414 passed, 19 skipped.
 - Stage closeout:
   - `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-route-adapter`
     passed: artifact validation OK, process verification OK, project-index/docs
     review OK, debt marker scan OK, full code-change verification OK, and stage
     closeout verification OK.
+  - Post-bare-ordinal-fix closeout passed again with the same stage command.
 
 ## Changed Files
 
@@ -78,9 +91,10 @@ behavior.
 
 ## Delivery
 
-Delivery is pending. Next steps are commit, push to `main`, GitHub
-Actions/deploy monitoring, production marker/smoke, live order/quote E2E, and
-synthetic data cleanup.
+Initial delivery commit `ab865b3` reached production and passed marker/smoke, but
+live E2E found the bare `2` selection-confirmation gap above. Second delivery is
+pending: commit, push to `main`, GitHub Actions/deploy monitoring, production
+marker/smoke, live order/quote E2E retry, and synthetic data cleanup.
 
 ## Explicit Defers
 

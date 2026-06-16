@@ -23,6 +23,7 @@ success_criteria:
   - sales-order quote extraction/resume regressions pass
   - exact-quote SKU repair regressions pass
   - selection confirmation regressions pass
+  - bare ordinal selection after numbered SKU options remains in selection-confirmation
   - quote-detail resume regressions pass
   - pending quantity/reference path remains green
   - #42/#49/#50/#51/#52 current order/quote regressions pass
@@ -59,13 +60,15 @@ docs_reviewed: no-change-needed
 docs_review_notes: no public behavior, API, operator workflow, deployment, integration, or stable navigation contract changed
 verification:
   - structural RED test: failed before adapter extraction
+  - bare ordinal RED test: failed with verified-policy-clarify before context-gated parser fix
+  - bare ordinal targeted set: passed, 3 tests
   - targeted order/quote regression set: passed, 13 tests
   - engine/runtime regression set: passed, 339 tests
   - ruff check src/ tests/: passed
   - ruff format --check src/ tests/: passed
   - mypy src/: passed
-  - pytest tests/ -q: passed, 1413 passed and 19 skipped after npm ci restored frontend dependencies
-  - run_stage_closeout.py --stage tj-order-cutover-route-adapter: passed
+  - pytest tests/ -q: passed, 1414 passed and 19 skipped after bare ordinal fix
+  - run_stage_closeout.py --stage tj-order-cutover-route-adapter: passed after adapter extraction and again after bare ordinal fix
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
@@ -84,6 +87,11 @@ Implemented the P2 route adapter extraction for `tj-order-cutover.10`.
 structural regression test. `create_quotation` remains directly called only by
 `_execute_order_quote_side_effect`.
 
+First production E2E on `ab865b3` found one selection-confirmation regression:
+bare `2` after numbered SKU options fell through to `verified-policy-clarify`.
+The follow-up fix accepts a bare ordinal only when the last assistant message
+contains numbered SKU options, preserving quantity clarification behavior.
+
 # Scope / Routing
 
 The stream was local because the acceptance touched one coupled route-selection
@@ -94,16 +102,18 @@ configured.
 # Verification
 
 Local verification passed for structural ownership, targeted order/quote
-regressions, full engine/runtime tests, and the full repo pytest suite. The
-first full pytest attempt exposed missing frontend `node_modules` in the fresh
-worktree; `npm ci` restored dependencies and the final full suite passed.
+regressions, bare ordinal selection confirmation, full engine/runtime tests, and
+the full repo pytest suite. The first full pytest attempt exposed missing
+frontend `node_modules` in the fresh worktree; `npm ci` restored dependencies and
+the final post-fix full suite passed.
 
 # Delivery / Cleanup
 
 Local implementation accepted by orchestrator and stage closeout passed.
-Delivery is pending commit, direct push to `main`, CI/deploy monitoring,
-production marker/smoke, live order/quote E2E, and synthetic production data
-cleanup.
+Initial delivery reached production, but live E2E found the bare ordinal gap.
+Second delivery is pending commit, direct push to `main`, CI/deploy monitoring,
+production marker/smoke, live order/quote E2E retry, and synthetic production
+data cleanup.
 
 # Risks / Follow-ups / Explicit Defers
 
