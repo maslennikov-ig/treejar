@@ -6996,6 +6996,40 @@ def _quote_candidates_from_last_assistant_selection(
         return ()
 
     candidates: list[ExactQuoteCandidate] = []
+    stock_option_quantity_match = re.search(
+        r"\boptions?\s+for\s+(?P<quantity>\d{1,4})\s+"
+        r"(?:chairs?|items?|units?|products?)\b",
+        last_assistant,
+        flags=re.IGNORECASE,
+    )
+    if stock_option_quantity_match is not None:
+        stock_option_quantity = int(stock_option_quantity_match.group("quantity"))
+        stock_option_candidates: list[str] = []
+        if stock_option_quantity > 0:
+            for raw_line in last_assistant.splitlines():
+                option_match = re.match(
+                    r"\s*Option\s+\d+\s*:\s*(?P<item>.+?)\s*$",
+                    raw_line,
+                    flags=re.IGNORECASE,
+                )
+                if option_match is None:
+                    continue
+                item_candidate = _clean_assistant_selection_cell(
+                    option_match.group("item")
+                ).strip(" \t\r\n,.;:-")
+                if not _looks_like_exact_item_candidate(item_candidate):
+                    continue
+                stock_option_candidates.append(item_candidate)
+        if len(stock_option_candidates) == 1:
+            item_candidate = stock_option_candidates[0]
+            candidates.append(
+                ExactQuoteCandidate(
+                    quantity=stock_option_quantity,
+                    item_candidate=item_candidate,
+                    sku=_extract_sku_signal(item_candidate),
+                )
+            )
+
     if "|" in last_assistant:
         table_second_column_is_quantity: bool | None = None
         for raw_line in last_assistant.splitlines():
@@ -7222,6 +7256,7 @@ def _last_assistant_offered_quote_for_selection(
     last_assistant = _normalize_text(_last_assistant_message(recent_history))
     if not last_assistant:
         return False
+    candidates = _quote_candidates_from_last_assistant_selection(recent_history)
     quote_offer = (
         "would you like" in last_assistant
         and ("quote" in last_assistant or "quotation" in last_assistant)
@@ -7230,8 +7265,26 @@ def _last_assistant_offered_quote_for_selection(
     proceed_offer = (
         "would you like" in last_assistant and "proceed with" in last_assistant
     )
-    return (quote_offer or proceed_offer) and bool(
-        _quote_candidates_from_last_assistant_selection(recent_history)
+    single_stock_option_offer = _last_assistant_offered_single_stock_price_quote_option(
+        recent_history
+    )
+    return (quote_offer or proceed_offer or single_stock_option_offer) and bool(
+        candidates
+    )
+
+
+def _last_assistant_offered_single_stock_price_quote_option(
+    recent_history: list[str] | None,
+) -> bool:
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    if not last_assistant:
+        return False
+    candidates = _quote_candidates_from_last_assistant_selection(recent_history)
+    return (
+        len(candidates) == 1
+        and "which option would you prefer" in last_assistant
+        and ("quote" in last_assistant or "quotation" in last_assistant)
+        and ("prepare" in last_assistant or "send" in last_assistant)
     )
 
 
@@ -7239,9 +7292,13 @@ async def _store_pending_quote_from_last_assistant_selection(
     db: AsyncSession,
     conversation: Conversation,
     recent_history: list[str] | None,
+    *,
+    require_single: bool = False,
 ) -> Mapping[str, Any] | None:
     candidates = _quote_candidates_from_last_assistant_selection(recent_history)
     if not candidates:
+        return None
+    if require_single and len(candidates) != 1:
         return None
 
     resolved_items: list[QuotationItem] = []
@@ -9807,6 +9864,22 @@ async def _order_quote_route_for_turn(
     pending_quote_selection = _active_pending_quote_selection_from_conversation(
         conversation
     )
+    if (
+        pending_quote_selection is None
+        and _last_assistant_offered_single_stock_price_quote_option(deps.recent_history)
+        and (
+            _has_affirmative_quote_resume_intent(combined_text)
+            or _has_affirmative_quote_resume_intent(masked_text)
+        )
+    ):
+        pending_quote_selection = (
+            await _store_pending_quote_from_last_assistant_selection(
+                db,
+                conversation,
+                deps.recent_history,
+                require_single=True,
+            )
+        )
 
     if pending_quote_selection is not None:
         pending_quote_customer_details = current_quote_customer_details

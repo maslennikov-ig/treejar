@@ -6,24 +6,24 @@ Current branch: `codex/tj-order-route-adapter`
 - Stage `tj-order-cutover-route-adapter`; worktree `/home/me/code/treejar/.worktrees/tj-order-route-adapter`.
 - `tj-order-cutover.10` local implementation is complete and verified: remaining deterministic order/quote route families now delegate from `process_message` to `_order_quote_route_for_turn`.
 - `create_quotation` remains directly callable only through `_execute_order_quote_side_effect`; structural regression coverage was added.
-- Production E2E found and fixed three route-resume gaps: bare `2` after numbered SKU options first fell through to `verified-policy-clarify`, then preserved route but defaulted quantity to 1 after name-gate, then the dialogue-kernel product quantity prompt failed to store the canonical pending quantity frame; all three regressions are covered locally.
+- Production E2E found and fixed four route-resume gaps: bare `2` after numbered SKU options first fell through to `verified-policy-clarify`, then preserved route but defaulted quantity to 1 after name-gate, then the dialogue-kernel product quantity prompt failed to store the canonical pending quantity frame, then short affirmative follow-up after a single stock/price option lost the quote context; all four regressions are covered locally.
 - Beads `tj-order-cutover.10` is closed; Beads export was written to the shared `/home/me/code/treejar/.beads/issues.jsonl`.
-- Local full gates passed after the dialogue-kernel quantity-frame fix: ruff check, ruff format check, mypy, and `pytest tests/ -q` with 1416 passed, 19 skipped.
-- Stage closeout passed again for `tj-order-cutover-route-adapter`.
-- Third delivery commit `8fb39cb` reached production and passed marker/smoke; live E2E verified name-gate resume, bare `2` quantity preservation, exact-quote repair/resume, SKU variant, and all-details first turn, then exposed the pending quantity dialogue-kernel frame gap now fixed locally.
-- Fourth delivery to `main`, GitHub Actions/deploy monitoring, production marker/smoke, live order/quote E2E retry, and synthetic data cleanup are pending.
+- Local full gates passed after the single stock-option quote-resume fix: ruff check, ruff format check, mypy, and `pytest tests/ -q` with 1418 passed, 19 skipped.
+- Stage closeout passed again for `tj-order-cutover-route-adapter` after the single stock-option quote-resume fix.
+- Fourth delivery commit `4d68f78` reached production and passed marker/smoke; live E2E verified name-gate resume, bare `2` quantity preservation, exact-quote repair/resume, SKU variant, all-details first turn, and pending quantity/reference resume, then exposed the single stock/price option short follow-up gap now fixed locally.
+- Fifth delivery to `main`, GitHub Actions/deploy monitoring, production marker/smoke, live order/quote E2E retry, and synthetic data cleanup are pending.
 - Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
 
 ## Verification
 - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` passed.
 - `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` passed.
 - `OPENROUTER_API_KEY=test uv run mypy src/` passed.
-- `OPENROUTER_API_KEY=test uv run pytest tests/ -q` passed: 1416 passed, 19 skipped.
+- `OPENROUTER_API_KEY=test uv run pytest tests/ -q` passed: 1418 passed, 19 skipped.
 - `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-route-adapter` passed.
 
 ## Next recommended
 Next stage id: `tj-order-cutover-route-adapter-delivery`
-Recommended action: commit the dialogue-kernel quantity-frame fix, push to `main`, wait for GitHub Actions/deploy, verify production marker/smoke, rerun the requested live order/quote E2E matrix, and clean synthetic PostgreSQL/Redis data.
+Recommended action: commit the single stock-option quote-resume fix, push to `main`, wait for GitHub Actions/deploy, verify production marker/smoke, rerun the requested live order/quote E2E matrix, and clean synthetic PostgreSQL/Redis data.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-route-adapter`; read `.codex/stages/tj-order-cutover-route-adapter/summary.md`, Beads `tj-order-cutover.10`, git status/diff, and do not add GitHub issue comments without explicit authorization.

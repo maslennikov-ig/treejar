@@ -6492,6 +6492,147 @@ async def test_process_message_stock_price_question_returns_catalog_option_list(
     assert "pending_quote_selection" not in (conv.metadata_ or {})
 
 
+def test_stock_price_single_option_is_quote_resume_candidate() -> None:
+    assistant = (
+        "Hello, I'm Noor from Treejar.\n\n"
+        "I found these options for 2 chairs:\n\n"
+        "Option 1: Skyland Executive office chair CH 140 black\n"
+        "- SKU: CH 140 black\n"
+        "- Price: 450.00 AED each\n"
+        "- Stock: 12 available\n\n"
+        "Which option would you prefer? I can prepare a formal quotation after that."
+    )
+    history = [f"assistant: {assistant}"]
+
+    candidates = engine_module._quote_candidates_from_last_assistant_selection(history)
+
+    assert [(item.sku, item.quantity) for item in candidates] == [("CH-140", 2)]
+    assert engine_module._last_assistant_offered_quote_for_selection(history) is True
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_short_quote_followup_uses_single_stock_price_option(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Victor Long Context"
+    conv.language = "en"
+    conv.metadata_ = {
+        "quote_customer_details": {
+            "name": "Victor Long Context",
+            "customer_type": "individual",
+            "email": "victor.routeadapter.long@example.com",
+            "address": "Office 1701 Long Context Tower Dubai",
+        }
+    }
+    first_text = (
+        "Please confirm stock and price for 2 CH 140 black chairs before I decide."
+    )
+    assistant = (
+        "Hello, I'm Noor from Treejar.\n\n"
+        "I found these options for 2 chairs:\n\n"
+        "Option 1: Skyland Executive office chair CH 140 black\n"
+        "- SKU: CH 140 black\n"
+        "- Price: 450.00 AED each\n"
+        "- Stock: 12 available\n\n"
+        "Which option would you prefer? I can prepare a formal quotation after that."
+    )
+    text = "Yes prepare the quotation"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=first_text)]),
+        ModelResponse(parts=[TextPart(content=assistant)]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+    async def get_system_config_side_effect(
+        _db: object,
+        key: str,
+        default: object,
+    ) -> object:
+        if key == "openrouter_model_main":
+            return "mock-model"
+        if key == "dialogue_kernel_trace_enabled":
+            return "true"
+        if key == "dialogue_kernel_mode":
+            return "disabled"
+        if key == "dialogue_kernel_enforced_flows":
+            return ""
+        return default
+
+    mock_get_system_config.side_effect = get_system_config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_search_behavior_rules.return_value = []
+    mock_create_quotation.return_value = "Quotation Fr-test has been prepared."
+
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 140 black",
+        zoho_item_id="zoho-ch-140-black",
+        name_en="Skyland Executive office chair CH 140 black",
+        description_en="Skyland Executive office chair CH 140 black",
+        price=450.0,
+        currency="AED",
+        stock=12,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    execute_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.return_value = execute_result
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|quote-resume"
+    assert "Quotation Fr-test" in response.text
+    pending = conv.metadata_["pending_quote_selection"]
+    assert pending["source"] == "assistant_prose_repair"
+    assert [(item["sku"], item["quantity"]) for item in pending["items"]] == [
+        ("CH 140 black", 2)
+    ]
+    mock_create_quotation.assert_awaited_once()
+    mock_run.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)

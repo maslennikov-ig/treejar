@@ -28,6 +28,7 @@ success_criteria:
   - quote-detail resume regressions pass
   - pending quantity/reference path remains green
   - dialogue-kernel product-selection quantity prompts persist the canonical pending quantity frame
+  - short affirmative follow-up after a single stock/price option resumes quote context
   - #42/#49/#50/#51/#52 current order/quote regressions pass
 selected_docs:
   - AGENTS.md
@@ -65,15 +66,18 @@ verification:
   - bare ordinal RED test: failed with verified-policy-clarify before context-gated parser fix
   - bare ordinal quantity RED test: failed with quantity 1 before option-prompt quantity fallback
   - dialogue-kernel quantity-frame RED test: failed with missing order_runtime frame before kernel quantity prompt frame storage
+  - single stock-option quote-resume RED tests: failed with no quote candidate and proposal-clarify fallback before stock option parsing/storage
   - bare ordinal targeted set: passed, 4 tests
   - dialogue-kernel pending quantity targeted set: passed, 9 tests
+  - single stock-option quote-resume targeted set: passed, 2 tests
+  - single stock-option blocker set: passed, 4 tests
   - targeted order/quote regression set: passed, 13 tests
   - engine/runtime regression set: passed, 339 tests
   - ruff check src/ tests/: passed
   - ruff format --check src/ tests/: passed
   - mypy src/: passed
-  - pytest tests/ -q: passed, 1416 passed and 19 skipped after dialogue-kernel quantity-frame fix
-  - run_stage_closeout.py --stage tj-order-cutover-route-adapter: passed after adapter extraction, bare ordinal fix, quantity preservation fix, and dialogue-kernel quantity-frame fix
+  - pytest tests/ -q: passed, 1418 passed and 19 skipped after single stock-option quote-resume fix
+  - run_stage_closeout.py --stage tj-order-cutover-route-adapter: passed after adapter extraction, bare ordinal fix, quantity preservation fix, dialogue-kernel quantity-frame fix, and single stock-option quote-resume fix
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
@@ -109,6 +113,15 @@ Production conversation `b228ac0e-ecbd-4d12-9a1f-671286733bba` stored no
 `verified-policy-clarify`. The final local fix stores a canonical order-runtime
 quantity frame before returning the kernel product-selection quantity prompt.
 
+Fourth production E2E on `4d68f78` found a short follow-up gap after a single
+stock/price option. Production conversation
+`c6d21cfe-6492-46d4-928b-ca33ee0d9fc4` returned
+`z-ai/glm-5|stock-price-options`, but `Yes prepare the quotation` fell through
+to `z-ai/glm-5|proposal-clarify` because no pending quote selection was stored
+from the assistant's single-option stock/price prose. The final local fix parses
+that single-option offer and stores pending quote context only when the assistant
+explicitly offers to prepare/send a quote.
+
 # Scope / Routing
 
 The stream was local because the acceptance touched one coupled route-selection
@@ -131,7 +144,9 @@ Local implementation accepted by orchestrator and stage closeout passed.
 Initial delivery reached production, but live E2E found the bare ordinal gap.
 Second delivery reached production, but live E2E found the quantity-preservation
 gap. Third delivery reached production, but live E2E found the dialogue-kernel
-pending quantity frame gap. Fourth delivery is pending commit, direct push to
+pending quantity frame gap. Fourth delivery reached production, but live E2E
+found the single stock-option short follow-up gap. Fifth delivery is pending
+commit, direct push to
 `main`, CI/deploy monitoring, production marker/smoke, live order/quote E2E
 retry, and synthetic production data cleanup.
 
