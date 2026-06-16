@@ -1,5 +1,6 @@
 import ast
 import datetime
+import importlib
 import json
 import uuid
 from decimal import Decimal
@@ -40,8 +41,25 @@ from src.schemas.product import ProductRead
 from src.services.proposal_followup import record_proposal_sent
 
 
+def test_order_quote_route_adapter_is_in_dedicated_module() -> None:
+    route_module = importlib.import_module("src.llm.order_quote_routes")
+
+    assert hasattr(route_module, "_order_quote_route_for_turn")
+
+    engine_source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
+    engine_tree = ast.parse(engine_source)
+    engine_defs = {
+        node.name
+        for node in ast.walk(engine_tree)
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
+    }
+
+    assert "_order_quote_route_for_turn" not in engine_defs
+
+
 def test_order_quote_create_quotation_calls_are_adapter_owned() -> None:
-    source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
+    route_module = importlib.import_module("src.llm.order_quote_routes")
+    source = Path(route_module.__file__ or "").read_text(encoding="utf-8")
     tree = ast.parse(source)
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):

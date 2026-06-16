@@ -1,33 +1,37 @@
 # Orchestrator Handoff
 Updated: 2026-06-16
-Current branch: `codex/tj-order-route-adapter`
+Current branch: `codex/tj-order-route-module-extract`
 
 ## Current Truth
-- Stage `tj-order-cutover-route-adapter`; worktree `/home/me/code/treejar/.worktrees/tj-order-route-adapter`.
-- `tj-order-cutover.10` local implementation is complete and verified: remaining deterministic order/quote route families now delegate from `process_message` to `_order_quote_route_for_turn`.
-- `create_quotation` remains directly callable only through `_execute_order_quote_side_effect`; structural regression coverage was added.
-- Production E2E found and fixed four route-resume gaps: bare `2` after numbered SKU options first fell through to `verified-policy-clarify`, then preserved route but defaulted quantity to 1 after name-gate, then the dialogue-kernel product quantity prompt failed to store the canonical pending quantity frame, then short affirmative follow-up after a single stock/price option lost the quote context; all four regressions are covered locally.
-- Beads `tj-order-cutover.10` is closed; Beads export was written to the shared `/home/me/code/treejar/.beads/issues.jsonl`.
-- Local full gates passed after the single stock-option quote-resume fix: ruff check, ruff format check, mypy, and `pytest tests/ -q` with 1418 passed, 19 skipped.
-- Stage closeout passed again for `tj-order-cutover-route-adapter` after the single stock-option quote-resume fix.
-- Fourth delivery commit `4d68f78` reached production and passed marker/smoke; live E2E verified name-gate resume, bare `2` quantity preservation, exact-quote repair/resume, SKU variant, all-details first turn, and pending quantity/reference resume, then exposed the single stock/price option short follow-up gap now fixed locally.
-- Fifth delivery commit `ec8dd61` reached production via CI run `27622142673`; production marker matched, health/`verify_api.py` smoke passed, final live order/quote E2E matrix passed, and scoped PostgreSQL/Redis synthetic cleanup completed.
+- Stage `tj-order-route-module-extract`; worktree `/home/me/code/treejar/.worktrees/tj-order-route-module-extract`.
+- Beads task `tj-kk3y` is closed for the physical module extraction after route adapter delivery.
+- `src/llm/order_quote_routes.py` now owns `QuotationItem`, `_execute_order_quote_side_effect`, `_append_quote_effect_trace`, and `_order_quote_route_for_turn`.
+- `src/llm/engine.py::process_message` still prepares turn context and calls `_order_quote_route_for_turn`, but no longer defines the order/quote route adapter.
+- This stage is behavior-preserving: no customer-facing text, route suffix, metadata key, quotation side effect, or API contract was intentionally changed.
+- Full local verification passed after installing fresh `frontend/admin` Node dependencies with `npm ci`; npm reported the existing local Node engine warning (`v24.16.0` vs package `>=22.12.0 <23`) and 0 vulnerabilities.
 - Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
+- Stage closeout passed for `tj-order-route-module-extract`.
+- No deploy, production mutation, or live WhatsApp E2E has been run for this module-extraction stage yet.
 
 ## Verification
+- RED: `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_order_quote_route_adapter_is_in_dedicated_module -q` failed with `ModuleNotFoundError: No module named 'src.llm.order_quote_routes'`.
+- `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_order_quote_route_adapter_is_in_dedicated_module tests/test_llm_engine.py::test_order_quote_create_quotation_calls_are_adapter_owned tests/test_llm_engine.py::test_process_message_order_quote_route_selection_is_adapter_owned -q` passed: 3 passed.
+- `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_quotation.py tests/test_e2e_tools.py -q` passed: 24 passed.
+- `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py -q` passed: 329 passed.
+- `OPENROUTER_API_KEY=test uv run pytest tests/test_admin_dashboard_frontend.py -q` passed after `npm ci`: 11 passed.
 - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` passed.
 - `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` passed.
-- `OPENROUTER_API_KEY=test uv run mypy src/` passed.
-- `OPENROUTER_API_KEY=test uv run pytest tests/ -q` passed: 1418 passed, 19 skipped.
-- `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-route-adapter` passed.
+- `OPENROUTER_API_KEY=test uv run mypy src/` passed: no issues in 158 source files.
+- `OPENROUTER_API_KEY=test env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run pytest tests/ -v --tb=short` passed: 1419 passed, 19 skipped.
+- `scripts/orchestration/run_stage_closeout.py --stage tj-order-route-module-extract` passed.
 
 ## Next recommended
-Next stage id: `tester-order-quote-handoff`
-Recommended action: hand the order/quote route adapter delivery to the tester with production evidence from commit `ec8dd61` / CI run `27622142673`.
+Next stage id: `tj-order-route-module-extract-delivery`
+Recommended action: commit the closed stage, deliver to `main`, wait for CI/deploy, verify production marker/smoke, and run a focused live order/quote E2E sanity pass before tester handoff.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage only if more engineering work is needed. For tester handoff, read `.codex/stages/tj-order-cutover-route-adapter/summary.md` and Beads `tj-order-cutover.10`; production is on `ec8dd612dfb0a44eb41104bd198a5936f91c847d` from CI run `27622142673`.
+Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-route-module-extract`; read `.codex/stages/tj-order-route-module-extract/summary.md`, artifact `tj-kk3y`, Beads `tj-kk3y`, git status/diff, and ask before any deploy or production/live WhatsApp mutation if not already explicitly authorized in the current task.
 
 ## Explicit defers
-- No in-scope defers remain for `tj-order-cutover.10` after production verification and cleanup.
-- GitHub issue #42 second-occurrence comment still lacks a separate production evidence reply; adding one is externally visible and was not separately authorized.
+- No in-scope code defers for `tj-kk3y`.
+- Deployment and live E2E remain pending for this module-extraction stage.
