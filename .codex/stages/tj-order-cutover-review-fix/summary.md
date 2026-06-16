@@ -1,16 +1,17 @@
 # Stage tj-order-cutover-review-fix: Order/Quote Cutover Review And Fix
 
 Updated: 2026-06-16
-Status: local hardening implemented; pending closeout, push, deploy, and live E2E
+Status: delivered to main, deployed, smoke-tested, E2E-tested, and cleaned up
 Branch: `codex/tj-order-cutover-review-fix`
 Worktree: `/home/me/code/treejar/.worktrees/tj-order-cutover-review-fix`
-Beads: `tj-s1qi`, `tj-1ha9`, `tj-hqsa`, `tj-v2k9`; partial improvement for
-`tj-order-cutover.10`
+Beads: `tj-s1qi`, `tj-1ha9`, `tj-hqsa`, `tj-v2k9` are closed;
+`tj-order-cutover.10` remains open only for the broader P2 extraction.
 
 docs-reviewed: no-change-needed - fixes tighten existing documented runtime
-ownership, make bounded diagnostics functional, and update a frontend lockfile;
-no public API, operator workflow, deployment contract, or durable doc contract
-changed.
+ownership, make bounded diagnostics functional, harden webhook batch handling,
+and update a frontend lockfile; no public API, operator workflow, deployment
+contract, or durable doc contract changed. Handoff and stage docs were updated
+with delivery/E2E evidence.
 graph-reviewed: no-change-needed - Graphify is not configured in this worktree;
 no `graphify-out/GRAPH_REPORT.md` exists.
 project-index: reviewed-no-change - no stable entrypoints, routes, directories,
@@ -60,6 +61,13 @@ follow-ups for larger improvements.
   Vite `8.0.16` / esbuild `0.28.1`. `npm audit` now reports zero
   vulnerabilities. The package engine remains `>=22.12.0 <23`; the local
   Node `24.16.0` warning is an environment mismatch, not a policy change.
+- Hardened inbound webhook batch completion when the generated bot reply cannot
+  be sent through Wazzup. The failed outbound send is logged and audited, but
+  the inbound batch remains successful so the worker does not retry stale
+  context indefinitely.
+- Added deterministic extraction for `Customer:` / `Customer name:` labels, so
+  first-turn quote requests with customer details no longer fall back to the
+  name gate solely because the label wording differs from `my name is`.
 
 ## Rejected Or Deferred Findings
 
@@ -138,6 +146,38 @@ follow-ups for larger improvements.
   - `npm audit --json` in `frontend/admin` -> 0 vulnerabilities.
   - `npm run lint` in `frontend/admin` -> passed.
   - `npm run build` in `frontend/admin` -> passed.
+- Delivery retest RED/GREEN:
+  - `uv run pytest tests/test_services_chat_batch.py::test_process_incoming_batch_keeps_batch_successful_when_bot_reply_send_fails -q`
+    failed before the chat fix because the Wazzup send failure raised
+    `RuntimeError` and failed the inbound batch; after the fix it passed.
+  - `uv run pytest tests/test_fact_extractor.py::test_deterministic_extracts_customer_label_as_name -q`
+    failed before the extractor fix because `Customer: Amina Complete` produced
+    no `customer.name`; after the fix it passed.
+  - `uv run pytest tests/test_services_chat_batch.py tests/test_outbound_audit.py -q`
+    -> 28 passed.
+  - `uv run pytest tests/test_fact_extractor.py -q` -> 33 passed.
+  - Related engine regressions for first-turn details and quote name-gate resume
+    -> 3 passed.
+  - Final local full gates after `16a2dfe`: `ruff check`, `ruff format --check`,
+    `mypy src/`, and `pytest tests/ -q` -> 1412 passed, 19 skipped.
+- CI/deploy/prod verification:
+  - GitHub Actions run `27613068608` deployed `03cd075` and passed changes,
+    lint, test, type-check, and deploy jobs.
+  - GitHub Actions run `27614021694` deployed `16a2dfe` and passed changes,
+    lint, test, type-check, and deploy jobs.
+  - Production marker after final runtime deploy:
+    `.release-sha=16a2dfe8de30b79a81cb53f73279c629eaa70499` and
+    `.release-run-id=27614021694`.
+  - Production health passed and `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+    reported 8 passed, 0 failed.
+- Live synthetic E2E:
+  - Matrix run `0616112830` passed name-gate quote resume, variant quote resume,
+    and customer-label first-turn quote scenarios without context loss.
+  - Strict all-details first-turn run for `+70016416113202` passed with
+    `z-ai/glm-5|exact-quote-deterministic`, manager verification, no name gate,
+    and no item clarification.
+  - Synthetic PostgreSQL and Redis test data was cleaned after the run; exact
+    target conversation count was zero.
 
 ## Changed Files
 
@@ -145,8 +185,12 @@ follow-ups for larger improvements.
 - `src/dialogue/order_state.py`
 - `src/dialogue/order_runtime.py`
 - `src/llm/engine.py`
+- `src/llm/fact_extractor.py`
+- `src/services/chat.py`
 - `tests/test_dialogue_order_runtime.py`
+- `tests/test_fact_extractor.py`
 - `tests/test_llm_engine.py`
+- `tests/test_services_chat_batch.py`
 - `.codex/handoff.md`
 - `.codex/stages/tj-order-cutover-review-fix/summary.md`
 - `.codex/stages/tj-order-cutover-review-fix/artifacts/tj-s1qi.md`
@@ -156,10 +200,12 @@ follow-ups for larger improvements.
 
 ## Delivery
 
-Delivery is now explicitly approved by the user, but has not yet been run after
-the follow-up hardening changes. Required remaining sequence: canonical stage
-closeout, commit, fast-forward push to `origin/main`, GitHub Actions deploy,
-release marker readback, production smoke, then live E2E.
+Delivery was explicitly approved by the user and completed through direct push
+to `main`. Runtime commits `03cd075` and `16a2dfe` were deployed by GitHub
+Actions; final production readback showed release SHA
+`16a2dfe8de30b79a81cb53f73279c629eaa70499`. Production smoke and the approved
+live synthetic E2E matrix passed after deploy. The final docs/Beads closeout
+commit is docs-only and does not change runtime behavior.
 
 ## Explicit Defers
 
