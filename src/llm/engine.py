@@ -6333,6 +6333,8 @@ def _detail_capture_acknowledgement(
     sales_memory_updates: Mapping[str, str],
 ) -> str:
     noted: list[str] = []
+    if customer_details.get("name"):
+        noted.append(f"name: {customer_details['name']}")
     if customer_details.get("company"):
         noted.append(f"company: {customer_details['company']}")
     if customer_details.get("address"):
@@ -6694,6 +6696,75 @@ async def _clear_quote_intent_frame(
             conversation.id,
             exc_info=True,
         )
+
+
+async def _store_name_gate_quote_context(
+    db: AsyncSession,
+    conversation: Conversation,
+    *,
+    combined_text: str,
+    masked_text: str,
+) -> bool:
+    """Persist quote/order intent before first-turn name-gate returns."""
+    try:
+        sales_order_items = _extract_sales_order_quote_items(masked_text)
+        if sales_order_items is None and masked_text != combined_text:
+            sales_order_items = _extract_sales_order_quote_items(combined_text)
+        if sales_order_items is not None:
+            resolved_quote_items: list[QuotationItem] = []
+            unresolved_items: list[ExactQuoteCandidate] = []
+            for item in sales_order_items:
+                resolved_sku = await _resolve_exact_quote_candidate_sku(db, item)
+                if resolved_sku:
+                    resolved_quote_items.append(
+                        QuotationItem(sku=resolved_sku, quantity=item.quantity)
+                    )
+                else:
+                    unresolved_items.append(item)
+            await _store_pending_sales_order_quote(
+                db,
+                conversation,
+                resolved_items=resolved_quote_items,
+                unresolved_items=tuple(unresolved_items),
+            )
+            return True
+
+        exact_quote_candidate = extract_exact_quote_candidate(masked_text)
+        if exact_quote_candidate is None and masked_text != combined_text:
+            exact_quote_candidate = extract_exact_quote_candidate(combined_text)
+        if exact_quote_candidate is None:
+            return False
+
+        resolved_exact_sku = await _resolve_exact_quote_candidate_sku(
+            db,
+            exact_quote_candidate,
+        )
+        if resolved_exact_sku:
+            await _store_pending_exact_quote(
+                db,
+                conversation,
+                [
+                    QuotationItem(
+                        sku=resolved_exact_sku,
+                        quantity=exact_quote_candidate.quantity,
+                    )
+                ],
+            )
+        else:
+            await _store_pending_exact_quote(
+                db,
+                conversation,
+                [],
+                unresolved_items=(exact_quote_candidate,),
+            )
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to persist quote context before name gate for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+        return False
 
 
 async def _store_applied_bot_rules(
@@ -9838,6 +9909,11 @@ async def process_message(
             allow_product_media=False,
         )
 
+    order_runtime_blocks_kernel_reply = (
+        _active_pending_quote_selection_from_conversation(conv) is not None
+        or _quote_intent_frame_from_metadata(conv) is not None
+    )
+
     try:
         dialogue_kernel_result = await run_dialogue_kernel(
             conversation=conv,
@@ -9862,6 +9938,10 @@ async def process_message(
         dialogue_kernel_result is not None
         and dialogue_kernel_result.should_use_kernel
         and dialogue_kernel_result.decision.action != "product_preference_answer"
+        and not (
+            order_runtime_blocks_kernel_reply
+            and dialogue_kernel_result.decision.flow != "quote_details"
+        )
     ):
         if dialogue_kernel_result.decision.flow == "name_gate":
             await _store_name_gate_pending_request(db, conv, combined_text)
@@ -9989,6 +10069,12 @@ async def process_message(
         and not _string_value(current_quote_customer_details.get("name"))
     ):
         await _store_name_gate_pending_request(db, conv, combined_text)
+        await _store_name_gate_quote_context(
+            db,
+            conv,
+            combined_text=combined_text,
+            masked_text=masked_text,
+        )
         response = _build_static_response(
             "Hello",
             "name-gate",
@@ -10074,6 +10160,22 @@ async def process_message(
             ) or _quote_intent_frame_from_text(combined_text)
         else:
             if not _has_detail_capture_handoff_blocker(combined_text):
+                if _has_active_sales_detail_capture_context(
+                    conv,
+                    deps.recent_history,
+                ) and _is_neutral_detail_capture_update(
+                    text=combined_text,
+                    customer_details=current_quote_customer_details,
+                    sales_memory_updates=current_sales_memory_updates,
+                ):
+                    return _build_static_response(
+                        _detail_capture_acknowledgement(
+                            current_quote_customer_details,
+                            current_sales_memory_updates,
+                        ),
+                        "detail-capture",
+                        allow_product_media=False,
+                    )
                 return _build_static_response(
                     f"Thank you, {current_quote_customer_details['name']}. "
                     "How can I help you with your office furniture requirement?",

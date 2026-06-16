@@ -2726,6 +2726,55 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
     messaging.send_media.assert_not_called()
 
 
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_name_only_update_in_active_product_context_does_not_reset_goal(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    text = "My name is Lili Cutover."
+    mock_build_history.return_value = _active_product_planning_history(text=text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.customer_name == "Lili Cutover"
+    assert conv.metadata_["quote_customer_details"] == {"name": "Lili Cutover"}
+    assert response.model == "detail-capture"
+    assert "name: Lili Cutover" in response.text
+    assert "How can I help you with your office furniture requirement?" not in (
+        response.text
+    )
+    assert mock_run.await_count == 0
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -13012,6 +13061,184 @@ async def test_process_message_sales_order_resolved_followup_then_brief_creates_
     }
     assert "pending_quote_selection" not in conv.metadata_
     assert mock_create_quotation.await_count == 2
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_first_turn_name_gate_stores_sales_order_quote_context(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.metadata_ = {}
+    text = "sales order 5 x CH 620"
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert response.model == "name-gate"
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert pending_quote == {
+        "source": "sales_order_quote",
+        "items": [],
+        "unresolved_items": [
+            {"sku": "CH-620", "quantity": 5, "item_candidate": "CH 620"}
+        ],
+    }
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["source"] == "sales_order_quote"
+    assert quote_frame["status"] == "repair_required"
+    assert quote_frame["unresolved_items"] == [
+        {"sku": "CH-620", "quantity": 5, "item_candidate": "CH 620"}
+    ]
+    mock_create_quotation.assert_not_awaited()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_active_quote_repair_bypasses_dialogue_kernel_product_selection(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_run_dialogue_kernel: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Victor Cutover"
+    conv.language = "en"
+    conv.metadata_ = {
+        "quote_customer_details": {"name": "Victor Cutover"},
+        "order_runtime": {
+            "quote_frame": {
+                "version": 1,
+                "frame_id": "qf-live-repair",
+                "source": "exact_quote",
+                "status": "repair_required",
+                "lines": [],
+                "unresolved_items": [
+                    {"sku": "CH-620", "quantity": 5, "item_candidate": "CH 620"}
+                ],
+                "quote_details": {"name": "Victor Cutover"},
+                "missing_quote_fields": ["items and quantities"],
+            }
+        },
+        "pending_quote_selection": {
+            "source": "exact_quote",
+            "items": [],
+            "unresolved_items": [
+                {"sku": "CH-620", "quantity": 5, "item_candidate": "CH 620"}
+            ],
+        },
+    }
+    text = "The exact SKU is CH 620 grey, quantity 5."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Before I prepare the quotation, please confirm the "
+                        "exact catalog item or SKU for: 5 x CH 620."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run_dialogue_kernel.return_value = DialogueKernelResult(
+        decision=DialogueDecision(
+            action="ask_followup",
+            flow="product_selection",
+            response_text=(
+                "I have the product reference. Please confirm the quantity for "
+                "each item so I can continue accurately."
+            ),
+            handled=True,
+            side_effects_allowed=False,
+        ),
+        state=DialogueState(),
+        should_use_kernel=True,
+    )
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        if candidate.item_candidate == "CH 620 grey" and candidate.quantity == 5:
+            return "CH 620 grey"
+        return None
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert response.model == "mock-model|quote-resume-missing-details"
+    assert "company" in response.text.lower()
+    assert "delivery address" in response.text.lower()
+    assert conv.metadata_["pending_quote_selection"] == {
+        "source": "exact_quote",
+        "items": [{"sku": "CH 620 grey", "quantity": 5}],
+        "unresolved_items": [],
+    }
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["status"] == "collecting_details"
+    assert [(line["sku"], line["quantity"]) for line in quote_frame["lines"]] == [
+        ("CH 620 grey", 5)
+    ]
+    mock_create_quotation.assert_not_awaited()
     mock_run.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
