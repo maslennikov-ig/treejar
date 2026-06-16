@@ -8676,6 +8676,143 @@ async def test_process_message_missing_quantity_reference_then_bare_number_resol
     mock_notify_manager.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_kernel_quantity_prompt_stores_order_runtime_frame(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Victor Quantity"
+    conv.language = "en"
+    first_text = (
+        "Hi Noor, I need CH 140. Customer: Victor Quantity. Individual purchase."
+    )
+    first_assistant = (
+        "Hello, I'm Noor from Treejar.\n\n"
+        "I have the product reference. Please confirm the quantity for each item "
+        "so I can continue accurately."
+    )
+    second_text = "2"
+    mock_build_history.side_effect = [
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+        ],
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=first_text)]),
+            ModelResponse(parts=[TextPart(content=first_assistant)]),
+            ModelRequest(parts=[UserPromptPart(content=second_text)]),
+        ],
+    ]
+
+    async def get_system_config_side_effect(
+        _db: object,
+        key: str,
+        default: object,
+    ) -> object:
+        if key == "openrouter_model_main":
+            return "mock-model"
+        if key == "dialogue_kernel_trace_enabled":
+            return "true"
+        if key == "dialogue_kernel_mode":
+            return "enforce"
+        if key == "dialogue_kernel_enforced_flows":
+            return "product_selection"
+        return default
+
+    mock_get_system_config.side_effect = get_system_config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_search_behavior_rules.return_value = []
+
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH-140",
+        zoho_item_id="zoho-ch-140",
+        name_en="SkyLand CH 140 Executive Office Chair Black",
+        description_en="SkyLand CH 140 Executive Office Chair Black",
+        price=450.0,
+        currency="AED",
+        stock=20,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = product
+    execute_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": "CH-140",
+        "stock_on_hand": 20,
+        "rate": 450.0,
+        "currency_code": "AED",
+    }
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=first_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "dialogue-kernel|product_selection"
+    quantity_frame = conv.metadata_["order_runtime"]["pending_question_frame"]
+    assert quantity_frame["question_kind"] == "quantity"
+    assert quantity_frame["source_refs"][0]["source_text"] == "CH 140"
+
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=second_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert second_response.model == "mock-model|selection-confirmation"
+    assert "what do you need" not in second_response.text.lower()
+    assert "CH 140" in second_response.text
+    assert "Quantity: 2" in second_response.text
+    pending_quote = conv.metadata_["pending_quote_selection"]
+    assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
+        ("CH-140", 2)
+    ]
+    mock_run.assert_not_awaited()
+    mock_search_knowledge.assert_not_awaited()
+    mock_search_behavior_rules.assert_not_awaited()
+    mock_notify_manager.assert_not_awaited()
+
+
 def test_pending_question_frame_selection_preserves_snapshot_context_lines() -> None:
     frame = engine_module.PendingQuestionFrame.model_validate(
         {

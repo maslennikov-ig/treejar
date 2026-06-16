@@ -3119,6 +3119,40 @@ async def _store_pending_question_frame(
         )
 
 
+async def _store_kernel_quantity_prompt_frame(
+    db: AsyncSession,
+    conversation: Conversation,
+    *,
+    combined_text: str,
+    masked_text: str,
+    response_text: str,
+) -> None:
+    if not _response_asks_sku_quantity(response_text):
+        return
+
+    missing_quantity_runtime_result = _missing_quantity_order_runtime_result(
+        combined_text
+    )
+    if missing_quantity_runtime_result is None and masked_text != combined_text:
+        missing_quantity_runtime_result = _missing_quantity_order_runtime_result(
+            masked_text
+        )
+
+    frame = (
+        missing_quantity_runtime_result.state.pending_question_frame
+        if missing_quantity_runtime_result is not None
+        else None
+    )
+    if frame is None:
+        references = _extract_missing_quantity_product_references(combined_text)
+        if not references and masked_text != combined_text:
+            references = _extract_missing_quantity_product_references(masked_text)
+        frame = _pending_question_frame_from_references(references)
+
+    if frame is not None:
+        await _store_pending_question_frame(db, conversation, frame)
+
+
 async def _clear_pending_question_frame(
     db: AsyncSession,
     conversation: Conversation,
@@ -10743,6 +10777,14 @@ async def process_message(
                 if isinstance(customer_type, str) and customer_type.strip():
                     quote_details["customer_type"] = customer_type.strip()
                 await _store_extracted_quote_customer_details(db, conv, quote_details)
+        if dialogue_kernel_result.decision.flow == "product_selection":
+            await _store_kernel_quantity_prompt_frame(
+                db,
+                conv,
+                combined_text=combined_text,
+                masked_text=masked_text,
+                response_text=dialogue_kernel_result.decision.response_text or "",
+            )
         return _build_static_response(
             dialogue_kernel_result.decision.response_text or "",
             f"dialogue-kernel|{dialogue_kernel_result.decision.flow}",
