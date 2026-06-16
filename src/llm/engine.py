@@ -2701,7 +2701,33 @@ def _quantity_from_prior_product_request(recent_history: list[str] | None) -> in
         }
         if len(quantities) == 1:
             return next(iter(quantities))
+    assistant_quantity = _quantity_from_last_assistant_option_prompt(recent_history)
+    if assistant_quantity is not None:
+        return assistant_quantity
     return 1
+
+
+def _quantity_from_last_assistant_option_prompt(
+    recent_history: list[str] | None,
+) -> int | None:
+    last_assistant = _normalize_text(_last_assistant_message(recent_history))
+    if not last_assistant:
+        return None
+    patterns = (
+        r"\bfor\s+your\s+(?P<quantity>\d{1,3})\s+"
+        r"(?:chairs?|tables?|units?|items?|pcs|pieces)\b",
+        r"\bfor\s+(?P<quantity>\d{1,3})\s+"
+        r"(?:chairs?|tables?|units?|items?|pcs|pieces)\b",
+        r"\bquote\s+for\s+(?P<quantity>\d{1,3})\s+units?\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, last_assistant)
+        if match is None:
+            continue
+        quantity = int(match.group("quantity"))
+        if quantity > 0:
+            return quantity
+    return None
 
 
 def _numbered_sku_options_from_assistant(

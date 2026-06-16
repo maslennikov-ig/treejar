@@ -41,6 +41,10 @@ behavior.
   option list fell through to `verified-policy-clarify`. Added a context-gated
   bare-ordinal parser path that only activates when the last assistant message
   contains numbered SKU options.
+- During second production E2E after `32baf76`, the same route stayed in
+  `selection-confirmation` but lost the original quantity after name-gate and
+  defaulted to quantity 1. Added a prompt-quantity fallback from the last
+  numbered SKU option prompt.
 
 ## Verification
 
@@ -51,6 +55,9 @@ behavior.
   - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_confirms_bare_ordinal_from_prior_sku_options -q`
     failed with `mock-model|verified-policy-clarify`, matching the production
     E2E gap for `2` after numbered SKU options.
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_bare_ordinal_keeps_option_prompt_quantity_after_name_gate -q`
+    failed because the route stayed in `selection-confirmation` but returned
+    quantity 1 instead of the option prompt's quantity 2.
 - GREEN / targeted:
   - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_order_quote_route_selection_is_adapter_owned -q`
     -> 1 passed.
@@ -60,6 +67,8 @@ behavior.
     -> 339 passed.
   - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_confirms_bare_ordinal_from_prior_sku_options tests/test_llm_engine.py::test_process_message_confirms_ordinal_selection_from_prior_sku_options tests/test_llm_engine.py::test_ordinal_option_from_reply_supports_more_than_two_options -q`
     -> 3 passed after the bare-ordinal fix.
+  - `OPENROUTER_API_KEY=test uv run pytest tests/test_llm_engine.py::test_process_message_bare_ordinal_keeps_option_prompt_quantity_after_name_gate tests/test_llm_engine.py::test_process_message_confirms_bare_ordinal_from_prior_sku_options tests/test_llm_engine.py::test_process_message_confirms_ordinal_selection_from_prior_sku_options tests/test_llm_engine.py::test_ordinal_option_from_reply_supports_more_than_two_options -q`
+    -> 4 passed after the quantity preservation fix.
 - Full local gates:
   - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` -> passed.
   - `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` -> passed.
@@ -74,6 +83,8 @@ behavior.
     1413 passed, 19 skipped.
   - Final post-bare-ordinal-fix `OPENROUTER_API_KEY=test uv run pytest tests/ -q`
     passed: 1414 passed, 19 skipped.
+  - Final post-quantity-fix `OPENROUTER_API_KEY=test uv run pytest tests/ -q`
+    passed: 1415 passed, 19 skipped.
 - Stage closeout:
   - `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-route-adapter`
     passed: artifact validation OK, process verification OK, project-index/docs
@@ -92,9 +103,11 @@ behavior.
 ## Delivery
 
 Initial delivery commit `ab865b3` reached production and passed marker/smoke, but
-live E2E found the bare `2` selection-confirmation gap above. Second delivery is
-pending: commit, push to `main`, GitHub Actions/deploy monitoring, production
-marker/smoke, live order/quote E2E retry, and synthetic data cleanup.
+live E2E found the bare `2` selection-confirmation gap above. Second delivery
+commit `32baf76` reached production and passed marker/smoke, but live E2E found
+the quantity-preservation gap above. Third delivery is pending: commit, push to
+`main`, GitHub Actions/deploy monitoring, production marker/smoke, live
+order/quote E2E retry, and synthetic data cleanup.
 
 ## Explicit Defers
 

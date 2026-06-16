@@ -7759,6 +7759,86 @@ async def test_process_message_confirms_bare_ordinal_from_prior_sku_options(
 
 
 @pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_bare_ordinal_keeps_option_prompt_quantity_after_name_gate(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Victor Route Final"
+    conv.metadata_ = {"quote_customer_details": {"name": "Victor Route Final"}}
+    text = "2\n[smoke:a89fdc4a]"
+    name_gate_reply = "Victor Route Final"
+    previous_assistant = (
+        "There are several variants for your 2 chairs. Here are the options:\n\n"
+        "Option 1: Skyland Operative Chair CH 616 NEW black\n"
+        "- SKU: CH 616 NEW black\n"
+        "- Price: 295.00 AED each\n"
+        "- Stock: 101 available\n\n"
+        "Option 2: SkyLand Workstation Chair CH 616 black\n"
+        "- SKU: CH 616 black\n"
+        "- Price: 220.00 AED each\n"
+        "- Stock: 3 available\n\n"
+        "Which option would you prefer? I can prepare a formal quotation after that."
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=name_gate_reply)]),
+        ModelResponse(parts=[TextPart(content=previous_assistant)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    ch616_product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 black",
+        zoho_item_id="zoho-ch-616-black",
+        name_en="SkyLand Workstation Chair CH 616 Black",
+        price=220.0,
+        currency="AED",
+        stock=3,
+        attributes={},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = []
+    execute_result.scalar_one_or_none.return_value = ch616_product
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": "CH 616 black",
+        "stock_on_hand": 3,
+        "rate": 220.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|selection-confirmation"
+    assert "Quantity: 2" in response.text
+    pending = conv.metadata_["pending_quote_selection"]
+    assert [(item["sku"], item["quantity"]) for item in pending["items"]] == [
+        ("CH 616 black", 2)
+    ]
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
