@@ -1,7 +1,9 @@
+import ast
 import datetime
 import json
 import uuid
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,6 +38,34 @@ from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 from src.schemas.product import ProductRead
 from src.services.proposal_followup import record_proposal_sent
+
+
+def test_order_quote_create_quotation_calls_are_adapter_owned() -> None:
+    source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+
+    direct_call_owners: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "create_quotation":
+            continue
+
+        owner = node
+        while owner in parents and not isinstance(
+            parents[owner],
+            (ast.FunctionDef, ast.AsyncFunctionDef),
+        ):
+            owner = parents[owner]
+        function = parents.get(owner)
+        if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            direct_call_owners.append(function.name)
+
+    assert direct_call_owners == ["_execute_order_quote_side_effect"]
 
 
 @pytest.fixture

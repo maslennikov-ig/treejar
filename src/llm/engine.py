@@ -8607,6 +8607,51 @@ class QuotationItem:
     quantity: int
 
 
+@dataclass(frozen=True)
+class OrderQuoteSideEffectPlan:
+    items: list[QuotationItem]
+    response_deps: SalesDeps
+    prompt: str
+    model_suffix: str
+    build_response: Callable[..., LLMResponse]
+    clear_verified_policy_repair_state: Callable[[], Any]
+    clear_pending_quote_selection_on_created: bool = True
+    clear_quote_intent_frame_on_created: bool = False
+
+
+async def _execute_order_quote_side_effect(
+    *,
+    db: AsyncSession,
+    conversation: Conversation,
+    dynamic_model: OpenAIChatModel,
+    db_model_main: str,
+    plan: OrderQuoteSideEffectPlan,
+) -> LLMResponse:
+    from pydantic_ai.usage import RunUsage
+
+    quote_ctx = RunContext(
+        deps=plan.response_deps,
+        retry=0,
+        messages=[],
+        prompt=plan.prompt,
+        model=dynamic_model,
+        usage=RunUsage(),
+    )
+    quote_text = await create_quotation(quote_ctx, plan.items)
+    if plan.response_deps.quotation_created:
+        if plan.clear_pending_quote_selection_on_created:
+            await _clear_pending_quote_selection(db, conversation)
+        if plan.clear_quote_intent_frame_on_created:
+            await _clear_quote_intent_frame(db, conversation)
+    await plan.clear_verified_policy_repair_state()
+    return plan.build_response(
+        quote_text,
+        f"{db_model_main}|{plan.model_suffix}",
+        response_deps=plan.response_deps,
+        allow_product_media=False,
+    )
+
+
 @sales_agent.tool
 async def create_quotation(
     ctx: RunContext[SalesDeps],
@@ -10136,20 +10181,10 @@ async def process_message(
                     allow_product_media=False,
                 )
 
-            from pydantic_ai.usage import RunUsage
-
             sales_order_deps = replace(
                 deps,
                 tool_mode="exact_quote",
                 runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
-            )
-            sales_order_ctx = RunContext(
-                deps=sales_order_deps,
-                retry=0,
-                messages=[],
-                prompt=masked_text,
-                model=dynamic_model,
-                usage=RunUsage(),
             )
             await _store_pending_sales_order_quote(
                 db,
@@ -10157,18 +10192,21 @@ async def process_message(
                 resolved_items=resolved_quote_items,
                 unresolved_items=(),
             )
-            quote_text = await create_quotation(
-                sales_order_ctx,
-                resolved_quote_items,
-            )
-            if sales_order_deps.quotation_created:
-                await _clear_pending_quote_selection(db, conv)
-            await _clear_verified_policy_repair_state()
-            return _build_static_response(
-                quote_text,
-                f"{db_model_main}|sales-order-quote",
-                response_deps=sales_order_deps,
-                allow_product_media=False,
+            return await _execute_order_quote_side_effect(
+                db=db,
+                conversation=conv,
+                dynamic_model=dynamic_model,
+                db_model_main=db_model_main,
+                plan=OrderQuoteSideEffectPlan(
+                    items=resolved_quote_items,
+                    response_deps=sales_order_deps,
+                    prompt=masked_text,
+                    model_suffix="sales-order-quote",
+                    build_response=_build_static_response,
+                    clear_verified_policy_repair_state=(
+                        _clear_verified_policy_repair_state
+                    ),
+                ),
             )
 
         pending_sales_order_quote = _active_pending_quote_selection_from_conversation(
@@ -10232,20 +10270,10 @@ async def process_message(
                     allow_product_media=False,
                 )
 
-            from pydantic_ai.usage import RunUsage
-
             sales_order_resume_deps = replace(
                 deps,
                 tool_mode="exact_quote",
                 runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
-            )
-            sales_order_resume_ctx = RunContext(
-                deps=sales_order_resume_deps,
-                retry=0,
-                messages=[],
-                prompt=masked_text,
-                model=dynamic_model,
-                usage=RunUsage(),
             )
             resolved_sales_order_items = [
                 *existing_quote_items,
@@ -10257,18 +10285,21 @@ async def process_message(
                 resolved_items=resolved_sales_order_items,
                 unresolved_items=(),
             )
-            quote_text = await create_quotation(
-                sales_order_resume_ctx,
-                resolved_sales_order_items,
-            )
-            if sales_order_resume_deps.quotation_created:
-                await _clear_pending_quote_selection(db, conv)
-            await _clear_verified_policy_repair_state()
-            return _build_static_response(
-                quote_text,
-                f"{db_model_main}|sales-order-quote-resume",
-                response_deps=sales_order_resume_deps,
-                allow_product_media=False,
+            return await _execute_order_quote_side_effect(
+                db=db,
+                conversation=conv,
+                dynamic_model=dynamic_model,
+                db_model_main=db_model_main,
+                plan=OrderQuoteSideEffectPlan(
+                    items=resolved_sales_order_items,
+                    response_deps=sales_order_resume_deps,
+                    prompt=masked_text,
+                    model_suffix="sales-order-quote-resume",
+                    build_response=_build_static_response,
+                    clear_verified_policy_repair_state=(
+                        _clear_verified_policy_repair_state
+                    ),
+                ),
             )
 
         if is_first_turn and is_high_confidence_first_turn_order(masked_text):
@@ -10366,8 +10397,6 @@ async def process_message(
                     allow_product_media=False,
                 )
 
-            from pydantic_ai.usage import RunUsage
-
             exact_quote_items = [
                 QuotationItem(
                     sku=resolved_exact_sku,
@@ -10392,27 +10421,22 @@ async def process_message(
                     allow_product_media=False,
                 )
 
-            exact_quote_ctx = RunContext(
-                deps=exact_quote_deps,
-                retry=0,
-                messages=[],
-                prompt=masked_text,
-                model=dynamic_model,
-                usage=RunUsage(),
-            )
-            quote_text = await create_quotation(
-                exact_quote_ctx,
-                exact_quote_items,
-            )
-            if exact_quote_deps.quotation_created:
-                await _clear_pending_quote_selection(db, conv)
-                await _clear_quote_intent_frame(db, conv)
-            await _clear_verified_policy_repair_state()
-            return _build_static_response(
-                quote_text,
-                f"{db_model_main}|exact-quote-deterministic",
-                response_deps=exact_quote_deps,
-                allow_product_media=False,
+            return await _execute_order_quote_side_effect(
+                db=db,
+                conversation=conv,
+                dynamic_model=dynamic_model,
+                db_model_main=db_model_main,
+                plan=OrderQuoteSideEffectPlan(
+                    items=exact_quote_items,
+                    response_deps=exact_quote_deps,
+                    prompt=masked_text,
+                    model_suffix="exact-quote-deterministic",
+                    build_response=_build_static_response,
+                    clear_verified_policy_repair_state=(
+                        _clear_verified_policy_repair_state
+                    ),
+                    clear_quote_intent_frame_on_created=True,
+                ),
             )
 
         quote_details_purchase_selection = None
@@ -10587,8 +10611,6 @@ async def process_message(
                 ]
                 await _store_pending_exact_quote(db, conv, resolved_exact_quote_items)
 
-                from pydantic_ai.usage import RunUsage
-
                 missing_required = _quote_missing_required_details(
                     deps,
                     resolved_exact_quote_items,
@@ -10609,26 +10631,21 @@ async def process_message(
                     tool_mode="exact_quote",
                     runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
                 )
-                quote_resume_ctx = RunContext(
-                    deps=quote_resume_deps,
-                    retry=0,
-                    messages=[],
-                    prompt=masked_text,
-                    model=dynamic_model,
-                    usage=RunUsage(),
-                )
-                quote_text = await create_quotation(
-                    quote_resume_ctx,
-                    resolved_exact_quote_items,
-                )
-                if quote_resume_deps.quotation_created:
-                    await _clear_pending_quote_selection(db, conv)
-                await _clear_verified_policy_repair_state()
-                return _build_static_response(
-                    quote_text,
-                    f"{db_model_main}|quote-resume",
-                    response_deps=quote_resume_deps,
-                    allow_product_media=False,
+                return await _execute_order_quote_side_effect(
+                    db=db,
+                    conversation=conv,
+                    dynamic_model=dynamic_model,
+                    db_model_main=db_model_main,
+                    plan=OrderQuoteSideEffectPlan(
+                        items=resolved_exact_quote_items,
+                        response_deps=quote_resume_deps,
+                        prompt=masked_text,
+                        model_suffix="quote-resume",
+                        build_response=_build_static_response,
+                        clear_verified_policy_repair_state=(
+                            _clear_verified_policy_repair_state
+                        ),
+                    ),
                 )
             if _should_resume_pending_quote_selection(
                 combined_text=combined_text,
@@ -10646,8 +10663,6 @@ async def process_message(
                         f"{db_model_main}|quote-resume-missing-items",
                     )
 
-                from pydantic_ai.usage import RunUsage
-
                 missing_required = _quote_missing_required_details(
                     deps,
                     list(quote_items),
@@ -10668,26 +10683,21 @@ async def process_message(
                     tool_mode="exact_quote",
                     runtime_directives=EXACT_QUOTE_PASS_2_DIRECTIVES,
                 )
-                quote_resume_ctx = RunContext(
-                    deps=quote_resume_deps,
-                    retry=0,
-                    messages=[],
-                    prompt=masked_text,
-                    model=dynamic_model,
-                    usage=RunUsage(),
-                )
-                quote_text = await create_quotation(
-                    quote_resume_ctx,
-                    list(quote_items),
-                )
-                if quote_resume_deps.quotation_created:
-                    await _clear_pending_quote_selection(db, conv)
-                await _clear_verified_policy_repair_state()
-                return _build_static_response(
-                    quote_text,
-                    f"{db_model_main}|quote-resume",
-                    response_deps=quote_resume_deps,
-                    allow_product_media=False,
+                return await _execute_order_quote_side_effect(
+                    db=db,
+                    conversation=conv,
+                    dynamic_model=dynamic_model,
+                    db_model_main=db_model_main,
+                    plan=OrderQuoteSideEffectPlan(
+                        items=list(quote_items),
+                        response_deps=quote_resume_deps,
+                        prompt=masked_text,
+                        model_suffix="quote-resume",
+                        build_response=_build_static_response,
+                        clear_verified_policy_repair_state=(
+                            _clear_verified_policy_repair_state
+                        ),
+                    ),
                 )
             if _last_assistant_asked_quote_customer_details(deps.recent_history):
                 quote_items = _active_quote_items(conv, pending_quote_selection)
