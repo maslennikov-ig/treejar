@@ -108,6 +108,14 @@ _ASSISTANT_GREETING_PATTERN = re.compile(
     r"\s+(?:noor|siyyad|treejar|bot|assistant)\s*$",
     re.IGNORECASE,
 )
+_GREETING_ONLY_PATTERN = re.compile(
+    r"^\s*(?:hi|hello|hey|dear|good\s+morning|good\s+afternoon|good\s+evening)\s*$",
+    re.IGNORECASE,
+)
+_SYNTHETIC_TEST_MARKER_PATTERN = re.compile(
+    r"\s*\[(?:smoke:[^\]]+|e2emarker[^\]]+|tj-[a-z0-9_-]*\d{8,}[a-z0-9_-]*)\]\s*",
+    re.IGNORECASE,
+)
 _PRODUCT_OR_REQUEST_ADDRESS_BLOCKER_PATTERN = re.compile(
     r"\b(?:need|needs|want|wants|would\s+like|looking\s+for|quote|quotation|"
     r"chair|chairs|desk|desks|table|tables|workstation|workstations|sku|"
@@ -263,6 +271,7 @@ async def extract_customer_facts(
 ) -> CustomerFactExtractionResult:
     """Extract deterministic facts first, then optionally call a fast model."""
 
+    message_text = _strip_synthetic_test_markers(message_text)
     deterministic_facts = _extract_deterministic_facts(
         message_text,
         source_message_id=source_message_id,
@@ -746,6 +755,8 @@ def _compact_name_part_candidate(value: str) -> str | None:
     candidates = [segment.strip() for segment in re.split(r"[.!?]", value)]
     candidates.append(value.strip())
     for candidate in reversed(candidates):
+        if _GREETING_ONLY_PATTERN.fullmatch(candidate):
+            continue
         if _ASSISTANT_GREETING_PATTERN.fullmatch(candidate):
             continue
         if _LABELED_NAME_PATTERN.search(candidate):
@@ -869,6 +880,10 @@ def _looks_like_address(value: str) -> bool:
 def _clean_value(value: str) -> str:
     cleaned = re.sub(r"\s+", " ", value).strip(" \t\r\n:;-")
     return cleaned.rstrip(".")
+
+
+def _strip_synthetic_test_markers(text: str) -> str:
+    return _SYNTHETIC_TEST_MARKER_PATTERN.sub(" ", text).strip()
 
 
 def _budget_value(match: re.Match[str]) -> dict[str, Any]:

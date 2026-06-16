@@ -125,6 +125,45 @@ async def test_deterministic_does_not_treat_product_delivery_need_as_address() -
 
 
 @pytest.mark.asyncio
+async def test_deterministic_ignores_synthetic_markers_for_profile_facts() -> None:
+    result = await extract_customer_facts(
+        "Hi, I need a quotation: 5 x CH 620\n[e2emarker20260616103817sales_order1]",
+        use_fast_model=False,
+    )
+
+    assert _facts_by_key(result, "customer.name") == []
+    assert _facts_by_key(result, "customer.phone") == []
+    order_items = _fact_by_key(result, "order.items")
+    assert order_items.value == [
+        {
+            "catalog_ref": "CH-620",
+            "quantity": 5,
+            "source_text": "CH 620",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_deterministic_does_not_use_greeting_as_compact_name_with_phone() -> None:
+    result = await extract_customer_facts(
+        "Hi, I need a quotation for 5 x CH 620. Phone +971501234567",
+        use_fast_model=False,
+    )
+
+    assert _facts_by_key(result, "customer.name") == []
+    phone = _fact_by_key(result, "customer.phone")
+    assert phone.value == "+971501234567"
+    order_items = _fact_by_key(result, "order.items")
+    assert order_items.value == [
+        {
+            "catalog_ref": "CH-620",
+            "quantity": 5,
+            "source_text": "CH 620",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_deterministic_extracts_repeatable_order_items_snapshot() -> None:
     result = await extract_customer_facts(
         "I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs",

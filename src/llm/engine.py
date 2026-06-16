@@ -144,7 +144,7 @@ NAME_GATE_PENDING_REQUEST_KEY = "name_gate_pending_request"
 MAX_NAME_GATE_PENDING_REQUEST_CHARS = 600
 LAST_APPLIED_BOT_RULES_KEY = "last_applied_bot_rules"
 BOT_TEST_MARKER_RE = re.compile(
-    r"\s*\[(?:smoke:[^\]]+|tj-[a-z0-9_-]*\d{8,}[a-z0-9_-]*)\]\s*",
+    r"\s*\[(?:smoke:[^\]]+|e2emarker[^\]]+|tj-[a-z0-9_-]*\d{8,}[a-z0-9_-]*)\]\s*",
     re.I,
 )
 PII_PLACEHOLDER_RE = re.compile(r"\[PII-[0-9A-Fa-f]+\]")
