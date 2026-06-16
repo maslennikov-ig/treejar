@@ -11,7 +11,7 @@ Current branch: `codex/tj-order-route-adapter`
 - Local full gates passed after the single stock-option quote-resume fix: ruff check, ruff format check, mypy, and `pytest tests/ -q` with 1418 passed, 19 skipped.
 - Stage closeout passed again for `tj-order-cutover-route-adapter` after the single stock-option quote-resume fix.
 - Fourth delivery commit `4d68f78` reached production and passed marker/smoke; live E2E verified name-gate resume, bare `2` quantity preservation, exact-quote repair/resume, SKU variant, all-details first turn, and pending quantity/reference resume, then exposed the single stock/price option short follow-up gap now fixed locally.
-- Fifth delivery to `main`, GitHub Actions/deploy monitoring, production marker/smoke, live order/quote E2E retry, and synthetic data cleanup are pending.
+- Fifth delivery commit `ec8dd61` reached production via CI run `27622142673`; production marker matched, health/`verify_api.py` smoke passed, final live order/quote E2E matrix passed, and scoped PostgreSQL/Redis synthetic cleanup completed.
 - Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
 
 ## Verification
@@ -22,12 +22,12 @@ Current branch: `codex/tj-order-route-adapter`
 - `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-route-adapter` passed.
 
 ## Next recommended
-Next stage id: `tj-order-cutover-route-adapter-delivery`
-Recommended action: commit the single stock-option quote-resume fix, push to `main`, wait for GitHub Actions/deploy, verify production marker/smoke, rerun the requested live order/quote E2E matrix, and clean synthetic PostgreSQL/Redis data.
+Next stage id: `tester-order-quote-handoff`
+Recommended action: hand the order/quote route adapter delivery to the tester with production evidence from commit `ec8dd61` / CI run `27622142673`.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-route-adapter`; read `.codex/stages/tj-order-cutover-route-adapter/summary.md`, Beads `tj-order-cutover.10`, git status/diff, and do not add GitHub issue comments without explicit authorization.
+Use $orchestrator-stage only if more engineering work is needed. For tester handoff, read `.codex/stages/tj-order-cutover-route-adapter/summary.md` and Beads `tj-order-cutover.10`; production is on `ec8dd612dfb0a44eb41104bd198a5936f91c847d` from CI run `27622142673`.
 
 ## Explicit defers
-- No in-scope defers remain for `tj-order-cutover.10` after local verification.
+- No in-scope defers remain for `tj-order-cutover.10` after production verification and cleanup.
 - GitHub issue #42 second-occurrence comment still lacks a separate production evidence reply; adding one is externally visible and was not separately authorized.

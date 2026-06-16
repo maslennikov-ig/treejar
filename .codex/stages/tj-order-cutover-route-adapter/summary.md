@@ -1,7 +1,7 @@
 # Stage tj-order-cutover-route-adapter: Order/Quote Route Adapter Extraction
 
 Updated: 2026-06-16
-Status: stage-closeout passed after single stock-option quote-resume fix, delivery pending
+Status: delivered to production; live E2E and synthetic cleanup complete
 Branch: `codex/tj-order-route-adapter`
 Worktree: `/home/me/code/treejar/.worktrees/tj-order-route-adapter`
 Beads: `tj-order-cutover.10` closed
@@ -154,6 +154,45 @@ the single stock-option short follow-up gap above. Fifth delivery is pending:
 commit, push to `main`, GitHub
 Actions/deploy monitoring, production marker/smoke, live order/quote E2E retry,
 and synthetic data cleanup.
+
+Final delivery commit `ec8dd61` reached production via CI run `27622142673`.
+Production marker matched
+`ec8dd612dfb0a44eb41104bd198a5936f91c847d`, `/api/v1/health` returned OK,
+and `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+passed 8/0.
+
+Final live E2E run `20260616134948` passed:
+
+- name-gate resume and repeated bare `2` after SKU option prompt:
+  conversation `762e0847-7081-4e46-9df6-e6fa2bb08381`, route
+  `selection-confirmation`, `CH 616 black`, quantity 2.
+- exact-quote SKU repair plus quote-detail resume:
+  conversation `e3b0bded-d293-4abc-8812-3a0964eaf10e`, routes
+  `exact-quote-clarify-item`, `quote-resume-missing-details`, `quote-resume`,
+  quotation `Fr3415`.
+- SKU variant all-details quote:
+  conversation `d3f121a2-dfba-413a-b33a-a0dc8a74c9ee`, route
+  `exact-quote-deterministic`, quotation `Fr3416`.
+- all-details first turn:
+  conversation `559f649f-4a4f-46a2-9404-fffa460fc743`, route
+  `exact-quote-deterministic`, quotation `Fr3417`.
+- pending quantity/reference path:
+  conversation `c12cbddf-6307-4245-aad1-056ca2610005`, quantity prompt from
+  `dialogue-kernel|product_selection`, follow-up `2` returned
+  `selection-confirmation`, `CH 140 black`, quantity 2.
+- short follow-up after long context:
+  conversation `e0f59d01-ae03-4458-a00e-9bb2c4c0126c`, first route
+  `stock-price-options`, follow-up `Yes prepare the quotation` returned
+  `quote-resume`, quotation `Fr3418`.
+
+Production synthetic cleanup completed after E2E:
+
+- PostgreSQL deleted 22 synthetic conversations, 92 messages, 46 outbound
+  audits, 119 customer facts, 22 order memories, 22 customer profiles, and 1
+  escalation for phones matching `%tj-route-adapter%` or `+70016416123436`.
+- Redis deleted 37 scoped keys matching the same synthetic markers.
+- Post-cleanup verification returned 0 matching conversations, customer
+  profiles, joined messages, and Redis keys.
 
 ## Explicit Defers
 

@@ -145,10 +145,27 @@ Initial delivery reached production, but live E2E found the bare ordinal gap.
 Second delivery reached production, but live E2E found the quantity-preservation
 gap. Third delivery reached production, but live E2E found the dialogue-kernel
 pending quantity frame gap. Fourth delivery reached production, but live E2E
-found the single stock-option short follow-up gap. Fifth delivery is pending
-commit, direct push to
-`main`, CI/deploy monitoring, production marker/smoke, live order/quote E2E
-retry, and synthetic production data cleanup.
+found the single stock-option short follow-up gap. Fifth delivery commit
+`ec8dd61` reached production via CI run `27622142673`; production marker matched
+`ec8dd612dfb0a44eb41104bd198a5936f91c847d`, health and `verify_api.py` passed,
+and the final live order/quote E2E matrix passed.
+
+Final live E2E run `20260616134948` covered:
+
+- name-gate resume, selected option `2`, and preserved quantity 2;
+- exact-quote SKU repair followed by quote-detail resume, quotation `Fr3415`;
+- SKU variant all-details quote, quotation `Fr3416`;
+- all-details first turn, quotation `Fr3417`;
+- dialogue-kernel pending quantity/reference resume, `CH 140 black` quantity 2;
+- short follow-up after long stock/price context, route `quote-resume`,
+  quotation `Fr3418`.
+
+Scoped production cleanup completed after E2E. PostgreSQL deleted 22 synthetic
+conversations, 92 messages, 46 outbound audits, 119 customer facts, 22 order
+memories, 22 customer profiles, and 1 escalation for phones matching
+`%tj-route-adapter%` or `+70016416123436`; Redis deleted 37 scoped keys. A
+post-cleanup check returned 0 matching conversations, profiles, joined messages,
+and Redis keys.
 
 # Risks / Follow-ups / Explicit Defers
 
