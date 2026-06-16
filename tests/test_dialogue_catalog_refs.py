@@ -98,6 +98,16 @@ def test_extract_catalog_references_finds_supported_sku_and_model_refs() -> None
     ]
 
 
+def test_extract_catalog_references_ignores_sku_like_email_local_parts() -> None:
+    refs = extract_catalog_references(
+        "I need 2 CH 616 black chairs, email cutover-all-20260616094954@example.com"
+    )
+
+    assert [(ref.normalized, ref.quantity, ref.raw) for ref in refs] == [
+        ("CH-616", 2, "CH 616")
+    ]
+
+
 def test_resolve_catalog_references_prefers_sku_over_model_name() -> None:
     products = [
         SimpleNamespace(sku="CH-616", name_en="Chair 616", is_active=True),

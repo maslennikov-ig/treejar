@@ -13040,6 +13040,7 @@ async def test_process_message_sales_order_resolved_followup_then_brief_creates_
             "items": [{"sku": "CH 620 grey", "quantity": 5}],
             "unresolved_items": [],
         }
+        assert "quote_intent_frame" not in conv.metadata_
 
         second_response = await process_message(
             conversation_id=conv.id,
@@ -13121,6 +13122,7 @@ async def test_process_message_first_turn_name_gate_stores_sales_order_quote_con
     assert quote_frame["unresolved_items"] == [
         {"sku": "CH-620", "quantity": 5, "item_candidate": "CH 620"}
     ]
+    assert "quote_intent_frame" not in conv.metadata_
     mock_create_quotation.assert_not_awaited()
     mock_run.assert_not_awaited()
     mock_notify.assert_not_awaited()

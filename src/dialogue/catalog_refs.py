@@ -156,6 +156,8 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
     matches: list[tuple[int, int, str, re.Match[str] | None]] = []
     for pattern in (_MODEL_RE, _NUMERIC_SKU_RE, _ALPHA_SKU_RE):
         for match in pattern.finditer(normalized_text):
+            if _inside_email_like_token(normalized_text, match.start(), match.end()):
+                continue
             if pattern is _ALPHA_SKU_RE:
                 prefix = match.group("prefix").translate(_HOMOGLYPHS).upper()
                 if prefix in _ALPHA_SKU_PREFIX_STOPWORDS:
@@ -191,6 +193,17 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
             )
         )
     return refs
+
+
+def _inside_email_like_token(text: str, start: int, end: int) -> bool:
+    left = start
+    while left > 0 and not text[left - 1].isspace():
+        left -= 1
+    right = end
+    while right < len(text) and not text[right].isspace():
+        right += 1
+    token = text[left:right].strip(" \t\r\n,;:()[]{}<>\"'")
+    return "@" in token and "." in token
 
 
 def resolve_catalog_references(

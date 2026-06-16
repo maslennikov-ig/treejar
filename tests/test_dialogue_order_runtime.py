@@ -24,6 +24,23 @@ def test_order_runtime_selects_product_route_for_complete_order_lines() -> None:
     ]
 
 
+def test_order_runtime_ignores_sku_like_email_local_part() -> None:
+    result = run_order_runtime(
+        text=(
+            "Hi Noor, I need 2 CH 616 black chairs. My name is Victor Cutover, "
+            "email cutover-all-20260616094954@example.com"
+        ),
+        metadata={},
+    )
+
+    assert result.decision.route == "product_selection"
+    assert result.state.pending_question_frame is None
+    assert [
+        (line.catalog_ref, line.quantity, line.source_text, line.status, line.sku)
+        for line in result.state.lines
+    ] == [("CH-616", 2, "CH 616 black chairs", "unresolved", "CH-616")]
+
+
 def test_order_runtime_trace_is_bounded_and_records_phase_latency() -> None:
     result = run_order_runtime(
         text="I need 2 CH 616 chairs",

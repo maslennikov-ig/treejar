@@ -10107,7 +10107,10 @@ async def process_message(
                 conv,
                 confirmed_quote_brief_address,
             )
-    if current_quote_intent_frame is not None:
+    if (
+        current_quote_intent_frame is not None
+        and pending_quote_selection_at_start is None
+    ):
         await _store_quote_intent_frame(db, conv, combined_text)
     if current_sales_memory_updates:
         await _store_sales_memory_updates(db, conv, current_sales_memory_updates)
