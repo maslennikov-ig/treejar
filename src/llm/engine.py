@@ -411,6 +411,27 @@ _BARE_QUANTITY_SKU_RE = re.compile(
     rf")(?=$|[^\w.-]|\.(?:\s|$|\[))",
     re.IGNORECASE,
 )
+_BARE_QUANTITY_SKU_SUFFIX_RE = re.compile(r"^\s+(?P<suffix>[^?.!,;\n\[]+)")
+_BARE_QUANTITY_SKU_SUFFIX_BOUNDARY_RE = re.compile(
+    r"\b(?:"
+    r"and|or|my\s+name|name\s*(?:is|:)|company|email|e-mail|phone|mobile|"
+    r"delivery|deliver|address|shipping|ship|contact"
+    r")\b",
+    re.IGNORECASE,
+)
+_BARE_QUANTITY_SKU_SUFFIX_STOPWORDS = frozenset(
+    {
+        "x",
+        "pcs",
+        "pc",
+        "piece",
+        "pieces",
+        "unit",
+        "units",
+        "qty",
+        "quantity",
+    }
+)
 _SKU_PRICE_PREFIX_STOPWORDS = frozenset(
     {
         "aed",
@@ -1193,6 +1214,39 @@ def _extract_sku_signal(text: str) -> str | None:
     return None
 
 
+def _extend_bare_quantity_sku_candidate(
+    text: str,
+    *,
+    sku_fragment: str,
+    match_end: int,
+) -> str:
+    item_candidate = " ".join(_normalize_sku_homoglyphs(sku_fragment).split())
+    suffix_match = _BARE_QUANTITY_SKU_SUFFIX_RE.match(text[match_end:])
+    if suffix_match is None:
+        return item_candidate
+
+    suffix = suffix_match.group("suffix")
+    suffix = _BARE_QUANTITY_SKU_SUFFIX_BOUNDARY_RE.split(suffix, maxsplit=1)[0]
+    suffix = " ".join(_normalize_sku_homoglyphs(suffix).split()).strip(" ,.;:-")
+    if not suffix:
+        return item_candidate
+
+    descriptor_tokens: list[str] = []
+    for token in suffix.split()[:4]:
+        cleaned = token.strip(" ,.;:-")
+        if not cleaned:
+            continue
+        if cleaned.casefold() in _BARE_QUANTITY_SKU_SUFFIX_STOPWORDS:
+            break
+        if re.fullmatch(r"\d{1,4}", cleaned):
+            break
+        descriptor_tokens.append(cleaned)
+
+    if not descriptor_tokens:
+        return item_candidate
+    return f"{item_candidate} {' '.join(descriptor_tokens)}"
+
+
 def _looks_like_named_model_sku(candidate: str) -> bool:
     match = re.fullmatch(
         r"([A-Z]{2,})[-\s]?(\d{2,8})",
@@ -1239,7 +1293,15 @@ def _extract_bare_quantity_sku_candidate(text: str) -> ExactQuoteCandidate | Non
         sku = _extract_sku_signal(sku_fragment)
         if sku is None:
             continue
-        item_candidate = " ".join(_normalize_sku_homoglyphs(sku_fragment).split())
+        if match.group("quantity_first"):
+            item_candidate = _extend_bare_quantity_sku_candidate(
+                normalized_text,
+                sku_fragment=sku_fragment,
+                match_end=match.end(),
+            )
+        else:
+            item_candidate = " ".join(_normalize_sku_homoglyphs(sku_fragment).split())
+        item_candidate = _clean_exact_quote_item_candidate(item_candidate)
         return ExactQuoteCandidate(
             quantity=int(quantity_raw),
             item_candidate=item_candidate,

@@ -6719,6 +6719,21 @@ def test_extract_exact_quote_candidate_accepts_bare_quantity_sku(
     assert candidate.sku == expected_sku
 
 
+def test_extract_exact_quote_candidate_preserves_sku_variant_after_bare_quantity() -> (
+    None
+):
+    candidate = extract_exact_quote_candidate(
+        "Please prepare a quote for 3 x CH 620 grey. "
+        "My name is Lilia All. Company QA All LLC. "
+        "Email all-20260616101028@example.com."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 3
+    assert candidate.sku == "CH-620"
+    assert candidate.item_candidate == "CH 620 grey"
+
+
 @pytest.mark.parametrize(
     ("raw_sku", "expected_sku"),
     [
