@@ -115,6 +115,16 @@ class QuoteFrame(BaseModel):
     def has_valid_lines(self) -> bool:
         return bool(self.lines) and all(line.is_valid for line in self.lines)
 
+    @property
+    def has_valid_unresolved_items(self) -> bool:
+        return bool(self.unresolved_items) and all(
+            item.is_valid for item in self.unresolved_items
+        )
+
+    @property
+    def has_active_payload(self) -> bool:
+        return self.has_valid_lines or self.has_valid_unresolved_items
+
 
 class OrderIntent(BaseModel):
     lines: list[OrderLine] = Field(default_factory=list)
@@ -287,7 +297,7 @@ def quote_frame_from_metadata(metadata: Mapping[str, Any] | None) -> QuoteFrame 
                 frame = QuoteFrame.model_validate(raw_frame)
             except ValidationError:
                 return None
-            return frame if frame.has_valid_lines else None
+            return frame if frame.has_active_payload else None
         if QUOTE_FRAME_METADATA_KEY in runtime:
             return None
 
@@ -360,9 +370,6 @@ def quote_frame_from_legacy_metadata(
             if line is not None:
                 lines.append(line)
 
-    if not lines:
-        return None
-
     source = _mapping_text(selection, "source") or "legacy_pending_quote_selection"
     unresolved_items: list[QuoteUnresolvedLine] = []
     raw_unresolved = selection.get("unresolved_items")
@@ -371,6 +378,8 @@ def quote_frame_from_legacy_metadata(
             unresolved_item = _quote_unresolved_line_from_legacy_item(raw_item)
             if unresolved_item is not None:
                 unresolved_items.append(unresolved_item)
+    if not lines and not unresolved_items:
+        return None
     has_unresolved = isinstance(raw_unresolved, list) and bool(raw_unresolved)
     return QuoteFrame(
         source=source,
@@ -397,7 +406,7 @@ def quote_frame_to_metadata(
 def quote_frame_is_active(frame: QuoteFrame | None) -> TypeGuard[QuoteFrame]:
     return (
         frame is not None
-        and frame.has_valid_lines
+        and frame.has_active_payload
         and frame.status in ACTIVE_QUOTE_FRAME_STATUSES
     )
 

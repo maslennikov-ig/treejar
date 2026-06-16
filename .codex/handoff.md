@@ -4,10 +4,11 @@ Current branch: `codex/tj-order-cutover-review-fix`
 
 ## Current Truth
 - Stage `tj-order-cutover-review-fix`; worktree `/home/me/code/treejar/.worktrees/tj-order-cutover-review-fix`.
-- Beads `tj-s1qi` is in progress for the local review-and-fix pass.
-- Source of truth was `origin/main` at `b03227e`; no push, deploy, production mutation, or live WhatsApp E2E was run in this pass.
-- Three read-only reviewer streams were used: `correctness_reviewer`, `improvement_reviewer`, and `architect_reviewer`.
+- Beads covered by this branch: `tj-s1qi`, `tj-1ha9`, `tj-hqsa`, `tj-v2k9`; `tj-order-cutover.10` is only partially improved and remains open for the full P2 route extraction.
+- Base was `origin/main` at `b03227e`; no push, deploy, production mutation, or live E2E has been run after the latest hardening changes yet.
+- Review streams used: `correctness_reviewer`, `improvement_reviewer`, `architect_reviewer`; final current-diff correctness review is running as `Ledger`.
 - Accepted and fixed locally: invalid canonical quote frame no longer falls back to stale legacy quote selection; expired/non-answerable typed quantity frame suppresses stale legacy `pending_product_reference_quantity`; `legacy_migration_read` trace now records legacy metadata reads.
+- Follow-up hardening added locally: unresolved-only quote repair has canonical typed frame ownership; pending quantity/reference route selection is delegated to `_pending_reference_route_for_turn`; quote frames get deterministic IDs and bounded non-PII quote side-effect traces; frontend admin package-lock resolves the Vite/esbuild audit findings.
 - Stage summary and artifacts are in `.codex/stages/tj-order-cutover-review-fix/`.
 - Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
 
@@ -17,25 +18,17 @@ Current branch: `codex/tj-order-cutover-review-fix`
 - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` passed.
 - `OPENROUTER_API_KEY=test uv run ruff format --check src/ tests/` passed: 293 files already formatted.
 - `OPENROUTER_API_KEY=test uv run mypy src/` passed: no issues in 157 source files.
-- Stage closeout full pytest passed after local `npm ci` in `frontend/admin`: 1399 passed, 19 skipped. `npm ci` reported local Node v24.16.0 outside the package engine range `>=22.12.0 <23` and 2 high severity audit findings.
-- Final `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-review-fix` passed: artifact validation OK, process verification OK, stage closeout verification OK.
-
-## Reviews
-- `correctness_reviewer` found the quantity legacy fallback leak and trace observability gap; both fixed.
-- `improvement_reviewer` found the invalid canonical quote frame legacy leak; fixed. It also recommended route-selection extraction and quote diagnostics follow-ups.
-- `architect_reviewer` returned Conditional Pass: production flow is sound enough, but route selection still needs extraction from `process_message`.
+- Follow-up hardening targeted tests passed: `tests/test_dialogue_order_runtime.py tests/test_llm_engine.py` -> 332 passed.
+- `frontend/admin`: `npm audit --json` reports 0 vulnerabilities; `npm run lint` and `npm run build` passed on local Node v24.16.0 with the existing package engine policy still set to `>=22.12.0 <23`.
+- Latest `run_stage_closeout.py --stage tj-order-cutover-review-fix` reached full pytest `1400 passed, 19 skipped` but failed only because this handoff exceeded the 40-line limit; rerun after this compression.
 
 ## Next recommended
 Next stage id: `tj-order-cutover-review-fix-delivery`
-Recommended action: review/commit/push this branch only after explicit approval. If delivery is deferred, continue with `tj-order-cutover.10` only when ready for the broader behavior-preserving route-selection extraction.
+Recommended action: run canonical closeout, commit remaining hardening/docs, push current branch HEAD to `origin/main`, monitor GitHub Actions deploy, verify production release markers/smoke, then run the approved live E2E matrix.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-cutover-review-fix`; read `.codex/stages/tj-order-cutover-review-fix/summary.md`, Beads `tj-s1qi`, `tj-order-cutover.10`, `tj-1ha9`, `tj-hqsa`, and git status/diff. Ask for explicit approval before push, deploy, production mutation, GitHub issue commenting, or live E2E.
+Use $orchestrator-stage. Continue from `/home/me/code/treejar/.worktrees/tj-order-cutover-review-fix`; read `.codex/stages/tj-order-cutover-review-fix/summary.md`, Beads `tj-s1qi`, `tj-order-cutover.10`, `tj-1ha9`, `tj-hqsa`, `tj-v2k9`, and git status/diff. User approved merge/deploy/live E2E in this active delivery thread; if resuming outside that context, ask again. Always ask before GitHub issue commenting or rollback/destructive production actions.
 
 ## Explicit defers
-- External delivery actions require explicit approval.
-- `tj-order-cutover.10`: extract deterministic order/quote route selection from `process_message`.
-- `tj-1ha9`: move unresolved-only quote repair into typed runtime state.
-- `tj-hqsa`: add bounded quote frame lifecycle diagnostics.
-- `tj-v2k9`: audit frontend admin npm vulnerabilities and Node engine range surfaced by local `npm ci`.
-- #42 second-occurrence GitHub issue comment lacks a matching production evidence response; adding a GitHub comment is externally visible and was not done.
+- #42 second-occurrence GitHub issue comment lacks a matching production evidence response; adding a GitHub comment is externally visible and has not been authorized separately.
+- `tj-order-cutover.10` full route-family extraction remains open as a P2 architecture follow-up.

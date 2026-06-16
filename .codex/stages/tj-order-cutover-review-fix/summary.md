@@ -1,14 +1,16 @@
 # Stage tj-order-cutover-review-fix: Order/Quote Cutover Review And Fix
 
 Updated: 2026-06-16
-Status: local branch ready; not pushed or deployed
+Status: local hardening implemented; pending closeout, push, deploy, and live E2E
 Branch: `codex/tj-order-cutover-review-fix`
 Worktree: `/home/me/code/treejar/.worktrees/tj-order-cutover-review-fix`
-Beads: `tj-s1qi`
+Beads: `tj-s1qi`, `tj-1ha9`, `tj-hqsa`, `tj-v2k9`; partial improvement for
+`tj-order-cutover.10`
 
 docs-reviewed: no-change-needed - fixes tighten existing documented runtime
-ownership and make an already documented trace field functional; no public API,
-operator workflow, deployment contract, or durable doc contract changed.
+ownership, make bounded diagnostics functional, and update a frontend lockfile;
+no public API, operator workflow, deployment contract, or durable doc contract
+changed.
 graph-reviewed: no-change-needed - Graphify is not configured in this worktree;
 no `graphify-out/GRAPH_REPORT.md` exists.
 project-index: reviewed-no-change - no stable entrypoints, routes, directories,
@@ -44,15 +46,29 @@ follow-ups for larger improvements.
   for that turn instead of reviving an expired product reference.
 - Fixed `legacy_migration_read` trace observability. Runtime load now sets the
   bounded boolean when legacy quote/customer metadata is read.
+- Added typed ownership for unresolved-only quote repair. Canonical
+  `order_runtime.quote_frame` now remains active for valid unresolved repair
+  items, so legacy `pending_quote_selection` is a compatibility mirror rather
+  than the only source of truth.
+- Extracted pending quantity/reference route selection from `process_message`
+  into `_pending_reference_route_for_turn`, with a structural regression test
+  preventing the low-level stale legacy helpers from moving back into
+  `process_message`.
+- Added deterministic bounded quote frame IDs and non-PII bounded
+  `order_runtime.quote_effect_traces` for quote side-effect attempts/results.
+- Resolved the frontend admin audit findings by updating the package lock to
+  Vite `8.0.16` / esbuild `0.28.1`. `npm audit` now reports zero
+  vulnerabilities. The package engine remains `>=22.12.0 <23`; the local
+  Node `24.16.0` warning is an environment mismatch, not a policy change.
 
 ## Rejected Or Deferred Findings
 
 - No rejected material findings.
-- `tj-order-cutover.10` remains the accepted follow-up for behavior-preserving
-  extraction of deterministic order/quote route selection from `process_message`.
-- `tj-1ha9` tracks moving unresolved-only quote repair into typed runtime state.
-- `tj-hqsa` tracks deterministic quote frame IDs and bounded quote side-effect
-  diagnostics.
+- `tj-order-cutover.10` remains intentionally deferred for the full
+  behavior-preserving extraction of the remaining deterministic route families
+  from `process_message`: sales-order quote extraction/resume, exact quote SKU
+  repair, selection confirmation, and quote-detail resume. This branch only
+  lands the lower-risk pending quantity/reference extraction slice.
 
 ## GitHub Evidence
 
@@ -107,9 +123,25 @@ follow-ups for larger improvements.
   - Final `scripts/orchestration/run_stage_closeout.py --stage tj-order-cutover-review-fix`
     passed: artifact validation OK, process verification OK, stage closeout
     verification OK.
+- Follow-up hardening RED/GREEN:
+  - `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_exact_quote_unresolved_item_clarifies_without_escalation tests/test_llm_engine.py::test_process_message_unresolved_only_canonical_quote_frame_resumes_without_legacy tests/test_llm_engine.py::test_process_message_sales_order_request_creates_multi_item_quotation -v --tb=short`
+    failed before the hardening because unresolved-only repair had no canonical
+    frame, canonical-only repair did not resume, and quote side-effect traces
+    were absent.
+  - `OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_pending_reference_route_is_adapter_owned tests/test_llm_engine.py::test_process_message_exact_quote_unresolved_item_clarifies_without_escalation tests/test_llm_engine.py::test_process_message_unresolved_only_canonical_quote_frame_resumes_without_legacy tests/test_llm_engine.py::test_process_message_sales_order_request_creates_multi_item_quotation tests/test_llm_engine.py::test_process_message_selection_unresolved_followup_resumes_from_canonical_quote_frame tests/test_llm_engine.py::test_process_message_exact_quote_unresolved_followup_resolves_sku_and_quantity tests/test_llm_engine.py::test_process_message_sales_order_unresolved_followup_resumes_quote tests/test_llm_engine.py::test_process_message_sales_order_resolved_followup_then_brief_creates_quote -v --tb=short`
+    -> 8 passed.
+  - `PYTHONDONTWRITEBYTECODE=1 PYTEST_ADDOPTS="-p no:cacheprovider" OPENROUTER_API_KEY=test uv run pytest tests/test_dialogue_order_runtime.py tests/test_llm_engine.py -q`
+    -> 332 passed.
+  - `OPENROUTER_API_KEY=test uv run ruff check src/ tests/` -> passed.
+  - `OPENROUTER_API_KEY=test uv run mypy src/` -> passed, no issues in 157
+    source files.
+  - `npm audit --json` in `frontend/admin` -> 0 vulnerabilities.
+  - `npm run lint` in `frontend/admin` -> passed.
+  - `npm run build` in `frontend/admin` -> passed.
 
 ## Changed Files
 
+- `frontend/admin/package-lock.json`
 - `src/dialogue/order_state.py`
 - `src/dialogue/order_runtime.py`
 - `src/llm/engine.py`
@@ -124,17 +156,15 @@ follow-ups for larger improvements.
 
 ## Delivery
 
-No push, deploy, production mutation, or live WhatsApp E2E was run in this pass.
-The branch is local and ready for user review or explicit delivery approval.
+Delivery is now explicitly approved by the user, but has not yet been run after
+the follow-up hardening changes. Required remaining sequence: canonical stage
+closeout, commit, fast-forward push to `origin/main`, GitHub Actions deploy,
+release marker readback, production smoke, then live E2E.
 
 ## Explicit Defers
 
-- External delivery actions require explicit approval.
-- `tj-order-cutover.10`: extract deterministic order/quote route selection from
-  `process_message`.
-- `tj-1ha9`: move unresolved-only quote repair into typed runtime state.
-- `tj-hqsa`: add bounded quote frame lifecycle diagnostics.
-- `tj-v2k9`: audit frontend admin npm vulnerabilities and Node engine range
-  surfaced by local `npm ci`.
 - The #42 second-occurrence GitHub issue comment lacks a matching production
   evidence response; updating GitHub is externally visible and was not done.
+- `tj-order-cutover.10`: full route-selection extraction from `process_message`
+  remains a P2 architecture follow-up; only the pending quantity/reference slice
+  is included in this delivery branch.

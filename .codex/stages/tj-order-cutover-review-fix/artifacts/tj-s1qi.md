@@ -13,6 +13,7 @@ base_branch: origin/main
 base_commit: b03227e86db838678551deca98234d6b925144f3
 worktree: /home/me/code/treejar/.worktrees/tj-order-cutover-review-fix
 write_zone:
+  - frontend/admin/package-lock.json
   - src/dialogue/order_state.py
   - src/dialogue/order_runtime.py
   - src/llm/engine.py
@@ -22,6 +23,7 @@ write_zone:
   - .codex/stages/tj-order-cutover-review-fix
 success_criteria:
   - accepted must-fix leaks are fixed test-first
+  - accepted hardening follow-ups are implemented or explicitly bounded
   - target order runtime and llm engine tests pass
   - docs-reviewed and graph-reviewed decisions recorded
 selected_docs:
@@ -54,17 +56,21 @@ status: accepted
 delivery_method: manual integration
 accepted_by_orchestrator: yes
 cleanup_status: blocked
-cleanup_notes: local feature branch/worktree retained because delivery was not requested
+cleanup_notes: local feature branch/worktree retained until approved delivery, deploy, and live E2E complete
 risk_level: medium
-docs_impact: behavior
+docs_impact: behavior,dependency
 docs_reviewed: no-change-needed
-docs_review_notes: existing docs already state typed runtime ownership and trace fields
+docs_review_notes: existing docs already state typed runtime ownership; package-lock update does not change supported Node policy
 verification:
   - target pytest: 330 passed
   - ruff check: passed
   - ruff format check: passed
   - mypy: passed
+  - hardening target pytest: 332 passed
+  - frontend admin npm audit: 0 vulnerabilities
+  - frontend admin lint/build: passed
 changed_files:
+  - frontend/admin/package-lock.json
   - src/dialogue/order_state.py
   - src/dialogue/order_runtime.py
   - src/llm/engine.py
@@ -73,10 +79,8 @@ changed_files:
   - .codex/handoff.md
   - .codex/stages/tj-order-cutover-review-fix
 explicit_defers:
-  - tj-order-cutover.10
-  - tj-1ha9
-  - tj-hqsa
-  - tj-v2k9
+  - tj-order-cutover.10 full route-selection extraction remains a P2 architecture follow-up
+  - production delivery and live E2E are pending in the current approved delivery phase
 ---
 
 # Summary
@@ -87,18 +91,31 @@ Implemented three accepted review fixes locally:
 - non-answerable typed quantity frames suppress stale legacy quantity metadata;
 - `legacy_migration_read` is now set when runtime load consumes legacy metadata.
 
+Follow-up hardening was added in the same branch after delivery approval:
+
+- unresolved-only exact quote repair now has canonical typed frame ownership;
+- the pending quantity/reference slice of route selection is delegated to
+  `_pending_reference_route_for_turn`;
+- quote frames get deterministic IDs and quote side effects write bounded
+  non-PII diagnostics;
+- frontend admin lockfile now resolves Vite/esbuild audit findings.
+
 # Verification
 
 Fresh target tests and local code gates passed after implementation and
-formatting. Full repo pytest and delivery were not run because this was a local
-review-and-fix branch and external delivery was not requested.
+formatting. Follow-up hardening target tests, ruff, mypy, npm audit, admin
+lint, and admin build passed. Full stage closeout and external delivery remain
+to be run after this artifact update.
 
 # Delivery / Cleanup
 
-No push, commit, deploy, production mutation, or live WhatsApp E2E was run.
-The worktree and local branch are retained for user review.
+The baseline review-fix commit was created locally. No push, deploy, production
+mutation, or live WhatsApp E2E has been run after the follow-up hardening yet.
+The worktree and local branch are retained until delivery completes.
 
 # Risks / Follow-ups
 
-Remaining accepted follow-ups are tracked as `tj-order-cutover.10`, `tj-1ha9`,
-`tj-hqsa`, and `tj-v2k9`. External delivery is deferred until explicit approval.
+`tj-order-cutover.10` remains open for the full behavior-preserving extraction
+of sales-order, exact-quote, selection-confirmation, and quote-detail-resume
+route families from `process_message`. External delivery/live E2E is the
+remaining phase for the current bug hardening branch.

@@ -68,6 +68,26 @@ def test_order_quote_create_quotation_calls_are_adapter_owned() -> None:
     assert direct_call_owners == ["_execute_order_quote_side_effect"]
 
 
+def test_process_message_pending_reference_route_is_adapter_owned() -> None:
+    source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    process_message_node = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "process_message"
+    )
+    call_names = {
+        node.func.id
+        for node in ast.walk(process_message_node)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+    assert "_pending_reference_route_for_turn" in call_names
+    assert "_pending_product_reference_quantity_from_metadata" not in call_names
+    assert "_purchase_selection_from_pending_question_frame" not in call_names
+    assert "_purchase_selection_from_pending_product_references" not in call_names
+
+
 @pytest.fixture
 def mock_deps() -> tuple[
     AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -9403,7 +9423,7 @@ def test_quoted_quote_frame_is_not_active_pending_selection() -> None:
 
 
 @pytest.mark.asyncio
-async def test_store_pending_exact_quote_with_unresolved_items_clears_stale_quote_frame(
+async def test_store_pending_exact_quote_with_unresolved_items_replaces_stale_quote_frame(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -9432,7 +9452,16 @@ async def test_store_pending_exact_quote_with_unresolved_items_clears_stale_quot
         ),
     )
 
-    assert engine_module._quote_frame_from_conversation(conv) is None
+    quote_frame = engine_module._quote_frame_from_conversation(conv)
+    assert quote_frame is not None
+    assert quote_frame.source == "exact_quote"
+    assert quote_frame.status == "repair_required"
+    assert quote_frame.lines == []
+    assert [
+        (item.sku, item.quantity, item.item_candidate)
+        for item in quote_frame.unresolved_items
+    ] == [(None, 2, "NEW UNKNOWN TABLE")]
+    assert quote_frame.missing_quote_fields == ["items and quantities"]
     assert conv.metadata_["pending_quote_selection"] == {
         "source": "exact_quote",
         "items": [],
@@ -11353,6 +11382,96 @@ async def test_process_message_selection_unresolved_followup_resumes_from_canoni
 
 
 @pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine._resolve_exact_quote_candidate_sku", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_unresolved_only_canonical_quote_frame_resumes_without_legacy(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_resolve_sku: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Igor"
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_frame": {
+                "source": "exact_quote",
+                "status": "repair_required",
+                "lines": [],
+                "unresolved_items": [
+                    {
+                        "sku": None,
+                        "quantity": 5,
+                        "item_candidate": "CH 620 grey",
+                    }
+                ],
+                "quote_details": {"name": "Igor"},
+                "missing_quote_fields": ["items and quantities"],
+            }
+        }
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "I found the quantity, but I need the exact catalog "
+                        "item for 5 x CH 620 grey before I can prepare the "
+                        "quotation."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_resolve_sku.return_value = "CH 620 grey"
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="The exact SKU is CH 620 grey, quantity 5.",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|quote-resume-missing-details"
+    assert "company" in response.text.lower()
+    assert conv.metadata_["pending_quote_selection"] == {
+        "source": "exact_quote",
+        "items": [{"sku": "CH 620 grey", "quantity": 5}],
+        "unresolved_items": [],
+    }
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["source"] == "exact_quote"
+    assert quote_frame["status"] == "collecting_details"
+    assert [(line["sku"], line["quantity"]) for line in quote_frame["lines"]] == [
+        ("CH 620 grey", 5)
+    ]
+    assert quote_frame["lines"][0]["item_candidate"] == "CH 620 grey"
+    mock_create_quotation.assert_not_awaited()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -12219,6 +12338,18 @@ async def test_process_message_exact_quote_unresolved_item_clarifies_without_esc
             "item_candidate": "Reception desk SKYLAND LUMA",
         }
     ]
+    quote_frame = conv.metadata_["order_runtime"]["quote_frame"]
+    assert quote_frame["source"] == "exact_quote"
+    assert quote_frame["status"] == "repair_required"
+    assert quote_frame["lines"] == []
+    assert quote_frame["unresolved_items"] == [
+        {
+            "sku": None,
+            "quantity": 1,
+            "item_candidate": "Reception desk SKYLAND LUMA",
+        }
+    ]
+    assert quote_frame["missing_quote_fields"] == ["items and quantities"]
     assert response.deferred_product_media == ()
 
 
@@ -12458,6 +12589,13 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
         ("CH-620-BLACK", 2),
         ("CH-410-BLACK", 1),
     ]
+    quote_effect_trace = conv.metadata_["order_runtime"]["quote_effect_traces"][-1]
+    assert quote_effect_trace == {
+        "source": "adapter",
+        "model_suffix": "sales-order-quote",
+        "item_count": 3,
+        "status": "created",
+    }
     mock_run.assert_not_awaited()
     mock_notify.assert_not_awaited()
 
