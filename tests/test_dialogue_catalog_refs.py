@@ -70,6 +70,22 @@ def test_extract_catalog_references_rejects_connector_or_as_sku() -> None:
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "3. No\n4. For commercial office space",
+        "1. Tables\n2. 5\n3. No\n4. For commercial office space",
+        "No 4",
+        "Yes 5",
+        "Low 3",
+    ],
+)
+def test_extract_catalog_references_rejects_numbered_answer_false_skus(
+    text: str,
+) -> None:
+    assert extract_catalog_references(text) == []
+
+
+@pytest.mark.parametrize(
     ("text", "expected"),
     [
         ("4 position CH 616 chairs", [("CH-616", 4)]),
@@ -87,12 +103,13 @@ def test_extract_catalog_references_accepts_position_quantity_phrases(
 
 def test_extract_catalog_references_finds_supported_sku_and_model_refs() -> None:
     refs = extract_catalog_references(
-        "Quote CH616, CP-2.1S, 00-07024023 and SKYLAND NOVO 2400 please"
+        "Quote CH616, CP-2.1S, SK 45 White, 00-07024023 and SKYLAND NOVO 2400 please"
     )
 
     assert [ref.normalized for ref in refs] == [
         "CH-616",
         "CP-2.1S",
+        "SK-45",
         "00-07024023",
         "SKYLAND NOVO 2400",
     ]

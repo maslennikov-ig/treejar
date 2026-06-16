@@ -9,7 +9,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from langgraph.graph import StateGraph
 
-from src.dialogue.catalog_refs import extract_catalog_references
+from src.dialogue.catalog_refs import CatalogParsedRef, extract_catalog_references
 from src.dialogue.reducer import (
     append_trace_bounded,
     apply_extracted_details,
@@ -329,7 +329,7 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
                 ),
             }
 
-    refs = extract_catalog_references(text)
+    refs = _extract_product_selection_refs(text)
     if refs:
         refs_payload = [
             {
@@ -460,6 +460,14 @@ def _has_active_flow_frame(state: DialogueState, flow: str) -> bool:
         frame.status == "active" and frame.flow == flow
         for frame in state.expected_answer_frames
     )
+
+
+def _extract_product_selection_refs(text: str) -> list[CatalogParsedRef]:
+    return [
+        ref
+        for ref in extract_catalog_references(text)
+        if ref.normalized and "\n" not in ref.raw and "\r" not in ref.raw
+    ]
 
 
 def _extract_quote_details(text: str) -> dict[str, str]:
