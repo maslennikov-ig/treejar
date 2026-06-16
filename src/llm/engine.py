@@ -5328,6 +5328,13 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     return details
 
 
+def _has_quote_customer_details_beyond_name(details: Mapping[str, str]) -> bool:
+    return any(
+        _string_value(details.get(key))
+        for key in ("company", "customer_type", "email", "phone", "address")
+    )
+
+
 def _is_individual_detail_value(value: str | None) -> bool:
     normalized = _normalize_text(value or "")
     return normalized in {
@@ -10177,11 +10184,19 @@ async def process_message(
     if current_sales_memory_updates:
         await _store_sales_memory_updates(db, conv, current_sales_memory_updates)
 
-    if _is_name_gate_completion_reply(
+    name_gate_completion_reply = _is_name_gate_completion_reply(
         combined_text,
         current_quote_customer_details,
         pending_request_exists=bool(pending_name_gate_request),
+    )
+    if (
+        name_gate_completion_reply
+        and quote_detail_context_active
+        and _has_quote_customer_details_beyond_name(current_quote_customer_details)
     ):
+        await _consume_name_gate_pending_request(db, conv)
+        pending_name_gate_request = None
+    elif name_gate_completion_reply:
         captured_customer_name = _string_value(current_quote_customer_details["name"])
         pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
         if pending_name_gate_request:

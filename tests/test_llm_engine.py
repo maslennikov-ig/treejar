@@ -13088,6 +13088,127 @@ async def test_process_message_sales_order_resolved_followup_then_brief_creates_
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quote_details_reply_clears_stale_name_gate_request(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.language = "en"
+    conv.metadata_ = {
+        "name_gate_pending_request": {"text": "Hi, I need a quotation: 5 x CH 620"},
+        "pending_quote_selection": {
+            "source": "exact_quote",
+            "items": [{"sku": "CH 620 grey", "quantity": 5}],
+            "unresolved_items": [],
+        },
+        "order_runtime": {
+            "quote_frame": {
+                "version": 1,
+                "frame_id": "qf-details-over-name-gate",
+                "source": "exact_quote",
+                "status": "collecting_details",
+                "lines": [
+                    {
+                        "sku": "CH 620 grey",
+                        "quantity": 5,
+                        "item_candidate": "CH 620 grey",
+                    }
+                ],
+                "unresolved_items": [],
+                "quote_details": {},
+                "missing_quote_fields": [],
+            }
+        },
+    }
+    current_text = (
+        "My name is Lilia Cutover.\nCompany: QA Cutover LLC.\n"
+        "Email lilia.cutover+sales@example.com.\nPhone +971501234567.\n"
+        "Delivery address Office 101, Business Bay, Dubai."
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(
+            parts=[UserPromptPart(content="Hi, I need a quotation: 5 x CH 620")]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. May I know your name "
+                        "so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="5 x CH 620 grey")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Before I prepare the quotation, please share: customer "
+                        "name; company name; specific delivery address; customer email."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=current_text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation Fr-details has been prepared."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+
+    async def resolve_side_effect(_db: object, candidate: object) -> str | None:
+        if getattr(candidate, "item_candidate", "") == "CH 620 grey":
+            return "CH 620 grey"
+        return None
+
+    with patch(
+        "src.llm.engine._resolve_exact_quote_candidate_sku",
+        new_callable=AsyncMock,
+        side_effect=resolve_side_effect,
+    ) as mock_resolve_sku:
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=current_text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert response.model == "mock-model|quote-resume"
+    assert response.text == "Quotation Fr-details has been prepared."
+    assert "name_gate_pending_request" not in conv.metadata_
+    assert "pending_quote_selection" not in conv.metadata_
+    mock_resolve_sku.assert_not_awaited()
+    mock_create_quotation.assert_awaited_once()
+    _, quote_items = mock_create_quotation.await_args.args
+    assert [(item.sku, item.quantity) for item in quote_items] == [("CH 620 grey", 5)]
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.integrations.notifications.escalation.notify_manager_escalation")
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_first_turn_name_gate_stores_sales_order_quote_context(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
