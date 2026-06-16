@@ -286,9 +286,10 @@ def quote_frame_from_metadata(metadata: Mapping[str, Any] | None) -> QuoteFrame 
             try:
                 frame = QuoteFrame.model_validate(raw_frame)
             except ValidationError:
-                frame = None
-            if frame is not None and frame.has_valid_lines:
-                return frame
+                return None
+            return frame if frame.has_valid_lines else None
+        if QUOTE_FRAME_METADATA_KEY in runtime:
+            return None
 
     return quote_frame_from_legacy_metadata(metadata)
 

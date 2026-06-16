@@ -8984,6 +8984,126 @@ async def test_process_message_stale_pending_quantity_does_not_consume_later_num
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_expired_quantity_frame_blocks_legacy_pending_reference(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify_manager: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from src.models.product import Product
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lilia"
+    conv.language = "en"
+    conv.metadata_ = {
+        "order_runtime": {
+            "pending_question_frame": {
+                "version": 1,
+                "frame_id": "quantity:sk45",
+                "question_kind": "quantity",
+                "status": "expired",
+                "prompt_key": "ask_quantity_for_sku",
+                "max_customer_turns": 2,
+                "turns_seen": 2,
+                "source_refs": [
+                    {
+                        "kind": "order_line",
+                        "catalog_ref": "SK-45",
+                        "source_text": "SK 45 White",
+                        "sku": "SK-45",
+                        "ordinal": 1,
+                    }
+                ],
+            }
+        },
+        "pending_product_reference_quantity": {
+            "source": "product_reference_quantity_clarification",
+            "references": ["SK 45 White"],
+        },
+    }
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "I have these product references: SK 45 White. Please "
+                        "confirm the quantity for each item."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content="2")]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Could you clarify what the number is for?"
+    )
+
+    product = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="SK-45",
+        zoho_item_id="zoho-sk-45",
+        name_en="SK 45 White Office Cabinet",
+        description_en="SK 45 White Office Cabinet",
+        price=620.0,
+        currency="AED",
+        stock=9,
+        attributes={},
+    )
+
+    async def get_side_effect(model: object, key: object) -> object | None:
+        if model is Conversation:
+            return conv
+        if model is Product and key == product.id:
+            return product
+        return None
+
+    caption_result = MagicMock()
+    caption_result.scalars.return_value.all.return_value = []
+    sku_result = MagicMock()
+    sku_result.scalar_one_or_none.return_value = product
+    catalog_result = MagicMock()
+    catalog_result.scalars.return_value.all.return_value = [product]
+    db.get.side_effect = get_side_effect
+    db.execute.side_effect = [caption_result, sku_result, catalog_result]
+    zoho.get_item.return_value = {
+        "sku": "SK-45",
+        "stock_on_hand": 9,
+        "rate": 620.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text="2",
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model != "mock-model|selection-confirmation"
+    assert "pending_quote_selection" not in (conv.metadata_ or {})
+    assert "pending_product_reference_quantity" not in (conv.metadata_ or {})
+    mock_notify_manager.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_novo_model_number_does_not_become_chair_quantity(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -9408,6 +9528,35 @@ def test_canonical_quote_frame_unresolved_state_wins_over_stale_legacy_unresolve
         )
         is False
     )
+
+
+def test_canonical_quote_frame_presence_blocks_invalid_frame_legacy_leak() -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="12345",
+        customer_name="Lilia",
+        sales_stage=SalesStage.GREETING.value,
+        language="en",
+        escalation_status="none",
+        metadata_={
+            "order_runtime": {
+                "quote_frame": {
+                    "source": "selection_confirmation",
+                    "status": "collecting_details",
+                    "lines": [],
+                }
+            },
+            "pending_quote_selection": {
+                "source": "selection_confirmation",
+                "items": [{"sku": "STALE-SKU", "quantity": 9}],
+                "unresolved_items": [],
+            },
+        },
+    )
+    legacy_selection = conv.metadata_["pending_quote_selection"]
+
+    assert engine_module._active_pending_quote_selection_from_conversation(conv) is None
+    assert engine_module._active_quote_items(conv, legacy_selection) == ()
 
 
 @pytest.mark.asyncio

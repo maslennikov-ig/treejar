@@ -48,6 +48,21 @@ def test_order_runtime_trace_is_bounded_and_records_phase_latency() -> None:
     assert "source_text" not in trace
 
 
+def test_order_runtime_trace_records_legacy_migration_read() -> None:
+    result = run_order_runtime(
+        text="4 position CH 616 chairs",
+        metadata={
+            "quote_customer_details": {
+                "name": "Lilia",
+                "company": "Del company",
+                "address": "2 street",
+            }
+        },
+    )
+
+    assert result.trace.legacy_migration_read is True
+
+
 def test_order_runtime_merges_legacy_state_with_new_order_lines() -> None:
     result = run_order_runtime(
         text="4 position CH 616 chairs",

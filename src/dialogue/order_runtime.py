@@ -100,13 +100,27 @@ def _build_order_graph() -> Any:
 
 def _load_state_node(graph_state: _OrderGraphState) -> _OrderGraphState:
     started_at = perf_counter()
+    metadata = graph_state.get("metadata")
+    trace = _trace_from_value(graph_state.get("trace"))
     return _with_phase_latency(
         {
             **graph_state,
-            "state": OrderState.from_legacy_metadata(graph_state.get("metadata")),
+            "state": OrderState.from_legacy_metadata(metadata),
+            "trace": trace.model_copy(
+                update={"legacy_migration_read": _has_legacy_order_metadata(metadata)}
+            ).model_dump(),
         },
         phase="load_state",
         started_at=started_at,
+    )
+
+
+def _has_legacy_order_metadata(metadata: Mapping[str, Any] | None) -> bool:
+    if not isinstance(metadata, Mapping):
+        return False
+    return any(
+        isinstance(metadata.get(key), Mapping)
+        for key in ("pending_quote_selection", "quote_customer_details")
     )
 
 

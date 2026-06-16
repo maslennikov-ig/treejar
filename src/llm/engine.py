@@ -6991,7 +6991,7 @@ def _active_quote_items(
     frame = _quote_frame_from_conversation(conversation)
     if quote_frame_is_active(frame):
         return _quote_items_from_frame(frame)
-    if frame is not None:
+    if frame is not None or _conversation_has_canonical_quote_frame(conversation):
         return ()
     if selection is None:
         return ()
@@ -7005,7 +7005,7 @@ def _active_quote_has_unresolved_items(
     frame = _quote_frame_from_conversation(conversation)
     if quote_frame_is_active(frame):
         return _quote_frame_has_unresolved_items(frame)
-    if frame is not None:
+    if frame is not None or _conversation_has_canonical_quote_frame(conversation):
         return False
     return selection is not None and _pending_quote_has_unresolved_items(selection)
 
@@ -9999,6 +9999,13 @@ async def process_message(
     pending_reference_quantity_refs = _pending_product_reference_quantity_from_metadata(
         conv
     )
+    if (
+        pending_question_frame is not None
+        and pending_question_selection is None
+        and pending_reference_quantity_refs
+    ):
+        await _clear_pending_product_reference_quantity(db, conv)
+        pending_reference_quantity_refs = ()
     pending_reference_context_active = bool(
         pending_reference_quantity_refs
     ) and _last_assistant_asked_pending_product_reference_quantity(
