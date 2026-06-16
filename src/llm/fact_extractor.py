@@ -42,6 +42,11 @@ _LABELED_NAME_PATTERN = re.compile(
     r"(?P<value>[A-Za-z][A-Za-z .'-]{1,60})",
     re.IGNORECASE,
 )
+_CUSTOMER_LABEL_NAME_PATTERN = re.compile(
+    r"\bcustomer(?:\s+name)?\s*(?:is|:|-)\s*"
+    r"(?P<value>[A-Za-z][A-Za-z '-]{1,60})(?=$|[,.;\n])",
+    re.IGNORECASE,
+)
 _FROM_NAME_PATTERN = re.compile(
     r"^\s*(?P<value>[A-Za-z][A-Za-z .'-]{1,60})\s+from\s+",
     re.IGNORECASE,
@@ -387,6 +392,20 @@ def _extract_name_facts(
     source_message_id: str | None,
 ) -> list[ExtractedCustomerFact]:
     facts: list[ExtractedCustomerFact] = []
+    for match in _CUSTOMER_LABEL_NAME_PATTERN.finditer(message_text):
+        name = _clean_person_name(match.group("value"))
+        if name:
+            facts.append(
+                _fact(
+                    scope="persistent_profile",
+                    key="customer.name",
+                    value=name,
+                    confidence="high",
+                    evidence=match.group(0),
+                    source_message_id=source_message_id,
+                )
+            )
+
     for match in _LABELED_NAME_PATTERN.finditer(message_text):
         name = _clean_person_name(match.group("value"))
         if name:

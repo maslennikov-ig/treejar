@@ -164,6 +164,20 @@ async def test_deterministic_does_not_use_greeting_as_compact_name_with_phone() 
 
 
 @pytest.mark.asyncio
+async def test_deterministic_extracts_customer_label_as_name() -> None:
+    result = await extract_customer_facts(
+        "Quotation for 1 x CH 620 grey. Customer: Amina Complete. Individual. "
+        "Delivery: Business Bay Dubai. Email: amina.complete@example.com. "
+        "Phone: +971501112255.",
+        use_fast_model=False,
+    )
+
+    name = _fact_by_key(result, "customer.name")
+    assert name.value == "Amina Complete"
+    assert name.confidence == "high"
+
+
+@pytest.mark.asyncio
 async def test_deterministic_extracts_repeatable_order_items_snapshot() -> None:
     result = await extract_customer_facts(
         "I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs",
