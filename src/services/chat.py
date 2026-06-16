@@ -972,21 +972,32 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                 # 5. Send via Wazzup
                 logger.info("Sending reply to %s via Wazzup", chat_id)
                 whatsapp_text = _format_for_whatsapp(llm_response.text)
-                await send_wazzup_text_with_audit(
-                    db,
-                    provider=wazzup_provider,
-                    conversation_id=conv.id,
-                    chat_id=chat_id,
-                    text=whatsapp_text,
-                    source="bot_reply",
-                    crm_message_id=deterministic_crm_message_id(
-                        "bot",
-                        conv.id,
-                        assistant_msg.id,
-                    ),
-                )
-                await db.commit()
-                if llm_response.deferred_product_media:
+                bot_reply_sent = False
+                try:
+                    await send_wazzup_text_with_audit(
+                        db,
+                        provider=wazzup_provider,
+                        conversation_id=conv.id,
+                        chat_id=chat_id,
+                        text=whatsapp_text,
+                        source="bot_reply",
+                        crm_message_id=deterministic_crm_message_id(
+                            "bot",
+                            conv.id,
+                            assistant_msg.id,
+                        ),
+                    )
+                except (httpx.HTTPError, RuntimeError):
+                    logger.warning(
+                        "Failed to send persisted bot reply to %s via Wazzup; "
+                        "keeping inbound batch successful.",
+                        chat_id,
+                        exc_info=True,
+                    )
+                else:
+                    bot_reply_sent = True
+                    await db.commit()
+                if bot_reply_sent and llm_response.deferred_product_media:
                     await _send_deferred_product_media(
                         db,
                         provider=wazzup_provider,
@@ -994,4 +1005,5 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         chat_id=chat_id,
                         media_items=llm_response.deferred_product_media,
                     )
-                logger.info("Reply sent to %s successfully", chat_id)
+                if bot_reply_sent:
+                    logger.info("Reply sent to %s successfully", chat_id)

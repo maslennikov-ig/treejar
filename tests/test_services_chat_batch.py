@@ -193,6 +193,93 @@ async def test_process_incoming_batch_new_conversation(
 @patch("src.services.chat.ZohoCRMClient")
 @patch("src.services.chat.ZohoInventoryClient")
 @patch("src.services.chat.EmbeddingEngine")
+async def test_process_incoming_batch_keeps_batch_successful_when_bot_reply_send_fails(
+    mock_embedding_cls: MagicMock,
+    mock_zoho_inv_cls: MagicMock,
+    mock_zoho_crm_cls: MagicMock,
+    mock_wazzup_cls: MagicMock,
+    mock_process_message: AsyncMock,
+    mock_session_factory: MagicMock,
+) -> None:
+    from src.llm import LLMResponse
+
+    mock_session = AsyncMock()
+    mock_session_factory.return_value.__aenter__.return_value = mock_session
+    mock_session.add = MagicMock()
+
+    existing_conv = MagicMock()
+    existing_conv.id = "conv-send-fail"
+    existing_conv.phone = "1234567890"
+    existing_conv.escalation_status = "none"
+    existing_conv.metadata_ = {}
+
+    mock_session.execute.side_effect = [
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
+        MockResult(None),  # outbound audit idempotency lookup
+    ]
+
+    mock_process_message.return_value = LLMResponse(
+        text="I can help with that.",
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.05,
+        model="test-model",
+    )
+    mock_embedding_cls.return_value = MagicMock()
+
+    mock_zoho_inv = AsyncMock()
+    mock_zoho_inv_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_inv)
+    mock_zoho_inv_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_zoho_crm = AsyncMock()
+    mock_zoho_crm_cls.return_value.__aenter__ = AsyncMock(return_value=mock_zoho_crm)
+    mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    mock_wazzup = AsyncMock()
+    mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
+    mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_wazzup.send_text.side_effect = RuntimeError("Wazzup send failed")
+    mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
+
+    mock_redis = AsyncMock()
+    msg = WazzupIncomingMessage(
+        messageId="msg-send-fail",
+        chatId="1234567890",
+        chatType="whatsapp",
+        type="text",
+        text="Hi",
+        channelId="chan-1",
+        timestamp=1704067200,
+    )
+    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+
+    with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
+        await process_incoming_batch({"redis": mock_redis}, "1234567890")
+
+    mock_process_message.assert_awaited_once()
+    mock_wazzup.send_text.assert_awaited_once()
+    added_messages = [
+        call.args[0]
+        for call in mock_session.add.call_args_list
+        if getattr(call.args[0], "__class__", None).__name__ == "Message"
+    ]
+    assert any(
+        message.role == "assistant" and message.content == "I can help with that."
+        for message in added_messages
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.process_message")
+@patch("src.services.chat.WazzupProvider")
+@patch("src.services.chat.ZohoCRMClient")
+@patch("src.services.chat.ZohoInventoryClient")
+@patch("src.services.chat.EmbeddingEngine")
 async def test_process_incoming_batch_sends_deferred_product_media_after_bot_reply(
     mock_embedding_cls: MagicMock,
     mock_zoho_inv_cls: MagicMock,
