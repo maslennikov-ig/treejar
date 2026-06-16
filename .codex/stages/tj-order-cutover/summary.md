@@ -163,8 +163,8 @@ recovery, or commercial-policy phrases misread as order quantities.
 
 ## Explicit Defers
 
-- Full architectural removal of every remaining order/quote-specific branch in
-  `src/llm/engine.py` remains a follow-up hardening task. The implemented stage
-  blocks the requested regression class with typed metadata, replay coverage,
-  and quote-prose recovery removal.
+- The P0 side-effect adapter hardening was delivered in follow-up stage
+  `tj-order-adapter-hardening` (`8bce801`). Remaining behavior-preserving route
+  selection extraction from `process_message` is tracked as
+  `tj-order-cutover.10`.
 - `tj-gh21` remains blocked on approved Wazzup WABA EN/AR templates.
