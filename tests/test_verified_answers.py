@@ -228,6 +228,38 @@ def test_policy_keeps_product_questions_on_catalog_path() -> None:
     assert decision.requires_manager_handoff is False
 
 
+def test_policy_routes_common_furniture_categories_to_product_path() -> None:
+    for query in (
+        "Hi, I need two wardrobes for my living room.",
+        "I want two beds for kids.",
+    ):
+        decision = evaluate_verified_answer_policy(query=query, faq_context=[])
+
+        assert decision.question_class == "product"
+        assert decision.policy_action == "allow"
+        assert decision.requires_manager_handoff is False
+
+
+def test_policy_treats_furniture_use_case_context_as_clarify_without_handoff() -> None:
+    for query in ("This is for my restaurant.", "This is for my restaurant?"):
+        decision = evaluate_verified_answer_policy(query=query, faq_context=[])
+
+        assert decision.question_class == "service_low_risk"
+        assert decision.policy_action == "clarify"
+        assert decision.requires_manager_handoff is False
+
+
+def test_policy_routes_contextual_catalog_discovery_question_to_product_path() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Do you have options for my restaurant?",
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
 def test_policy_routes_office_workspace_need_to_product_path() -> None:
     decision = evaluate_verified_answer_policy(
         query="I need few work stations for my new office space in business bay dubai",

@@ -2787,6 +2787,129 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_name_gate_resumes_wardrobe_request_without_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = "Hi, I need two wardrobes for my living room."
+    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
+    text = "My name is Angela."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. "
+                        "May I know your name so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        assert deps.user_query == pending_text
+        assert any(
+            "Continue the customer's prior request" in directive
+            for directive in deps.runtime_directives
+        )
+        assert deps.tool_mode == "full"
+        return _FakeAgentResult("Thank you, Angela. I can help with wardrobe options.")
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.customer_name == "Angela"
+    assert conv.escalation_status == "none"
+    assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert response.model == "mock-model"
+    assert "wardrobe options" in response.text
+    assert mock_run.await_count == 1
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_known_customer_bed_request_uses_catalog_path_not_handoff(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "I want two beds for kids."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "I can help with kids bed options from the catalog."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.escalation_status == "none"
+    assert response.model == "mock-model"
+    assert "kids bed options" in response.text
+    assert mock_run.await_count == 1
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.user_query == text
+    assert deps.tool_mode == "full"
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_name_only_update_in_active_product_context_does_not_reset_goal(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,

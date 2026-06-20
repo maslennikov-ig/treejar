@@ -107,6 +107,24 @@ _PRODUCT_SIGNALS = (
     "مكتب",
     "طاولة",
 )
+_PRODUCT_SIGNAL_TOKENS = frozenset(
+    {
+        "bed",
+        "beds",
+        "bookcase",
+        "bookcases",
+        "bookshelf",
+        "bookshelves",
+        "locker",
+        "lockers",
+        "mattress",
+        "mattresses",
+        "shelf",
+        "shelves",
+        "wardrobe",
+        "wardrobes",
+    }
+)
 _COMPACT_PRODUCT_SIGNALS = tuple(
     re.sub(r"[\s-]+", "", signal)
     for signal in _PRODUCT_SIGNALS
@@ -125,6 +143,8 @@ _SKU_SELECTION_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 _PRODUCT_DISCOVERY_PHRASES = (
+    "anything for",
+    "options",
     "what options",
     "show me",
     "tell me about",
@@ -135,6 +155,21 @@ _PRODUCT_DISCOVERY_PHRASES = (
     "price",
     "stock",
     "catalog",
+)
+_CATALOG_DISCOVERY_CONTEXT_TERMS = (
+    "apartment",
+    "bedroom",
+    "cafe",
+    "children",
+    "dining room",
+    "hotel",
+    "kids",
+    "living room",
+    "lounge",
+    "reception area",
+    "restaurant",
+    "villa",
+    "waiting area",
 )
 _BENIGN_PREFERENCE_PHRASES = (
     "i prefer",
@@ -492,10 +527,16 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _has_product_signal(normalized: str) -> bool:
+    if set(_unicode_tokens(normalized)) & _PRODUCT_SIGNAL_TOKENS:
+        return True
     if any(signal in normalized for signal in _PRODUCT_SIGNALS):
         return True
     compact = re.sub(r"[\s-]+", "", normalized)
     return any(signal in compact for signal in _COMPACT_PRODUCT_SIGNALS)
+
+
+def _has_catalog_discovery_context(normalized: str) -> bool:
+    return any(term in normalized for term in _CATALOG_DISCOVERY_CONTEXT_TERMS)
 
 
 def _has_product_selection_signal(normalized: str) -> bool:
@@ -593,8 +634,6 @@ def _is_benign_no_match(query: str) -> bool:
     normalized = _normalize(query).casefold()
     if not normalized:
         return True
-    if "?" in query:
-        return False
     if _has_product_signal(normalized):
         return False
     if any(signal in normalized for signal in _ORDER_STATUS_SIGNALS):
@@ -608,6 +647,10 @@ def _is_benign_no_match(query: str) -> bool:
     if _asks_for_specific_commitment(normalized):
         return False
     if any(term in normalized for term in _LOW_RISK_FACT_QUESTION_TERMS):
+        return False
+    if _has_catalog_discovery_context(normalized):
+        return True
+    if "?" in query:
         return False
 
     tokens = _unicode_tokens(query)
@@ -629,6 +672,7 @@ def classify_question(query: str) -> QuestionClass:
     has_product_discovery = any(
         phrase in normalized for phrase in _PRODUCT_DISCOVERY_PHRASES
     )
+    has_catalog_discovery_context = _has_catalog_discovery_context(normalized)
     has_high_risk_service_topic = any(
         keyword in normalized
         for topic in _HIGH_RISK_TOPICS
@@ -639,6 +683,13 @@ def classify_question(query: str) -> QuestionClass:
         return "service_high_risk"
 
     if has_product_signal and (has_product_discovery or has_product_selection):
+        return "product"
+
+    if (
+        has_catalog_discovery_context
+        and has_product_discovery
+        and not has_high_risk_service_topic
+    ):
         return "product"
 
     if is_quote_or_proposal_request(normalized):

@@ -1,40 +1,39 @@
 # Orchestrator Handoff
-Updated: 2026-06-16
-Current branch: `codex/tj-gh53-numbered-answer-sku-fix`
+Updated: 2026-06-20
+Current branch: `codex/tj-lgmg-catalog-discovery`
 
 ## Current Truth
-- Stage `tj-gh53-numbered-answer-sku-fix`; Beads `tj-6r78` is closed for GitHub #53.
-- Runtime commit `f1b7f0c5360fedbba7c9e8dd9ab983ef784a3cf1` is merged to
-  `main`, deployed to `https://noor.starec.ai`, and live E2E verified.
-- GitHub Actions run `27633383386` passed `changes`, `lint`, `test`,
-  `type-check`, and `deploy`.
-- Production marker matched `f1b7f0c5360fedbba7c9e8dd9ab983ef784a3cf1` and
-  release run `27633383386`; API smoke passed `8/0`.
-- Live E2E used isolated chatId
-  `+79262810921#tj-gh53-live-clean-20260616164900`; conversation
-  `a73e7b96-26e9-4104-9f52-56463316f36e` did not produce the
-  product-reference quantity prompt, did not store `NO-4`, and had
-  `pending_product_refs=None`.
-- Synthetic cleanup closed both `tj-gh53-live` conversations; `non_closed=0`.
-- Graphify is not configured; no `graphify-out/GRAPH_REPORT.md` exists.
+- Stage `tj-lgmg-catalog-discovery`; Beads `tj-lgmg` tracks GH #55.
+- Local implementation is in
+  `/home/me/code/treejar/.worktrees/tj-lgmg-catalog-discovery`.
+- Verified-answer routing now keeps ordinary wardrobes, beds, and
+  restaurant/living-room/kids discovery on product path or bounded clarify.
+- Payment terms and company office-location questions still hand off.
+- No commit, push, PR, deploy, GitHub mutation, production mutation, or live
+  WhatsApp E2E has been performed.
+- Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
 
 ## Verification
-- Targeted post-rebase dialogue/order/LLM tests passed: `383 passed`.
-- Ruff check and format check passed.
-- Full local gates before docs-only base rebase: mypy passed; full pytest
-  passed `1425 passed, 19 skipped`.
-- `scripts/orchestration/run_process_verification.sh` passed.
-- Production readback for #53 passed: no `NO-4`, no bad product-reference reply,
-  and no pending product refs.
+- RED regressions failed before implementation; post-fix targeted slices passed:
+  `4 passed`, `8 passed`, and policy/order-handoff `48 passed`.
+- Ruff check, ruff format-check, and `uv run mypy src/` passed.
+- Full pytest first exposed missing local `frontend/admin` deps (`esbuild`).
+  After `npm --prefix frontend/admin ci --ignore-scripts`, final full pytest
+  passed: `1430 passed, 19 skipped`.
+- Stage evidence: `.codex/stages/tj-lgmg-catalog-discovery/summary.md`.
+- Stage closeout passed for `tj-lgmg-catalog-discovery`.
 
 ## Next recommended
-Next stage id: none.
-Recommended action: hand to testers; add future alpha SKU prefixes deliberately
-with parser and runner regression coverage.
+Next stage id: `tj-lgmg-delivery`.
+Recommended action: review diff, commit if accepted, then decide whether to
+push/deploy and run live GH #55 WhatsApp E2E.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage for new medium/complex work. Read the stage summary,
-Beads `tj-6r78`, `.codex/orchestrator.toml`, and this handoff first.
+Use $orchestrator-stage for delivery of `tj-lgmg`. Read AGENTS.md,
+`.codex/orchestrator.toml`, this handoff, Beads `tj-lgmg`, and the stage
+summary. Verify branch `codex/tj-lgmg-catalog-discovery`; ask before any
+push/deploy/live/GitHub mutation not explicitly authorized.
 
 ## Explicit defers
-- None for GH #53.
+- No technical defers. Push, deploy, live WhatsApp E2E, and GH #55 closure were
+  not performed because external/delivery actions need explicit authorization.
