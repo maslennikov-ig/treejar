@@ -45,9 +45,9 @@ parallel_group: catalog-discovery-handoff-guard
 depends_on_streams:
   - issue-history-research
 parallel_decision: local
-status: returned
-delivery_method: n/a
-accepted_by_orchestrator: no
+status: merged
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: no child branch cleanup required; implementation is in this stage worktree
 risk_level: medium
@@ -73,7 +73,8 @@ changed_files:
   - .codex/stages/tj-lgmg-catalog-discovery/artifacts/tj-lgmg-local-implementation.md
   - .codex/handoff.md
 explicit_defers:
-  - no live WhatsApp E2E, push, PR, deploy, or GitHub issue mutation performed without explicit authorization
+  - GH #55 issue mutation not performed without explicit authorization
+  - destructive production cleanup not performed without a separate cleanup request
 ---
 
 # Summary
@@ -101,12 +102,19 @@ existing admin frontend dependencies with
 
 # Delivery / Cleanup
 
-No commit, push, PR, deploy, GitHub issue mutation, or live WhatsApp E2E was
-performed. The implementation remains in
-`/home/me/code/treejar/.worktrees/tj-lgmg-catalog-discovery` on branch
-`codex/tj-lgmg-catalog-discovery`.
+The implementation was committed as `2e41bfd` and pushed directly to `main`
+after a fresh fast-forward check. GitHub Actions run `27873799695` passed
+`changes`, `lint`, `test`, `type-check`, and `deploy`; production marker
+`/opt/noor/.release-sha` matched
+`2e41bfd2cf5487b2997ff8c87cc31848336471a7`. Production smoke passed with
+`8 passed, 0 failed`.
+
+Controlled live E2E on the approved `+79262810921` test phone passed for the
+restaurant, wardrobe resume, and kids beds scenarios with `escalation_status`
+remaining `none`. See `tj-lgmg-delivery-live-e2e.md` for details.
 
 # Risks / Follow-ups / Explicit Defers
 
-No technical defers. Delivery, live E2E, deploy, and GH #55 closure require
-explicit authorization.
+No technical defers. GH #55 issue mutation was not performed. Synthetic live E2E
+conversations were left in production for audit; destructive production cleanup
+was not performed without a separate cleanup request.

@@ -1,7 +1,7 @@
 # Stage tj-lgmg-catalog-discovery Summary
 
-Status: local implementation complete and verified. Not committed, pushed,
-deployed, or used to mutate GitHub issue state.
+Status: delivered to `main`, deployed to production, and controlled live E2E
+verified. GitHub issue state was not mutated.
 
 Scope: fix GH #55 class of premature manager handoffs where ordinary furniture
 discovery turns, especially restaurant context, wardrobes after name gate, and
@@ -72,18 +72,42 @@ Verification:
   passed, including ruff, format-check, mypy, full pytest, process
   verification, artifact validation, stage-ready check, documentation review,
   project-index review, and debt marker scan.
+- Delivery:
+  - Commit `2e41bfd2cf5487b2997ff8c87cc31848336471a7` was pushed directly to
+    `main` after a fresh fetch and fast-forward check.
+  - GitHub Actions run `27873799695` passed `changes`, `lint`, `test`,
+    `type-check`, and `deploy`.
+  - Production marker `/opt/noor/.release-sha` matched
+    `2e41bfd2cf5487b2997ff8c87cc31848336471a7`; `/opt/noor/.release-run-id`
+    matched `27873799695`.
+  - `ssh noor-server 'cd /opt/noor && docker compose ps'` showed `app`,
+    `worker`, `nginx`, `db`, and `redis` up.
+  - `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+    passed: `8 passed, 0 failed`.
+- Controlled live E2E on approved test phone `+79262810921`:
+  - `+79262810921#tj-lgmg-live-restaurant-20260620T142253Z`: initial name gate,
+    then `Angela` resumed restaurant discovery with catalog alternatives;
+    `escalation_status=none`.
+  - `+79262810921#tj-lgmg-live-wardrobe-20260620T142253Z`: initial name gate,
+    then `Angela` resumed living-room wardrobe discovery with catalog wardrobe
+    options; `escalation_status=none`.
+  - Same wardrobe suffix, `I also want two beds for kids.`: returned catalog
+    alternatives/clarification for kids beds with `escalation_status=none`.
+  - Production readback for `+79262810921#tj-lgmg-live-%` returned 2 synthetic
+    conversations, 0 escalation rows, and 0 pending escalations.
 
 Documentation:
 - docs-reviewed: updated - this stage summary, local implementation artifact,
-  handoff, and stage plan record the behavior change and verification evidence.
+  delivery/live E2E artifact, handoff, and stage plan record the behavior
+  change, delivery, and verification evidence.
 - project-index: reviewed-no-change - no stable entrypoints, routes,
   subsystem ownership, integrations, or verification commands changed.
 - graph-reviewed: no-change-needed - no Graphify report/config is present.
 
 Residual / handoff:
-- No live WhatsApp E2E, deploy, GitHub issue mutation, PR, push, or merge was
-  performed in this stage.
 - Local `frontend/admin/node_modules` was installed to satisfy existing
   frontend regression tests; it is ignored and not part of tracked changes.
-- Beads `tj-lgmg` remains the task truth for GH #55 until delivery/issue
-  closure is authorized.
+- No PR or GitHub issue mutation was performed.
+- Synthetic live E2E conversations were left in production for audit;
+  destructive production cleanup was not performed without a separate cleanup
+  request.
