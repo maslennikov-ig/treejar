@@ -168,6 +168,58 @@ async def test_search_products_defers_image_when_runtime_requests_deferred_media
     assert pending.product_key == "11111111-1111-1111-1111-111111111111"
 
 
+async def test_search_products_defers_only_exact_match_media_when_query_has_specific_modifier(
+    run_context: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_messaging_client: MagicMock,
+) -> None:
+    exact_product = ProductRead(
+        id="11111111-1111-1111-1111-111111111111",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Convertible Sleeper Skyland Chair (Beige)",
+        description_en="A multifunctional chair that converts into a sleeper",
+        sku="CSC-01 beige",
+        price="420.00",
+        currency="AED",
+        image_url="https://example.com/convertible-sleeper.jpg",
+        created_at="2024-01-01T00:00:00Z",
+        stock=4,
+        is_active=True,
+    )
+    nearby_product = ProductRead(
+        id="33333333-3333-3333-3333-333333333333",
+        category_id="22222222-2222-2222-2222-222222222222",
+        name_en="Visitor Chair Grey",
+        description_en="Standard guest chair for reception seating",
+        sku="CH-999 grey",
+        price="180.00",
+        currency="AED",
+        image_url="https://example.com/visitor-chair.jpg",
+        created_at="2024-01-01T00:00:00Z",
+        stock=7,
+        is_active=True,
+    )
+
+    class MockResults:
+        products = [exact_product, nearby_product]
+
+    async def mock_rag_search(*args: Any, **kwargs: Any) -> MockResults:
+        return MockResults()
+
+    run_context.deps.defer_product_media = True
+    monkeypatch.setattr("src.llm.engine.rag_search_products", mock_rag_search)
+
+    result = await search_products(run_context, "Convertible chairs")
+
+    assert isinstance(result, ToolReturn)
+    assert "Convertible Sleeper Skyland Chair" in result.return_value
+    assert "Visitor Chair Grey" in result.return_value
+    assert result.return_value.count("[Note: Image of this product") == 1
+    mock_messaging_client.send_media.assert_not_called()
+    queued_urls = [item.url for item in run_context.deps.pending_product_media]
+    assert queued_urls == ["https://example.com/convertible-sleeper.jpg"]
+
+
 async def test_search_products_shows_catalog_only_customer_facing_option(
     run_context: Any,
     monkeypatch: pytest.MonkeyPatch,

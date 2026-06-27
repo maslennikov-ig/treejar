@@ -8691,6 +8691,27 @@ async def search_products(
 
     formatted_results = []
 
+    def _product_match_text(product: Any) -> str:
+        return (
+            f"{product.name_en}\n"
+            f"{product.description_en or ''}\n"
+            f"{product.category or ''}"
+        )
+
+    product_match = classify_product_match(
+        query,
+        [_product_match_text(product) for product in results.products],
+    )
+    exact_media_product_keys: set[str] | None = None
+    if product_match == "exact":
+        exact_keys = {
+            str(getattr(product, "id", None) or product.sku)
+            for product in results.products
+            if classify_product_match(query, [_product_match_text(product)]) == "exact"
+        }
+        if exact_keys:
+            exact_media_product_keys = exact_keys
+
     async def _safe_send_media(
         url: str,
         caption: str,
@@ -8772,6 +8793,21 @@ async def search_products(
         )
 
         if r.image_url:
+            product_key = str(getattr(r, "id", None) or r.sku)
+            should_send_media = not (
+                exact_media_product_keys is not None
+                and product_key not in exact_media_product_keys
+            )
+            if not should_send_media:
+                logger.info(
+                    "Suppressed nearby product media for query=%r product_key=%s "
+                    "because exact product media is available",
+                    query,
+                    product_key,
+                )
+                formatted_results.append(desc)
+                continue
+
             image_delivery_text = (
                 "will be sent to the customer's WhatsApp after the text reply"
                 if ctx.deps.defer_product_media
@@ -8785,19 +8821,11 @@ async def search_products(
             await _safe_send_media(
                 url=r.image_url,
                 caption=media_caption,
-                product_key=str(getattr(r, "id", None) or r.sku),
+                product_key=product_key,
                 zoho_item_id=getattr(r, "zoho_item_id", None),
             )
 
         formatted_results.append(desc)
-
-    product_match = classify_product_match(
-        query,
-        [
-            f"{product.name_en}\n{product.description_en or ''}\n{product.category or ''}"
-            for product in results.products
-        ],
-    )
 
     if product_match == "nearby":
         formatted_results.insert(
