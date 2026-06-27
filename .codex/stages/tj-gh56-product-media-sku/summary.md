@@ -1,10 +1,11 @@
 # Stage tj-gh56-product-media-sku Summary
 
 Updated: 2026-06-27
-Status: local implementation verified; delivery authorized
-Branch: `codex/tj-gh56-product-media-sku`
+Status: delivered, deployed, and closed
+Branch: `main`
 Base: `origin/main@b28c246af13db58cae921e4ff08705831c3ae8ad`
-Beads: `tj-jyig`, external ref `gh-56`
+Commit: `6df39c72ef6d4b79de67b58a9c6f29a7771293ab`
+Beads: `tj-jyig`, external ref `gh-56`, closed
 
 docs-reviewed: no-change-needed - this is a narrow runtime behavior bugfix
 covered by regression tests; no public API, operator workflow, deployment,
@@ -84,15 +85,31 @@ Passed:
 - Full pytest after dependency install:
   `OPENROUTER_API_KEY=dummy env DYLD_FALLBACK_LIBRARY_PATH="${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}" uv run --extra dev pytest tests/ -v --tb=short`
   passed: 1431 passed, 19 skipped.
+- Stage closeout:
+  `scripts/orchestration/run_stage_closeout.py --stage tj-gh56-product-media-sku`
+  passed.
+- CI/deploy run:
+  `https://github.com/maslennikov-ig/treejar/actions/runs/28278326716`
+  passed, including deploy.
+- Production smoke:
+  `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
+  passed: 8 passed, 0 failed.
+- VPS release check:
+  `/opt/noor/.release-sha` is
+  `6df39c72ef6d4b79de67b58a9c6f29a7771293ab`; `.release-run-id` is
+  `28278326716`.
 
 ## Delivery
 
-Authorized on 2026-06-27 by the user:
+Completed on 2026-06-27:
 
-- commit and push the feature branch
-- fast-forward/merge into `main`
-- deploy through the `main` GitHub Actions workflow
-- comment on GH #56 and close it as fixed
+- committed `fix(llm): restrict product media to exact matches`
+- pushed feature branch `origin/codex/tj-gh56-product-media-sku`
+- fast-forwarded `origin/main` to `6df39c7`
+- deployed through the `main` GitHub Actions workflow
+- commented on GH #56 and closed it as completed
+- closed Beads `tj-jyig`
+- removed the local GH56 stage worktree and local feature branch
 
 Live WhatsApp E2E and catalog/prod data audit are not part of this delivery
 unless separately needed.
@@ -102,4 +119,4 @@ unless separately needed.
 - Read-only live/catalog audit can still distinguish whether the incident media
   came from an extra nearby RAG product or from a wrong primary image on
   `CSC-01 beige`.
-- External delivery actions are approved for GH #56 only.
+- No GH #56 delivery, deploy, Beads, or GitHub mutation remains pending.
