@@ -120,6 +120,21 @@ No scope split or preservation ledger is active.
 - No credential/scope changes or destructive cleanup without explicit approval.
 - Ambiguous public API compatibility decisions return to the user.
 
+## Acceptance Audit
+
+| Criterion | Local evidence | External evidence still required | State |
+| --- | --- | --- | --- |
+| `AC-1` debug exposure | Route-removal regression and security gates pass | Deploy/readback; current production still returns `200` | externally blocked |
+| `AC-2` OAuth/inbound durability | Malformed OAuth, durable recovery, replay, cancellation, and quarantine regressions pass | Deploy plus bounded production health/log readback | externally blocked |
+| `AC-3` escalation reconciliation | Exact-manifest, tamper, transaction, rollback, and idempotency tests pass | Apply only if explicitly approved; otherwise retain the audited manifest | approval-gated |
+| `AC-4` Docker maintenance | Dry-run/apply safety, heartbeat, health-failure, and idempotent installer tests pass | Production installation/apply only if explicitly approved | approval-gated |
+| `AC-5` truthful health | Redis/database/version/status regressions pass | Deploy/readback; current production still reports `0.1.0` and Redis only | externally blocked |
+| `AC-6` failure visibility | Privacy-safe signals, thresholds, cooldown ownership, and heartbeat coverage pass | Deploy and runtime readback | externally blocked |
+| `AC-7` latency | Local phase instrumentation, delivery-boundary reduction, and quality regressions pass | Approved live synthetic matrix for p50/p95/max | externally blocked |
+| `AC-8` public `501` contracts | Removed-route/OpenAPI regressions and durable documentation pass | Deploy/readback of retired routes | externally blocked |
+| `AC-9` repository reconciliation | Exact inventory, handoff, inbox, and cleanup dry-run are complete | Destructive removal and final inventory require explicit approval | externally blocked |
+| `AC-10` release closeout | Full canonical local gate, release dry-run, process verification, and rollback procedure pass | Approved merge/push, successful CI/deploy, deployed SHA, smoke/readback, and rollback evidence | externally blocked |
+
 ## Internal-Ready Closeout
 
 - `scripts/orchestration/check_stage_ready.py tj-av22`: passed.
