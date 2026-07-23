@@ -95,7 +95,7 @@ async def main() -> None:
 
     # 4. Optionally send a real test message
     print("\n--- 8.4 Live message ---")
-    if os.getenv("SEND_TEST") == "1" and client and client.is_configured():
+    if os.getenv("SEND_TEST") == "1" and client and client.is_configured:
         try:
             await client.send_message(
                 "🤖 TreeJar verification test — if you see this, notifications work!"
