@@ -100,21 +100,27 @@ async def test_signal_delivery_claim_deduplicates_by_code() -> None:
         redis,
         code="inbound_queue_stalled",
         cooldown_seconds=1800,
+        owner_token="claim-1",
     )
     second = await claim_signal_delivery(
         redis,
         code="inbound_queue_stalled",
         cooldown_seconds=1800,
+        owner_token="claim-2",
     )
 
-    assert first is True
-    assert second is False
-    redis.set.assert_awaited_with(
+    assert first == "claim-1"
+    assert second is None
+    assert redis.set.await_args_list[0].args == (
         "runtime-alert:inbound_queue_stalled",
-        "1",
-        ex=1800,
-        nx=True,
+        "claim-1",
     )
+    assert redis.set.await_args_list[0].kwargs == {"ex": 1800, "nx": True}
+    assert redis.set.await_args_list[1].args == (
+        "runtime-alert:inbound_queue_stalled",
+        "claim-2",
+    )
+    assert redis.set.await_args_list[1].kwargs == {"ex": 1800, "nx": True}
 
 
 class _ScalarResult:
@@ -254,8 +260,8 @@ async def test_runtime_monitoring_notifies_once_after_explicit_enable(
             maintenance_heartbeat_missing=False,
         )
     )
-    sender = AsyncMock()
-    claim = AsyncMock(return_value=True)
+    sender = AsyncMock(return_value=True)
+    claim = AsyncMock(return_value="claim-token")
     monkeypatch.setattr(
         "src.services.runtime_monitoring.collect_runtime_snapshot",
         collector,
@@ -276,15 +282,152 @@ async def test_runtime_monitoring_notifies_once_after_explicit_enable(
         "src.services.runtime_monitoring.settings.runtime_monitoring_telegram_enabled",
         True,
     )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.telegram_bot_token",
+        "test-token",
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.telegram_chat_id",
+        "test-chat",
+    )
 
-    signals = await run_runtime_monitoring({"redis": AsyncMock()})
+    redis = AsyncMock()
+    signals = await run_runtime_monitoring({"redis": redis})
 
     assert [signal.code for signal in signals] == ["zoho_oauth_failed"]
     claim.assert_awaited_once()
+    redis.eval.assert_not_awaited()
     message = sender.await_args.args[0]
     assert "zoho_oauth_failed" in message
     assert "token" not in message.lower()
     assert "secret" not in message.lower()
+
+
+@pytest.mark.asyncio
+async def test_runtime_monitoring_releases_claim_when_delivery_is_not_confirmed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collector = AsyncMock(
+        return_value=RuntimeSnapshot(
+            observed_at=NOW,
+            failed_jobs_last_hour=0,
+            oauth_failures_last_hour=1,
+            queue_depth=0,
+            oldest_queue_age_seconds=None,
+            stale_pending_escalations=0,
+            health_dependency_failures=0,
+            maintenance_age_seconds=60,
+            maintenance_last_run_succeeded=True,
+            maintenance_heartbeat_missing=False,
+        )
+    )
+    sender = AsyncMock(return_value=False)
+    claim = AsyncMock(return_value="claim-token")
+    redis = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.collect_runtime_snapshot",
+        collector,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.send_telegram_message",
+        sender,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.claim_signal_delivery",
+        claim,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.runtime_monitoring_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.runtime_monitoring_telegram_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.telegram_bot_token",
+        "test-token",
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.telegram_chat_id",
+        "test-chat",
+    )
+
+    signals = await run_runtime_monitoring({"redis": redis})
+
+    assert [signal.code for signal in signals] == ["zoho_oauth_failed"]
+    sender.assert_awaited_once()
+    redis.eval.assert_awaited_once()
+    assert redis.eval.await_args.args[1:] == (
+        1,
+        "runtime-alert:zoho_oauth_failed",
+        "claim-token",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("bot_token", "chat_id"),
+    [
+        ("", "test-chat"),
+        ("test-token", ""),
+    ],
+)
+async def test_runtime_monitoring_does_not_claim_or_send_with_incomplete_config(
+    monkeypatch: pytest.MonkeyPatch,
+    bot_token: str,
+    chat_id: str,
+) -> None:
+    collector = AsyncMock(
+        return_value=RuntimeSnapshot(
+            observed_at=NOW,
+            failed_jobs_last_hour=1,
+            oauth_failures_last_hour=0,
+            queue_depth=0,
+            oldest_queue_age_seconds=None,
+            stale_pending_escalations=0,
+            health_dependency_failures=0,
+            maintenance_age_seconds=60,
+            maintenance_last_run_succeeded=True,
+            maintenance_heartbeat_missing=False,
+        )
+    )
+    sender = AsyncMock()
+    claim = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.collect_runtime_snapshot",
+        collector,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.send_telegram_message",
+        sender,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.claim_signal_delivery",
+        claim,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.runtime_monitoring_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.runtime_monitoring_telegram_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.telegram_bot_token",
+        bot_token,
+    )
+    monkeypatch.setattr(
+        "src.services.runtime_monitoring.settings.telegram_chat_id",
+        chat_id,
+    )
+
+    signals = await run_runtime_monitoring({"redis": AsyncMock()})
+
+    assert [signal.code for signal in signals] == ["arq_jobs_failed"]
+    claim.assert_not_awaited()
+    sender.assert_not_awaited()
 
 
 def test_production_worker_can_read_host_maintenance_heartbeat() -> None:

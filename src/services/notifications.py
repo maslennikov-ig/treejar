@@ -615,21 +615,24 @@ async def notify_daily_summary_telegram(metrics: DailySummaryData) -> None:
         logger.exception("Failed to send daily summary to Telegram")
 
 
-async def send_telegram_message(text: str) -> None:
+async def send_telegram_message(text: str) -> bool:
     """Send a pre-formatted message to Telegram.
 
     Public wrapper for _get_telegram_client — for use by other modules
-    (e.g., weekly reports). Safe to call even when Telegram is not configured.
+    (e.g., weekly reports). Return whether Telegram confirmed delivery.
+    Safe to call even when Telegram is not configured.
     """
     try:
         client = _get_telegram_client()
-        await client.send_message(text)
+        result = await client.send_message(text)
+        return bool(result and result.get("ok") is True)
     except Exception:
         logfire.error(
             "telegram.send_message.failed",
             notification_type="generic",
         )
         logger.exception("Failed to send message to Telegram")
+        return False
 
 
 async def run_daily_summary(ctx: dict[str, Any]) -> None:

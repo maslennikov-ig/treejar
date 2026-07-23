@@ -147,7 +147,7 @@
     },
     {
       "task_id": "tj-av22.1.1",
-      "stream_owner": "alert-cooldown-worker",
+      "stream_owner": "runtime-alert-worker",
       "artifact_path": ".codex/stages/tj-av22/artifacts/tj-av22.1.1.md"
     }
   ]
