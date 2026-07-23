@@ -1,30 +1,29 @@
-# Noor Prompt
+# Noor Stabilization Launcher
 
 Target: Codex gpt-5.6 root orchestrator in `/home/me/code/treejar`.
 
-Goal: complete Beads epic `tj-av22` and leave Noor secure, reliable, observable,
-verified, and ready for supported operation.
+Entrypoint: use `orchestrator-stage` to continue Beads epic `tj-av22`.
 
-Success criteria: the epic's technical findings are resolved or have a specific
-external blocker; appropriate regression and canonical gates pass; docs and
-Beads reflect reality; approved production work has release and rollback
-evidence.
+Goal: leave Noor secure, reliable, observable, verified, and ready for supported
+operation.
 
-Context: read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`,
-`docs/superpowers/specs/2026-07-23-noor-stabilization-design.md`,
-`docs/superpowers/plans/2026-07-23-noor-stabilization.md`, then epic `tj-av22`.
+Success criteria:
+- technical findings are resolved or tied to a specific external blocker;
+- relevant regression tests and canonical gates pass;
+- Beads, stage records, and durable docs reflect the final state;
+- approved production work has release, verification, and rollback evidence.
 
-Constraints: use your judgment to choose the execution order and whether, how
-many, and when to spawn visible subagents; the user has authorized them. The
-candidate map in the plan is guidance, not a schedule. Follow repository
-contracts for delegated work, isolation, artifacts, review, testing, and
-closeout. Keep worker prompts concise and in English. Preserve unrelated files,
-use first-party documentation where relevant, and capture durable findings in
-Beads or stage documentation.
+Context: read `AGENTS.md`, `.codex/orchestrator.toml`, `.codex/handoff.md`, the
+epic, and its linked specification and implementation plan.
 
-Output: completed outcome, verification evidence, remaining blockers, and the
-next approval decision if one is required.
+Working approach: choose the execution shape that best fits current evidence.
+Visible subagents are authorized when delegation is useful; the plan's
+decomposition is optional guidance. Keep delegated prompts concise and in
+English. Preserve unrelated files and follow repository approval boundaries.
 
-Stop: ask before deploy/prod mutation, real Telegram/WhatsApp, reconciliation
-apply, credential/scope changes, destructive cleanup, or ambiguous API
-compatibility decisions.
+Output: the completed outcome, verification evidence, remaining blockers, and
+the next approval decision if one is needed.
+
+Stop: ask before deploy or production mutation, real Telegram/WhatsApp traffic,
+reconciliation apply, credential or scope changes, destructive cleanup, or an
+ambiguous API compatibility decision.

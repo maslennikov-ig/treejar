@@ -32,13 +32,13 @@ Ruff, Mypy, Docker/cron, existing Telegram notifications.
 | 10 | Integrate, deploy, verify, close | `tj-av22.3` | all implementation tasks | Yes |
 
 The user explicitly authorized visible spawned subagents on 2026-07-23.
-The root orchestrator decides whether delegation is useful, how many agents to
-spawn, how to group the work, and when to run streams in parallel. Delegated
-work still follows the repository's isolation, artifact, and review contracts.
+The root orchestrator may delegate coherent workstreams when useful and chooses
+the working shape from current evidence. Delegated work still follows the
+repository's isolation, artifact, and review contracts.
 
 ## Candidate Delegation Map
 
-This is an advisory decomposition map, not a required schedule or agent count.
+This is an advisory decomposition map, not a required execution shape.
 The orchestrator may combine, split, reorder, defer, or keep any stream local
 based on current evidence, shared-file conflicts, context size, and material
 benefit.
@@ -80,8 +80,8 @@ worker. A completion event is evidence to review, not automatic acceptance.
 2. Validate that `tj-av22.3` depends on all implementation/cleanup children.
 3. Confirm `bd dep cycles` is empty.
 4. Remove the mistakenly created commercial-offer artifact.
-5. Record the user's spawned-subagent authorization without fixing agent count
-   or scheduling-only dependencies.
+5. Record the user's spawned-subagent authorization without prescribing the
+   execution shape or scheduling-only dependencies.
 6. Run prompt validation and process verification.
 7. Close `tj-g6m4` only after the artifacts and Beads export are verified.
 
