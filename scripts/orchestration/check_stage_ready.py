@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """Check whether a stage folder is ready for closure or handoff."""
+# ruff: noqa: E402
 
 from __future__ import annotations
 
 import pathlib
+import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
+
+from runtime_support import ensure_tomllib_runtime
+
+ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
+
 import re
 import subprocess
-import sys
 import tomllib
 
 
@@ -107,6 +117,8 @@ def main(argv: list[str]) -> int:
         errors.append(f"missing stage summary: {summary_path}")
 
     artifacts = sorted(artifacts_dir.glob("*.md")) if artifacts_dir.exists() else []
+    if not artifacts:
+        errors.append(f"missing stage artifacts: {artifacts_dir}")
 
     if exact_identity:
         for artifact in artifacts:

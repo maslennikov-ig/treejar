@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """Validate cohesive v2.19 stage manifests, scope ledgers, and active-stage state."""
+# ruff: noqa: E402
 
 from __future__ import annotations
+
+import pathlib
+import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
+
+from runtime_support import ensure_tomllib_runtime
+
+ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
 
 import argparse
 import hashlib
 import json
-import pathlib
 import re
 import subprocess
-import sys
 import tomllib
 from typing import Any
 

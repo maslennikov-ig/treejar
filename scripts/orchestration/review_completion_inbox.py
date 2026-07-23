@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """Inspect and update the repo-local delegated completion inbox."""
+# ruff: noqa: E402
 
 from __future__ import annotations
+
+import pathlib
+import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
+
+from runtime_support import ensure_tomllib_runtime
+
+ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
 
 import argparse
 from contextlib import contextmanager
 import fcntl
 import json
 import os
-import pathlib
 import subprocess
-import sys
 import tomllib
 from datetime import datetime, timezone
 

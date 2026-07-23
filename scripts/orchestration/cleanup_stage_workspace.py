@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """Clean safe local branches and worktrees for accepted child streams."""
+# ruff: noqa: E402
 
 from __future__ import annotations
 
-import argparse
 import pathlib
-import subprocess
 import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
+
+from runtime_support import ensure_tomllib_runtime
+
+ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
+
+import argparse
+import subprocess
 import tomllib
 
 

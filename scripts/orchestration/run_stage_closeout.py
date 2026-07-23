@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 """Run stage close verification based on the repo-local orchestration contract."""
+# ruff: noqa: E402
 
 from __future__ import annotations
+
+import pathlib
+import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
+
+from runtime_support import ensure_tomllib_runtime
+
+ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
 
 import argparse
 from contextlib import contextmanager
@@ -11,10 +23,8 @@ import fcntl
 import hashlib
 import json
 import os
-import pathlib
 import re
 import subprocess
-import sys
 import tomllib
 
 DEBT_MARKER_PATTERN = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
@@ -1549,6 +1559,14 @@ def main(argv: list[str]) -> int:
         if explicit_level == "inner_loop" or not args.stage_id
         else load_stage_artifacts(repo_root, str(args.stage_id))
     )
+    enforcement = contract.get("enforcement")
+    artifacts_required = (
+        isinstance(enforcement, dict)
+        and enforcement.get("artifact_required_for_stage_close") is True
+    )
+    if artifacts_required and args.stage_id and not artifacts:
+        artifacts_dir = repo_root / ".codex" / "stages" / str(args.stage_id) / "artifacts"
+        raise SystemExit(f"missing stage artifacts: {artifacts_dir}")
     artifact_level = artifact_metadata(artifacts)[0]
     level = select_orchestration_level(args.level, artifacts, contract)
     if level == "inner_loop" and args.stage_id:
