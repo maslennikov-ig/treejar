@@ -1,37 +1,58 @@
 # Orchestrator Handoff
-Updated: 2026-06-27
+Updated: 2026-07-23
 Current branch: `main`
 
 ## Current Truth
-- Stage `tj-gh56-product-media-sku` delivered; Beads `tj-jyig` and GH #56 closed.
-- Commit `6df39c7` fixes over-broad product media queueing for exact catalog matches.
-- `search_products` now queues/sends media only for per-product exact matches
-  when any exact match exists; nearby alternatives stay text-only.
-- CI/deploy run `28278326716` deployed release SHA `6df39c7` to `https://noor.starec.ai`.
-- GH #56 was commented and closed as completed; local stage worktree/branch removed.
+- Active stabilization epic: `tj-av22`.
+- Planning task `tj-g6m4` produced the approved technical design, implementation
+  plan, Beads hierarchy, and root-orchestrator prompt.
+- Design:
+  `docs/superpowers/specs/2026-07-23-noor-stabilization-design.md`.
+- Plan:
+  `docs/superpowers/plans/2026-07-23-noor-stabilization.md`.
+- Prompt:
+  `docs/prompts/2026-07-23-noor-stabilization-orchestrator.md`.
+- P1 scope: public Redis debug exposure (`tj-9c94`), Zoho OAuth/inbound batch
+  reliability (`tj-p9ui`), pending escalation reconciliation (`tj-ymi3`),
+  failure visibility (`tj-av22.1`), and latency (`tj-15m`).
+- P2 scope: Docker maintenance (`tj-092y`), truthful health (`tj-38l5`),
+  incomplete public `501` contracts (`tj-av22.2`), and local orchestration
+  residue (`tj-rt42`).
+- Integration/release/closeout `tj-av22.3` depends on all implementation and
+  cleanup children.
+- On 2026-07-23 the user explicitly authorized visible spawned subagents for
+  this epic. The orchestrator chooses the useful number, scope, and timing of
+  agents. The plan contains advisory candidate streams rather than a prescribed
+  wave schedule.
+- Canonical runtime remains `https://noor.starec.ai`.
 - Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
 
-## Verification
-- RED regression failed before implementation, then passed after the media guard.
-- Targeted media checks passed: `9 passed`.
-- `uv run --extra dev ruff check src/ tests/` passed.
-- `uv run --extra dev ruff format --check src/ tests/` passed.
-- `uv run --extra dev mypy src/` passed.
-- Full pytest initially failed only due missing fresh-worktree frontend
-  `esbuild`; after `npm ci` in `frontend/admin`, full pytest passed: `1431 passed, 19 skipped`.
-- Production smoke passed: `verify_api` 8 passed, 0 failed; `/api/v1/health` OK.
+## Audit Baseline
+- Local canonical gates were green at audit time: Ruff, format, Mypy, and full
+  pytest (`1431 passed, 19 skipped`).
+- Production was generally available, but the audit found a public raw-Redis
+  debug route, one Zoho OAuth-shaped incoming-batch loss, 33 pending escalation
+  rows, a non-running maintenance cron, incomplete health, weak failure
+  visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: `none`.
-Recommended action: no GH #56 action pending; only optional read-only catalog audit remains.
+Next stage id: `tj-av22`.
+Recommended action: execute the checked-in orchestrator prompt. Start with local
+triage, then choose delegation and sequencing from current evidence. Do not
+deploy or mutate production until the explicit approval gate.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage only if doing the optional GH #56 follow-up audit.
-Read AGENTS.md, `.codex/orchestrator.toml`, this handoff, Beads `tj-jyig`,
-and `.codex/stages/tj-gh56-product-media-sku/summary.md`.
-Do not run live WhatsApp E2E or catalog/prod data audit unless separately needed.
+Use $orchestrator-stage and the prompt at
+`docs/prompts/2026-07-23-noor-stabilization-orchestrator.md`.
+
+## Approval gates
+- Ask before deploy/staging or production mutation.
+- Ask before applying escalation reconciliation or sending real Telegram/
+  WhatsApp tests.
+- Ask before deleting worktrees/branches/caches or changing credentials/scopes.
+- Preserve existing untracked user files.
 
 ## Explicit defers
-- Read-only live/catalog audit can still distinguish whether the incident media
-  came from an extra nearby RAG result or a wrong primary image on `CSC-01 beige`.
-- No delivery/deploy/GitHub mutation remains pending for GH #56.
+- Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
+  `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
+  `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.
