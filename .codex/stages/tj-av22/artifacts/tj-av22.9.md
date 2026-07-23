@@ -55,8 +55,8 @@ depends_on_streams:
   - durable-documentation-correction
 parallel_decision: sequential
 status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: isolated review worktree retained for root inspection
 risk_level: high

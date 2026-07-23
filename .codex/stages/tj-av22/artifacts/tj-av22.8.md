@@ -63,8 +63,8 @@ depends_on_streams:
   - correction-review
 parallel_decision: parallel
 status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: read-only review worktree retained for root-orchestrator inspection
 risk_level: high

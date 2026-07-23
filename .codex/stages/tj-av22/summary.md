@@ -35,6 +35,30 @@ No scope split or preservation ledger is active.
   targeted correctness/security reviewer at the integration boundary.
 - Catalog candidates: none; installed workflows cover the stage.
 
+## Delivered Locally
+
+- Removed the unauthenticated Redis debug surface and made health report the
+  installed version plus required Redis/PostgreSQL state with sanitized `503`
+  degradation.
+- Added typed Zoho OAuth parsing, owner-safe refresh locks, bounded failure
+  handling, and privacy-safe operational records.
+- Replaced destructive inbound `LPOP` processing with an immutable durable
+  processing list, an owner-token lease longer than the worker timeout, and a
+  started/completed replay guard. Uncertain post-side-effect recovery is
+  quarantined instead of replayed.
+- Added exact-ID, classifier-limited, transactional escalation reconciliation
+  and conservative Docker maintenance/cron/heartbeat tooling. Production apply
+  remains approval-gated.
+- Added privacy-safe runtime monitoring and delivery-aware optional Telegram
+  cooldown behavior.
+- Added bounded latency phase evidence and moved summary enqueue work after
+  customer-facing text delivery. Controlled local evidence does not claim live
+  latency targets.
+- Retired the never-functional public SaleOrder and quality-report routes with
+  contract tests and documentation.
+- Aligned durable release, health, Zoho recovery, latency, and inbound recovery
+  documentation with the current implementation.
+
 ## Parallel Decomposition Matrix
 
 | Stream | Goal | Agent | Write zone | Dependencies | Verification | Decision | Reason |
@@ -48,16 +72,26 @@ No scope split or preservation ledger is active.
 
 ## Verification
 
-- Clean baseline after orchestration guardrail repair:
+- Initial clean baseline after orchestration guardrail repair:
   - `scripts/orchestration/run_process_verification.sh`: passed
   - `uv run ruff check src/ tests/`: passed
   - `uv run ruff format --check src/ tests/`: passed
   - `uv run mypy src/`: passed
   - `uv run pytest tests/ -q --tb=short`: `1431 passed, 19 skipped`
-- Delegation decision: API/health, Zoho/inbound, and operational-state streams
-  pass the isolation and material-benefit gates. Runtime visibility, latency,
-  API-contract cleanup, repository cleanup, and closeout remain sequential
-  until the first integration boundary.
+- Integrated pre-review gate at `3cf59b5`:
+  - process verification, Ruff, format, and Mypy: passed
+  - full pytest: `1499 passed, 19 skipped`
+- Post-correction root gate after `fb52643`:
+  - focused audio/inbound/webhook/worker matrix: `61 passed`
+  - process verification, Ruff, format, and Mypy: passed
+  - full pytest: `1507 passed, 19 skipped`
+- Independent review artifacts `tj-av22.5`, `tj-av22.7`, and `tj-av22.8`
+  were accepted as findings reports. Their implementation and documentation
+  corrections are integrated. Final correction review `tj-av22.9` passed after
+  the audio-transcription guard correction; the branch is locally
+  release-ready.
+- No production, credentials, live messaging, external API, reconciliation
+  apply, cron install, deployment, or destructive cleanup was performed.
 
 ## Approval Gates
 
@@ -69,5 +103,8 @@ No scope split or preservation ledger is active.
 
 ## Explicit Defers
 
-- Product-policy and vendor gates remain outside this stage as recorded in
-  `.codex/handoff.md`.
+- Production deploy/readback, live latency matrix, exact external-message
+  tests, escalation apply, maintenance cron installation/apply, and destructive
+  repository/cache cleanup remain explicit approval gates.
+- Product-policy and vendor gates outside this stabilization stage remain
+  recorded in `.codex/handoff.md`.
