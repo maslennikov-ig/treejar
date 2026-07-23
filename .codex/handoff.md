@@ -2,9 +2,12 @@
 Updated: 2026-07-23
 Current branch: `main`
 Current stage id: `tj-av22`
+Current stage status: accepted historical stage
 
 ## Current Truth
-- Active stabilization epic: `tj-av22`.
+- Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
+  closed. Their technical release boundary is complete; separately
+  approval-gated operational follow-ups remain active.
 - Integration branch `codex/tj-av22-stabilization` was fast-forwarded into
   `main`.
 - Planning task `tj-g6m4` produced the technical design, implementation plan,
@@ -68,16 +71,16 @@ Current stage id: `tj-av22`
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: `tj-av22`.
-Recommended action: choose the next bounded approval-gated stream: live
-synthetic latency/message proof, escalation/maintenance operations, rollback
-exercise, or repository/worktree cleanup.
+Next stage id: not opened.
+Recommended action: continue normal product work, or explicitly authorize one
+bounded follow-up: `tj-15m` live latency/message proof, `tj-5o9r` production
+operational validation, or `tj-rt42` destructive repository cleanup.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to continue `tj-av22` from deployed `main@2213a06`.
-Read the accepted `tj-av22.10` artifact and the delivery evidence in the stage
-summary; keep live traffic, production data changes, rollback exercise, and
-cleanup behind their separate approval gates.
+Use $orchestrator-stage only after selecting the next product outcome or one
+explicitly authorized follow-up. Treat `tj-av22` as accepted history, read its
+stage summary for deployed release evidence, and do not infer permission for
+live traffic, production data changes, rollback exercise, or cleanup.
 
 ## Approval gates
 - Ask before applying escalation reconciliation or sending real Telegram/
@@ -88,6 +91,14 @@ cleanup behind their separate approval gates.
 - Preserve existing untracked user files.
 
 ## Explicit defers
+- `tj-15m`: live FAQ/product/comparison/order/Arabic/escalation latency and
+  message matrix; blocked until exact synthetic identities/scenarios and real
+  traffic are approved.
+- `tj-5o9r`: optional exact-manifest escalation apply, maintenance cron
+  install/first run, real alert delivery test, and rollback exercise; each
+  operation requires separate exact production approval.
+- `tj-rt42`: stage/legacy worktree, branch, and optional cache deletion;
+  blocked until exact destructive-cleanup approval.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
   `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.

@@ -1311,6 +1311,25 @@ def git_diff_text(repo_root: pathlib.Path) -> str:
     return fallback.stdout if fallback.returncode == 0 else ""
 
 
+def is_probably_binary(path: pathlib.Path) -> bool:
+    try:
+        sample = path.open("rb").read(65536)
+    except OSError:
+        return False
+    if not sample:
+        return False
+    if b"\0" in sample:
+        return True
+    try:
+        decoded = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return any(
+        ord(character) < 32 and character not in "\b\t\n\f\r"
+        for character in decoded
+    )
+
+
 def changed_line_debt_hits(repo_root: pathlib.Path) -> list[str]:
     if not git_available(repo_root):
         return []
@@ -1340,7 +1359,7 @@ def changed_line_debt_hits(repo_root: pathlib.Path) -> list[str]:
 
     for raw_path in untracked.stdout.splitlines():
         path = repo_root / raw_path
-        if not path.is_file():
+        if not path.is_file() or is_probably_binary(path):
             continue
         try:
             for line_number, line in enumerate(path.read_text(errors="ignore").splitlines(), start=1):

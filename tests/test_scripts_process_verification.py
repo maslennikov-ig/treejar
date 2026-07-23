@@ -36,6 +36,16 @@ def _load_runtime_support():
     return module
 
 
+def _load_stage_closeout():
+    spec = importlib.util.spec_from_file_location("stage_closeout", STAGE_CLOSEOUT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class ProcessVerificationTests(unittest.TestCase):
     def test_verification_policy_references_defined_command_groups(self) -> None:
         contract = tomllib.loads(
@@ -197,6 +207,27 @@ class ProcessVerificationTests(unittest.TestCase):
                 text.index("ensure_tomllib_runtime"),
                 text.index("import tomllib"),
                 f"{path.name} must re-exec Python 3.10 before importing tomllib",
+            )
+
+    def test_debt_scan_ignores_untracked_binary_files(self) -> None:
+        stage_closeout = _load_stage_closeout()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+            binary_marker = "".join(("HA", "CK"))
+            text_marker = "".join(("TO", "DO"))
+            (tmp_path / "binary.pdf").write_bytes(
+                b"%PDF-1.7\n\x00\x01compressed "
+                + binary_marker.encode()
+                + b" payload\xff"
+            )
+            (tmp_path / "notes.txt").write_text(f"{text_marker}: tracked follow-up\n")
+
+            hits = stage_closeout.changed_line_debt_hits(tmp_path)
+
+            self.assertEqual(
+                hits,
+                [f"notes.txt:1: {text_marker}: tracked follow-up"],
             )
 
     def test_runtime_support_reexecs_with_uv_for_python_without_tomllib(self) -> None:
