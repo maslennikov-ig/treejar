@@ -35,6 +35,11 @@ Current stage id: `tj-av22`
   approval boundary.
 - Production deployment, readback, real external-message tests, escalation
   apply, cron installation, and live latency proof have not been performed.
+- Fresh read-only production recheck still returns version `0.1.0`, Redis-only
+  health, and HTTP `200` for `/api/v1/debug/redis` (body discarded). The latest
+  `main@89f9a560` CI run `30002801189` failed only in four orchestration-runtime
+  guard tests; the integration branch contains their root fixes and passes the
+  expanded process-verification suite plus the full canonical gate.
 - Cleanup audit `tj-rt42` found nine old worktrees with no commits unique from
   `main`, plus large local caches. Nothing was deleted because cleanup requires
   explicit approval.

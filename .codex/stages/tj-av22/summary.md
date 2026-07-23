@@ -102,6 +102,15 @@ No scope split or preservation ledger is active.
   release-ready.
 - No production, credentials, live messaging, external API, reconciliation
   apply, cron install, deployment, or destructive cleanup was performed.
+- Fresh read-only production/CI baseline before delivery:
+  - `https://noor.starec.ai/api/v1/health` still reports version `0.1.0` and
+    only Redis dependency state
+  - `/api/v1/debug/redis` still returns HTTP `200`; its body was discarded
+  - GitHub Actions run `30002801189` for `main@89f9a560` failed in four
+    orchestration-runtime tests covering tomllib bootstrap and mandatory stage
+    artifacts; lint and Mypy passed, and deploy was skipped
+  - commits `e0b7ca8` and `00ec0cf` contain the root corrections; the integration
+    branch passes the expanded process suite and full canonical local gate
 
 ## Approval Gates
 
