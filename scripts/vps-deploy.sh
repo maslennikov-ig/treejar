@@ -52,6 +52,7 @@ KEEP_PATHS=(
     ".worktrees"
     "debug.log"
     "logs"
+    "ops"
 )
 
 while [ "$#" -gt 0 ]; do

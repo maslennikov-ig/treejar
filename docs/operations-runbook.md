@@ -83,6 +83,11 @@ manifest was wrong:
 
 Do not use a broad status update as rollback.
 
+The `ops/` directory is runtime audit state and is preserved by artifact
+deploys. Keep manifests, apply/readback results, crontab snapshots, and
+sanitized verification logs there with restrictive permissions; never add
+credentials or customer content.
+
 ## Docker maintenance
 
 The maintenance script never prunes volumes or running resources. Its default
@@ -156,6 +161,37 @@ crontab -l
 
 Restoring a crontab does not restore Docker data already pruned. Docker cleanup
 is therefore approval-gated and intentionally conservative.
+
+## Controlled deployment rollback/restore drill
+
+Copy the currently deployed operator script outside the replaceable runtime
+tree before the first activation, and use that same immutable copy for both
+directions:
+
+```bash
+umask 077
+cp /opt/noor/scripts/vps-deploy.sh /tmp/noor-vps-deploy-current.sh
+chmod 700 /tmp/noor-vps-deploy-current.sh
+
+bash /tmp/noor-vps-deploy-current.sh \
+  --archive /opt/noor/.hotfix-backups/<predecessor>.tar.gz \
+  --target-dir /opt/noor \
+  --health-url http://127.0.0.1:8002/api/v1/health
+
+# Select the newly created deploy-...-from-<original-sha>.tar.gz archive.
+bash /tmp/noor-vps-deploy-current.sh \
+  --archive /opt/noor/.hotfix-backups/<current-release-backup>.tar.gz \
+  --target-dir /opt/noor \
+  --health-url http://127.0.0.1:8002/api/v1/health
+```
+
+Do not run the second step through `scripts/vps-deploy.sh` from the activated
+predecessor: its archived implementation may predate current runtime-state
+preservation rules. Keep command logs under `/tmp` during activation and move
+them into `ops/` only after the original release is restored. Verify the exact
+original `.release-sha`, all expected compose services, health dependencies,
+cron markers, and the maintenance heartbeat before declaring the drill
+complete.
 
 ## Runtime failure visibility
 
