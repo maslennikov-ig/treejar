@@ -3,7 +3,7 @@
   "stage_id": "tj-av22",
   "goal_id": "tj-av22",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "internal_ready",
   "sequence": 1,
   "acceptance_boundary_id": "noor-production-stabilization",
   "acceptance_owner": "root-orchestrator",
