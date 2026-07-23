@@ -899,6 +899,15 @@ async def _process_batch_inner(
 ) -> None:
     """Inner implementation — separated for clean error handling."""
     batch_id = _inbound_batch_id(raw_messages)
+    side_effects_started = False
+
+    async def _ensure_side_effect_guard() -> None:
+        nonlocal side_effects_started
+        if side_effects_started:
+            return
+        await _begin_inbound_side_effects(redis, batch_id)
+        side_effects_started = True
+
     latency_trace = ChatLatencyTrace()
     pre_llm_started = latency_trace.start_phase()
     try:
@@ -995,6 +1004,7 @@ async def _process_batch_inner(
     should_send_voice_fallback = False
 
     if audio_messages:
+        await _ensure_side_effect_guard()
         from src.integrations.voice.voxtral import (
             MAX_AUDIO_SIZE,
             transcribe_audio_with_metadata,
@@ -1322,7 +1332,7 @@ async def _process_batch_inner(
                 return
 
             if should_send_voice_fallback:
-                await _begin_inbound_side_effects(redis, batch_id)
+                await _ensure_side_effect_guard()
                 fallback_text = _voice_fallback_text(conv.language)
                 await send_wazzup_text_with_audit(
                     db,
@@ -1357,7 +1367,7 @@ async def _process_batch_inner(
                     conv.escalation_status,
                     batch_ref,
                 )
-                await _begin_inbound_side_effects(redis, batch_id)
+                await _ensure_side_effect_guard()
                 await _handle_escalation_fallback(
                     conv=conv,
                     combined_text=combined_text,
@@ -1386,7 +1396,7 @@ async def _process_batch_inner(
                     batch_ref,
                     LLM_TIMEOUT,
                 )
-                await _begin_inbound_side_effects(redis, batch_id)
+                await _ensure_side_effect_guard()
                 llm_started = latency_trace.start_phase()
                 try:
                     typing_task = _start_typing_refresh(wazzup_provider, chat_id)

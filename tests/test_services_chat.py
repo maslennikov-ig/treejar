@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.models.message import Message
-from src.services.chat import _format_for_whatsapp, process_incoming_batch
+from src.services.chat import (
+    INBOUND_EXECUTION_STARTED,
+    InboundBatchTerminalError,
+    _format_for_whatsapp,
+    process_incoming_batch,
+)
 
 
 class MockResult:
@@ -227,6 +232,94 @@ async def test_process_incoming_batch_no_redis() -> None:
     """When context lacks redis entirely, should raise KeyError."""
     with pytest.raises(KeyError, match="redis"):
         await process_incoming_batch({}, "79991234567")
+
+
+@pytest.mark.asyncio
+@patch("src.services.chat.async_session_factory")
+@patch("src.services.chat.WazzupProvider")
+async def test_audio_transcription_is_not_replayed_after_late_failure(
+    mock_provider_class: MagicMock,
+    mock_db_factory: MagicMock,
+) -> None:
+    from arq import Retry
+
+    chat_id = "79991234567"
+    raw_message = json.dumps(
+        {
+            "messageId": "audio-replay-guard",
+            "chatId": chat_id,
+            "chatType": "whatsapp",
+            "type": "voice",
+            "channelId": "ch1",
+            "status": "inbound",
+            "authorType": "client",
+            "dateTime": "2026-04-30T10:00:00.000",
+            "media": {
+                "url": "https://cdn.wazzup24.com/files/replay-guard.ogg",
+                "mimeType": "audio/ogg",
+            },
+        }
+    )
+    redis = AsyncMock()
+    _seed_inbound_redis(redis, [raw_message])
+
+    provider = AsyncMock()
+    provider.download_media.return_value = b"audio-bytes"
+    mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=provider)
+    mock_provider_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    db = AsyncMock()
+    db.execute.side_effect = RuntimeError("database unavailable after transcription")
+    mock_db_factory.return_value.__aenter__.return_value = db
+
+    transcription = SimpleNamespace(
+        text="one external transcription",
+        tokens_in=10,
+        tokens_out=2,
+        total_tokens=12,
+        cost=0.001,
+        model="openai/gpt-audio-mini",
+    )
+    transcribe_with_metadata = AsyncMock(return_value=transcription)
+
+    with (
+        patch(
+            "src.integrations.voice.voxtral.transcribe_audio_with_metadata",
+            transcribe_with_metadata,
+            create=True,
+        ),
+        patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+        pytest.raises(Retry),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            chat_id,
+        )
+
+    transcribe_with_metadata.assert_awaited_once()
+    assert any(
+        len(call.args) > 1 and call.args[1] == INBOUND_EXECUTION_STARTED
+        for call in redis.set.await_args_list
+    )
+
+    redis.set.reset_mock()
+    redis.set.return_value = True
+    redis.get.return_value = INBOUND_EXECUTION_STARTED
+    redis.lrange.return_value = [raw_message]
+    redis.lmove.reset_mock(side_effect=True)
+    inner = AsyncMock()
+
+    with (
+        patch("src.services.chat._process_batch_inner", inner),
+        pytest.raises(InboundBatchTerminalError, match="uncertain_replay"),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 2},
+            chat_id,
+        )
+
+    inner.assert_not_awaited()
+    transcribe_with_metadata.assert_awaited_once()
 
 
 @pytest.mark.asyncio
