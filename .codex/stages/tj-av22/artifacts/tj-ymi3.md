@@ -19,7 +19,7 @@ epic_id: tj-av22
 stage_id: tj-av22
 session_id: tj-av22
 milestone: operational-safety-controls
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -56,11 +56,11 @@ parallel_group: ops
 depends_on_streams:
   - none
 parallel_decision: parallel
-status: returned
-delivery_method: n/a
-accepted_by_orchestrator: no
+status: accepted
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: pending
-cleanup_notes: branch retained for root review and integration
+cleanup_notes: accepted and integrated; worktree retained pending approved stage cleanup
 risk_level: high
 verification_tier: slice_acceptance
 risk_tags:
@@ -87,6 +87,7 @@ verification:
   - uv run ruff format --check changed Python and script files: passed
   - uv run mypy src/services/escalation_state.py: passed
   - uv run python scripts/escalation_guard.py --help: passed
+  - root review added symlink-manifest rejection and reran 42 focused tests: passed
 changed_files:
   - src/services/escalation_state.py
   - scripts/escalation_guard.py
@@ -124,6 +125,10 @@ production database, alert channel, or runtime was accessed.
 
 Returned for root review on `codex/tj-av22-ops`. The worker did not merge into
 the integration branch, push, deploy, or clean the worktree.
+
+The root orchestrator reviewed and merged the stream, added a regression that
+rejects symlinked apply manifests, and reran the 42-test affected slice plus
+static checks. The worktree remains pending approved stage cleanup.
 
 # Risks / Follow-ups / Explicit Defers
 

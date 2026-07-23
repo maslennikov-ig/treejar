@@ -225,8 +225,8 @@ def _validated_actions(manifest: dict[str, Any]) -> list[dict[str, Any]]:
 
 def load_reconciliation_manifest(path: Path) -> dict[str, Any]:
     """Load a previously archived regular-file manifest and verify its digest."""
-    if not path.is_file():
-        raise ManifestValidationError("apply requires an archived manifest file")
+    if path.is_symlink() or not path.is_file():
+        raise ManifestValidationError("apply requires an archived regular file")
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

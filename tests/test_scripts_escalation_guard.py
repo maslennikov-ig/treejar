@@ -148,6 +148,26 @@ def test_archived_manifest_detects_tampering(tmp_path: Path) -> None:
         load_reconciliation_manifest(path)
 
 
+def test_apply_rejects_symlinked_manifest(tmp_path: Path) -> None:
+    pair = _pending_pair(
+        conversation_status="closed",
+        conversation_escalation_status="resolved",
+        age_days=45,
+    )
+    manifest = build_reconciliation_manifest(
+        [pair],
+        now=datetime(2026, 7, 23, tzinfo=UTC),
+        stale_after_days=30,
+    )
+    target = tmp_path / "approved-target.json"
+    target.write_text(json.dumps(manifest))
+    link = tmp_path / "approved.json"
+    link.symlink_to(target)
+
+    with pytest.raises(ManifestValidationError, match="regular file"):
+        load_reconciliation_manifest(link)
+
+
 @pytest.mark.asyncio
 async def test_audit_is_select_only() -> None:
     db = AsyncMock()
