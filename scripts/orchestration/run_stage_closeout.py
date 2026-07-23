@@ -456,6 +456,24 @@ def _stage_path_error(
     return None
 
 
+def _completion_runtime_path_error(
+    repo_root: pathlib.Path,
+    expected_stage: pathlib.Path,
+    inbox: dict[str, object],
+    key: str,
+) -> str | None:
+    label = f"completion_inbox.{key}"
+    raw_value = inbox.get(key)
+    if inbox.get("scope", "repo_root") != "git_common_dir":
+        return _stage_path_error(repo_root, expected_stage, label, raw_value)
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return f"{label} is missing"
+    raw_path = pathlib.Path(raw_value)
+    if raw_path.is_absolute() or ".." in raw_path.parts:
+        return f"{label} must be a safe relative git-common path"
+    return None
+
+
 def validate_stage_state(
     repo_root: pathlib.Path, contract: dict[str, object], stage_id: str
 ) -> list[str]:
@@ -489,11 +507,11 @@ def validate_stage_state(
             errors.append("completion_inbox is required for delegated stage state")
         else:
             for key in ("events_file", "review_state_file"):
-                inbox_error = _stage_path_error(
+                inbox_error = _completion_runtime_path_error(
                     root,
                     expected,
-                    f"completion_inbox.{key}",
-                    inbox.get(key),
+                    inbox,
+                    key,
                 )
                 if inbox_error:
                     errors.append(inbox_error)

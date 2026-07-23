@@ -203,12 +203,16 @@ async def test_create_review_conversation_not_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_report_not_implemented() -> None:
-    """POST /reports/ should still return 501 (Week 11 feature)."""
+async def test_legacy_quality_report_route_is_not_exposed() -> None:
+    """The unused report stub is retired in favor of /api/v1/reports/generate."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         response = await ac.post(
-            "/api/v1/quality/reports/", json={"start_date": "2024-01-01"}
+            "/api/v1/quality/reports/", json={"date_from": "2024-01-01T00:00:00Z"}
         )
-    assert response.status_code in (422, 501)
+    assert response.status_code == 404
+
+
+def test_legacy_quality_report_route_is_absent_from_openapi() -> None:
+    assert "/api/v1/quality/reports/" not in app.openapi()["paths"]

@@ -16,6 +16,9 @@ RUNTIME_SUPPORT = REPO_ROOT / "scripts" / "orchestration" / "runtime_support.py"
 STAGE_CLOSEOUT = REPO_ROOT / "scripts" / "orchestration" / "run_stage_closeout.py"
 STAGE_CLEANUP = REPO_ROOT / "scripts" / "orchestration" / "cleanup_stage_workspace.py"
 CHECK_STAGE_READY = REPO_ROOT / "scripts" / "orchestration" / "check_stage_ready.py"
+REVIEW_COMPLETION_INBOX = (
+    REPO_ROOT / "scripts" / "orchestration" / "review_completion_inbox.py"
+)
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -33,6 +36,44 @@ def _load_runtime_support():
 
 
 class ProcessVerificationTests(unittest.TestCase):
+    def test_completion_inbox_accepts_git_common_dir_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            subprocess.run(
+                ["git", "init", "-q"],
+                cwd=tmp_path,
+                check=True,
+            )
+            (tmp_path / ".codex").mkdir()
+            (tmp_path / ".codex" / "orchestrator.toml").write_text(
+                "\n".join(
+                    [
+                        "[baseline]",
+                        'profile = "balanced-v2.19"',
+                        "",
+                        "[workspace]",
+                        'current_stage_id = "tj-shared-inbox"',
+                        "",
+                        "[completion_inbox]",
+                        'scope = "git_common_dir"',
+                        'events_file = "codex-orchestration/completions.ndjson"',
+                        'review_state_file = "codex-orchestration/review-state.json"',
+                    ]
+                )
+            )
+
+            result = subprocess.run(
+                [sys.executable, str(REVIEW_COMPLETION_INBOX)],
+                cwd=tmp_path,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+            self.assertIn("total_events: 0", result.stdout)
+            self.assertIn("pending_events: 0", result.stdout)
+
     def test_stage_ready_requires_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
