@@ -134,6 +134,11 @@
       "task_id": "tj-092y",
       "stream_owner": "operations-worker",
       "artifact_path": ".codex/stages/tj-av22/artifacts/tj-092y.md"
+    },
+    {
+      "task_id": "tj-15m.6",
+      "stream_owner": "latency-worker",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-15m.6.md"
     }
   ]
 }
