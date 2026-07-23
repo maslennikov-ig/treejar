@@ -3,7 +3,7 @@
   "stage_id": "tj-15m",
   "goal_id": "tj-15m",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "blocked",
   "sequence": 1,
   "acceptance_boundary_id": "noor-live-synthetic-latency-proof",
   "acceptance_owner": "root-orchestrator",

@@ -150,6 +150,16 @@ async def test_ensure_token_refreshes_and_caches_when_lock_acquired() -> None:
             False,
         ),
         (
+            _make_response(
+                200,
+                {
+                    "error": "invalid_code",
+                    "error_description": "refresh_token=must-not-leak",
+                },
+            ),
+            False,
+        ),
+        (
             httpx.Response(
                 200,
                 content=b"not-json-client_secret=must-not-leak",

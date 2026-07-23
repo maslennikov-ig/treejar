@@ -27,6 +27,7 @@ ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS = 0.5
 _TERMINAL_OAUTH_ERROR_CODES = {
     "invalid_client",
     "invalid_client_secret",
+    "invalid_code",
     "invalid_grant",
     "invalid_refresh_token",
     "unauthorized_client",

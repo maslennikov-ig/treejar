@@ -2,7 +2,7 @@
 Updated: 2026-07-23
 Current branch: `main`
 Current stage id: `tj-15m`
-Current stage status: in progress
+Current stage status: blocked on Zoho account-owner credential renewal
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -65,6 +65,12 @@ Current stage status: in progress
   operations, live synthetic message/latency proof, and destructive cleanup.
   Stage `tj-5o9r` completed the production operations under exact snapshot and
   restore boundaries.
+- The approved `tj-15m` live matrix stopped after one FAQ canary. Both Zoho CRM
+  and Inventory refresh calls return `invalid_code` with no access token; no
+  assistant message was produced, the batch was safely quarantined, no pending
+  escalation remains, and health is green. `tj-15m.7` requires interactive
+  Zoho owner consent and new protected refresh tokens before the matrix can
+  resume.
 
 ## Audit Baseline
 - Local canonical gates were green at audit time: Ruff, format, Mypy, and full
@@ -76,15 +82,14 @@ Current stage status: in progress
 
 ## Next recommended
 Next stage id: `tj-rt42`, after `tj-15m` is accepted.
-Recommended action: finish the authorized live synthetic latency/message
-matrix, then perform safe repository cleanup.
+Recommended action: perform safe repository cleanup while `tj-15m.7` waits for
+Zoho owner action; resume the exact live matrix after both tokens are renewed.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to continue `tj-15m`. Treat `tj-av22` and `tj-5o9r` as
-accepted history. Follow `.codex/stages/tj-15m/summary.md`: use only the
-approved synthetic test recipient/channel with unique suffixes, record
-per-scenario latency and cleanup, and stop on any unsafe commercial claim,
-duplicate send, unresolved escalation, or health failure.
+Use $orchestrator-stage to open `tj-rt42` for the authorized safe cleanup.
+Treat `tj-av22` and `tj-5o9r` as accepted history and `tj-15m` as explicitly
+blocked by `tj-15m.7`. Preserve all unrelated user files and archive any dirty
+or ambiguous worktree evidence before deletion.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -93,7 +98,9 @@ duplicate send, unresolved escalation, or health failure.
 - Preserve existing unrelated user files and do not change credentials/scopes.
 
 ## Explicit defers
-- `tj-15m`: authorized and in progress.
+- `tj-15m`: blocked after one authorized canary; resume after `tj-15m.7`.
+- `tj-15m.7`: blocked on interactive Zoho owner consent and new CRM/Inventory
+  refresh tokens.
 - `tj-5o9r`: accepted and closed.
 - `tj-rt42`: authorized and queued after live evidence is committed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54

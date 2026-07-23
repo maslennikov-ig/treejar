@@ -101,3 +101,31 @@ If `model_tools` remains dominant with local RAG/context phases small, the
 remaining blocker is the external model/provider turn path. That evidence
 should be recorded rather than weakening catalog, quotation, escalation,
 language, or answer-quality behavior.
+
+## Approved live attempt on 2026-07-23
+
+The authorized six-scenario matrix stopped after its first FAQ canary, as
+required by the runbook stop rules. The webhook accepted the synthetic message,
+but the protected helper observed no assistant reply within 120 seconds and
+ended after `128.157s`. The remaining product, comparison, order, Arabic, and
+escalation messages were not sent.
+
+This was not a measured LLM latency failure. The worker reached the normal
+message path, then both Zoho CRM and Inventory refresh diagnostics returned
+`HTTP 200` with `error=invalid_code` and no access token. The durable execution
+guard quarantined the batch before replay, so no duplicate external side
+effect occurred. Exact aggregate readback found one synthetic conversation and
+user message, zero assistant messages, zero pending escalations, and escalation
+status `none`; production health remained green.
+
+Zoho documents `invalid_code` for a refresh-token request as a revoked/deleted
+refresh-token condition requiring token issuance again:
+<https://www.zoho.com/books/api/v4/oauth/#possible-errors>. The application now
+classifies this code as terminal `invalid_credentials` instead of scheduling a
+misleading transient retry.
+
+Beads `tj-15m.7` tracks the external owner action: issue new least-privilege CRM
+and Inventory refresh tokens in the correct data center, update protected
+production configuration, verify both refreshes, and rerun the exact matrix.
+Until then, no p50, p95, maximum, provider/model, or response-quality target is
+claimed from this attempt.
