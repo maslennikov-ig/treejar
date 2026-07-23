@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from arq import func
 from arq.connections import RedisSettings
 from arq.cron import cron
 
@@ -19,7 +20,7 @@ from src.quality.job import (
 )
 from src.quality.manager_job import evaluate_escalated_conversations
 from src.rag.embeddings import EmbeddingEngine
-from src.services.chat import process_incoming_batch
+from src.services.chat import INBOUND_BATCH_MAX_TRIES, process_incoming_batch
 from src.services.followup import run_automatic_followups, run_feedback_requests
 from src.services.metrics import calculate_and_store_metrics
 from src.services.notifications import run_daily_summary
@@ -77,7 +78,7 @@ class WorkerSettings:
     functions: list[Any] = [
         sync_products_from_treejar_catalog,
         sync_products_from_zoho,
-        process_incoming_batch,
+        func(process_incoming_batch, max_tries=INBOUND_BATCH_MAX_TRIES),
         refresh_conversation_summary,
         run_automatic_followups,
         run_proposal_followups,

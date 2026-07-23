@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
-import traceback
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+from arq import Retry
 from sqlalchemy import func, select
 
 from src.core.config import settings
@@ -19,6 +20,7 @@ from src.core.database import async_session_factory
 from src.integrations.crm.zoho_crm import ZohoCRMClient
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
 from src.integrations.messaging.wazzup import WazzupProvider
+from src.integrations.zoho_oauth import ZohoOAuthError
 from src.llm.conversation_summary import should_enqueue_conversation_summary_refresh
 from src.llm.engine import ProductMediaPayload, process_message
 from src.models.conversation import Conversation
@@ -54,6 +56,10 @@ logger = logging.getLogger(__name__)
 # Maximum time to wait for LLM response (seconds)
 LLM_TIMEOUT = 120
 TYPING_REFRESH_INTERVAL_SECONDS = 4.0
+INBOUND_BATCH_MAX_TRIES = 3
+INBOUND_BATCH_FAILURES_KEY = "wazzup:inbound:failures"
+INBOUND_BATCH_QUARANTINE_PREFIX = "wazzup:inbound:quarantine:"
+_INBOUND_BATCH_FAILURE_HISTORY_LIMIT = 1000
 
 VOICE_TRANSCRIPTION_TOO_LARGE_MARKER = (
     "[System: Unreadable voice message (file too large)]"
@@ -81,6 +87,31 @@ class _AudioProcessingResult:
 
 def _voice_fallback_text(language: str | None) -> str:
     return VOICE_FALLBACK_AR if language == "ar" else VOICE_FALLBACK_EN
+
+
+def _inbound_batch_id(raw_messages: Sequence[str]) -> str:
+    digest = hashlib.sha256()
+    for raw_message in raw_messages:
+        digest.update(raw_message.encode("utf-8"))
+        digest.update(b"\x1e")
+    return digest.hexdigest()[:24]
+
+
+def _bot_reply_crm_message_id(
+    *,
+    conversation_id: object,
+    source_message_id: str | None,
+    combined_text: str,
+) -> str:
+    stable_source = (
+        source_message_id
+        or hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16]
+    )
+    return deterministic_crm_message_id(
+        "bot",
+        conversation_id,
+        stable_source,
+    )
 
 
 # WhatsApp Formatting Regexes
@@ -449,21 +480,10 @@ async def process_incoming_batch(
     """
     # ARQ automatically injects its Redis pool as ctx["redis"]
     redis = ctx["redis"]
-
-    try:
-        await _process_batch_inner(redis, chat_id)
-    except Exception:
-        logger.exception("Failed to process batch for chat_id=%s", chat_id)
-        traceback.print_exc()
-        raise  # Let ARQ mark the job as failed
-
-
-async def _process_batch_inner(redis: Any, chat_id: str) -> None:
-    """Inner implementation — separated for clean error handling."""
-    # 1. Pop all messages from Redis list
+    queue_key = f"wazzup_msgs:{chat_id}"
     raw_messages: list[str] = []
     while True:
-        raw = await redis.lpop(f"wazzup_msgs:{chat_id}")
+        raw = await redis.lpop(queue_key)
         if raw is None:
             break
         raw_messages.append(raw if isinstance(raw, str) else raw.decode())
@@ -472,6 +492,66 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
         logger.warning("No messages in Redis for %s, skipping.", chat_id)
         return
 
+    batch_id = _inbound_batch_id(raw_messages)
+    try:
+        await _process_batch_inner(redis, chat_id, raw_messages)
+    except ZohoOAuthError as exc:
+        attempt = max(1, int(ctx.get("job_try", 1)))
+        if exc.retryable and attempt < INBOUND_BATCH_MAX_TRIES:
+            await redis.lpush(queue_key, *reversed(raw_messages))
+            defer_seconds = 2**attempt
+            logger.warning(
+                "Retrying inbound batch after Zoho OAuth failure: "
+                "batch_id=%s attempt=%d/%d error_kind=%s defer_seconds=%d",
+                batch_id,
+                attempt,
+                INBOUND_BATCH_MAX_TRIES,
+                exc.kind,
+                defer_seconds,
+            )
+            raise Retry(defer=defer_seconds) from exc
+
+        quarantine_key = f"{INBOUND_BATCH_QUARANTINE_PREFIX}{batch_id}"
+        await redis.rpush(quarantine_key, *raw_messages)
+        failure_record = {
+            "attempt": attempt,
+            "batch_id": batch_id,
+            "error_kind": exc.kind,
+            "failed_at": datetime.now(UTC).isoformat(),
+            "message_count": len(raw_messages),
+            "retryable": exc.retryable,
+            "status": "terminal",
+        }
+        await redis.rpush(
+            INBOUND_BATCH_FAILURES_KEY,
+            json.dumps(failure_record, sort_keys=True),
+        )
+        await redis.ltrim(
+            INBOUND_BATCH_FAILURES_KEY,
+            -_INBOUND_BATCH_FAILURE_HISTORY_LIMIT,
+            -1,
+        )
+        logger.error(
+            "Inbound batch quarantined after Zoho OAuth failure: "
+            "batch_id=%s attempt=%d/%d error_kind=%s retryable=%s",
+            batch_id,
+            attempt,
+            INBOUND_BATCH_MAX_TRIES,
+            exc.kind,
+            exc.retryable,
+        )
+        raise
+    except Exception:
+        logger.exception("Failed to process inbound batch: batch_id=%s", batch_id)
+        raise  # Let ARQ mark the job as failed
+
+
+async def _process_batch_inner(
+    redis: Any,
+    chat_id: str,
+    raw_messages: Sequence[str],
+) -> None:
+    """Inner implementation — separated for clean error handling."""
     messages = [WazzupIncomingMessage.model_validate_json(raw) for raw in raw_messages]
     logger.info("Processing batch for %s with %d messages.", chat_id, len(messages))
 
@@ -981,10 +1061,10 @@ async def _process_batch_inner(redis: Any, chat_id: str) -> None:
                         chat_id=chat_id,
                         text=whatsapp_text,
                         source="bot_reply",
-                        crm_message_id=deterministic_crm_message_id(
-                            "bot",
-                            conv.id,
-                            assistant_msg.id,
+                        crm_message_id=_bot_reply_crm_message_id(
+                            conversation_id=conv.id,
+                            source_message_id=source_message_id,
+                            combined_text=combined_text,
                         ),
                     )
                 except (httpx.HTTPError, RuntimeError):

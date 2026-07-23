@@ -8,6 +8,14 @@ import httpx
 
 from src.core.config import settings
 from src.integrations.crm.base import CRMProvider
+from src.integrations.zoho_oauth import (
+    ZOHO_OAUTH_LOCK_POLL_ATTEMPTS,
+    ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS,
+    ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
+    ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
+    parse_zoho_oauth_response,
+    zoho_oauth_transport_error,
+)
 
 
 def _attribution_path_value(
@@ -79,12 +87,17 @@ class ZohoCRMClient(CRMProvider):
             return token if isinstance(token, str) else token.decode("utf-8")
 
         # 2. Acquire lock (race condition protection)
-        acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+        acquired = await self.redis.set(
+            lock_key,
+            "1",
+            ex=ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
+            nx=True,
+        )
 
         if not acquired:
             # Wait for another worker to refresh the token
-            for _ in range(20):  # Wait up to 10 seconds
-                await asyncio.sleep(0.5)
+            for _ in range(ZOHO_OAUTH_LOCK_POLL_ATTEMPTS):
+                await asyncio.sleep(ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS)
                 token = await self.redis.get(token_key)
                 if token:
                     return token if isinstance(token, str) else token.decode("utf-8")
@@ -99,27 +112,27 @@ class ZohoCRMClient(CRMProvider):
 
             # 4. Refresh token
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{settings.zoho_crm_accounts_url}/oauth/v2/token",
-                    data={
-                        "refresh_token": settings.zoho_crm_refresh_token,
-                        "client_id": settings.zoho_crm_client_id,
-                        "client_secret": settings.zoho_crm_client_secret,
-                        "grant_type": "refresh_token",
-                    },
-                    timeout=15.0,
+                try:
+                    response = await client.post(
+                        f"{settings.zoho_crm_accounts_url}/oauth/v2/token",
+                        data={
+                            "refresh_token": settings.zoho_crm_refresh_token,
+                            "client_id": settings.zoho_crm_client_id,
+                            "client_secret": settings.zoho_crm_client_secret,
+                            "grant_type": "refresh_token",
+                        },
+                        timeout=ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
+                    )
+                except httpx.RequestError as exc:
+                    raise zoho_oauth_transport_error() from exc
+
+                token_response = parse_zoho_oauth_response(response)
+                await self.redis.set(
+                    token_key,
+                    token_response.access_token,
+                    ex=token_response.cache_ttl_seconds,
                 )
-                response.raise_for_status()
-                data = response.json()
-
-                new_token = data["access_token"]
-                expires_in = int(data.get("expires_in", 3600))
-
-                # Cache token with TTL = expires_in - 60 seconds (buffer)
-                ttl = max(10, expires_in - 60)
-                await self.redis.set(token_key, new_token, ex=ttl)
-
-                return str(new_token)
+                return token_response.access_token
 
         finally:
             # 5. Release lock

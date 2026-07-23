@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
+from src.integrations.zoho_oauth import ZohoOAuthError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,7 +46,7 @@ async def test_ensure_token_timeout_when_lock_held() -> None:
 
     client = ZohoInventoryClient(redis)
 
-    # Patch asyncio.sleep so the test does not actually wait 10 seconds
+    # Patch asyncio.sleep so the test does not actually wait 20 seconds
     with (
         patch(
             "src.integrations.inventory.zoho_inventory.asyncio.sleep",
@@ -57,8 +58,8 @@ async def test_ensure_token_timeout_when_lock_held() -> None:
     ):
         await client._ensure_token()
 
-    # sleep must have been called exactly 20 times (the retry loop)
-    assert mock_sleep.call_count == 20
+    # The wait window must cover the 15-second refresh timeout.
+    assert mock_sleep.call_count == 40
 
     await client.close()
 
@@ -131,6 +132,160 @@ async def test_ensure_token_refreshes_and_caches_when_lock_acquired() -> None:
     redis.set.assert_awaited()
     # Lock should have been released
     redis.delete.assert_awaited_with("zoho:access_token:lock")
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "retryable"),
+    [
+        (
+            _make_response(
+                200,
+                {
+                    "error": "invalid_client",
+                    "error_description": "client_secret=must-not-leak",
+                },
+            ),
+            False,
+        ),
+        (
+            httpx.Response(
+                200,
+                content=b"not-json-client_secret=must-not-leak",
+                request=httpx.Request("POST", "https://example.com/oauth/v2/token"),
+            ),
+            True,
+        ),
+        (
+            httpx.Response(
+                200,
+                json=["not", "an", "object"],
+                request=httpx.Request("POST", "https://example.com/oauth/v2/token"),
+            ),
+            True,
+        ),
+    ],
+)
+async def test_ensure_token_rejects_malformed_oauth_response_safely(
+    response: httpx.Response,
+    retryable: bool,
+) -> None:
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+    client = ZohoInventoryClient(redis)
+
+    with (
+        patch("httpx.AsyncClient") as mock_httpx_client,
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        mock_httpx_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=response
+        )
+        await client._ensure_token()
+
+    assert isinstance(exc_info.value, ZohoOAuthError)
+    assert exc_info.value.retryable is retryable
+    assert "must-not-leak" not in str(exc_info.value)
+    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ensure_token_classifies_transport_failure_and_releases_lock() -> None:
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+    client = ZohoInventoryClient(redis)
+    request = httpx.Request("POST", "https://example.com/oauth/v2/token")
+
+    with (
+        patch("httpx.AsyncClient") as mock_httpx_client,
+        pytest.raises(ZohoOAuthError) as exc_info,
+    ):
+        mock_httpx_client.return_value.__aenter__.return_value.post = AsyncMock(
+            side_effect=httpx.ConnectError("connection failed", request=request)
+        )
+        await client._ensure_token()
+
+    assert exc_info.value.kind == "transport"
+    assert exc_info.value.retryable is True
+    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("expires_in", "expected_ttl"),
+    [
+        (999_999, 3540),
+        (30, 1),
+    ],
+)
+async def test_ensure_token_clamps_cache_ttl_to_safe_bounds(
+    expires_in: int,
+    expected_ttl: int,
+) -> None:
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+    client = ZohoInventoryClient(redis)
+    response = _make_response(
+        200,
+        {
+            "access_token": "brand_new_token",
+            "expires_in": expires_in,
+            "token_type": "Bearer",
+        },
+    )
+
+    with patch("httpx.AsyncClient") as mock_httpx_client:
+        mock_httpx_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=response
+        )
+        await client._ensure_token()
+
+    redis.set.assert_any_await(
+        "zoho:access_token",
+        "brand_new_token",
+        ex=expected_ttl,
+    )
+    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ensure_token_lock_outlives_refresh_request_timeout() -> None:
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+    client = ZohoInventoryClient(redis)
+    response = _make_response(
+        200,
+        {
+            "access_token": "brand_new_token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        },
+    )
+
+    with patch("httpx.AsyncClient") as mock_httpx_client:
+        mock_httpx_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=response
+        )
+        await client._ensure_token()
+
+    redis.set.assert_any_await(
+        "zoho:access_token:lock",
+        "1",
+        ex=20,
+        nx=True,
+    )
     await client.close()
 
 

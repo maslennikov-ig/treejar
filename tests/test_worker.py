@@ -1,6 +1,13 @@
 import pytest
+from arq.worker import Function
 
 from src.worker import WorkerSettings
+
+
+def _function_name(function: object) -> str:
+    if isinstance(function, Function):
+        return function.name
+    return function.__name__  # type: ignore[attr-defined,no-any-return]
 
 
 def test_arq_worker_settings_configured() -> None:
@@ -11,7 +18,7 @@ def test_arq_worker_settings_configured() -> None:
     assert len(settings.functions) > 0
 
     # process_incoming_batch should be registered
-    function_names = [f.__name__ for f in settings.functions]
+    function_names = [_function_name(f) for f in settings.functions]
     assert "process_incoming_batch" in function_names
     assert "refresh_conversation_summary" in function_names
     assert "sync_products_from_treejar_catalog" in function_names
@@ -27,6 +34,17 @@ def test_arq_worker_settings_configured() -> None:
     assert "sync_products_from_treejar_catalog" in cron_names
     assert "evaluate_realtime_red_flags" in cron_names
     assert "evaluate_mature_conversations_quality" in cron_names
+
+
+def test_inbound_batch_job_has_bounded_retries() -> None:
+    inbound_batch = next(
+        function
+        for function in WorkerSettings.functions
+        if _function_name(function) == "process_incoming_batch"
+    )
+
+    assert isinstance(inbound_batch, Function)
+    assert inbound_batch.max_tries == 3
 
 
 def test_worker_startup_shutdown_callable() -> None:
