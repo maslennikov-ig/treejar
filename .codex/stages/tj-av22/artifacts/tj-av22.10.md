@@ -7,7 +7,7 @@ orchestration_level: release
 scope_kind: product_slice
 immediate_consumer: root-orchestrator
 public_facade: n/a
-bounded_acceptance: independent release review of the complete Noor stabilization range 89f9a560..75d610d against AC-1 through AC-10
+bounded_acceptance: independent release review and correction delta review of the Noor stabilization range through 82a2bdb against AC-1 through AC-10
 non_goals:
   - product-code test configuration Beads or existing-document changes
   - production deployment mutation or external-service proof
@@ -19,7 +19,7 @@ epic_id: tj-av22
 stage_id: tj-av22
 session_id: tj-av22-release-review-pass
 milestone: noor-stabilization-combined-release-review
-milestone_status: replan-required
+milestone_status: accepted
 agent_type: reviewer
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -27,7 +27,7 @@ model_reasoning_rationale: independent high-risk release review across security 
 repo: treejar
 branch: codex/tj-av22-review-pass
 base_branch: codex/tj-av22-stabilization
-base_commit: 75d610de4bcfd12ba952b9f80b00fe2a98256c8e
+base_commit: 82a2bdb8897d845001e2b3b098a0c2032ae9f4d1
 worktree: /home/me/code/treejar/.worktrees/tj-av22-review-pass
 write_zone:
   - .codex/stages/tj-av22/artifacts/tj-av22.10.md
@@ -89,8 +89,8 @@ invariants:
   - rollback
   - test-matrix
 docs_impact: docs-only
-docs_reviewed: needs-work
-docs_review_notes: two durable documents still describe the retired public SaleOrder routes as active or returning 501
+docs_reviewed: updated
+docs_review_notes: correction range marks the two historical documents accurately and removes current-tense promises of retired public SaleOrder routes
 graph_reviewed: no-change-needed
 graph_review_notes: Graphify is not configured and graphify-out/GRAPH_REPORT.md is absent
 verification:
@@ -104,6 +104,13 @@ verification:
   - release-level stage-closeout dry-run before this finding artifact: passed
   - expired execution-guard read-only probe - old processing batch re-entered inner processing: failed invariant
   - durable-queue observability read-only probe - one raw list reported as zero queued jobs: failed invariant
+  - git diff --check 402ee45..82a2bdb: passed
+  - correction delta matrix - 395 passed: passed
+  - correction changed-file Ruff check: passed
+  - correction changed-file Ruff format check - 4 files: passed
+  - correction changed-source Mypy check - 2 files: passed
+  - correction process verification: passed
+  - bounded retired-route documentation search: passed
 changed_files:
   - .codex/stages/tj-av22/artifacts/tj-av22.10.md
 explicit_defers:
@@ -114,15 +121,73 @@ explicit_defers:
 
 # Summary
 
-**NEEDS WORK / NOT LOCALLY READY FOR PRODUCTION AUTHORIZATION.** The complete
-stabilization range has one confirmed P1 replay defect and two P2 acceptance
-gaps. The P1 blocks release. No P0 was found. Missing deploy, live-service,
-production-readback, latency, and cleanup evidence remains separately
-approval-gated rather than being counted as an implementation failure.
+**PASS / LOCALLY RELEASE-READY.** Correction commits `cc22972` and `82a2bdb`
+resolve the original P1 replay defect and both P2 acceptance gaps. The final
+atomic transition was necessary: the first correction still expired a guard
+before deleting its durable processing copy, while `82a2bdb` removes the copy
+and starts terminal retention in one Redis script. No active P0/P1/P2/P3
+finding remains. Deploy, live-service, production-readback, latency, and
+cleanup evidence remains separately approval-gated rather than being counted
+as a local defect.
 
-# Findings
+# Correction Delta Review (`402ee45..82a2bdb`)
 
-## P1 — an expired execution guard replays a durable processing batch
+## Original P1 — resolved
+
+- **Disposition:** resolved; no release-blocking P1 remains.
+- **Evidence:** a `started` guard is now persisted without TTL before side
+  effects at `src/services/chat.py:328-342`, and completion is also persistent
+  until finalization at `src/services/chat.py:345-349`. The Lua transition at
+  `src/services/chat.py:102-105` atomically deletes the processing list and
+  starts the bounded guard TTL; both quarantine and successful acknowledgment
+  use it at `src/services/chat.py:860-889`.
+- **Failure-boundary review:** `cc22972` alone was insufficient because its
+  terminal branch set `EXPIRE` before failure recording and processing-list
+  deletion. A crash in that interval could still leave a recoverable list whose
+  guard later disappeared. Follow-up `82a2bdb` removes that inter-command
+  window. If quarantine, failure recording, or the Lua call fails before
+  execution, both the durable copy and persistent guard remain recoverable; if
+  the Lua call executes, Redis applies deletion and expiry atomically.
+- **Regression evidence:** `tests/test_services_chat_batch.py:92-119` asserts
+  non-expiring started/completed guards before terminal state, and
+  `tests/test_services_chat_batch.py:330-393` verifies completed and uncertain
+  replay paths use the single finalization call without replaying inner work.
+
+## Original AC-6 P2 — resolved
+
+- **Disposition:** resolved for local acceptance; production enablement/readback
+  remains approval-gated.
+- **Evidence:** monitoring scans only the two durable inbound key patterns at
+  `src/services/runtime_monitoring.py:27-30`, reads `OBJECT IDLETIME` before
+  `LLEN` without reading values at
+  `src/services/runtime_monitoring.py:290-325`, and combines durable and ARQ
+  depth/age at `src/services/runtime_monitoring.py:390-419`. Reading idle time
+  first prevents the length read from masking the observed age.
+- **Regression evidence:** the parameterized orphan test covers both
+  `wazzup_msgs:*` and `wazzup:inbound:processing:*`, no ARQ job, nonzero depth,
+  stale age, and the idle-before-length behavior at
+  `tests/test_runtime_monitoring.py:204-255`. The runbook accurately names both
+  sources and the payload-free method at `docs/operations-runbook.md:160-172`.
+
+## Original AC-8 P2 — resolved
+
+- **Disposition:** resolved.
+- **Evidence:** `docs/pdf-generation-research.md:3-6,20-23,75-82` marks the
+  document historical and maps quotation creation to the internal
+  `ZohoInventoryClient.create_sale_order()` flow.
+  `docs/specs/zoho-integration/spec.md:3-14` likewise states that the public
+  SaleOrder routes were retired while stock routes remain. A bounded search
+  found only explicit statements that `/api/v1/inventory/sale-orders/*` is
+  removed, not a current-tense promise that it exists or returns `501`.
+
+## Delta finding count and verdict
+
+No genuinely new delta finding was identified. Active finding count:
+`P0=0`, `P1=0`, `P2=0`, `P3=0`. Local correction verdict: **PASS**.
+
+# Original Findings (Historical Record)
+
+## P1 — an expired execution guard replays a durable processing batch — RESOLVED
 
 - **Type:** implementation defect; `AC-2`; release-blocking.
 - **Confidence:** high. Code inspection and a read-only focused probe reproduced
@@ -156,8 +221,10 @@ approval-gated rather than being counted as an implementation failure.
 - **Promotion target:** create or attach a P1 correction child under
   `tj-av22`/`tj-av22.3`, link this finding, and require an invariant test plus
   focused delta-review before release authorization.
+- **Correction result:** resolved by `tj-av22.11` in `cc22972` plus the atomic
+  terminal transition in `82a2bdb`; see the correction delta above.
 
-## P2 — runtime monitoring misses orphaned durable inbound lists
+## P2 — runtime monitoring misses orphaned durable inbound lists — RESOLVED
 
 - **Type:** implementation/compliance defect; `AC-6`.
 - **Confidence:** high. The collector's inspected sources and a read-only probe
@@ -185,8 +252,10 @@ approval-gated rather than being counted as an implementation failure.
   processing-list-without-job cases.
 - **Promotion target:** a P2 observability correction under `tj-av22.1` or
   `tj-av22.3`, plus runbook wording that names both ARQ and durable-list sources.
+- **Correction result:** resolved by `tj-av22.12` in `cc22972`; see the
+  correction delta above.
 
-## P2 — durable documentation still promises retired SaleOrder routes
+## P2 — durable documentation still promises retired SaleOrder routes — RESOLVED
 
 - **Type:** compliance/documentation defect; `AC-8`.
 - **Confidence:** high. Repository search found direct current-tense
@@ -210,32 +279,34 @@ approval-gated rather than being counted as an implementation failure.
 - **Promotion target:** durable documentation correction attached to
   `tj-av22.2`/`tj-av22.3`; update the stage summary only after the contradiction
   is removed and re-reviewed.
+- **Correction result:** resolved by `tj-av22.13` in `cc22972`; see the
+  correction delta above.
 
 # Verdicts
 
 | Lens | Verdict | Reason |
 | --- | --- | --- |
-| Correctness / compliance | **NEEDS WORK** | One P1 replay defect and two P2 acceptance gaps remain. |
-| Quality / improvement | **PASS WITH NOTES** | No additional independent quality-only finding was identified; the P2 observability and documentation corrections also improve operability and maintainability. |
-| Overall release review | **NEEDS WORK / NOT LOCALLY READY FOR PRODUCTION AUTHORIZATION** | The P1 must be corrected and delta-reviewed before authorization. |
+| Correctness / compliance | **PASS** | Atomic guard finalization closes the replay/retention window; durable-list monitoring and route documentation now meet the reviewed local contract. |
+| Quality / improvement | **PASS** | Focused regressions cover both durable key families, idle-read ordering, and terminal finalization; no new delta finding was identified. |
+| Overall release review | **PASS / LOCALLY RELEASE-READY** | No active P0/P1/P2/P3 remains; approval-gated live proof is still required before production claims. |
 
-Finding count: `P0=0`, `P1=1`, `P2=2`, `P3=0`. There is no P0. The one P1
-blocks release under `.codex/orchestrator.toml`.
+Active finding count: `P0=0`, `P1=0`, `P2=0`, `P3=0`. The historical count
+before correction was `P0=0`, `P1=1`, `P2=2`, `P3=0`.
 
 # AC-1 Through AC-10 Coverage
 
 | Criterion | Local review disposition | Approval-gated proof still missing |
 | --- | --- | --- |
 | `AC-1` | Local pass: public debug route is removed and regression-covered. | Deploy/readback; current production baseline still returns `200`. |
-| `AC-2` | **Needs work:** OAuth parsing, owned locks, durable claim, quarantine, and ordinary replay tests pass, but execution-marker expiry permits duplicate replay. | Bounded deployed OAuth/inbound readback after the P1 correction. |
+| `AC-2` | Local pass: OAuth parsing, owned locks, durable claim, quarantine, replay handling, persistent active guards, and atomic bounded terminal finalization pass. | Bounded deployed OAuth/inbound readback. |
 | `AC-3` | Local pass: exact manifest, classifier recheck, transaction rollback, and idempotency are covered. | Approved production dry-run/apply/readback only if the exact mutation is authorized. |
 | `AC-4` | Local pass: conservative dry-run/apply, cron idempotency/readback restore, heartbeat, and health failure behavior are covered. | Approved installation/first-run/readback. |
 | `AC-5` | Local pass: installed version, Redis/database probes, sanitized `503`, and `200` matrix pass. | Deploy/version/dependency readback; production remains on the old contract. |
-| `AC-6` | **Needs work:** safe signals and cooldown behavior pass, but orphaned live/processing lists are invisible without an ARQ job. | Enablement and runtime readback remain approval-gated after correction. |
+| `AC-6` | Local pass: safe signals/cooldown pass, and orphaned live/processing lists contribute payload-free depth and age without an ARQ job. | Enablement and runtime readback remain approval-gated. |
 | `AC-7` | Local pass for bounded scope: privacy-safe phases and summary-after-text ordering are covered without quality-regression evidence loss. | Approved live scenario matrix for p50/p95/max or named provider blocker. |
-| `AC-8` | **Needs work:** code/OpenAPI route retirement passes, but two durable docs contradict it. | Deploy/readback of retired routes after documentation correction. |
+| `AC-8` | Local pass: code/OpenAPI route retirement and durable documentation agree on the internal quotation flow and retired public routes. | Deploy/readback of retired routes. |
 | `AC-9` | Local pass: Beads contains the exact nine-worktree inventory, handoff is current, inbox/process checks pass, and no destructive cleanup occurred. | Exact cleanup/final inventory only after destructive approval. |
-| `AC-10` | Local canonical evidence, process verification, stage-ready check, deploy backup path, manual rollback procedure, and release closeout dry-run are present. Overall acceptance is blocked by this P1. | Merge/push, green CI, deployed SHA/version, smoke/readback, live E2E, and rollback evidence. |
+| `AC-10` | Local canonical evidence, current correction verification, process verification, prior stage-ready check, deploy backup path, manual rollback procedure, and release closeout dry-run are present. Local review no longer has a finding blocker. | Merge/push, green CI, deployed SHA/version, smoke/readback, live E2E, and rollback evidence. |
 
 # Approval-Gated Production Proof Is Not A Local Defect
 
@@ -260,6 +331,27 @@ No dependency documentation lookup was decision-critical. Graphify is not
 configured. The only repository write is this artifact.
 
 # Verification
+
+- Correction range `402ee45..82a2bdb`:
+  - `git diff --check 402ee45..82a2bdb`: passed.
+  - Focused correction/release matrix across chat batch, runtime monitoring,
+    worker, webhook, inventory API, and LLM engine: `395 passed in 5.24s`.
+  - `uv run ruff check` on the two changed source and two changed test files:
+    passed.
+  - `uv run ruff format --check` on the same four files: passed
+    (`4 files already formatted`).
+  - `uv run mypy src/services/chat.py src/services/runtime_monitoring.py`:
+    passed.
+  - `scripts/orchestration/run_process_verification.sh`: passed.
+  - Bounded documentation search: no current-tense promise of the retired
+    public SaleOrder routes or SaleOrder `501` behavior.
+- The first correction `cc22972` was inspected independently and found to leave
+  an ordering window in the terminal branch. The final verdict therefore relies
+  on the atomic follow-up `82a2bdb`, not on the earlier commit message.
+- No production, external service, live traffic, deploy, cleanup, or remote
+  action was performed.
+
+Historical pre-correction verification:
 
 - `git diff --check 89f9a560071302d16f53704870e7a508e9d05f28...HEAD`:
   passed.
@@ -286,12 +378,13 @@ and mocks; they contacted no external service.
 
 | Finding | Implication | Confidence | Next action | Promotion target |
 | --- | --- | --- | --- | --- |
-| Expired guard replays processing batch | Duplicate external side effects remain possible; release blocked. | High | Correct TTL/lifecycle, add invariant tests, run focused delta-review. | P1 Beads correction under `tj-av22`/`tj-av22.3`. |
-| Durable lists invisible to monitoring | Accepted stalled work can appear healthy. | High | Add privacy-safe live/processing metadata and tests. | P2 under `tj-av22.1` or `tj-av22.3`, plus runbook. |
-| Retired routes remain in durable docs | AC-8 documentation proof is overstated. | High | Correct or mark historical, then rerun bounded docs search. | `tj-av22.2`/`tj-av22.3` and durable docs. |
+| Expired guard replays processing batch | **Resolved:** persistent active guard plus atomic processing deletion/terminal expiry. | High | Keep the focused regressions in release gates. | `tj-av22.11`; corrected in `cc22972`/`82a2bdb`. |
+| Durable lists invisible to monitoring | **Resolved:** both durable list families contribute payload-free depth and age. | High | Validate signal readback after approved enablement. | `tj-av22.12`; corrected in `cc22972`. |
+| Retired routes remain in durable docs | **Resolved:** historical status and internal client flow are explicit. | High | Keep the bounded retired-route search in documentation review. | `tj-av22.13`; corrected in `cc22972`. |
 
-The strict write zone prohibited Beads or existing-document mutation. The root
-orchestrator should promote the accepted findings before correction work.
+The strict write zone prohibited Beads, implementation, test, or durable
+document mutation by this reviewer. The root orchestrator promoted and
+corrected all three findings before this delta review.
 
 # Positive Patterns
 
@@ -308,24 +401,26 @@ orchestrator should promote the accepted findings before correction work.
 
 # Risks / Follow-ups
 
-- Correct the execution-marker/processing-list lifecycle first and require a
-  focused invariant test plus delta-review before any production authorization.
-- Correct durable-list observability and the two stale route documents before
-  restating `AC-6` or `AC-8` as complete.
+- Preserve atomic processing deletion/terminal guard retention and the focused
+  replay tests in future inbound changes.
+- Treat durable-key idle age as an operational stall signal and validate its
+  threshold behavior during the approval-gated production readback.
 - Keep production deployment/readback, live latency, reconciliation apply,
   maintenance installation, external messaging, rollback exercise, and
   destructive cleanup behind their existing explicit approval gates.
-- Root-orchestrator must register this returned v3 artifact in
-  `stage-manifest.json` when accepting it; that file is outside this stream's
-  strict write zone.
+- Root-orchestrator must accept the amended artifact and retain its existing
+  stage-manifest registration; that file is outside this stream's strict write
+  zone.
 
 # Delivery / Cleanup
 
-The artifact is returned on `codex/tj-av22-review-pass` for root triage. This
-reviewer did not accept or close the stage, modify Beads, change implementation,
-push, deploy, contact production, or perform cleanup.
+The amended artifact is returned on `codex/tj-av22-review-pass` for root
+acceptance. This reviewer did not close the stage, modify Beads, change
+implementation/tests/durable docs, push, deploy, contact production, or perform
+cleanup.
 
-- `docs-reviewed: needs-work` — exact contradictions are the third finding.
+- `docs-reviewed: updated` — `cc22972` corrects both durable route documents,
+  and the bounded search found no remaining current-tense promise.
 - `graph-reviewed: no-change-needed` — Graphify is not configured and
   `graphify-out/GRAPH_REPORT.md` is absent.
 - E2E/smoke: deterministic local coverage was included in the focused matrix;
