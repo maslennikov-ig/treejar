@@ -179,8 +179,8 @@ explicit production approval.
 
 Known `501` routes:
 
-- `POST /api/v1/inventory/sync`;
-- `GET /api/v1/inventory/sync/status`;
+- `POST /api/v1/inventory/sale-orders/`;
+- `GET /api/v1/inventory/sale-orders/{order_id}`;
 - `POST /api/v1/quality/reports/`.
 
 For each route, inspect real consumers and documentation, then choose one:
