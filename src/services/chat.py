@@ -99,6 +99,10 @@ end
 redis.call("del", KEYS[1])
 return 0
 """
+_FINALIZE_INBOUND_BATCH_SCRIPT = """
+redis.call("del", KEYS[1])
+return redis.call("expire", KEYS[2], ARGV[1])
+"""
 
 VOICE_TRANSCRIPTION_TOO_LARGE_MARKER = (
     "[System: Unreadable voice message (file too large)]"
@@ -342,6 +346,22 @@ async def _mark_inbound_execution_completed(redis: Any, batch_id: str) -> None:
     await redis.set(
         inbound_execution_key(batch_id),
         INBOUND_EXECUTION_COMPLETED,
+    )
+
+
+async def _finalize_inbound_batch(
+    redis: Any,
+    *,
+    processing_key: str,
+    batch_id: str,
+) -> None:
+    """Atomically remove the durable copy and bound its terminal guard."""
+    await redis.eval(
+        _FINALIZE_INBOUND_BATCH_SCRIPT,
+        2,
+        processing_key,
+        inbound_execution_key(batch_id),
+        str(settings.inbound_batch_quarantine_ttl_seconds),
     )
 
 
@@ -837,10 +857,6 @@ async def process_incoming_batch(
                         defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)
                     ) from exc
 
-                await redis.expire(
-                    inbound_execution_key(batch_id),
-                    settings.inbound_batch_quarantine_ttl_seconds,
-                )
                 await _record_inbound_batch_failure(
                     redis,
                     batch_id=batch_id,
@@ -850,7 +866,11 @@ async def process_incoming_batch(
                     retryable=retryable,
                     failed_at=failed_at,
                 )
-                await redis.delete(processing_key)
+                await _finalize_inbound_batch(
+                    redis,
+                    processing_key=processing_key,
+                    batch_id=batch_id,
+                )
                 logger.error(
                     "Inbound batch quarantined after processing failure: "
                     "batch_id=%s attempt=%d/%d error_kind=%s retryable=%s",
@@ -862,10 +882,10 @@ async def process_incoming_batch(
                 )
                 raise
 
-            await redis.delete(processing_key)
-            await redis.expire(
-                inbound_execution_key(batch_id),
-                settings.inbound_batch_quarantine_ttl_seconds,
+            await _finalize_inbound_batch(
+                redis,
+                processing_key=processing_key,
+                batch_id=batch_id,
             )
             release_state = await _release_or_continue_inbound_lock(
                 redis,

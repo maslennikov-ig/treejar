@@ -1,6 +1,7 @@
 Target: Codex reviewer continuing the `tj-av22.10` combined release review.
 
-Goal: decide whether correction commit `cc22972` resolves the three findings
+Goal: decide whether the correction series beginning at `cc22972` and ending at
+the current `codex/tj-av22-stabilization` head resolves the three findings
 recorded in `.codex/stages/tj-av22/artifacts/tj-av22.10.md`, with enough focused
 evidence for the root orchestrator to accept or replan the stabilization stage.
 Use your judgment to choose the most useful inspection order and delta checks.
@@ -8,7 +9,7 @@ Use your judgment to choose the most useful inspection order and delta checks.
 Context:
 
 Please review the correction independently rather than relying on its commit
-message. The most relevant delta is `402ee45..cc22972` in
+message. The most relevant delta is `402ee45..codex/tj-av22-stabilization` in
 `/home/me/code/treejar/.worktrees/tj-av22-stabilization`. In particular, assess
 whether:
 

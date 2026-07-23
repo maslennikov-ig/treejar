@@ -75,6 +75,20 @@ def _assert_bot_reply_sent(
     )
 
 
+def _processing_finalization_calls(
+    redis: AsyncMock,
+    batch_ref: str,
+) -> list[object]:
+    processing_key = inbound_processing_key(batch_ref)
+    return [
+        awaited
+        for awaited in redis.eval.await_args_list
+        if len(awaited.args) >= 3
+        and awaited.args[1] == 2
+        and awaited.args[2] == processing_key
+    ]
+
+
 @pytest.mark.asyncio
 async def test_started_execution_guard_remains_until_batch_reaches_terminal_state() -> (
     None
@@ -130,9 +144,10 @@ async def test_process_incoming_batch_retries_transient_zoho_failure_from_durabl
         )
 
     redis.lpush.assert_not_awaited()
-    assert inbound_processing_key(inbound_chat_reference("sensitive-chat")) not in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
+    assert not _processing_finalization_calls(
+        redis,
+        inbound_chat_reference("sensitive-chat"),
+    )
     oauth_call = redis.rpush.await_args
     assert oauth_call.args[0] == ZOHO_OAUTH_FAILURES_KEY
     oauth_record = json.loads(oauth_call.args[1])
@@ -172,9 +187,7 @@ async def test_process_incoming_batch_requeues_unexpected_failure_with_backoff(
         )
 
     redis.lpush.assert_not_awaited()
-    assert inbound_processing_key(batch_ref) not in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
+    assert not _processing_finalization_calls(redis, batch_ref)
     assert exc_info.value.defer_score == 2000
     assert chat_id not in caplog.text
     assert "private customer request" not in caplog.text
@@ -210,9 +223,7 @@ async def test_process_incoming_batch_recovers_durable_processing_batch_after_cr
     inner.assert_awaited_once_with(redis, batch_ref, [raw_message])
     redis.lpop.assert_not_awaited()
     redis.lmove.assert_not_awaited()
-    assert inbound_processing_key(batch_ref) in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
+    assert len(_processing_finalization_calls(redis, batch_ref)) == 1
 
 
 @pytest.mark.asyncio
@@ -249,9 +260,7 @@ async def test_process_incoming_batch_keeps_processing_batch_on_retryable_failur
 
     redis.lpop.assert_not_awaited()
     redis.lpush.assert_not_awaited()
-    assert inbound_processing_key(batch_ref) not in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
+    assert not _processing_finalization_calls(redis, batch_ref)
 
 
 @pytest.mark.asyncio
@@ -281,9 +290,7 @@ async def test_process_incoming_batch_keeps_processing_batch_on_cancellation() -
             batch_ref=batch_ref,
         )
 
-    assert inbound_processing_key(batch_ref) not in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
+    assert not _processing_finalization_calls(redis, batch_ref)
 
 
 @pytest.mark.asyncio
@@ -336,12 +343,11 @@ async def test_process_incoming_batch_acknowledges_completed_batch_without_repla
         for call in redis.get.await_args_list
     )
     assert inbound_execution_key(batch_id) == redis.get.await_args.args[0]
-    assert inbound_processing_key(batch_ref) in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
-    redis.expire.assert_any_await(
+    finalization_calls = _processing_finalization_calls(redis, batch_ref)
+    assert len(finalization_calls) == 1
+    assert finalization_calls[0].args[3:] == (
         inbound_execution_key(batch_id),
-        chat.settings.inbound_batch_quarantine_ttl_seconds,
+        str(chat.settings.inbound_batch_quarantine_ttl_seconds),
     )
 
 
@@ -379,12 +385,11 @@ async def test_process_incoming_batch_quarantines_uncertain_replay_without_side_
     quarantine_call = redis.set.await_args
     assert quarantine_call.args[0].startswith(chat.INBOUND_BATCH_QUARANTINE_PREFIX)
     assert json.loads(quarantine_call.args[1])["raw_messages"] == [raw_message]
-    assert inbound_processing_key(batch_ref) in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
-    redis.expire.assert_any_await(
+    finalization_calls = _processing_finalization_calls(redis, batch_ref)
+    assert len(finalization_calls) == 1
+    assert finalization_calls[0].args[3:] == (
         redis.get.await_args.args[0],
-        chat.settings.inbound_batch_quarantine_ttl_seconds,
+        str(chat.settings.inbound_batch_quarantine_ttl_seconds),
     )
 
 
@@ -460,9 +465,7 @@ async def test_process_incoming_batch_retains_durable_copy_when_quarantine_fails
         )
 
     redis.lpush.assert_not_awaited()
-    assert inbound_processing_key(batch_ref) not in {
-        call.args[0] for call in redis.delete.await_args_list
-    }
+    assert not _processing_finalization_calls(redis, batch_ref)
 
 
 @pytest.mark.asyncio

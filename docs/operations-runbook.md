@@ -198,6 +198,9 @@ effects; once quarantined, the guard receives the same bounded retention.
 Invalid configuration/payloads and exhausted retries are quarantined in the
 same way. If the quarantine write fails, the durable processing list and its
 guard are retained and the job retries; neither is deleted or copied into logs.
+At either successful acknowledgment or quarantine, Redis atomically removes
+the processing list and starts the terminal guard TTL, avoiding a crash window
+between those state changes.
 Any quarantine inspection or replay remains an exact, separately approved
 recovery action.
 
