@@ -130,7 +130,10 @@ the begin marker, entry, and end marker each occur exactly once. If readback
 fails, it restores the previous crontab automatically. Every approved apply
 atomically writes
 `/opt/noor/logs/maintenance/docker-maintenance.status` with only its final
-success/failure state and completion timestamp.
+success/failure state and completion timestamp. Deployment preserves the
+runtime `logs/` directory, recreates `logs/maintenance` when absent, and mounts
+that directory read-only into the worker at the same path so monitoring can
+read the heartbeat without gaining write access to host logs.
 
 Confirm the next approved run with:
 

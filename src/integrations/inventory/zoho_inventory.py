@@ -15,6 +15,7 @@ from src.integrations.zoho_oauth import (
     ZOHO_OAUTH_LOCK_POLL_INTERVAL_SECONDS,
     ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
     ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
+    ZohoOAuthError,
     parse_zoho_oauth_response,
     zoho_oauth_transport_error,
 )
@@ -272,7 +273,7 @@ class ZohoInventoryClient(InventoryProvider):
                 if token:
                     return token if isinstance(token, str) else token.decode("utf-8")
 
-            raise RuntimeError("Timeout waiting for Zoho token refresh lock")
+            raise ZohoOAuthError("lock_timeout", retryable=True)
 
         try:
             # 3. We have the lock, check token again just in case

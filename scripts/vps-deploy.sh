@@ -51,6 +51,7 @@ KEEP_PATHS=(
     ".ruff_cache"
     ".worktrees"
     "debug.log"
+    "logs"
 )
 
 while [ "$#" -gt 0 ]; do
@@ -160,6 +161,7 @@ for path in "${KEEP_PATHS[@]}"; do
 done
 
 rsync "${RSYNC_ARGS[@]}" "$STAGING_DIR"/ "$TARGET_DIR"/
+mkdir -p "$TARGET_DIR/logs/maintenance"
 
 cd "$TARGET_DIR"
 docker compose --project-name "$PROJECT_NAME" -f "$COMPOSE_FILE" up -d --build

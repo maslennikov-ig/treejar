@@ -40,6 +40,11 @@ def test_vps_deploy_syncs_release_and_preserves_runtime_state(tmp_path: Path) ->
     (target_dir / "app.txt").write_text("old payload\n")
     (target_dir / ".codex").mkdir()
     (target_dir / ".codex" / "keep.txt").write_text("preserve me\n")
+    maintenance_dir = target_dir / "logs" / "maintenance"
+    maintenance_dir.mkdir(parents=True)
+    (maintenance_dir / "docker-maintenance.status").write_text(
+        '{"status":"success","finished_at_epoch":1}\n'
+    )
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -95,6 +100,9 @@ def test_vps_deploy_syncs_release_and_preserves_runtime_state(tmp_path: Path) ->
     assert (target_dir / ".env").read_text() == "SECRET=1\n"
     assert not (target_dir / "stale.txt").exists()
     assert (target_dir / ".codex" / "keep.txt").read_text() == "preserve me\n"
+    assert (
+        maintenance_dir / "docker-maintenance.status"
+    ).read_text() == '{"status":"success","finished_at_epoch":1}\n'
     assert (target_dir / ".release-sha").read_text() == "278c46c8\n"
 
     backup_files = sorted((target_dir / ".hotfix-backups").glob("deploy-*.tar.gz"))
