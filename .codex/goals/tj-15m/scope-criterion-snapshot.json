@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-15m",
+  "source_kind": "beads",
+  "source_id": "tj-15m",
+  "source_digest": "8968c8895d651b6bac039979b596a96f848f23ae901d146bc4a68caa5253680b",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "Establish a repeatable baseline for agreed ordinary text scenarios; profile before changing behavior; implement only evidence-backed reductions; preserve catalog/quote/escalation correctness and response quality; local regression suites pass; after approved deploy, target p50 <= 15s and p95 <= 25s with no response over 45s in the bounded synthetic matrix, or record an explicit external-model blocker with evidence.",
+      "text_digest": "0ed9d82a4106084c8a0d17ff4d1c887b60b1ee819102cf66c6cd022fa8e12c86"
+    }
+  ]
+}

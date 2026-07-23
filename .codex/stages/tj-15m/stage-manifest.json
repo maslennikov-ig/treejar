@@ -1,0 +1,63 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-15m",
+  "goal_id": "tj-15m",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "noor-live-synthetic-latency-proof",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "wazzup-webhook",
+      "sales-agent",
+      "catalog-and-order",
+      "escalation",
+      "chat-latency"
+    ],
+    "risk_models": [
+      "performance-quality",
+      "external-messaging",
+      "state-transition"
+    ],
+    "test_environments": [
+      "production-synthetic-recipient",
+      "production-observability"
+    ],
+    "rollback_boundary": "exact-synthetic-conversations-and-escalation-state",
+    "acceptance_proofs": [
+      "six-scenario-correctness-matrix",
+      "privacy-safe-latency-summary",
+      "no-pending-or-duplicate-readback",
+      "production-health"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "persistence_or_adapter",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-15m",
+    "source_digest": "8968c8895d651b6bac039979b596a96f848f23ae901d146bc4a68caa5253680b",
+    "criteria": [
+      {
+        "criterion_id": "AC-1",
+        "text": "Establish a repeatable baseline for agreed ordinary text scenarios; profile before changing behavior; implement only evidence-backed reductions; preserve catalog/quote/escalation correctness and response quality; local regression suites pass; after approved deploy, target p50 <= 15s and p95 <= 25s with no response over 45s in the bounded synthetic matrix, or record an explicit external-model blocker with evidence.",
+        "text_digest": "0ed9d82a4106084c8a0d17ff4d1c887b60b1ee819102cf66c6cd022fa8e12c86"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-15m/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "8968c8895d651b6bac039979b596a96f848f23ae901d146bc4a68caa5253680b",
+  "scope_ledger": "none",
+  "stream_artifacts": []
+}

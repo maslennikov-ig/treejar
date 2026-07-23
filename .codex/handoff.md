@@ -1,8 +1,8 @@
 # Orchestrator Handoff
 Updated: 2026-07-23
 Current branch: `main`
-Current stage id: `tj-5o9r`
-Current stage status: accepted and closed
+Current stage id: `tj-15m`
+Current stage status: in progress
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -75,16 +75,16 @@ Current stage status: accepted and closed
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: `tj-15m`.
-Recommended action: run the authorized live synthetic latency/message matrix,
-then perform safe repository cleanup.
+Next stage id: `tj-rt42`, after `tj-15m` is accepted.
+Recommended action: finish the authorized live synthetic latency/message
+matrix, then perform safe repository cleanup.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to open `tj-15m`. Treat `tj-av22` and `tj-5o9r` as
-accepted history. Use only the approved synthetic test recipient/channel with
-unique suffixes, record per-scenario latency and cleanup, and stop on any
-unsafe commercial claim, duplicate send, unresolved escalation, or health
-failure.
+Use $orchestrator-stage to continue `tj-15m`. Treat `tj-av22` and `tj-5o9r` as
+accepted history. Follow `.codex/stages/tj-15m/summary.md`: use only the
+approved synthetic test recipient/channel with unique suffixes, record
+per-scenario latency and cleanup, and stop on any unsafe commercial claim,
+duplicate send, unresolved escalation, or health failure.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -93,7 +93,7 @@ failure.
 - Preserve existing unrelated user files and do not change credentials/scopes.
 
 ## Explicit defers
-- `tj-15m`: authorized and next.
+- `tj-15m`: authorized and in progress.
 - `tj-5o9r`: accepted and closed.
 - `tj-rt42`: authorized and queued after live evidence is committed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
