@@ -62,7 +62,7 @@ depends_on_streams:
 parallel_decision: parallel
 status: returned
 delivery_method: merge
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: isolated worktree retained for root-orchestrator review and integration
 risk_level: medium
