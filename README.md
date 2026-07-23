@@ -58,7 +58,7 @@ uv run pytest tests/ -v
 
 ```
 src/
-  api/v1/          # FastAPI routes (25 endpoints)
+  api/v1/          # FastAPI v1 routes
   core/            # Config, database, redis, security
   models/          # SQLAlchemy models (13 runtime tables)
   schemas/         # Pydantic schemas (API contracts)

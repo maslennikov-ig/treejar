@@ -177,7 +177,15 @@ The dashboard is no longer metrics-only. It now includes the operator controls t
 ```
 GET https://noor.starec.ai/api/v1/health
 ```
-Returns `{"status": "ok"}` if the app and database are reachable.
+Returns HTTP `200` only when both Redis and PostgreSQL pass their probes. The
+response contains the installed application `version` and structured
+`dependencies.redis` / `dependencies.database` entries with status and
+latency. If either required dependency is unavailable, it returns HTTP `503`
+with `status: "degraded"` and a sanitized `message: "unavailable"` rather than
+raw connection details.
+
+`/api/v1/debug/redis` is intentionally absent. Raw queue payloads are not a
+supported troubleshooting surface.
 
 ### Docker Logs (via SSH)
 ```bash
@@ -213,13 +221,17 @@ If the summary stops arriving, check the worker logs.
 
 | Problem | First Step | If Still Failing |
 |---------|-----------|-----------------|
-| Bot not responding | `docker compose logs worker --tail=50` | `docker compose restart worker` |
-| Slow responses | `docker compose stats` (check CPU/RAM) | `docker compose restart app` |
-| Zoho sync failing | Check `ZOHO_REFRESH_TOKEN` in `.env` | Re-generate Zoho OAuth token |
-| Database connection error | `docker compose ps db` | `docker compose restart db` |
+| Bot not responding | `docker compose logs worker --tail=50` | Identify the failing dependency before requesting an approved worker restart |
+| Slow responses | Collect `noor_chat_latency` records from worker logs and run the analyzer in [`docs/latency-evidence.md`](latency-evidence.md) | Inspect CPU/RAM or provider behavior only when the measured dominant phase supports it; the live latency matrix requires separate approval |
+| Zoho sync failing | Inspect the sanitized `zoho_oauth_failed` class, then verify the affected `ZOHO_CRM_REFRESH_TOKEN` or `ZOHO_INVENTORY_REFRESH_TOKEN` configuration | Token regeneration or OAuth scope changes require owner approval |
+| Database connection error | Check the database entry in `/api/v1/health` and the managed PostgreSQL service | Request an approved service restart only after identifying the failure |
 | Out of disk space | `df -h` and `docker system df` on VPS | Run Docker maintenance cleanup |
 
 ### Restarting Services
+Production restarts and rebuilds are operational mutations and require current
+approval. A service restart does not establish a new release identity; use the
+artifact deployment workflow when code or configuration must be released.
+
 ```bash
 # Restart a single service
 docker compose restart app

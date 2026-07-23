@@ -352,19 +352,29 @@ pytest tests/ --cov=src --cov-report=html
 
 ### Процесс деплоя
 
-```bash
-# На сервере
-git pull origin main
-docker compose build --no-cache
-docker compose up -d
-alembic upgrade head        # Применить новые миграции
-docker compose logs -f app  # Проверить логи
-```
+Production delivery is an artifact-based operation and requires current
+approval. An approved code change is delivered through the `main` workflow (or
+an explicitly approved manual workflow dispatch), not by updating a live Git
+checkout on the VPS.
+
+The workflow packages the exact commit together with `.release-sha` and
+`.release-run-id`, uploads the archive, and invokes `scripts/vps-deploy.sh`.
+That script stages the release, preserves runtime state, creates a rollback
+archive, rebuilds the Compose services, and verifies the health endpoint. The
+canonical `/opt/noor` runtime is not a Git checkout; do not run `git pull` or
+`git reset` there.
+
+Deploy and rollback are externally visible production mutations. Obtain current
+approval before either action, then follow the exact readback and archive
+rollback procedure in [the administrator guide](admin-guide.md#rollback-a-deployment).
 
 ### CI/CD
 
-- **GitHub Actions**: автодеплой по push в main
-- Pipeline: `ruff check` -> `mypy` -> `pytest` -> SSH deploy на VPS
+- **GitHub Actions**: code changes pushed to `main`, or a manual dispatch, can
+  run the deployment job after approval
+- Pipeline: change classification -> `ruff check` -> `ruff format --check` ->
+  `mypy` -> `pytest` -> release archive -> `scripts/vps-deploy.sh` -> health
+  verification
 
 ### Бэкапы
 
