@@ -28,8 +28,10 @@ Current stage id: `tj-av22`
   documentation is aligned with the implementation.
 - Independent final review `tj-av22.9` passed after one correction round.
   Process verification, Ruff, format, Mypy, and the full suite pass locally
-  (`1507 passed, 19 skipped`). Release/closeout `tj-av22.3` remains open at the
-  production approval boundary.
+  (`1507 passed, 19 skipped`). The release-level closeout dry-run also passes;
+  it now validates every referenced risk-based verification group and the
+  exact current-stage summary. Release/closeout `tj-av22.3` is blocked only at
+  the production approval boundary.
 - Production deployment, readback, real external-message tests, escalation
   apply, cron installation, and live latency proof have not been performed.
 - Cleanup audit `tj-rt42` found nine old worktrees with no commits unique from
@@ -53,8 +55,8 @@ Current stage id: `tj-av22`
 ## Next recommended
 Next stage id: `tj-av22`.
 Recommended action: reconcile the remaining approval-gated Beads, then ask for
-the exact deployment and production-readback approval. Do not deploy or mutate
-production before that approval.
+the exact merge/push, deployment, and production-readback approval. Do not
+deploy or mutate production before that approval.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage to continue `tj-av22` from the current integration

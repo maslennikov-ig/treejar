@@ -59,8 +59,8 @@ parallel_decision: parallel
 status: accepted
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: accepted and integrated; worktree retained pending approved stage cleanup
+cleanup_status: blocked
+cleanup_notes: accepted and integrated; dry-run classifies the stage worktree and branch as cleanup candidates, but deletion awaits explicit user approval after delivery
 risk_level: high
 verification_tier: slice_acceptance
 risk_tags:

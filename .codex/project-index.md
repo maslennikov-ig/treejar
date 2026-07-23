@@ -33,7 +33,9 @@ Stable navigation map for this repository. Keep operational state in
 - `src/dialogue/` - explicit dialogue state kernel plus typed product/quantity extraction contract; rollout modes are dialogue-kernel owned, while order runtime feeds engine/facts/memory adapters.
 - `src/rag/` - knowledge/product search and embedding pipeline.
 - `src/integrations/` - Wazzup messaging, Zoho CRM, Zoho Inventory, Telegram notification clients.
-- `src/services/` - business services for chat, customer memory, notifications, follow-up, reports, media, PDF, referrals.
+- `src/services/` - business services for chat, durable inbound batching,
+  privacy-safe runtime monitoring/latency evidence, customer memory,
+  notifications, follow-up, reports, media, PDF, and referrals.
 - `src/quality/` - AI and manager quality evaluation jobs, schemas, and transcript handling.
 - `migrations/` - Alembic database migrations.
 - `frontend/admin/` - admin/dashboard frontend build assets used by regression tests.
@@ -48,6 +50,19 @@ Stable navigation map for this repository. Keep operational state in
 - Telegram is the manager/operator alert and callback channel.
 - Redis stores runtime cache, idempotency, temporary quotation PDFs, and background job state.
 - PostgreSQL/Supabase is the durable application database; pgvector backs knowledge/product search.
+
+## Operational Entrypoints
+
+- `scripts/vps-deploy.sh` - artifact-based production deployment, backup,
+  rebuild, release readback, and health verification.
+- `scripts/escalation_guard.py` - read-only escalation audit and explicitly
+  approved exact-manifest reconciliation.
+- `scripts/docker-maintenance.sh` and
+  `scripts/install-docker-maintenance-cron.sh` - conservative maintenance,
+  idempotent scheduling, and heartbeat output.
+- `scripts/analyze_chat_latency.py` and
+  `scripts/benchmark_chat_delivery_boundary.py` - privacy-safe latency analysis
+  and controlled local delivery-boundary evidence.
 
 ## Verification
 

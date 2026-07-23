@@ -48,6 +48,7 @@ hard_limit_lines = 200
 tracked_in_git = true
 format = "frontmatter_plus_short_note"
 sensitivity = "internal_no_secrets"
+current_stage_summary = ".codex/stages/tj-av22/summary.md"
 
 [completion_inbox]
 scope = "git_common_dir"
@@ -145,7 +146,34 @@ auto_delete_local_branch_after_remote_delivery = true
 process_only_commands = [
   "scripts/orchestration/run_process_verification.sh",
 ]
+targeted_commands = [
+  "git diff --check",
+]
+affected_package_commands = [
+  "uv run pytest tests/test_api_health.py tests/test_services_chat.py tests/test_services_chat_batch.py tests/test_runtime_monitoring.py tests/test_scripts_escalation_guard.py tests/test_scripts_docker_maintenance.py tests/test_zoho_client.py tests/test_zoho_crm.py -q --tb=short",
+]
+integration_commands = [
+  "uv run pytest tests/test_api_health.py tests/test_api_inventory.py tests/test_api_quality.py tests/test_webhook.py tests/test_services_chat.py tests/test_services_chat_batch.py tests/test_runtime_monitoring.py tests/test_scripts_escalation_guard.py tests/test_scripts_docker_maintenance.py tests/test_worker.py tests/test_zoho_client.py tests/test_zoho_crm.py -q --tb=short",
+]
+security_commands = [
+  "uv run pytest tests/test_api_health.py tests/test_security.py tests/test_security_extended.py tests/test_webhook.py -q --tb=short",
+]
+concurrency_commands = [
+  "uv run pytest tests/test_services_chat.py tests/test_services_chat_batch.py tests/test_chat_escalation.py tests/test_runtime_monitoring.py tests/test_worker.py tests/test_zoho_client.py tests/test_zoho_crm.py -q --tb=short",
+]
+postgres_migration_commands = [
+  "uv run pytest tests/test_migrations.py tests/test_database.py tests/test_db_integration.py -q --tb=short",
+]
+e2e_commands = [
+  "uv run pytest tests/test_e2e_fsm.py tests/test_e2e_rag.py tests/test_e2e_stage2.py tests/test_e2e_tools.py -q --tb=short",
+]
 code_change_commands = [
+  "uv run ruff check src/ tests/",
+  "uv run ruff format --check src/ tests/",
+  "uv run mypy src/",
+  "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" uv run pytest tests/ -v --tb=short",
+]
+release_commands = [
   "uv run ruff check src/ tests/",
   "uv run ruff format --check src/ tests/",
   "uv run mypy src/",

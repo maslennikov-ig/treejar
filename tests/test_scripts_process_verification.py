@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -36,6 +37,45 @@ def _load_runtime_support():
 
 
 class ProcessVerificationTests(unittest.TestCase):
+    def test_verification_policy_references_defined_command_groups(self) -> None:
+        contract = tomllib.loads(
+            (REPO_ROOT / ".codex" / "orchestrator.toml").read_text()
+        )
+        verification = contract["verification"]
+        policy = contract["verification_policy"]
+
+        referenced_groups = {
+            group
+            for mapping_name in (
+                "level_groups",
+                "tier_groups",
+                "risk_tag_groups",
+                "surface_groups",
+            )
+            for groups in policy[mapping_name].values()
+            for group in groups
+        }
+
+        missing = sorted(
+            group
+            for group in referenced_groups
+            if not isinstance(verification.get(group), list) or not verification[group]
+        )
+        self.assertEqual(missing, [])
+
+    def test_contract_points_to_current_stage_summary(self) -> None:
+        contract = tomllib.loads(
+            (REPO_ROOT / ".codex" / "orchestrator.toml").read_text()
+        )
+        stage_id = contract["workspace"]["current_stage_id"]
+        expected = f".codex/stages/{stage_id}/summary.md"
+
+        self.assertEqual(
+            contract["artifacts"].get("current_stage_summary"),
+            expected,
+        )
+        self.assertTrue((REPO_ROOT / expected).is_file())
+
     def test_completion_inbox_accepts_git_common_dir_transport(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

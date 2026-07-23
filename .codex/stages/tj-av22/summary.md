@@ -1,7 +1,7 @@
 # Stage tj-av22 Summary
 
 Updated: 2026-07-23
-Status: in progress
+Status: internal ready; external authorization pending
 Branch: `codex/tj-av22-stabilization`
 Base: `main@89f9a560071302d16f53704870e7a508e9d05f28`
 Planning commit: `9ee579b5391edf82d5fac9d70bc5c28c2116a40d`
@@ -85,6 +85,11 @@ No scope split or preservation ledger is active.
   - focused audio/inbound/webhook/worker matrix: `61 passed`
   - process verification, Ruff, format, and Mypy: passed
   - full pytest: `1507 passed, 19 skipped`
+- Internal-ready orchestration gate:
+  - process-verification tests: `8 passed`
+  - release-level stage-closeout dry-run: passed
+  - the contract now defines every risk-based verification group and points to
+    the exact `tj-av22` stage summary; regression tests cover both invariants
 - Independent review artifacts `tj-av22.5`, `tj-av22.7`, and `tj-av22.8`
   were accepted as findings reports. Their implementation and documentation
   corrections are integrated. Final correction review `tj-av22.9` passed after
@@ -101,6 +106,39 @@ No scope split or preservation ledger is active.
 - No credential/scope changes or destructive cleanup without explicit approval.
 - Ambiguous public API compatibility decisions return to the user.
 
+## Internal-Ready Closeout
+
+- `scripts/orchestration/check_stage_ready.py tj-av22`: passed.
+- `scripts/orchestration/run_stage_closeout.py --stage tj-av22 --level release
+  --dry-run`: passed without publishing or changing production. It selected
+  the full release gate plus integration, concurrency, security, PostgreSQL,
+  and process-verification groups.
+- Completion inbox: `12` events reviewed, `0` pending; the final P1 correction
+  has an immutable accepted correction event.
+- E2E/smoke: deterministic local coverage passed. Production health/readback,
+  OAuth/inbound smoke, real messaging, and the live latency matrix are blocked
+  on explicit deployment/live-traffic approval.
+- Delivery: branch `codex/tj-av22-stabilization` is clean and ahead of
+  `main@89f9a560071302d16f53704870e7a508e9d05f28`; merging/pushing is blocked on
+  explicit approval because `main` triggers the production workflow.
+- Rollback boundary: the workflow packages `.release-sha`/`.release-run-id`;
+  `scripts/vps-deploy.sh` creates a pre-deploy archive and verifies health.
+  The current production baseline SHA is
+  `89f9a560071302d16f53704870e7a508e9d05f28`.
+- Stage cleanup dry-run classified the accepted child worktrees and branches as
+  cleanup candidates. Their artifacts record `cleanup_status: blocked` because
+  deletion requires explicit user approval after delivery.
+- Completed-agent runtime-tail check found no stage-owned pytest, Ruff, Mypy,
+  or child-agent process group to terminate. The Codex app server and code-mode
+  host are shared session infrastructure and were left untouched.
+- `docs-reviewed: updated` — README, developer/admin guides, operations
+  runbook, architecture/task-plan notes, latency evidence, handoff, stage
+  records, and project index reflect the stabilized contracts.
+- `project-index: updated` — added the durable deploy, reconciliation,
+  maintenance, and latency operational entrypoints.
+- `graph-reviewed: no-change-needed` — Graphify is not configured and
+  `graphify-out/GRAPH_REPORT.md` is absent.
+
 ## Explicit Defers
 
 - Production deploy/readback, live latency matrix, exact external-message
@@ -108,3 +146,13 @@ No scope split or preservation ledger is active.
   repository/cache cleanup remain explicit approval gates.
 - Product-policy and vendor gates outside this stabilization stage remain
   recorded in `.codex/handoff.md`.
+
+| Beads | Remaining proof | External blocker / owner |
+| --- | --- | --- |
+| `tj-av22.3` | Merge/push, CI deploy, deployed SHA/version, health/debug/auth/runtime readback, rollback evidence | Explicit production-deploy approval from the user |
+| `tj-15m` | Approved live FAQ/product/comparison/order/Arabic/escalation latency matrix or named provider blocker | Exact live-test identity/scenarios and real-traffic approval from the user |
+| `tj-rt42` | Removal and final readback of stage plus nine legacy worktrees/branches and optional caches | Exact destructive-cleanup approval from the user |
+
+Escalation reconciliation apply, maintenance cron installation/cleanup, and real
+Telegram/WhatsApp checks remain separately approval-gated after deployment;
+none is implied by approval to merge and push.

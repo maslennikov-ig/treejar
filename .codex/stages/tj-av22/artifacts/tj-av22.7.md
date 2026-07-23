@@ -58,8 +58,8 @@ parallel_decision: parallel
 status: returned
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: isolated review worktree retained for root inspection
+cleanup_status: blocked
+cleanup_notes: review accepted and integrated; dry-run classifies the isolated worktree and branch as cleanup candidates, but deletion awaits explicit user approval after delivery
 risk_level: high
 verification_tier: integration
 risk_tags:
