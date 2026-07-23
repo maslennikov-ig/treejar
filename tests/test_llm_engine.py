@@ -1731,6 +1731,8 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
+    from src.services.chat_latency import ChatLatencyTrace
+
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     text = "I need 200 chairs delivered to Dubai Marina by next week"
     mock_build_history.return_value = _first_turn_history(text)
@@ -1740,6 +1742,7 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
         _FakeAgentResult("Could you share your budget?"),
         _FakeAgentResult("Our manager will confirm the order shortly."),
     ]
+    latency_trace = ChatLatencyTrace()
 
     response = await process_message(
         conversation_id=conv.id,
@@ -1749,6 +1752,7 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
         embedding_engine=engine,
         zoho_client=zoho,
         messaging_client=messaging,
+        latency_trace=latency_trace,
     )
 
     _assert_first_turn_opening(
@@ -1771,6 +1775,15 @@ async def test_process_message_high_confidence_candidate_uses_guarded_path(
         "previous pass missed likely order handoff" in directive
         for directive in second_call["deps"].runtime_directives
     )
+    latency_ms = latency_trace.snapshot(status="sent")["latency_ms"]
+    assert {
+        "llm_context",
+        "faq_rag",
+        "behavior_rag",
+        "model_tools",
+        "total",
+    } <= set(latency_ms)
+    assert all(value >= 0 for value in latency_ms.values())
 
 
 @pytest.mark.asyncio

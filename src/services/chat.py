@@ -33,6 +33,11 @@ from src.models.message import (
 from src.models.system_config import SystemConfig
 from src.rag.embeddings import EmbeddingEngine
 from src.schemas.webhook import WazzupIncomingMessage
+from src.services.chat_latency import (
+    CHAT_LATENCY_EVENT,
+    ChatLatencyTrace,
+    format_chat_latency,
+)
 from src.services.customer_identity import (
     apply_source_attribution_metadata,
     extract_inbound_source_attribution,
@@ -596,11 +601,26 @@ async def _process_batch_inner(
     raw_messages: Sequence[str],
 ) -> None:
     """Inner implementation — separated for clean error handling."""
+    latency_trace = ChatLatencyTrace()
+    pre_llm_started = latency_trace.start_phase()
     messages = [WazzupIncomingMessage.model_validate_json(raw) for raw in raw_messages]
     logger.info("Processing batch for %s with %d messages.", chat_id, len(messages))
 
     # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
+    oldest_message_at = min(
+        message_created_at_from_wazzup(
+            date_time=message.dateTime,
+            timestamp=message.timestamp,
+        )
+        for message in messages
+    )
+    queue_wait_ms = max(
+        (datetime.now(UTC).replace(tzinfo=None) - oldest_message_at).total_seconds()
+        * 1000.0,
+        0.0,
+    )
+    latency_trace.set_queue_wait_ms(queue_wait_ms)
 
     expected_channel = settings.wazzup_channel_id
     if not expected_channel:
@@ -1028,7 +1048,9 @@ async def _process_batch_inner(
                 ZohoInventoryClient(redis_client=redis) as zoho_client,
                 ZohoCRMClient(redis_client=redis) as crm_client,
             ):
+                latency_trace.finish_phase("pre_llm", pre_llm_started)
                 logger.info("Calling LLM for %s (timeout=%ds)", chat_id, LLM_TIMEOUT)
+                llm_started = latency_trace.start_phase()
                 try:
                     typing_task = _start_typing_refresh(wazzup_provider, chat_id)
                     await asyncio.sleep(0)
@@ -1044,12 +1066,14 @@ async def _process_batch_inner(
                                 crm_client=crm_client,
                                 messaging_client=wazzup_provider,
                                 source_message_id=source_message_id,
+                                latency_trace=latency_trace,
                             ),
                             timeout=LLM_TIMEOUT,
                         )
                     finally:
                         await _stop_typing_refresh(typing_task)
                 except TimeoutError:
+                    latency_trace.finish_phase("llm", llm_started)
                     logger.error(
                         "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
                     )
@@ -1074,10 +1098,18 @@ async def _process_batch_inner(
                             ],
                         ),
                     )
+                    latency_trace.mark_text_delivered()
                     await db.commit()
+                    logger.info(
+                        "%s %s",
+                        CHAT_LATENCY_EVENT,
+                        format_chat_latency(latency_trace, status="timeout"),
+                    )
                     return
+                latency_trace.finish_phase("llm", llm_started)
 
                 # 4. Save response to DB
+                persist_started = latency_trace.start_phase()
                 assistant_msg = Message(
                     conversation_id=conv.id,
                     role="assistant",
@@ -1091,12 +1123,13 @@ async def _process_batch_inner(
                 db.add(assistant_msg)
                 await db.flush()
                 await db.commit()
-                await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
+                latency_trace.finish_phase("persist_response", persist_started)
 
                 # 5. Send via Wazzup
                 logger.info("Sending reply to %s via Wazzup", chat_id)
                 whatsapp_text = _format_for_whatsapp(llm_response.text)
                 bot_reply_sent = False
+                outbound_started = latency_trace.start_phase()
                 try:
                     await send_wazzup_text_with_audit(
                         db,
@@ -1120,14 +1153,39 @@ async def _process_batch_inner(
                     )
                 else:
                     bot_reply_sent = True
+                    latency_trace.mark_text_delivered()
                     await db.commit()
-                if bot_reply_sent and llm_response.deferred_product_media:
-                    await _send_deferred_product_media(
-                        db,
-                        provider=wazzup_provider,
-                        conversation_id=conv.id,
-                        chat_id=chat_id,
-                        media_items=llm_response.deferred_product_media,
+                finally:
+                    latency_trace.finish_phase("outbound_text", outbound_started)
+
+                summary_started = latency_trace.start_phase()
+                try:
+                    await _enqueue_summary_refresh_if_needed(redis, db, conv.id)
+                finally:
+                    latency_trace.finish_phase(
+                        "summary_refresh_enqueue",
+                        summary_started,
                     )
+
+                if bot_reply_sent and llm_response.deferred_product_media:
+                    media_started = latency_trace.start_phase()
+                    try:
+                        await _send_deferred_product_media(
+                            db,
+                            provider=wazzup_provider,
+                            conversation_id=conv.id,
+                            chat_id=chat_id,
+                            media_items=llm_response.deferred_product_media,
+                        )
+                    finally:
+                        latency_trace.finish_phase("deferred_media", media_started)
                 if bot_reply_sent:
                     logger.info("Reply sent to %s successfully", chat_id)
+                logger.info(
+                    "%s %s",
+                    CHAT_LATENCY_EVENT,
+                    format_chat_latency(
+                        latency_trace,
+                        status="sent" if bot_reply_sent else "send_failed",
+                    ),
+                )
