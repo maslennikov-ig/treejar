@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -50,6 +51,9 @@ from src.services.escalation_state import (
 )
 from src.services.inbound_batch import (
     inbound_chat_reference,
+    inbound_execution_key,
+    inbound_lock_key,
+    inbound_processing_key,
     inbound_queue_key,
     is_inbound_chat_reference,
 )
@@ -73,8 +77,28 @@ LLM_TIMEOUT = 120
 TYPING_REFRESH_INTERVAL_SECONDS = 4.0
 INBOUND_BATCH_MAX_TRIES = 3
 INBOUND_BATCH_QUARANTINE_PREFIX = "wazzup:inbound:quarantine:"
+INBOUND_BATCH_LOCK_TTL_SECONDS = 660
+INBOUND_EXECUTION_STARTED = "started"
+INBOUND_EXECUTION_COMPLETED = "completed"
 _INBOUND_BATCH_FAILURE_HISTORY_LIMIT = 1000
 _ZOHO_OAUTH_FAILURE_HISTORY_LIMIT = 1000
+_RELEASE_INBOUND_LOCK_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
+_RELEASE_OR_CONTINUE_INBOUND_SCRIPT = """
+if redis.call("get", KEYS[1]) ~= ARGV[1] then
+    return -1
+end
+if redis.call("llen", KEYS[2]) > 0 then
+    redis.call("expire", KEYS[1], ARGV[2])
+    return 1
+end
+redis.call("del", KEYS[1])
+return 0
+"""
 
 VOICE_TRANSCRIPTION_TOO_LARGE_MARKER = (
     "[System: Unreadable voice message (file too large)]"
@@ -234,13 +258,93 @@ async def _store_inbound_quarantine(
     return quarantine_key
 
 
-async def _requeue_inbound_batch(
+def _decode_redis_message(raw: str | bytes) -> str:
+    return raw if isinstance(raw, str) else raw.decode()
+
+
+async def _claim_inbound_messages(
     redis: Any,
     *,
     queue_key: str,
-    raw_messages: Sequence[str],
-) -> None:
-    await redis.lpush(queue_key, *reversed(raw_messages))
+    processing_key: str,
+) -> list[str]:
+    """Recover an interrupted batch and atomically move newly queued messages."""
+    existing = await redis.lrange(processing_key, 0, -1)
+    raw_messages = [_decode_redis_message(raw) for raw in existing]
+    if raw_messages:
+        return raw_messages
+
+    while True:
+        raw = await redis.lmove(queue_key, processing_key, "LEFT", "RIGHT")
+        if raw is None:
+            break
+        raw_messages.append(_decode_redis_message(raw))
+    return raw_messages
+
+
+async def _release_inbound_lock(
+    redis: Any,
+    *,
+    lock_key: str,
+    owner_token: str,
+) -> bool:
+    released = await redis.eval(
+        _RELEASE_INBOUND_LOCK_SCRIPT,
+        1,
+        lock_key,
+        owner_token,
+    )
+    return bool(released)
+
+
+async def _release_or_continue_inbound_lock(
+    redis: Any,
+    *,
+    lock_key: str,
+    queue_key: str,
+    owner_token: str,
+) -> int:
+    result = await redis.eval(
+        _RELEASE_OR_CONTINUE_INBOUND_SCRIPT,
+        2,
+        lock_key,
+        queue_key,
+        owner_token,
+        str(INBOUND_BATCH_LOCK_TTL_SECONDS),
+    )
+    return int(result)
+
+
+def _normalize_execution_state(raw: Any) -> str | None:
+    if isinstance(raw, bytes):
+        return raw.decode()
+    return raw if isinstance(raw, str) else None
+
+
+async def _begin_inbound_side_effects(redis: Any, batch_id: str) -> None:
+    """Claim the at-most-once boundary before LLM or provider side effects."""
+    execution_key = inbound_execution_key(batch_id)
+    claimed = await redis.set(
+        execution_key,
+        INBOUND_EXECUTION_STARTED,
+        ex=settings.inbound_batch_quarantine_ttl_seconds,
+        nx=True,
+    )
+    if claimed is True:
+        return
+
+    state = _normalize_execution_state(await redis.get(execution_key))
+    if state == INBOUND_EXECUTION_COMPLETED:
+        raise InboundBatchTerminalError("already_completed")
+    raise InboundBatchTerminalError("uncertain_replay")
+
+
+async def _mark_inbound_execution_completed(redis: Any, batch_id: str) -> None:
+    await redis.set(
+        inbound_execution_key(batch_id),
+        INBOUND_EXECUTION_COMPLETED,
+        ex=settings.inbound_batch_quarantine_ttl_seconds,
+    )
 
 
 # WhatsApp Formatting Regexes
@@ -602,7 +706,7 @@ async def process_incoming_batch(
     New jobs use a keyed, privacy-safe ``batch_ref``. ``chat_id`` remains a
     migration-only keyword for jobs that were already queued before rollout.
 
-    1. Pop all queued messages from Redis.
+    1. Recover any durable in-flight batch and atomically claim queued messages.
     2. Validate and recover the chat identifier from the queued payload.
     3. Save incoming messages (with correct role: user/manager).
     4. If escalation is active or message is from manager → skip LLM.
@@ -619,105 +723,173 @@ async def process_incoming_batch(
         else inbound_chat_reference(queue_token)
     )
     queue_key = inbound_queue_key(queue_token)
-    raw_messages: list[str] = []
-    while True:
-        raw = await redis.lpop(queue_key)
-        if raw is None:
-            break
-        raw_messages.append(raw if isinstance(raw, str) else raw.decode())
+    processing_key = inbound_processing_key(safe_batch_ref)
+    lock_key = inbound_lock_key(safe_batch_ref)
+    owner_token = secrets.token_hex(16)
+    attempt = max(1, int(ctx.get("job_try", 1)))
 
-    if not raw_messages:
-        logger.warning(
-            "No messages in Redis for batch_ref=%s; skipping", safe_batch_ref
-        )
-        return
-
-    batch_id = _inbound_batch_id(raw_messages)
     try:
-        await _process_batch_inner(redis, queue_token, raw_messages)
+        claimed = await redis.set(
+            lock_key,
+            owner_token,
+            ex=INBOUND_BATCH_LOCK_TTL_SECONDS,
+            nx=True,
+        )
     except Exception as exc:
-        attempt = max(1, int(ctx.get("job_try", 1)))
-        failed_at = datetime.now(UTC)
-        error_kind: str
-        if isinstance(exc, ZohoOAuthError):
-            await _record_zoho_oauth_failure(
-                redis,
-                batch_id=batch_id,
-                attempt=attempt,
-                error=exc,
-                failed_at=failed_at,
-            )
-            retryable = exc.retryable
-            error_kind = exc.kind
-        elif isinstance(exc, InboundBatchTerminalError):
-            retryable = False
-            error_kind = exc.kind
-        else:
-            retryable = True
-            error_kind = "unexpected_error"
+        raise Retry(defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)) from exc
+    if not claimed:
+        logger.info("Inbound batch is already owned: batch_ref=%s", safe_batch_ref)
+        raise Retry(defer=INBOUND_BATCH_LOCK_TTL_SECONDS + 1)
 
-        if retryable and attempt < INBOUND_BATCH_MAX_TRIES:
-            await _requeue_inbound_batch(
-                redis,
-                queue_key=queue_key,
-                raw_messages=raw_messages,
-            )
-            defer_seconds = 2**attempt
-            logger.warning(
-                "Retrying inbound batch after processing failure: "
-                "batch_id=%s attempt=%d/%d error_kind=%s defer_seconds=%d",
-                batch_id,
-                attempt,
-                INBOUND_BATCH_MAX_TRIES,
-                error_kind,
-                defer_seconds,
-            )
-            raise Retry(defer=defer_seconds) from exc
-
-        try:
-            await _store_inbound_quarantine(
-                redis,
-                batch_id=batch_id,
-                raw_messages=raw_messages,
-            )
-        except Exception as quarantine_exc:
+    lock_released = False
+    try:
+        while True:
             try:
-                await _requeue_inbound_batch(
+                raw_messages = await _claim_inbound_messages(
                     redis,
                     queue_key=queue_key,
-                    raw_messages=raw_messages,
+                    processing_key=processing_key,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not claim inbound messages: batch_ref=%s",
+                    safe_batch_ref,
+                )
+                raise Retry(defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)) from exc
+
+            if not raw_messages:
+                release_state = await _release_or_continue_inbound_lock(
+                    redis,
+                    lock_key=lock_key,
+                    queue_key=queue_key,
+                    owner_token=owner_token,
+                )
+                lock_released = release_state == 0
+                if release_state == 1:
+                    continue
+                if release_state < 0:
+                    logger.warning(
+                        "Inbound batch lock ownership changed: batch_ref=%s",
+                        safe_batch_ref,
+                    )
+                return
+
+            batch_id = _inbound_batch_id(raw_messages)
+            try:
+                execution_state = _normalize_execution_state(
+                    await redis.get(inbound_execution_key(batch_id))
+                )
+                if execution_state == INBOUND_EXECUTION_COMPLETED:
+                    logger.info(
+                        "Acknowledging completed inbound batch without replay: "
+                        "batch_id=%s",
+                        batch_id,
+                    )
+                elif execution_state == INBOUND_EXECUTION_STARTED:
+                    raise InboundBatchTerminalError("uncertain_replay")
+                else:
+                    await _process_batch_inner(redis, queue_token, raw_messages)
+                    await _mark_inbound_execution_completed(redis, batch_id)
+            except Exception as exc:
+                failed_at = datetime.now(UTC)
+                error_kind: str
+                if isinstance(exc, ZohoOAuthError):
+                    await _record_zoho_oauth_failure(
+                        redis,
+                        batch_id=batch_id,
+                        attempt=attempt,
+                        error=exc,
+                        failed_at=failed_at,
+                    )
+                    retryable = exc.retryable
+                    error_kind = exc.kind
+                elif isinstance(exc, InboundBatchTerminalError):
+                    retryable = False
+                    error_kind = exc.kind
+                else:
+                    retryable = True
+                    error_kind = "unexpected_error"
+
+                if retryable and attempt < INBOUND_BATCH_MAX_TRIES:
+                    defer_seconds = 2**attempt
+                    logger.warning(
+                        "Retrying durable inbound batch after processing failure: "
+                        "batch_id=%s attempt=%d/%d error_kind=%s defer_seconds=%d",
+                        batch_id,
+                        attempt,
+                        INBOUND_BATCH_MAX_TRIES,
+                        error_kind,
+                        defer_seconds,
+                    )
+                    raise Retry(defer=defer_seconds) from exc
+
+                try:
+                    await _store_inbound_quarantine(
+                        redis,
+                        batch_id=batch_id,
+                        raw_messages=raw_messages,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Inbound batch quarantine failed; durable processing "
+                        "copy retained: batch_id=%s",
+                        batch_id,
+                    )
+                    raise Retry(
+                        defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)
+                    ) from exc
+
+                await _record_inbound_batch_failure(
+                    redis,
+                    batch_id=batch_id,
+                    attempt=attempt,
+                    error_kind=error_kind,
+                    message_count=len(raw_messages),
+                    retryable=retryable,
+                    failed_at=failed_at,
+                )
+                await redis.delete(processing_key)
+                logger.error(
+                    "Inbound batch quarantined after processing failure: "
+                    "batch_id=%s attempt=%d/%d error_kind=%s retryable=%s",
+                    batch_id,
+                    attempt,
+                    INBOUND_BATCH_MAX_TRIES,
+                    error_kind,
+                    retryable,
+                )
+                raise
+
+            await redis.delete(processing_key)
+            release_state = await _release_or_continue_inbound_lock(
+                redis,
+                lock_key=lock_key,
+                queue_key=queue_key,
+                owner_token=owner_token,
+            )
+            lock_released = release_state == 0
+            if release_state == 1:
+                continue
+            if release_state < 0:
+                logger.warning(
+                    "Inbound batch lock ownership changed after processing: "
+                    "batch_ref=%s",
+                    safe_batch_ref,
+                )
+            return
+    finally:
+        if not lock_released:
+            try:
+                await _release_inbound_lock(
+                    redis,
+                    lock_key=lock_key,
+                    owner_token=owner_token,
                 )
             except Exception:
                 logger.exception(
-                    "Inbound batch quarantine and requeue both failed: batch_id=%s",
-                    batch_id,
+                    "Could not release inbound batch lock: batch_ref=%s",
+                    safe_batch_ref,
                 )
-                raise quarantine_exc from exc
-            logger.exception(
-                "Inbound batch quarantine failed; restored queue: batch_id=%s",
-                batch_id,
-            )
-            raise Retry(defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)) from exc
-
-        await _record_inbound_batch_failure(
-            redis,
-            batch_id=batch_id,
-            attempt=attempt,
-            error_kind=error_kind,
-            message_count=len(raw_messages),
-            retryable=retryable,
-            failed_at=failed_at,
-        )
-        logger.error(
-            "Inbound batch quarantined after processing failure: "
-            "batch_id=%s attempt=%d/%d error_kind=%s retryable=%s",
-            batch_id,
-            attempt,
-            INBOUND_BATCH_MAX_TRIES,
-            error_kind,
-            retryable,
-        )
-        raise
 
 
 async def _process_batch_inner(
@@ -726,6 +898,7 @@ async def _process_batch_inner(
     raw_messages: Sequence[str],
 ) -> None:
     """Inner implementation — separated for clean error handling."""
+    batch_id = _inbound_batch_id(raw_messages)
     latency_trace = ChatLatencyTrace()
     pre_llm_started = latency_trace.start_phase()
     try:
@@ -1140,7 +1313,16 @@ async def _process_batch_inner(
 
             await db.commit()
 
+            if has_manager_message:
+                logger.info(
+                    "Manager message persisted; skipping automated response: "
+                    "batch_ref=%s",
+                    batch_ref,
+                )
+                return
+
             if should_send_voice_fallback:
+                await _begin_inbound_side_effects(redis, batch_id)
                 fallback_text = _voice_fallback_text(conv.language)
                 await send_wazzup_text_with_audit(
                     db,
@@ -1175,6 +1357,7 @@ async def _process_batch_inner(
                     conv.escalation_status,
                     batch_ref,
                 )
+                await _begin_inbound_side_effects(redis, batch_id)
                 await _handle_escalation_fallback(
                     conv=conv,
                     combined_text=combined_text,
@@ -1203,6 +1386,7 @@ async def _process_batch_inner(
                     batch_ref,
                     LLM_TIMEOUT,
                 )
+                await _begin_inbound_side_effects(redis, batch_id)
                 llm_started = latency_trace.start_phase()
                 try:
                     typing_task = _start_typing_refresh(wazzup_provider, chat_id)

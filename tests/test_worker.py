@@ -1,6 +1,7 @@
 import pytest
 from arq.worker import Function
 
+from src.services.chat import INBOUND_BATCH_LOCK_TTL_SECONDS
 from src.worker import WorkerSettings
 
 
@@ -47,6 +48,10 @@ def test_inbound_batch_job_has_bounded_retries() -> None:
 
     assert isinstance(inbound_batch, Function)
     assert inbound_batch.max_tries == 3
+
+
+def test_inbound_batch_lease_outlives_worker_job_timeout() -> None:
+    assert WorkerSettings.job_timeout < INBOUND_BATCH_LOCK_TTL_SECONDS
 
 
 def test_worker_startup_shutdown_callable() -> None:

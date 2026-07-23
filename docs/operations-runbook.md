@@ -178,11 +178,22 @@ can contain customer content, and expires after seven days by default
 tickets, alerts, or chat. Inspect or replay it only as an exact, separately
 approved production recovery action.
 
-Accepted batches are requeued with bounded backoff after transient OAuth or
-unexpected processing failures. Invalid configuration/payloads and exhausted
-retries are quarantined. If the quarantine write itself fails, the raw batch is
-restored to its queue before the job is retried so that a consumed message does
-not silently disappear.
+The worker atomically moves an accepted batch from its live Redis list into a
+durable `wazzup:inbound:processing:<batch_ref>` list under an owner-token lease.
+The lease outlives the ARQ job timeout. A retry or replacement worker recovers
+that same immutable processing list before touching newer queued messages.
+Ordinary pre-side-effect failures therefore leave the only working copy in
+Redis instead of destructively popping it into process memory.
+
+Before invoking the LLM or a provider action, the worker persists an execution
+guard for the immutable batch. A completed guard is acknowledged without
+replaying the work. A recovered `started` guard has an uncertain external
+outcome, so its raw batch is moved to the restricted quarantine instead of
+repeating CRM, Inventory, Telegram, or Wazzup side effects. Invalid
+configuration/payloads and exhausted retries are quarantined in the same way.
+If the quarantine write fails, the durable processing list is retained and the
+job retries; it is not deleted or copied into logs. Any quarantine inspection
+or replay remains an exact, separately approved recovery action.
 
 ### Default thresholds and ownership
 

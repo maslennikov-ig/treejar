@@ -12,11 +12,17 @@ from arq import Retry
 from src.integrations.zoho_oauth import ZohoOAuthError
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import (
+    INBOUND_EXECUTION_COMPLETED,
+    INBOUND_EXECUTION_STARTED,
     InboundBatchTerminalError,
     _handle_escalation_fallback,
     process_incoming_batch,
 )
-from src.services.inbound_batch import inbound_chat_reference, inbound_queue_key
+from src.services.inbound_batch import (
+    inbound_chat_reference,
+    inbound_execution_key,
+    inbound_processing_key,
+)
 from src.services.proposal_followup import record_proposal_sent
 from src.services.runtime_monitoring import ZOHO_OAUTH_FAILURES_KEY
 
@@ -45,6 +51,14 @@ class MockResult:
         return [self.val] if self.val is not None else []
 
 
+def _seed_inbound_redis(redis: AsyncMock, raw_messages: list[str]) -> None:
+    redis.set.return_value = True
+    redis.get.return_value = None
+    redis.lrange.return_value = []
+    redis.lmove.side_effect = [*raw_messages, None]
+    redis.eval.return_value = 0
+
+
 def _assert_bot_reply_sent(
     mock_wazzup: AsyncMock,
     *,
@@ -60,7 +74,7 @@ def _assert_bot_reply_sent(
 
 
 @pytest.mark.asyncio
-async def test_process_incoming_batch_requeues_transient_zoho_failure_with_backoff() -> (
+async def test_process_incoming_batch_retries_transient_zoho_failure_from_durable_copy() -> (
     None
 ):
     redis = AsyncMock()
@@ -68,7 +82,7 @@ async def test_process_incoming_batch_requeues_transient_zoho_failure_with_backo
         '{"messageId":"msg-1","chatId":"sensitive-chat","type":"text"}',
         '{"messageId":"msg-2","chatId":"sensitive-chat","type":"text"}',
     ]
-    redis.lpop.side_effect = [*raw_messages, None]
+    _seed_inbound_redis(redis, raw_messages)
     error = ZohoOAuthError("invalid_payload", retryable=True)
 
     with (
@@ -83,10 +97,10 @@ async def test_process_incoming_batch_requeues_transient_zoho_failure_with_backo
             "sensitive-chat",
         )
 
-    redis.lpush.assert_awaited_once_with(
-        "wazzup_msgs:sensitive-chat",
-        *reversed(raw_messages),
-    )
+    redis.lpush.assert_not_awaited()
+    assert inbound_processing_key(inbound_chat_reference("sensitive-chat")) not in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
     oauth_call = redis.rpush.await_args
     assert oauth_call.args[0] == ZOHO_OAUTH_FAILURES_KEY
     oauth_record = json.loads(oauth_call.args[1])
@@ -110,7 +124,7 @@ async def test_process_incoming_batch_requeues_unexpected_failure_with_backoff(
             "type": "text",
         }
     )
-    redis.lpop.side_effect = [raw_message, None]
+    _seed_inbound_redis(redis, [raw_message])
 
     with (
         caplog.at_level(logging.INFO),
@@ -125,13 +139,211 @@ async def test_process_incoming_batch_requeues_unexpected_failure_with_backoff(
             batch_ref=batch_ref,
         )
 
-    redis.lpush.assert_awaited_once_with(
-        inbound_queue_key(batch_ref),
-        raw_message,
-    )
+    redis.lpush.assert_not_awaited()
+    assert inbound_processing_key(batch_ref) not in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
     assert exc_info.value.defer_score == 2000
     assert chat_id not in caplog.text
     assert "private customer request" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_recovers_durable_processing_batch_after_crash() -> (
+    None
+):
+    redis = AsyncMock()
+    redis.set.return_value = True
+    chat_id = "+971500001237"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-crash-recovery",
+            "chatId": chat_id,
+            "text": "recover me",
+            "type": "text",
+        }
+    )
+    redis.lrange.return_value = [raw_message]
+    redis.lmove.return_value = None
+    redis.eval.return_value = 0
+    inner = AsyncMock()
+
+    with patch("src.services.chat._process_batch_inner", inner):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 2},
+            batch_ref=batch_ref,
+        )
+
+    inner.assert_awaited_once_with(redis, batch_ref, [raw_message])
+    redis.lpop.assert_not_awaited()
+    redis.lmove.assert_not_awaited()
+    assert inbound_processing_key(batch_ref) in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_keeps_processing_batch_on_retryable_failure() -> (
+    None
+):
+    redis = AsyncMock()
+    redis.set.return_value = True
+    chat_id = "+971500001238"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-durable-retry",
+            "chatId": chat_id,
+            "text": "keep me durable",
+            "type": "text",
+        }
+    )
+    redis.lrange.return_value = []
+    redis.lmove.side_effect = [raw_message, None]
+    redis.eval.return_value = 0
+
+    with (
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=RuntimeError("worker dependency failed")),
+        ),
+        pytest.raises(Retry),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            batch_ref=batch_ref,
+        )
+
+    redis.lpop.assert_not_awaited()
+    redis.lpush.assert_not_awaited()
+    assert inbound_processing_key(batch_ref) not in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_keeps_processing_batch_on_cancellation() -> None:
+    redis = AsyncMock()
+    chat_id = "+971500001242"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-cancelled",
+            "chatId": chat_id,
+            "text": "keep me after cancellation",
+            "type": "text",
+        }
+    )
+    _seed_inbound_redis(redis, [raw_message])
+
+    with (
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=asyncio.CancelledError),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            batch_ref=batch_ref,
+        )
+
+    assert inbound_processing_key(batch_ref) not in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_lock_contention_does_not_consume_queue() -> None:
+    redis = AsyncMock()
+    redis.set.return_value = False
+    batch_ref = inbound_chat_reference("+971500001239")
+
+    with pytest.raises(Retry):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            batch_ref=batch_ref,
+        )
+
+    redis.lmove.assert_not_awaited()
+    redis.lrange.assert_not_awaited()
+    redis.lpop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_acknowledges_completed_batch_without_replay() -> (
+    None
+):
+    redis = AsyncMock()
+    chat_id = "+971500001240"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-completed",
+            "chatId": chat_id,
+            "text": "already handled",
+            "type": "text",
+        }
+    )
+    _seed_inbound_redis(redis, [raw_message])
+    redis.get.return_value = INBOUND_EXECUTION_COMPLETED
+    inner = AsyncMock()
+
+    with patch("src.services.chat._process_batch_inner", inner):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 2},
+            batch_ref=batch_ref,
+        )
+
+    inner.assert_not_awaited()
+    batch_id = next(
+        call.args[0].removeprefix("wazzup:inbound:execution:")
+        for call in redis.get.await_args_list
+    )
+    assert inbound_execution_key(batch_id) == redis.get.await_args.args[0]
+    assert inbound_processing_key(batch_ref) in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_quarantines_uncertain_replay_without_side_effects() -> (
+    None
+):
+    from src.services import chat
+
+    redis = AsyncMock()
+    chat_id = "+971500001241"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-uncertain",
+            "chatId": chat_id,
+            "text": "do not replay tools",
+            "type": "text",
+        }
+    )
+    _seed_inbound_redis(redis, [raw_message])
+    redis.get.return_value = INBOUND_EXECUTION_STARTED
+    inner = AsyncMock()
+
+    with (
+        patch("src.services.chat._process_batch_inner", inner),
+        pytest.raises(InboundBatchTerminalError, match="uncertain_replay"),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 2},
+            batch_ref=batch_ref,
+        )
+
+    inner.assert_not_awaited()
+    quarantine_call = redis.set.await_args
+    assert quarantine_call.args[0].startswith(chat.INBOUND_BATCH_QUARANTINE_PREFIX)
+    assert json.loads(quarantine_call.args[1])["raw_messages"] == [raw_message]
+    assert inbound_processing_key(batch_ref) in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
 
 
 @pytest.mark.asyncio
@@ -152,7 +364,7 @@ async def test_process_incoming_batch_quarantines_exhausted_unexpected_failure()
             "type": "text",
         }
     )
-    redis.lpop.side_effect = [raw_message, None]
+    _seed_inbound_redis(redis, [raw_message])
 
     with (
         patch(
@@ -177,7 +389,9 @@ async def test_process_incoming_batch_quarantines_exhausted_unexpected_failure()
 
 
 @pytest.mark.asyncio
-async def test_process_incoming_batch_requeues_when_quarantine_write_fails() -> None:
+async def test_process_incoming_batch_retains_durable_copy_when_quarantine_fails() -> (
+    None
+):
     redis = AsyncMock()
     chat_id = "+971500001236"
     batch_ref = inbound_chat_reference(chat_id)
@@ -188,8 +402,8 @@ async def test_process_incoming_batch_requeues_when_quarantine_write_fails() -> 
             "type": "text",
         }
     )
-    redis.lpop.side_effect = [raw_message, None]
-    redis.set.side_effect = RuntimeError("quarantine storage unavailable")
+    _seed_inbound_redis(redis, [raw_message])
+    redis.set.side_effect = [True, RuntimeError("quarantine storage unavailable")]
 
     with (
         patch(
@@ -203,10 +417,10 @@ async def test_process_incoming_batch_requeues_when_quarantine_write_fails() -> 
             batch_ref=batch_ref,
         )
 
-    redis.lpush.assert_awaited_once_with(
-        inbound_queue_key(batch_ref),
-        raw_message,
-    )
+    redis.lpush.assert_not_awaited()
+    assert inbound_processing_key(batch_ref) not in {
+        call.args[0] for call in redis.delete.await_args_list
+    }
 
 
 @pytest.mark.asyncio
@@ -225,7 +439,7 @@ async def test_process_incoming_batch_quarantines_terminal_zoho_failure(
 
     redis = AsyncMock()
     raw_message = '{"messageId":"msg-terminal","chatId":"sensitive-chat","type":"text"}'
-    redis.lpop.side_effect = [raw_message, None]
+    _seed_inbound_redis(redis, [raw_message])
     error = ZohoOAuthError(
         "invalid_payload" if retryable else "invalid_credentials",
         retryable=retryable,
@@ -416,7 +630,7 @@ async def test_process_incoming_batch_new_conversation(
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     ctx = {"redis": mock_redis}
     chat_id = "1234567890"
@@ -434,6 +648,16 @@ async def test_process_incoming_batch_new_conversation(
         text="Hello from AI",
         conversation_id="conv-uuid-123",
     )
+    execution_states = [
+        call.args[1]
+        for call in mock_redis.set.await_args_list
+        if len(call.args) > 1
+        and call.args[1] in {INBOUND_EXECUTION_STARTED, INBOUND_EXECUTION_COMPLETED}
+    ]
+    assert execution_states == [
+        INBOUND_EXECUTION_STARTED,
+        INBOUND_EXECUTION_COMPLETED,
+    ]
     mock_redis.enqueue_job.assert_not_called()
 
 
@@ -506,7 +730,7 @@ async def test_process_incoming_batch_keeps_batch_successful_when_bot_reply_send
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -605,7 +829,7 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -707,7 +931,7 @@ async def test_process_incoming_batch_refreshes_typing_while_llm_runs(
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with (
         patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
@@ -791,7 +1015,7 @@ async def test_process_incoming_batch_ignores_typing_failures(
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -871,7 +1095,7 @@ async def test_process_incoming_batch_skips_typing_loop_when_provider_unsupporte
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -954,7 +1178,7 @@ async def test_process_incoming_batch_stops_proposal_followup_on_customer_reply(
         channelId="chan-1",
         timestamp=1777896000,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -1030,7 +1254,7 @@ async def test_process_incoming_batch_typing_failure_does_not_block_timeout_fall
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with (
         patch("src.services.chat.settings.wazzup_channel_id", "chan-1"),
@@ -1119,7 +1343,7 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -1217,7 +1441,7 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
         channelId="chan-1",
         timestamp=1704067201,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -1301,7 +1525,7 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
         utm_source="instagram",
         utm_campaign="retargeting",
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -1342,7 +1566,7 @@ async def test_process_incoming_batch_quarantines_without_expected_channel(
         channelId="chan-1",
         timestamp=1704067200,
     )
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with (
         patch("src.services.chat.settings.wazzup_channel_id", ""),
@@ -1434,11 +1658,13 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
     )
 
     mock_redis = AsyncMock()
-    mock_redis.lpop.side_effect = [
-        later_msg.model_dump_json(),
-        earlier_msg.model_dump_json(),
-        None,
-    ]
+    _seed_inbound_redis(
+        mock_redis,
+        [
+            later_msg.model_dump_json(),
+            earlier_msg.model_dump_json(),
+        ],
+    )
 
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")

@@ -84,11 +84,18 @@ def test_format_for_whatsapp_tables() -> None:
     assert _format_for_whatsapp(no_table) == no_table
 
 
+def _seed_inbound_redis(redis: AsyncMock, raw_messages: list[str]) -> None:
+    redis.set.return_value = True
+    redis.get.return_value = None
+    redis.lrange.return_value = []
+    redis.lmove.side_effect = [*raw_messages, None]
+    redis.eval.return_value = 0
+
+
 @pytest.fixture
 def chat_context() -> dict[str, Any]:
     mock_redis = AsyncMock()
-    # Default: no messages in Redis
-    mock_redis.lpop.return_value = None
+    _seed_inbound_redis(mock_redis, [])
     return {
         "redis": mock_redis,
     }
@@ -112,11 +119,13 @@ async def test_process_incoming_batch_success(
 ) -> None:
     # 1. Setup Redis mocks — simulate messages in Redis list
     mock_redis = chat_context["redis"]
-    mock_redis.lpop.side_effect = [
-        '{"messageId": "m1", "chatId": "79991234567", "chatType": "whatsapp", "text": "Hi", "type": "text", "channelId": "ch1", "timestamp": 12345}',
-        '{"messageId": "m2", "chatId": "79991234567", "chatType": "whatsapp", "text": "I need help", "type": "text", "channelId": "ch1", "timestamp": 12346}',
-        None,  # sentinel: no more messages
-    ]
+    _seed_inbound_redis(
+        mock_redis,
+        [
+            '{"messageId": "m1", "chatId": "79991234567", "chatType": "whatsapp", "text": "Hi", "type": "text", "channelId": "ch1", "timestamp": 12345}',
+            '{"messageId": "m2", "chatId": "79991234567", "chatType": "whatsapp", "text": "I need help", "type": "text", "channelId": "ch1", "timestamp": 12346}',
+        ],
+    )
 
     # 2. Setup DB mocks
     mock_db = AsyncMock()
@@ -204,12 +213,13 @@ async def test_process_incoming_batch_success(
 async def test_process_incoming_batch_empty_redis(chat_context: dict[str, Any]) -> None:
     """When Redis list is empty, should exit early without crashing."""
     mock_redis = chat_context["redis"]
-    mock_redis.lpop.return_value = None  # no messages
+    _seed_inbound_redis(mock_redis, [])
 
     await process_incoming_batch(chat_context, "79991234567")
 
     # Should not call anything else
-    assert mock_redis.lpop.await_count == 1
+    mock_redis.lrange.assert_awaited_once()
+    mock_redis.lmove.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -239,22 +249,24 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     chat_id = "79991234567"
     audio_url = "https://cdn.wazzup24.com/files/voice.ogg"
     mock_redis = chat_context["redis"]
-    mock_redis.lpop.side_effect = [
-        json.dumps(
-            {
-                "messageId": "audio-001",
-                "chatId": chat_id,
-                "chatType": "whatsapp",
-                "type": "voice",
-                "channelId": "ch1",
-                "status": "inbound",
-                "authorType": "client",
-                "dateTime": "2026-04-30T10:00:00.000",
-                "media": {"url": audio_url, "mimeType": "audio/ogg"},
-            }
-        ),
-        None,
-    ]
+    _seed_inbound_redis(
+        mock_redis,
+        [
+            json.dumps(
+                {
+                    "messageId": "audio-001",
+                    "chatId": chat_id,
+                    "chatType": "whatsapp",
+                    "type": "voice",
+                    "channelId": "ch1",
+                    "status": "inbound",
+                    "authorType": "client",
+                    "dateTime": "2026-04-30T10:00:00.000",
+                    "media": {"url": audio_url, "mimeType": "audio/ogg"},
+                }
+            ),
+        ],
+    )
 
     mock_db = AsyncMock()
     mock_db_factory.return_value.__aenter__.return_value = mock_db
@@ -365,22 +377,24 @@ async def test_audio_only_oversized_message_sends_safe_fallback_without_llm(
     chat_id = "79991234567"
     audio_url = "https://cdn.wazzup24.com/files/too-large.ogg"
     mock_redis = chat_context["redis"]
-    mock_redis.lpop.side_effect = [
-        json.dumps(
-            {
-                "messageId": "audio-too-large",
-                "chatId": chat_id,
-                "chatType": "whatsapp",
-                "type": "voice",
-                "channelId": "ch1",
-                "status": "inbound",
-                "authorType": "client",
-                "dateTime": "2026-04-30T10:00:00.000",
-                "media": {"url": audio_url, "mimeType": "audio/ogg"},
-            }
-        ),
-        None,
-    ]
+    _seed_inbound_redis(
+        mock_redis,
+        [
+            json.dumps(
+                {
+                    "messageId": "audio-too-large",
+                    "chatId": chat_id,
+                    "chatType": "whatsapp",
+                    "type": "voice",
+                    "channelId": "ch1",
+                    "status": "inbound",
+                    "authorType": "client",
+                    "dateTime": "2026-04-30T10:00:00.000",
+                    "media": {"url": audio_url, "mimeType": "audio/ogg"},
+                }
+            ),
+        ],
+    )
 
     mock_db = AsyncMock()
     mock_db_factory.return_value.__aenter__.return_value = mock_db
@@ -448,22 +462,24 @@ async def test_audio_only_transcription_error_sends_safe_fallback_without_llm(
     chat_id = "79991234567"
     audio_url = "https://cdn.wazzup24.com/files/unreadable.ogg"
     mock_redis = chat_context["redis"]
-    mock_redis.lpop.side_effect = [
-        json.dumps(
-            {
-                "messageId": "audio-unreadable",
-                "chatId": chat_id,
-                "chatType": "whatsapp",
-                "type": "audio",
-                "channelId": "ch1",
-                "status": "inbound",
-                "authorType": "client",
-                "dateTime": "2026-04-30T10:00:00.000",
-                "media": {"url": audio_url, "mimeType": "audio/ogg"},
-            }
-        ),
-        None,
-    ]
+    _seed_inbound_redis(
+        mock_redis,
+        [
+            json.dumps(
+                {
+                    "messageId": "audio-unreadable",
+                    "chatId": chat_id,
+                    "chatType": "whatsapp",
+                    "type": "audio",
+                    "channelId": "ch1",
+                    "status": "inbound",
+                    "authorType": "client",
+                    "dateTime": "2026-04-30T10:00:00.000",
+                    "media": {"url": audio_url, "mimeType": "audio/ogg"},
+                }
+            ),
+        ],
+    )
 
     mock_db = AsyncMock()
     mock_db_factory.return_value.__aenter__.return_value = mock_db

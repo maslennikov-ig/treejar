@@ -79,6 +79,14 @@ def _make_mock_conv(
     return mock_conv
 
 
+def _seed_inbound_redis(redis: AsyncMock, raw_messages: list[str]) -> None:
+    redis.set.return_value = True
+    redis.get.return_value = None
+    redis.lrange.return_value = []
+    redis.lmove.side_effect = [*raw_messages, None]
+    redis.eval.return_value = 0
+
+
 # ---------------------------------------------------------------------------
 # Bot silencing tests (Component 2)
 # ---------------------------------------------------------------------------
@@ -149,7 +157,7 @@ async def test_resolved_escalation_resumes_bot(
         authorType="client",
     )
     mock_redis = AsyncMock()
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -201,7 +209,8 @@ async def test_bot_silent_when_escalated(
         authorType="client",
     )
     mock_redis = AsyncMock()
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
+    mock_redis.get.side_effect = [None, "already-sent"]
 
     ctx = {"redis": mock_redis}
     with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
@@ -251,7 +260,7 @@ async def test_bot_silent_during_manual_takeover(
         authorType="client",
     )
     mock_redis = AsyncMock()
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -305,7 +314,7 @@ async def test_manual_takeover_triggered(
         authorName="Israullah",
     )
     mock_redis = AsyncMock()
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
@@ -362,7 +371,7 @@ async def test_manager_message_saved_with_correct_role(
         isEcho=True,
     )
     mock_redis = AsyncMock()
-    mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
+    _seed_inbound_redis(mock_redis, [msg.model_dump_json()])
 
     with patch("src.services.chat.settings.wazzup_channel_id", "ch1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
