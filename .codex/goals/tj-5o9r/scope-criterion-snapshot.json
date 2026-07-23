@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-5o9r",
+  "source_kind": "beads",
+  "source_id": "tj-5o9r",
+  "source_digest": "56d7109c4fb7f30a738298c78c6d3151a8b0701202c38e2a7ef0f22d7322da75",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "For each operation the user explicitly selects, record exact scope and rollback, execute only the approved mutation/message/drill, verify health and relevant readback, and record evidence. Unselected operations remain explicitly deferred; no credentials, customer data, or destructive cleanup are changed implicitly.",
+      "text_digest": "46fd49c68bba47d078d168ff4680fd72290384c132f7541c7330e2a509581842"
+    }
+  ]
+}

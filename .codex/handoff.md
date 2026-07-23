@@ -1,8 +1,8 @@
 # Orchestrator Handoff
 Updated: 2026-07-23
 Current branch: `main`
-Current stage id: `tj-av22`
-Current stage status: accepted historical stage
+Current stage id: `tj-5o9r`
+Current stage status: in progress
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -61,6 +61,10 @@ Current stage status: accepted historical stage
   prescribed schedule.
 - Canonical runtime remains `https://noor.starec.ai`.
 - Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
+- On 2026-07-23 the user explicitly authorized all previously gated production
+  operations, live synthetic message/latency proof, and destructive cleanup.
+  Stage `tj-5o9r` is executing the production operations first under exact
+  snapshot and restore boundaries.
 
 ## Audit Baseline
 - Local canonical gates were green at audit time: Ruff, format, Mypy, and full
@@ -71,34 +75,26 @@ Current stage status: accepted historical stage
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: not opened.
-Recommended action: continue normal product work, or explicitly authorize one
-bounded follow-up: `tj-15m` live latency/message proof, `tj-5o9r` production
-operational validation, or `tj-rt42` destructive repository cleanup.
+Next stage id: `tj-15m`, after `tj-5o9r` is accepted.
+Recommended action: finish production operational validation, then run the live
+synthetic latency/message matrix, then perform safe repository cleanup.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage only after selecting the next product outcome or one
-explicitly authorized follow-up. Treat `tj-av22` as accepted history, read its
-stage summary for deployed release evidence, and do not infer permission for
-live traffic, production data changes, rollback exercise, or cleanup.
+Use $orchestrator-stage to continue `tj-5o9r`. Treat `tj-av22` as accepted
+history. Execute only the exact production operations recorded in
+`.codex/stages/tj-5o9r/summary.md`, verify after every mutation, and restore the
+original release before advancing.
 
 ## Approval gates
-- Ask before applying escalation reconciliation or sending real Telegram/
-  WhatsApp tests.
-- Ask before live synthetic latency traffic, rollback exercise, or maintenance
-  cron installation/apply.
-- Ask before deleting worktrees/branches/caches or changing credentials/scopes.
-- Preserve existing untracked user files.
+- The user explicitly approved escalation reconciliation, maintenance cron and
+  first apply, one Telegram alert, controlled rollback/restore, live synthetic
+  WhatsApp traffic, and safe destructive cleanup on 2026-07-23.
+- Preserve existing unrelated user files and do not change credentials/scopes.
 
 ## Explicit defers
-- `tj-15m`: live FAQ/product/comparison/order/Arabic/escalation latency and
-  message matrix; blocked until exact synthetic identities/scenarios and real
-  traffic are approved.
-- `tj-5o9r`: optional exact-manifest escalation apply, maintenance cron
-  install/first run, real alert delivery test, and rollback exercise; each
-  operation requires separate exact production approval.
-- `tj-rt42`: stage/legacy worktree, branch, and optional cache deletion;
-  blocked until exact destructive-cleanup approval.
+- `tj-15m`: authorized and queued after `tj-5o9r`.
+- `tj-5o9r`: authorized and in progress.
+- `tj-rt42`: authorized and queued after live evidence is committed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
   `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.

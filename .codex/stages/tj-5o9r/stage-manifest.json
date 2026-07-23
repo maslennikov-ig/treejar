@@ -1,0 +1,63 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-5o9r",
+  "goal_id": "tj-5o9r",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "noor-production-operational-validation",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "escalation-operations",
+      "docker-maintenance",
+      "telegram-alerting",
+      "artifact-deployment"
+    ],
+    "risk_models": [
+      "state-transition",
+      "operations",
+      "external-messaging",
+      "rollback"
+    ],
+    "test_environments": [
+      "production-vps",
+      "production-health"
+    ],
+    "rollback_boundary": "current-noor-production-release-and-pre-operation-state",
+    "acceptance_proofs": [
+      "exact-manifest-readback",
+      "cron-and-heartbeat-readback",
+      "telegram-delivery-result",
+      "rollback-and-restore-health"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "persistence_or_adapter",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-5o9r",
+    "source_digest": "56d7109c4fb7f30a738298c78c6d3151a8b0701202c38e2a7ef0f22d7322da75",
+    "criteria": [
+      {
+        "criterion_id": "AC-1",
+        "text": "For each operation the user explicitly selects, record exact scope and rollback, execute only the approved mutation/message/drill, verify health and relevant readback, and record evidence. Unselected operations remain explicitly deferred; no credentials, customer data, or destructive cleanup are changed implicitly.",
+        "text_digest": "46fd49c68bba47d078d168ff4680fd72290384c132f7541c7330e2a509581842"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-5o9r/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "56d7109c4fb7f30a738298c78c6d3151a8b0701202c38e2a7ef0f22d7322da75",
+  "scope_ledger": "none",
+  "stream_artifacts": []
+}
