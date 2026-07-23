@@ -17,8 +17,6 @@ from src.quality.evaluator import evaluate_conversation
 from src.quality.service import conversation_already_reviewed, get_reviews, save_review
 from src.schemas import (
     PaginatedResponse,
-    QualityReportRequest,
-    QualityReportResponse,
     QualityReviewCreate,
     QualityReviewRead,
 )
@@ -94,14 +92,3 @@ async def create_review(
     review = await save_review(db, body.conversation_id, result)
     await db.commit()
     return QualityReviewRead.model_validate(review)
-
-
-@router.post("/reports/", response_model=QualityReportResponse)
-async def generate_report(
-    body: QualityReportRequest,
-) -> QualityReportResponse:
-    """Generate an aggregate quality report for a period.
-
-    Not yet implemented — coming in Week 11.
-    """
-    raise HTTPException(status_code=501, detail="Not implemented")
