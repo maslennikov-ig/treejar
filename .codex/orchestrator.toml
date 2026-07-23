@@ -9,6 +9,7 @@ artifact_path_template = ".codex/stages/{stage_id}/artifacts/{task_id}.md"
 [workspace]
 multi_repo = false
 launch_mode = "direct_or_orchestrated"
+current_stage_id = "tj-av22"
 
 [baseline]
 profile = "balanced-v2.19"

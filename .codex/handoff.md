@@ -1,6 +1,7 @@
 # Orchestrator Handoff
 Updated: 2026-07-23
-Current branch: `main`
+Current branch: `codex/tj-av22-stabilization`
+Current stage id: `tj-av22`
 
 ## Current Truth
 - Active stabilization epic: `tj-av22`.

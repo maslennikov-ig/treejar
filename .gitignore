@@ -86,6 +86,8 @@ docs/**/*.pdf
 !.codex/project-index.md
 !.codex/report-template.md
 !.codex/stage-artifact-template.md
+!.codex/goals/
+!.codex/goals/**
 !.codex/stages/
 !.codex/stages/**
 

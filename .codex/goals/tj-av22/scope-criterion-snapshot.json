@@ -1,0 +1,59 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-av22",
+  "source_kind": "beads",
+  "source_id": "tj-av22",
+  "source_digest": "168ccf763e17ab52a7b27c626eb19f4143fb21b1835a6f7ee3cde5709d873782",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "The unauthenticated Redis debug endpoint cannot expose raw queue data, with regression coverage.",
+      "text_digest": "5cbf54eab1880fd6ca7b8f4c3a22bfcf6fdd418321d0f77d21eb44573ae7bdd7"
+    },
+    {
+      "criterion_id": "AC-2",
+      "text": "Zoho OAuth and inbound batch processing handle malformed token responses without silent message loss or duplicate replay.",
+      "text_digest": "258c0d214f3cc770f05370ab4be226e528a6ef33fc68470ebd299e0610246950"
+    },
+    {
+      "criterion_id": "AC-3",
+      "text": "Pending escalation state can be audited and reconciled idempotently, with production writes gated by explicit approval.",
+      "text_digest": "3920761744250f3d8199bf4ea93c8e7c2e875cdfb62433a76baaaeb2acdfe0f4"
+    },
+    {
+      "criterion_id": "AC-4",
+      "text": "Docker maintenance installs and runs conservatively with verified logging, while production cleanup remains approval-gated.",
+      "text_digest": "1087e744ce6dde4ea4743dffc420f26baa3e3ca0cb0e0ce33f7e1f584868163b"
+    },
+    {
+      "criterion_id": "AC-5",
+      "text": "The health endpoint reports the deployed version and required Redis and database health with correct HTTP status.",
+      "text_digest": "55b3f48a2401b3829d666988c1968773034c4e4d64bc37508929eeaa56518f52"
+    },
+    {
+      "criterion_id": "AC-6",
+      "text": "Critical runtime failures are observable through privacy-safe signals, documented thresholds, ownership, and remediation.",
+      "text_digest": "080d1e2e78f058249b70f939e9c2521d9d812a5da2263419cb76ff6759190b49"
+    },
+    {
+      "criterion_id": "AC-7",
+      "text": "Response latency is measured and reduced without regression in catalog, quotation, escalation, language, or answer quality.",
+      "text_digest": "fd05089ce5565dcc4d5e9e3cd907776bcc998ecda230acd234562aae1323d658"
+    },
+    {
+      "criterion_id": "AC-8",
+      "text": "Every public 501 route is implemented or deliberately removed/deprecated with consumer, compatibility, documentation, and test evidence.",
+      "text_digest": "f68774f3dbc5ca69f464fedaea8d934ad92dfeabdc1d6fa1e6f3f7b08ad48da1"
+    },
+    {
+      "criterion_id": "AC-9",
+      "text": "Repository worktrees, branches, completion state, and handoff are reconciled without unapproved destructive cleanup.",
+      "text_digest": "0490283977d054806c690087e2472df16ac598ccc68ead9e0f0b90eb6c506e68"
+    },
+    {
+      "criterion_id": "AC-10",
+      "text": "Canonical local gates pass and approved release, production readback, smoke/E2E, and rollback evidence are recorded before epic close.",
+      "text_digest": "4cd9c7712dc5fbbbe113d2efc4285c2aa876c3ad31ab1d66c281756aede6c07e"
+    }
+  ]
+}
