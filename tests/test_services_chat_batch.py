@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from arq import Retry
 
+from src.integrations.zoho_oauth import ZohoOAuthError
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import _handle_escalation_fallback, process_incoming_batch
 from src.services.proposal_followup import record_proposal_sent
@@ -47,6 +50,117 @@ def _assert_bot_reply_sent(
     assert mock_wazzup.send_text.await_args.kwargs["crm_message_id"].startswith(
         f"bot:{conversation_id}:"
     )
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_requeues_transient_zoho_failure_with_backoff() -> (
+    None
+):
+    redis = AsyncMock()
+    raw_messages = [
+        '{"messageId":"msg-1","chatId":"sensitive-chat","type":"text"}',
+        '{"messageId":"msg-2","chatId":"sensitive-chat","type":"text"}',
+    ]
+    redis.lpop.side_effect = [*raw_messages, None]
+    error = ZohoOAuthError("invalid_payload", retryable=True)
+
+    with (
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=error),
+        ),
+        pytest.raises(Retry) as exc_info,
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            "sensitive-chat",
+        )
+
+    redis.lpush.assert_awaited_once_with(
+        "wazzup_msgs:sensitive-chat",
+        *reversed(raw_messages),
+    )
+    assert exc_info.value.defer_score == 2000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("retryable", "job_try"),
+    [
+        (True, 3),
+        (False, 1),
+    ],
+)
+async def test_process_incoming_batch_quarantines_terminal_zoho_failure(
+    retryable: bool,
+    job_try: int,
+) -> None:
+    from src.services import chat
+
+    redis = AsyncMock()
+    raw_message = '{"messageId":"msg-terminal","chatId":"sensitive-chat","type":"text"}'
+    redis.lpop.side_effect = [raw_message, None]
+    error = ZohoOAuthError(
+        "invalid_payload" if retryable else "invalid_credentials",
+        retryable=retryable,
+    )
+
+    with (
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=error),
+        ),
+        pytest.raises(ZohoOAuthError),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": job_try},
+            "sensitive-chat",
+        )
+
+    redis.lpush.assert_not_awaited()
+    quarantine_call, failure_call = redis.rpush.await_args_list
+    quarantine_key = quarantine_call.args[0]
+    assert quarantine_key.startswith(chat.INBOUND_BATCH_QUARANTINE_PREFIX)
+    assert quarantine_call.args[1:] == (raw_message,)
+    assert failure_call.args[0] == chat.INBOUND_BATCH_FAILURES_KEY
+    failure_record = json.loads(failure_call.args[1])
+    assert (
+        failure_record.items()
+        >= {
+            "attempt": job_try,
+            "batch_id": quarantine_key.removeprefix(
+                chat.INBOUND_BATCH_QUARANTINE_PREFIX
+            ),
+            "error_kind": error.kind,
+            "message_count": 1,
+            "retryable": retryable,
+            "status": "terminal",
+        }.items()
+    )
+    assert failure_record["failed_at"].endswith("+00:00")
+    assert "sensitive-chat" not in failure_call.args[1]
+    redis.ltrim.assert_awaited_once_with(
+        chat.INBOUND_BATCH_FAILURES_KEY,
+        -1000,
+        -1,
+    )
+
+
+def test_bot_reply_id_is_stable_for_replayed_inbound_batch() -> None:
+    from src.services.chat import _bot_reply_crm_message_id
+
+    first = _bot_reply_crm_message_id(
+        conversation_id="conv-1",
+        source_message_id="msg-1",
+        combined_text="Need two desks",
+    )
+    replay = _bot_reply_crm_message_id(
+        conversation_id="conv-1",
+        source_message_id="msg-1",
+        combined_text="Need two desks",
+    )
+
+    assert first == replay == "bot:conv-1:msg-1"
 
 
 @pytest.mark.asyncio

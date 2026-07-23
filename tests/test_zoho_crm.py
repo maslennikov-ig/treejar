@@ -12,6 +12,7 @@ from src.integrations.crm.zoho_crm import (
     ZohoCRMClient,
     apply_zoho_attribution_mapping,
 )
+from src.integrations.zoho_oauth import ZohoOAuthError
 
 
 def _make_response(
@@ -37,6 +38,40 @@ async def test_ensure_token_uses_cached_token_on_first_get() -> None:
 
     assert token == "cached_crm_token"
     redis.set.assert_not_called()
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ensure_token_rejects_2xx_without_access_token_and_releases_lock() -> (
+    None
+):
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = True
+
+    response = _make_response(
+        200,
+        {
+            "expires_in": 3600,
+            "error_description": "client_secret=must-not-leak",
+        },
+    )
+    client = ZohoCRMClient(redis)
+
+    with (
+        patch("httpx.AsyncClient") as mock_httpx_client,
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        mock_httpx_client.return_value.__aenter__.return_value.post = AsyncMock(
+            return_value=response
+        )
+        await client._ensure_token()
+
+    assert isinstance(exc_info.value, ZohoOAuthError)
+    assert exc_info.value.retryable is True
+    assert "must-not-leak" not in str(exc_info.value)
+    redis.delete.assert_awaited_with("zoho_crm:access_token:lock")
     await client.close()
 
 
