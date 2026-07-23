@@ -22,17 +22,22 @@ Current stage id: `tj-av22`
   the never-functional public `501` routes.
 - Inbound processing now uses an immutable durable Redis processing list, an
   owner-token lease longer than the ARQ job timeout, and a started/completed
-  execution guard. Cancellation keeps the raw batch recoverable; completed
-  work is not replayed; uncertain post-side-effect recovery is quarantined.
+  execution guard. Active guards do not expire while a durable copy exists;
+  terminal processing-list deletion and guard TTL are one atomic Redis
+  transition. Cancellation keeps the raw batch recoverable; completed work is
+  not replayed; uncertain post-side-effect recovery is quarantined.
+- Runtime monitoring now includes payload-free depth and idle age for orphaned
+  `wazzup_msgs:*` and `wazzup:inbound:processing:*` lists even without an ARQ
+  job.
 - Durable release, health, Zoho recovery, latency, and inbound runbook
   documentation is aligned with the implementation.
-- Independent final review `tj-av22.9` passed after one correction round.
+- Independent final review `tj-av22.9` passed after one correction round. The
+  explicit combined review `tj-av22.10` then found one P1 and two P2 gaps; all
+  were corrected and independently delta-reviewed. Its final verdict is
+  `PASS / LOCALLY RELEASE-READY`, with active `P0/P1/P2/P3=0`.
   Process verification, Ruff, format, Mypy, and the full suite pass locally
-  (`1509 passed, 19 skipped`, including pytest 9 deprecation warnings promoted
-  to errors). The release-level closeout dry-run also passes; it now validates
-  every referenced risk-based verification group and the exact current-stage
-  summary. Release/closeout `tj-av22.3` is blocked only at the production
-  approval boundary.
+  (`1513 passed, 19 skipped`). Release/closeout `tj-av22.3` remains blocked
+  only at the production authorization boundary.
 - Production deployment, readback, real external-message tests, escalation
   apply, cron installation, and live latency proof have not been performed.
 - Fresh read-only production recheck still returns version `0.1.0`, Redis-only
@@ -66,8 +71,8 @@ deploy or mutate production before that approval.
 
 ## Starter prompt for next orchestrator
 Use $orchestrator-stage to continue `tj-av22` from the current integration
-branch. Read the accepted `tj-av22.9` artifact, finish local closeout, and stop
-at the deployment approval gate.
+branch. Read the accepted `tj-av22.10` artifact and stop at the merge/push,
+deployment, live-readback, and cleanup approval gates.
 
 ## Approval gates
 - Ask before deploy/staging or production mutation.

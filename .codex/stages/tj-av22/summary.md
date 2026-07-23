@@ -44,12 +44,15 @@ No scope split or preservation ledger is active.
   handling, and privacy-safe operational records.
 - Replaced destructive inbound `LPOP` processing with an immutable durable
   processing list, an owner-token lease longer than the worker timeout, and a
-  started/completed replay guard. Uncertain post-side-effect recovery is
-  quarantined instead of replayed.
+  started/completed replay guard. Active guards remain persistent while a
+  durable copy exists; Redis atomically removes that copy and bounds terminal
+  retention. Uncertain post-side-effect recovery is quarantined instead of
+  replayed.
 - Added exact-ID, classifier-limited, transactional escalation reconciliation
   and conservative Docker maintenance/cron/heartbeat tooling. Production apply
   remains approval-gated.
-- Added privacy-safe runtime monitoring and delivery-aware optional Telegram
+- Added privacy-safe runtime monitoring, including orphaned live/processing
+  inbound lists without reading payloads, and delivery-aware optional Telegram
   cooldown behavior.
 - Added bounded latency phase evidence and moved summary enqueue work after
   customer-facing text delivery. Controlled local evidence does not claim live
@@ -100,6 +103,15 @@ No scope split or preservation ledger is active.
   corrections are integrated. Final correction review `tj-av22.9` passed after
   the audio-transcription guard correction; the branch is locally
   release-ready.
+- Explicit combined release review `tj-av22.10` initially found one P1 replay
+  lifecycle defect and two P2 acceptance gaps. Corrections `cc22972` and
+  `82a2bdb` were independently delta-reviewed: `395 passed`, active
+  `P0/P1/P2/P3=0`, verdict `PASS / LOCALLY RELEASE-READY`.
+- Fresh root gate after the accepted delta:
+  - focused inbound/runtime/worker/webhook matrix: `67 passed`
+  - Ruff, format (`300 files`), Mypy (`162 source files`), process verification,
+    and diff-check: passed
+  - full pytest: `1513 passed, 19 skipped`
 - No production, credentials, live messaging, external API, reconciliation
   apply, cron install, deployment, or destructive cleanup was performed.
 - Fresh read-only production/CI baseline before delivery:
@@ -142,8 +154,8 @@ No scope split or preservation ledger is active.
   --dry-run`: passed without publishing or changing production. It selected
   the full release gate plus integration, concurrency, security, PostgreSQL,
   and process-verification groups.
-- Completion inbox: `12` events reviewed, `0` pending; the final P1 correction
-  has an immutable accepted correction event.
+- Completion inbox: `14` events reviewed, `0` pending; both the combined
+  findings report and its resolving correction review are immutable.
 - E2E/smoke: deterministic local coverage passed. Production health/readback,
   OAuth/inbound smoke, real messaging, and the live latency matrix are blocked
   on explicit deployment/live-traffic approval.
@@ -161,8 +173,9 @@ No scope split or preservation ledger is active.
   or child-agent process group to terminate. The Codex app server and code-mode
   host are shared session infrastructure and were left untouched.
 - `docs-reviewed: updated` — README, developer/admin guides, operations
-  runbook, architecture/task-plan notes, latency evidence, handoff, stage
-  records, and project index reflect the stabilized contracts.
+  runbook, historical Zoho research/specification, architecture/task-plan
+  notes, latency evidence, handoff, stage records, and project index reflect
+  the stabilized contracts.
 - `project-index: updated` — added the durable deploy, reconciliation,
   maintenance, and latency operational entrypoints.
 - `graph-reviewed: no-change-needed` — Graphify is not configured and

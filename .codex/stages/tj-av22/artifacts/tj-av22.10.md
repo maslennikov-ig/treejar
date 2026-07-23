@@ -64,10 +64,10 @@ depends_on_streams:
   - final-stabilization-review
 parallel_decision: parallel
 status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: review artifact is committed for root triage; this reviewer did not close the stage or remove the isolated worktree
+delivery_method: merge
+accepted_by_orchestrator: yes
+cleanup_status: blocked
+cleanup_notes: root accepted and integrated the delta review; deleting the isolated review worktree remains explicitly approval-gated
 risk_level: high
 verification_tier: release
 risk_tags:
@@ -320,9 +320,9 @@ not counted as additional findings; they remain blockers owned by
 
 # Scope / Routing
 
-The review covered the full non-merge history and 94-file diff from
-`main@89f9a560071302d16f53704870e7a508e9d05f28` through
-`codex/tj-av22-stabilization@75d610de4bcfd12ba952b9f80b00fe2a98256c8e`.
+The review covered the full non-merge history from
+`main@89f9a560071302d16f53704870e7a508e9d05f28` through the correction head
+`codex/tj-av22-stabilization@82a2bdb8897d845001e2b3b098a0c2032ae9f4d1`.
 It inspected the approved design/plan, stage manifest and summary, prior
 review/correction/documentation artifacts, Beads release/latency/cleanup state,
 implementation, tests, deploy/rollback scripts, CI, and durable documentation.
