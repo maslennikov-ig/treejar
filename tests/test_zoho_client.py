@@ -36,7 +36,7 @@ def _make_response(
 @pytest.mark.asyncio
 async def test_ensure_token_timeout_when_lock_held() -> None:
     """When the lock is held by another worker and the token never appears,
-    _ensure_token must raise RuntimeError after exhausting all retries."""
+    _ensure_token must raise a retryable typed error after all retries."""
     redis = AsyncMock()
 
     # redis.get always returns None — no token present
@@ -52,12 +52,12 @@ async def test_ensure_token_timeout_when_lock_held() -> None:
             "src.integrations.inventory.zoho_inventory.asyncio.sleep",
             new_callable=AsyncMock,
         ) as mock_sleep,
-        pytest.raises(
-            RuntimeError, match="Timeout waiting for Zoho token refresh lock"
-        ),
+        pytest.raises(ZohoOAuthError) as exc_info,
     ):
         await client._ensure_token()
 
+    assert exc_info.value.kind == "lock_timeout"
+    assert exc_info.value.retryable is True
     # The wait window must cover the 15-second refresh timeout.
     assert mock_sleep.call_count == 40
 

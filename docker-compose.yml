@@ -26,6 +26,8 @@ services:
     command: worker
     env_file:
       - .env
+    volumes:
+      - ./logs/maintenance:/opt/noor/logs/maintenance:ro
     depends_on:
       db:
         condition: service_started

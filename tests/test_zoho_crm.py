@@ -77,6 +77,28 @@ async def test_ensure_token_rejects_2xx_without_access_token_and_releases_lock()
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_ensure_token_lock_timeout_is_retryable_typed_error() -> None:
+    redis = AsyncMock()
+    redis.get.return_value = None
+    redis.set.return_value = False
+    client = ZohoCRMClient(redis)
+
+    with (
+        patch(
+            "src.integrations.crm.zoho_crm.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+        pytest.raises(ZohoOAuthError) as exc_info,
+    ):
+        await client._ensure_token()
+
+    assert exc_info.value.kind == "lock_timeout"
+    assert exc_info.value.retryable is True
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_request_retries_after_401() -> None:
     """On a 401 response the client must delete the cached token from Redis and retry."""
     redis = AsyncMock()

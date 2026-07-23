@@ -19,6 +19,7 @@ from src.services.runtime_monitoring import (
 )
 
 NOW = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_healthy_runtime_snapshot_has_no_alerts() -> None:
@@ -284,3 +285,13 @@ async def test_runtime_monitoring_notifies_once_after_explicit_enable(
     assert "zoho_oauth_failed" in message
     assert "token" not in message.lower()
     assert "secret" not in message.lower()
+
+
+def test_production_worker_can_read_host_maintenance_heartbeat() -> None:
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    worker_section = compose.split("\n  worker:", maxsplit=1)[1].split(
+        "\n  redis:",
+        maxsplit=1,
+    )[0]
+
+    assert "./logs/maintenance:/opt/noor/logs/maintenance:ro" in worker_section

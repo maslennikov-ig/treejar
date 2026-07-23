@@ -13,6 +13,7 @@ ZohoOAuthFailureKind = Literal[
     "invalid_json",
     "invalid_payload",
     "invalid_token_type",
+    "lock_timeout",
     "oauth_error",
     "transport",
 ]

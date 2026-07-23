@@ -16,7 +16,8 @@
 - [x] Схема БД (6 таблиц: conversations, messages, products, knowledge_base, quality_reviews, escalations)
 - [x] SQLAlchemy модели + Alembic миграция
 - [x] Pydantic-схемы (9 модулей, все API-контракты)
-- [x] FastAPI skeleton (8 роутеров, health endpoint рабочий, остальные 501)
+- [x] FastAPI skeleton (8 роутеров; первоначальные заглушки позднее реализованы
+  или явно удалены из публичного контракта)
 - [x] Docker (Dockerfile multi-stage, docker-compose prod + dev, nginx, entrypoint)
 - [x] Protocol-абстракции (MessagingProvider, CRMProvider, InventoryProvider, VectorStore)
 - [x] CI: GitHub Actions (ruff + mypy + pytest)
