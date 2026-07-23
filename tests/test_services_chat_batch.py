@@ -243,9 +243,9 @@ async def test_process_incoming_batch_new_conversation(
         MockResult(None),  # bot_enabled
         MockResult(None),  # conv lookup (None = create new)
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     # Simulate LLM response
@@ -343,9 +343,9 @@ async def test_process_incoming_batch_keeps_batch_successful_when_bot_reply_send
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     mock_process_message.return_value = LLMResponse(
@@ -431,9 +431,9 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
+        MockResult(None),  # bot_reply audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # bot_reply audit idempotency lookup
         MockResult(None),  # product media audit idempotency lookup
         MockResult(None),  # product caption audit idempotency lookup
     ]
@@ -539,9 +539,9 @@ async def test_process_incoming_batch_refreshes_typing_while_llm_runs(
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     async def _slow_process_message(**_: object) -> LLMResponse:
@@ -627,9 +627,9 @@ async def test_process_incoming_batch_ignores_typing_failures(
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     mock_process_message.return_value = LLMResponse(
@@ -703,12 +703,12 @@ async def test_process_incoming_batch_skips_typing_loop_when_provider_unsupporte
     existing_conv.metadata_ = {}
 
     mock_session.execute.side_effect = [
-        MockResult(None),
-        MockResult(existing_conv),
-        MockResult([]),
-        MockResult(2),
-        MockResult(None),
-        MockResult(None),
+        MockResult(None),  # bot_enabled
+        MockResult(existing_conv),  # conversation lookup
+        MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
+        MockResult(2),  # total messages after assistant commit
+        MockResult(None),  # no existing summary
     ]
 
     mock_process_message.return_value = LLMResponse(
@@ -791,9 +791,9 @@ async def test_process_incoming_batch_stops_proposal_followup_on_customer_reply(
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # conversation lookup
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     mock_process_message.return_value = LLMResponse(
@@ -954,9 +954,9 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
         MockResult([duplicate_empty, populated_conv]),  # duplicate conv lookup
         MockResult(["conv-live"]),  # conversations that already have messages
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(10),  # total messages after assistant commit
         MockResult(None),  # no existing summary yet
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse
@@ -1019,7 +1019,12 @@ async def test_process_incoming_batch_prefers_non_empty_conversation_when_duplic
 @patch("src.services.chat.ZohoCRMClient")
 @patch("src.services.chat.ZohoInventoryClient")
 @patch("src.services.chat.EmbeddingEngine")
+@patch(
+    "src.services.chat._enqueue_summary_refresh_if_needed",
+    new_callable=AsyncMock,
+)
 async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exists(
+    mock_enqueue_summary: AsyncMock,
     mock_embedding_cls: MagicMock,
     mock_zoho_inv_cls: MagicMock,
     mock_zoho_crm_cls: MagicMock,
@@ -1039,8 +1044,6 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # single existing conversation
         MockResult([]),  # msg dedup check
-        MockResult(4),  # still a short conversation
-        MockResult("summary-row"),  # summary already exists
         MockResult(None),  # outbound audit idempotency lookup
     ]
 
@@ -1066,7 +1069,17 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
     mock_wazzup = AsyncMock()
     mock_wazzup_cls.return_value.__aenter__ = AsyncMock(return_value=mock_wazzup)
     mock_wazzup_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-    mock_wazzup.send_text.return_value = "msg_out_1"
+    events: list[str] = []
+
+    async def _send_text(*_: object, **__: object) -> str:
+        events.append("text_sent")
+        return "msg_out_1"
+
+    async def _enqueue_summary(*_: object, **__: object) -> None:
+        events.append("summary_enqueued")
+
+    mock_wazzup.send_text.side_effect = _send_text
+    mock_enqueue_summary.side_effect = _enqueue_summary
     mock_wazzup.resolve_channel_phone = AsyncMock(return_value="+971551220665")
 
     mock_redis = AsyncMock()
@@ -1084,10 +1097,12 @@ async def test_process_incoming_batch_enqueues_summary_refresh_when_summary_exis
     with patch("src.services.chat.settings.wazzup_channel_id", "chan-1"):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
-    mock_redis.enqueue_job.assert_awaited_once_with(
-        "refresh_conversation_summary",
+    mock_enqueue_summary.assert_awaited_once_with(
+        mock_redis,
+        mock_session,
         "conv-with-summary",
     )
+    assert events == ["text_sent", "summary_enqueued"]
 
 
 @pytest.mark.asyncio
@@ -1118,9 +1133,9 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # existing conversation
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse
@@ -1236,9 +1251,9 @@ async def test_process_incoming_batch_persists_stable_created_at_for_batched_mes
         MockResult(None),  # bot_enabled
         MockResult(existing_conv),  # existing conversation
         MockResult([]),  # msg dedup check
+        MockResult(None),  # outbound audit idempotency lookup
         MockResult(3),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit idempotency lookup
     ]
 
     from src.llm import LLMResponse

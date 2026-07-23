@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from html import escape
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import httpx
@@ -98,6 +98,9 @@ from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
 from src.schemas.product import ProductSearchQuery
+
+if TYPE_CHECKING:
+    from src.services.chat_latency import ChatLatencyTrace
 from src.services.bot_behavior_rules import (
     BehaviorRuleSearchContext,
     format_behavior_rules_prompt,
@@ -9608,6 +9611,7 @@ async def process_message(
     messaging_client: MessagingProvider,
     crm_client: ZohoCRMClient | None = None,
     source_message_id: str | None = None,
+    latency_trace: ChatLatencyTrace | None = None,
 ) -> LLMResponse:
     """Process an incoming message through the PydanticAI agent.
 
@@ -9618,6 +9622,7 @@ async def process_message(
     5. Unmasks PII in response when masking was enabled
     """
 
+    context_started = latency_trace.start_phase() if latency_trace is not None else None
     combined_text = _strip_synthetic_test_marker(combined_text)
     dialogue_kernel_result: DialogueKernelResult | None = None
 
@@ -10425,7 +10430,11 @@ async def process_message(
     if order_quote_response is not None:
         return order_quote_response
 
+    if latency_trace is not None and context_started is not None:
+        latency_trace.finish_phase("llm_context", context_started)
+
     # Pre-compute FAQ search results (once per message, not per tool roundtrip)
+    faq_started = latency_trace.start_phase() if latency_trace is not None else None
     try:
         from src.rag.pipeline import search_knowledge
 
@@ -10434,7 +10443,13 @@ async def process_message(
         )
     except Exception:
         logger.warning("FAQ knowledge base search failed", exc_info=True)
+    finally:
+        if latency_trace is not None and faq_started is not None:
+            latency_trace.finish_phase("faq_rag", faq_started)
 
+    behavior_started = (
+        latency_trace.start_phase() if latency_trace is not None else None
+    )
     try:
         metadata = conv.metadata_ if isinstance(conv.metadata_, dict) else {}
         segment = None
@@ -10455,6 +10470,9 @@ async def process_message(
         await _store_applied_bot_rules(db, conv, deps.behavior_rules)
     except Exception:
         logger.warning("Bot behavior rule search failed", exc_info=True)
+    finally:
+        if latency_trace is not None and behavior_started is not None:
+            latency_trace.finish_phase("behavior_rag", behavior_started)
 
     policy_decision = evaluate_verified_answer_policy(
         masked_text, deps.faq_context or []
@@ -10478,15 +10496,22 @@ async def process_message(
         )
 
         async def _run_agent(run_deps: SalesDeps) -> Any:
-            return await run_agent_with_safety(
-                sales_agent,
-                PATH_CORE_CHAT,
-                user_prompt=masked_text,
-                deps=run_deps,
-                message_history=history,
-                model=dynamic_model,
-                model_name=db_model_main,
+            agent_started = (
+                latency_trace.start_phase() if latency_trace is not None else None
             )
+            try:
+                return await run_agent_with_safety(
+                    sales_agent,
+                    PATH_CORE_CHAT,
+                    user_prompt=masked_text,
+                    deps=run_deps,
+                    message_history=history,
+                    model=dynamic_model,
+                    model_name=db_model_main,
+                )
+            finally:
+                if latency_trace is not None and agent_started is not None:
+                    latency_trace.finish_phase("model_tools", agent_started)
 
         order_quote_response = await _order_quote_route_for_turn(
             phase="post_policy",
