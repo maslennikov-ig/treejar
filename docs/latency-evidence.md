@@ -49,9 +49,9 @@ The 2026-07-23 worktree run used nine samples per ordering and a configured
 
 | Controlled boundary | p50 time-to-text |
 |---|---:|
-| Legacy: summary before send | `60.671ms` |
-| Current: summary after send | `30.481ms` |
-| Measured reduction | `30.191ms` |
+| Legacy: summary before send | `60.761ms` |
+| Current: summary after send | `30.533ms` |
+| Measured reduction | `30.228ms` |
 
 The approximately `30ms` reduction validates the scheduling relationship, not
 the real size of the summary phase.
