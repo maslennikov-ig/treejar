@@ -28,10 +28,11 @@ Current stage id: `tj-av22`
   documentation is aligned with the implementation.
 - Independent final review `tj-av22.9` passed after one correction round.
   Process verification, Ruff, format, Mypy, and the full suite pass locally
-  (`1507 passed, 19 skipped`). The release-level closeout dry-run also passes;
-  it now validates every referenced risk-based verification group and the
-  exact current-stage summary. Release/closeout `tj-av22.3` is blocked only at
-  the production approval boundary.
+  (`1509 passed, 19 skipped`, including pytest 9 deprecation warnings promoted
+  to errors). The release-level closeout dry-run also passes; it now validates
+  every referenced risk-based verification group and the exact current-stage
+  summary. Release/closeout `tj-av22.3` is blocked only at the production
+  approval boundary.
 - Production deployment, readback, real external-message tests, escalation
   apply, cron installation, and live latency proof have not been performed.
 - Cleanup audit `tj-rt42` found nine old worktrees with no commits unique from

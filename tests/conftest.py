@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["WAZZUP_API_KEY"] = "fake-wazzup-key"
 os.environ["WAZZUP_API_URL"] = "http://fake-wazzup-url"
 
-import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 
 os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
 
@@ -66,14 +66,14 @@ def integration(fn: object) -> object:
 
 
 @pytest.fixture(autouse=True)
-async def cleanup_db_pool() -> AsyncGenerator[None, None]:
+def cleanup_db_pool() -> Generator[None, None, None]:
     """Force SQLAlchemy to dispose of the connection pool after each test.
     This prevents 'different event loop' errors when engines are reused across tests.
     """
     yield
     from src.core.database import engine
 
-    await engine.dispose()
+    asyncio.run(engine.dispose())
 
 
 @pytest.fixture

@@ -90,6 +90,11 @@ No scope split or preservation ledger is active.
   - release-level stage-closeout dry-run: passed
   - the contract now defines every risk-based verification group and points to
     the exact `tj-av22` stage summary; regression tests cover both invariants
+  - final canonical static gates: Ruff, format, and Mypy passed
+  - final full pytest with pytest 9 deprecation warnings promoted to errors:
+    `1509 passed, 19 skipped`
+  - the global database-pool teardown no longer exposes sync tests to an
+    unsupported async autouse fixture
 - Independent review artifacts `tj-av22.5`, `tj-av22.7`, and `tj-av22.8`
   were accepted as findings reports. Their implementation and documentation
   corrections are integrated. Final correction review `tj-av22.9` passed after
