@@ -2,7 +2,7 @@
 Updated: 2026-07-23
 Current branch: `main`
 Current stage id: `tj-rt42`
-Current stage status: in progress
+Current stage status: accepted and closed
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -52,9 +52,11 @@ Current stage status: in progress
 - Real external-message tests, escalation apply, maintenance cron
   installation/apply, live latency proof, rollback exercise, and destructive
   cleanup were not performed because they remain separately approval-gated.
-- Cleanup audit `tj-rt42` found nine old worktrees with no commits unique from
-  `main`, plus large local caches. Nothing was deleted because cleanup requires
-  explicit approval.
+- Cleanup stage `tj-rt42` removed all 20 stale task worktrees, all 29 local
+  integrated or patch-equivalent task branches, and about 377 MB of rebuildable
+  Python caches after preserving exact evidence. Only `main` remains locally;
+  remote branches, `.venv`, completion history, and all protected user files
+  were preserved and verified.
 - On 2026-07-23 the user explicitly authorized visible spawned subagents for
   this epic. Delegation remains adaptive: the orchestrator chooses the working
   shape from current evidence. The plan's candidate streams are guidance, not a
@@ -82,14 +84,14 @@ Current stage status: in progress
 
 ## Next recommended
 Next stage id: not opened.
-Recommended action: finish the authorized safe repository cleanup while
-`tj-15m.7` waits for Zoho owner action; resume the exact live matrix after both
-tokens are renewed.
+Recommended action: obtain interactive Zoho owner consent, renew both CRM and
+Inventory refresh tokens under `tj-15m.7`, then resume the exact live latency
+matrix from scenario two.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to continue `tj-rt42`. Treat `tj-av22` and `tj-5o9r` as
-accepted history and `tj-15m` as explicitly blocked by `tj-15m.7`. Follow the
-exact preservation/deletion rules in `.codex/stages/tj-rt42/summary.md`.
+Use $orchestrator-stage to resume `tj-15m` only after `tj-15m.7` has both new
+Zoho refresh tokens installed through the protected configuration path. Treat
+`tj-av22`, `tj-5o9r`, and `tj-rt42` as accepted history.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -102,7 +104,7 @@ exact preservation/deletion rules in `.codex/stages/tj-rt42/summary.md`.
 - `tj-15m.7`: blocked on interactive Zoho owner consent and new CRM/Inventory
   refresh tokens.
 - `tj-5o9r`: accepted and closed.
-- `tj-rt42`: authorized and in progress.
+- `tj-rt42`: accepted and closed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
   `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.

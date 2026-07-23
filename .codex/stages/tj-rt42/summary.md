@@ -1,7 +1,7 @@
 # Stage tj-rt42 Summary
 
 Updated: 2026-07-23
-Status: in progress
+Status: accepted and closed
 Branch: `main`
 Beads: `tj-rt42`
 
@@ -90,6 +90,35 @@ ambiguous or unique change are outside destructive scope.
   patch-equivalent branches.
 - Remove only the classified rebuildable caches. Preserve `.venv`, completion
   history, all remote branches, and every protected user path.
+
+### Post-cleanup readback
+
+- All 20 stale task worktrees were removed child-first. `git worktree
+  list --porcelain` now reports only `/home/me/code/treejar` on `main`;
+  `.worktrees/` is an empty 4 KB directory.
+- All 29 local task branches were removed. Normal deletion covered 26 branches;
+  Git required force deletion for one ancestor with a stale upstream and the
+  two pre-proven patch-equivalent branches. `refs/heads` now contains only
+  `main`. No remote branch was deleted.
+- `.mypy_cache` (about 377 MB), `.ruff_cache`, `.pytest_cache`, and all project
+  `__pycache__` directories were removed. `.venv` remains at about 1.6 GB.
+- All four protected offer-file SHA-256 values and the protected file counts
+  (`output=1`, `tmp=8`) match the pre-cleanup snapshot.
+- `git fsck --full` reports no repository corruption. Unreachable objects
+  listed only when explicitly using `--no-reflogs --unreachable` are the
+  expected recoverable object tail after local branch deletion; no object
+  pruning or reflog expiry was performed.
+- Completion history remains intact: 14 reviewed historical events, zero
+  current-stage events, and zero pending current-stage events.
+- CI run `30034173648` passed for the inbox stage-filter correction. The
+  previously deployed Zoho terminal-error correction also passed lint,
+  type-check, full tests, and deployment in run `30033697030`; production
+  readback confirms exact release `c519c3f1...`, five running services, green
+  Redis/database health, cron markers `1:1:1`, and a successful maintenance
+  heartbeat.
+- Canonical stage closeout passed artifact and readiness validation, blocking
+  review reconciliation, documentation/project-index/debt checks, process
+  verification, `git diff --check`, and the 102-test acceptance slice.
 
 ## Closeout
 

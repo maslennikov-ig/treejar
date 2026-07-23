@@ -3,7 +3,7 @@
   "stage_id": "tj-rt42",
   "goal_id": "tj-rt42",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 1,
   "acceptance_boundary_id": "treejar-safe-repository-cleanup",
   "acceptance_owner": "root-orchestrator",
@@ -59,5 +59,11 @@
   "scope_anchor": ".codex/goals/tj-rt42/scope-criterion-snapshot.json",
   "scope_anchor_digest": "b8026a7689749b211ddd950b8758f9a28ed9e3067c20b133de97c2a5992b1619",
   "scope_ledger": "none",
-  "stream_artifacts": []
+  "stream_artifacts": [
+    {
+      "task_id": "tj-rt42",
+      "stream_owner": "repository-cleanup-executor",
+      "artifact_path": ".codex/stages/tj-rt42/artifacts/tj-rt42.md"
+    }
+  ]
 }
