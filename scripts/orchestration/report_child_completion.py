@@ -174,11 +174,35 @@ def require_exact_artifact(
     return artifact
 
 
-def require_stage_runtime_path(path: pathlib.Path, stage_id: str, label: str) -> None:
-    parent = path.parent
+def require_runtime_path(
+    repo_root: pathlib.Path,
+    inbox: dict,
+    key: str,
+    resolved_path: pathlib.Path,
+    stage_id: str,
+) -> None:
+    label = f"completion_inbox.{key}"
+    raw_path = pathlib.Path(require_string(inbox.get(key), label))
+    if raw_path.is_absolute() or ".." in raw_path.parts:
+        raise SystemExit(f"{label} must be a safe relative path")
+    if inbox.get("scope", "repo_root") == "git_common_dir":
+        common_dir_raw = subprocess.check_output(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        common_dir = pathlib.Path(common_dir_raw)
+        if not common_dir.is_absolute():
+            common_dir = (repo_root / common_dir).resolve()
+        expected = common_dir / raw_path
+        if resolved_path != expected:
+            raise SystemExit(f"{label} does not match configured git-common path")
+        return
+    parent = resolved_path.parent
     if parent.name != stage_id or parent.parent.name != "stages":
         raise SystemExit(
-            f"{label} must be inside the exact configured stage root for {stage_id}: {path}"
+            f"{label} must be inside the exact configured stage root for {stage_id}: "
+            f"{resolved_path}"
         )
 
 
@@ -212,8 +236,8 @@ def main(argv: list[str]) -> int:
         artifact_path = require_exact_artifact(
             repo_root, contract, args.task, args.stage, args.artifact
         )
-        require_stage_runtime_path(
-            events_file, args.stage, "completion_inbox.events_file"
+        require_runtime_path(
+            repo_root, inbox, "events_file", events_file, args.stage
         )
         artifact_display = artifact_path.relative_to(repo_root).as_posix()
     else:
