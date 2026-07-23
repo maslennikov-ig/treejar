@@ -149,6 +149,16 @@
       "task_id": "tj-av22.1.1",
       "stream_owner": "runtime-alert-worker",
       "artifact_path": ".codex/stages/tj-av22/artifacts/tj-av22.1.1.md"
+    },
+    {
+      "task_id": "tj-av22.7",
+      "stream_owner": "correction-reviewer",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-av22.7.md"
+    },
+    {
+      "task_id": "tj-av22.8",
+      "stream_owner": "docs-reviewer",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-av22.8.md"
     }
   ]
 }
