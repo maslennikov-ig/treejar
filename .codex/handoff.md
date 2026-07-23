@@ -1,8 +1,8 @@
 # Orchestrator Handoff
 Updated: 2026-07-23
 Current branch: `main`
-Current stage id: `tj-15m`
-Current stage status: blocked on Zoho account-owner credential renewal
+Current stage id: `tj-rt42`
+Current stage status: in progress
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -81,15 +81,15 @@ Current stage status: blocked on Zoho account-owner credential renewal
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: `tj-rt42`, after `tj-15m` is accepted.
-Recommended action: perform safe repository cleanup while `tj-15m.7` waits for
-Zoho owner action; resume the exact live matrix after both tokens are renewed.
+Next stage id: not opened.
+Recommended action: finish the authorized safe repository cleanup while
+`tj-15m.7` waits for Zoho owner action; resume the exact live matrix after both
+tokens are renewed.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to open `tj-rt42` for the authorized safe cleanup.
-Treat `tj-av22` and `tj-5o9r` as accepted history and `tj-15m` as explicitly
-blocked by `tj-15m.7`. Preserve all unrelated user files and archive any dirty
-or ambiguous worktree evidence before deletion.
+Use $orchestrator-stage to continue `tj-rt42`. Treat `tj-av22` and `tj-5o9r` as
+accepted history and `tj-15m` as explicitly blocked by `tj-15m.7`. Follow the
+exact preservation/deletion rules in `.codex/stages/tj-rt42/summary.md`.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -102,7 +102,7 @@ or ambiguous worktree evidence before deletion.
 - `tj-15m.7`: blocked on interactive Zoho owner consent and new CRM/Inventory
   refresh tokens.
 - `tj-5o9r`: accepted and closed.
-- `tj-rt42`: authorized and queued after live evidence is committed.
+- `tj-rt42`: authorized and in progress.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
   `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.

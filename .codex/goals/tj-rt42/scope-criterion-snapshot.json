@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-rt42",
+  "source_kind": "beads",
+  "source_id": "tj-rt42",
+  "source_digest": "b8026a7689749b211ddd950b8758f9a28ed9e3067c20b133de97c2a5992b1619",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "Classify every dirty diff and unique branch commit; update handoff to current task truth; propose exact safe cleanup commands; delete nothing until explicit approval; verify final worktree/branch/inbox state.",
+      "text_digest": "ac93d8a152d68f78d9c00ca68d531dbedfe9f4dc66c32fe749e64566352668e4"
+    }
+  ]
+}

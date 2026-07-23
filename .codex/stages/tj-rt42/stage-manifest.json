@@ -1,0 +1,63 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-rt42",
+  "goal_id": "tj-rt42",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "treejar-safe-repository-cleanup",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "git-worktrees",
+      "local-branches",
+      "completion-inbox",
+      "development-caches",
+      "handoff"
+    ],
+    "risk_models": [
+      "destructive-cleanup",
+      "change-preservation",
+      "repository-operations"
+    ],
+    "test_environments": [
+      "local-git-common-dir",
+      "local-workspace"
+    ],
+    "rollback_boundary": "archive-or-prove-integrated-before-each-deletion",
+    "acceptance_proofs": [
+      "exact-worktree-and-branch-inventory",
+      "dirty-and-unique-change-classification",
+      "post-cleanup-git-readback",
+      "preserved-user-files"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "persistence_or_adapter",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-rt42",
+    "source_digest": "b8026a7689749b211ddd950b8758f9a28ed9e3067c20b133de97c2a5992b1619",
+    "criteria": [
+      {
+        "criterion_id": "AC-1",
+        "text": "Classify every dirty diff and unique branch commit; update handoff to current task truth; propose exact safe cleanup commands; delete nothing until explicit approval; verify final worktree/branch/inbox state.",
+        "text_digest": "ac93d8a152d68f78d9c00ca68d531dbedfe9f4dc66c32fe749e64566352668e4"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-rt42/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "b8026a7689749b211ddd950b8758f9a28ed9e3067c20b133de97c2a5992b1619",
+  "scope_ledger": "none",
+  "stream_artifacts": []
+}

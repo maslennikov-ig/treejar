@@ -9,7 +9,7 @@ artifact_path_template = ".codex/stages/{stage_id}/artifacts/{task_id}.md"
 [workspace]
 multi_repo = false
 launch_mode = "direct_or_orchestrated"
-current_stage_id = "tj-15m"
+current_stage_id = "tj-rt42"
 
 [baseline]
 profile = "balanced-v2.19"
@@ -48,7 +48,7 @@ hard_limit_lines = 200
 tracked_in_git = true
 format = "frontmatter_plus_short_note"
 sensitivity = "internal_no_secrets"
-current_stage_summary = ".codex/stages/tj-15m/summary.md"
+current_stage_summary = ".codex/stages/tj-rt42/summary.md"
 
 [completion_inbox]
 scope = "git_common_dir"
