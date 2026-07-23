@@ -327,7 +327,6 @@ async def _begin_inbound_side_effects(redis: Any, batch_id: str) -> None:
     claimed = await redis.set(
         execution_key,
         INBOUND_EXECUTION_STARTED,
-        ex=settings.inbound_batch_quarantine_ttl_seconds,
         nx=True,
     )
     if claimed is True:
@@ -343,7 +342,6 @@ async def _mark_inbound_execution_completed(redis: Any, batch_id: str) -> None:
     await redis.set(
         inbound_execution_key(batch_id),
         INBOUND_EXECUTION_COMPLETED,
-        ex=settings.inbound_batch_quarantine_ttl_seconds,
     )
 
 
@@ -839,6 +837,10 @@ async def process_incoming_batch(
                         defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)
                     ) from exc
 
+                await redis.expire(
+                    inbound_execution_key(batch_id),
+                    settings.inbound_batch_quarantine_ttl_seconds,
+                )
                 await _record_inbound_batch_failure(
                     redis,
                     batch_id=batch_id,
@@ -861,6 +863,10 @@ async def process_incoming_batch(
                 raise
 
             await redis.delete(processing_key)
+            await redis.expire(
+                inbound_execution_key(batch_id),
+                settings.inbound_batch_quarantine_ttl_seconds,
+            )
             release_state = await _release_or_continue_inbound_lock(
                 redis,
                 lock_key=lock_key,

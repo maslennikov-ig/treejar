@@ -164,6 +164,11 @@
       "task_id": "tj-av22.9",
       "stream_owner": "final-reviewer",
       "artifact_path": ".codex/stages/tj-av22/artifacts/tj-av22.9.md"
+    },
+    {
+      "task_id": "tj-av22.10",
+      "stream_owner": "combined-release-reviewer",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-av22.10.md"
     }
   ]
 }

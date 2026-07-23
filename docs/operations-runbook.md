@@ -160,11 +160,13 @@ is therefore approval-gated and intentionally conservative.
 ## Runtime failure visibility
 
 `run_runtime_monitoring` is registered as a five-minute ARQ cron job but is
-disabled by default. It reads only bounded operational metadata:
+disabled by default. It reads only payload-free operational metadata:
 
 - failed ARQ result metadata retained during the previous hour;
 - sanitized Zoho OAuth failure events from `zoho:oauth:failures`;
-- count and oldest age of queued `process_incoming_batch` jobs;
+- count and oldest age across queued `process_incoming_batch` jobs and the
+  durable `wazzup_msgs:*` / `wazzup:inbound:processing:*` lists, using only
+  list length and Redis key idle time;
 - count of pending escalation rows older than 30 days;
 - direct Redis and database probes;
 - the Docker maintenance heartbeat described above.
@@ -186,14 +188,18 @@ Ordinary pre-side-effect failures therefore leave the only working copy in
 Redis instead of destructively popping it into process memory.
 
 Before invoking the LLM or a provider action, the worker persists an execution
-guard for the immutable batch. A completed guard is acknowledged without
-replaying the work. A recovered `started` guard has an uncertain external
-outcome, so its raw batch is moved to the restricted quarantine instead of
-repeating CRM, Inventory, Telegram, or Wazzup side effects. Invalid
-configuration/payloads and exhausted retries are quarantined in the same way.
-If the quarantine write fails, the durable processing list is retained and the
-job retries; it is not deleted or copied into logs. Any quarantine inspection
-or replay remains an exact, separately approved recovery action.
+guard for the immutable batch. The `started` guard does not expire while the
+durable processing list can still be recovered, so even a long worker outage
+cannot silently reopen provider or LLM side effects. A completed guard is
+acknowledged without replaying the work. A recovered `started` guard has an
+uncertain external outcome, so its raw batch is moved to the restricted
+quarantine instead of repeating CRM, Inventory, Telegram, or Wazzup side
+effects; once quarantined, the guard receives the same bounded retention.
+Invalid configuration/payloads and exhausted retries are quarantined in the
+same way. If the quarantine write fails, the durable processing list and its
+guard are retained and the job retries; neither is deleted or copied into logs.
+Any quarantine inspection or replay remains an exact, separately approved
+recovery action.
 
 ### Default thresholds and ownership
 
@@ -201,8 +207,8 @@ or replay remains an exact, separately approved recovery action.
 |---|---:|---|---|---|
 | `arq_jobs_failed` | 1 failed result in 1 hour | structured log; optional Telegram | Noor operations | Inspect sanitized job result metadata and fix the cause before replay |
 | `zoho_oauth_failed` | 1 refresh failure in 1 hour | structured log; optional Telegram | Noor operations | Check the error class and Zoho account configuration |
-| `inbound_queue_backlog` | 25 queued inbound jobs | structured log; optional Telegram | Noor operations | Check worker capacity and queue trend |
-| `inbound_queue_stalled` | oldest inbound job is 120s old | structured log; optional Telegram | Noor operations | Check worker health before replaying anything |
+| `inbound_queue_backlog` | 25 queued jobs or durable inbound messages | structured log; optional Telegram | Noor operations | Check worker capacity and durable queue trend |
+| `inbound_queue_stalled` | oldest queued job or durable inbound key is idle for 120s | structured log; optional Telegram | Noor operations | Check worker health before replaying anything |
 | `pending_escalations_stale` | 1 row older than 30 days | structured log; optional Telegram | Noor operations | Run and review the read-only escalation audit |
 | `health_dependency_failed` | 1 failed Redis/DB probe | structured log; optional Telegram | Noor operations | Inspect dependency health before restart |
 | `maintenance_failed` | last heartbeat reports failure | structured log; optional Telegram | Noor operations | Inspect logs and rerun only in dry-run mode |

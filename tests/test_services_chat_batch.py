@@ -15,7 +15,9 @@ from src.services.chat import (
     INBOUND_EXECUTION_COMPLETED,
     INBOUND_EXECUTION_STARTED,
     InboundBatchTerminalError,
+    _begin_inbound_side_effects,
     _handle_escalation_fallback,
+    _mark_inbound_execution_completed,
     process_incoming_batch,
 )
 from src.services.inbound_batch import (
@@ -70,6 +72,36 @@ def _assert_bot_reply_sent(
     assert mock_wazzup.send_text.await_args.args == (chat_id, text)
     assert mock_wazzup.send_text.await_args.kwargs["crm_message_id"].startswith(
         f"bot:{conversation_id}:"
+    )
+
+
+@pytest.mark.asyncio
+async def test_started_execution_guard_remains_until_batch_reaches_terminal_state() -> (
+    None
+):
+    redis = AsyncMock()
+    redis.set.return_value = True
+
+    await _begin_inbound_side_effects(redis, "batch-in-progress")
+
+    redis.set.assert_awaited_once_with(
+        inbound_execution_key("batch-in-progress"),
+        INBOUND_EXECUTION_STARTED,
+        nx=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_completed_execution_guard_remains_until_processing_copy_is_deleted() -> (
+    None
+):
+    redis = AsyncMock()
+
+    await _mark_inbound_execution_completed(redis, "batch-completed")
+
+    redis.set.assert_awaited_once_with(
+        inbound_execution_key("batch-completed"),
+        INBOUND_EXECUTION_COMPLETED,
     )
 
 
@@ -275,6 +307,8 @@ async def test_process_incoming_batch_lock_contention_does_not_consume_queue() -
 async def test_process_incoming_batch_acknowledges_completed_batch_without_replay() -> (
     None
 ):
+    from src.services import chat
+
     redis = AsyncMock()
     chat_id = "+971500001240"
     batch_ref = inbound_chat_reference(chat_id)
@@ -305,6 +339,10 @@ async def test_process_incoming_batch_acknowledges_completed_batch_without_repla
     assert inbound_processing_key(batch_ref) in {
         call.args[0] for call in redis.delete.await_args_list
     }
+    redis.expire.assert_any_await(
+        inbound_execution_key(batch_id),
+        chat.settings.inbound_batch_quarantine_ttl_seconds,
+    )
 
 
 @pytest.mark.asyncio
@@ -344,6 +382,10 @@ async def test_process_incoming_batch_quarantines_uncertain_replay_without_side_
     assert inbound_processing_key(batch_ref) in {
         call.args[0] for call in redis.delete.await_args_list
     }
+    redis.expire.assert_any_await(
+        redis.get.await_args.args[0],
+        chat.settings.inbound_batch_quarantine_ttl_seconds,
+    )
 
 
 @pytest.mark.asyncio

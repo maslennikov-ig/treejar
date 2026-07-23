@@ -157,6 +157,7 @@ async def test_collect_runtime_snapshot_reads_real_sources_without_payloads(
             enqueue_time=datetime(2026, 7, 23, 11, 0, tzinfo=UTC),
         ),
     ]
+    redis.scan.side_effect = [(0, []), (0, [])]
     redis.lrange.return_value = [
         json.dumps(
             {
@@ -198,6 +199,60 @@ async def test_collect_runtime_snapshot_reads_real_sources_without_payloads(
     assert snapshot.maintenance_last_run_succeeded is True
     assert snapshot.maintenance_heartbeat_missing is False
     redis.lrange.assert_awaited_once_with(ZOHO_OAUTH_FAILURES_KEY, 0, -1)
+
+
+@pytest.mark.parametrize(
+    "durable_key",
+    [
+        b"wazzup_msgs:ib1_privacy_safe_reference",
+        b"wazzup:inbound:processing:ib1_privacy_safe_reference",
+    ],
+)
+@pytest.mark.asyncio
+async def test_collect_runtime_snapshot_sees_orphaned_durable_inbound_batch(
+    tmp_path: Path,
+    durable_key: bytes,
+) -> None:
+    redis = AsyncMock()
+    redis.ping.return_value = True
+    redis.all_job_results.return_value = []
+    redis.queued_jobs.return_value = []
+    redis.lrange.return_value = []
+
+    def scan_result(*, cursor: int, match: str, count: int) -> tuple[int, list[bytes]]:
+        del cursor, count
+        prefix = match.removesuffix("*").encode()
+        return 0, [durable_key] if durable_key.startswith(prefix) else []
+
+    redis.scan.side_effect = scan_result
+    redis.object.return_value = 300
+
+    async def llen_and_touch_key(key: bytes) -> int:
+        del key
+        redis.object.return_value = 0
+        return 1
+
+    redis.llen.side_effect = llen_and_touch_key
+
+    db = AsyncMock()
+    db.execute.side_effect = [SimpleNamespace(), _ScalarResult(0)]
+    heartbeat = tmp_path / "maintenance.status"
+    heartbeat.write_text(
+        '{"status":"success","finished_at_epoch":1784806200}\n',
+        encoding="utf-8",
+    )
+
+    snapshot = await collect_runtime_snapshot(
+        redis,
+        db,
+        observed_at=NOW,
+        maintenance_status_path=heartbeat,
+    )
+
+    assert snapshot.queue_depth == 1
+    assert snapshot.oldest_queue_age_seconds == 300
+    redis.llen.assert_awaited_once()
+    redis.object.assert_awaited_once()
 
 
 @pytest.mark.asyncio

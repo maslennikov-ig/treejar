@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 INBOUND_BATCH_FAILURES_KEY = "wazzup:inbound:failures"
 ZOHO_OAUTH_FAILURES_KEY = "zoho:oauth:failures"
 _INBOUND_JOB_FUNCTION = "process_incoming_batch"
+_DURABLE_INBOUND_KEY_PATTERNS = (
+    "wazzup_msgs:*",
+    "wazzup:inbound:processing:*",
+)
 _LOOKBACK = timedelta(hours=1)
 _STALE_ESCALATION_AGE = timedelta(days=30)
 _RELEASE_CLAIM_SCRIPT = """
@@ -128,7 +132,7 @@ def evaluate_runtime_snapshot(
                 severity="warning",
                 value=snapshot.queue_depth,
                 threshold=thresholds.queue_depth,
-                source="ARQ queue metadata",
+                source="ARQ and durable inbound metadata",
                 remediation="Check worker capacity and the oldest queued job.",
             )
         )
@@ -142,7 +146,7 @@ def evaluate_runtime_snapshot(
                 severity="critical",
                 value=snapshot.oldest_queue_age_seconds,
                 threshold=thresholds.oldest_queue_age_seconds,
-                source="ARQ queue metadata",
+                source="ARQ and durable inbound metadata",
                 remediation="Check worker health before replaying queued work.",
             )
         )
@@ -283,6 +287,44 @@ def _count_recent_oauth_failures(
     return failures
 
 
+async def _durable_inbound_queue_metadata(
+    redis: Any,
+) -> tuple[int, float | None, bool]:
+    """Count durable inbound messages and their oldest key idle age without payloads."""
+    message_count = 0
+    oldest_idle_seconds: float | None = None
+    try:
+        for pattern in _DURABLE_INBOUND_KEY_PATTERNS:
+            cursor = 0
+            while True:
+                cursor, keys = await redis.scan(
+                    cursor=cursor,
+                    match=pattern,
+                    count=100,
+                )
+                for key in keys:
+                    idle_raw = await redis.object("idletime", key)
+                    length = int(await redis.llen(key))
+                    if length <= 0:
+                        continue
+                    message_count += length
+                    if isinstance(idle_raw, bool) or not isinstance(
+                        idle_raw, int | float
+                    ):
+                        continue
+                    idle_seconds = max(float(idle_raw), 0.0)
+                    oldest_idle_seconds = max(
+                        oldest_idle_seconds or 0.0,
+                        idle_seconds,
+                    )
+                if int(cursor) == 0:
+                    break
+    except Exception:
+        logger.exception("Runtime monitoring could not read durable inbound metadata")
+        return message_count, oldest_idle_seconds, False
+    return message_count, oldest_idle_seconds, True
+
+
 def _maintenance_heartbeat(
     path: Path,
     *,
@@ -355,8 +397,7 @@ async def collect_runtime_snapshot(
         for job in queued_jobs
         if job.function.rsplit(".", maxsplit=1)[-1] == _INBOUND_JOB_FUNCTION
     ]
-    queue_depth = len(inbound_jobs)
-    oldest_queue_age = (
+    arq_queue_age = (
         max(
             0.0,
             (
@@ -366,6 +407,16 @@ async def collect_runtime_snapshot(
         if inbound_jobs
         else None
     )
+    (
+        durable_depth,
+        durable_queue_age,
+        durable_metadata_healthy,
+    ) = await _durable_inbound_queue_metadata(redis)
+    if not durable_metadata_healthy:
+        dependency_failures += 1
+    queue_depth = max(len(inbound_jobs), durable_depth)
+    queue_ages = [age for age in (arq_queue_age, durable_queue_age) if age is not None]
+    oldest_queue_age = max(queue_ages) if queue_ages else None
 
     database_healthy = True
     try:
