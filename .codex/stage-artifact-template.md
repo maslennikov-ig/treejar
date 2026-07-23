@@ -1,8 +1,23 @@
 ---
-schema_version: orchestration-artifact/v1
+schema_version: orchestration-artifact/v3
 artifact_type: delegated-stream
+stage_manifest: .codex/stages/<stage-id>/stage-manifest.json
+stream_owner: <worker-or-root-owner>
+orchestration_level: <inner_loop|slice_acceptance|integration|release>
+scope_kind: <product_slice|foundation>
+immediate_consumer: <consumer-or-n/a>
+public_facade: <thin-facade-or-n/a>
+bounded_acceptance: <bounded-acceptance-or-n/a>
+non_goals:
+  - <non-goal-or-n/a>
+evidence:
+  - <repo-relative-verification-evidence-sidecar-or-none>
 task_id: <task-id>
+epic_id: <beads-epic-id-or-n/a>
 stage_id: <stage-id>
+session_id: <durable-goal-or-n/a>
+milestone: <cohesive-vertical-slice>
+milestone_status: <planned|in_progress|accepted|replan-required|n/a>
 agent_type: <worker|explorer|docs_researcher|skill_scout|custom-or-n/a>
 subagent_model: <inherit_orchestrator|model-id|role_default|n/a>
 reasoning_effort: <inherit_orchestrator|role_default|low|medium|high|xhigh|n/a>
@@ -34,6 +49,13 @@ accepted_by_orchestrator: <yes|no>
 cleanup_status: <pending|cleaned|blocked|not_applicable>
 cleanup_notes: <short cleanup result or blocker>
 risk_level: <low|medium|high>
+verification_tier: <inner|delta|integration|release|n/a-legacy-alias>
+risk_tags:
+  - <migration|rls|security|authorization|tenancy|concurrency|atomicity|retry|state-transition|idempotency|rollback|public-api|data|ui|user-flow|api|none>
+affected_surfaces:
+  - <database|data|api|backend|ui|user-flow|none>
+invariants:
+  - <tenancy|state-transition|idempotency|rollback|test-matrix|none>
 docs_impact: <none|tests-only|refactor|behavior|structural|api-contract|migration|ops-deploy|docs-only|n/a>
 docs_reviewed: <updated|no-change-needed|n/a>
 docs_review_notes: <short reason or updated docs>

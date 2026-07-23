@@ -11,7 +11,7 @@ multi_repo = false
 launch_mode = "direct_or_orchestrated"
 
 [baseline]
-profile = "balanced-v2.14"
+profile = "balanced-v2.19"
 source_skill = "orchestration-setup"
 
 [execution]
@@ -41,6 +41,7 @@ ask_before = [
 mode = "current_state_plus_stages"
 current_state_max_lines = 200
 legacy_archive_dir = ".codex/agent-reports"
+hard_limit_lines = 200
 
 [artifacts]
 tracked_in_git = true
@@ -91,27 +92,24 @@ require_dedicated_worktree = true
 require_strict_write_zone = true
 require_clean_git_status = true
 require_artifact = true
-artifact_fields = [
-  "task_id",
-  "stage_id",
-  "branch",
-  "base_branch",
-  "base_commit",
-  "worktree",
-  "status",
-  "verification",
-  "changed_files",
-]
+artifact_fields = ["task_id", "stage_id", "branch", "base_branch", "base_commit", "worktree", "status", "verification", "changed_files"]
 launcher = "codex_subagents"
 subagent_visibility = "separate_spawned_threads"
 inline_subagents_allowed = false
-requires_explicit_user_spawn_request = true
 write_heavy_requires_dedicated_worktree = true
 worker_isolation = "dedicated_branch_worktree"
-
-parallel_decomposition_matrix = "required_for_medium_complex"
-parallel_execution_default = "spawn_all_independent_streams"
+parallel_decomposition_matrix = "required_for_complex_candidates"
+parallel_execution_default = "spawn_eligible_complex_streams"
 sequential_requires_reason = true
+subagents_preauthorized_for_complex = true
+medium_execution_default = "local_owner"
+simple_checks_owner = "orchestrator"
+delegation_gate = "complex_and_material_benefit"
+independence_alone_sufficient = false
+write_heavy_isolation_default = "dedicated_branch_or_worktree"
+max_concurrent_subagents = 4
+max_parallel_write_streams = 3
+critical_path_priority = true
 
 [subagent_model_policy]
 default_model = "inherit_orchestrator"
@@ -119,15 +117,7 @@ default_reasoning_effort = "inherit_orchestrator"
 reasoning_policy = "complexity_based"
 model_override_requires_current_user_authorization = true
 record_model_reasoning_rationale = true
-high_reasoning_triggers = [
-  "architecture",
-  "security",
-  "data_migration",
-  "cross_module_change",
-  "critical_bug",
-  "review",
-  "ambiguous_requirements",
-]
+high_reasoning_triggers = ["architecture", "security", "migrations", "cross-module", "critical-bugs", "reviews", "ambiguity"]
 
 [review]
 require_findings_first = true
@@ -176,3 +166,115 @@ maintenance_commands = [
 canonical_runtime = "https://noor.starec.ai"
 prefer_direct_opt_noor_triage = true
 legacy_reports_dir = ".codex/agent-reports"
+
+[orchestration_levels]
+default = "slice_acceptance"
+stage_levels = ["slice_acceptance", "integration", "release"]
+legacy_inner = "inner_loop"
+legacy_delta = "slice_acceptance"
+
+[stage_limits]
+epic_scope = "roadmap_only"
+stage_unit = "cohesive_vertical_slice"
+automatic_advance_after_acceptance = true
+replan_on_material_boundary = true
+cost_anomaly_action = "replan_not_stop"
+hard_stop_on_time_or_token_budget = false
+continuation_lineage = "selected_beads_goal"
+max_correction_loops = 2
+p0_p1_block_acceptance = true
+
+[stage_sizing]
+mode = "cohesive_vertical_slice"
+manifest_schema = "orchestration-stage/v1"
+ledger_schema = "scope-preservation-ledger/v1"
+scope_anchor_schema = "scope-criterion-snapshot/v1"
+one_active_implementation_stage = true
+parallel_streams_inside_stage = true
+merge_adjacent_when_shared = ["acceptance_owner", "subsystem", "risk_model", "test_environment", "rollback_boundary", "acceptance_proof"]
+allowed_split_reasons = ["unresolved_public_ownership_or_public_contract", "hard_dependency", "independent_rollback_or_migration_boundary", "distinct_security_or_compliance_risk", "external_authorization"]
+scope_preservation_ledger_required_on_replan = true
+accepted_history_immutable = true
+migration_scope = "future_work_only"
+legacy_active_stage_id = "tj-av22"
+
+[verification_policy]
+mode = "risk_adaptive"
+default_level = "slice_acceptance"
+default_tier = "integration"
+reuse_unchanged_evidence = true
+
+[verification_policy.level_groups]
+inner_loop = ["targeted_commands"]
+slice_acceptance = ["targeted_commands", "affected_package_commands"]
+integration = ["integration_commands"]
+release = ["release_commands"]
+
+[verification_policy.tier_groups]
+inner = ["targeted_commands"]
+delta = ["targeted_commands"]
+integration = ["integration_commands"]
+release = ["release_commands"]
+
+[verification_policy.risk_tag_groups]
+migration = ["postgres_migration_commands"]
+rls = ["postgres_migration_commands"]
+authorization = ["security_commands"]
+security = ["security_commands"]
+concurrency = ["concurrency_commands"]
+atomicity = ["concurrency_commands"]
+retry = ["concurrency_commands"]
+tenancy = ["security_commands", "postgres_migration_commands"]
+state-transition = ["concurrency_commands"]
+idempotency = ["concurrency_commands"]
+rollback = ["postgres_migration_commands"]
+public-api = ["integration_commands"]
+data = ["postgres_migration_commands"]
+ui = ["e2e_commands"]
+user-flow = ["e2e_commands"]
+api = ["integration_commands"]
+
+[verification_policy.surface_groups]
+database = ["postgres_migration_commands"]
+ui = ["e2e_commands"]
+user-flow = ["e2e_commands"]
+api = ["integration_commands"]
+backend = ["integration_commands"]
+data = ["postgres_migration_commands"]
+
+[evidence]
+schema = "verification-evidence/v1"
+source_paths_are_repo_relative = true
+reject_symlinks_and_path_escape = true
+exact_identity_required_for_reuse = true
+release_requires_release_level_evidence = true
+
+[cost_guard]
+enabled = true
+action = "replan_required"
+missing_counts = "null"
+may_shrink_epic_or_skip_gate = false
+
+[foundation_guard]
+scope_kinds = ["product_slice", "foundation"]
+required_foundation_fields = ["immediate_consumer", "public_facade", "bounded_acceptance", "non_goals"]
+
+[stage_state]
+exact_identity_required = true
+closeout_lock = "exclusive_nonblocking"
+idempotent_retries = true
+
+[documentation]
+closeout_docs_review_required = true
+project_index_required = true
+
+[knowledge_graph]
+optional = true
+graph_dir = "graphify-out"
+report = "graphify-out/GRAPH_REPORT.md"
+setup_skill = "~/.agents/skills/graphify-project/SKILL.md"
+hooks_allowed = "codex_pre_tool_use_only"
+git_hooks_allowed = false
+query_first = true
+freshness_check_required = true
+refresh_policy = "accepted_relevant_integration_or_release_boundary"
