@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import ipaddress
-import json
 import logging
 import time
-import traceback
 from functools import lru_cache
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from src.core.config import settings
 from src.core.database import async_session_factory
 from src.schemas import WazzupWebhookPayload
+from src.services.inbound_batch import inbound_chat_reference, inbound_queue_key
 from src.services.outbound_audit import update_wazzup_statuses
 from src.services.proposal_followup import apply_proposal_read_statuses
 
@@ -89,10 +89,15 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         logger.warning("Wazzup webhook: failed to parse JSON body")
         return JSONResponse({"ok": True}, status_code=200)
 
-    # Log raw payload for debugging (truncate to 2000 chars)
     logger.info(
-        "Wazzup webhook received: %s",
-        json.dumps(raw_body, ensure_ascii=False, default=str)[:2000],
+        "Wazzup webhook received: messages=%d statuses=%d test=%s",
+        len(raw_body.get("messages", []))
+        if isinstance(raw_body.get("messages"), list)
+        else 0,
+        len(raw_body.get("statuses", []))
+        if isinstance(raw_body.get("statuses"), list)
+        else 0,
+        bool(raw_body.get("test")),
     )
 
     # Wazzup test ping during webhook registration
@@ -126,9 +131,18 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
 
     try:
         payload = WazzupWebhookPayload(**raw_body)
-    except Exception as e:
-        logger.error("Wazzup payload validation error: %s", e)
-        traceback.print_exc()
+    except ValidationError as exc:
+        logger.error(
+            "Wazzup payload validation failed: validation_errors=%d",
+            exc.error_count(),
+        )
+        # Still return 200 so Wazzup doesn't retry
+        return JSONResponse({"ok": True}, status_code=200)
+    except Exception as exc:
+        logger.error(
+            "Wazzup payload validation failed: error_type=%s",
+            type(exc).__name__,
+        )
         # Still return 200 so Wazzup doesn't retry
         return JSONResponse({"ok": True}, status_code=200)
 
@@ -144,17 +158,14 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         expected_channel = settings.wazzup_channel_id
         if not expected_channel:
             logger.error(
-                "Skipping incoming Wazzup message because WAZZUP_CHANNEL_ID is not configured: chatId=%s",
-                msg.chatId,
+                "Skipping incoming Wazzup message because WAZZUP_CHANNEL_ID is not configured"
             )
             continue
 
         if msg.channelId != expected_channel:
             logger.warning(
-                "Skipping message from unexpected Wazzup channel: expected=%s got=%s chatId=%s",
-                expected_channel,
-                msg.channelId or "MISSING",
-                msg.chatId,
+                "Skipping message from unexpected Wazzup channel: channel_present=%s",
+                bool(msg.channelId),
             )
             continue
 
@@ -163,35 +174,27 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
 
         if author_type == "bot":
             # Echo of our own bot messages — skip entirely
-            logger.debug("Skipping bot echo message: chatId=%s", msg.chatId)
+            logger.debug("Skipping bot echo message")
             continue
 
         if author_type == "manager":
             # Manager message — save but don't trigger LLM
-            logger.info(
-                "Manager message from %s (chatId=%s): %s",
-                msg.authorName or "unknown",
-                msg.chatId,
-                msg.text[:100] if msg.text else "(no text)",
-            )
+            logger.info("Accepted manager message: message_type=%s", msg.type)
         else:
             # Client message — standard flow
-            logger.info(
-                "Client message from chatId=%s: %s",
-                msg.chatId,
-                msg.text[:100] if msg.text else "(no text)",
-            )
+            logger.info("Accepted client message: message_type=%s", msg.type)
 
         # Push to Redis list
-        await redis.rpush(f"wazzup_msgs:{msg.chatId}", msg.model_dump_json())
+        batch_ref = inbound_chat_reference(msg.chatId)
+        await redis.rpush(inbound_queue_key(batch_ref), msg.model_dump_json())
 
         # Enqueue job with a 5-second defer to allow batching
         # Use time-windowed job ID: same window = dedup, new window = new job
         window = int(time.time()) // 10  # 10-second windows
-        job_id = f"wazzup_batch_{msg.chatId}_{window}"
+        job_id = f"wazzup_batch_{batch_ref}_{window}"
         await arq_pool.enqueue_job(
             "process_incoming_batch",
-            chat_id=msg.chatId,
+            batch_ref=batch_ref,
             _job_id=job_id,
             _defer_by=5,
         )

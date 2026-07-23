@@ -1,4 +1,5 @@
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -153,9 +154,9 @@ async def test_process_incoming_batch_success(
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
+        MockResult(None),  # outbound audit lookup
         MockResult(4),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit lookup
     ]
 
     # 3. Setup LLM response mock
@@ -233,6 +234,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     mock_provider_class: MagicMock,
     mock_db_factory: MagicMock,
     chat_context: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     chat_id = "79991234567"
     audio_url = "https://cdn.wazzup24.com/files/voice.ogg"
@@ -267,9 +269,9 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
         MockResult([]),  # batch messages dedup check
+        MockResult(None),  # outbound audit lookup
         MockResult(2),  # total messages after assistant commit
         MockResult(None),  # no existing summary
-        MockResult(None),  # outbound audit lookup
     ]
 
     from src.llm import LLMResponse
@@ -318,6 +320,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
         ),
         patch("src.integrations.voice.voxtral.transcribe_audio", legacy_transcribe),
         patch("src.services.chat.settings.wazzup_channel_id", "ch1"),
+        caplog.at_level(logging.INFO, logger="src.services.chat"),
     ):
         await process_incoming_batch(chat_context, chat_id)
 
@@ -342,6 +345,9 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     assert user_message.tokens_out == 8
     assert user_message.cost == 0.00042
     assert user_message.model == "openai/gpt-audio-mini"
+    assert chat_id not in caplog.text
+    assert audio_url not in caplog.text
+    assert transcription.text not in caplog.text
 
 
 @pytest.mark.asyncio

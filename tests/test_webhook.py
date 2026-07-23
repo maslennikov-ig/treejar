@@ -1,4 +1,5 @@
 import datetime
+import logging
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.main import app
 from src.models.conversation import Conversation
+from src.services.inbound_batch import inbound_chat_reference, inbound_queue_key
 from src.services.proposal_followup import record_proposal_sent
 
 client = TestClient(app)
@@ -71,9 +73,50 @@ def test_wazzup_webhook_endpoint(mock_networks: Any) -> None:
     # job_id now includes a time window suffix
     call_args = app.state.arq_pool.enqueue_job.call_args
     assert call_args.args[0] == "process_incoming_batch"
-    assert call_args.kwargs["chat_id"] == "79991234567"
-    assert call_args.kwargs["_job_id"].startswith("wazzup_batch_79991234567_")
+    batch_ref = inbound_chat_reference("79991234567")
+    assert call_args.kwargs["batch_ref"] == batch_ref
+    assert "chat_id" not in call_args.kwargs
+    assert call_args.kwargs["_job_id"].startswith(f"wazzup_batch_{batch_ref}_")
     assert call_args.kwargs["_defer_by"] == 5
+    assert app.state.redis.rpush.await_args.args[0] == inbound_queue_key(batch_ref)
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_logs_do_not_expose_customer_payload(
+    mock_networks: Any,
+    caplog: Any,
+) -> None:
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+    sensitive_chat_id = "+971500009999"
+    sensitive_text = "Need a confidential quotation"
+    sensitive_name = "Private Customer"
+    payload = {
+        "messages": [
+            {
+                "messageId": "privacy-msg-1",
+                "chatId": sensitive_chat_id,
+                "chatType": "whatsapp",
+                "text": sensitive_text,
+                "type": "text",
+                "authorType": "manager",
+                "authorName": sensitive_name,
+                "channelId": EXPECTED_CHANNEL_ID,
+                "timestamp": 1234567890,
+            }
+        ]
+    }
+
+    with (
+        caplog.at_level(logging.INFO, logger="uvicorn.error"),
+        patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID),
+    ):
+        response = client.post("/api/v1/webhook/wazzup", json=payload)
+
+    assert response.status_code == 200
+    assert sensitive_chat_id not in caplog.text
+    assert sensitive_text not in caplog.text
+    assert sensitive_name not in caplog.text
 
 
 @patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])

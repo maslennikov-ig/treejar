@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     runtime_monitoring_enabled: bool = False
     runtime_monitoring_telegram_enabled: bool = False
     runtime_monitoring_alert_cooldown_seconds: int = Field(default=1800, ge=1)
+    inbound_batch_quarantine_ttl_seconds: int = Field(
+        default=7 * 24 * 60 * 60,
+        ge=60,
+    )
     runtime_monitoring_maintenance_status_path: str = Field(
         default="/opt/noor/logs/maintenance/docker-maintenance.status",
         min_length=1,

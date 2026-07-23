@@ -171,10 +171,18 @@ disabled by default. It reads only bounded operational metadata:
 
 Terminal inbound batches are also recorded in
 `wazzup:inbound:failures` and their original raw payloads are retained under
-`wazzup:inbound:quarantine:<batch_id>`. The first key is bounded sanitized
-metadata. The quarantine key is restricted recovery data and can contain
-customer content; never copy it into logs, tickets, alerts, or chat. Inspect or
-replay it only as an exact, separately approved production recovery action.
+`wazzup:inbound:quarantine:<batch_id>` as one JSON document. The first key is
+bounded sanitized metadata. The quarantine key is restricted recovery data,
+can contain customer content, and expires after seven days by default
+(`INBOUND_BATCH_QUARANTINE_TTL_SECONDS=604800`). Never copy it into logs,
+tickets, alerts, or chat. Inspect or replay it only as an exact, separately
+approved production recovery action.
+
+Accepted batches are requeued with bounded backoff after transient OAuth or
+unexpected processing failures. Invalid configuration/payloads and exhausted
+retries are quarantined. If the quarantine write itself fails, the raw batch is
+restored to its queue before the job is retried so that a consumed message does
+not silently disappear.
 
 ### Default thresholds and ownership
 

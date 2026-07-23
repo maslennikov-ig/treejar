@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,7 +11,12 @@ from arq import Retry
 
 from src.integrations.zoho_oauth import ZohoOAuthError
 from src.schemas.webhook import WazzupIncomingMessage
-from src.services.chat import _handle_escalation_fallback, process_incoming_batch
+from src.services.chat import (
+    InboundBatchTerminalError,
+    _handle_escalation_fallback,
+    process_incoming_batch,
+)
+from src.services.inbound_batch import inbound_chat_reference, inbound_queue_key
 from src.services.proposal_followup import record_proposal_sent
 from src.services.runtime_monitoring import ZOHO_OAUTH_FAILURES_KEY
 
@@ -90,6 +96,120 @@ async def test_process_incoming_batch_requeues_transient_zoho_failure_with_backo
 
 
 @pytest.mark.asyncio
+async def test_process_incoming_batch_requeues_unexpected_failure_with_backoff(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    redis = AsyncMock()
+    chat_id = "+971500001234"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-generic",
+            "chatId": chat_id,
+            "text": "private customer request",
+            "type": "text",
+        }
+    )
+    redis.lpop.side_effect = [raw_message, None]
+
+    with (
+        caplog.at_level(logging.INFO),
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=RuntimeError("database unavailable")),
+        ),
+        pytest.raises(Retry) as exc_info,
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            batch_ref=batch_ref,
+        )
+
+    redis.lpush.assert_awaited_once_with(
+        inbound_queue_key(batch_ref),
+        raw_message,
+    )
+    assert exc_info.value.defer_score == 2000
+    assert chat_id not in caplog.text
+    assert "private customer request" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_quarantines_exhausted_unexpected_failure() -> (
+    None
+):
+    from src.services import chat
+
+    redis = AsyncMock()
+    redis.set.return_value = True
+    chat_id = "+971500001235"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-generic-terminal",
+            "chatId": chat_id,
+            "text": "private terminal request",
+            "type": "text",
+        }
+    )
+    redis.lpop.side_effect = [raw_message, None]
+
+    with (
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=RuntimeError("database unavailable")),
+        ),
+        pytest.raises(RuntimeError, match="database unavailable"),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": chat.INBOUND_BATCH_MAX_TRIES},
+            batch_ref=batch_ref,
+        )
+
+    quarantine_call = redis.set.await_args
+    assert quarantine_call.args[0].startswith(chat.INBOUND_BATCH_QUARANTINE_PREFIX)
+    assert quarantine_call.kwargs == {
+        "ex": chat.settings.inbound_batch_quarantine_ttl_seconds,
+        "nx": True,
+    }
+    assert json.loads(quarantine_call.args[1])["raw_messages"] == [raw_message]
+    redis.lpush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_incoming_batch_requeues_when_quarantine_write_fails() -> None:
+    redis = AsyncMock()
+    chat_id = "+971500001236"
+    batch_ref = inbound_chat_reference(chat_id)
+    raw_message = json.dumps(
+        {
+            "messageId": "msg-terminal-write",
+            "chatId": chat_id,
+            "type": "text",
+        }
+    )
+    redis.lpop.side_effect = [raw_message, None]
+    redis.set.side_effect = RuntimeError("quarantine storage unavailable")
+
+    with (
+        patch(
+            "src.services.chat._process_batch_inner",
+            new=AsyncMock(side_effect=InboundBatchTerminalError("invalid_payload")),
+        ),
+        pytest.raises(Retry),
+    ):
+        await process_incoming_batch(
+            {"redis": redis, "job_try": 1},
+            batch_ref=batch_ref,
+        )
+
+    redis.lpush.assert_awaited_once_with(
+        inbound_queue_key(batch_ref),
+        raw_message,
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("retryable", "job_try"),
     [
@@ -124,11 +244,16 @@ async def test_process_incoming_batch_quarantines_terminal_zoho_failure(
         )
 
     redis.lpush.assert_not_awaited()
-    oauth_call, quarantine_call, failure_call = redis.rpush.await_args_list
+    oauth_call, failure_call = redis.rpush.await_args_list
     assert oauth_call.args[0] == chat.ZOHO_OAUTH_FAILURES_KEY
+    quarantine_call = redis.set.await_args
     quarantine_key = quarantine_call.args[0]
     assert quarantine_key.startswith(chat.INBOUND_BATCH_QUARANTINE_PREFIX)
-    assert quarantine_call.args[1:] == (raw_message,)
+    assert json.loads(quarantine_call.args[1])["raw_messages"] == [raw_message]
+    assert quarantine_call.kwargs == {
+        "ex": chat.settings.inbound_batch_quarantine_ttl_seconds,
+        "nx": True,
+    }
     assert failure_call.args[0] == chat.INBOUND_BATCH_FAILURES_KEY
     failure_record = json.loads(failure_call.args[1])
     assert (
@@ -1203,10 +1328,11 @@ async def test_process_incoming_batch_persists_inbound_channel_metadata(
 
 @pytest.mark.asyncio
 @patch("src.services.chat.async_session_factory")
-async def test_process_incoming_batch_skips_without_expected_channel(
+async def test_process_incoming_batch_quarantines_without_expected_channel(
     mock_session_factory: MagicMock,
 ) -> None:
     mock_redis = AsyncMock()
+    mock_redis.set.return_value = True
     msg = WazzupIncomingMessage(
         messageId="msg-1",
         chatId="1234567890",
@@ -1218,10 +1344,17 @@ async def test_process_incoming_batch_skips_without_expected_channel(
     )
     mock_redis.lpop.side_effect = [msg.model_dump_json(), None]
 
-    with patch("src.services.chat.settings.wazzup_channel_id", ""):
+    with (
+        patch("src.services.chat.settings.wazzup_channel_id", ""),
+        pytest.raises(
+            InboundBatchTerminalError,
+            match="wazzup_channel_not_configured",
+        ),
+    ):
         await process_incoming_batch({"redis": mock_redis}, "1234567890")
 
     mock_session_factory.assert_not_called()
+    assert mock_redis.set.await_args.kwargs["ex"] > 0
 
 
 @pytest.mark.asyncio

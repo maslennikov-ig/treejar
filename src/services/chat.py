@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 from arq import Retry
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from src.core.config import settings
@@ -46,6 +47,11 @@ from src.services.customer_language import is_arabic_customer_language
 from src.services.escalation_state import (
     should_pause_bot_for_escalation,
     should_send_escalation_fallback,
+)
+from src.services.inbound_batch import (
+    inbound_chat_reference,
+    inbound_queue_key,
+    is_inbound_chat_reference,
 )
 from src.services.inbound_channels import update_conversation_inbound_channel
 from src.services.outbound_audit import (
@@ -92,6 +98,14 @@ class _AudioProcessingResult:
     tokens_out: int | None = None
     cost: float | None = None
     model: str | None = None
+
+
+class InboundBatchTerminalError(RuntimeError):
+    """A batch failure that should be quarantined without ordinary retries."""
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+        super().__init__(kind)
 
 
 def _voice_fallback_text(language: str | None) -> str:
@@ -153,6 +167,80 @@ async def _record_zoho_oauth_failure(
             "Could not record sanitized Zoho OAuth failure: batch_id=%s",
             batch_id,
         )
+
+
+async def _record_inbound_batch_failure(
+    redis: Any,
+    *,
+    batch_id: str,
+    attempt: int,
+    error_kind: str,
+    message_count: int,
+    retryable: bool,
+    failed_at: datetime,
+) -> None:
+    record = {
+        "attempt": attempt,
+        "batch_id": batch_id,
+        "error_kind": error_kind,
+        "failed_at": failed_at.isoformat(),
+        "message_count": message_count,
+        "retryable": retryable,
+        "status": "terminal",
+    }
+    try:
+        await redis.rpush(
+            INBOUND_BATCH_FAILURES_KEY,
+            json.dumps(record, sort_keys=True),
+        )
+        await redis.ltrim(
+            INBOUND_BATCH_FAILURES_KEY,
+            -_INBOUND_BATCH_FAILURE_HISTORY_LIMIT,
+            -1,
+        )
+    except Exception:
+        logger.exception(
+            "Could not record sanitized inbound batch failure: batch_id=%s",
+            batch_id,
+        )
+
+
+async def _store_inbound_quarantine(
+    redis: Any,
+    *,
+    batch_id: str,
+    raw_messages: Sequence[str],
+) -> str:
+    quarantine_key = f"{INBOUND_BATCH_QUARANTINE_PREFIX}{batch_id}"
+    quarantine_payload = json.dumps(
+        {
+            "batch_id": batch_id,
+            "raw_messages": list(raw_messages),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    stored = await redis.set(
+        quarantine_key,
+        quarantine_payload,
+        ex=settings.inbound_batch_quarantine_ttl_seconds,
+        nx=True,
+    )
+    if stored is not True:
+        await redis.expire(
+            quarantine_key,
+            settings.inbound_batch_quarantine_ttl_seconds,
+        )
+    return quarantine_key
+
+
+async def _requeue_inbound_batch(
+    redis: Any,
+    *,
+    queue_key: str,
+    raw_messages: Sequence[str],
+) -> None:
+    await redis.lpush(queue_key, *reversed(raw_messages))
 
 
 # WhatsApp Formatting Regexes
@@ -324,8 +412,8 @@ async def _handle_escalation_fallback(
     repeat_key = _build_escalation_repeat_key(conv.id, combined_text)
     if await redis.get(repeat_key):
         logger.info(
-            "Suppressing duplicate escalation fallback for %s due to repeated identical message.",
-            conv.phone,
+            "Suppressing duplicate escalation fallback: chat_ref=%s",
+            inbound_chat_reference(conv.phone),
         )
         return
 
@@ -397,7 +485,10 @@ async def _handle_escalation_fallback(
                 f"💬 <i>{safe_text}</i>"
             )
         except Exception:
-            logger.exception("Failed to re-notify manager for %s", conv.phone)
+            logger.exception(
+                "Failed to re-notify manager: chat_ref=%s",
+                inbound_chat_reference(conv.phone),
+            )
 
 
 async def _send_deferred_product_media(
@@ -446,10 +537,10 @@ async def _send_deferred_product_media(
             await db.commit()
         except Exception as exc:
             logger.warning(
-                "Failed to send deferred product image for conversation %s: %s",
-                conversation_id,
-                exc,
-                exc_info=True,
+                "Failed to send deferred product image: conversation_ref=%s "
+                "error_type=%s",
+                inbound_chat_reference(str(conversation_id)),
+                type(exc).__name__,
             )
 
 
@@ -463,11 +554,7 @@ async def _send_typing_best_effort(provider: Any, chat_id: str) -> bool:
     try:
         result = await provider.send_typing(chat_id)
     except Exception:
-        logger.warning(
-            "Failed to send typing indicator for %s; continuing.",
-            chat_id,
-            exc_info=True,
-        )
+        logger.warning("Failed to send typing indicator; continuing")
         return True
     return result is not False
 
@@ -506,22 +593,32 @@ def _determine_role(msg: WazzupIncomingMessage) -> str:
 
 async def process_incoming_batch(
     ctx: dict[str, Any],
-    chat_id: str,
+    batch_ref: str | None = None,
+    *,
+    chat_id: str | None = None,
 ) -> None:
     """Process a batch of incoming messages from a single chat.
 
-    Messages are read from a Redis list (``wazzup_msgs:{chat_id}``) where
-    the webhook handler pushes them via ``rpush``.
+    New jobs use a keyed, privacy-safe ``batch_ref``. ``chat_id`` remains a
+    migration-only keyword for jobs that were already queued before rollout.
 
     1. Pop all queued messages from Redis.
-    2. Get or create conversation based on chat_id (phone number).
+    2. Validate and recover the chat identifier from the queued payload.
     3. Save incoming messages (with correct role: user/manager).
     4. If escalation is active or message is from manager → skip LLM.
     5. Otherwise generate LLM response, save, and send via Wazzup.
     """
     # ARQ automatically injects its Redis pool as ctx["redis"]
     redis = ctx["redis"]
-    queue_key = f"wazzup_msgs:{chat_id}"
+    queue_token = batch_ref or chat_id
+    if not queue_token:
+        raise InboundBatchTerminalError("missing_batch_reference")
+    safe_batch_ref = (
+        queue_token
+        if is_inbound_chat_reference(queue_token)
+        else inbound_chat_reference(queue_token)
+    )
+    queue_key = inbound_queue_key(queue_token)
     raw_messages: list[str] = []
     while True:
         raw = await redis.lpop(queue_key)
@@ -530,81 +627,132 @@ async def process_incoming_batch(
         raw_messages.append(raw if isinstance(raw, str) else raw.decode())
 
     if not raw_messages:
-        logger.warning("No messages in Redis for %s, skipping.", chat_id)
+        logger.warning(
+            "No messages in Redis for batch_ref=%s; skipping", safe_batch_ref
+        )
         return
 
     batch_id = _inbound_batch_id(raw_messages)
     try:
-        await _process_batch_inner(redis, chat_id, raw_messages)
-    except ZohoOAuthError as exc:
+        await _process_batch_inner(redis, queue_token, raw_messages)
+    except Exception as exc:
         attempt = max(1, int(ctx.get("job_try", 1)))
         failed_at = datetime.now(UTC)
-        await _record_zoho_oauth_failure(
-            redis,
-            batch_id=batch_id,
-            attempt=attempt,
-            error=exc,
-            failed_at=failed_at,
-        )
-        if exc.retryable and attempt < INBOUND_BATCH_MAX_TRIES:
-            await redis.lpush(queue_key, *reversed(raw_messages))
+        error_kind: str
+        if isinstance(exc, ZohoOAuthError):
+            await _record_zoho_oauth_failure(
+                redis,
+                batch_id=batch_id,
+                attempt=attempt,
+                error=exc,
+                failed_at=failed_at,
+            )
+            retryable = exc.retryable
+            error_kind = exc.kind
+        elif isinstance(exc, InboundBatchTerminalError):
+            retryable = False
+            error_kind = exc.kind
+        else:
+            retryable = True
+            error_kind = "unexpected_error"
+
+        if retryable and attempt < INBOUND_BATCH_MAX_TRIES:
+            await _requeue_inbound_batch(
+                redis,
+                queue_key=queue_key,
+                raw_messages=raw_messages,
+            )
             defer_seconds = 2**attempt
             logger.warning(
-                "Retrying inbound batch after Zoho OAuth failure: "
+                "Retrying inbound batch after processing failure: "
                 "batch_id=%s attempt=%d/%d error_kind=%s defer_seconds=%d",
                 batch_id,
                 attempt,
                 INBOUND_BATCH_MAX_TRIES,
-                exc.kind,
+                error_kind,
                 defer_seconds,
             )
             raise Retry(defer=defer_seconds) from exc
 
-        quarantine_key = f"{INBOUND_BATCH_QUARANTINE_PREFIX}{batch_id}"
-        await redis.rpush(quarantine_key, *raw_messages)
-        failure_record = {
-            "attempt": attempt,
-            "batch_id": batch_id,
-            "error_kind": exc.kind,
-            "failed_at": failed_at.isoformat(),
-            "message_count": len(raw_messages),
-            "retryable": exc.retryable,
-            "status": "terminal",
-        }
-        await redis.rpush(
-            INBOUND_BATCH_FAILURES_KEY,
-            json.dumps(failure_record, sort_keys=True),
-        )
-        await redis.ltrim(
-            INBOUND_BATCH_FAILURES_KEY,
-            -_INBOUND_BATCH_FAILURE_HISTORY_LIMIT,
-            -1,
+        try:
+            await _store_inbound_quarantine(
+                redis,
+                batch_id=batch_id,
+                raw_messages=raw_messages,
+            )
+        except Exception as quarantine_exc:
+            try:
+                await _requeue_inbound_batch(
+                    redis,
+                    queue_key=queue_key,
+                    raw_messages=raw_messages,
+                )
+            except Exception:
+                logger.exception(
+                    "Inbound batch quarantine and requeue both failed: batch_id=%s",
+                    batch_id,
+                )
+                raise quarantine_exc from exc
+            logger.exception(
+                "Inbound batch quarantine failed; restored queue: batch_id=%s",
+                batch_id,
+            )
+            raise Retry(defer=2 ** min(attempt, INBOUND_BATCH_MAX_TRIES)) from exc
+
+        await _record_inbound_batch_failure(
+            redis,
+            batch_id=batch_id,
+            attempt=attempt,
+            error_kind=error_kind,
+            message_count=len(raw_messages),
+            retryable=retryable,
+            failed_at=failed_at,
         )
         logger.error(
-            "Inbound batch quarantined after Zoho OAuth failure: "
+            "Inbound batch quarantined after processing failure: "
             "batch_id=%s attempt=%d/%d error_kind=%s retryable=%s",
             batch_id,
             attempt,
             INBOUND_BATCH_MAX_TRIES,
-            exc.kind,
-            exc.retryable,
+            error_kind,
+            retryable,
         )
         raise
-    except Exception:
-        logger.exception("Failed to process inbound batch: batch_id=%s", batch_id)
-        raise  # Let ARQ mark the job as failed
 
 
 async def _process_batch_inner(
     redis: Any,
-    chat_id: str,
+    queue_token: str,
     raw_messages: Sequence[str],
 ) -> None:
     """Inner implementation — separated for clean error handling."""
     latency_trace = ChatLatencyTrace()
     pre_llm_started = latency_trace.start_phase()
-    messages = [WazzupIncomingMessage.model_validate_json(raw) for raw in raw_messages]
-    logger.info("Processing batch for %s with %d messages.", chat_id, len(messages))
+    try:
+        messages = [
+            WazzupIncomingMessage.model_validate_json(raw) for raw in raw_messages
+        ]
+    except ValidationError as exc:
+        raise InboundBatchTerminalError("invalid_payload") from exc
+    if not messages:
+        raise InboundBatchTerminalError("empty_batch")
+
+    chat_ids = {message.chatId for message in messages}
+    if len(chat_ids) != 1:
+        raise InboundBatchTerminalError("mixed_chat_batch")
+    chat_id = next(iter(chat_ids))
+    batch_ref = inbound_chat_reference(chat_id)
+    if is_inbound_chat_reference(queue_token):
+        if queue_token != batch_ref:
+            raise InboundBatchTerminalError("batch_reference_mismatch")
+    elif queue_token != chat_id:
+        raise InboundBatchTerminalError("legacy_chat_mismatch")
+
+    logger.info(
+        "Processing inbound batch: batch_ref=%s message_count=%d",
+        batch_ref,
+        len(messages),
+    )
 
     # Sort messages by dateTime (Wazzup v3 format) or timestamp (legacy)
     messages.sort(key=lambda m: m.dateTime or str(m.timestamp or 0))
@@ -624,26 +772,23 @@ async def _process_batch_inner(
 
     expected_channel = settings.wazzup_channel_id
     if not expected_channel:
-        logger.error(
-            "Skipping batch for %s because WAZZUP_CHANNEL_ID is not configured.",
-            chat_id,
-        )
-        return
+        raise InboundBatchTerminalError("wazzup_channel_not_configured")
 
     filtered_messages = [m for m in messages if m.channelId == expected_channel]
     skipped_count = len(messages) - len(filtered_messages)
     if skipped_count:
         logger.warning(
-            "Skipping %d message(s) for %s from unexpected or missing Wazzup channel IDs.",
+            "Skipping messages from unexpected or missing Wazzup channel IDs: "
+            "batch_ref=%s skipped_count=%d",
+            batch_ref,
             skipped_count,
-            chat_id,
         )
 
     messages = filtered_messages
     if not messages:
         logger.warning(
-            "No messages left for %s after Wazzup channel filtering, skipping batch.",
-            chat_id,
+            "No messages left after Wazzup channel filtering: batch_ref=%s",
+            batch_ref,
         )
         return
 
@@ -697,9 +842,8 @@ async def _process_batch_inner(
 
             try:
                 logger.info(
-                    "Audio message detected for %s, downloading from %s",
-                    chat_id,
-                    audio_url,
+                    "Audio message detected: batch_ref=%s",
+                    batch_ref,
                 )
 
                 audio_bytes = await wazzup_dl.download_media(
@@ -708,8 +852,8 @@ async def _process_batch_inner(
 
                 if len(audio_bytes) > MAX_AUDIO_SIZE:
                     logger.warning(
-                        "Audio too large for %s: %d bytes (max %d)",
-                        chat_id,
+                        "Audio too large: batch_ref=%s bytes=%d max_bytes=%d",
+                        batch_ref,
                         len(audio_bytes),
                         MAX_AUDIO_SIZE,
                     )
@@ -742,9 +886,8 @@ async def _process_batch_inner(
                 )
                 if transcription.text:
                     logger.info(
-                        "Transcription for %s: %s",
-                        chat_id,
-                        transcription.text[:200],
+                        "Audio transcription completed: batch_ref=%s",
+                        batch_ref,
                     )
                     return (
                         msg_id,
@@ -767,8 +910,12 @@ async def _process_batch_inner(
                     ),
                 )
 
-            except Exception:
-                logger.exception("Failed to process audio message for %s", chat_id)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to process audio message: batch_ref=%s error_type=%s",
+                    batch_ref,
+                    type(exc).__name__,
+                )
                 url = audio_msg.contentUri or (
                     audio_msg.media.url if audio_msg.media else None
                 )
@@ -823,13 +970,15 @@ async def _process_batch_inner(
                 and combined_text == failed_transcription_text
             )
 
-        except Exception:
-            logger.exception(
-                "Unexpected error in audio batch processing for %s", chat_id
+        except Exception as exc:
+            logger.warning(
+                "Unexpected audio batch processing error: batch_ref=%s error_type=%s",
+                batch_ref,
+                type(exc).__name__,
             )
 
     if not combined_text.strip():
-        logger.warning("No text content in batch for %s, skipping.", chat_id)
+        logger.warning("No text content in batch: batch_ref=%s", batch_ref)
         return
 
     async with async_session_factory() as db:
@@ -841,7 +990,7 @@ async def _process_batch_inner(
             bot_enabled_cfg.value is False
             or str(bot_enabled_cfg.value).lower() == "false"
         ):
-            logger.info("Bot is globally disabled. Skipping batch for %s", chat_id)
+            logger.info("Bot is globally disabled: batch_ref=%s", batch_ref)
             return
 
         # 1. Get or create conversation
@@ -874,15 +1023,16 @@ async def _process_batch_inner(
                 conversations[0],
             )
             logger.warning(
-                "Found %d conversations for %s; using %s (has_messages=%s)",
+                "Found duplicate conversations: batch_ref=%s count=%d "
+                "conversation_ref=%s has_messages=%s",
+                batch_ref,
                 len(conversations),
-                chat_id,
-                conv.id,
+                inbound_chat_reference(str(conv.id)),
                 conv.id in conv_ids_with_messages,
             )
 
         if not conv:
-            logger.info("Creating new conversation for %s", chat_id)
+            logger.info("Creating new conversation: batch_ref=%s", batch_ref)
             conv = Conversation(phone=chat_id)
             db.add(conv)
             await db.flush()
@@ -901,9 +1051,8 @@ async def _process_batch_inner(
                     )
                 except Exception:
                     logger.exception(
-                        "Failed to resolve inbound channel phone for %s via %s",
-                        chat_id,
-                        channel_id,
+                        "Failed to resolve inbound channel phone: batch_ref=%s",
+                        batch_ref,
                     )
                     resolved_phone = None
 
@@ -922,9 +1071,9 @@ async def _process_batch_inner(
             ):
                 conv.escalation_status = "manual_takeover"
                 logger.info(
-                    "Manual takeover for %s by manager %s",
-                    chat_id,
-                    manager_name or "unknown",
+                    "Manual takeover activated: batch_ref=%s manager_present=%s",
+                    batch_ref,
+                    bool(manager_name),
                 )
 
             # 3. Save incoming messages (deduplicate by wazzup_message_id)
@@ -1022,9 +1171,9 @@ async def _process_batch_inner(
             # Resolved escalations should not keep the bot in fallback mode.
             if should_send_escalation_fallback(conv.escalation_status):
                 logger.info(
-                    "Escalation active (%s) for %s. Sending fallback response.",
+                    "Escalation active: status=%s batch_ref=%s",
                     conv.escalation_status,
-                    chat_id,
+                    batch_ref,
                 )
                 await _handle_escalation_fallback(
                     conv=conv,
@@ -1036,8 +1185,8 @@ async def _process_batch_inner(
                 return
             if conv.escalation_status == "manual_takeover":
                 logger.info(
-                    "Manual takeover active for %s. Skipping LLM + fallback.",
-                    chat_id,
+                    "Manual takeover active; skipping LLM: batch_ref=%s",
+                    batch_ref,
                 )
                 return
 
@@ -1049,7 +1198,11 @@ async def _process_batch_inner(
                 ZohoCRMClient(redis_client=redis) as crm_client,
             ):
                 latency_trace.finish_phase("pre_llm", pre_llm_started)
-                logger.info("Calling LLM for %s (timeout=%ds)", chat_id, LLM_TIMEOUT)
+                logger.info(
+                    "Calling LLM: batch_ref=%s timeout_seconds=%d",
+                    batch_ref,
+                    LLM_TIMEOUT,
+                )
                 llm_started = latency_trace.start_phase()
                 try:
                     typing_task = _start_typing_refresh(wazzup_provider, chat_id)
@@ -1075,7 +1228,9 @@ async def _process_batch_inner(
                 except TimeoutError:
                     latency_trace.finish_phase("llm", llm_started)
                     logger.error(
-                        "LLM timeout after %ds for chat_id=%s", LLM_TIMEOUT, chat_id
+                        "LLM timeout: batch_ref=%s timeout_seconds=%d",
+                        batch_ref,
+                        LLM_TIMEOUT,
                     )
                     # R3-11: Send timeout fallback in client's language
                     timeout_msg = (
@@ -1126,7 +1281,7 @@ async def _process_batch_inner(
                 latency_trace.finish_phase("persist_response", persist_started)
 
                 # 5. Send via Wazzup
-                logger.info("Sending reply to %s via Wazzup", chat_id)
+                logger.info("Sending reply via Wazzup: batch_ref=%s", batch_ref)
                 whatsapp_text = _format_for_whatsapp(llm_response.text)
                 bot_reply_sent = False
                 outbound_started = latency_trace.start_phase()
@@ -1146,10 +1301,9 @@ async def _process_batch_inner(
                     )
                 except (httpx.HTTPError, RuntimeError):
                     logger.warning(
-                        "Failed to send persisted bot reply to %s via Wazzup; "
-                        "keeping inbound batch successful.",
-                        chat_id,
-                        exc_info=True,
+                        "Failed to send persisted bot reply via Wazzup; "
+                        "keeping inbound batch successful: batch_ref=%s",
+                        batch_ref,
                     )
                 else:
                     bot_reply_sent = True
@@ -1180,7 +1334,7 @@ async def _process_batch_inner(
                     finally:
                         latency_trace.finish_phase("deferred_media", media_started)
                 if bot_reply_sent:
-                    logger.info("Reply sent to %s successfully", chat_id)
+                    logger.info("Reply sent successfully: batch_ref=%s", batch_ref)
                 logger.info(
                     "%s %s",
                     CHAT_LATENCY_EVENT,
