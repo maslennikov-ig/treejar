@@ -1,8 +1,8 @@
 # Stage tj-av22 Summary
 
 Updated: 2026-07-23
-Status: internal ready; external authorization pending
-Branch: `codex/tj-av22-stabilization`
+Status: deployed; bounded operational follow-ups remain approval-gated
+Branch: `main`
 Base: `main@89f9a560071302d16f53704870e7a508e9d05f28`
 Planning commit: `9ee579b5391edf82d5fac9d70bc5c28c2116a40d`
 Beads: `tj-av22`
@@ -35,7 +35,7 @@ No scope split or preservation ledger is active.
   targeted correctness/security reviewer at the integration boundary.
 - Catalog candidates: none; installed workflows cover the stage.
 
-## Delivered Locally
+## Delivered
 
 - Removed the unauthenticated Redis debug surface and made health report the
   installed version plus required Redis/PostgreSQL state with sanitized `503`
@@ -112,9 +112,7 @@ No scope split or preservation ledger is active.
   - Ruff, format (`300 files`), Mypy (`162 source files`), process verification,
     and diff-check: passed
   - full pytest: `1513 passed, 19 skipped`
-- No production, credentials, live messaging, external API, reconciliation
-  apply, cron install, deployment, or destructive cleanup was performed.
-- Fresh read-only production/CI baseline before delivery:
+- Pre-delivery production/CI baseline:
   - `https://noor.starec.ai/api/v1/health` still reports version `0.1.0` and
     only Redis dependency state
   - `/api/v1/debug/redis` still returns HTTP `200`; its body was discarded
@@ -123,12 +121,26 @@ No scope split or preservation ledger is active.
     artifacts; lint and Mypy passed, and deploy was skipped
   - commits `e0b7ca8` and `00ec0cf` contain the root corrections; the integration
     branch passes the expanded process suite and full canonical local gate
+- Delivery and production proof:
+  - `main` fast-forwarded to
+    `2213a06800a156f6d511af26072ea17f16178ef2` and ordinary push succeeded
+  - GitHub Actions run `30028216974` passed changes, lint, type-check, tests,
+    and deploy; deploy job `89278412590` activated the exact release SHA
+  - the deploy created rollback backup
+    `deploy-20260723T171150Z-from-6df39c72ef6d4b79de67b58a9c6f29a7771293ab.tar.gz`
+  - production health returns `200`, version `0.4.0`, Redis `ok`, and database
+    `ok`
+  - `/api/v1/debug/redis` and the retired SaleOrder read route return `404`;
+    anonymous conversations access returns `403`
+  - production OpenAPI does not contain the debug, SaleOrder create/read, or
+    legacy quality-report routes
 
 ## Approval Gates
 
-- No deployment or production/staging mutation without explicit approval.
 - No escalation reconciliation apply or real Telegram/WhatsApp test without
   explicit approval.
+- No maintenance cron installation/apply or live synthetic latency traffic
+  without explicit approval.
 - No credential/scope changes or destructive cleanup without explicit approval.
 - Ambiguous public API compatibility decisions return to the user.
 
@@ -136,18 +148,18 @@ No scope split or preservation ledger is active.
 
 | Criterion | Local evidence | External evidence still required | State |
 | --- | --- | --- | --- |
-| `AC-1` debug exposure | Route-removal regression and security gates pass | Deploy/readback; current production still returns `200` | externally blocked |
-| `AC-2` OAuth/inbound durability | Malformed OAuth, durable recovery, replay, cancellation, and quarantine regressions pass | Deploy plus bounded production health/log readback | externally blocked |
+| `AC-1` debug exposure | Route-removal regression, security gates, and production `404` pass | None for the bounded release | passed |
+| `AC-2` OAuth/inbound durability | Malformed OAuth, durable recovery, replay, cancellation, quarantine regressions, deployment, and dependency health pass | Real provider/message replay remains separately approval-gated | deployed; live proof deferred |
 | `AC-3` escalation reconciliation | Exact-manifest, tamper, transaction, rollback, and idempotency tests pass | Apply only if explicitly approved; otherwise retain the audited manifest | approval-gated |
 | `AC-4` Docker maintenance | Dry-run/apply safety, heartbeat, health-failure, and idempotent installer tests pass | Production installation/apply only if explicitly approved | approval-gated |
-| `AC-5` truthful health | Redis/database/version/status regressions pass | Deploy/readback; current production still reports `0.1.0` and Redis only | externally blocked |
-| `AC-6` failure visibility | Privacy-safe signals, thresholds, cooldown ownership, and heartbeat coverage pass | Deploy and runtime readback | externally blocked |
+| `AC-5` truthful health | Production reports version `0.4.0`, Redis `ok`, database `ok`, HTTP `200` | None | passed |
+| `AC-6` failure visibility | Privacy-safe signals, thresholds, cooldown ownership, heartbeat coverage, and deployment pass | Enabling optional Telegram/runtime monitoring remains approval-gated | deployed; enablement deferred |
 | `AC-7` latency | Local phase instrumentation, delivery-boundary reduction, and quality regressions pass | Approved live synthetic matrix for p50/p95/max | externally blocked |
-| `AC-8` public `501` contracts | Removed-route/OpenAPI regressions and durable documentation pass | Deploy/readback of retired routes | externally blocked |
+| `AC-8` public `501` contracts | Removed-route/OpenAPI regressions, durable documentation, production `404`, and production OpenAPI pass | None | passed |
 | `AC-9` repository reconciliation | Exact inventory, handoff, inbox, and cleanup dry-run are complete | Destructive removal and final inventory require explicit approval | externally blocked |
-| `AC-10` release closeout | Full canonical local gate, release dry-run, process verification, and rollback procedure pass | Approved merge/push, successful CI/deploy, deployed SHA, smoke/readback, and rollback evidence | externally blocked |
+| `AC-10` release closeout | Full local gate, process verification, merge/push, green CI/deploy, exact active SHA, smoke/readback, and rollback backup pass | Destructive cleanup and an exercised rollback remain separately approval-gated | deployed |
 
-## Internal-Ready Closeout
+## Delivery Closeout
 
 - `scripts/orchestration/check_stage_ready.py tj-av22`: passed.
 - `scripts/orchestration/run_stage_closeout.py --stage tj-av22 --level release
@@ -156,16 +168,17 @@ No scope split or preservation ledger is active.
   and process-verification groups.
 - Completion inbox: `14` events reviewed, `0` pending; both the combined
   findings report and its resolving correction review are immutable.
-- E2E/smoke: deterministic local coverage passed. Production health/readback,
-  OAuth/inbound smoke, real messaging, and the live latency matrix are blocked
-  on explicit deployment/live-traffic approval.
-- Delivery: branch `codex/tj-av22-stabilization` is clean and ahead of
-  `main@89f9a560071302d16f53704870e7a508e9d05f28`; merging/pushing is blocked on
-  explicit approval because `main` triggers the production workflow.
+- E2E/smoke: deterministic local coverage and bounded production health,
+  auth, route, OpenAPI, and release-SHA readback passed. Real messaging and the
+  live latency matrix remain approval-gated.
+- Delivery: `main`, `origin/main`, and the deployed release all identify
+  `2213a06800a156f6d511af26072ea17f16178ef2` before this docs-only closeout
+  update.
 - Rollback boundary: the workflow packages `.release-sha`/`.release-run-id`;
   `scripts/vps-deploy.sh` creates a pre-deploy archive and verifies health.
-  The current production baseline SHA is
-  `89f9a560071302d16f53704870e7a508e9d05f28`.
+  The deployed production SHA is
+  `2213a06800a156f6d511af26072ea17f16178ef2`; its predecessor backup is
+  recorded above.
 - Stage cleanup dry-run classified the accepted child worktrees and branches as
   cleanup candidates. Their artifacts record `cleanup_status: blocked` because
   deletion requires explicit user approval after delivery.
@@ -183,15 +196,15 @@ No scope split or preservation ledger is active.
 
 ## Explicit Defers
 
-- Production deploy/readback, live latency matrix, exact external-message
-  tests, escalation apply, maintenance cron installation/apply, and destructive
+- Live latency matrix, exact external-message tests, escalation apply,
+  maintenance cron installation/apply, an exercised rollback, and destructive
   repository/cache cleanup remain explicit approval gates.
 - Product-policy and vendor gates outside this stabilization stage remain
   recorded in `.codex/handoff.md`.
 
 | Beads | Remaining proof | External blocker / owner |
 | --- | --- | --- |
-| `tj-av22.3` | Merge/push, CI deploy, deployed SHA/version, health/debug/auth/runtime readback, rollback evidence | Explicit production-deploy approval from the user |
+| `tj-av22.3` | Delivery is complete; real provider/message proof, live latency, operational apply, rollback exercise, and cleanup remain outside the bounded authorization | Explicit per-operation approval from the user |
 | `tj-15m` | Approved live FAQ/product/comparison/order/Arabic/escalation latency matrix or named provider blocker | Exact live-test identity/scenarios and real-traffic approval from the user |
 | `tj-rt42` | Removal and final readback of stage plus nine legacy worktrees/branches and optional caches | Exact destructive-cleanup approval from the user |
 

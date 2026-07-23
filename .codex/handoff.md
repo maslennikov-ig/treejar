@@ -1,11 +1,12 @@
 # Orchestrator Handoff
 Updated: 2026-07-23
-Current branch: `codex/tj-av22-stabilization`
+Current branch: `main`
 Current stage id: `tj-av22`
 
 ## Current Truth
 - Active stabilization epic: `tj-av22`.
-- Integration branch: `codex/tj-av22-stabilization`.
+- Integration branch `codex/tj-av22-stabilization` was fast-forwarded into
+  `main`.
 - Planning task `tj-g6m4` produced the technical design, implementation plan,
   Beads hierarchy, and root-orchestrator prompt.
 - Design:
@@ -36,15 +37,18 @@ Current stage id: `tj-av22`
   were corrected and independently delta-reviewed. Its final verdict is
   `PASS / LOCALLY RELEASE-READY`, with active `P0/P1/P2/P3=0`.
   Process verification, Ruff, format, Mypy, and the full suite pass locally
-  (`1513 passed, 19 skipped`). Release/closeout `tj-av22.3` remains blocked
-  only at the production authorization boundary.
-- Production deployment, readback, real external-message tests, escalation
-  apply, cron installation, and live latency proof have not been performed.
-- Fresh read-only production recheck still returns version `0.1.0`, Redis-only
-  health, and HTTP `200` for `/api/v1/debug/redis` (body discarded). The latest
-  `main@89f9a560` CI run `30002801189` failed only in four orchestration-runtime
-  guard tests; the integration branch contains their root fixes and passes the
-  expanded process-verification suite plus the full canonical gate.
+  (`1513 passed, 19 skipped`).
+- `main` was pushed and GitHub Actions run `30028216974` passed lint,
+  type-check, tests, and deployment. Production activated exact release
+  `2213a06800a156f6d511af26072ea17f16178ef2`; a predecessor rollback backup was
+  created.
+- Production health returns `200`, version `0.4.0`, Redis `ok`, and database
+  `ok`. `/api/v1/debug/redis` and the retired SaleOrder read route return
+  `404`; anonymous conversations access returns `403`; production OpenAPI omits
+  the debug, SaleOrder create/read, and legacy quality-report routes.
+- Real external-message tests, escalation apply, maintenance cron
+  installation/apply, live latency proof, rollback exercise, and destructive
+  cleanup were not performed because they remain separately approval-gated.
 - Cleanup audit `tj-rt42` found nine old worktrees with no commits unique from
   `main`, plus large local caches. Nothing was deleted because cleanup requires
   explicit approval.
@@ -65,19 +69,21 @@ Current stage id: `tj-av22`
 
 ## Next recommended
 Next stage id: `tj-av22`.
-Recommended action: reconcile the remaining approval-gated Beads, then ask for
-the exact merge/push, deployment, and production-readback approval. Do not
-deploy or mutate production before that approval.
+Recommended action: choose the next bounded approval-gated stream: live
+synthetic latency/message proof, escalation/maintenance operations, rollback
+exercise, or repository/worktree cleanup.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to continue `tj-av22` from the current integration
-branch. Read the accepted `tj-av22.10` artifact and stop at the merge/push,
-deployment, live-readback, and cleanup approval gates.
+Use $orchestrator-stage to continue `tj-av22` from deployed `main@2213a06`.
+Read the accepted `tj-av22.10` artifact and the delivery evidence in the stage
+summary; keep live traffic, production data changes, rollback exercise, and
+cleanup behind their separate approval gates.
 
 ## Approval gates
-- Ask before deploy/staging or production mutation.
 - Ask before applying escalation reconciliation or sending real Telegram/
   WhatsApp tests.
+- Ask before live synthetic latency traffic, rollback exercise, or maintenance
+  cron installation/apply.
 - Ask before deleting worktrees/branches/caches or changing credentials/scopes.
 - Preserve existing untracked user files.
 
