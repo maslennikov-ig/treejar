@@ -16,13 +16,13 @@ from runtime_support import ensure_tomllib_runtime
 ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
 
 import argparse
-from contextlib import contextmanager
 import fcntl
 import json
 import os
 import subprocess
 import tomllib
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import UTC, datetime
 
 ALLOWED_DECISIONS = {
     "accepted",
@@ -44,7 +44,9 @@ def require_string(value: object, name: str) -> str:
     return value
 
 
-def resolve_runtime_path(repo_root: pathlib.Path, inbox: dict, key: str) -> pathlib.Path:
+def resolve_runtime_path(
+    repo_root: pathlib.Path, inbox: dict, key: str
+) -> pathlib.Path:
     raw_path = pathlib.Path(require_string(inbox.get(key), f"completion_inbox.{key}"))
     scope = inbox.get("scope", "repo_root")
     if scope == "git_common_dir":
@@ -143,11 +145,20 @@ def require_v219_stream_aggregation(
     if not manifest_path.is_file():
         if legacy == stage_id:
             return
-        raise SystemExit(f"new v2.19 delegated stage {stage_id!r} requires a stage manifest")
+        raise SystemExit(
+            f"new v2.19 delegated stage {stage_id!r} requires a stage manifest"
+        )
     if metadata.get("schema_version") != "orchestration-artifact/v3":
-        raise SystemExit("newly reported delegated artifacts in a v2.19 stage must use orchestration-artifact/v3")
-    if metadata.get("stage_manifest") != f".codex/stages/{stage_id}/stage-manifest.json":
-        raise SystemExit("event artifact stage_manifest does not match the owning stage")
+        raise SystemExit(
+            "newly reported delegated artifacts in a v2.19 stage must use orchestration-artifact/v3"
+        )
+    if (
+        metadata.get("stage_manifest")
+        != f".codex/stages/{stage_id}/stage-manifest.json"
+    ):
+        raise SystemExit(
+            "event artifact stage_manifest does not match the owning stage"
+        )
     stream_owner = metadata.get("stream_owner")
     if not stream_owner:
         raise SystemExit("event v3 artifact must declare stream_owner")
@@ -157,16 +168,22 @@ def require_v219_stream_aggregation(
         raise SystemExit(f"cannot read owning stage manifest: {exc}") from exc
     entries = manifest.get("stream_artifacts") if isinstance(manifest, dict) else None
     relative = artifact.relative_to(repo_root).as_posix()
-    matching = [
-        entry
-        for entry in entries
-        if isinstance(entry, dict)
-        and entry.get("artifact_path") == relative
-        and entry.get("task_id") == metadata.get("task_id")
-        and entry.get("stream_owner") == stream_owner
-    ] if isinstance(entries, list) else []
+    matching = (
+        [
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+            and entry.get("artifact_path") == relative
+            and entry.get("task_id") == metadata.get("task_id")
+            and entry.get("stream_owner") == stream_owner
+        ]
+        if isinstance(entries, list)
+        else []
+    )
     if len(matching) != 1:
-        raise SystemExit("event v3 artifact is unlisted or mismatched in the owning stage manifest")
+        raise SystemExit(
+            "event v3 artifact is unlisted or mismatched in the owning stage manifest"
+        )
 
 
 def require_exact_events(
@@ -177,7 +194,9 @@ def require_exact_events(
     state_file: pathlib.Path,
 ) -> str:
     workspace = contract.get("workspace")
-    stage_id = workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+    stage_id = (
+        workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+    )
     if not isinstance(stage_id, str) or not stage_id:
         raise SystemExit("exact inbox review requires workspace.current_stage_id")
     inbox = contract.get("completion_inbox")
@@ -287,7 +306,11 @@ def correction_limit(contract: dict) -> int | None:
     if not isinstance(limits, dict):
         return None
     value = limits.get("max_correction_loops")
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else None
+    )
 
 
 def prior_p2_corrections(reviewed: dict[str, dict], event: dict) -> int:
@@ -332,13 +355,20 @@ def main(argv: list[str]) -> int:
     contract = load_contract()
     inbox = contract.get("completion_inbox")
     if not isinstance(inbox, dict):
-        raise SystemExit("missing [completion_inbox] section in .codex/orchestrator.toml")
+        raise SystemExit(
+            "missing [completion_inbox] section in .codex/orchestrator.toml"
+        )
 
     events_file = resolve_runtime_path(repo_root, inbox, "events_file")
     state_file = resolve_runtime_path(repo_root, inbox, "review_state_file")
 
     events = load_events(events_file)
     if exact_identity_required(contract):
+        workspace = contract.get("workspace")
+        stage_id = (
+            workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+        )
+        events = [event for event in events if event.get("stage_id") == stage_id]
         require_exact_events(repo_root, contract, events, events_file, state_file)
     if args.task:
         events = [event for event in events if event.get("task_id") == args.task]
@@ -349,32 +379,55 @@ def main(argv: list[str]) -> int:
             reviewed = state["reviewed"]
             if not args.decision:
                 raise SystemExit("--decision is required with --mark-reviewed")
-            matching = [event for event in events if event.get("event_id") == args.mark_reviewed]
+            matching = [
+                event for event in events if event.get("event_id") == args.mark_reviewed
+            ]
             if not matching:
                 raise SystemExit(f"event not found: {args.mark_reviewed}")
             if args.mark_reviewed in reviewed:
-                raise SystemExit(f"event already reviewed and immutable: {args.mark_reviewed}")
+                raise SystemExit(
+                    f"event already reviewed and immutable: {args.mark_reviewed}"
+                )
             if args.decision == "accepted" and args.severity:
-                raise SystemExit("accepted correction events must omit --severity and link resolved findings")
+                raise SystemExit(
+                    "accepted correction events must omit --severity and link resolved findings"
+                )
             if args.decision == "accepted" and (
-                matching[0].get("status") != "returned" or matching[0].get("verify") != "passed"
+                matching[0].get("status") != "returned"
+                or matching[0].get("verify") != "passed"
             ):
-                raise SystemExit("accepted correction events require returned status and passed verification")
+                raise SystemExit(
+                    "accepted correction events require returned status and passed verification"
+                )
 
             event_links = matching[0].get("resolves_review", [])
-            if not isinstance(event_links, list) or not all(isinstance(link, str) and link for link in event_links):
-                raise SystemExit("event resolves_review must be a list of non-empty event ids")
-            resolution_links = list(dict.fromkeys([*event_links, *args.resolves_review]))
+            if not isinstance(event_links, list) or not all(
+                isinstance(link, str) and link for link in event_links
+            ):
+                raise SystemExit(
+                    "event resolves_review must be a list of non-empty event ids"
+                )
+            resolution_links = list(
+                dict.fromkeys([*event_links, *args.resolves_review])
+            )
             if args.decision != "accepted" and resolution_links:
-                raise SystemExit("--resolves-review is allowed only with --decision accepted")
+                raise SystemExit(
+                    "--resolves-review is allowed only with --decision accepted"
+                )
             for finding_id in resolution_links:
                 finding = reviewed.get(finding_id)
                 if not isinstance(finding, dict):
-                    raise SystemExit(f"resolved review finding is not reviewed: {finding_id}")
+                    raise SystemExit(
+                        f"resolved review finding is not reviewed: {finding_id}"
+                    )
                 if finding.get("stage_id") != matching[0].get("stage_id"):
-                    raise SystemExit(f"resolved review finding is outside this stage: {finding_id}")
+                    raise SystemExit(
+                        f"resolved review finding is outside this stage: {finding_id}"
+                    )
 
-            severity = args.severity or ("P2" if args.decision == "needs_rework_same_stream" else "")
+            severity = args.severity or (
+                "P2" if args.decision == "needs_rework_same_stream" else ""
+            )
             limit = correction_limit(contract)
             if (
                 args.decision == "needs_rework_same_stream"
@@ -390,9 +443,10 @@ def main(argv: list[str]) -> int:
                 "severity": severity,
                 "resolves_review": resolution_links,
                 "correction_round": prior_p2_corrections(reviewed, matching[0]) + 1
-                if args.decision == "needs_rework_same_stream" and severity not in {"P0", "P1"}
+                if args.decision == "needs_rework_same_stream"
+                and severity not in {"P0", "P1"}
                 else 0,
-                "reviewed_at": datetime.now(timezone.utc).isoformat(),
+                "reviewed_at": datetime.now(UTC).isoformat(),
                 "note": args.note,
                 "task_id": matching[0].get("task_id"),
                 "stage_id": matching[0].get("stage_id"),

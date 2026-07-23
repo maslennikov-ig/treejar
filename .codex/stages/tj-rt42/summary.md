@@ -39,10 +39,61 @@ ambiguous or unique change are outside destructive scope.
 
 ## Evidence
 
-Pending re-audit and cleanup.
+### Pre-cleanup inventory
+
+- `git worktree list --porcelain`: 21 worktrees total (`main` plus 20 stale
+  task worktrees).
+- `git for-each-ref refs/heads`: 30 local branches total (`main` plus 29 task
+  branches).
+- All 27 ordinary task branches are ancestors of `main`. The remaining two
+  branches are patch-equivalent: `codex/tj-av22-review-pass` has
+  `cherry_plus=0/cherry_minus=2`, and
+  `codex/tj-gh48-expected-answer-frames` has
+  `cherry_plus=0/cherry_minus=1`. No local branch has a commit whose patch is
+  absent from `main`.
+- Eleven `tj-av22` worktrees are clean. Nine older worktrees contain only
+  shared orchestration-baseline drift, not task implementation:
+  `.codex/orchestrator.toml` changes the handoff line cap from 40 to 200;
+  `tj-gh48-impl` also contains the superseded Docs L1/L2 wording in the two
+  subagent contract files and the current AGENTS adapter in `CLAUDE.md`;
+  `tj-gh51-order-quote-cutover` also contains that `CLAUDE.md` adapter.
+  Patch fingerprints are:
+  `tj-gh48-impl=33b426c219ab7e7f1ecf50aacf9df9d2ac508c5f9d007c47f28d1c8f7b7c6c94`,
+  `tj-gh51-order-quote-cutover=e5998d5f0205351a6e791e061e48e1b1cf7a090ab56b1629062977892f5ac9d9`,
+  and the seven remaining dirty worktrees share
+  `b33d22b1a2ef8baf0c0d65efa3d1b276e83f5e8e7bd48e48981dca1a6a70606c`.
+  Current tracked repository contracts supersede these copies, so the hashes
+  and semantic diff classification are the preservation record.
+- Protected untracked user paths were fingerprinted before cleanup:
+  `noor-100-dialogue-tuning-offer.html=170246f1...`,
+  `noor-media-recovery-pm-note.html=4433b93a...`,
+  `noor-media-recovery-pm-note.md=5b46a609...`,
+  `treejar-visual-search-offer.html=4d110f42...`, plus one file under
+  `output/` and eight files under `tmp/`.
+- `.venv` is active project infrastructure and is preserved. Rebuildable,
+  inactive `.mypy_cache`, `.ruff_cache`, `.pytest_cache`, and project
+  `__pycache__` directories are cleanup candidates. No repository-owned
+  pytest, Ruff, Mypy, Uvicorn, or Vite process was active at classification
+  time.
+- Shared completion transport contains 14 reviewed historical `tj-av22`
+  events and zero events for `tj-rt42`; it is retained as review history.
+- The inbox reader itself exposed a stage-filtering defect. A regression test
+  now proves that historical events from other stages are ignored before exact
+  current-stage validation; the focused process suite passes 11/11.
+
+### Planned exact cleanup
+
+- Remove child worktrees before their nested parent, then remove the remaining
+  clean worktrees and the nine classified baseline-drift worktrees.
+- Delete all 29 local task branches only after worktree removal, using normal
+  deletion for ancestors and force deletion only for the two proven
+  patch-equivalent branches.
+- Remove only the classified rebuildable caches. Preserve `.venv`, completion
+  history, all remote branches, and every protected user path.
 
 ## Closeout
 
-- `docs-reviewed: pending`
+- `docs-reviewed: updated` — this stage summary is the durable preservation
+  and deletion record; product and operations docs are unaffected.
 - `project-index: reviewed-no-change` — no entrypoint change is planned.
 - `graph-reviewed: no-change-needed` — Graphify is not configured.
