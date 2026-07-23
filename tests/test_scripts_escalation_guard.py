@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from scripts.escalation_guard import maybe_suppress_external_escalation_alerts
+from scripts.escalation_guard import (
+    ManifestValidationError,
+    apply_manifest_in_transaction,
+    audit_pending_escalations,
+    build_reconciliation_manifest,
+    load_reconciliation_manifest,
+    maybe_suppress_external_escalation_alerts,
+)
 
 from src.integrations.notifications.escalation import notify_manager_escalation
 from src.models.conversation import Conversation
@@ -49,3 +59,175 @@ async def test_helper_suppresses_telegram_but_preserves_escalation_state(
     db.commit.assert_awaited_once()
     mocks.send_message_with_inline_keyboard.assert_awaited_once()
     mocks.send_document.assert_not_awaited()
+
+
+def _pending_pair(
+    *,
+    conversation_status: str,
+    conversation_escalation_status: str,
+    age_days: int,
+    phone: str = "+971500000000",
+) -> tuple[Escalation, Conversation]:
+    now = datetime(2026, 7, 23, tzinfo=UTC)
+    conversation = Conversation(
+        id=uuid4(),
+        phone=phone,
+        sales_stage=SalesStage.GREETING.value,
+        status=conversation_status,
+        escalation_status=conversation_escalation_status,
+        language="en",
+        metadata_={},
+    )
+    escalation = Escalation(
+        id=uuid4(),
+        conversation_id=conversation.id,
+        reason="redacted from manifest",
+        status=EscalationStatus.PENDING.value,
+        created_at=now - timedelta(days=age_days),
+    )
+    return escalation, conversation
+
+
+def test_manifest_contains_every_classification_but_only_exact_safe_actions() -> None:
+    now = datetime(2026, 7, 23, tzinfo=UTC)
+    active_pending = _pending_pair(
+        conversation_status="active",
+        conversation_escalation_status="pending",
+        age_days=45,
+    )
+    stale_none = _pending_pair(
+        conversation_status="active",
+        conversation_escalation_status="none",
+        age_days=45,
+    )
+    closed_resolved = _pending_pair(
+        conversation_status="closed",
+        conversation_escalation_status="resolved",
+        age_days=8,
+    )
+    manual_takeover = _pending_pair(
+        conversation_status="active",
+        conversation_escalation_status="manual_takeover",
+        age_days=45,
+    )
+
+    manifest = build_reconciliation_manifest(
+        [active_pending, stale_none, closed_resolved, manual_takeover],
+        now=now,
+        stale_after_days=30,
+    )
+
+    assert manifest["schema_version"] == "treejar-escalation-reconciliation/v1"
+    assert manifest["summary"]["total_pending"] == 4
+    assert len(manifest["records"]) == 4
+    assert {action["escalation_id"] for action in manifest["actions"]} == {
+        str(stale_none[0].id),
+        str(closed_resolved[0].id),
+    }
+    encoded_manifest = json.dumps(manifest)
+    assert "phone" not in encoded_manifest
+    assert "redacted from manifest" not in encoded_manifest
+
+
+def test_archived_manifest_detects_tampering(tmp_path: Path) -> None:
+    pair = _pending_pair(
+        conversation_status="closed",
+        conversation_escalation_status="resolved",
+        age_days=45,
+    )
+    manifest = build_reconciliation_manifest(
+        [pair],
+        now=datetime(2026, 7, 23, tzinfo=UTC),
+        stale_after_days=30,
+    )
+    manifest["actions"][0]["conversation_id"] = str(uuid4())
+    path = tmp_path / "audit.json"
+    path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ManifestValidationError, match="digest"):
+        load_reconciliation_manifest(path)
+
+
+@pytest.mark.asyncio
+async def test_audit_is_select_only() -> None:
+    db = AsyncMock()
+    result = MagicMock()
+    result.all.return_value = []
+    db.execute.return_value = result
+
+    rows = await audit_pending_escalations(db)
+
+    assert rows == []
+    db.execute.assert_awaited_once()
+    db.commit.assert_not_awaited()
+    db.rollback.assert_not_awaited()
+    db.add.assert_not_called()
+
+
+class _SessionContext:
+    def __init__(self, db: AsyncMock) -> None:
+        self.db = db
+
+    async def __aenter__(self) -> AsyncMock:
+        return self.db
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_exact_manifest_apply_is_idempotent() -> None:
+    escalation, conversation = _pending_pair(
+        conversation_status="closed",
+        conversation_escalation_status="resolved",
+        age_days=45,
+    )
+    manifest = build_reconciliation_manifest(
+        [(escalation, conversation)],
+        now=datetime(2026, 7, 23, tzinfo=UTC),
+        stale_after_days=30,
+    )
+    db = AsyncMock()
+    result = MagicMock()
+    result.all.return_value = [(escalation, conversation)]
+    db.execute.return_value = result
+
+    def session_factory() -> _SessionContext:
+        return _SessionContext(db)
+
+    first = await apply_manifest_in_transaction(session_factory, manifest)
+    second = await apply_manifest_in_transaction(session_factory, manifest)
+
+    assert first["changed_escalation_ids"] == [str(escalation.id)]
+    assert second["changed_escalation_ids"] == []
+    assert second["already_applied_escalation_ids"] == [str(escalation.id)]
+    assert db.commit.await_count == 2
+    db.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manifest_precondition_failure_rolls_back_whole_transaction() -> None:
+    escalation, conversation = _pending_pair(
+        conversation_status="closed",
+        conversation_escalation_status="resolved",
+        age_days=45,
+    )
+    manifest = build_reconciliation_manifest(
+        [(escalation, conversation)],
+        now=datetime(2026, 7, 23, tzinfo=UTC),
+        stale_after_days=30,
+    )
+    conversation.status = "active"
+    db = AsyncMock()
+    result = MagicMock()
+    result.all.return_value = [(escalation, conversation)]
+    db.execute.return_value = result
+
+    def session_factory() -> _SessionContext:
+        return _SessionContext(db)
+
+    with pytest.raises(ManifestValidationError, match="precondition"):
+        await apply_manifest_in_transaction(session_factory, manifest)
+
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
