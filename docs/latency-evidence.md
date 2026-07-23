@@ -1,6 +1,6 @@
 # Noor latency evidence
 
-Date: 2026-07-23  
+Date: 2026-07-23
 Scope: `tj-15m.6`
 
 This note separates three evidence classes: historical production observations,
