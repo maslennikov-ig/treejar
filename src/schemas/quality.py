@@ -60,18 +60,3 @@ class QualityReviewRead(UUIDModel):
                 return values
             return []
         return value
-
-
-class QualityReportRequest(BaseModel):
-    date_from: datetime | None = None
-    date_to: datetime | None = None
-    min_score: float | None = None
-
-
-class QualityReportResponse(BaseModel):
-    period: str
-    total_conversations: int
-    reviewed: int
-    average_score: float
-    rating_distribution: dict[str, int]
-    top_issues: list[str]

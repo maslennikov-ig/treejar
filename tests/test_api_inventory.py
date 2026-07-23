@@ -87,22 +87,28 @@ async def test_get_stock_levels_success(
 
 
 @pytest.mark.asyncio
-async def test_create_sale_order_not_implemented() -> None:
+async def test_sale_order_create_route_is_not_exposed() -> None:
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         response = await ac.post(
             "/api/v1/inventory/sale-orders/", json={"contact_name": "x", "items": []}
         )
-    assert response.status_code == 501
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_sale_order_not_implemented() -> None:
+async def test_sale_order_read_route_is_not_exposed() -> None:
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         response = await ac.get(
             "/api/v1/inventory/sale-orders/00000000-0000-0000-0000-000000000000"
         )
-    assert response.status_code == 501
+    assert response.status_code == 404
+
+
+def test_sale_order_routes_are_absent_from_openapi() -> None:
+    paths = app.openapi()["paths"]
+    assert "/api/v1/inventory/sale-orders/" not in paths
+    assert "/api/v1/inventory/sale-orders/{order_id}" not in paths
