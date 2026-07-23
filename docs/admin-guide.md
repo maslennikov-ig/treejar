@@ -235,6 +235,9 @@ docker compose stats
 ### Docker Maintenance
 For disk cleanup on the canonical host, prefer the repo-managed maintenance script over ad-hoc prune commands:
 
+The complete approval, readback, and rollback procedure is in
+[`docs/operations-runbook.md`](operations-runbook.md).
+
 ```bash
 ssh -p 2222 noor-dev@95.216.204.189
 cd /opt/noor
