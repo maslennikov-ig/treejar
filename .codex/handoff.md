@@ -2,7 +2,7 @@
 Updated: 2026-07-23
 Current branch: `main`
 Current stage id: `tj-5o9r`
-Current stage status: in progress
+Current stage status: accepted and closed
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -63,8 +63,8 @@ Current stage status: in progress
 - Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
 - On 2026-07-23 the user explicitly authorized all previously gated production
   operations, live synthetic message/latency proof, and destructive cleanup.
-  Stage `tj-5o9r` is executing the production operations first under exact
-  snapshot and restore boundaries.
+  Stage `tj-5o9r` completed the production operations under exact snapshot and
+  restore boundaries.
 
 ## Audit Baseline
 - Local canonical gates were green at audit time: Ruff, format, Mypy, and full
@@ -75,15 +75,16 @@ Current stage status: in progress
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: `tj-15m`, after `tj-5o9r` is accepted.
-Recommended action: finish production operational validation, then run the live
-synthetic latency/message matrix, then perform safe repository cleanup.
+Next stage id: `tj-15m`.
+Recommended action: run the authorized live synthetic latency/message matrix,
+then perform safe repository cleanup.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to continue `tj-5o9r`. Treat `tj-av22` as accepted
-history. Execute only the exact production operations recorded in
-`.codex/stages/tj-5o9r/summary.md`, verify after every mutation, and restore the
-original release before advancing.
+Use $orchestrator-stage to open `tj-15m`. Treat `tj-av22` and `tj-5o9r` as
+accepted history. Use only the approved synthetic test recipient/channel with
+unique suffixes, record per-scenario latency and cleanup, and stop on any
+unsafe commercial claim, duplicate send, unresolved escalation, or health
+failure.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -92,8 +93,8 @@ original release before advancing.
 - Preserve existing unrelated user files and do not change credentials/scopes.
 
 ## Explicit defers
-- `tj-15m`: authorized and queued after `tj-5o9r`.
-- `tj-5o9r`: authorized and in progress.
+- `tj-15m`: authorized and next.
+- `tj-5o9r`: accepted and closed.
 - `tj-rt42`: authorized and queued after live evidence is committed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy

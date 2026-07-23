@@ -16,9 +16,6 @@ from runtime_support import ensure_tomllib_runtime
 ensure_tomllib_runtime([str(SCRIPT_PATH), *sys.argv[1:]])
 
 import argparse
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
@@ -26,6 +23,9 @@ import os
 import re
 import subprocess
 import tomllib
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 
 DEBT_MARKER_PATTERN = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
 DEBT_POLICY_REFERENCE_PATTERNS = (
@@ -129,11 +129,7 @@ def repeated_full_verification_diagnostic(
     """Use the exact reusable-evidence result; legal must-run retries are exempt."""
     if must_run_reason in MUST_RUN_REASONS:
         return None
-    if (
-        level in {"integration", "release"}
-        and execution.reusable
-        and decision == "run"
-    ):
+    if level in {"integration", "release"} and execution.reusable and decision == "run":
         return "repeated_full_verification_without_material_source_change"
     return None
 
@@ -156,7 +152,9 @@ def record_sizing_diagnostic(
     ]
     if code == "repeated_full_verification_without_material_source_change":
         if repeated_execution is None or not repeated_execution.reusable:
-            raise SystemExit("repeated verification diagnostic lacks exact reusable evidence")
+            raise SystemExit(
+                "repeated verification diagnostic lacks exact reusable evidence"
+            )
         command.extend(
             [
                 "--prior-result",
@@ -193,9 +191,7 @@ def normalize_orchestration_level(value: str | None, *, legacy_default: bool) ->
     return normalized
 
 
-def compute_content_digest(
-    repo_root: pathlib.Path, relative_paths: list[str]
-) -> str:
+def compute_content_digest(repo_root: pathlib.Path, relative_paths: list[str]) -> str:
     """Hash exact repo-relative paths without following symlinks or escapes."""
     root = repo_root.resolve()
     files: set[pathlib.Path] = set()
@@ -256,9 +252,7 @@ def verification_fingerprint(
         "artifact_digests": list(artifact_digests),
         "environment_digest": environment_digest,
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -364,7 +358,9 @@ def build_verification_execution(
         evidence.get("artifact_paths"), group, allow_empty=True
     )
     environments = evidence.get("environment_digests")
-    environment_digest = environments.get(group) if isinstance(environments, dict) else None
+    environment_digest = (
+        environments.get(group) if isinstance(environments, dict) else None
+    )
     allowed = evidence.get("allowed_producers")
     if (
         source_paths is None
@@ -406,7 +402,10 @@ def record_verification_evidence(
         return
     evidence = contract.get("evidence")
     producer = evidence.get("producer") if isinstance(evidence, dict) else None
-    if not isinstance(producer, str) or producer not in execution.identity.allowed_producers:
+    if (
+        not isinstance(producer, str)
+        or producer not in execution.identity.allowed_producers
+    ):
         return
     payload: dict[str, object] = {
         "schema_version": "verification-evidence/v1",
@@ -418,7 +417,7 @@ def record_verification_evidence(
         "artifact_digests": list(execution.identity.artifact_digests),
         "environment_digest": execution.identity.environment_digest,
         "result": "passed",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "producer": producer,
     }
     path = execution.evidence_path
@@ -485,14 +484,18 @@ def validate_stage_state(
         errors.append(f"expected stage directory is missing or unsafe: {expected}")
 
     workspace = contract.get("workspace")
-    current_stage = workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+    current_stage = (
+        workspace.get("current_stage_id") if isinstance(workspace, dict) else None
+    )
     if current_stage != stage_id:
         errors.append(
             f"workspace.current_stage_id must equal requested stage {stage_id!r}; found {current_stage!r}"
         )
 
     artifacts = contract.get("artifacts")
-    summary = artifacts.get("current_stage_summary") if isinstance(artifacts, dict) else None
+    summary = (
+        artifacts.get("current_stage_summary") if isinstance(artifacts, dict) else None
+    )
     summary_error = _stage_path_error(
         root, expected, "artifacts.current_stage_summary", summary
     )
@@ -542,9 +545,7 @@ def closeout_idempotency_key(
         "groups": groups,
         "verification_fingerprint": fingerprint,
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -587,6 +588,7 @@ def _closeout_fingerprint(
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise SystemExit(f"cannot read stage sizing manifest: {exc}") from exc
+
             def sizing_state_path(raw: object, label: str) -> pathlib.Path | None:
                 if not isinstance(raw, str) or raw in {"none", "n/a"}:
                     return None
@@ -605,11 +607,15 @@ def _closeout_fingerprint(
                     raise SystemExit(f"{label} path escapes repository")
                 return candidate
 
-            raw_anchor = manifest.get("scope_anchor") if isinstance(manifest, dict) else None
+            raw_anchor = (
+                manifest.get("scope_anchor") if isinstance(manifest, dict) else None
+            )
             anchor_path = sizing_state_path(raw_anchor, "scope_anchor")
             if anchor_path is not None:
                 state_paths.append(anchor_path)
-            raw_ledger = manifest.get("scope_ledger") if isinstance(manifest, dict) else None
+            raw_ledger = (
+                manifest.get("scope_ledger") if isinstance(manifest, dict) else None
+            )
             ledger_path = sizing_state_path(raw_ledger, "scope_ledger")
             if ledger_path is not None:
                 state_paths.append(ledger_path)
@@ -618,7 +624,9 @@ def _closeout_fingerprint(
                         ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
                     except (OSError, json.JSONDecodeError) as exc:
                         raise SystemExit(f"cannot read scope ledger: {exc}") from exc
-                    entries = ledger.get("criteria") if isinstance(ledger, dict) else None
+                    entries = (
+                        ledger.get("criteria") if isinstance(ledger, dict) else None
+                    )
                     if isinstance(entries, list):
                         for entry in entries:
                             if not isinstance(entry, dict):
@@ -644,9 +652,7 @@ def _closeout_fingerprint(
         ],
         "state": [file_state(path) for path in state_paths],
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -715,7 +721,9 @@ def parse_artifact(path: pathlib.Path) -> dict[str, object]:
     return data
 
 
-def load_stage_artifacts(repo_root: pathlib.Path, stage_id: str) -> list[dict[str, object]]:
+def load_stage_artifacts(
+    repo_root: pathlib.Path, stage_id: str
+) -> list[dict[str, object]]:
     artifacts_dir = repo_root / ".codex" / "stages" / stage_id / "artifacts"
     if not artifacts_dir.exists():
         return []
@@ -779,7 +787,9 @@ def append_policy_groups(
             groups.append(group)
 
 
-def artifact_metadata(artifacts: list[dict[str, object]]) -> tuple[str, set[str], set[str], bool]:
+def artifact_metadata(
+    artifacts: list[dict[str, object]],
+) -> tuple[str, set[str], set[str], bool]:
     levels: set[str] = set()
     risk_tags: set[str] = set()
     surfaces: set[str] = set()
@@ -789,9 +799,7 @@ def artifact_metadata(artifacts: list[dict[str, object]]) -> tuple[str, set[str]
         if not isinstance(raw_level, str):
             raw_level = artifact.get("verification_tier")
         if isinstance(raw_level, str) and raw_level.strip().lower() != "n/a":
-            levels.add(
-                normalize_orchestration_level(raw_level, legacy_default=False)
-            )
+            levels.add(normalize_orchestration_level(raw_level, legacy_default=False))
             present = True
         tags = meaningful_list(artifact.get("risk_tags"))
         affected = meaningful_list(artifact.get("affected_surfaces"))
@@ -841,18 +849,26 @@ def split_adaptive_artifacts(
     modern: list[dict[str, object]] = []
     legacy: list[dict[str, object]] = []
     for artifact in artifacts:
-        (modern if artifact_has_adaptive_metadata(artifact) else legacy).append(artifact)
+        (modern if artifact_has_adaptive_metadata(artifact) else legacy).append(
+            artifact
+        )
     return modern, legacy
 
 
-def infer_legacy_groups(contract: dict[str, object], artifacts: list[dict[str, object]], include_optional: bool) -> list[str]:
+def infer_legacy_groups(
+    contract: dict[str, object],
+    artifacts: list[dict[str, object]],
+    include_optional: bool,
+) -> list[str]:
     verification = contract.get("verification", {})
     if not isinstance(verification, dict):
         return []
 
     groups: list[str] = []
     workspace = contract.get("workspace", {})
-    multi_repo = bool(workspace.get("multi_repo")) if isinstance(workspace, dict) else False
+    multi_repo = (
+        bool(workspace.get("multi_repo")) if isinstance(workspace, dict) else False
+    )
     touched_repos: set[str] = set()
     has_changed_files = False
 
@@ -862,7 +878,9 @@ def infer_legacy_groups(contract: dict[str, object], artifacts: list[dict[str, o
             touched_repos.add(repo)
 
         changed_files = artifact.get("changed_files")
-        if isinstance(changed_files, list) and any(item and not str(item).startswith("<") for item in changed_files):
+        if isinstance(changed_files, list) and any(
+            item and not str(item).startswith("<") for item in changed_files
+        ):
             has_changed_files = True
 
     if multi_repo:
@@ -888,9 +906,13 @@ def infer_adaptive_groups(
     verification = contract.get("verification", {})
     policy = contract.get("verification_policy")
     if not isinstance(verification, dict) or not isinstance(policy, dict):
-        raise SystemExit("risk-adaptive verification requires [verification] and [verification_policy]")
+        raise SystemExit(
+            "risk-adaptive verification requires [verification] and [verification_policy]"
+        )
     if policy.get("mode") != "risk_adaptive":
-        raise SystemExit("verification_policy.mode must be 'risk_adaptive' for artifacts with adaptive metadata")
+        raise SystemExit(
+            "verification_policy.mode must be 'risk_adaptive' for artifacts with adaptive metadata"
+        )
 
     artifact_level, risk_tags, surfaces, metadata_present = artifact_metadata(artifacts)
     if not metadata_present and explicit_level is None:
@@ -916,13 +938,17 @@ def infer_adaptive_groups(
     if not isinstance(risk_tag_groups, dict):
         raise SystemExit("verification_policy.risk_tag_groups must be a table")
     for tag in sorted(risk_tags):
-        append_policy_groups(groups, verification, risk_tag_groups, "risk_tag_groups", tag)
+        append_policy_groups(
+            groups, verification, risk_tag_groups, "risk_tag_groups", tag
+        )
 
     surface_groups = policy.get("surface_groups", {})
     if not isinstance(surface_groups, dict):
         raise SystemExit("verification_policy.surface_groups must be a table")
     for surface in sorted(surfaces):
-        append_policy_groups(groups, verification, surface_groups, "surface_groups", surface)
+        append_policy_groups(
+            groups, verification, surface_groups, "surface_groups", surface
+        )
 
     if include_optional and "stage_level_optional_commands" in verification:
         append_unique(groups, ["stage_level_optional_commands"])
@@ -939,7 +965,11 @@ def infer_groups(
     """Choose adaptive groups per modern artifact and preserve legacy evidence for older artifacts."""
     policy = contract.get("verification_policy")
     modern, legacy = split_adaptive_artifacts(artifacts)
-    if isinstance(policy, dict) and policy.get("mode") == "risk_adaptive" and high_risk_artifacts_missing_metadata(artifacts):
+    if (
+        isinstance(policy, dict)
+        and policy.get("mode") == "risk_adaptive"
+        and high_risk_artifacts_missing_metadata(artifacts)
+    ):
         raise SystemExit(
             "high-risk changed artifacts require verification_tier, risk_tags, affected_surfaces, and invariants"
         )
@@ -954,7 +984,9 @@ def infer_groups(
     if not modern:
         return infer_legacy_groups(contract, artifacts, include_optional)
     if not isinstance(policy, dict) or policy.get("mode") != "risk_adaptive":
-        raise SystemExit("artifacts with adaptive metadata require verification_policy.mode = 'risk_adaptive'")
+        raise SystemExit(
+            "artifacts with adaptive metadata require verification_policy.mode = 'risk_adaptive'"
+        )
 
     groups = infer_adaptive_groups(contract, modern, include_optional)
     if legacy:
@@ -997,7 +1029,11 @@ def high_risk_artifacts_missing_metadata(artifacts: list[dict[str, object]]) -> 
 def stage_has_high_risk_artifact(artifacts: list[dict[str, object]]) -> bool:
     for artifact in artifacts:
         risk_level = artifact.get("risk_level")
-        if artifact_has_changed_files(artifact) and isinstance(risk_level, str) and risk_level.lower() == "high":
+        if (
+            artifact_has_changed_files(artifact)
+            and isinstance(risk_level, str)
+            and risk_level.lower() == "high"
+        ):
             return True
     return False
 
@@ -1029,9 +1065,13 @@ def check_child_acceptance_cleanup(artifacts: list[dict[str, object]]) -> None:
         if delivery_method in {"", "not accepted"}:
             failures.append(f"{task_id}: accepted stream missing delivery_method")
         if accepted != "yes":
-            failures.append(f"{task_id}: accepted stream missing accepted_by_orchestrator: yes")
+            failures.append(
+                f"{task_id}: accepted stream missing accepted_by_orchestrator: yes"
+            )
         if cleanup_status not in {"cleaned", "blocked"}:
-            failures.append(f"{task_id}: accepted stream cleanup_status must be cleaned or blocked")
+            failures.append(
+                f"{task_id}: accepted stream cleanup_status must be cleaned or blocked"
+            )
         if not cleanup_notes:
             failures.append(f"{task_id}: accepted stream missing cleanup_notes")
 
@@ -1039,7 +1079,10 @@ def check_child_acceptance_cleanup(artifacts: list[dict[str, object]]) -> None:
         print("child acceptance cleanup OK")
         return
 
-    print("Accepted child streams require mini-closeout before stage close:", file=sys.stderr)
+    print(
+        "Accepted child streams require mini-closeout before stage close:",
+        file=sys.stderr,
+    )
     for failure in failures:
         print(f"- {failure}", file=sys.stderr)
     raise SystemExit(1)
@@ -1064,7 +1107,9 @@ def resolve_inbox_path(
     return common_dir / path
 
 
-def resolve_review_state_path(repo_root: pathlib.Path, inbox: dict[str, object]) -> pathlib.Path:
+def resolve_review_state_path(
+    repo_root: pathlib.Path, inbox: dict[str, object]
+) -> pathlib.Path:
     return resolve_inbox_path(repo_root, inbox, "review_state_file")
 
 
@@ -1086,7 +1131,9 @@ def load_completion_events(path: pathlib.Path) -> list[dict[str, object]]:
                 f"invalid completion event JSON at {path}:{line_number}: {exc}"
             ) from exc
         if not isinstance(event, dict):
-            raise SystemExit(f"completion event at {path}:{line_number} must be an object")
+            raise SystemExit(
+                f"completion event at {path}:{line_number} must be an object"
+            )
         events.append(event)
     return events
 
@@ -1121,7 +1168,9 @@ def validate_event_artifact_identity(
             return errors
         if component == repo_root:
             break
-    expected_parent = (repo_root / ".codex" / "stages" / stage_id / "artifacts").resolve()
+    expected_parent = (
+        repo_root / ".codex" / "stages" / stage_id / "artifacts"
+    ).resolve()
     try:
         artifact = candidate.resolve(strict=True)
     except OSError:
@@ -1159,11 +1208,13 @@ def check_pending_completion_events(
     failures: list[str] = []
     relevant: list[dict[str, object]] = []
     for event in events:
+        if event.get("stage_id") != stage_id:
+            continue
         if exact_identity:
-            failures.extend(validate_event_artifact_identity(repo_root, stage_id, event))
-            relevant.append(event)
-        elif event.get("stage_id") == stage_id:
-            relevant.append(event)
+            failures.extend(
+                validate_event_artifact_identity(repo_root, stage_id, event)
+            )
+        relevant.append(event)
     pending = [
         event.get("event_id")
         for event in relevant
@@ -1188,8 +1239,13 @@ def load_reviewed_state(path: pathlib.Path) -> dict[str, dict[str, object]]:
     reviewed = payload.get("reviewed") if isinstance(payload, dict) else None
     if not isinstance(reviewed, dict):
         raise SystemExit(f"completion review state {path} is missing a reviewed object")
-    if any(not isinstance(event_id, str) or not isinstance(entry, dict) for event_id, entry in reviewed.items()):
-        raise SystemExit(f"completion review state {path} contains an invalid reviewed entry")
+    if any(
+        not isinstance(event_id, str) or not isinstance(entry, dict)
+        for event_id, entry in reviewed.items()
+    ):
+        raise SystemExit(
+            f"completion review state {path} contains an invalid reviewed entry"
+        )
     return reviewed
 
 
@@ -1217,7 +1273,9 @@ def unresolved_blocking_review_findings(
     for entry in scoped.values():
         if entry.get("decision") != "accepted":
             continue
-        if entry.get("verify") != "passed" or not isinstance(entry.get("artifact_path"), str):
+        if entry.get("verify") != "passed" or not isinstance(
+            entry.get("artifact_path"), str
+        ):
             continue
         links = entry.get("resolves_review")
         if isinstance(links, list):
@@ -1230,9 +1288,13 @@ def unresolved_blocking_review_findings(
             continue
         decision = entry.get("decision")
         if decision == "accepted":
-            failures.append(f"{event_id}: P0/P1 finding cannot be accepted directly; record a linked correction")
+            failures.append(
+                f"{event_id}: P0/P1 finding cannot be accepted directly; record a linked correction"
+            )
         elif event_id not in resolved:
-            failures.append(f"{event_id}: {severity} finding has no linked accepted correction")
+            failures.append(
+                f"{event_id}: {severity} finding has no linked accepted correction"
+            )
     return failures
 
 
@@ -1252,7 +1314,9 @@ def check_blocking_review_findings(
     if not failures:
         print("blocking review findings OK")
         return
-    print("P0/P1 review findings must be fixed before stage acceptance:", file=sys.stderr)
+    print(
+        "P0/P1 review findings must be fixed before stage acceptance:", file=sys.stderr
+    )
     for failure in failures:
         print(f"- {failure}", file=sys.stderr)
     raise SystemExit(1)
@@ -1284,12 +1348,15 @@ def run_shell(command: str, cwd: pathlib.Path, dry_run: bool) -> None:
 
 
 def git_available(repo_root: pathlib.Path) -> bool:
-    return subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def git_diff_text(repo_root: pathlib.Path) -> str:
@@ -1325,8 +1392,7 @@ def is_probably_binary(path: pathlib.Path) -> bool:
     except UnicodeDecodeError:
         return True
     return any(
-        ord(character) < 32 and character not in "\b\t\n\f\r"
-        for character in decoded
+        ord(character) < 32 and character not in "\b\t\n\f\r" for character in decoded
     )
 
 
@@ -1362,7 +1428,9 @@ def changed_line_debt_hits(repo_root: pathlib.Path) -> list[str]:
         if not path.is_file() or is_probably_binary(path):
             continue
         try:
-            for line_number, line in enumerate(path.read_text(errors="ignore").splitlines(), start=1):
+            for line_number, line in enumerate(
+                path.read_text(errors="ignore").splitlines(), start=1
+            ):
                 if any(pattern in line for pattern in DEBT_POLICY_REFERENCE_PATTERNS):
                     continue
                 if DEBT_MARKER_PATTERN.search(line):
@@ -1398,7 +1466,9 @@ def git_changed_files(repo_root: pathlib.Path) -> list[str]:
         capture_output=True,
     )
     if result.returncode == 0:
-        changed.extend(line.strip() for line in result.stdout.splitlines() if line.strip())
+        changed.extend(
+            line.strip() for line in result.stdout.splitlines() if line.strip()
+        )
 
     untracked = subprocess.run(
         ["git", "ls-files", "--others", "--exclude-standard"],
@@ -1407,7 +1477,9 @@ def git_changed_files(repo_root: pathlib.Path) -> list[str]:
         capture_output=True,
     )
     if untracked.returncode == 0:
-        changed.extend(line.strip() for line in untracked.stdout.splitlines() if line.strip())
+        changed.extend(
+            line.strip() for line in untracked.stdout.splitlines() if line.strip()
+        )
 
     return sorted(set(changed))
 
@@ -1419,8 +1491,12 @@ def stage_summary_text(repo_root: pathlib.Path, stage_id: str) -> str:
     return summary.read_text(errors="ignore")
 
 
-def check_project_index_review(repo_root: pathlib.Path, contract: dict[str, object], stage_id: str) -> None:
-    project_index_path = str(contract.get("project_index_file", ".codex/project-index.md"))
+def check_project_index_review(
+    repo_root: pathlib.Path, contract: dict[str, object], stage_id: str
+) -> None:
+    project_index_path = str(
+        contract.get("project_index_file", ".codex/project-index.md")
+    )
     changed = git_changed_files(repo_root)
     if not changed:
         print("project index review OK (no changed files)")
@@ -1445,7 +1521,10 @@ def check_project_index_review(repo_root: pathlib.Path, contract: dict[str, obje
         print("project index review OK (stage summary records no-change review)")
         return
 
-    print("Structural changes require project index review before stage close:", file=sys.stderr)
+    print(
+        "Structural changes require project index review before stage close:",
+        file=sys.stderr,
+    )
     for path in structural_changes[:20]:
         print(f"- {path}", file=sys.stderr)
     if len(structural_changes) > 20:
@@ -1475,7 +1554,12 @@ def documentation_impact(changed: list[str]) -> list[str]:
     if not non_docs:
         return ["docs-only"]
 
-    if all(path.startswith("tests/") or "/tests/" in path or path.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", "_test.py")) for path in non_docs):
+    if all(
+        path.startswith("tests/")
+        or "/tests/" in path
+        or path.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", "_test.py"))
+        for path in non_docs
+    ):
         categories.add("tests-only")
 
     structural = [
@@ -1487,7 +1571,10 @@ def documentation_impact(changed: list[str]) -> list[str]:
     if structural:
         categories.add("structural")
 
-    if any(path.startswith(("migrations/", "db/migrations/", "supabase/migrations/")) for path in non_docs):
+    if any(
+        path.startswith(("migrations/", "db/migrations/", "supabase/migrations/"))
+        for path in non_docs
+    ):
         categories.add("migration")
 
     if any(
@@ -1498,7 +1585,15 @@ def documentation_impact(changed: list[str]) -> list[str]:
         categories.add("ops-deploy")
 
     if any(
-        path.startswith(("api/", "src/api/", "src/server/", "packages/shared", "packages/shared-types"))
+        path.startswith(
+            (
+                "api/",
+                "src/api/",
+                "src/server/",
+                "packages/shared",
+                "packages/shared-types",
+            )
+        )
         or "contract" in path.lower()
         or "schema" in path.lower()
         for path in non_docs
@@ -1530,7 +1625,10 @@ def check_documentation_review(repo_root: pathlib.Path, stage_id: str) -> None:
         "`docs-reviewed: no-change-needed - <reason>` to the stage summary",
         file=sys.stderr,
     )
-    print("- update stable docs first when the impact changes navigation, contracts, ops, migrations, integrations, or durable behavior", file=sys.stderr)
+    print(
+        "- update stable docs first when the impact changes navigation, contracts, ops, migrations, integrations, or durable behavior",
+        file=sys.stderr,
+    )
     raise SystemExit(1)
 
 
@@ -1557,7 +1655,9 @@ def check_debt_markers(repo_root: pathlib.Path, contract: dict[str, object]) -> 
         print("debt marker scan OK (tracked defer recorded)")
         return
 
-    print("Changed-line debt markers require action before stage close:", file=sys.stderr)
+    print(
+        "Changed-line debt markers require action before stage close:", file=sys.stderr
+    )
     for hit in hits[:20]:
         print(f"- {hit}", file=sys.stderr)
     if len(hits) > 20:
@@ -1602,7 +1702,9 @@ def main(argv: list[str]) -> int:
         and enforcement.get("artifact_required_for_stage_close") is True
     )
     if artifacts_required and args.stage_id and not artifacts:
-        artifacts_dir = repo_root / ".codex" / "stages" / str(args.stage_id) / "artifacts"
+        artifacts_dir = (
+            repo_root / ".codex" / "stages" / str(args.stage_id) / "artifacts"
+        )
         raise SystemExit(f"missing stage artifacts: {artifacts_dir}")
     artifact_level = artifact_metadata(artifacts)[0]
     level = select_orchestration_level(args.level, artifacts, contract)
@@ -1678,7 +1780,9 @@ def main(argv: list[str]) -> int:
                 and reuse_unchanged_evidence
                 and args.must_run_reason is None
             ):
-                print(f"evidence reuse: {execution.group} {execution.identity.source_digest if execution.identity else ''}")
+                print(
+                    f"evidence reuse: {execution.group} {execution.identity.source_digest if execution.identity else ''}"
+                )
                 completed.append(execution)
                 continue
             run_shell(execution.command, repo_root, args.dry_run)
@@ -1696,8 +1800,7 @@ def main(argv: list[str]) -> int:
             if (
                 execution.identity is not None
                 and refreshed.identity is not None
-                and execution.identity.source_digest
-                != refreshed.identity.source_digest
+                and execution.identity.source_digest != refreshed.identity.source_digest
             ):
                 print(
                     f"evidence not recorded: source set changed during {execution.group}",
@@ -1766,7 +1869,9 @@ def main(argv: list[str]) -> int:
         if exact_state_enabled:
             state_errors = validate_stage_state(repo_root, contract, stage_id)
             if state_errors:
-                raise SystemExit("stage state mismatch:\n- " + "\n- ".join(state_errors))
+                raise SystemExit(
+                    "stage state mismatch:\n- " + "\n- ".join(state_errors)
+                )
         check_pending_completion_events(
             repo_root,
             contract,

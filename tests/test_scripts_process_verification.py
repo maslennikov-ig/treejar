@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -123,6 +124,51 @@ class ProcessVerificationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
             self.assertIn("total_events: 0", result.stdout)
             self.assertIn("pending_events: 0", result.stdout)
+
+    def test_stage_closeout_ignores_historical_events_from_other_stages(
+        self,
+    ) -> None:
+        stage_closeout = _load_stage_closeout()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+            contract = {
+                "completion_inbox": {
+                    "scope": "git_common_dir",
+                    "events_file": "codex-orchestration/completions.ndjson",
+                    "review_state_file": "codex-orchestration/review-state.json",
+                }
+            }
+            common_dir = Path(
+                subprocess.check_output(
+                    ["git", "rev-parse", "--git-common-dir"],
+                    cwd=tmp_path,
+                    text=True,
+                ).strip()
+            )
+            if not common_dir.is_absolute():
+                common_dir = (tmp_path / common_dir).resolve()
+            runtime_dir = common_dir / "codex-orchestration"
+            runtime_dir.mkdir()
+            (runtime_dir / "completions.ndjson").write_text(
+                json.dumps(
+                    {
+                        "event_id": "historical-event",
+                        "task_id": "tj-old.1",
+                        "stage_id": "tj-old",
+                        "artifact_path": (".codex/stages/tj-old/artifacts/tj-old.1.md"),
+                    }
+                )
+                + "\n"
+            )
+            (runtime_dir / "review-state.json").write_text('{"reviewed": {}}\n')
+
+            stage_closeout.check_pending_completion_events(
+                tmp_path,
+                contract,
+                "tj-current",
+                exact_identity=True,
+            )
 
     def test_stage_ready_requires_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
