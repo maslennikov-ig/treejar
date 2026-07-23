@@ -48,8 +48,16 @@ No scope split or preservation ledger is active.
 
 ## Verification
 
-- Stage sizing: pending initial manifest validation.
-- Clean baseline: pending dependency setup and canonical test run.
+- Clean baseline after orchestration guardrail repair:
+  - `scripts/orchestration/run_process_verification.sh`: passed
+  - `uv run ruff check src/ tests/`: passed
+  - `uv run ruff format --check src/ tests/`: passed
+  - `uv run mypy src/`: passed
+  - `uv run pytest tests/ -q --tb=short`: `1431 passed, 19 skipped`
+- Delegation decision: API/health, Zoho/inbound, and operational-state streams
+  pass the isolation and material-benefit gates. Runtime visibility, latency,
+  API-contract cleanup, repository cleanup, and closeout remain sequential
+  until the first integration boundary.
 
 ## Approval Gates
 

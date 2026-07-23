@@ -109,5 +109,31 @@
   "scope_anchor": ".codex/goals/tj-av22/scope-criterion-snapshot.json",
   "scope_anchor_digest": "168ccf763e17ab52a7b27c626eb19f4143fb21b1835a6f7ee3cde5709d873782",
   "scope_ledger": "none",
-  "stream_artifacts": []
+  "stream_artifacts": [
+    {
+      "task_id": "tj-9c94",
+      "stream_owner": "api-health-worker",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-9c94.md"
+    },
+    {
+      "task_id": "tj-38l5",
+      "stream_owner": "api-health-worker",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-38l5.md"
+    },
+    {
+      "task_id": "tj-p9ui",
+      "stream_owner": "zoho-inbound-worker",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-p9ui.md"
+    },
+    {
+      "task_id": "tj-ymi3",
+      "stream_owner": "operations-worker",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-ymi3.md"
+    },
+    {
+      "task_id": "tj-092y",
+      "stream_owner": "operations-worker",
+      "artifact_path": ".codex/stages/tj-av22/artifacts/tj-092y.md"
+    }
+  ]
 }
