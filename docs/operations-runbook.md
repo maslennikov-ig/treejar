@@ -193,7 +193,10 @@ replay it only as an exact, separately approved production recovery action.
 Signals contain codes, numeric values, thresholds, sources, ownership, and
 remediation only. They do not include tokens, credentials, phone numbers,
 message bodies, raw job arguments, or OAuth response payloads. Each Telegram
-signal uses a 30-minute Redis cooldown by default.
+signal uses a 30-minute Redis cooldown by default. The cooldown is retained only
+after Telegram confirms delivery. Missing Telegram credentials skip the send
+without claiming a cooldown; a no-op or failed delivery releases its claim so
+the next monitoring interval can retry.
 
 ### Enable after approval
 

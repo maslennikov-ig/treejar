@@ -236,6 +236,64 @@ async def test_telegram_webhook_accepts_valid_secret(client: AsyncMock) -> None:
 
 
 @pytest.mark.asyncio
+async def test_send_telegram_message_reports_confirmed_delivery() -> None:
+    from src.services.notifications import send_telegram_message
+
+    client = MagicMock()
+    client.send_message = AsyncMock(return_value={"ok": True, "result": {}})
+
+    with patch(
+        "src.services.notifications._get_telegram_client",
+        return_value=client,
+    ):
+        delivered = await send_telegram_message("runtime signal")
+
+    assert delivered is True
+    client.send_message.assert_awaited_once_with("runtime signal")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "send_result",
+    [
+        None,
+        {"ok": False},
+    ],
+)
+async def test_send_telegram_message_reports_noop_as_undelivered(
+    send_result: dict[str, object] | None,
+) -> None:
+    from src.services.notifications import send_telegram_message
+
+    client = MagicMock()
+    client.send_message = AsyncMock(return_value=send_result)
+
+    with patch(
+        "src.services.notifications._get_telegram_client",
+        return_value=client,
+    ):
+        delivered = await send_telegram_message("runtime signal")
+
+    assert delivered is False
+
+
+@pytest.mark.asyncio
+async def test_send_telegram_message_reports_transport_failure_as_undelivered() -> None:
+    from src.services.notifications import send_telegram_message
+
+    client = MagicMock()
+    client.send_message = AsyncMock(side_effect=RuntimeError("transport failed"))
+
+    with patch(
+        "src.services.notifications._get_telegram_client",
+        return_value=client,
+    ):
+        delivered = await send_telegram_message("runtime signal")
+
+    assert delivered is False
+
+
+@pytest.mark.asyncio
 async def test_notify_escalation_formats_html() -> None:
     """notify_escalation should format HTML with masked phone, reason, and link."""
     from src.services.notifications import format_escalation_message

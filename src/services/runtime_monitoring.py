@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,6 +26,12 @@ ZOHO_OAUTH_FAILURES_KEY = "zoho:oauth:failures"
 _INBOUND_JOB_FUNCTION = "process_incoming_batch"
 _LOOKBACK = timedelta(hours=1)
 _STALE_ESCALATION_AGE = timedelta(days=30)
+_RELEASE_CLAIM_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
 
 
 class RuntimeSnapshot(BaseModel):
@@ -205,17 +212,35 @@ async def claim_signal_delivery(
     *,
     code: str,
     cooldown_seconds: int,
-) -> bool:
+    owner_token: str | None = None,
+) -> str | None:
     """Claim a cooldown window before sending one external notification."""
     if cooldown_seconds <= 0:
         raise ValueError("cooldown_seconds must be positive")
+    token = owner_token or secrets.token_hex(16)
     claimed = await redis.set(
         f"runtime-alert:{code}",
-        "1",
+        token,
         ex=cooldown_seconds,
         nx=True,
     )
-    return bool(claimed)
+    return token if claimed else None
+
+
+async def release_signal_delivery(
+    redis: Any,
+    *,
+    code: str,
+    owner_token: str,
+) -> bool:
+    """Release a failed delivery claim only while this caller still owns it."""
+    released = await redis.eval(
+        _RELEASE_CLAIM_SCRIPT,
+        1,
+        f"runtime-alert:{code}",
+        owner_token,
+    )
+    return bool(released)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -424,11 +449,24 @@ async def run_runtime_monitoring(ctx: dict[str, Any]) -> list[RuntimeSignal]:
         )
         if not settings.runtime_monitoring_telegram_enabled:
             continue
-        if await claim_signal_delivery(
+        if (
+            not settings.telegram_bot_token.strip()
+            or not str(settings.telegram_chat_id).strip()
+        ):
+            continue
+        owner_token = await claim_signal_delivery(
             redis,
             code=signal.code,
             cooldown_seconds=settings.runtime_monitoring_alert_cooldown_seconds,
-        ):
-            await send_telegram_message(_format_runtime_signal(signal))
+        )
+        if owner_token is None:
+            continue
+        delivered = await send_telegram_message(_format_runtime_signal(signal))
+        if not delivered:
+            await release_signal_delivery(
+                redis,
+                code=signal.code,
+                owner_token=owner_token,
+            )
 
     return signals
