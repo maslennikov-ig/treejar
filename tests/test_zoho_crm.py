@@ -71,7 +71,7 @@ async def test_ensure_token_rejects_2xx_without_access_token_and_releases_lock()
     assert isinstance(exc_info.value, ZohoOAuthError)
     assert exc_info.value.retryable is True
     assert "must-not-leak" not in str(exc_info.value)
-    redis.delete.assert_awaited_with("zoho_crm:access_token:lock")
+    redis.eval.assert_awaited_once()
     await client.close()
 
 

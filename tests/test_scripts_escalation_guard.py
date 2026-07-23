@@ -9,7 +9,9 @@ from uuid import uuid4
 import pytest
 from scripts.escalation_guard import (
     ManifestValidationError,
+    _manifest_digest,
     apply_manifest_in_transaction,
+    apply_reconciliation_manifest,
     audit_pending_escalations,
     build_reconciliation_manifest,
     load_reconciliation_manifest,
@@ -251,3 +253,43 @@ async def test_manifest_precondition_failure_rolls_back_whole_transaction() -> N
 
     db.commit.assert_not_awaited()
     db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_rejects_fabricated_action_for_human_owned_pending_row() -> None:
+    escalation, conversation = _pending_pair(
+        conversation_status="active",
+        conversation_escalation_status=EscalationStatus.PENDING.value,
+        age_days=45,
+    )
+    manifest = build_reconciliation_manifest(
+        [(escalation, conversation)],
+        now=datetime(2026, 7, 23, tzinfo=UTC),
+        stale_after_days=30,
+    )
+    expected = {
+        "escalation_status": EscalationStatus.PENDING.value,
+        "conversation_status": "active",
+        "conversation_escalation_status": EscalationStatus.PENDING.value,
+    }
+    manifest["actions"] = [
+        {
+            "escalation_id": str(escalation.id),
+            "conversation_id": str(conversation.id),
+            "expected": expected,
+            "target": {
+                **expected,
+                "escalation_status": EscalationStatus.RESOLVED.value,
+            },
+        }
+    ]
+    manifest["digest"] = _manifest_digest(manifest)
+    db = AsyncMock()
+    result = MagicMock()
+    result.all.return_value = [(escalation, conversation)]
+    db.execute.return_value = result
+
+    with pytest.raises(ManifestValidationError, match="not safe to resolve"):
+        await apply_reconciliation_manifest(db, manifest)
+
+    assert escalation.status == EscalationStatus.PENDING.value

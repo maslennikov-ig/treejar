@@ -31,6 +31,12 @@ _TERMINAL_OAUTH_ERROR_CODES = {
     "invalid_refresh_token",
     "unauthorized_client",
 }
+_RELEASE_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
 
 
 class ZohoOAuthError(RuntimeError):
@@ -147,3 +153,19 @@ def parse_zoho_oauth_response(response: httpx.Response) -> ZohoOAuthToken:
 
 def zoho_oauth_transport_error() -> ZohoOAuthError:
     return ZohoOAuthError("transport", retryable=True)
+
+
+async def release_zoho_oauth_lock(
+    redis: Any,
+    *,
+    lock_key: str,
+    owner_token: str,
+) -> bool:
+    """Release a refresh lock only when this caller still owns its lease."""
+    released = await redis.eval(
+        _RELEASE_LOCK_SCRIPT,
+        1,
+        lock_key,
+        owner_token,
+    )
+    return bool(released)

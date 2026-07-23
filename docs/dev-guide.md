@@ -428,7 +428,7 @@ src/integrations/
 |---------|----------|-----|
 | **Message debouncing** | Redis key `debounce:{chat_id}` с TTL 3-5 сек. Серия сообщений -> один batch | Webhook handler |
 | **Webhook idempotency** | `SET debounce:{message_id} NX EX 86400`. Дубль -> drop | Webhook handler |
-| **OAuth distributed lock** | Отдельные CRM/Inventory lock keys: refresh timeout 15s, lock TTL 20s, poll window 20s. Один воркер обновляет токен, остальные ждут кеш | Zoho integrations |
+| **OAuth distributed lock** | Отдельные CRM/Inventory lock keys: refresh timeout 15s, lock TTL 20s, poll window 20s; уникальный owner token и atomic compare-and-delete не позволяют старому владельцу снять новую блокировку | Zoho integrations |
 | **Rolling context window** | System prompt + резюме старых сообщений + последние 5 raw | LLM engine |
 | **24h WhatsApp rule** | >24ч с последнего сообщения -> только template messages | Messaging layer |
 | **PII masking** | Опционально; по умолчанию выключено, чтобы LLM видел телефоны/email для sales-фактов | LLM engine |

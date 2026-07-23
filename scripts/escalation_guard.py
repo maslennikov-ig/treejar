@@ -182,6 +182,16 @@ def _validated_actions(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     if manifest.get("digest") != _manifest_digest(manifest):
         raise ManifestValidationError("manifest digest mismatch")
 
+    stale_after_days = manifest.get("stale_after_days")
+    if (
+        not isinstance(stale_after_days, int)
+        or isinstance(stale_after_days, bool)
+        or stale_after_days < 1
+    ):
+        raise ManifestValidationError(
+            "manifest stale_after_days must be a positive integer"
+        )
+
     actions = manifest.get("actions")
     if not isinstance(actions, list):
         raise ManifestValidationError("manifest actions must be a list")
@@ -302,6 +312,22 @@ async def apply_reconciliation_manifest(
         if current != action["expected"]:
             raise ManifestValidationError(
                 f"state precondition mismatch for {escalation_id}"
+            )
+
+        classification = classify_pending_escalation(
+            escalation_id=escalation.id,
+            conversation_id=conversation.id,
+            phone=conversation.phone,
+            conversation_status=conversation.status,
+            conversation_escalation_status=conversation.escalation_status,
+            escalation_status=escalation.status,
+            escalation_created_at=escalation.created_at,
+            now=datetime.now(UTC),
+            stale_after_days=manifest["stale_after_days"],
+        )
+        if classification.action is not EscalationAction.RESOLVE:
+            raise ManifestValidationError(
+                f"current state is not safe to resolve for {escalation_id}"
             )
 
         escalation.status = action["target"]["escalation_status"]

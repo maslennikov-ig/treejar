@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from src.integrations.inventory.zoho_inventory import ZohoInventoryClient
-from src.integrations.zoho_oauth import ZohoOAuthError
+from src.integrations.zoho_oauth import ZohoOAuthError, release_zoho_oauth_lock
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -112,7 +112,6 @@ async def test_ensure_token_refreshes_and_caches_when_lock_acquired() -> None:
     redis.get.return_value = None
     # Lock acquired
     redis.set.return_value = True
-    redis.delete.return_value = 1
 
     new_token_response = _make_response(
         200,
@@ -130,8 +129,8 @@ async def test_ensure_token_refreshes_and_caches_when_lock_acquired() -> None:
     assert token == "brand_new_token"
     # Token should have been stored in Redis
     redis.set.assert_awaited()
-    # Lock should have been released
-    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    # Lock should have been released only by its owner.
+    redis.eval.assert_awaited_once()
     await client.close()
 
 
@@ -189,7 +188,7 @@ async def test_ensure_token_rejects_malformed_oauth_response_safely(
     assert isinstance(exc_info.value, ZohoOAuthError)
     assert exc_info.value.retryable is retryable
     assert "must-not-leak" not in str(exc_info.value)
-    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    redis.eval.assert_awaited_once()
     await client.close()
 
 
@@ -213,7 +212,7 @@ async def test_ensure_token_classifies_transport_failure_and_releases_lock() -> 
 
     assert exc_info.value.kind == "transport"
     assert exc_info.value.retryable is True
-    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    redis.eval.assert_awaited_once()
     await client.close()
 
 
@@ -254,7 +253,7 @@ async def test_ensure_token_clamps_cache_ttl_to_safe_bounds(
         "brand_new_token",
         ex=expected_ttl,
     )
-    redis.delete.assert_awaited_with("zoho:access_token:lock")
+    redis.eval.assert_awaited_once()
     await client.close()
 
 
@@ -280,13 +279,48 @@ async def test_ensure_token_lock_outlives_refresh_request_timeout() -> None:
         )
         await client._ensure_token()
 
-    redis.set.assert_any_await(
-        "zoho:access_token:lock",
-        "1",
-        ex=20,
-        nx=True,
+    lock_call = next(
+        call
+        for call in redis.set.await_args_list
+        if call.args[0] == "zoho:access_token:lock"
     )
+    assert lock_call.args[1] != "1"
+    assert lock_call.kwargs == {"ex": 20, "nx": True}
+    assert redis.eval.await_args.args[-1] == lock_call.args[1]
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_expired_lock_owner_cannot_release_new_owner_lock() -> None:
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.value = "new-owner"
+
+        async def eval(
+            self,
+            script: str,
+            key_count: int,
+            key: str,
+            owner: str,
+        ) -> int:
+            assert "redis.call('get', KEYS[1]) == ARGV[1]" in script
+            assert key_count == 1
+            assert key == "zoho:access_token:lock"
+            if self.value == owner:
+                self.value = ""
+                return 1
+            return 0
+
+    redis = FakeRedis()
+
+    released = await release_zoho_oauth_lock(
+        redis,
+        lock_key="zoho:access_token:lock",
+        owner_token="expired-owner",
+    )
+
+    assert released is False
+    assert redis.value == "new-owner"
 
 
 # ---------------------------------------------------------------------------

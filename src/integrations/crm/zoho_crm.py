@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,6 +16,7 @@ from src.integrations.zoho_oauth import (
     ZOHO_OAUTH_REFRESH_TIMEOUT_SECONDS,
     ZohoOAuthError,
     parse_zoho_oauth_response,
+    release_zoho_oauth_lock,
     zoho_oauth_transport_error,
 )
 
@@ -81,6 +83,7 @@ class ZohoCRMClient(CRMProvider):
         """Get the current access token, refreshing if necessary via Redis lock."""
         token_key = "zoho_crm:access_token"
         lock_key = "zoho_crm:access_token:lock"
+        lock_owner = uuid.uuid4().hex
 
         # 1. Try to get existing token
         token = await self.redis.get(token_key)
@@ -90,7 +93,7 @@ class ZohoCRMClient(CRMProvider):
         # 2. Acquire lock (race condition protection)
         acquired = await self.redis.set(
             lock_key,
-            "1",
+            lock_owner,
             ex=ZOHO_OAUTH_REFRESH_LOCK_TTL_SECONDS,
             nx=True,
         )
@@ -137,7 +140,11 @@ class ZohoCRMClient(CRMProvider):
 
         finally:
             # 5. Release lock
-            await self.redis.delete(lock_key)
+            await release_zoho_oauth_lock(
+                self.redis,
+                lock_key=lock_key,
+                owner_token=lock_owner,
+            )
 
     async def _request(
         self,
