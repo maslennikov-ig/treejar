@@ -118,8 +118,9 @@
   - [x] Jinja2 шаблоны (`templates/quotation.html` и CSS) с поддержкой разрывов страниц, repeating thead, и footer-а
 - [x] Интеграция Sale Order с Zoho Inventory
   - [x] Запись черновика (Draft) Sale Order в Zoho Inventory для складского учета
-  - [x] `POST /api/v1/inventory/sale-orders/` -- создание заказа
-  - [x] `GET /api/v1/inventory/sale-orders/{order_id}`
+  - [x] Создание и чтение SaleOrder через внутренний `ZohoInventoryClient`
+  - [x] Неиспользуемые публичные `/api/v1/inventory/sale-orders/*` удалены;
+    рабочий бот не зависит от них
 - [x] LLM flow для КП (4 образца КП получены: AA, CH, MS, PY. См. `docs/sample-quotations/`)
   - [x] Tool: `create_quotation` -- собирает данные (имя, компания, email, товары, QTY) и формирует структуру
   - [x] Интеграция генерации PDF и отправки через Wazzup (`client.send_media`)

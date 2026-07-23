@@ -91,7 +91,7 @@ treejar-ai-bot/
 │   │       ├── conversations.py  # CRUD диалогов
 │   │       ├── products.py       # Каталог товаров + поиск
 │   │       ├── crm.py            # Интеграция Zoho CRM (контакты, сделки)
-│   │       ├── inventory.py      # Zoho Inventory (остатки, SaleOrder)
+│   │       ├── inventory.py      # Публичное чтение остатков Zoho Inventory
 │   │       ├── quality.py        # Контроль качества
 │   │       ├── notifications.py  # Protected notification endpoints
 │   │       ├── reports.py        # Protected report endpoints
@@ -125,8 +125,8 @@ treejar-ai-bot/
 │   │   ├── conversation.py       # ConversationCreate/Read/Update
 │   │   ├── product.py            # ProductRead, ProductSearchQuery
 │   │   ├── crm.py                # ContactRead, DealCreate/Read
-│   │   ├── inventory.py          # StockRead, SaleOrderCreate
-│   │   ├── quality.py            # ReviewCreate/Read, ReportQuery
+│   │   ├── inventory.py          # StockLevel
+│   │   ├── quality.py            # QualityReviewCreate/Read
 │   │   └── admin.py              # AdminSettings, PromptConfig
 │   ├── integrations/             # Внешние сервисы (Protocol-абстракции)
 │   │   ├── messaging/            # WhatsApp

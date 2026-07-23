@@ -209,8 +209,7 @@ erDiagram
 │   ├── /contacts            # Контакты
 │   └── /deals               # Сделки
 ├── /inventory/              # Zoho Inventory
-│   ├── /stock               # Остатки
-│   └── /sale-orders         # Создание SaleOrder
+│   └── /stock               # Остатки
 ├── /quality/                # Контроль качества
 │   └── /reviews             # Оценки диалогов
 ├── /notifications/          # Protected operator notification endpoints
@@ -223,6 +222,11 @@ erDiagram
 │   └── /settings            # Настройки
 └── /health                  # Состояние сервиса
 ```
+
+SaleOrder creation/status and aggregate report generation are internal service
+flows, not public Inventory/Quality routes. The bot uses
+`ZohoInventoryClient` directly for SaleOrders; operator reports use the
+protected `/api/v1/reports/generate` endpoint.
 
 ---
 

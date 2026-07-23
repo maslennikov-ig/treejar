@@ -72,6 +72,39 @@ def exact_identity_required(contract: dict) -> bool:
     )
 
 
+def require_runtime_path(
+    repo_root: pathlib.Path,
+    inbox: dict,
+    key: str,
+    resolved_path: pathlib.Path,
+    stage_id: str,
+) -> None:
+    label = f"completion_inbox.{key}"
+    raw_path = pathlib.Path(require_string(inbox.get(key), label))
+    if raw_path.is_absolute() or ".." in raw_path.parts:
+        raise SystemExit(f"{label} must be a safe relative path")
+    if inbox.get("scope", "repo_root") == "git_common_dir":
+        common_dir_raw = subprocess.check_output(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        common_dir = pathlib.Path(common_dir_raw)
+        if not common_dir.is_absolute():
+            common_dir = (repo_root / common_dir).resolve()
+        expected = common_dir / raw_path
+        if resolved_path != expected:
+            raise SystemExit(f"{label} does not match configured git-common path")
+        return
+    if (
+        resolved_path.parent.name != stage_id
+        or resolved_path.parent.parent.name != "stages"
+    ):
+        raise SystemExit(
+            f"{label} is outside exact stage root for {stage_id}: {resolved_path}"
+        )
+
+
 def parse_artifact_metadata(path: pathlib.Path) -> dict[str, str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -147,12 +180,11 @@ def require_exact_events(
     stage_id = workspace.get("current_stage_id") if isinstance(workspace, dict) else None
     if not isinstance(stage_id, str) or not stage_id:
         raise SystemExit("exact inbox review requires workspace.current_stage_id")
-    for label, path in (
-        ("completion_inbox.events_file", events_file),
-        ("completion_inbox.review_state_file", state_file),
-    ):
-        if path.parent.name != stage_id or path.parent.parent.name != "stages":
-            raise SystemExit(f"{label} is outside exact stage root for {stage_id}: {path}")
+    inbox = contract.get("completion_inbox")
+    if not isinstance(inbox, dict):
+        raise SystemExit("exact inbox review requires [completion_inbox]")
+    require_runtime_path(repo_root, inbox, "events_file", events_file, stage_id)
+    require_runtime_path(repo_root, inbox, "review_state_file", state_file, stage_id)
     artifacts_root = (
         repo_root / ".codex" / "stages" / stage_id / "artifacts"
     ).resolve()

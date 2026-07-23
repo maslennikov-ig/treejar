@@ -76,9 +76,6 @@ from .crm import (
 )
 from .health import DependencyHealth, HealthCheckResponse
 from .inventory import (
-    SaleOrderCreate,
-    SaleOrderItem,
-    SaleOrderRead,
     StockLevel,
 )
 from .manager_review import (
@@ -95,8 +92,6 @@ from .product import (
 )
 from .quality import (
     QualityCriterion,
-    QualityReportRequest,
-    QualityReportResponse,
     QualityReviewCreate,
     QualityReviewRead,
 )
@@ -144,14 +139,9 @@ __all__ = [
     "DealRead",
     "DealUpdate",
     # inventory
-    "SaleOrderCreate",
-    "SaleOrderItem",
-    "SaleOrderRead",
     "StockLevel",
     # quality
     "QualityCriterion",
-    "QualityReportRequest",
-    "QualityReportResponse",
     "QualityReviewCreate",
     "QualityReviewRead",
     # admin

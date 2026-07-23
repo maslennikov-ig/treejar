@@ -101,6 +101,9 @@ fi
 for cmd in docker df; do
     require_cmd "$cmd"
 done
+if [ "$APPLY" -eq 1 ]; then
+    require_cmd curl
+fi
 
 log "Docker maintenance start"
 log "Runtime directory: $TARGET_DIR"
@@ -137,10 +140,8 @@ run_cmd docker system df
 log "Filesystem usage after cleanup:"
 run_cmd df -h /
 
-if command -v curl >/dev/null 2>&1; then
-    log "Verifying health endpoint"
-    run_cmd curl --fail --silent --show-error "$HEALTH_URL"
-    printf '\n'
-fi
+log "Verifying health endpoint"
+run_cmd curl --fail --silent --show-error "$HEALTH_URL"
+printf '\n'
 
 log "Docker maintenance complete"
