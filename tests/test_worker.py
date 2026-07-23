@@ -26,6 +26,7 @@ def test_arq_worker_settings_configured() -> None:
     assert "evaluate_realtime_red_flags" in function_names
     assert "evaluate_mature_conversations_quality" in function_names
     assert "evaluate_recent_conversations_quality" in function_names
+    assert "run_runtime_monitoring" in function_names
 
     # Crons should include product sync
     assert settings.cron_jobs is not None
@@ -34,6 +35,7 @@ def test_arq_worker_settings_configured() -> None:
     assert "sync_products_from_treejar_catalog" in cron_names
     assert "evaluate_realtime_red_flags" in cron_names
     assert "evaluate_mature_conversations_quality" in cron_names
+    assert "run_runtime_monitoring" in cron_names
 
 
 def test_inbound_batch_job_has_bounded_retries() -> None:

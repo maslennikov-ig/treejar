@@ -261,7 +261,10 @@ bash scripts/install-docker-maintenance-cron.sh
 crontab -l
 ```
 
-The managed cron job writes logs into `/opt/noor/logs/maintenance/`.
+The managed cron job writes logs and an atomic success/failure heartbeat into
+`/opt/noor/logs/maintenance/`. Runtime monitoring reads the heartbeat from
+`docker-maintenance.status`; Telegram delivery remains separately disabled
+until explicitly approved and enabled.
 
 ### Rollback a Deployment
 If a new deployment causes issues:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     telegram_allowed_inbound_phone: str = "+971551220665"
     telegram_admin_user_ids: str = ""
     telegram_admin_login_ttl_seconds: int = 300
+
+    # Privacy-safe runtime monitoring (external alerts remain opt-in)
+    runtime_monitoring_enabled: bool = False
+    runtime_monitoring_telegram_enabled: bool = False
+    runtime_monitoring_alert_cooldown_seconds: int = Field(default=1800, ge=1)
+    runtime_monitoring_maintenance_status_path: str = Field(
+        default="/opt/noor/logs/maintenance/docker-maintenance.status",
+        min_length=1,
+    )
 
     # API key for internal endpoints (referrals, reports, notifications)
     api_key: str = ""

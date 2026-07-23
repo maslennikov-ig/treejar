@@ -20,7 +20,7 @@ epic_id: tj-av22
 stage_id: tj-av22
 session_id: tj-av22-zoho-inbound
 milestone: noor-zoho-inbound-reliability
-milestone_status: in_progress
+milestone_status: completed
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -65,8 +65,8 @@ depends_on_streams:
   - none
 parallel_decision: parallel
 status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: isolated worktree retained for root-orchestrator review and integration
 risk_level: high
@@ -146,10 +146,11 @@ No live Zoho, Wazzup, Telegram, staging, or production access occurred.
 
 # Delivery / Cleanup
 
-Implementation commit `4824dc7` is on `codex/tj-av22-zoho`. The current
-`codex/tj-av22-stabilization@cae7d7e` was merged without conflict, producing
-merge commit `19a3a5b`. The root orchestrator must review and accept this
-returned stream; the isolated worktree remains available until then.
+Implementation commit `4824dc7` is on `codex/tj-av22-zoho`. The root
+orchestrator reviewed the implementation, merged the returned stream as
+`068ab1a`, and reran the exact 61-test focused suite plus Ruff, format, and
+Mypy successfully. The isolated worktree remains available until approved
+cleanup.
 
 # Risks / Follow-ups / Explicit Defers
 

@@ -17,6 +17,7 @@ Options:
   --builder-reserved-space <size>  Reserved builder cache in conservative mode. Default: 5gb
   --image-until <value>            Retention filter for unused images in conservative mode. Default: 168h
   --log-file <path>                Append all output to a log file.
+  --status-file <path>             Write an atomic success/failure heartbeat after apply.
   -h, --help                       Show this help.
 EOF
 }
@@ -46,6 +47,7 @@ BUILDER_MAX_USED_SPACE="20gb"
 BUILDER_RESERVED_SPACE="5gb"
 IMAGE_UNTIL="168h"
 LOG_FILE=""
+STATUS_FILE=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -81,6 +83,10 @@ while [ "$#" -gt 0 ]; do
             LOG_FILE="$2"
             shift 2
             ;;
+        --status-file)
+            STATUS_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -93,10 +99,40 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+STATUS_FILE="${STATUS_FILE:-$TARGET_DIR/logs/maintenance/docker-maintenance.status}"
+
 if [ -n "$LOG_FILE" ]; then
     mkdir -p "$(dirname "$LOG_FILE")"
     exec > >(tee -a "$LOG_FILE") 2>&1
 fi
+
+write_status() {
+    local status="$1"
+    local status_dir
+    local temporary
+    status_dir="$(dirname "$STATUS_FILE")"
+    temporary="${STATUS_FILE}.tmp.$$"
+    umask 077
+    mkdir -p "$status_dir"
+    printf '{"status":"%s","finished_at_epoch":%s}\n' \
+        "$status" "$(date -u +%s)" > "$temporary"
+    mv "$temporary" "$STATUS_FILE"
+}
+
+record_apply_status() {
+    local result="$?"
+    trap - EXIT
+    if [ "$APPLY" -eq 1 ]; then
+        if [ "$result" -eq 0 ]; then
+            write_status success || result=1
+        else
+            write_status failure || true
+        fi
+    fi
+    exit "$result"
+}
+
+trap record_apply_status EXIT
 
 for cmd in docker df; do
     require_cmd "$cmd"

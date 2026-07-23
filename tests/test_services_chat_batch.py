@@ -12,6 +12,7 @@ from src.integrations.zoho_oauth import ZohoOAuthError
 from src.schemas.webhook import WazzupIncomingMessage
 from src.services.chat import _handle_escalation_fallback, process_incoming_batch
 from src.services.proposal_followup import record_proposal_sent
+from src.services.runtime_monitoring import ZOHO_OAUTH_FAILURES_KEY
 
 
 class MockResult:
@@ -80,6 +81,11 @@ async def test_process_incoming_batch_requeues_transient_zoho_failure_with_backo
         "wazzup_msgs:sensitive-chat",
         *reversed(raw_messages),
     )
+    oauth_call = redis.rpush.await_args
+    assert oauth_call.args[0] == ZOHO_OAUTH_FAILURES_KEY
+    oauth_record = json.loads(oauth_call.args[1])
+    assert oauth_record["error_kind"] == "invalid_payload"
+    assert "sensitive-chat" not in oauth_call.args[1]
     assert exc_info.value.defer_score == 2000
 
 
@@ -118,7 +124,8 @@ async def test_process_incoming_batch_quarantines_terminal_zoho_failure(
         )
 
     redis.lpush.assert_not_awaited()
-    quarantine_call, failure_call = redis.rpush.await_args_list
+    oauth_call, quarantine_call, failure_call = redis.rpush.await_args_list
+    assert oauth_call.args[0] == chat.ZOHO_OAUTH_FAILURES_KEY
     quarantine_key = quarantine_call.args[0]
     assert quarantine_key.startswith(chat.INBOUND_BATCH_QUARANTINE_PREFIX)
     assert quarantine_call.args[1:] == (raw_message,)
@@ -139,7 +146,12 @@ async def test_process_incoming_batch_quarantines_terminal_zoho_failure(
     )
     assert failure_record["failed_at"].endswith("+00:00")
     assert "sensitive-chat" not in failure_call.args[1]
-    redis.ltrim.assert_awaited_once_with(
+    assert redis.ltrim.await_args_list[0].args == (
+        chat.ZOHO_OAUTH_FAILURES_KEY,
+        -1000,
+        -1,
+    )
+    assert redis.ltrim.await_args_list[1].args == (
         chat.INBOUND_BATCH_FAILURES_KEY,
         -1000,
         -1,

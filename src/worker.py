@@ -26,6 +26,7 @@ from src.services.metrics import calculate_and_store_metrics
 from src.services.notifications import run_daily_summary
 from src.services.proposal_followup import run_proposal_followups
 from src.services.reports import run_weekly_report
+from src.services.runtime_monitoring import run_runtime_monitoring
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class WorkerSettings:
         evaluate_escalated_conversations,
         run_daily_summary,
         run_weekly_report,
+        run_runtime_monitoring,
     ]
     cron_jobs = [
         cron(
@@ -127,6 +129,11 @@ class WorkerSettings:
             weekday={0},
             hour={6},
             minute={0},
+            run_at_startup=False,
+        ),
+        cron(
+            run_runtime_monitoring,
+            minute={2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57},
             run_at_startup=False,
         ),
     ]

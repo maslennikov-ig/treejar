@@ -50,6 +50,10 @@ from src.services.outbound_audit import (
 )
 from src.services.proposal_followup import record_customer_reply
 from src.services.public_media import build_signed_product_image_url
+from src.services.runtime_monitoring import (
+    INBOUND_BATCH_FAILURES_KEY,
+    ZOHO_OAUTH_FAILURES_KEY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +61,9 @@ logger = logging.getLogger(__name__)
 LLM_TIMEOUT = 120
 TYPING_REFRESH_INTERVAL_SECONDS = 4.0
 INBOUND_BATCH_MAX_TRIES = 3
-INBOUND_BATCH_FAILURES_KEY = "wazzup:inbound:failures"
 INBOUND_BATCH_QUARANTINE_PREFIX = "wazzup:inbound:quarantine:"
 _INBOUND_BATCH_FAILURE_HISTORY_LIMIT = 1000
+_ZOHO_OAUTH_FAILURE_HISTORY_LIMIT = 1000
 
 VOICE_TRANSCRIPTION_TOO_LARGE_MARKER = (
     "[System: Unreadable voice message (file too large)]"
@@ -112,6 +116,38 @@ def _bot_reply_crm_message_id(
         conversation_id,
         stable_source,
     )
+
+
+async def _record_zoho_oauth_failure(
+    redis: Any,
+    *,
+    batch_id: str,
+    attempt: int,
+    error: ZohoOAuthError,
+    failed_at: datetime,
+) -> None:
+    record = {
+        "attempt": attempt,
+        "batch_id": batch_id,
+        "error_kind": error.kind,
+        "failed_at": failed_at.isoformat(),
+        "retryable": error.retryable,
+    }
+    try:
+        await redis.rpush(
+            ZOHO_OAUTH_FAILURES_KEY,
+            json.dumps(record, sort_keys=True),
+        )
+        await redis.ltrim(
+            ZOHO_OAUTH_FAILURES_KEY,
+            -_ZOHO_OAUTH_FAILURE_HISTORY_LIMIT,
+            -1,
+        )
+    except Exception:
+        logger.exception(
+            "Could not record sanitized Zoho OAuth failure: batch_id=%s",
+            batch_id,
+        )
 
 
 # WhatsApp Formatting Regexes
@@ -497,6 +533,14 @@ async def process_incoming_batch(
         await _process_batch_inner(redis, chat_id, raw_messages)
     except ZohoOAuthError as exc:
         attempt = max(1, int(ctx.get("job_try", 1)))
+        failed_at = datetime.now(UTC)
+        await _record_zoho_oauth_failure(
+            redis,
+            batch_id=batch_id,
+            attempt=attempt,
+            error=exc,
+            failed_at=failed_at,
+        )
         if exc.retryable and attempt < INBOUND_BATCH_MAX_TRIES:
             await redis.lpush(queue_key, *reversed(raw_messages))
             defer_seconds = 2**attempt
@@ -517,7 +561,7 @@ async def process_incoming_batch(
             "attempt": attempt,
             "batch_id": batch_id,
             "error_kind": exc.kind,
-            "failed_at": datetime.now(UTC).isoformat(),
+            "failed_at": failed_at.isoformat(),
             "message_count": len(raw_messages),
             "retryable": exc.retryable,
             "status": "terminal",

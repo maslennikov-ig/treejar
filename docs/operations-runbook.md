@@ -1,9 +1,10 @@
 # Noor Operations Runbook
 
-This runbook covers two approval-gated controls: pending-escalation
-reconciliation and Docker storage maintenance. Both workflows are read-only by
-default. Do not run an apply, cron installation, or rollback against the
-canonical VPS until the exact production action has been approved.
+This runbook covers pending-escalation reconciliation, Docker storage
+maintenance, and privacy-safe runtime signals. Mutating workflows are
+read-only by default. Do not run an apply, cron installation, monitoring config
+change, external notification test, or rollback against the canonical VPS
+until the exact production action has been approved.
 
 ## Pending escalation reconciliation
 
@@ -126,7 +127,10 @@ The installer creates `/opt/noor/logs/maintenance`, requires an executable
 maintenance script, writes exactly one marked conservative entry, and reads the
 crontab back. It reports `Verified Docker maintenance cron readback` only when
 the begin marker, entry, and end marker each occur exactly once. If readback
-fails, it restores the previous crontab automatically.
+fails, it restores the previous crontab automatically. Every approved apply
+atomically writes
+`/opt/noor/logs/maintenance/docker-maintenance.status` with only its final
+success/failure state and completion timestamp.
 
 Confirm the next approved run with:
 
@@ -149,3 +153,59 @@ crontab -l
 
 Restoring a crontab does not restore Docker data already pruned. Docker cleanup
 is therefore approval-gated and intentionally conservative.
+
+## Runtime failure visibility
+
+`run_runtime_monitoring` is registered as a five-minute ARQ cron job but is
+disabled by default. It reads only bounded operational metadata:
+
+- failed ARQ result metadata retained during the previous hour;
+- sanitized Zoho OAuth failure events from `zoho:oauth:failures`;
+- count and oldest age of queued `process_incoming_batch` jobs;
+- count of pending escalation rows older than 30 days;
+- direct Redis and database probes;
+- the Docker maintenance heartbeat described above.
+
+Terminal inbound batches are also recorded in
+`wazzup:inbound:failures` and their original raw payloads are retained under
+`wazzup:inbound:quarantine:<batch_id>`. The first key is bounded sanitized
+metadata. The quarantine key is restricted recovery data and can contain
+customer content; never copy it into logs, tickets, alerts, or chat. Inspect or
+replay it only as an exact, separately approved production recovery action.
+
+### Default thresholds and ownership
+
+| Signal | Default threshold | Destination | Owner | First action |
+|---|---:|---|---|---|
+| `arq_jobs_failed` | 1 failed result in 1 hour | structured log; optional Telegram | Noor operations | Inspect sanitized job result metadata and fix the cause before replay |
+| `zoho_oauth_failed` | 1 refresh failure in 1 hour | structured log; optional Telegram | Noor operations | Check the error class and Zoho account configuration |
+| `inbound_queue_backlog` | 25 queued inbound jobs | structured log; optional Telegram | Noor operations | Check worker capacity and queue trend |
+| `inbound_queue_stalled` | oldest inbound job is 120s old | structured log; optional Telegram | Noor operations | Check worker health before replaying anything |
+| `pending_escalations_stale` | 1 row older than 30 days | structured log; optional Telegram | Noor operations | Run and review the read-only escalation audit |
+| `health_dependency_failed` | 1 failed Redis/DB probe | structured log; optional Telegram | Noor operations | Inspect dependency health before restart |
+| `maintenance_failed` | last heartbeat reports failure | structured log; optional Telegram | Noor operations | Inspect logs and rerun only in dry-run mode |
+| `maintenance_stale` | heartbeat is 26 hours old | structured log; optional Telegram | Noor operations | Verify cron installation and last run |
+| `maintenance_heartbeat_missing` | status file absent | structured log; optional Telegram | Noor operations | Verify the configured status path and schedule |
+
+Signals contain codes, numeric values, thresholds, sources, ownership, and
+remediation only. They do not include tokens, credentials, phone numbers,
+message bodies, raw job arguments, or OAuth response payloads. Each Telegram
+signal uses a 30-minute Redis cooldown by default.
+
+### Enable after approval
+
+Enabling local collection and structured logs does not enable Telegram:
+
+```dotenv
+RUNTIME_MONITORING_ENABLED=true
+RUNTIME_MONITORING_TELEGRAM_ENABLED=false
+RUNTIME_MONITORING_ALERT_COOLDOWN_SECONDS=1800
+RUNTIME_MONITORING_MAINTENANCE_STATUS_PATH=/opt/noor/logs/maintenance/docker-maintenance.status
+```
+
+After an approved deployment, read the worker logs for one complete monitoring
+interval and confirm that collection succeeds. Set
+`RUNTIME_MONITORING_TELEGRAM_ENABLED=true` only after the exact production
+notification test has separate approval and the existing Telegram destination
+has been verified. Roll back delivery by restoring it to `false`; collection
+and structured logs can remain enabled.

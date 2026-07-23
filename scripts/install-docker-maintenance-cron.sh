@@ -74,6 +74,7 @@ LOG_DIR="${LOG_DIR:-$TARGET_DIR/logs/maintenance}"
 SCRIPT_PATH="$TARGET_DIR/scripts/docker-maintenance.sh"
 CRON_LOG="$LOG_DIR/docker-maintenance.log"
 CRON_STDOUT="$LOG_DIR/docker-maintenance.cron.log"
+STATUS_FILE="$LOG_DIR/docker-maintenance.status"
 
 require_cmd crontab
 reject_cron_unsafe_value "target directory" "$TARGET_DIR"
@@ -102,7 +103,8 @@ TARGET_DIR_QUOTED="$(shell_quote "$TARGET_DIR")"
 SCRIPT_PATH_QUOTED="$(shell_quote "$SCRIPT_PATH")"
 CRON_LOG_QUOTED="$(shell_quote "$CRON_LOG")"
 CRON_STDOUT_QUOTED="$(shell_quote "$CRON_STDOUT")"
-ENTRY="$SCHEDULE cd $TARGET_DIR_QUOTED && bash $SCRIPT_PATH_QUOTED --apply --log-file $CRON_LOG_QUOTED >> $CRON_STDOUT_QUOTED 2>&1"
+STATUS_FILE_QUOTED="$(shell_quote "$STATUS_FILE")"
+ENTRY="$SCHEDULE cd $TARGET_DIR_QUOTED && bash $SCRIPT_PATH_QUOTED --apply --log-file $CRON_LOG_QUOTED --status-file $STATUS_FILE_QUOTED >> $CRON_STDOUT_QUOTED 2>&1"
 CURRENT_CRONTAB="$(crontab -l 2>/dev/null || true)"
 FILTERED_CRONTAB="$(printf '%s\n' "$CURRENT_CRONTAB" | awk -v begin="$MARKER_BEGIN" -v end="$MARKER_END" '
     $0 == begin { skip=1; next }

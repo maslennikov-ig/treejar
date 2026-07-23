@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -66,6 +67,7 @@ def test_docker_maintenance_apply_runs_conservative_cleanup_and_health_check(
     curl_log = tmp_path / "curl.log"
     target_dir = tmp_path / "noor"
     target_dir.mkdir()
+    status_file = tmp_path / "maintenance.status"
 
     _write_executable(
         bin_dir / "docker",
@@ -106,6 +108,8 @@ def test_docker_maintenance_apply_runs_conservative_cleanup_and_health_check(
             str(target_dir),
             "--health-url",
             "http://127.0.0.1:8002/api/v1/health",
+            "--status-file",
+            str(status_file),
         ],
         capture_output=True,
         check=False,
@@ -123,12 +127,16 @@ def test_docker_maintenance_apply_runs_conservative_cleanup_and_health_check(
     assert curl_log.read_text().splitlines() == [
         "--fail --silent --show-error http://127.0.0.1:8002/api/v1/health"
     ]
+    status = json.loads(status_file.read_text())
+    assert status["status"] == "success"
+    assert isinstance(status["finished_at_epoch"], int)
 
 
 def test_docker_maintenance_failed_health_check_is_a_failure(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker_log = tmp_path / "docker.log"
+    status_file = tmp_path / "maintenance.status"
 
     _write_executable(
         bin_dir / "docker",
@@ -149,7 +157,13 @@ def test_docker_maintenance_failed_health_check_is_a_failure(tmp_path: Path) -> 
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
 
     result = subprocess.run(
-        ["bash", str(MAINTENANCE_SCRIPT), "--apply"],
+        [
+            "bash",
+            str(MAINTENANCE_SCRIPT),
+            "--apply",
+            "--status-file",
+            str(status_file),
+        ],
         capture_output=True,
         check=False,
         env=env,
@@ -158,6 +172,7 @@ def test_docker_maintenance_failed_health_check_is_a_failure(tmp_path: Path) -> 
 
     assert result.returncode != 0
     assert "Docker maintenance complete" not in result.stdout
+    assert json.loads(status_file.read_text())["status"] == "failure"
 
 
 def test_cron_installer_rewrites_managed_block_idempotently(tmp_path: Path) -> None:
@@ -228,6 +243,10 @@ def test_cron_installer_rewrites_managed_block_idempotently(tmp_path: Path) -> N
     assert "17 3 * * *" in crontab_contents
     assert (
         str(target_dir / "logs" / "maintenance" / "docker-maintenance.log")
+        in crontab_contents
+    )
+    assert (
+        str(target_dir / "logs" / "maintenance" / "docker-maintenance.status")
         in crontab_contents
     )
     assert "--aggressive" not in crontab_contents
