@@ -49,6 +49,24 @@ def test_extract_catalog_references_captures_quantity_before_sku() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_quantity"),
+    [
+        ("I am considering 2 units of SKU 00-07024023.", 2),
+        ("I need two pieces of SKU CH 616.", 2),
+        ("Please reserve 3 pcs of CP-2.1S.", 3),
+    ],
+)
+def test_extract_catalog_references_preserves_quantity_before_units_of_sku(
+    text: str,
+    expected_quantity: int,
+) -> None:
+    refs = extract_catalog_references(text)
+
+    assert len(refs) == 1
+    assert refs[0].quantity == expected_quantity
+
+
 def test_extract_catalog_references_preserves_multi_item_quantities() -> None:
     refs = extract_catalog_references(
         "I need 2 SKYLAND NOVO 2400 Meeting Table and 4 CH 616 chairs"

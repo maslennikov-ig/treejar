@@ -168,6 +168,28 @@ async def test_dialogue_kernel_hydrates_known_customer_name_from_conversation() 
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_does_not_reask_quantity_for_units_of_sku() -> None:
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Noor QA")
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="I am considering 2 units of SKU 00-07024023.",
+        recent_history=[],
+        is_first_turn=True,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.action == "delegate_quantity_selection_to_legacy"
+    assert result.decision.handled is False
+    assert result.state.slots.selected_items == [{"sku": "00-07024023", "quantity": 2}]
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_shadow_records_bounded_trace_without_handling() -> None:
     from src.dialogue.runner import record_legacy_route, run_dialogue_kernel
 

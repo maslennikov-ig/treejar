@@ -336,7 +336,8 @@ def _quantity_before_ref(normalized_text: str, ref_start: int) -> int | None:
     prefix = normalized_text[max(0, ref_start - 32) : ref_start]
     match = re.search(
         r"(?:^|[^A-Z0-9])(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
-        r"(?:\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?))?\s*$",
+        r"(?:\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?))?"
+        r"(?:\s+OF)?(?:\s+SKU)?\s*$",
         prefix,
         flags=re.IGNORECASE,
     )
