@@ -1099,6 +1099,51 @@ async def test_process_message_dialogue_kernel_enforce_name_gate_before_llm(
 
 
 @pytest.mark.asyncio
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_localizes_first_turn_arabic_name_gate(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    conv.language = "en"
+    conv.metadata_ = {}
+    text = "أبحث عن كرسي مكتب مريح من كتالوج تريجار، وأرجو الرد بالعربية."
+    mock_build_history.return_value = _first_turn_history(text)
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "enforce",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "name_gate",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "dialogue-kernel|name_gate"
+    assert response.text.startswith("مرحبًا، أنا Noor من Treejar.")
+    assert "اسمك" in response.text
+    assert conv.language == "ar"
+    mock_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,

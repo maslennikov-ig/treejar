@@ -111,7 +111,10 @@ from src.services.customer_identity import (
     build_bounded_returning_customer_context,
     format_llm_crm_context,
 )
-from src.services.customer_language import is_arabic_customer_language
+from src.services.customer_language import (
+    is_arabic_customer_language,
+    is_strongly_arabic_customer_text,
+)
 from src.services.customer_memory import (
     CustomerFactsContext,
     FactMergeResult,
@@ -9882,6 +9885,13 @@ async def process_message(
     masked_text, new_piis = mask_pii(combined_text)
     pii_map.update(new_piis)
     is_first_turn = _is_first_turn(history)
+    if (
+        is_first_turn
+        and not is_arabic_customer_language(conv.language)
+        and is_strongly_arabic_customer_text(combined_text)
+    ):
+        conv.language = "ar"
+        await db.flush()
 
     # Escalation is now handled by the agent's escalate_to_manager tool.
     # The agent decides when to escalate based on full conversation context.

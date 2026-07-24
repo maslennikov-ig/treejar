@@ -1,6 +1,7 @@
 from src.services.customer_language import (
     customer_language_name,
     is_arabic_customer_language,
+    is_strongly_arabic_customer_text,
     normalize_customer_language,
 )
 
@@ -23,3 +24,14 @@ def test_customer_language_falls_back_to_english_for_unsupported_output_language
     assert normalize_customer_language(None) == "en"
     assert is_arabic_customer_language("ru") is False
     assert customer_language_name("Russian") == "English"
+
+
+def test_strongly_arabic_customer_text_requires_dominant_arabic_script() -> None:
+    assert (
+        is_strongly_arabic_customer_text(
+            "أبحث عن كرسي مكتب مريح من كتالوج Treejar وأرجو الرد بالعربية."
+        )
+        is True
+    )
+    assert is_strongly_arabic_customer_text("I need an office chair.") is False
+    assert is_strongly_arabic_customer_text("Arabic العربية") is False
