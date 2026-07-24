@@ -1,8 +1,8 @@
 # Orchestrator Handoff
-Updated: 2026-07-23
+Updated: 2026-07-24
 Current branch: `main`
-Current stage id: `tj-rt42`
-Current stage status: accepted and closed
+Current stage id: `tj-15m`
+Current stage status: blocked on Wazzup WhatsApp reconnection
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -67,12 +67,21 @@ Current stage status: accepted and closed
   operations, live synthetic message/latency proof, and destructive cleanup.
   Stage `tj-5o9r` completed the production operations under exact snapshot and
   restore boundaries.
-- The approved `tj-15m` live matrix stopped after one FAQ canary. Both Zoho CRM
-  and Inventory refresh calls return `invalid_code` with no access token; no
-  assistant message was produced, the batch was safely quarantined, no pending
-  escalation remains, and health is green. `tj-15m.7` requires interactive
-  Zoho owner consent and new protected refresh tokens before the matrix can
-  resume.
+- On 2026-07-24 Viktor supplied fresh EU Zoho Self Client grants. CRM and
+  Inventory refresh tokens were rotated through the protected production path;
+  both direct and app-native read-only probes pass, and later deploys preserved
+  the credentials.
+- The resumed `tj-15m` matrix found and fixed three bounded defects: quantity
+  loss in `N units of SKU`, explicit no-quotation requests entering quote
+  routing, and an English first-turn name gate for Arabic input. Releases
+  `e4959e0`, `3ebb69c`, and `cee1f7d` are deployed.
+- GitHub Actions run `30098682854` passed lint, type-check, tests, and deploy.
+  Local release gates pass with `1528 passed, 19 skipped`. Production health is
+  green on exact release `cee1f7d4ba05eba5107d38bd5388c2b5b4622d55`.
+- The configured Wazzup WhatsApp channel reports `qridle`; outbound attempts
+  return `MESSAGE_CHANNEL_UNAVAILABLE`. Recorded timings are internal response
+  persistence only, not customer-visible delivery. No p50/p95/max target is
+  claimed. Task `tj-15m.10` requires the account owner to reconnect the channel.
 
 ## Audit Baseline
 - Local canonical gates were green at audit time: Ruff, format, Mypy, and full
@@ -83,15 +92,19 @@ Current stage status: accepted and closed
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: not opened.
-Recommended action: obtain interactive Zoho owner consent, renew both CRM and
-Inventory refresh tokens under `tj-15m.7`, then resume the exact live latency
-matrix from scenario two.
+Next stage id: `tj-15m` remains active but blocked.
+Recommended action: the Wazzup account owner reconnects the configured WhatsApp
+session and confirms an active/send-capable state. Then run one approved
+synthetic delivery canary, the post-fix Arabic scenario, the
+escalation-and-cleanup scenario, and the complete delivery-aware matrix.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to resume `tj-15m` only after `tj-15m.7` has both new
-Zoho refresh tokens installed through the protected configuration path. Treat
-`tj-av22`, `tj-5o9r`, and `tj-rt42` as accepted history.
+Use $orchestrator-stage to resume `tj-15m` after the configured Wazzup WhatsApp
+channel is reconnected and read-only status is send-capable. First send one
+approved synthetic canary and verify an audited provider delivery id; only then
+run the remaining Arabic and escalation scenarios plus the delivery-aware
+latency matrix. Treat the Zoho rotation and releases through `cee1f7d` as
+accepted history.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -100,9 +113,12 @@ Zoho refresh tokens installed through the protected configuration path. Treat
 - Preserve existing unrelated user files and do not change credentials/scopes.
 
 ## Explicit defers
-- `tj-15m`: blocked after one authorized canary; resume after `tj-15m.7`.
-- `tj-15m.7`: blocked on interactive Zoho owner consent and new CRM/Inventory
-  refresh tokens.
+- `tj-15m`: blocked because Wazzup persisted replies cannot currently be
+  delivered to WhatsApp; resume after `tj-15m.10`.
+- `tj-15m.7`: credential rotation is complete, but its combined matrix
+  acceptance remains blocked by `tj-15m.10`.
+- `tj-15m.10`: external Wazzup account owner must reconnect/re-authorize the
+  configured WhatsApp session.
 - `tj-5o9r`: accepted and closed.
 - `tj-rt42`: accepted and closed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54

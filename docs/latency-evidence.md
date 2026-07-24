@@ -129,3 +129,44 @@ and Inventory refresh tokens in the correct data center, update protected
 production configuration, verify both refreshes, and rerun the exact matrix.
 Until then, no p50, p95, maximum, provider/model, or response-quality target is
 claimed from this attempt.
+
+## Credential restoration and bounded rerun on 2026-07-24
+
+Fresh EU Self Client grants for CRM and Inventory were exchanged before expiry.
+The resulting long-lived refresh tokens were installed through the protected
+production configuration path. Direct and application-native read-only probes
+for both services returned `HTTP 200`; OAuth caches were repopulated, and later
+canonical deployments preserved the rotated configuration.
+
+The resumed bounded run exposed and accepted three product corrections:
+
+- quantities in `N units of SKU <ref>` are retained for numeric, `CH`, and `CP`
+  references;
+- explicit instructions not to create a quotation no longer enter exact-quote
+  routing, and repeated `units of SKU` wrappers are cleaned correctly;
+- strongly Arabic first-turn text sets Arabic before the deterministic Noor
+  identity/name gate.
+
+Releases `e4959e0`, `3ebb69c`, and `cee1f7d` delivered these corrections.
+GitHub Actions run `30098682854` passed lint, type-check, tests, and deployment.
+The final local release suite passed Ruff check, Ruff format check, Mypy over
+`162` source files, and Pytest (`1528 passed, 19 skipped`).
+
+Protected processing observations were FAQ name gate `7.519s`, FAQ answer
+`14.818s`, product `20.748s`, comparison `18.684s`, and corrected order
+`9.481s`. The corrected order retained quantity `2`, used a current
+catalog-and-Zoho-verified SKU, and created no quotation. The pre-correction
+Arabic attempt reproduced the English name gate in `6.285s`; its deployed
+correction is regression-covered.
+
+These values are not customer-visible latency evidence. A read-only Wazzup
+channel check found the configured WhatsApp channel in state `qridle`, and
+outbound audits returned `MESSAGE_CHANNEL_UNAVAILABLE`. Assistant replies were
+persisted but not delivered through WhatsApp. The stage therefore claims no
+customer-visible `p50`, `p95`, or maximum.
+
+The stop rule was applied as soon as the unavailable channel was confirmed.
+No further live messages were sent. Beads `tj-15m.10` tracks the external owner
+action: reconnect/re-authorize the configured WhatsApp session, prove one
+approved synthetic canary is actually delivered, then rerun the post-fix Arabic
+scenario, escalation/cleanup scenario, and delivery-aware matrix.
