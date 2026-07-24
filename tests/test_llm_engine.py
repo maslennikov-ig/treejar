@@ -6983,6 +6983,20 @@ def test_extract_exact_quote_candidate_rejects_stock_price_inquiry_without_exact
     assert candidate is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        ("I am considering 2 units of SKU 00-07024023. Do not create a quotation."),
+        "I need 2 CH 616 chairs, but don't prepare a quote.",
+        "Please verify 2 CP-2.1S without creating a commercial offer.",
+    ],
+)
+def test_extract_exact_quote_candidate_respects_explicit_no_quote_instruction(
+    text: str,
+) -> None:
+    assert extract_exact_quote_candidate(text) is None
+
+
 def test_extract_exact_quote_candidate_accepts_exact_named_item_without_quote_terms() -> (
     None
 ):
@@ -7024,6 +7038,17 @@ def test_extract_exact_quote_candidate_accepts_numeric_hyphenated_sku() -> None:
 
     assert candidate is not None
     assert candidate.quantity == 1
+    assert candidate.item_candidate == "00-07024023"
+    assert candidate.sku == "00-07024023"
+
+
+def test_extract_exact_quote_candidate_cleans_units_of_numeric_sku() -> None:
+    candidate = extract_exact_quote_candidate(
+        "Please prepare a quote for 2 units of SKU 00-07024023."
+    )
+
+    assert candidate is not None
+    assert candidate.quantity == 2
     assert candidate.item_candidate == "00-07024023"
     assert candidate.sku == "00-07024023"
 

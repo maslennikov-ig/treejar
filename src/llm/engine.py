@@ -365,6 +365,16 @@ _QUOTE_REQUEST_TERMS = (
     "проформа",
     "инвойс",
 )
+_EXACT_QUOTE_NEGATION_RE = re.compile(
+    r"\b(?:"
+    r"(?:do\s+not|don't|dont)\s+"
+    r"(?:create|prepare|make|issue|generate|send)|"
+    r"without\s+(?:creating|preparing|making|issuing|generating|sending)"
+    r")\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
+    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
+    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b",
+    re.IGNORECASE,
+)
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
 _EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
 _CONSULTATIVE_QUOTE_BLOCKERS = (
@@ -1316,7 +1326,7 @@ def _extract_bare_quantity_sku_candidate(text: str) -> ExactQuoteCandidate | Non
 def _clean_exact_quote_item_candidate(candidate: str) -> str:
     cleaned = " ".join(_normalize_sku_homoglyphs(candidate).split()).strip(" ,.;:-")
     cleaned = re.sub(
-        r"^(?:for|of|x|pcs?|pieces?|units?|qty)\s+",
+        r"^(?:(?:for|of|x|pcs?|pieces?|units?|qty|sku)\s+)+",
         "",
         cleaned,
         flags=re.IGNORECASE,
@@ -1366,6 +1376,8 @@ def _tokenize_exact_match_text(text: str) -> list[str]:
 
 
 def _has_exact_commitment_intent(normalized: str) -> bool:
+    if _EXACT_QUOTE_NEGATION_RE.search(normalized):
+        return False
     if any(blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS):
         return False
     if any(blocker in normalized for blocker in _EXACT_QUOTE_HIGH_RISK_BLOCKERS):
