@@ -734,6 +734,36 @@ def test_finalizer_recovers_partial_final_commit_marker(
     assert not tuple(protected.glob(".final-commit.*"))
 
 
+def test_finalizer_retries_after_crash_before_final_commit_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    _, _, trusted = _modules()
+    original_replace = trusted.os.replace
+
+    def crash_before_commit(source, destination) -> None:
+        if Path(destination).name == "final-commit.json":
+            raise OSError("simulated crash before final marker rename")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(trusted.os, "replace", crash_before_commit)
+    with pytest.raises(OSError, match="simulated crash"):
+        registry.finalize_run(run_id)
+
+    assert not tracked.exists()
+    assert not protected.exists()
+    monkeypatch.setattr(trusted.os, "replace", original_replace)
+    registry.finalize_run(run_id)
+    registry.open_run(run_id=run_id)
+
+    assert (protected / "final-commit.json").is_file()
+
+
 def test_finalizer_removes_orphan_staging_for_same_run(tmp_path: Path) -> None:
     registry, tracked, protected = _build_verified_run(tmp_path)
     run_id = "synthetic-trusted-run"

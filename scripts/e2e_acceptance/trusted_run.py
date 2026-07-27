@@ -881,6 +881,30 @@ def _write_snapshot_tree(
             os.close(fd)
 
 
+def _write_atomic_final_commit(
+    root: Path,
+    commit: PublishedRunCommit,
+) -> None:
+    fd, temporary_name = tempfile.mkstemp(prefix=".final-commit.", dir=root)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        payload = _canonical_bytes(commit.model_dump(mode="json"))
+        offset = 0
+        while offset < len(payload):
+            offset += os.write(fd, payload[offset:])
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.replace(temporary, root / "final-commit.json")
+        _fsync_directory(root)
+    except Exception:
+        if fd >= 0:
+            os.close(fd)
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def _fsync_directory(path: Path) -> None:
     fd = os.open(path, _directory_flags())
     try:
@@ -1117,8 +1141,12 @@ def _finalize_verified_run(registry: Any, run_id: str) -> None:
     protected_parent = _published_protected_root(registry)
     protected_root = protected_parent / run_id
     if protected_root.exists() and (protected_root / "final-commit.json").is_file():
-        _load_verified_run(registry, run_id)
-        return
+        try:
+            _load_verified_run(registry, run_id)
+        except TrustedRunError:
+            pass
+        else:
+            return
     if tracked_root.exists() or protected_root.exists():
         shutil.rmtree(tracked_root, ignore_errors=True)
         shutil.rmtree(protected_root, ignore_errors=True)
@@ -1145,21 +1173,18 @@ def _finalize_verified_run(registry: Any, run_id: str) -> None:
         os.rename(protected_staging, protected_root)
         _fsync_directory(tracked_root.parent)
         _fsync_directory(protected_parent)
-        _write_snapshot_tree(
+        _write_atomic_final_commit(
             protected_root,
-            {
-                "final-commit.json": PublishedRunCommit(
-                    schema_version="noor-e2e-published-run-commit/v2",
-                    status="committed",
-                    run_id=run_id,
-                    registry_id=registry.registry_id,
-                    snapshot_digest=snapshot.snapshot_digest,
-                    tracked_tree_digest=tracked_tree_digest,
-                    protected_tree_digest=protected_tree_digest,
-                ).model_dump(mode="json")
-            },
+            PublishedRunCommit(
+                schema_version="noor-e2e-published-run-commit/v2",
+                status="committed",
+                run_id=run_id,
+                registry_id=registry.registry_id,
+                snapshot_digest=snapshot.snapshot_digest,
+                tracked_tree_digest=tracked_tree_digest,
+                protected_tree_digest=protected_tree_digest,
+            ),
         )
-        _fsync_directory(protected_root)
         _load_verified_run(registry, run_id)
     except Exception:
         shutil.rmtree(tracked_staging, ignore_errors=True)
