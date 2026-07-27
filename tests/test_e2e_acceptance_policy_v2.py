@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import inspect
 import json
-import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -115,7 +115,7 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
                     producer="production-manager-fidelity-classifier",
                     source_id="synthetic-classifier-event",
                     source_digest="a" * 64,
-                    observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=timezone.utc),
+                    observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
                     passed=False,
                     reason="The delivered reply adds a fact absent from the draft.",
                 )
@@ -135,14 +135,14 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline-source",
-        observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=timezone.utc),
+        observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=UTC),
         inventory={"synthetic:conversation": {"state": "absent"}},
     )
     stale_final = policy.ReadbackObservation.build(
         phase="final",
         collector_id="independent-readback-collector",
         source_id="synthetic-final-source",
-        observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=timezone.utc),
+        observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
         inventory={"synthetic:conversation": {"state": "closed"}},
     )
 
@@ -150,9 +150,9 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
         registry.validate_readback_window(
             baseline=baseline,
             final=stale_final,
-            final_visible_at=[datetime(2026, 7, 27, 10, 0, 3, tzinfo=timezone.utc)],
-            delivered_at=[datetime(2026, 7, 27, 10, 0, 4, tzinfo=timezone.utc)],
-            action_at=[datetime(2026, 7, 27, 10, 0, 5, tzinfo=timezone.utc)],
+            final_visible_at=[datetime(2026, 7, 27, 10, 0, 3, tzinfo=UTC)],
+            delivered_at=[datetime(2026, 7, 27, 10, 0, 4, tzinfo=UTC)],
+            action_at=[datetime(2026, 7, 27, 10, 0, 5, tzinfo=UTC)],
         )
 
 

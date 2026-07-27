@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from scripts.e2e_acceptance.manifest import load_authorization_manifest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AUTHORIZATION_V1_PATH = (
     PROJECT_ROOT / ".codex/stages/tj-ee5f/authorization-manifest.example.json"
+)
+SCENARIO_IDS = tuple(
+    item["scenario_id"]
+    for item in json.loads(
+        (PROJECT_ROOT / ".codex/stages/tj-ee5f/scenario-set.json").read_text(
+            encoding="utf-8"
+        )
+    )["scenarios"]
 )
 
 
@@ -30,7 +38,7 @@ def _registry():
 
 def _authorization(registry, **updates):
     _, execution = _modules()
-    now = datetime(2026, 7, 27, 10, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 27, 10, 0, tzinfo=UTC)
     values = {
         "schema_version": "noor-e2e-authorization/v2",
         "authorization_id": "synthetic-local-auth-v2",
@@ -42,6 +50,9 @@ def _authorization(registry, **updates):
         "compiler_id": registry.compiled_plan.compiler_id,
         "compiled_plan_digest": registry.compiled_plan.plan_digest,
         "execution_ids": tuple(registry.compiled_plan.execution_ids),
+        "execution_input_digests": {
+            identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
+        },
         "adapter_ids": ("fake-local-adapter",),
         "store_ids": execution.StoreIdentities(
             raw_store_id="synthetic-raw-store",
@@ -89,12 +100,13 @@ def test_executor_rejects_v1_and_authorization_v2_cannot_shrink_execution() -> N
     with pytest.raises(Exception, match="v1|V1|authorization/v2"):
         registry.validate_execution_authorization(archival_v1)
 
-    shrunk = _authorization(
-        registry,
-        execution_ids=tuple(registry.compiled_plan.execution_ids[:1]),
-    )
-    with pytest.raises(Exception, match="exact.*29|execution.*drift"):
-        registry.validate_execution_authorization(shrunk)
+    only_execution = registry.compiled_plan.execution_ids[0]
+    with pytest.raises(Exception, match="29|execution.*drift"):
+        _authorization(
+            registry,
+            execution_ids=(only_execution,),
+            execution_input_digests={only_execution: "0" * 64},
+        )
 
 
 def test_authorization_v2_binds_policy_plan_compiler_adapters_and_stores() -> None:
@@ -161,7 +173,7 @@ def test_phase_machine_uses_cursor_and_digest_causality(tmp_path: Path) -> None:
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
-        observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=timezone.utc),
+        observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
     )
     journal.seal_baseline(baseline)
@@ -194,7 +206,7 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
-        observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=timezone.utc),
+        observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
     )
     journal.seal_baseline(baseline)
@@ -220,7 +232,7 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
     with pytest.raises(Exception, match="unknown"):
         journal.anchor_final_turn(
             event_digest="e" * 64,
-            occurred_at=datetime(2026, 7, 27, 10, 1, tzinfo=timezone.utc),
+            occurred_at=datetime(2026, 7, 27, 10, 1, tzinfo=UTC),
         )
 
 
@@ -254,3 +266,166 @@ def test_interrupted_two_phase_attempt_recovers_as_aborted(tmp_path: Path) -> No
     assert recovered.raw_digest is not None
     assert recovered.tracked_digest is None
     assert recovered.commit_digest is not None
+
+
+@pytest.mark.parametrize("scenario_id", SCENARIO_IDS)
+def test_generic_runner_validates_every_canonical_scenario(
+    tmp_path: Path,
+    scenario_id: str,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    scenario = registry.compiled_policy.scenarios[scenario_id]
+    assertion_ids = {
+        item.assertion_id
+        for group in (scenario.checkpoints, scenario.prohibited_outcomes)
+        for item in group.values()
+    }
+    for criterion_id in scenario.criterion_ids:
+        assertion_ids.update(
+            item.assertion_id
+            for item in registry.compiled_policy.criteria[
+                criterion_id
+            ].oracle_checks.values()
+        )
+    planned = execution.PlannedTurnV2(
+        turn_id="turn-001",
+        customer_input_digest="1" * 64,
+        expected_behavior_digest="2" * 64,
+        criterion_ids=scenario.criterion_ids,
+        assertion_ids=tuple(sorted(assertion_ids)),
+    )
+    timeline = execution.TurnTimelineV2(
+        sent_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
+        first_visible_at=datetime(2026, 7, 27, 10, 0, 1, tzinfo=UTC),
+        final_visible_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
+        delivered_at=datetime(2026, 7, 27, 10, 0, 3, tzinfo=UTC),
+    )
+    actual = execution.ActualTurnV2(
+        actual_turn_id="turn-001",
+        planned_turn_id="turn-001",
+        customer_input_digest=planned.customer_input_digest,
+        expected_behavior_digest=planned.expected_behavior_digest,
+        criterion_ids=planned.criterion_ids,
+        assertion_ids=planned.assertion_ids,
+        event_refs=("synthetic-event",),
+        tool_refs=(),
+        audit_refs=("synthetic-audit",),
+        timeline=timeline,
+        model_id="fixture/model",
+        token_count=1,
+        cost_usd=0,
+    )
+    oracle_evidence = []
+    for assertion_id in sorted(assertion_ids):
+        assertion = registry.compiled_policy.assertions[assertion_id]
+        if assertion.oracle.kind == "classifier_result":
+            classifier = policy.ClassifierResult(
+                classifier_id=assertion.oracle.classifier_id,
+                producer=assertion.oracle.allowed_producers[0],
+                source_id=f"{assertion_id}:classifier",
+                source_digest="3" * 64,
+                observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
+                passed=True,
+                reason="Structured classifier passed.",
+            )
+            oracle_evidence.append(
+                policy.OracleEvidence(
+                    assertion_id=assertion_id,
+                    structured_events=(),
+                    tool_results=(),
+                    readbacks=(),
+                    classifier_results=(classifier,),
+                    text_supplements=(),
+                )
+            )
+        else:
+            event = policy.StructuredEvent(
+                assertion_id=assertion_id,
+                producer=assertion.oracle.allowed_producers[0],
+                source_id=f"{assertion_id}:event",
+                source_digest="4" * 64,
+                observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
+                passed=True,
+                reason="Structured evidence passed.",
+            )
+            oracle_evidence.append(
+                policy.OracleEvidence(
+                    assertion_id=assertion_id,
+                    structured_events=(event,),
+                    tool_results=(),
+                    readbacks=(),
+                    classifier_results=(),
+                    text_supplements=(),
+                )
+            )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id=f"{scenario_id}:baseline",
+        observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=UTC),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    final = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id="independent-readback-collector",
+        source_id=f"{scenario_id}:final",
+        observed_at=datetime(2026, 7, 27, 10, 0, 5, tzinfo=UTC),
+        inventory={"synthetic:item": {"state": "closed"}},
+    )
+    attempt = execution.ScenarioAttemptV2(
+        schema_version="noor-e2e-scenario-attempt/v2",
+        execution_id=scenario_id,
+        planned_turns=(planned,),
+        actual_turns=(actual,),
+        adaptive_deviations=(),
+        oracle_evidence=tuple(oracle_evidence),
+        permission_evidence=scenario.required_permissions,
+        readback_evidence=scenario.required_readbacks,
+        baseline=baseline,
+        final=final,
+        action_at=(datetime(2026, 7, 27, 10, 0, 4, tzinfo=UTC),),
+        tester_config_digest="5" * 64,
+        judge_config_digest="6" * 64,
+    )
+    plan_digest = execution.scenario_plan_digest(attempt)
+    input_digests = {
+        identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
+    }
+    input_digests[scenario_id] = plan_digest
+    authorization = _authorization(
+        registry,
+        execution_input_digests=input_digests,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id=f"run-{scenario_id.lower()}",
+        authorization=authorization,
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+    runner = execution.GenericAcceptanceRunner(
+        registry=registry,
+        authorization=authorization,
+        journal=journal,
+    )
+
+    result = runner.validate_attempt(attempt)
+
+    assert result.execution_id == scenario_id
+    assert result.outcome == "PASS"
+    assert result.plan_digest == plan_digest
+    assert (
+        result.attempt_digest
+        == hashlib.sha256(
+            (
+                json.dumps(
+                    attempt.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            ).encode("utf-8")
+        ).hexdigest()
+    )
