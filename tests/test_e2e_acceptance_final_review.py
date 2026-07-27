@@ -562,6 +562,36 @@ def test_runtime_has_no_mutable_operator_root_hook() -> None:
     assert not hasattr(trusted, "_PROTECTED_STORE_ROOT")
 
 
+def test_production_registry_has_only_no_arg_canonical_factory() -> None:
+    policy, _, _ = _modules()
+
+    assert tuple(inspect.signature(policy.TrustedAcceptanceRegistry).parameters) == ()
+    assert tuple(
+        inspect.signature(
+            policy.TrustedAcceptanceRegistry.from_canonical_repo
+        ).parameters
+    ) == ()
+    assert not hasattr(policy.TrustedAcceptanceRegistry, "open_contracts")
+
+
+def test_production_trust_path_has_no_object_setattr_context_replacement() -> None:
+    policy, _, trusted = _modules()
+
+    assert "object.__setattr__" not in inspect.getsource(policy)
+    assert "object.__setattr__" not in inspect.getsource(trusted)
+
+
+def test_snapshot_commit_binds_journal_authorization_attempts_and_store() -> None:
+    _, _, trusted = _modules()
+
+    assert {
+        "authorization_digest",
+        "journal_head_digest",
+        "attempt_chain_heads_digest",
+        "operator_store_digest",
+    } <= set(trusted.ProtectedSnapshotCommit.model_fields)
+
+
 def test_registry_trust_context_is_frozen_and_has_no_mutable_digest_stores() -> None:
     registry = _registry()
 
@@ -620,6 +650,23 @@ def test_finalizer_recovers_crash_after_tracked_publication(tmp_path: Path) -> N
 
     assert not (tracked / "partial.json").exists()
     assert (protected / "final-commit.json").is_file()
+
+
+def test_finalizer_removes_orphan_staging_for_same_run(tmp_path: Path) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    tracked_orphan = tracked.parent / f".{run_id}.orphan"
+    protected_orphan = protected.parent / f".{run_id}.orphan"
+    tracked_orphan.mkdir()
+    protected_orphan.mkdir()
+
+    registry.finalize_run(run_id)
+
+    assert not tracked_orphan.exists()
+    assert not protected_orphan.exists()
 
 
 def test_runtime_has_no_local_or_caller_decisive_artifact_loader() -> None:
