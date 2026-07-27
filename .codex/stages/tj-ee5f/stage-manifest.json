@@ -7,8 +7,8 @@
   "sequence": 1,
   "acceptance_boundary_id": "noor-agent-driven-e2e-acceptance",
   "acceptance_owner": "root-orchestrator",
-  "stage_shape": "cohesive_vertical_slice",
-  "stage_boundary_reason": "shared_acceptance_boundary",
+  "stage_shape": "material_boundary_override",
+  "stage_boundary_reason": "unresolved_public_ownership_or_public_contract",
   "boundary": {
     "subsystems": [
       "acceptance-contracts",
@@ -214,7 +214,7 @@
   },
   "scope_anchor": ".codex/goals/tj-ee5f/scope-criterion-snapshot.json",
   "scope_anchor_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "scope_ledger": "none",
+  "scope_ledger": ".codex/stages/tj-ee5f/scope-preservation-ledger.json",
   "stream_artifacts": [
     {
       "task_id": "tj-ee5f-design-review",
@@ -225,6 +225,11 @@
       "task_id": "tj-ee5f-task-1",
       "stream_owner": "python-pro-task-1",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-task-1.md"
+    },
+    {
+      "task_id": "tj-ee5f.3-policy-v2",
+      "stream_owner": "ai-product-engineer-policy-v2",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.3-policy-v2.md"
     }
   ],
   "scope_provenance": {
