@@ -93,8 +93,10 @@ verification:
   - final bounded review focused GREEN: pure passed 80 tests, runtime passed 65 selected tests, and smoke passed 37 selected tests
   - bounded interaction RED: three immediate conditional-list cases failed in pure and runtime; smoke additionally false-rejected one quoted present claim
   - bounded interaction focused GREEN: 43 pure, 41 runtime-selected, and 59 smoke-selected tests passed with ordinary unquoted/list assertions retained as negative controls
+  - final broad-smoke RED: the public quote masker was absent and three otherwise-valid unquoted broad stock assertions passed smoke while three quoted controls passed
+  - final broad-smoke focused GREEN: public helper passed its offset/apostrophe test and 47 quote-aware broad/SKU smoke cases passed
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 605 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 612 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
@@ -176,6 +178,12 @@ single decision source. Immediate `if`/`whether`/`when` scope now propagates
 across one colon/newline list boundary. Ordinary newline/list SKU assertions
 without that immediate conditional introducer remain evidence-gated.
 
+The final smoke correction exposes the production quote masker as
+`visible_grounding_text()`. Legacy broad non-SKU phrase and inventory patterns
+now inspect its quote-masked normalized output. This restores rejection of
+unquoted `product/chair is in stock` and `available now` assertions without
+false-rejecting quoted equivalents or widening the SKU-bounded runtime guard.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -210,9 +218,11 @@ non-SKU controls, and singular/plural unrelated warehouse checks. Final-review
 coverage adds contracted negative states, dash/newline/list assertions, paired
 single-quote safety, and contraction/possessive negative controls. Interaction
 coverage locks quoted-present smoke alignment and immediate conditional-list
-scope while retaining unquoted/list negative controls.
+scope while retaining unquoted/list negative controls. Final broad-smoke
+coverage locks quoted and unquoted non-SKU stock wording plus the public
+masker's offset and word-apostrophe contract.
 
-The complete three affected test files passed 605 tests. Focused Ruff and
+The complete three affected test files passed 612 tests. Focused Ruff and
 format plus full `src/` Mypy passed. The detailed commands and failure evidence
 are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.

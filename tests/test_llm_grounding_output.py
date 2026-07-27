@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from src.llm import grounding_output
 from src.llm.grounding_output import (
     GroundingOutputAction,
     GroundingViolation,
@@ -25,6 +26,20 @@ STOCK_ATTEMPT_3 = (
     "for our team to check and get back to you, or you're welcome to visit our "
     "UAE showroom to experience our product quality firsthand."
 )
+
+
+def test_visible_grounding_text_masks_quotes_but_preserves_word_apostrophes() -> None:
+    text = (
+        "Treejar's note says 'AX-E1 is currently in stock', "
+        "but AX-E1 isn't otherwise asserted."
+    )
+
+    visible = grounding_output.visible_grounding_text(text)
+
+    assert len(visible) == len(text)
+    assert "AX-E1 is currently in stock" not in visible
+    assert "Treejar's" in visible
+    assert "isn't" in visible
 
 
 def test_classify_grounding_output_finds_exact_attempt_3_violations() -> None:

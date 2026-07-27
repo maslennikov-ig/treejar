@@ -681,6 +681,51 @@ def test_sales_case_evaluation_preserves_conditional_sku_stock_control(
     assert result == {"passed": True, "failures": []}
 
 
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The product is currently in stock.",
+        "This chair is in stock.",
+        "The chair is available now.",
+    ],
+)
+def test_sales_case_evaluation_rejects_unquoted_broad_stock_assertions(
+    claim: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": f"Current stock is unconfirmed. {claim}",
+        },
+    )
+
+    assert result["passed"] is False
+    assert any("unsupported stock claim" in failure for failure in result["failures"])
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The product is currently in stock.",
+        "This chair is in stock.",
+        "The chair is available now.",
+    ],
+)
+def test_sales_case_evaluation_preserves_quoted_broad_stock_assertions(
+    claim: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": f"Current stock is unconfirmed. The note says '{claim}'",
+        },
+    )
+
+    assert result == {"passed": True, "failures": []}
+
+
 def test_sales_evidence_record_keeps_only_auditable_synthetic_answer() -> None:
     case = SALES_CASES[0]
     answer = {

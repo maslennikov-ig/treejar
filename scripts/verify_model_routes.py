@@ -27,6 +27,7 @@ from src.llm.grounding_output import (
     contains_future_stock_check,
     contains_specific_product_showroom_trial,
     contains_unverified_stock_confirmation,
+    visible_grounding_text,
 )
 
 MAIN_MODEL_ID = "z-ai/glm-5.2"
@@ -363,6 +364,7 @@ def evaluate_sales_answer(
     reply_raw = answer.get("reply")
     grounding_reply = reply_raw if isinstance(reply_raw, str) else ""
     reply = _normalized(grounding_reply)
+    visible_reply = _normalized(visible_grounding_text(grounding_reply))
     failures: list[str] = []
     if decision not in case.expected_decisions:
         failures.append(
@@ -472,7 +474,10 @@ def evaluate_sales_answer(
             )
         if contains_unverified_stock_confirmation(grounding_reply):
             failures.append("reply adds an unverified present stock confirmation")
-        if _contains_asserted_pattern(reply, _STOCK_ASSERTION_RE):
+        for phrase in ("currently in stock", "is in stock", "available now"):
+            if _contains_asserted_phrase(visible_reply, phrase):
+                failures.append(f"unsupported stock claim: {phrase}")
+        if _contains_asserted_pattern(visible_reply, _STOCK_ASSERTION_RE):
             failures.append("reply adds unsupported inventory availability")
         for phrase in (
             "ready to ship",

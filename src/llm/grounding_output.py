@@ -196,8 +196,11 @@ def _with_normalized_apostrophes(text: str) -> str:
     return text.replace("’", "'")
 
 
-def _without_quoted_text(text: str) -> str:
-    return _QUOTED_TEXT_RE.sub(lambda match: " " * len(match.group()), text)
+def visible_grounding_text(text: str) -> str:
+    """Mask bounded quoted spans while preserving offsets and visible wording."""
+
+    original = str(text or "")
+    return _QUOTED_TEXT_RE.sub(lambda match: " " * len(match.group()), original)
 
 
 def _sentence_parts(text: str) -> list[str]:
@@ -223,7 +226,7 @@ def _is_asserted_match(
 
 
 def _has_specific_product_showroom_trial(sentence: str) -> bool:
-    visible = _without_quoted_text(sentence)
+    visible = visible_grounding_text(sentence)
     normalized = _normalized(visible)
     if _EN_SHOWROOM_RE.search(normalized):
         for pattern in (_EN_SPECIFIC_PRODUCT_TRIAL_RE, _EN_SKU_TRIAL_RE):
@@ -287,7 +290,7 @@ def _present_stock_confirmation_spans(text: str) -> list[tuple[int, int]]:
 
 
 def _has_present_stock_confirmation(sentence: str) -> bool:
-    visible = _with_normalized_apostrophes(_without_quoted_text(sentence))
+    visible = _with_normalized_apostrophes(visible_grounding_text(sentence))
     return bool(_present_stock_confirmation_spans(visible))
 
 
@@ -296,8 +299,8 @@ def _has_future_stock_check(
     *,
     full_text: str,
 ) -> bool:
-    visible = _without_quoted_text(sentence)
-    full_visible = _without_quoted_text(full_text)
+    visible = visible_grounding_text(sentence)
+    full_visible = visible_grounding_text(full_text)
     normalized = _normalized(visible)
     normalized_full = _normalized(full_visible)
     full_has_strong_stock = (
@@ -363,7 +366,7 @@ def _confirmed_present_clause(
 ) -> str | None:
     if not inventory_confirmed:
         return None
-    visible = _with_normalized_apostrophes(_without_quoted_text(sentence))
+    visible = _with_normalized_apostrophes(visible_grounding_text(sentence))
     spans = _present_stock_confirmation_spans(visible)
     if not spans:
         return None

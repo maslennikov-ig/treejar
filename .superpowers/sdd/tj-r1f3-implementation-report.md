@@ -431,6 +431,62 @@ uv run mypy src/
 
 Results: Ruff and format passed; Mypy passed over 163 source files.
 
+## Final quote-aware broad smoke correction
+
+Removing the duplicate raw phrase loop fixed quoted SKU alignment but exposed a
+separate broad smoke regression. With an otherwise valid unconfirmed prefix,
+these non-SKU claims passed:
+
+- `The product is currently in stock.`
+- `This chair is in stock.`
+- `The chair is available now.`
+
+The production guard intentionally remains SKU-bounded, so expanding runtime
+classification would have crossed scope. The correct boundary is shared quote
+visibility for the smoke-only broad commercial assertion checks.
+
+RED proved the public helper was absent and all three unquoted broad claims
+passed. Their three quoted equivalents already passed as required.
+
+The small correction:
+
+- exposes `visible_grounding_text(raw_text)` from the production grounding
+  module;
+- preserves source length and word-internal apostrophes while masking supported
+  quote spans;
+- reuses that helper for all internal production quote masking;
+- restores the smoke broad phrase loop over quote-masked normalized text;
+- applies the existing broad `_STOCK_ASSERTION_RE` to the same visible text;
+- leaves shared SKU classification and runtime enforcement scope unchanged.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py::test_visible_grounding_text_masks_quotes_but_preserves_word_apostrophes -q --tb=short
+uv run pytest tests/test_scripts_verify_model_routes.py -q --tb=short -k 'unquoted_broad_stock_assertions or quoted_broad_stock_assertions or preserves_conditional_sku_stock_control or rejects_unverified_present_stock_forms'
+```
+
+Results: `1 passed`; `47 passed, 52 deselected`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `612 passed`.
+
+Fresh static checks:
+
+```text
+uv run ruff check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run ruff format --check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run mypy src/
+```
+
+Results: Ruff and format passed after organizing the new test import; Mypy
+passed over 163 source files.
+
 ## Remaining environment-level checks
 
 - Independent delta review.
