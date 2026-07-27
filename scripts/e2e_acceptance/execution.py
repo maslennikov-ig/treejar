@@ -1409,6 +1409,8 @@ class ProtectedExecutionJournal:
         tracked_digest = self._optional_digest(
             f"attempts/{transaction_id}/tracked.json"
         )
+        execution_id: str | None = None
+        semantic_digest: str | None = None
         status: Literal["committed", "aborted"]
         if abort or raw_digest is None or tracked_digest is None:
             status = "aborted"
@@ -1459,11 +1461,17 @@ class ProtectedExecutionJournal:
                 raise ExecutionValidationError(
                     "attempt raw/tracked semantic binding drift"
                 )
+            execution_id = str(expected_execution)
+            semantic_digest = str(raw["semantic_digest"])
             status = "committed"
         record = {
             "schema_version": "noor-e2e-attempt-commit/v2",
             "transaction_id": transaction_id,
+            "run_id": self.run_id,
+            "execution_id": execution_id,
             "status": status,
+            "authorization_digest": self.authorization_digest,
+            "semantic_digest": semantic_digest,
             "raw_digest": raw_digest,
             "tracked_digest": tracked_digest,
         }

@@ -193,6 +193,26 @@ def _build_verified_run(
         )
         if without_attempts:
             continue
+        attempt_digest = hashlib.sha256(identity.encode()).hexdigest()
+        semantic_digest = hashlib.sha256(f"semantic:{identity}".encode()).hexdigest()
+        raw_digest = hashlib.sha256(f"raw:{identity}".encode()).hexdigest()
+        tracked_digest = hashlib.sha256(f"tracked:{identity}".encode()).hexdigest()
+        transaction_id = f"{identity.lower()}-attempt-001"
+        protected_commit_ref = f"attempts/{transaction_id}/commit.json"
+        protected_commit_digest = _write_json(
+            protected_run / protected_commit_ref,
+            {
+                "schema_version": "noor-e2e-attempt-commit/v2",
+                "transaction_id": transaction_id,
+                "run_id": run_id,
+                "execution_id": identity,
+                "status": "committed",
+                "authorization_digest": authorization_digest,
+                "semantic_digest": semantic_digest,
+                "raw_digest": raw_digest,
+                "tracked_digest": tracked_digest,
+            },
+        )
         previous = None
         phase_chain = []
         for cursor, phase in enumerate(
@@ -211,24 +231,42 @@ def _build_verified_run(
                 "cursor": cursor,
                 "phase": phase,
                 "previous_event_digest": previous,
+                "run_id": run_id,
+                "execution_id": identity,
+                "attempt_digest": attempt_digest,
+                "semantic_digest": semantic_digest,
+                "authorization_digest": authorization_digest,
+                "protected_commit_digest": protected_commit_digest,
             }
             previous = trusted.canonical_digest(event)
-            phase_chain.append({**event, "event_digest": previous})
+            phase_chain.append(
+                {
+                    "cursor": cursor,
+                    "phase": phase,
+                    "previous_event_digest": event["previous_event_digest"],
+                    "event_digest": previous,
+                }
+            )
         attempt = {
             "schema_version": "noor-e2e-committed-execution/v2",
+            "run_id": run_id,
             "execution_id": identity,
             "outcome": "PASS",
             "authorization_digest": authorization_digest,
-            "attempt_digest": hashlib.sha256(identity.encode()).hexdigest(),
-            "semantic_digest": hashlib.sha256(
-                f"semantic:{identity}".encode()
-            ).hexdigest(),
+            "attempt_digest": attempt_digest,
+            "semantic_digest": semantic_digest,
+            "registry_id": registry.registry_id,
+            "protected_commit_ref": protected_commit_ref,
+            "protected_commit_digest": protected_commit_digest,
+            "raw_digest": raw_digest,
+            "tracked_digest": tracked_digest,
+            "phase_head_digest": previous,
             "phase_chain": phase_chain,
             "evidence_refs": ["fresh"],
         }
         relative = f"attempts/{identity}.json"
         digest = _write_json(tracked_run / relative, attempt)
-        attempt_chain_heads[identity] = digest
+        attempt_chain_heads[identity] = previous
         index_entries.append(
             {
                 "evidence_id": attempt_ref,
@@ -237,6 +275,24 @@ def _build_verified_run(
                 "producer": "protected-attempt-committer",
             }
         )
+        if not missing_attempt_receipts:
+            _write_json(
+                protected_run / f"producer-receipts/attempts/{identity}.json",
+                {
+                    "schema_version": "noor-e2e-attempt-producer-receipt/v2",
+                    "registry_id": registry.registry_id,
+                    "run_id": run_id,
+                    "execution_id": identity,
+                    "attempt_digest": attempt_digest,
+                    "authorization_digest": authorization_digest,
+                    "semantic_digest": semantic_digest,
+                    "raw_digest": raw_digest,
+                    "tracked_digest": tracked_digest,
+                    "phase_head_digest": previous,
+                    "tracked_sha256": digest,
+                    "protected_commit_digest": protected_commit_digest,
+                },
+            )
     if without_attempts:
         attempt_chain_heads = {
             identity: "6" * 64 for identity in registry.compiled_plan.execution_ids
@@ -359,9 +415,16 @@ def _build_verified_run(
         ],
     }
     validated_report = trusted.ClientReportPayload.model_validate(report_payload)
+    expected_report_digest = hashlib.sha256(_bytes(report_payload)).hexdigest()
+    verified_snapshot_digest = trusted._verified_report_snapshot_digest(
+        validated_report
+    )
     report_source = {
         "schema_version": "noor-e2e-report-source/v2",
+        "registry_id": registry.registry_id,
         "report_sections_digest": trusted._report_sections_digest(validated_report),
+        "report_payload_sha256": expected_report_digest,
+        "verified_snapshot_digest": verified_snapshot_digest,
     }
     report_source_digest = _write_json(
         tracked_run / "evidence/report-source.json",
@@ -375,6 +438,18 @@ def _build_verified_run(
             "producer": "protected-report-materializer",
         }
     )
+    if not missing_report_receipt:
+        _write_json(
+            protected_run / "producer-receipts/report-source.json",
+            {
+                "schema_version": "noor-e2e-report-producer-receipt/v2",
+                "registry_id": registry.registry_id,
+                "tracked_sha256": report_source_digest,
+                "report_sections_digest": report_source["report_sections_digest"],
+                "report_payload_sha256": expected_report_digest,
+                "verified_snapshot_digest": verified_snapshot_digest,
+            },
+        )
     index = {
         "schema_version": "noor-e2e-evidence-index/v2",
         "run_id": run_id,
@@ -385,6 +460,7 @@ def _build_verified_run(
         tracked_run / "registry/report-payload.json",
         report_payload,
     )
+    assert report_digest == expected_report_digest
     run_document = {
         "schema_version": "noor-e2e-trusted-run/v2",
         "run_id": run_id,
@@ -419,6 +495,11 @@ def _build_verified_run(
         "attempt_chain_heads": attempt_chain_heads,
     }
     _write_json(protected_run / "registry/anchor.json", anchor)
+    registry._fixed_run_roots = lambda requested_run_id: (
+        (tracked_run, protected_run)
+        if requested_run_id == run_id
+        else (_ for _ in ()).throw(ValueError("unexpected fixture run identity"))
+    )
     return registry, tracked_run, protected_run
 
 
@@ -427,7 +508,7 @@ def test_registry_loads_real_index_and_calculates_canonical_mode_rollups(
 ) -> None:
     registry, tracked, protected = _build_verified_run(tmp_path)
 
-    registry._load_verified_run_roots(tracked, protected)
+    registry.open_run(run_id="synthetic-trusted-run")
 
     assert registry.calculate_rollups() == {
         "coverage_complete": True,
@@ -445,14 +526,14 @@ def test_registry_rejects_one_of_30_scope_even_with_matching_anchor(
     )
 
     with pytest.raises(Exception, match="exact.*30|criterion.*scope"):
-        registry._load_verified_run_roots(tracked, protected)
+        registry.open_run(run_id="synthetic-trusted-run")
 
 
 def test_typed_russian_report_and_final_serialized_privacy(
     tmp_path: Path,
 ) -> None:
     registry, tracked, protected = _build_verified_run(tmp_path)
-    registry._load_verified_run_roots(tracked, protected)
+    registry.open_run(run_id="synthetic-trusted-run")
     output = tmp_path / "report.md"
 
     registry.write_report(output)
@@ -472,7 +553,4 @@ def test_typed_russian_report_and_final_serialized_privacy(
         leaked_answer=True,
     )
     with pytest.raises(Exception, match="phone|privacy|redact"):
-        leaked_registry._load_verified_run_roots(
-            leaked_tracked,
-            leaked_protected,
-        )
+        leaked_registry.open_run(run_id="synthetic-trusted-run")

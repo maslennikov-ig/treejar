@@ -19,12 +19,16 @@ from scripts.e2e_acceptance.evidence import (
 from scripts.e2e_acceptance.execution import (
     ExecutionAuthorizationV2,
     OutcomeValue,
+    _write_exclusive,
     aggregate_criterion_outcome,
     store_root_digest,
 )
 from scripts.e2e_acceptance.policy import (
     PolicyValidationError,
     ReadbackObservation,
+    ReadbackResult,
+    StructuredEvent,
+    ToolResult,
 )
 from scripts.e2e_acceptance.schemas import EvidenceMode
 
@@ -182,13 +186,35 @@ class AttemptPhase(_StrictModel):
 
 class CommittedExecutionArtifact(_StrictModel):
     schema_version: Literal["noor-e2e-committed-execution/v2"]
+    run_id: str = Field(min_length=1)
     execution_id: str = Field(min_length=1)
     outcome: OutcomeValue
     authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     semantic_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    protected_commit_ref: str = Field(min_length=1)
+    protected_commit_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    raw_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    phase_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     phase_chain: tuple[AttemptPhase, ...] = Field(min_length=7, max_length=7)
     evidence_refs: tuple[str, ...] = Field(min_length=1)
+
+
+class AttemptProducerReceipt(_StrictModel):
+    schema_version: Literal["noor-e2e-attempt-producer-receipt/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    raw_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    phase_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    protected_commit_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class CriterionRow(_StrictModel):
@@ -333,7 +359,46 @@ class DefectReport(_StrictModel):
 
 class ReportSourceArtifact(_StrictModel):
     schema_version: Literal["noor-e2e-report-source/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     report_sections_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    report_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    verified_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ReportProducerReceipt(_StrictModel):
+    schema_version: Literal["noor-e2e-report-producer-receipt/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    report_sections_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    report_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    verified_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+StructuredEvidenceKind = Literal[
+    "structured_event",
+    "tool_result",
+    "readback_result",
+]
+
+
+class MaterializedStructuredEnvelope(_StrictModel):
+    schema_version: Literal["noor-e2e-structured-evidence-envelope/v2"]
+    evidence_kind: StructuredEvidenceKind
+    artifact: dict[str, Any]
+
+
+class StructuredArtifactReceipt(_StrictModel):
+    schema_version: Literal["noor-e2e-structured-producer-receipt/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    assertion_id: str = Field(min_length=1)
+    producer: str = Field(min_length=1)
+    evidence_id: str = Field(min_length=1)
+    relative_path: str = Field(min_length=1)
+    tracked_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ClientReportPayload(_StrictModel):
@@ -372,6 +437,19 @@ def _report_sections_digest(payload: ClientReportPayload) -> str:
             ],
             "latency": payload.latency.model_dump(mode="json"),
             "defects": [item.model_dump(mode="json") for item in payload.defects],
+        }
+    )
+
+
+def _verified_report_snapshot_digest(payload: ClientReportPayload) -> str:
+    return canonical_digest(
+        {
+            "run_id": payload.run_id,
+            "executions": [item.model_dump(mode="json") for item in payload.executions],
+            "criteria": [item.model_dump(mode="json") for item in payload.criteria],
+            "turn_evidence": {
+                item.execution_id: list(item.evidence_refs) for item in payload.turns
+            },
         }
     )
 
@@ -445,6 +523,12 @@ def _validate_attempt_phase_chain(artifact: CommittedExecutionArtifact) -> None:
             "cursor": cursor,
             "phase": phase,
             "previous_event_digest": previous,
+            "run_id": artifact.run_id,
+            "execution_id": artifact.execution_id,
+            "attempt_digest": artifact.attempt_digest,
+            "semantic_digest": artifact.semantic_digest,
+            "authorization_digest": artifact.authorization_digest,
+            "protected_commit_digest": artifact.protected_commit_digest,
         }
         expected = canonical_digest(identity)
         if (
@@ -455,6 +539,256 @@ def _validate_attempt_phase_chain(artifact: CommittedExecutionArtifact) -> None:
         ):
             raise TrustedRunError(f"attempt phase chain drift: {artifact.execution_id}")
         previous = expected
+    if artifact.phase_head_digest != previous:
+        raise TrustedRunError(
+            f"attempt phase head binding drift: {artifact.execution_id}"
+        )
+
+
+def _validate_protected_attempt_commit(
+    payload: bytes,
+    *,
+    artifact: CommittedExecutionArtifact,
+    authorization_digest: str,
+) -> None:
+    value = _parse_json(payload, "protected attempt commit")
+    if (
+        value.get("schema_version") != "noor-e2e-attempt-commit/v2"
+        or value.get("status") != "committed"
+        or value.get("run_id") != artifact.run_id
+        or value.get("execution_id") != artifact.execution_id
+        or value.get("authorization_digest") != authorization_digest
+        or value.get("semantic_digest") != artifact.semantic_digest
+        or value.get("raw_digest") != artifact.raw_digest
+        or value.get("tracked_digest") != artifact.tracked_digest
+    ):
+        raise TrustedRunError(
+            f"protected attempt commit binding drift: {artifact.execution_id}"
+        )
+
+
+class TrustedArtifactMaterializer:
+    """Materialize trusted producer artifacts into fixed local run stores."""
+
+    def __init__(
+        self,
+        *,
+        registry: Any,
+        run_id: str,
+        tracked_root: Path,
+        protected_root: Path,
+        capability: object,
+    ) -> None:
+        registry._validate_run_loader_capability(capability)
+        self._registry = registry
+        self._registry_capability = capability
+        self._run_id = run_id
+        self._tracked_root = tracked_root
+        self._protected_root = protected_root
+
+    def write_structured_evidence(
+        self,
+        artifact: StructuredEvent | ToolResult | ReadbackResult,
+    ) -> EvidenceIndexEntry:
+        kind: StructuredEvidenceKind
+        if isinstance(artifact, ToolResult):
+            kind = "tool_result"
+        elif isinstance(artifact, ReadbackResult):
+            kind = "readback_result"
+        else:
+            kind = "structured_event"
+        envelope = MaterializedStructuredEnvelope(
+            schema_version="noor-e2e-structured-evidence-envelope/v2",
+            evidence_kind=kind,
+            artifact=artifact.model_dump(mode="json"),
+        )
+        relative = f"evidence/structured/{artifact.artifact_digest}.json"
+        tracked_sha256 = _write_exclusive(
+            self._tracked_root,
+            relative,
+            envelope.model_dump(mode="json"),
+        )
+        receipt = StructuredArtifactReceipt(
+            schema_version="noor-e2e-structured-producer-receipt/v2",
+            registry_id=self._registry.registry_id,
+            artifact_digest=artifact.artifact_digest,
+            run_id=artifact.run_id,
+            attempt_digest=artifact.attempt_digest,
+            preflight_digest=artifact.preflight_digest,
+            assertion_id=artifact.assertion_id,
+            producer=artifact.producer,
+            evidence_id=f"structured:{artifact.artifact_digest}",
+            relative_path=relative,
+            tracked_sha256=tracked_sha256,
+        )
+        _write_exclusive(
+            self._protected_root,
+            f"producer-receipts/structured/{artifact.artifact_digest}.json",
+            receipt.model_dump(mode="json"),
+        )
+        self._registry._register_protected_structured_artifact(
+            artifact,
+            receipt=receipt.model_dump(mode="python"),
+            capability=self._registry_capability,
+        )
+        return EvidenceIndexEntry(
+            evidence_id=f"structured:{artifact.artifact_digest}",
+            relative_path=relative,
+            sha256=tracked_sha256,
+            producer="protected-structured-oracle",
+        )
+
+    def write_committed_execution(
+        self,
+        artifact: CommittedExecutionArtifact,
+    ) -> EvidenceIndexEntry:
+        _validate_attempt_phase_chain(artifact)
+        if (
+            artifact.registry_id != self._registry.registry_id
+            or artifact.run_id != self._run_id
+            or not self._registry._is_trusted_authorization_digest(
+                artifact.authorization_digest
+            )
+            or not artifact.protected_commit_ref.startswith("attempts/")
+            or not artifact.protected_commit_ref.endswith("/commit.json")
+        ):
+            raise TrustedRunError("attempt materializer registry binding drift")
+        protected_payload = _read_file(
+            self._protected_root,
+            artifact.protected_commit_ref,
+            protected=True,
+        )
+        if _sha256(protected_payload) != artifact.protected_commit_digest:
+            raise TrustedRunError("attempt materializer protected commit drift")
+        _validate_protected_attempt_commit(
+            protected_payload,
+            artifact=artifact,
+            authorization_digest=artifact.authorization_digest,
+        )
+        relative = f"attempts/{artifact.execution_id}.json"
+        tracked_sha256 = _write_exclusive(
+            self._tracked_root,
+            relative,
+            artifact.model_dump(mode="json"),
+        )
+        _write_exclusive(
+            self._protected_root,
+            f"producer-receipts/attempts/{artifact.execution_id}.json",
+            AttemptProducerReceipt(
+                schema_version="noor-e2e-attempt-producer-receipt/v2",
+                registry_id=self._registry.registry_id,
+                run_id=artifact.run_id,
+                execution_id=artifact.execution_id,
+                attempt_digest=artifact.attempt_digest,
+                authorization_digest=artifact.authorization_digest,
+                semantic_digest=artifact.semantic_digest,
+                raw_digest=artifact.raw_digest,
+                tracked_digest=artifact.tracked_digest,
+                phase_head_digest=artifact.phase_head_digest,
+                tracked_sha256=tracked_sha256,
+                protected_commit_digest=artifact.protected_commit_digest,
+            ).model_dump(mode="json"),
+        )
+        return EvidenceIndexEntry(
+            evidence_id=f"attempt:{artifact.execution_id}",
+            relative_path=relative,
+            sha256=tracked_sha256,
+            producer="protected-attempt-committer",
+        )
+
+    def write_report_source(
+        self,
+        report: ClientReportPayload,
+    ) -> EvidenceIndexEntry:
+        if report.run_id != self._run_id:
+            raise TrustedRunError("report materializer run identity drift")
+        report_payload_sha256 = _write_exclusive(
+            self._tracked_root,
+            "registry/report-payload.json",
+            report.model_dump(mode="json"),
+        )
+        snapshot_digest = _verified_report_snapshot_digest(report)
+        source = ReportSourceArtifact(
+            schema_version="noor-e2e-report-source/v2",
+            registry_id=self._registry.registry_id,
+            report_sections_digest=_report_sections_digest(report),
+            report_payload_sha256=report_payload_sha256,
+            verified_snapshot_digest=snapshot_digest,
+        )
+        relative = "evidence/report-source.json"
+        tracked_sha256 = _write_exclusive(
+            self._tracked_root,
+            relative,
+            source.model_dump(mode="json"),
+        )
+        _write_exclusive(
+            self._protected_root,
+            "producer-receipts/report-source.json",
+            ReportProducerReceipt(
+                schema_version="noor-e2e-report-producer-receipt/v2",
+                registry_id=self._registry.registry_id,
+                tracked_sha256=tracked_sha256,
+                report_sections_digest=source.report_sections_digest,
+                report_payload_sha256=report_payload_sha256,
+                verified_snapshot_digest=snapshot_digest,
+            ).model_dump(mode="json"),
+        )
+        return EvidenceIndexEntry(
+            evidence_id="report-source",
+            relative_path=relative,
+            sha256=tracked_sha256,
+            producer="protected-report-materializer",
+        )
+
+
+def _load_structured_evidence(
+    registry: Any,
+    tracked_root: Path,
+    protected_root: Path,
+    *,
+    artifact_digest: str,
+    capability: object,
+) -> None:
+    registry._validate_run_loader_capability(capability)
+    relative = f"evidence/structured/{artifact_digest}.json"
+    tracked_payload = _read_file(tracked_root, relative)
+    try:
+        envelope = MaterializedStructuredEnvelope.model_validate(
+            _parse_json(tracked_payload, "structured evidence envelope")
+        )
+        artifact: StructuredEvent | ToolResult | ReadbackResult
+        if envelope.evidence_kind == "tool_result":
+            artifact = ToolResult.model_validate(envelope.artifact)
+        elif envelope.evidence_kind == "readback_result":
+            artifact = ReadbackResult.model_validate(envelope.artifact)
+        else:
+            artifact = StructuredEvent.model_validate(envelope.artifact)
+        receipt = StructuredArtifactReceipt.model_validate(
+            _parse_json(
+                _read_file(
+                    protected_root,
+                    f"producer-receipts/structured/{artifact_digest}.json",
+                    protected=True,
+                ),
+                "protected structured producer receipt",
+            )
+        )
+    except (TrustedRunError, ValueError) as exc:
+        raise TrustedRunError(
+            f"protected structured producer receipt invalid: {exc}"
+        ) from exc
+    if (
+        artifact.artifact_digest != artifact_digest
+        or receipt.evidence_id != f"structured:{artifact_digest}"
+        or receipt.relative_path != relative
+        or receipt.tracked_sha256 != _sha256(tracked_payload)
+    ):
+        raise TrustedRunError("structured evidence tracked receipt drift")
+    registry._register_protected_structured_artifact(
+        artifact,
+        receipt=receipt.model_dump(mode="python"),
+        capability=capability,
+    )
 
 
 def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> bytes:
@@ -560,13 +894,16 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
     return ("\n".join(lines).rstrip() + "\n").encode("utf-8")
 
 
-def load_verified_run(
+def _load_verified_run(
     registry: Any,
     tracked_root: Path,
     protected_root: Path,
+    *,
+    capability: object,
 ) -> VerifiedRun:
     """Verify fixed run artifacts against the registry and protected anchor."""
 
+    registry._validate_run_loader_capability(capability)
     run_payload = _read_file(tracked_root, "registry/run.json")
     index_payload = _read_file(tracked_root, "registry/evidence-index.json")
     report_payload_bytes = _read_file(tracked_root, "registry/report-payload.json")
@@ -730,12 +1067,60 @@ def load_verified_run(
                 f"execution committed attempt schema invalid: {identity}: {exc}"
             ) from exc
         _validate_attempt_phase_chain(attempt)
+        if not attempt.protected_commit_ref.startswith(
+            "attempts/"
+        ) or not attempt.protected_commit_ref.endswith("/commit.json"):
+            raise TrustedRunError(
+                f"execution protected commit reference drift: {identity}"
+            )
+        protected_commit = _read_file(
+            protected_root,
+            attempt.protected_commit_ref,
+            protected=True,
+        )
+        if _sha256(protected_commit) != attempt.protected_commit_digest:
+            raise TrustedRunError(
+                f"execution protected commit digest drift: {identity}"
+            )
+        _validate_protected_attempt_commit(
+            protected_commit,
+            artifact=attempt,
+            authorization_digest=authorization_digest,
+        )
+        try:
+            receipt = AttemptProducerReceipt.model_validate(
+                _parse_json(
+                    _read_file(
+                        protected_root,
+                        f"producer-receipts/attempts/{identity}.json",
+                        protected=True,
+                    ),
+                    f"protected attempt producer receipt {identity}",
+                )
+            )
+        except (TrustedRunError, ValueError) as exc:
+            raise TrustedRunError(
+                f"protected attempt producer receipt invalid: {identity}: {exc}"
+            ) from exc
         if (
-            attempt.execution_id != identity
+            attempt.run_id != run.run_id
+            or attempt.execution_id != identity
             or attempt.outcome != execution_row.outcome
             or attempt.authorization_digest != authorization_digest
+            or attempt.registry_id != registry.registry_id
             or attempt.evidence_refs != execution_row.evidence_refs
-            or anchor.attempt_chain_heads[identity] != entry.sha256
+            or anchor.attempt_chain_heads[identity] != attempt.phase_head_digest
+            or receipt.registry_id != registry.registry_id
+            or receipt.run_id != run.run_id
+            or receipt.execution_id != identity
+            or receipt.attempt_digest != attempt.attempt_digest
+            or receipt.authorization_digest != authorization_digest
+            or receipt.semantic_digest != attempt.semantic_digest
+            or receipt.raw_digest != attempt.raw_digest
+            or receipt.tracked_digest != attempt.tracked_digest
+            or receipt.phase_head_digest != attempt.phase_head_digest
+            or receipt.tracked_sha256 != entry.sha256
+            or receipt.protected_commit_digest != attempt.protected_commit_digest
         ):
             raise TrustedRunError(
                 f"execution committed attempt binding drift: {identity}"
@@ -790,9 +1175,34 @@ def load_verified_run(
         )
     except ValueError as exc:
         raise TrustedRunError(f"protected report source schema invalid: {exc}") from exc
+    try:
+        report_receipt = ReportProducerReceipt.model_validate(
+            _parse_json(
+                _read_file(
+                    protected_root,
+                    "producer-receipts/report-source.json",
+                    protected=True,
+                ),
+                "protected report producer receipt",
+            )
+        )
+    except (TrustedRunError, ValueError) as exc:
+        raise TrustedRunError(
+            f"protected report producer receipt invalid: {exc}"
+        ) from exc
+    report_payload_sha256 = _sha256(report_payload_bytes)
+    snapshot_digest = _verified_report_snapshot_digest(report)
     if (
         report_source_entry.evidence_id not in report_refs
+        or report_source.registry_id != registry.registry_id
         or report_source.report_sections_digest != _report_sections_digest(report)
+        or report_source.report_payload_sha256 != report_payload_sha256
+        or report_source.verified_snapshot_digest != snapshot_digest
+        or report_receipt.registry_id != registry.registry_id
+        or report_receipt.tracked_sha256 != report_source_entry.sha256
+        or report_receipt.report_sections_digest != report_source.report_sections_digest
+        or report_receipt.report_payload_sha256 != report_payload_sha256
+        or report_receipt.verified_snapshot_digest != snapshot_digest
     ):
         raise TrustedRunError("typed report protected source binding drift")
     try:

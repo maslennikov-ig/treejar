@@ -797,12 +797,7 @@ def test_generic_runner_validates_every_canonical_scenario(
             *item.tool_results,
             *item.readbacks,
         ):
-            registry._load_structured_artifact(
-                structured,
-                run_id=f"run-{scenario_id.lower()}",
-                attempt_digest=plan_digest,
-                preflight_digest="8" * 64,
-            )
+            registry._load_local_structured_fixture(structured)
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id=f"run-{scenario_id.lower()}",
@@ -925,12 +920,7 @@ def test_generic_runner_validates_every_canonical_evidence_block(
                 attempt_digest=plan_digest,
                 preflight_digest=authorization.preflight_digest,
             )
-            registry._load_structured_artifact(
-                event,
-                run_id=run_id,
-                attempt_digest=plan_digest,
-                preflight_digest=authorization.preflight_digest,
-            )
+            registry._load_local_structured_fixture(event)
             item = policy.OracleEvidence(
                 assertion_id=assertion_id,
                 structured_events=(event,),
