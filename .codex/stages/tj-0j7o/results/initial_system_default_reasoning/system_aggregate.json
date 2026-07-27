@@ -1,0 +1,32 @@
+{
+  "deepseek/deepseek-v4-flash": {
+    "model": "deepseek/deepseek-v4-flash",
+    "runs": 48,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 9490.032666666666,
+      "p50": 4771.851500000001,
+      "p95": 30983.802199999984,
+      "max": 85324.916
+    },
+    "json_schema_first_pass": 0.825,
+    "semantic_accuracy": 0.5428571428571428,
+    "tool_case_pass_rate": 1.0
+  },
+  "nex-agi/nex-n2-mini": {
+    "model": "nex-agi/nex-n2-mini",
+    "runs": 48,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 2545.0687916666666,
+      "p50": 2244.6724999999997,
+      "p95": 5462.614,
+      "max": 5786.817
+    },
+    "json_schema_first_pass": 0.75,
+    "semantic_accuracy": 0.5476190476190477,
+    "tool_case_pass_rate": 1.0
+  }
+}

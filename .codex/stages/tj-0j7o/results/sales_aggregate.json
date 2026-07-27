@@ -1,0 +1,30 @@
+{
+  "deepseek/deepseek-v4-flash": {
+    "model": "deepseek/deepseek-v4-flash",
+    "runs": 24,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 10092.592416666666,
+      "p50": 9490.818500000001,
+      "p95": 21961.66709999998,
+      "max": 35935.094
+    },
+    "objective_correctness": 0.888343253968254,
+    "case_pass_rate": 0.2916666666666667
+  },
+  "z-ai/glm-5": {
+    "model": "z-ai/glm-5",
+    "runs": 24,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 7979.3695,
+      "p50": 7325.782499999999,
+      "p95": 11228.663799999997,
+      "max": 19675.204
+    },
+    "objective_correctness": 0.8898974867724867,
+    "case_pass_rate": 0.2916666666666667
+  }
+}

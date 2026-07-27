@@ -3,7 +3,7 @@
   "stage_id": "tj-0j7o",
   "goal_id": "tj-0j7o",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 1,
   "acceptance_boundary_id": "noor-two-route-model-battle",
   "acceptance_owner": "root-orchestrator",
@@ -58,5 +58,11 @@
   "scope_anchor": ".codex/goals/tj-0j7o/scope-criterion-snapshot.json",
   "scope_anchor_digest": "86ace849aae6d763f084455c2efe48336ab845489fa63532f621b2e0deedb3e5",
   "scope_ledger": "none",
-  "stream_artifacts": []
+  "stream_artifacts": [
+    {
+      "task_id": "tj-0j7o",
+      "stream_owner": "model-battle-stage-owner",
+      "artifact_path": ".codex/stages/tj-0j7o/artifacts/tj-0j7o.md"
+    }
+  ]
 }

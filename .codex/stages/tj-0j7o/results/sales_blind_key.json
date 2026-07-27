@@ -1,0 +1,194 @@
+[
+  {
+    "case_id": "sales-01",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-01",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-12",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-12",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash"
+    }
+  }
+]

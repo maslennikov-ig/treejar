@@ -3,7 +3,7 @@
 Updated: 2026-07-27
 Current branch: `main`
 Current stage id: `tj-0j7o`
-Current stage status: in progress; balanced model battle approved
+Current stage status: accepted; comparative model choices recorded
 
 ## Current Truth
 
@@ -49,38 +49,49 @@ Current stage status: in progress; balanced model battle approved
 - Raw recipient/channel/conversation evidence is protected on the VPS with mode
   `600` and is not stored in Git, Beads, handoff, or public logs.
 - Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
-- Model battle `tj-0j7o` is active. The approved core comparison is
+- Model battle `tj-0j7o` is accepted. The core comparison was
   `z-ai/glm-5` versus `deepseek/deepseek-v4-flash`; the fast/system comparison
-  is `nex-agi/nex-n2-mini` versus `deepseek/deepseek-v4-flash`.
-- The benchmark uses fixed synthetic evidence, two repetitions per case,
-  correctness-first winner gates, blinded sales review, and sequential latency
-  measurements. Production routing remains unchanged.
+  was `nex-agi/nex-n2-mini` versus `deepseek/deepseek-v4-flash`.
+- Comparative sales choice: keep GLM-5. It scored `92.879` versus `85.395`,
+  had equivalent blind quality (`91.33%` versus `91.00%`), and led p95 latency
+  (`11.229s` versus `21.962s`).
+- Comparative fast/system choice: prefer DeepSeek V4 Flash with reasoning
+  disabled and structured validation/fallback. It achieved `97.5%` first-pass
+  JSON/schema versus Nex `72.5%` and higher semantic field accuracy (`71.84%`
+  versus `64.08%`), while Nex led p95 latency (`5.553s` versus `14.804s`).
+- Strict release-gate outcome is `no_safe_replacement` for both battles. Sales
+  had one blind critical finding per candidate; both fast candidates missed
+  the semantic threshold. Production routing remains unchanged.
+- Durable report: `docs/reports/model-battle-2026-07-27.md`; raw and derived
+  evidence: `.codex/stages/tj-0j7o/results/`.
 
 ## Boundary and Scope Ledger
 
-- One cohesive stage owned the shared recipient, provider channel, production
-  queue, correctness contract, and exact cleanup boundary.
-- Work remained root-owned and sequential; no subagent stream had a material
-  parallel, specialist, context-isolation, or write-isolation benefit.
+- One cohesive stage owned the shared OpenRouter evaluation, correctness,
+  blinding, and evidence boundary.
+- Root owned implementation and sequential inference. One docs specialist
+  reviewed provider/methodology risk, and one context-isolated QA reviewer
+  scored anonymous A/B sales responses without reading the model key.
 - No scope criterion was dropped and no v2.19 material split occurred.
-- Excluded actions remained excluded: quotation creation/media, voice, payment,
-  referral, and real-customer traffic.
+- Excluded actions remained excluded: production routing, customer traffic,
+  quotation/order creation, Zoho/Wazzup mutations, and real customer data.
 
 ## Next recommended
 
 Next stage id: `tj-0j7o`
 
-Recommended action: implement and run the approved balanced sales and
-fast/system battles, select route winners through hard correctness gates, and
-publish the evidence without changing production routing.
+Recommended action: start `tj-j13d` to replace the stale Xiaomi fast default
+with guarded DeepSeek V4 Flash locally, add focused fact/red-flag/FAQ/summary
+contracts, and rerun the system suite. `tj-b93r` separately owns the GLM-5
+weak-catalog grounding guard. Deployment remains separately gated.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-0j7o`. Treat the approved balanced methodology
-and paid OpenRouter calls as current scope. Finish the shared synthetic harness,
-run both two-repeat battles sequentially, record blinded sales review and
-structured-output evidence, and choose one winner per route. Do not switch
-production routing.
+Use $orchestrator-stage for `tj-j13d`. Preserve the accepted `tj-0j7o`
+evidence. Configure DeepSeek V4 Flash for fast structured work with reasoning
+disabled and validation/fallback, add focused failing-case contracts, and
+rerun the fast/system benchmark. Keep the GLM-5 empty-catalog guard in
+`tj-b93r`. Ask before deployment or live traffic.
 
 ## Approval gates
 
@@ -92,8 +103,9 @@ production routing.
 
 ## Explicit defers
 
-- `tj-0j7o`: active balanced model battle; production adoption remains outside
-  this stage.
+- Model adoption and deployment remain outside accepted stage `tj-0j7o` and
+  must use `tj-j13d` and a separately approved release boundary.
+- GLM-5 weak-catalog grounding is tracked by `tj-b93r`.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
   `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.

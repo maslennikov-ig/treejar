@@ -36,15 +36,15 @@ and one route-level recommendation per battle.
 **Verification lane:** `tdd-required` — the work introduces parsing, schema
 validation, scoring, percentile calculation, and winner-selection behavior.
 
-- [ ] Add failing tests for case validation, JSON/schema scoring, semantic
+- [x] Add failing tests for case validation, JSON/schema scoring, semantic
   scoring, latency aggregation, hard gates, blinding, and winner selection.
-- [ ] Implement the complete harness and fixed synthetic cases.
-- [ ] Verify official candidate availability and supported parameters before
+- [x] Implement the complete harness and fixed synthetic cases.
+- [x] Verify official candidate availability and supported parameters before
   paid calls.
-- [ ] Run the sales suite twice per case, preserving raw evidence and timings.
-- [ ] Run the system suite twice per case, preserving raw evidence and timings.
-- [ ] Record blinded qualitative sales review before unblinding.
-- [ ] Generate the durable report and select winners only through the accepted
+- [x] Run the sales suite twice per case, preserving raw evidence and timings.
+- [x] Run the system suite twice per case, preserving raw evidence and timings.
+- [x] Record blinded qualitative sales review before unblinding.
+- [x] Generate the durable report and select winners only through the accepted
   gates.
-- [ ] Run focused tests, Ruff/format/Mypy, process verification, stage closeout,
+- [x] Run focused tests, Ruff/format/Mypy, process verification, stage closeout,
   documentation review, and safe delivery.

@@ -1,0 +1,26 @@
+{
+  "seed": 27072026,
+  "repetitions": 2,
+  "suites": [
+    "sales",
+    "system"
+  ],
+  "profiles": {
+    "sales": {
+      "reasoning": "provider_default",
+      "runs": 48
+    },
+    "system": {
+      "reasoning": "disabled",
+      "runs": 96
+    }
+  },
+  "diagnostic_runs": {
+    "initial_system_default_reasoning": {
+      "runs": 96,
+      "used_for_decision": false
+    }
+  },
+  "production_changed": false,
+  "synthetic_evidence_only": true
+}
