@@ -10,6 +10,7 @@ from scripts.model_battle import (
     build_base_payload,
     build_blind_pair,
     candidate_metrics_from_evidence,
+    evaluate_blind_reviews,
     extract_numeric_tokens,
     parse_json_content,
     percentile,
@@ -49,11 +50,17 @@ def test_catalog_preflight_rejects_missing_required_model_capability() -> None:
                 "tools",
                 "tool_choice",
                 "response_format",
+                "reasoning",
                 "structured_outputs",
             ]
         },
         "nex-agi/nex-n2-mini": {
-            "supported_parameters": ["tools", "tool_choice", "response_format"]
+            "supported_parameters": [
+                "tools",
+                "tool_choice",
+                "response_format",
+                "reasoning",
+            ]
         },
     }
 
@@ -66,9 +73,11 @@ def test_base_payload_requires_an_endpoint_supporting_all_parameters() -> None:
         model="candidate",
         messages=[{"role": "user", "content": "hello"}],
         max_tokens=900,
+        reasoning_enabled=False,
     )
 
     assert payload["provider"] == {"require_parameters": True}
+    assert payload["reasoning"] == {"enabled": False}
 
 
 @pytest.mark.parametrize("status", [408, 409, 429, 500, 502, 503, 504])
@@ -216,6 +225,16 @@ def test_score_expected_fields_supports_semantic_text_fragments() -> None:
     assert mismatches == []
 
 
+def test_score_expected_fields_supports_numeric_value_inside_currency_text() -> None:
+    correct, total, mismatches = score_expected_fields(
+        {"value": "AED 8,000"},
+        {"value": {"$number": 8000}},
+    )
+
+    assert (correct, total) == (1, 1)
+    assert mismatches == []
+
+
 def test_sales_scoring_blocks_ungrounded_numbers_and_wrong_language() -> None:
     score = score_sales_response(
         content="Axis Ergo متاح بسعر 1,450 درهم، ويمكن توصيل 99 وحدة.",
@@ -303,18 +322,26 @@ def test_blind_review_scores_map_back_to_models_only_after_review() -> None:
             "repetition": 1,
             "scores": {
                 "A": {
-                    "clarity": 5,
-                    "factual_trust": 5,
-                    "persuasion": 4,
-                    "concision": 4,
-                    "next_step": 5,
+                    "scores": {
+                        "clarity": 5,
+                        "factual_trust": 5,
+                        "persuasion": 4,
+                        "concision": 4,
+                        "next_step": 5,
+                    },
+                    "critical_failure": False,
+                    "critical_failure_reason": "",
                 },
                 "B": {
-                    "clarity": 3,
-                    "factual_trust": 4,
-                    "persuasion": 3,
-                    "concision": 3,
-                    "next_step": 2,
+                    "scores": {
+                        "clarity": 3,
+                        "factual_trust": 4,
+                        "persuasion": 3,
+                        "concision": 3,
+                        "next_step": 2,
+                    },
+                    "critical_failure": True,
+                    "critical_failure_reason": "Invented stock.",
                 },
             },
         }
@@ -331,6 +358,8 @@ def test_blind_review_scores_map_back_to_models_only_after_review() -> None:
 
     assert quality["left"] == pytest.approx(23 / 25)
     assert quality["right"] == pytest.approx(15 / 25)
+    _, hard_gates = evaluate_blind_reviews(reviews, key)
+    assert hard_gates == {"left": True, "right": False}
 
 
 def test_blind_review_rejects_missing_pair() -> None:

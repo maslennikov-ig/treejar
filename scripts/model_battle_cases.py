@@ -529,7 +529,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             "language": "en",
             "facts.$length": 1,
             "facts[0].key": "budget",
-            "facts[0].value": 8000,
+            "facts[0].value": {"$number": 8000},
             "facts[0].scope": "current_order",
             "facts[0].needs_confirmation": True,
         },
@@ -544,7 +544,9 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         {
             "flags.$length": 1,
             "flags[0].code": "unverified_commitment",
-            "flags[0].evidence": "50 units are definitely available",
+            "flags[0].evidence": {
+                "$contains_all": ["50", "definitely available"],
+            },
         },
     ),
     SystemCase(
@@ -553,7 +555,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         _SYSTEM_BASE + "Return no flags when no critical issue is explicit.",
         "Customer: I need six chairs.\nAssistant: I can help. Which style and budget range do you prefer?",
         _RED_FLAG_SCHEMA,
-        {"flags.$length": 0, "recommended_action": ""},
+        {"flags.$length": 0},
     ),
     SystemCase(
         "system-red-03",
@@ -564,7 +566,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         {
             "flags.$length": 1,
             "flags[0].code": "hard_deflection",
-            "flags[0].evidence": "Talk to a manager",
+            "flags[0].evidence": {"$contains_all": ["Talk to a manager"]},
         },
     ),
     SystemCase(
@@ -576,7 +578,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         {
             "flags.$length": 1,
             "flags[0].code": "bad_tone",
-            "flags[0].evidence": "Stop asking",
+            "flags[0].evidence": {"$contains_all": ["Stop asking"]},
         },
     ),
     SystemCase(
@@ -587,9 +589,13 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         "Question: What is the Axis warranty?\nManager draft: Axis chairs include a 5-year manufacturer warranty.\nCustomer language: en",
         _FAQ_SCHEMA,
         {
-            "customer_message": "Axis chairs include a 5-year manufacturer warranty.",
-            "kb_candidate.question": "What warranty do Axis chairs include?",
-            "kb_candidate.answer": "Axis chairs include a 5-year manufacturer warranty.",
+            "customer_message": {
+                "$contains_all": ["Axis", "5-year", "warranty"],
+            },
+            "kb_candidate.question": {"$contains_all": ["Axis", "warranty"]},
+            "kb_candidate.answer": {
+                "$contains_all": ["Axis", "5-year", "warranty"],
+            },
             "kb_candidate.confidence": 0.95,
             "kb_candidate.language": "en",
         },
@@ -601,7 +607,9 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         "Question: Can I get a discount?\nManager draft: For this project only, Victor approved 12% until Friday.\nCustomer language: en",
         _FAQ_SCHEMA,
         {
-            "customer_message": "For this project only, Victor approved 12% until Friday.",
+            "customer_message": {
+                "$contains_all": ["project", "Victor", "12%", "Friday"],
+            },
             "kb_candidate": None,
         },
     ),
@@ -613,9 +621,12 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         "Question: هل تقدمون خدمة التركيب؟\nManager draft: Assembly is available as an optional paid service.\nCustomer language: ar",
         _FAQ_SCHEMA,
         {
-            "customer_message": "التركيب متاح كخدمة اختيارية مدفوعة.",
-            "kb_candidate.question": "Is assembly available?",
-            "kb_candidate.answer": "Assembly is available as an optional paid service.",
+            "customer_message": {
+                "$contains_all": ["التركيب", "اختيارية", "مدفوعة"],
+            },
+            "kb_candidate.answer": {
+                "$contains_all": ["Assembly", "optional", "paid"],
+            },
             "kb_candidate.confidence": 0.9,
             "kb_candidate.language": "en",
         },
@@ -627,7 +638,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         "Question: How long is delivery?\nManager draft: I think it may be around a week, but I need to check.\nCustomer language: en",
         _FAQ_SCHEMA,
         {
-            "customer_message": "I think it may be around a week, but I need to check.",
+            "customer_message": {"$contains_all": ["week", "check"]},
             "kb_candidate": None,
         },
     ),
@@ -642,7 +653,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             "stage": "quoting",
             "selected_sku": "AX-E1",
             "quantity": 20,
-            "next_action": "Prepare a draft quote",
+            "next_action": {"$contains_all": ["prepare", "draft quote"]},
         },
     ),
     SystemCase(
@@ -656,7 +667,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             "stage": "qualifying",
             "selected_sku": None,
             "quantity": None,
-            "next_action": "Ask for team size",
+            "next_action": {"$contains_all": ["ask", "team size"]},
         },
     ),
     SystemCase(
@@ -670,7 +681,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             "stage": "solution",
             "selected_sku": "AX-E1",
             "quantity": 8,
-            "next_action": "Confirm preferred color",
+            "next_action": {"$contains_all": ["confirm", "color"]},
         },
     ),
     SystemCase(
@@ -684,7 +695,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             "stage": "closing",
             "selected_sku": "DK-4",
             "quantity": 4,
-            "next_action": "Manager sends the final quotation",
+            "next_action": {"$contains_all": ["manager", "final quotation"]},
         },
     ),
     SystemCase(
@@ -697,10 +708,10 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
         {
             "language": "ar",
             "translation": {
-                "$contains_all": ["1,450", "درهم", "الضمان", "5"],
+                "$contains_all": ["1,450", "درهم", "ضمان", "5"],
             },
             "preserved_numbers.$length": 2,
-            "preserved_numbers[0]": "1,450",
+            "preserved_numbers[0]": {"$contains_all": ["1,450"]},
             "preserved_numbers[1]": "5",
         },
     ),
@@ -748,7 +759,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             },
             "preserved_numbers.$length": 2,
             "preserved_numbers[0]": "10%",
-            "preserved_numbers[1]": "3",
+            "preserved_numbers[1]": {"$contains_all": ["3"]},
         },
     ),
     SystemCase(

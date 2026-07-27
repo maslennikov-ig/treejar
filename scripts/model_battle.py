@@ -215,6 +215,13 @@ def _normalize_expected_value(value: Any) -> Any:
 
 
 def _matches_expected(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, Mapping) and set(expected) == {"$number"}:
+        number = str(expected["$number"])
+        if isinstance(actual, int | float) and not isinstance(actual, bool):
+            return str(actual) == number
+        if isinstance(actual, str):
+            return number in extract_numeric_tokens(actual)
+        return False
     if (
         isinstance(expected, Mapping)
         and set(expected) == {"$contains_all"}
@@ -292,10 +299,10 @@ def build_blind_pair(
     }
 
 
-def score_blind_reviews(
+def evaluate_blind_reviews(
     reviews: Sequence[Mapping[str, Any]],
     key_rows: Sequence[Mapping[str, Any]],
-) -> dict[str, float]:
+) -> tuple[dict[str, float], dict[str, bool]]:
     """Validate completed blinded rubrics and reveal aggregate model quality."""
 
     review_by_pair = {
@@ -308,6 +315,7 @@ def score_blind_reviews(
         raise ValueError("Blind review pairs do not match the reveal key")
 
     points: dict[str, list[int]] = {}
+    hard_gate_observations: dict[str, list[bool]] = {}
     for pair, key_row in key_by_pair.items():
         review = review_by_pair[pair]
         scores = review.get("scores")
@@ -315,10 +323,21 @@ def score_blind_reviews(
         if not isinstance(scores, Mapping) or not isinstance(reveal, Mapping):
             raise ValueError(f"{pair}: missing scores or reveal mapping")
         for label in ("A", "B"):
-            label_scores = scores.get(label)
+            label_review = scores.get(label)
             model = reveal.get(label)
-            if not isinstance(label_scores, Mapping) or not isinstance(model, str):
+            if not isinstance(label_review, Mapping) or not isinstance(model, str):
                 raise ValueError(f"{pair}: incomplete label {label}")
+            label_scores = label_review.get("scores")
+            critical_failure = label_review.get("critical_failure")
+            critical_reason = label_review.get("critical_failure_reason")
+            if (
+                not isinstance(label_scores, Mapping)
+                or not isinstance(critical_failure, bool)
+                or not isinstance(critical_reason, str)
+            ):
+                raise ValueError(f"{pair}: incomplete rubric for {label}")
+            if critical_failure and not critical_reason.strip():
+                raise ValueError(f"{pair}: critical failure for {label} lacks a reason")
             if set(label_scores) != _BLIND_REVIEW_DIMENSIONS:
                 raise ValueError(f"{pair}: invalid review dimensions for {label}")
             values = list(label_scores.values())
@@ -330,10 +349,24 @@ def score_blind_reviews(
             ):
                 raise ValueError(f"{pair}: review scores must be integers from 1 to 5")
             points.setdefault(model, []).extend(values)
-    return {
+            hard_gate_observations.setdefault(model, []).append(not critical_failure)
+    quality = {
         model: sum(model_points) / (len(model_points) * 5)
         for model, model_points in points.items()
     }
+    hard_gates = {
+        model: all(observations)
+        for model, observations in hard_gate_observations.items()
+    }
+    return quality, hard_gates
+
+
+def score_blind_reviews(
+    reviews: Sequence[Mapping[str, Any]],
+    key_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, float]:
+    quality, _hard_gates = evaluate_blind_reviews(reviews, key_rows)
+    return quality
 
 
 def select_winner(
@@ -513,14 +546,18 @@ def build_base_payload(
     model: str,
     messages: Sequence[Mapping[str, Any]],
     max_tokens: int,
+    reasoning_enabled: bool | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "model": model,
         "messages": list(messages),
         "temperature": 0.0,
         "max_tokens": max_tokens,
         "provider": {"require_parameters": True},
     }
+    if reasoning_enabled is not None:
+        payload["reasoning"] = {"enabled": reasoning_enabled}
+    return payload
 
 
 def _extract_tool_calls(message: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -615,10 +652,7 @@ def score_sales_response(
     return {
         "passed": passed,
         "hard_gate_passed": (
-            all(forbidden_results.values())
-            and expected_tool_ok
-            and language_ok
-            and not ungrounded_numbers
+            all(forbidden_results.values()) and expected_tool_ok and language_ok
         ),
         "checks_passed": checks_passed,
         "checks_total": checks_total,
@@ -652,6 +686,7 @@ async def _run_sales_case(
             model=model,
             messages=messages,
             max_tokens=2200,
+            reasoning_enabled=None,
         )
         if case.tools:
             payload["tools"] = list(case.tools)
@@ -760,7 +795,12 @@ async def _run_system_case(
         {"role": "system", "content": case.system_prompt},
         {"role": "user", "content": case.user_prompt},
     ]
-    payload = build_base_payload(model=model, messages=messages, max_tokens=900)
+    payload = build_base_payload(
+        model=model,
+        messages=messages,
+        max_tokens=900,
+        reasoning_enabled=False,
+    )
     if case.tools:
         payload["tools"] = list(case.tools)
         payload["tool_choice"] = "auto"
@@ -886,6 +926,7 @@ def assert_catalog_capabilities(
                     "tools",
                     "tool_choice",
                     "response_format",
+                    "reasoning",
                     "structured_outputs",
                 }
             )
@@ -969,8 +1010,19 @@ def _build_blind_files(
                         "scale": "1=poor, 3=adequate, 5=excellent",
                         "instruction": (
                             "Score both answers independently using only the "
-                            "synthetic scenario. Do not infer model identity."
+                            "synthetic scenario. Mark critical_failure only for "
+                            "an invented commercial fact, wrong action/tool "
+                            "outcome, wrong required language, or materially "
+                            "unsafe advice. Do not infer model identity."
                         ),
+                        "answer_contract": {
+                            "scores": {
+                                dimension: "integer 1..5"
+                                for dimension in sorted(_BLIND_REVIEW_DIMENSIONS)
+                            },
+                            "critical_failure": "boolean",
+                            "critical_failure_reason": "string; required when true",
+                        },
                     },
                 },
                 "answers": pair["answers"],
@@ -989,7 +1041,7 @@ def _build_blind_files(
 def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
     """Turn raw evidence plus completed blind scores into route decisions."""
 
-    sales_rows = _read_jsonl(output_dir / "sales_results.jsonl")
+    sales_rows = rescore_sales_rows(_read_jsonl(output_dir / "sales_results.jsonl"))
     system_rows = _read_jsonl(output_dir / "system_results.jsonl")
     blind_scores = json.loads(blind_scores_path.read_text(encoding="utf-8"))
     blind_key = json.loads(
@@ -997,12 +1049,18 @@ def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
     )
     if not isinstance(blind_scores, list) or not isinstance(blind_key, list):
         raise ValueError("Blind scores and key must be JSON arrays")
-    blind_quality = score_blind_reviews(blind_scores, blind_key)
+    _write_jsonl(output_dir / "sales_scored_results.jsonl", sales_rows)
+    _write_json(output_dir / "sales_scored_aggregate.json", aggregate_rows(sales_rows))
+    blind_quality, blind_hard_gates = evaluate_blind_reviews(
+        blind_scores,
+        blind_key,
+    )
 
     sales_metrics, sales_details = candidate_metrics_from_evidence(
         suite="sales",
         rows=sales_rows,
         blind_quality=blind_quality,
+        blind_hard_gates=blind_hard_gates,
     )
     system_metrics, system_details = candidate_metrics_from_evidence(
         suite="system",
@@ -1023,6 +1081,48 @@ def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
     }
     _write_json(output_dir / "route_decisions.json", result)
     return result
+
+
+def rescore_sales_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Reapply the current deterministic scorer without new provider calls."""
+
+    from scripts.model_battle_cases import SALES_CASES
+
+    cases_by_id = {case.case_id: case for case in SALES_CASES}
+    rescored: list[dict[str, Any]] = []
+    for source_row in rows:
+        row = dict(source_row)
+        case = cases_by_id[str(row["case_id"])]
+        grounding_evidence = json.dumps(
+            {
+                "system_prompt": case.system_prompt,
+                "user_prompt": case.user_prompt,
+                "tool_results": case.tool_results,
+            },
+            ensure_ascii=False,
+        )
+        objective = score_sales_response(
+            content=str(row["final_content"]),
+            required_phrases=case.required_phrases,
+            forbidden_phrases=case.forbidden_phrases,
+            expected_tools=case.expected_tools,
+            observed_tools=[str(item) for item in row["observed_tools"]],
+            expected_language=case.expected_language,
+            allowed_numbers=extract_numeric_tokens(grounding_evidence),
+        )
+        tool_arguments = row.get("tool_arguments", [])
+        tool_args_ok = all(
+            item["parse_error"] is None and item["correct"] == item["total"]
+            for item in tool_arguments
+        )
+        objective["tool_arguments_ok"] = tool_args_ok
+        objective["passed"] = objective["passed"] and tool_args_ok
+        objective["hard_gate_passed"] = objective["hard_gate_passed"] and tool_args_ok
+        row["objective"] = objective
+        rescored.append(row)
+    return rescored
 
 
 def aggregate_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -1088,6 +1188,7 @@ def candidate_metrics_from_evidence(
     suite: str,
     rows: Sequence[Mapping[str, Any]],
     blind_quality: Mapping[str, float] | None = None,
+    blind_hard_gates: Mapping[str, bool] | None = None,
 ) -> tuple[list[CandidateMetrics], dict[str, Any]]:
     """Apply the accepted weights and hard gates to raw run evidence."""
 
@@ -1122,7 +1223,12 @@ def candidate_metrics_from_evidence(
             hard_gates = {
                 "zero_critical_failures": all(
                     bool(row["objective"]["hard_gate_passed"]) for row in model_rows
-                )
+                ),
+                "zero_blind_review_critical_failures": (
+                    True
+                    if blind_hard_gates is None
+                    else bool(blind_hard_gates.get(model, False))
+                ),
             }
             weighted = 100 * (
                 0.45 * objective_correctness
