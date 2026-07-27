@@ -18,12 +18,13 @@ and the implementation plan at
 
 Treat the recorded release identities as evidence to verify, not assumptions.
 At handoff time, `tj-r1f3` is still an open prerequisite. Its latest evidence
-is `.codex/stages/tj-r1f3/results/postdeploy-verification.md`: production is
-healthy on `main@b8de75c`, but the final bounded model smoke found a repeated
-specific-chair showroom offer after an unsupported medical claim and an
-unflagged delegated future stock-check promise. Preparation may continue, but
-mutation-capable E2E must wait until that prerequisite is resolved, deployed,
-and freshly proven.
+is `.codex/stages/tj-r1f3/results/postdeploy-verification.md`: the deployed code
+release `b8de75c` is healthy, and `main` also contains later
+documentation/evidence-only commits, but the final bounded model smoke found a
+repeated specific-chair showroom offer after an unsupported medical claim and
+an unflagged delegated future stock-check promise. Preparation may continue,
+but mutation-capable E2E must wait until that prerequisite is resolved,
+deployed, and freshly proven.
 
 Success criteria:
 - Freeze the immutable criterion snapshot and keep traceability, evidence mode,

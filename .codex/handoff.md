@@ -10,8 +10,11 @@ execution task, and launcher prompt prepared; live execution blocked by
 ## Current Truth
 
 - Canonical runtime: `https://noor.starec.ai`.
-- Local `main`, `origin/main`, and the deployed release are
+- The deployed code release is
   `b8de75c215d2678eb8d2cff06f91a49e48e0e4a9`.
+- `origin/main` contains that release plus later documentation/evidence-only
+  handoff commits. Those path-ignored commits intentionally did not redeploy
+  production.
 - GitHub Actions run `30283789902` passed lint, type-check, tests, and deploy.
 - Final local release gate passed Ruff, format, Mypy over 162 source files,
   process verification, and Pytest: `1624 passed, 19 skipped`.
