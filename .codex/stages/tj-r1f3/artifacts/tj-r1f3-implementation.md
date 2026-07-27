@@ -18,7 +18,7 @@ epic_id: tj-r1f3
 stage_id: tj-r1f3
 session_id: tj-r1f3
 milestone: grounded customer-output enforcement implementation
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: ai_engineer
 subagent_model: inherit_orchestrator
 reasoning_effort: high
@@ -61,9 +61,9 @@ parallel_group: output-enforcement-implementation
 depends_on_streams:
   - tj-r1f3-root-cause
 parallel_decision: sequential
-status: returned
-delivery_method: not accepted
-accepted_by_orchestrator: no
+status: accepted
+delivery_method: n/a
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: Implementation and review fixes are returned for orchestrator review; orchestrator owns acceptance and worktree cleanup.
 risk_level: high
@@ -97,9 +97,14 @@ verification:
   - final broad-smoke focused GREEN: public helper passed its offset/apostrophe test and 47 quote-aware broad/SKU smoke cases passed
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
   - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 612 tests
+  - independent delta review of 8b9ece6..d616463: APPROVED with no critical findings
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
+  - uv run ruff check src/ tests/: passed
+  - uv run ruff format --check src/ tests/: passed with 305 files already formatted
+  - uv run pytest tests/ -q --tb=short: passed with 1865 tests and 19 skipped
+  - scripts/orchestration/run_process_verification.sh: passed
   - uv run python scripts/orchestration/validate_artifact.py on this artifact: passed
   - uv run python scripts/orchestration/lint_stage_sizing.py --stage tj-r1f3: passed
   - git diff --check: passed
@@ -114,7 +119,7 @@ changed_files:
   - .codex/stages/tj-r1f3/artifacts/tj-r1f3-implementation.md
   - .superpowers/sdd/tj-r1f3-implementation-report.md
 explicit_defers:
-  - independent delta review, full release gate, deployment, production readback, and any freshly authorized provider smoke remain with later stage streams
+  - deployment, production readback, and any freshly authorized provider smoke remain with later stage streams
   - mixed-language and unseen paraphrase coverage remains a bounded residual risk; expansion to broad factual validation requires a separately reviewed scope
 ---
 
@@ -222,15 +227,18 @@ scope while retaining unquoted/list negative controls. Final broad-smoke
 coverage locks quoted and unquoted non-SKU stock wording plus the public
 masker's offset and word-apostrophe contract.
 
-The complete three affected test files passed 612 tests. Focused Ruff and
-format plus full `src/` Mypy passed. The detailed commands and failure evidence
-are in
+The complete three affected test files passed 612 tests. The independent
+delta review approved the final quote-aware smoke correction with no critical
+findings. The full local release gate then passed with 1865 tests and 19 skips,
+plus repository-wide Ruff, format, `src/` Mypy, and process verification. The
+detailed commands and failure evidence are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.
 
 # Delivery / Cleanup
 
-The stream is returned for orchestrator review and is not yet accepted.
-Cleanup is pending and remains owned by the orchestrator. No provider smoke,
+The stream is accepted by the orchestrator for local integration. Stage
+completion remains pending on exact authorization for delivery and live proof;
+cleanup remains owned by the orchestrator. No provider smoke,
 deployment, live call, customer send, production mutation, Zoho/CRM action,
 quotation, or order action was performed.
 
@@ -239,5 +247,5 @@ quotation, or order action was performed.
 Residual risk is bounded to unseen paraphrases, especially mixed-language
 outputs. The fail-closed path limits user-visible harm for recognized forms,
 but broader factual-claim enforcement is intentionally outside this task.
-Independent review, release verification, deploy/readback, and any newly
-authorized provider smoke remain required before stage acceptance.
+Deploy/readback and any newly authorized provider smoke remain required before
+stage acceptance.
