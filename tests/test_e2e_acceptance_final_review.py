@@ -183,3 +183,44 @@ def test_final_readback_cannot_predate_final_turn_anchor(tmp_path: Path) -> None
 
     with pytest.raises(Exception, match="timestamp|occurred|predate|final-turn"):
         journal.seal_final_readback(final)
+
+
+def test_trusted_run_module_has_no_public_caller_root_loader() -> None:
+    _, _, trusted = _modules()
+
+    assert not hasattr(trusted, "load_verified_run")
+
+
+def test_trusted_run_rejects_attempt_producer_without_protected_receipt(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(
+        tmp_path,
+        missing_attempt_receipts=True,
+    )
+
+    with pytest.raises(Exception, match="protected.*receipt|producer.*receipt"):
+        registry._load_verified_run_roots(tracked, protected)
+
+
+def test_trusted_run_rejects_report_producer_without_protected_receipt(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(
+        tmp_path,
+        missing_report_receipt=True,
+    )
+
+    with pytest.raises(Exception, match="protected.*receipt|producer.*receipt"):
+        registry._load_verified_run_roots(tracked, protected)
+
+
+def test_registry_materializer_uses_fixed_roots() -> None:
+    policy, _, _ = _modules()
+
+    parameters = inspect.signature(
+        policy.TrustedAcceptanceRegistry.open_materializer
+    ).parameters
+
+    assert "tracked_root" not in parameters
+    assert "protected_root" not in parameters

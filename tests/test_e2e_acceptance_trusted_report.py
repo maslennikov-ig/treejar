@@ -51,6 +51,8 @@ def _build_verified_run(
     self_authorized_exclusion: bool = False,
     without_attempts: bool = False,
     incomplete_turns: bool = False,
+    missing_attempt_receipts: bool = False,
+    missing_report_receipt: bool = False,
 ):
     policy, execution, trusted = _modules()
     registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
