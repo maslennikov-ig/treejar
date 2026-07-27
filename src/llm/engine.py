@@ -1057,6 +1057,60 @@ class ProductMediaPayload:
     caption: str
     product_key: str
     zoho_item_id: str | None = None
+    reference_tokens: tuple[str, ...] = ()
+
+
+_PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
+    {
+        "beige",
+        "black",
+        "blue",
+        "brown",
+        "green",
+        "grey",
+        "gray",
+        "orange",
+        "red",
+        "walnut",
+        "white",
+        "yellow",
+    }
+)
+
+
+def _normalized_product_reference(value: str) -> str:
+    return " ".join(re.sub(r"[^\w]+", " ", value.casefold()).split())
+
+
+def _product_media_is_referenced(
+    item: ProductMediaPayload,
+    response_text: str,
+) -> bool:
+    if not item.reference_tokens:
+        return True
+
+    normalized_response = _normalized_product_reference(response_text)
+    response_words = set(normalized_response.split())
+    for raw_reference in item.reference_tokens:
+        reference = _normalized_product_reference(raw_reference)
+        if not reference:
+            continue
+        if reference in normalized_response:
+            return True
+
+        reference_words = [
+            word
+            for word in reference.split()
+            if word not in _PRODUCT_REFERENCE_VARIANT_WORDS
+        ]
+        if (
+            len(reference_words) >= 2
+            and any(any(char.isdigit() for char in word) for word in reference_words)
+            and all(word in response_words for word in reference_words)
+        ):
+            return True
+
+    return False
 
 
 @dataclass(frozen=True)
@@ -8773,6 +8827,7 @@ async def search_products(
         caption: str,
         product_key: str,
         zoho_item_id: str | None = None,
+        reference_tokens: tuple[str, ...] = (),
     ) -> None:
         if ctx.deps.defer_product_media:
             ctx.deps.pending_product_media.append(
@@ -8781,6 +8836,7 @@ async def search_products(
                     caption=caption,
                     product_key=product_key,
                     zoho_item_id=zoho_item_id,
+                    reference_tokens=reference_tokens,
                 )
             )
             return
@@ -8879,6 +8935,7 @@ async def search_products(
                 caption=media_caption,
                 product_key=product_key,
                 zoho_item_id=getattr(r, "zoho_item_id", None),
+                reference_tokens=(r.name_en, r.sku),
             )
 
         formatted_results.append(desc)
@@ -9739,6 +9796,7 @@ async def process_message(
         response_deps: SalesDeps,
         *,
         allow_product_media: bool,
+        response_text: str,
     ) -> tuple[ProductMediaPayload, ...]:
         if response_deps.quotation_created:
             if response_deps.pending_product_media:
@@ -9751,7 +9809,22 @@ async def process_message(
                 )
             return ()
         if allow_product_media:
-            return tuple(response_deps.pending_product_media)
+            referenced_media = tuple(
+                item
+                for item in response_deps.pending_product_media
+                if _product_media_is_referenced(item, response_text)
+            )
+            suppressed_count = len(response_deps.pending_product_media) - len(
+                referenced_media
+            )
+            if suppressed_count:
+                logger.info(
+                    "Suppressed %d deferred product media item(s) not referenced "
+                    "by the final response for conversation %s",
+                    suppressed_count,
+                    response_deps.conversation.id,
+                )
+            return referenced_media
         if response_deps.pending_product_media:
             logger.warning(
                 "Suppressed %d deferred product media item(s) for conversation %s "
@@ -9830,6 +9903,7 @@ async def process_message(
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
+                response_text=final_text,
             ),
         )
 
@@ -9864,6 +9938,7 @@ async def process_message(
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
+                response_text=final_text,
             ),
         )
 
@@ -9891,6 +9966,7 @@ async def process_message(
             deferred_product_media=_deferred_product_media_for_response(
                 deps,
                 allow_product_media=False,
+                response_text=final_text,
             ),
         )
 

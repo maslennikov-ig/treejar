@@ -2089,6 +2089,64 @@ async def test_process_message_returns_deferred_product_media_after_first_turn_o
 
 
 @pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_suppresses_unreferenced_deferred_product_media(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Please recommend one or two acoustic pod alternatives."
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    referenced = ProductMediaPayload(
+        url="https://example.com/luma.jpg",
+        caption="Two Person Workstation SKYLAND LUMA 9719-2 — 941.00 AED",
+        product_key="luma-9719-2",
+        reference_tokens=(
+            "Two Person Workstation SKYLAND LUMA 9719-2",
+            "OF-HAI-Luma-Workstation-RJ 9719-2-Walnut",
+        ),
+    )
+    unreferenced = ProductMediaPayload(
+        url="https://example.com/chair.jpg",
+        caption="Operative Chair CH 270 Black — 410.00 AED",
+        product_key="ch-270-black",
+        reference_tokens=("Operative Chair CH 270 Black", "CH 270 Black"),
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.pending_product_media.extend((referenced, unreferenced))
+        return _FakeAgentResult(
+            "The closest alternative is Two Person Workstation SKYLAND LUMA 9719-2."
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.deferred_product_media == (referenced,)
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
