@@ -258,6 +258,10 @@ BARE_NAME_GATE_REJECT_TOKENS = frozenset(
 )
 NATURAL_NAME_PATTERNS = (
     re.compile(
+        r"\bاسمي\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s)",
+        re.S,
+    ),
+    re.compile(
         r"\bmy\s+name\s+is\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s)",
         re.I | re.S,
     ),
