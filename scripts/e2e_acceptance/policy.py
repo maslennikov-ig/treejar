@@ -808,6 +808,38 @@ class TrustedAcceptanceRegistry:
             )
         return dict(self._verified_rollups)
 
+    def _load_verified_run_roots(
+        self,
+        tracked_root: Path,
+        protected_root: Path,
+    ) -> None:
+        """Internal test seam; public callers must use the fixed run layout."""
+
+        from scripts.e2e_acceptance.trusted_run import load_verified_run
+
+        verified = load_verified_run(self, tracked_root, protected_root)
+        self._verified_rollups = dict(verified.rollups)
+        self._report_bytes = verified.report_bytes
+
+    def open_run(
+        self,
+        *,
+        protected_root: Path,
+        run_id: str,
+    ) -> None:
+        if not run_id or any(
+            character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
+            for character in run_id.lower()
+        ):
+            raise PolicyValidationError("trusted run identity is unsafe")
+        tracked_root = (
+            self._repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+        )
+        self._load_verified_run_roots(
+            tracked_root,
+            protected_root / run_id,
+        )
+
     def write_report(self, output_path: Path) -> None:
         parent_fd, name = _open_output_parent(output_path)
         try:

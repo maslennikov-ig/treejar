@@ -8,17 +8,20 @@ import os
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from scripts.e2e_acceptance.evidence import (
     redact_payload,
     validate_redacted_payload,
 )
+from scripts.e2e_acceptance.policy import (
+    CompiledPolicy,
+    OracleEvidence,
+    ReadbackObservation,
+    TrustedAcceptanceRegistry,
+)
 from scripts.e2e_acceptance.schemas import EvidenceMode
-
-if TYPE_CHECKING:
-    from scripts.e2e_acceptance.policy import CompiledPolicy, ReadbackObservation
 
 COMPILER_ID = "treejar.acceptance-policy-compiler.v2"
 LOCAL_ADAPTER_IDS = ("fake-local-adapter",)
@@ -190,6 +193,7 @@ class ExecutionAuthorizationV2(_StrictModel):
     compiler_id: str = Field(min_length=1)
     compiled_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     execution_ids: tuple[str, ...] = Field(min_length=1)
+    execution_input_digests: dict[str, str] = Field(min_length=29)
     adapter_ids: tuple[str, ...] = Field(min_length=1)
     store_ids: StoreIdentities
     registry_id: str = Field(min_length=1)
@@ -205,6 +209,12 @@ class ExecutionAuthorizationV2(_StrictModel):
             or self.expires_at <= self.issued_at
         ):
             raise ValueError("authorization v2 window is invalid")
+        if set(self.execution_input_digests) != set(self.execution_ids) or any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in self.execution_input_digests.values()
+        ):
+            raise ValueError("authorization v2 executable input binding drift")
         return self
 
 
@@ -263,6 +273,235 @@ class AttemptRecovery(_StrictModel):
     raw_digest: str | None
     tracked_digest: str | None
     commit_digest: str
+
+
+class PlannedTurnV2(_StrictModel):
+    turn_id: str = Field(min_length=1)
+    customer_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_behavior_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    criterion_ids: tuple[str, ...] = Field(min_length=1)
+    assertion_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class TurnTimelineV2(_StrictModel):
+    sent_at: datetime
+    first_visible_at: datetime
+    final_visible_at: datetime
+    delivered_at: datetime | None
+
+    @model_validator(mode="after")
+    def _ordered(self) -> TurnTimelineV2:
+        values = [self.sent_at, self.first_visible_at, self.final_visible_at]
+        if any(item.tzinfo is None or item.utcoffset() is None for item in values):
+            raise ValueError("turn timeline must be timezone-aware")
+        if values != sorted(values):
+            raise ValueError("turn timeline order is invalid")
+        if self.delivered_at is not None and (
+            self.delivered_at.tzinfo is None
+            or self.delivered_at.utcoffset() is None
+            or self.delivered_at < self.final_visible_at
+        ):
+            raise ValueError("turn delivery timestamp is invalid")
+        return self
+
+
+class ActualTurnV2(_StrictModel):
+    actual_turn_id: str = Field(min_length=1)
+    planned_turn_id: str = Field(min_length=1)
+    customer_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_behavior_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    criterion_ids: tuple[str, ...] = Field(min_length=1)
+    assertion_ids: tuple[str, ...] = Field(min_length=1)
+    event_refs: tuple[str, ...] = Field(min_length=1)
+    tool_refs: tuple[str, ...]
+    audit_refs: tuple[str, ...] = Field(min_length=1)
+    timeline: TurnTimelineV2
+    model_id: str = Field(min_length=1)
+    token_count: int = Field(ge=0)
+    cost_usd: float = Field(ge=0)
+
+
+class AdaptiveDeviationV2(_StrictModel):
+    planned_turn_id: str = Field(min_length=1)
+    actual_turn_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class ScenarioAttemptV2(_StrictModel):
+    schema_version: Literal["noor-e2e-scenario-attempt/v2"]
+    execution_id: str = Field(min_length=1)
+    planned_turns: tuple[PlannedTurnV2, ...] = Field(min_length=1)
+    actual_turns: tuple[ActualTurnV2, ...] = Field(min_length=1)
+    adaptive_deviations: tuple[AdaptiveDeviationV2, ...]
+    oracle_evidence: tuple[OracleEvidence, ...] = Field(min_length=1)
+    permission_evidence: tuple[str, ...]
+    readback_evidence: tuple[str, ...]
+    baseline: ReadbackObservation
+    final: ReadbackObservation
+    action_at: tuple[datetime, ...]
+    tester_config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    judge_config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ValidatedAttempt(_StrictModel):
+    execution_id: str
+    plan_digest: str
+    attempt_digest: str
+    outcome: Literal["PASS", "FAIL"]
+    oracle_decisions: tuple[dict[str, Any], ...]
+
+
+def scenario_plan_digest(attempt: ScenarioAttemptV2) -> str:
+    return _digest(
+        {
+            "execution_id": attempt.execution_id,
+            "planned_turns": [
+                item.model_dump(mode="json") for item in attempt.planned_turns
+            ],
+            "tester_config_digest": attempt.tester_config_digest,
+            "judge_config_digest": attempt.judge_config_digest,
+        }
+    )
+
+
+class GenericAcceptanceRunner:
+    """Validate locally captured attempts against the universal compiled policy."""
+
+    def __init__(
+        self,
+        *,
+        registry: TrustedAcceptanceRegistry,
+        authorization: ExecutionAuthorizationV2,
+        journal: ProtectedExecutionJournal,
+    ) -> None:
+        registry.validate_execution_authorization(authorization)
+        if journal.authorization_digest != _digest(
+            authorization.model_dump(mode="json")
+        ):
+            raise ExecutionValidationError("journal authorization binding drift")
+        self.registry = registry
+        self.authorization = authorization
+        self.journal = journal
+
+    def validate_attempt(self, attempt: ScenarioAttemptV2) -> ValidatedAttempt:
+        scenario = self.registry.compiled_policy.scenarios.get(attempt.execution_id)
+        if scenario is None:
+            raise ExecutionValidationError(
+                "generic scenario runner requires a canonical scenario execution"
+            )
+        plan_digest = scenario_plan_digest(attempt)
+        if (
+            self.authorization.execution_input_digests.get(attempt.execution_id)
+            != plan_digest
+        ):
+            raise ExecutionValidationError("authorized planned input digest drift")
+
+        planned_by_id = {item.turn_id: item for item in attempt.planned_turns}
+        actual_by_plan = {item.planned_turn_id: item for item in attempt.actual_turns}
+        if (
+            len(planned_by_id) != len(attempt.planned_turns)
+            or len(actual_by_plan) != len(attempt.actual_turns)
+            or set(planned_by_id) != set(actual_by_plan)
+        ):
+            raise ExecutionValidationError("actual turns lack exact planned coverage")
+
+        canonical_assertions = {
+            item.assertion_id
+            for group in (scenario.checkpoints, scenario.prohibited_outcomes)
+            for item in group.values()
+        }
+        for criterion_id in scenario.criterion_ids:
+            canonical_assertions.update(
+                item.assertion_id
+                for item in self.registry.compiled_policy.criteria[
+                    criterion_id
+                ].oracle_checks.values()
+            )
+        planned_criteria = {
+            criterion_id
+            for item in attempt.planned_turns
+            for criterion_id in item.criterion_ids
+        }
+        planned_assertions = {
+            assertion_id
+            for item in attempt.planned_turns
+            for assertion_id in item.assertion_ids
+        }
+        if planned_criteria != set(scenario.criterion_ids):
+            raise ExecutionValidationError("planned criterion coverage drift")
+        if planned_assertions != canonical_assertions:
+            raise ExecutionValidationError("planned canonical oracle coverage drift")
+
+        expected_deviations: set[tuple[str, str]] = set()
+        for planned_id, planned in planned_by_id.items():
+            actual = actual_by_plan[planned_id]
+            if (
+                actual.expected_behavior_digest != planned.expected_behavior_digest
+                or actual.criterion_ids != planned.criterion_ids
+                or actual.assertion_ids != planned.assertion_ids
+            ):
+                raise ExecutionValidationError("actual turn plan binding drift")
+            if (
+                actual.actual_turn_id != planned_id
+                or actual.customer_input_digest != planned.customer_input_digest
+            ):
+                expected_deviations.add((planned_id, actual.actual_turn_id))
+        actual_deviations = {
+            (item.planned_turn_id, item.actual_turn_id)
+            for item in attempt.adaptive_deviations
+        }
+        if actual_deviations != expected_deviations:
+            raise ExecutionValidationError("adaptive deviation coverage drift")
+
+        evidence_by_assertion = {
+            item.assertion_id: item for item in attempt.oracle_evidence
+        }
+        if (
+            len(evidence_by_assertion) != len(attempt.oracle_evidence)
+            or set(evidence_by_assertion) != canonical_assertions
+        ):
+            raise ExecutionValidationError("structured oracle evidence coverage drift")
+        decisions = tuple(
+            self.registry.evaluate_oracle(
+                assertion_id,
+                evidence_by_assertion[assertion_id],
+            )
+            for assertion_id in sorted(canonical_assertions)
+        )
+        if set(attempt.permission_evidence) != set(scenario.required_permissions):
+            raise ExecutionValidationError("permission evidence coverage drift")
+        if set(attempt.readback_evidence) != set(scenario.required_readbacks):
+            raise ExecutionValidationError("readback evidence coverage drift")
+
+        final_visible = [
+            item.timeline.final_visible_at for item in attempt.actual_turns
+        ]
+        delivered = [
+            item.timeline.delivered_at
+            for item in attempt.actual_turns
+            if item.timeline.delivered_at is not None
+        ]
+        self.registry.validate_readback_window(
+            baseline=attempt.baseline,
+            final=attempt.final,
+            final_visible_at=final_visible,
+            delivered_at=delivered,
+            action_at=attempt.action_at,
+        )
+        if self.journal.phase != "executing":
+            raise ExecutionValidationError(
+                "attempt validation requires executing phase"
+            )
+        outcome: Literal["PASS", "FAIL"] = (
+            "PASS" if all(item.passed for item in decisions) else "FAIL"
+        )
+        return ValidatedAttempt(
+            execution_id=attempt.execution_id,
+            plan_digest=plan_digest,
+            attempt_digest=_digest(attempt.model_dump(mode="json")),
+            outcome=outcome,
+            oracle_decisions=tuple(item.model_dump(mode="json") for item in decisions),
+        )
 
 
 def _directory_flags() -> int:
