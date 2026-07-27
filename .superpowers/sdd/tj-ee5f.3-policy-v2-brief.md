@@ -23,22 +23,32 @@ Three approaches were considered:
    safety, commercial, manager, and side-effect decisions would become
    self-authorized and non-reproducible.
 
-The compiler loads exact Task 1 files plus a versioned execution-policy manifest.
-It produces one immutable `CompiledPolicy` only after exact-set equality and
-reciprocal binding pass for all 20 scenarios, 9 evidence blocks, and 30 criteria.
-Typed oracle primitives distinguish text supplements from structured event,
-tool, audit, classifier, and independent-readback evidence. Production
-classifiers are named evidence dependencies; fixtures cannot replace them with
-regexes, literals, `hard_safety`, or caller allowlists.
+`TrustedAcceptanceRegistry` is the only public trust center. It opens the exact
+Task 1 files, versioned execution-policy manifest, authorization/preflight
+binding, evidence index, and protected external anchors itself. It exposes
+immutable compiled-policy and verified-run views only after exact-set equality,
+integrity, and reciprocal binding pass for all 20 scenarios, 9 evidence blocks,
+and 30 criteria. Rollup/report APIs never accept caller scope IDs, planned
+execution IDs, result rows, evidence roots, verified flags, or self-described
+final readbacks.
+
+The compiler validates an explicit typed DSL against a code-owned
+capability/oracle registry. It never derives semantics from free text and never
+branches on scenario ID. Typed oracle primitives distinguish text supplements
+from structured event, tool, audit, classifier, and independent-readback
+evidence. Production classifiers are named evidence dependencies; fixtures
+cannot replace them with regexes, literals, `hard_safety`, or caller allowlists.
 
 The runner validates the Task 1 authorization/preflight bundle, exact compiled
 scenario plan, every planned/actual/adaptive turn, structured evidence, separate
-baseline and final readbacks, post-action timestamps, and cumulative immutable
-attempt quotas. Evidence is raw/private outside Git and recursively redacted in
-Git, with descriptor-relative no-follow reads/writes and an external protected
-anchor. Rollups derive their scope only from the immutable snapshot,
-traceability, scenario set, policy, verified evidence index, and protected
-anchor. The report accepts a strict typed payload, validates privacy after final
+baseline and final typed observations, post-action timestamps, and cumulative
+immutable attempt quotas. The final observation must come from an independent
+collector bound by preflight, exactly reconcile the baseline/final inventory,
+and occur after the maximum delivered, final-visible, and action timestamp.
+Evidence is raw/private outside Git and recursively redacted in Git, with
+descriptor-relative no-follow reads/writes and an external protected anchor.
+Rollups derive their scope only through the registry. The report accepts a
+registry-issued strict typed payload, validates privacy after final
 serialization, and creates a new file only through a no-follow descriptor chain.
 
 ## Invariant gate and focused matrix
