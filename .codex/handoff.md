@@ -2,8 +2,8 @@
 
 Updated: 2026-07-27
 Current branch: `main`
-Current stage id: `tj-5e3k`
-Current stage status: accepted; four-candidate model battle
+Current stage id: `tj-j13d`
+Current stage status: in progress; grounded model adoption and authorized deployment
 
 ## Current Truth
 
@@ -72,14 +72,20 @@ Current stage status: accepted; four-candidate model battle
 - Durable report:
   `docs/reports/model-battle-glm52-v4pro-2026-07-27.md`; raw and derived
   evidence: `.codex/stages/tj-5e3k/results/`.
+- Stage `tj-j13d` implements the approved product decision: GLM-5.2 for core
+  sales and DeepSeek V4 Flash for default fast/helper routes, with one
+  immutable evidence-grounding contract and capability registry.
+- Repository FAQ truth confirms UAE showroom visits and conditional project
+  samples. The new policy preserves those capabilities while keeping stock,
+  operational price, quotation, order state, discounts, and exceptional terms
+  behind their existing evidence/tool/manager gates.
 
 ## Boundary and Scope Ledger
 
-- One cohesive active stage owns the shared OpenRouter evaluation,
-  correctness, blinding, and evidence boundary.
-- Root owned implementation and sequential inference. Context-isolated
-  reviewers performed anonymous A/B/C/D sales scoring and targeted correctness
-  review without production access.
+- One cohesive active stage owns model routing, grounding policy, provider
+  verification, deployment, rollback, and post-deploy smoke.
+- Root owns the sequential implementation and deploy chain. One
+  context-isolated combined reviewer is reserved for the release boundary.
 - No scope criterion was dropped and no v2.19 material split occurred.
 - Excluded actions remained excluded: production routing, customer traffic,
   quotation/order creation, Zoho/Wazzup mutations, and real customer data.
@@ -88,33 +94,33 @@ Current stage status: accepted; four-candidate model battle
 
 Next stage id: `tj-j13d`
 
-Recommended action: harden DeepSeek V4 Pro locally for the structured routes,
-using DeepSeek V4 Flash as the semantic reference. Require the accepted
-JSON/schema, semantic, consistent-case, tool-argument, reasoning-control, and
-fallback gates before any production switch. `tj-b93r` separately owns the
-GLM-5 weak-catalog grounding guard.
+Recommended action: implement the approved GLM-5.2/V4 Flash routing and shared
+grounding policy through TDD, release review, authorized deploy, rollback
+capture, and bounded post-deploy smoke. `tj-b93r` remains separate historical
+grounding evidence and must not duplicate this stage.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-j13d`. Preserve accepted `tj-5e3k` evidence,
-harden `deepseek/deepseek-v4-pro` for fast structured routes with reasoning
-disabled, validation and bounded fallback, and compare it against
-`deepseek/deepseek-v4-flash`. Close every acceptance gate locally before
-proposing a production switch. Ask before deployment or live traffic.
+Use $orchestrator-stage for `tj-j13d`. Execute
+`docs/superpowers/plans/2026-07-27-noor-model-switch-grounding.md`, preserve the
+accepted benchmark evidence, and deploy only the locally verified release.
+Run bounded synthetic post-deploy tests without outbound customer messaging or
+business-system mutations.
 
 ## Approval gates
 
 - Existing authorization covered the completed bounded production matrix and
   exact synthetic cleanup.
-- A production model/provider switch is a new release boundary and requires
-  explicit current-task authorization.
+- The user explicitly authorized this stage's production model switch, deploy,
+  and bounded post-deploy tests.
+- Outbound customer messaging, quotation/order creation, and Zoho mutations
+  remain outside that authorization.
 - Preserve protected credentials and unrelated user files.
 
 ## Explicit defers
 
-- DeepSeek V4 Pro hardening is tracked by `tj-j13d`; model adoption and
-  deployment require that task to pass its gates and a separately approved
-  release boundary.
+- No adoption defer remains inside `tj-j13d`; deployment is gated by its local
+  release, provider, review, rollback, and post-deploy acceptance checks.
 - GLM-5 weak-catalog grounding is tracked by `tj-b93r`.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy

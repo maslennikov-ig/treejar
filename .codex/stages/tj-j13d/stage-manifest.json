@@ -1,0 +1,71 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-j13d",
+  "goal_id": "tj-j13d",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "noor-grounded-model-adoption",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "core-sales-model",
+      "fast-helper-model",
+      "prompt-grounding-policy",
+      "production-runtime"
+    ],
+    "risk_models": [
+      "model-quality",
+      "unsupported-commercial-claims",
+      "provider-compatibility",
+      "deployment-rollback"
+    ],
+    "test_environments": [
+      "local-unit-integration",
+      "openrouter-synthetic",
+      "production-health-smoke"
+    ],
+    "rollback_boundary": "restore-prior-release-and-two-model-env-values",
+    "acceptance_proofs": [
+      "model-routing-contract",
+      "grounding-capability-contract",
+      "release-quality-gates",
+      "provider-synthetic-smoke",
+      "production-health-and-model-readback"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "persistence_or_adapter",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-j13d",
+    "source_digest": "83d2d9e3c482205dd5a10c53c9079f8d683f21ebeb211d83d715279931102426",
+    "criteria": [
+      {
+        "criterion_id": "AC-1",
+        "text": "Repository defaults and .env.example select z-ai/glm-5.2 for OPENROUTER_MODEL_MAIN and deepseek/deepseek-v4-flash for OPENROUTER_MODEL_FAST; core and helper routing tests prove those identities; V4 Flash requests reasoning disabled where supported without changing other providers; build_system_prompt always appends the immutable grounding contract after database prompt components; the capability registry preserves FAQ-backed showroom visits, conditional samples, tool-required stock/price/quote/order state, and manager-required exceptional commitments; missing evidence uses a safe unknown/unconfirmed tool-or-clarification-or-handoff fallback; focused tests, affected integration checks, full release gates, provider capability preflight, and bounded synthetic model smoke pass; production .env is backed up and exactly the two model variables are updated, the canonical deploy succeeds, release/model readback and app/worker/Redis/PostgreSQL/public health pass, and post-deploy synthetic FAQ/product/missing-stock/structured/fallback checks pass without customer data, Zoho mutation, quotation creation, or outbound Wazzup; prior release and model values are retained for rollback.",
+        "text_digest": "4872ebc336e40cde4def5bd4fe17c1802b24937629688f0ba14d0960326cfa57"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-j13d/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "83d2d9e3c482205dd5a10c53c9079f8d683f21ebeb211d83d715279931102426",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-j13d",
+      "stream_owner": "root-implementation-and-deployment",
+      "artifact_path": ".codex/stages/tj-j13d/artifacts/tj-j13d.md"
+    }
+  ]
+}

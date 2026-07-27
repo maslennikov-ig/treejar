@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-j13d",
+  "source_kind": "beads",
+  "source_id": "tj-j13d",
+  "source_digest": "83d2d9e3c482205dd5a10c53c9079f8d683f21ebeb211d83d715279931102426",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "Repository defaults and .env.example select z-ai/glm-5.2 for OPENROUTER_MODEL_MAIN and deepseek/deepseek-v4-flash for OPENROUTER_MODEL_FAST; core and helper routing tests prove those identities; V4 Flash requests reasoning disabled where supported without changing other providers; build_system_prompt always appends the immutable grounding contract after database prompt components; the capability registry preserves FAQ-backed showroom visits, conditional samples, tool-required stock/price/quote/order state, and manager-required exceptional commitments; missing evidence uses a safe unknown/unconfirmed tool-or-clarification-or-handoff fallback; focused tests, affected integration checks, full release gates, provider capability preflight, and bounded synthetic model smoke pass; production .env is backed up and exactly the two model variables are updated, the canonical deploy succeeds, release/model readback and app/worker/Redis/PostgreSQL/public health pass, and post-deploy synthetic FAQ/product/missing-stock/structured/fallback checks pass without customer data, Zoho mutation, quotation creation, or outbound Wazzup; prior release and model values are retained for rollback.",
+      "text_digest": "4872ebc336e40cde4def5bd4fe17c1802b24937629688f0ba14d0960326cfa57"
+    }
+  ]
+}
