@@ -1,0 +1,241 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-ee5f",
+  "goal_id": "tj-ee5f",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "noor-agent-driven-e2e-acceptance",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "material_boundary_override",
+  "stage_boundary_reason": "unresolved_public_ownership_or_public_contract",
+  "boundary": {
+    "subsystems": [
+      "acceptance-contracts",
+      "customer-conversation",
+      "provider-transport",
+      "catalog-and-commercial-safety",
+      "quotation-and-crm",
+      "manager-and-lifecycle",
+      "admin-quality-and-reporting",
+      "nonfunctional-evidence"
+    ],
+    "risk_models": [
+      "authorization",
+      "external-side-effects",
+      "commercial-correctness",
+      "privacy",
+      "state-transition",
+      "provider-ingress",
+      "evidence-integrity"
+    ],
+    "test_environments": [
+      "local-contract-tests",
+      "authorized-application-native-production",
+      "authorized-provider-canary",
+      "authorized-readback-and-nonfunctional-blocks"
+    ],
+    "rollback_boundary": "immutable-acceptance-evidence-plus-isolated-fix-and-delivery-streams",
+    "acceptance_proofs": [
+      "immutable-scope-and-traceability",
+      "validated-authorization-preflight",
+      "exact-redacted-conversation-evidence",
+      "external-side-effect-terminal-ledger",
+      "fresh-release-bound-scenario-results",
+      "client-report-rollups"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "persistence_or_adapter",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-ee5f",
+    "source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
+    "criteria": [
+      {
+        "criterion_id": "AC-01",
+        "text": "The exact target release, deployment, application version, migration head, endpoint, main and fast model routes, health, Redis, PostgreSQL, worker, and Wazzup channel state are identified; one application-native inbound message is persisted and answered once; provider-originated ingress is claimed only when separately proven.",
+        "text_digest": "f893c1da547c0e52dd3aba2c237e606721768082bd4330f23feabac099fbbb4f"
+      },
+      {
+        "criterion_id": "AC-02",
+        "text": "On first contact Noor correctly distinguishes a new customer from an existing customer, creates or enriches only the expected CRM records for a new synthetic customer, and uses bounded relevant context for a returning customer.",
+        "text_digest": "521543bc66ef3f05c68d028135d4c2211e69abc7ee76e3b7bed6bda10dd80db4"
+      },
+      {
+        "criterion_id": "AC-03",
+        "text": "Noor handles English and Arabic text, opens in the customer's language as Noor from Treejar, asks how to address an unknown customer, accepts labeled and bare names, resumes the pre-name request, and preserves locale through normal, fallback, and manager paths.",
+        "text_digest": "6892739af3cced0929e94ebf65f2621ced09d2e411f397871e68253b7fa138d9"
+      },
+      {
+        "criterion_id": "AC-04",
+        "text": "Noor accepts English and Arabic voice messages, transcribes them, answers in the detected language, persists the exchange, and records observable audit evidence.",
+        "text_digest": "093c4fffb1ea50322e911a3226cb770ff8984247845b1c3d603ce310c32c2bf2"
+      },
+      {
+        "criterion_id": "AC-05",
+        "text": "Noor consults from the current Treejar Catalog API assortment and provides catalog-backed identity, description, category, image, customer-facing price, characteristics, and appropriately verified delivery information without treating Zoho Inventory as the primary customer catalog.",
+        "text_digest": "1fd94ff94bc1c679f071f43757c55b63358996b9a178d5df357529b3a1752e33"
+      },
+      {
+        "criterion_id": "AC-06",
+        "text": "Noor follows the approved dialogue rules and Treejar values: it discovers the customer's business need, recommends useful options before unnecessary data collection, explains value, handles objections, labels alternatives, offers a bounded next step, and does not invent a discount or unsupported benefit.",
+        "text_digest": "e53c617b70442180f77bcffff20a1593c5237aaa775e4800d888baa745896a81"
+      },
+      {
+        "criterion_id": "AC-07",
+        "text": "Exact stock, availability, operational price, quotation state, order state, exceptional discounts, payment terms, logistics, warranties, medical benefits, manager actions, samples, and other commercial claims use the required verified tool, policy, or manager gate; missing evidence remains unknown or unconfirmed and never becomes an unsupported promise.",
+        "text_digest": "f5915830996e571d5a6aa4e44cf8f692cb41961467e22cee9dc92d3e8a81a30f"
+      },
+      {
+        "criterion_id": "AC-08",
+        "text": "For an existing order, Noor returns the correct confirmation, delivery, and payment status from the approved operational source.",
+        "text_digest": "c8bb18dc412c8cbb3e356a6102af367866ccc5f6258d56dbaa1c05d4f9ada13e"
+      },
+      {
+        "criterion_id": "AC-09",
+        "text": "Quotation follow-up, explicit acceptance or rejection, final-response grace, payment reminders, Arabic locale variants, and post-delivery feedback follow the approved lifecycle policy, are deduplicated, and remain disabled or non-passing when their required client template, timing, stop conditions, or service-window policy is unresolved.",
+        "text_digest": "bc897567080877f872e52915f759328c86deeccf731d0c23cf2f1f3b952c9057"
+      },
+      {
+        "criterion_id": "AC-10",
+        "text": "Noor calculates the current order total from approved item, delivery, discount, markup, tax, and personalized pricing inputs; permanent-customer pricing is applied only from an approved segment rule or operational confirmation.",
+        "text_digest": "6b242ef584e0e7b6f6cdef8c451be77c5f9e9766212d249a784ad8f59eae2aa1"
+      },
+      {
+        "criterion_id": "AC-11",
+        "text": "CRM contact and deal data preserve the customer's name, phone, email, company, source, original and latest UTM values, segment, and address according to the current mapping and overwrite policy, while CRM or OAuth failure remains observable and fail-soft for customer communication.",
+        "text_digest": "c5db12f8ae0d4ef15b66009bbe7664a2ab07a83a24dfa21874f897c51f22e32a"
+      },
+      {
+        "criterion_id": "AC-12",
+        "text": "The CRM deal moves through the approved New Deal, In Progress, Negotiation, and Paid stage sequence with the correct observable stage after each authorized transition.",
+        "text_digest": "6e8464ac7891aa39e5e10827d02e3a30fa505c6adc944e65ca5fe1723aae1547"
+      },
+      {
+        "criterion_id": "AC-13",
+        "text": "Conversation history and customer memory preserve product, quantity, delivery, assembly, company, address, email, role, preference, budget, and next-step facts; compact answers attach to the question Noor asked; interruptions resume the active flow; corrections replace only the corrected fact; stale quotation or product state does not leak into a new request.",
+        "text_digest": "d4bc9dcda5ead35d2a725292ec2cdae08b55cb14e217fc1a693858a0e253071f"
+      },
+      {
+        "criterion_id": "AC-14",
+        "text": "Quotation and order handling recognizes natural SKU and quantity variants, asks only for missing required data, preserves customer-provided fields exactly, creates a quotation only after exact SKU and quantity readiness plus the customer-data gate, fails closed for catalog-only or missing-price items, and keeps PDF, audit, approval, rejection, and order state consistent.",
+        "text_digest": "ef2328f565b3acadecea6fcc1b42129843cd553f3f1028361ed836584468bdb8"
+      },
+      {
+        "criterion_id": "AC-15",
+        "text": "Direct human requests and approved hard triggers hand off exactly once with a localized customer fallback, durable escalation reason and context, bounded Telegram notification, faithful manager reply, customer delivery, persistence, resolution, and no premature handoff for ordinary discovery or low-risk detail updates.",
+        "text_digest": "83191e7289289ebc6f1ab80a4e9bdfd8407f6aff60a946cb8f4b305e85e36d9e"
+      },
+      {
+        "criterion_id": "AC-16",
+        "text": "Authorized managers can access the admin surface to inspect conversations, audits, prompts, QA results, costs, and operational status; prompt editing is explicit and observable; UI actions never fail silently.",
+        "text_digest": "4b6cbc7f6d86707b96cd918579fb65514d3c81ebed5aec1c6882604ed3285e8e"
+      },
+      {
+        "criterion_id": "AC-17",
+        "text": "Bot dialogue quality uses the current 15-rule, four-weighted-block, stage-aware 0-30 methodology, excludes not-applicable rules from the denominator, and records strengths, improvement areas, and next-contact recommendations.",
+        "text_digest": "552c6047e021a345faee09227d6afd69d062c3075b9695dcda80af479f70b914"
+      },
+      {
+        "criterion_id": "AC-18",
+        "text": "Manager assessment runs only for completed or resolved escalations, applies the current ten qualitative criteria to transcript evidence, and reports the defined quantitative response, conversion, message-count, and deal-amount metrics.",
+        "text_digest": "d157e2dd4dae86a1d728d75af7ccfa4a5b283f37fbe53ab41f9d19c1e9e5df07"
+      },
+      {
+        "criterion_id": "AC-19",
+        "text": "The system provides observable reports for bot quality, manager quality, dialogue volume, conversion, refusal reasons, and agreed operational metrics without uncontrolled model spend or silent report actions.",
+        "text_digest": "e0ee83078368350476084d213b7d8c6bb6197957bc20a360a706f08afa1c7c96"
+      },
+      {
+        "criterion_id": "AC-20",
+        "text": "Noor recommends catalog-backed alternatives and complementary products using the customer's stated need, segment, history, and preferences without claiming an exact match that the catalog does not support.",
+        "text_digest": "aa374f67ceefd698d8354cc4016230f0a42596898a5f703dee6a0d1eeb6d292a"
+      },
+      {
+        "criterion_id": "AC-21",
+        "text": "Referral codes, tracking, rewards, admin behavior, and referral reports are tested only after the client approves exact business rules and synthetic reward constraints; unresolved referral scope is a non-passing external gate.",
+        "text_digest": "3e47cd478b4f474ba98c33c734ec113a387396947aeace6f750b114cfb7ed4c1"
+      },
+      {
+        "criterion_id": "AC-22",
+        "text": "The deployed service uses HTTPS, SSH-key-based administration, protected environment variables, authorized manager access, least-privilege integration credentials, personal-data minimization, and evidence that prompt injection or soft-deleted knowledge cannot override policy or leak data.",
+        "text_digest": "925911aecc1a4512ae2d0a12a2defefb0f9a5a4ee6094b1f0894da6ddd550160"
+      },
+      {
+        "criterion_id": "AC-23",
+        "text": "The contractual inbound-to-visible-response target is less than 10 seconds, reported with first-visible, final-text, media, scenario-duration, p50, p95, maximum, timeout, and retry evidence; any miss is FAIL.",
+        "text_digest": "bf05ef6acf58389df2b4e56f8d2446f429c78cb8cb6ddae6bd5505d5dc4d44ac"
+      },
+      {
+        "criterion_id": "AC-24",
+        "text": "The contractual availability target is 99% uptime, supported by an explicitly bounded measurement window and observable health evidence; an unproven or missed target is not PASS.",
+        "text_digest": "f3d64118de14d2b72bae52facd5d7db6229a1c672cc180f0691e68d93da2fbf1"
+      },
+      {
+        "criterion_id": "AC-25",
+        "text": "The system supports the contractual 100+ concurrent-dialogue target in an authorized synthetic load test that contacts no real customers and records the declared workload, errors, latency, saturation, and recovery evidence.",
+        "text_digest": "81bc6af0a6c885a0cb5a7a6df2a7fb5c0c9add61c24ceec3736416193c1d7a3e"
+      },
+      {
+        "criterion_id": "AC-26",
+        "text": "Database backups run daily, are retained for 30 days, and have separately reported restore evidence, ownership, integrity, and retention disposition; policy text alone is not PASS.",
+        "text_digest": "7b22c06c580b9fe113fffd887015842f8f2da3230f44d71c8efca19e044c93cc"
+      },
+      {
+        "criterion_id": "AC-27",
+        "text": "At least 95% of Inventory SKUs are available through the approved API and at least 90% of SKUs have at least one photo and description; customer-facing prices come from Treejar Catalog API price and personalized prices correctly apply approved CRM segments.",
+        "text_digest": "93bc7e86bb2a9d5e55a87a106c3b78262840be183a6a7d67b9b19ada091eccd8"
+      },
+      {
+        "criterion_id": "AC-28",
+        "text": "The offer-generation target for the top three positions is at most 2 seconds, with the exact query, catalog identity, result set, timing boundary, and outcome recorded; any miss is FAIL.",
+        "text_digest": "c927a7f33c2c6e5108e19a2c9e91fd6d327bf28406db78a06c37646759e17b4d"
+      },
+      {
+        "criterion_id": "AC-29",
+        "text": "Product text is delivered before matching media; media corresponds to products actually named, is not repeated after selection, quotation, fail-closed response, or handoff, uses non-duplicative captions, and WhatsApp formatting contains no broken markers, raw separators, malformed links, or unpaired emphasis.",
+        "text_digest": "ea7a744246f5c87d169ceaaf6da620cb259de56116e5d330f4a2582ed1f34c71"
+      },
+      {
+        "criterion_id": "AC-30",
+        "text": "The exact target release has no unresolved in-scope P0 or P1; tj-r1f3 remains a hard external dependency until closed with a freshly deployed passing release and provider smoke, and affected grounding criteria cannot contribute PASS before that proof exists.",
+        "text_digest": "d7dd9ca902ce5acc0d932241ca4ca542bcda2deb896c7c0a4e89babef77c8265"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-ee5f/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
+  "scope_ledger": ".codex/stages/tj-ee5f/scope-preservation-ledger.json",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-ee5f-design-review",
+      "stream_owner": "improvement_reviewer",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-design-review.md"
+    },
+    {
+      "task_id": "tj-ee5f-task-1",
+      "stream_owner": "python-pro-task-1",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-task-1.md"
+    },
+    {
+      "task_id": "tj-ee5f.3-policy-v2",
+      "stream_owner": "ai-product-engineer-policy-v2",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.3-policy-v2.md"
+    }
+  ],
+  "scope_provenance": {
+    "path": ".codex/goals/tj-ee5f/scope-source-provenance.json",
+    "digest": "d62c90f6262aa5f08e1a82f2c08b3f39883caca6c798dab2f1e280bae8fbc349",
+    "anchor_creation_commit": "b77cc34ac7bed163c293761fe9998b4c78b45359",
+    "anchor_blob_digest": "e997f5139dff929e777707817392a59bc72088d354a5e0ca1827bf6b1fe04871"
+  }
+}

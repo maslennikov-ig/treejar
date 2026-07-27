@@ -1,0 +1,92 @@
+{
+  "schema_version": "scope-source-provenance/v1",
+  "goal_id": "tj-ee5f",
+  "scope_anchor_path": ".codex/goals/tj-ee5f/scope-criterion-snapshot.json",
+  "criteria_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
+  "anchor_creation_commit": "b77cc34ac7bed163c293761fe9998b4c78b45359",
+  "anchor_blob_digest": "e997f5139dff929e777707817392a59bc72088d354a5e0ca1827bf6b1fe04871",
+  "beads_records": [
+    {
+      "issue_id": "tj-ee5f",
+      "canonical_record": {
+        "_type": "issue",
+        "id": "tj-ee5f",
+        "title": "EPIC: Agent-driven full Noor E2E acceptance with client evidence",
+        "description": "Prepare and later execute a comprehensive agent-driven end-to-end acceptance of Noor against the original Treejar requirements and closed bot-behavior regressions. Preserve every test method, exact question/answer, timing, runtime identity, side-effect readback, defect, fix, and retest in protected raw evidence plus a redacted client report.",
+        "acceptance_criteria": "Approved hybrid design; traceability from original requirements and closed relevant Beads to scenario IDs; isolated scenario capsules plus one long-memory journey; exact transcript and audit evidence schema; defect-to-Beads and fix/retest workflow; client-facing report shows original failure and corrected result; English orchestrator prompt passes orch-prompts prompt-check; no live/paid/customer/production action during preparation.",
+        "notes": "2026-07-27: full customer-path scope and hybrid isolated-scenarios-plus-long-journey design approved by user. Preparation only; live authorization remains a separate gate.\nDesign committed on isolated branch codex/noor-agent-e2e-acceptance-plan at 21bebc2. Awaiting user review before implementation-plan and execution prompt authoring, per brainstorming gate.\nIndependent improvement review verdict REVISE: five P1 design corrections and one P2 reproducibility improvement are valid and are being incorporated. Execution must depend on tj-r1f3 delivery; Beads rejects an epic->task blocking edge, so the execution child task created during planning will carry that dependency.\n2026-07-27 independent improvement review completed on branch codex/noor-agent-e2e-acceptance-plan. Initial review found five P1 design gaps and one P2 reproducibility gap; two focused resolution passes corrected criterion/result separation and side-effect terminal-state semantics. Final reviewer verdict ACCEPT at 1c57b58 with no remaining P0-P2. Accepted review artifact is committed at 3516fa1. Implementation planning may proceed; the future execution child task must depend on tj-r1f3 delivery/runtime proof.\n2026-07-27 implementation preparation completed on main: execution child tj-ee5f.1 created with blocking dependency on tj-r1f3; durable plan is docs/superpowers/plans/2026-07-27-noor-agent-driven-e2e-acceptance.md; English orchestrator prompt is .codex/stages/tj-ee5f/orchestrator-prompt.md and passes prompt-check. Final grounding smoke remains a documented prerequisite blocker.",
+        "spec_id": "docs/superpowers/specs/2026-07-27-noor-agent-driven-e2e-acceptance-design.md",
+        "status": "in_progress",
+        "priority": 1,
+        "issue_type": "epic",
+        "owner": "maslennikov-ig@users.noreply.github.com",
+        "created_at": "2026-07-27T14:20:51Z",
+        "created_by": "maslennikov-ig",
+        "updated_at": "2026-07-27T16:22:11Z",
+        "started_at": "2026-07-27T14:20:56Z",
+        "labels": [
+          "acceptance",
+          "client-evidence",
+          "e2e",
+          "planning",
+          "whatsapp"
+        ],
+        "dependency_count": 0,
+        "dependent_count": 0,
+        "comment_count": 0
+      },
+      "canonical_record_digest": "cf7a8a4550e9e81ccbe2377e494873e7259e99a7ecd483be94f5b1b1e83a202c"
+    },
+    {
+      "issue_id": "tj-ee5f.1",
+      "canonical_record": {
+        "_type": "issue",
+        "id": "tj-ee5f.1",
+        "title": "Execute agent-driven Noor E2E acceptance and client evidence",
+        "description": "Implement and execute the approved agent-driven end-to-end acceptance of Noor from the exact deployed main release. Freeze criterion scope and traceability, build isolated scenario capsules plus one longitudinal journey, preserve exact questions and answers, reconcile all side effects, create Beads defects for failures, and produce protected raw evidence plus a redacted Russian client report for Viktor.",
+        "acceptance_criteria": "tj-r1f3 is closed with fresh production proof before mutation-capable scenarios; immutable scope snapshot and separate traceability/run-result schemas cover original requirements and closed regressions; exact authorization manifest binds release, models, targets, quotas, mutations, readbacks, cleanup, and retention; application-native capsules, one long-memory journey, and separately authorized provider canaries execute or receive explicit non-passing outcomes; every turn, timing, tool/audit identity, side effect, defect, fix deployment, and retest is preserved; no unresolved P0/P1 or nonterminal/unlisted side effect remains; client Markdown report includes exact Q/A, failures, fixes, retests, limitations, and accepted rollups, with PDF generated only after content acceptance.",
+        "notes": "2026-07-27 preparation complete: accepted design, implementation plan, and English fallback prompt are tracked. Prompt passed orch-prompts prompt-check for codex/gpt-5.6/fallback. Execution remains blocked by tj-r1f3 and requires a fresh exact live authorization manifest.",
+        "spec_id": "docs/superpowers/plans/2026-07-27-noor-agent-driven-e2e-acceptance.md",
+        "status": "open",
+        "priority": 1,
+        "issue_type": "task",
+        "owner": "maslennikov-ig@users.noreply.github.com",
+        "created_at": "2026-07-27T16:19:01Z",
+        "created_by": "maslennikov-ig",
+        "updated_at": "2026-07-27T16:22:10Z",
+        "labels": [
+          "acceptance",
+          "client-evidence",
+          "e2e",
+          "planning",
+          "production",
+          "whatsapp"
+        ],
+        "dependencies": [
+          {
+            "issue_id": "tj-ee5f.1",
+            "depends_on_id": "tj-r1f3",
+            "type": "blocks",
+            "created_at": "2026-07-27T19:19:00Z",
+            "created_by": "maslennikov-ig",
+            "metadata": "{}"
+          },
+          {
+            "issue_id": "tj-ee5f.1",
+            "depends_on_id": "tj-ee5f",
+            "type": "parent-child",
+            "created_at": "2026-07-27T19:19:00Z",
+            "created_by": "maslennikov-ig",
+            "metadata": "{}"
+          }
+        ],
+        "dependency_count": 1,
+        "dependent_count": 0,
+        "comment_count": 0
+      },
+      "canonical_record_digest": "b076d8eb2fead5f714abf90c83734bf29778583a9e3387b86265b1af242cb0e3"
+    }
+  ],
+  "beads_records_digest": "3195794bb1189e9652e572dead43e3d73e42c8c868ed1dd9ec360e331caa19db",
+  "provenance_digest": "d62c90f6262aa5f08e1a82f2c08b3f39883caca6c798dab2f1e280bae8fbc349"
+}

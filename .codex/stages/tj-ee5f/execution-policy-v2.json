@@ -1,0 +1,3560 @@
+{
+  "schema_version": "noor-e2e-execution-policy/v2",
+  "dsl_version": "noor-e2e-oracle-dsl/v2",
+  "policy_version": "2026-07-27.2",
+  "scenario_set_version": "2026-07-27.3",
+  "oracle_registry": {
+    "checkpoint.structured.v2": {
+      "kind": "structured_event",
+      "decisive": true,
+      "allowed_producers": [
+        "runtime-event-source",
+        "audit-event-source",
+        "production-policy-classifier"
+      ]
+    },
+    "prohibited.classifier.v2": {
+      "kind": "classifier_result",
+      "decisive": true,
+      "classifier_id": "scenario_policy.v2",
+      "allowed_producers": [
+        "production-policy-classifier"
+      ]
+    },
+    "manager_faithfulness.v1": {
+      "kind": "classifier_result",
+      "decisive": true,
+      "classifier_id": "manager_faithfulness.v1",
+      "allowed_producers": [
+        "production-manager-fidelity-classifier"
+      ]
+    },
+    "permission.authorization.v2": {
+      "kind": "authorization_permission",
+      "decisive": true,
+      "allowed_producers": [
+        "validated-authorization-manifest"
+      ]
+    },
+    "readback.independent.v2": {
+      "kind": "independent_readback",
+      "decisive": true,
+      "allowed_producers": [
+        "independent-readback-collector"
+      ]
+    },
+    "criterion.fresh.v2": {
+      "kind": "structured_evidence",
+      "decisive": true,
+      "allowed_producers": [
+        "runtime-event-source",
+        "audit-event-source",
+        "production-policy-classifier",
+        "independent-readback-collector"
+      ]
+    },
+    "criterion.reused_exact.v2": {
+      "kind": "reused_exact_evidence",
+      "decisive": true,
+      "allowed_producers": [
+        "trusted-evidence-registry"
+      ]
+    },
+    "criterion.external_gate.v2": {
+      "kind": "external_gate_evidence",
+      "decisive": true,
+      "allowed_producers": [
+        "trusted-evidence-registry"
+      ]
+    },
+    "block.oracle.v2": {
+      "kind": "independent_readback",
+      "decisive": true,
+      "allowed_producers": [
+        "independent-readback-collector",
+        "trusted-evidence-registry"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "SC-OPEN-EN",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-OPEN-EN:checkpoint:001",
+          "canonical_text": "English Noor and Treejar opener",
+          "source_text_digest": "5b56474a4532e13bd7014e9249ce04c5955a42b23a45f45acefb2408e47531d6",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-EN:checkpoint:002",
+          "canonical_text": "Name requested without product or quote side effect",
+          "source_text_digest": "1e7ab46a77d5f94146a00b140645da426f77a17efa9b8fa278dd87cab4596797",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-EN:checkpoint:003",
+          "canonical_text": "Bare name accepted",
+          "source_text_digest": "20256dc405f1f5bbbea065685086f22314092be73d5e24dde9dedb44b29a1c01",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-EN:checkpoint:004",
+          "canonical_text": "Original chair request resumed",
+          "source_text_digest": "8944844e890faf3eea6fd3fe32bbbb00a9800ced51bb4571d82a7dd928014389",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-OPEN-EN:prohibited:001",
+          "canonical_text": "Siyyad identity",
+          "source_text_digest": "966973d2cf1d0f5bbdb7bf405591db0e5c42b5c84fca96a15355fd7c4b65ddf4",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-EN:prohibited:002",
+          "canonical_text": "Repeated name question",
+          "source_text_digest": "2b8c919b34fa7635f0eaf1a533ec11ee0b2fa7ceb268e5cc6967e98a890cef2c",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-EN:prohibited:003",
+          "canonical_text": "Premature CRM quotation or manager handoff",
+          "source_text_digest": "52e43aa8ccef67a3555b6cf325b2372ecedac7f3d8c7196738c2d65cde19dca1",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-06"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "crm_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "conversation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "outbound audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "CRM mutation ledger",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-OPEN-AR",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-OPEN-AR:checkpoint:001",
+          "canonical_text": "First reply is Arabic",
+          "source_text_digest": "4cbe878406e4aa9d9d84950e8faa0f99fb685d4f653c082bc066a858b0e3a15c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-AR:checkpoint:002",
+          "canonical_text": "Noor and Treejar introduced",
+          "source_text_digest": "717af27a83af764d08d4ac6799bd1ff33c81f2ca5d45f211921f1e7d8725ec17",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-AR:checkpoint:003",
+          "canonical_text": "Name accepted",
+          "source_text_digest": "a3db4e2f01557feb09beadc2fc5a85fbc3217d9ee00f5b0734936a44f172ce91",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-AR:checkpoint:004",
+          "canonical_text": "Locale remains Arabic",
+          "source_text_digest": "ea97d4eb278040660267fc647fd1562068bbfc3766b7e9b16155e9b795cb0702",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-OPEN-AR:prohibited:001",
+          "canonical_text": "English-only opener",
+          "source_text_digest": "25be96a4980996ecafc94b7f8cbee35c04c7ffba279e935bea649e509aca4416",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-AR:prohibited:002",
+          "canonical_text": "Repeated name gate",
+          "source_text_digest": "1dcc4fece7f1665f8b9021d77dc3a2e155b0afe9c62585277226bb0b48ecef27",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-OPEN-AR:prohibited:003",
+          "canonical_text": "Untranslated fallback",
+          "source_text_digest": "aec6bee37f075282d31ef07e8d632e1d5cddc48f1816c44d4b590ac2c75019ce",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-01",
+        "AC-02",
+        "AC-03"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "crm_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "conversation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "outbound audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "language state",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-VOICE-EN",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-VOICE-EN:checkpoint:001",
+          "canonical_text": "Media accepted",
+          "source_text_digest": "d5bb6d854720957b1af020aa3a07403644183dcaca67eb4f36a659de49360b37",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-EN:checkpoint:002",
+          "canonical_text": "Transcript persisted",
+          "source_text_digest": "90240c3ba153651625d00f9779d6aa63d77bc734af28f8cabc666a87ee80e0df",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-EN:checkpoint:003",
+          "canonical_text": "English response persisted",
+          "source_text_digest": "065693333a48e3eee6ad938fe08b18c6e820d56df7a921d96f1119cc72c8b01c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-EN:checkpoint:004",
+          "canonical_text": "Audit links media, transcript, and response",
+          "source_text_digest": "f5a53e7a4fd27a5a1b432a24c66273b082dc50dc0a8d9837644d257a21590c30",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-VOICE-EN:prohibited:001",
+          "canonical_text": "Skipped empty batch",
+          "source_text_digest": "3e6c388878b775e5d3692a04d7733683b58b87d470e4d625d726fcf6e3102107",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-EN:prohibited:002",
+          "canonical_text": "Transcript leakage",
+          "source_text_digest": "5ecd9015fc206de9196eec34b2108accf08c773e7022781c516f74074359d2e0",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-EN:prohibited:003",
+          "canonical_text": "Wrong-language answer",
+          "source_text_digest": "e0e68eb22aa5a9d19aa06fea16b9b1f4403607fb25943586033202dac6176fa1",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-04"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "voice_fixture",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "message media",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "transcript",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "response",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-VOICE-AR",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-VOICE-AR:checkpoint:001",
+          "canonical_text": "Arabic transcript persisted",
+          "source_text_digest": "86bed7a7b4c5fb999b8562125c90d3ec9895151b4928b027cf0d084b650ddf73",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-AR:checkpoint:002",
+          "canonical_text": "Arabic response persisted",
+          "source_text_digest": "874e0f9c197e0fc23d62e5bef9aa5526f1a4125e4fc1a49110377a0ed5677045",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-AR:checkpoint:003",
+          "canonical_text": "Audit evidence complete",
+          "source_text_digest": "e26d266baef1d984f347982529d976362db5f16af2a28949f3074e2c74c76eeb",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-VOICE-AR:prohibited:001",
+          "canonical_text": "Skipped batch",
+          "source_text_digest": "886856b5f4c9b94b7a4c14bc6f52c509bf3ded8b5a8ded16d8e437cb87d0973b",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-AR:prohibited:002",
+          "canonical_text": "English fallback",
+          "source_text_digest": "c1fac1ad65bc30a1df3faaf48c19ed117fda6c6fb88f5f8303c6faaa227e40da",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-VOICE-AR:prohibited:003",
+          "canonical_text": "Missing transcript",
+          "source_text_digest": "efc133229a20c9cfa2eff425fc5f5d50e5300c22268a2c5b1c84c8dd6214d584",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-04"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "voice_fixture",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "message media",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "transcript",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "response",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-DISCOVERY",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-DISCOVERY:checkpoint:001",
+          "canonical_text": "Useful options before unnecessary details",
+          "source_text_digest": "47dcae06f4ce2a88e46c68ac3826bb32a3a638cd6ceeb409b653cce588024abc",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:checkpoint:002",
+          "canonical_text": "Catalog-backed comparison",
+          "source_text_digest": "87e3d176e4239fe632e4e0d2f30e7f2f95d44b5b0b203a35bf46c2ffb06e0694",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:checkpoint:003",
+          "canonical_text": "One bounded clarification",
+          "source_text_digest": "866c389d9e3f459f5dbb36ee3f526b43e234e80b2a38ec3ae275eadc08883a2c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:checkpoint:004",
+          "canonical_text": "Safe objection handling",
+          "source_text_digest": "791614ee0525d50ff8577f8fda3b54605f473194c3d00e66feac2155c1f22682",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:checkpoint:005",
+          "canonical_text": "Relevant cross-sell only after core need",
+          "source_text_digest": "7e2e82fad1f355c19094b5fddba1bcd51373a31d34d407f3d96faad6db54fce2",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-DISCOVERY:prohibited:001",
+          "canonical_text": "Fake SKU",
+          "source_text_digest": "1c24fb88488a821aadfad5f3b5ea70859c0c977549272898ce45cb8113e18ab7",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:prohibited:002",
+          "canonical_text": "Invented discount",
+          "source_text_digest": "3a53d1ed6bb368b9a5af4729f3166cc24576bfea8bfedf23e476666f5d8c32cc",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:prohibited:003",
+          "canonical_text": "Unsupported exact delivery promise",
+          "source_text_digest": "96917e47ca017c656f154a040d3aad020413fe8493d7bbad2334328bf3555d58",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-DISCOVERY:prohibited:004",
+          "canonical_text": "Premature handoff",
+          "source_text_digest": "94d3287ee52cab7bff30b5c165f0dcae74713e6bcd5cf3c7c1e93c87a7c2fe10",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-05",
+        "AC-06",
+        "AC-20",
+        "AC-29"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_media",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "catalog_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "catalog tool results",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "media audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "conversation state",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-GROUNDING",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-GROUNDING:checkpoint:001",
+          "canonical_text": "Required tool is used in-turn",
+          "source_text_digest": "8be05e34f8763ff0132b637e8a43d6f0063d930f1795941bd6c3bcdf7b44c81a",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:checkpoint:002",
+          "canonical_text": "Unknown stays unconfirmed",
+          "source_text_digest": "063d6c8f773a6ad8ab0fa7524d473837f68d47c5d431199e63eeef3b9be836a9",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:checkpoint:003",
+          "canonical_text": "No delegated future check",
+          "source_text_digest": "5eebbf545e9412837e917090fdfad1266c4ccb664ae70c65f4c29c2f8fc847ae",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:checkpoint:004",
+          "canonical_text": "General showroom language remains bounded",
+          "source_text_digest": "8fb0e68d1366249fb2633bece4295741bcc325bd265af9b6dad6cdeb1526554d",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:checkpoint:005",
+          "canonical_text": "Conditional sample language preserved",
+          "source_text_digest": "a1293e1da798c265fd2d30677de00b308be9ca98bb550f9357986073de23b478",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-GROUNDING:prohibited:001",
+          "canonical_text": "Specific product promised for showroom trial",
+          "source_text_digest": "bf6d51b611b75e259636db8cff95f29e189c9c2fea29faff37ce0cfc39ce330c",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:prohibited:002",
+          "canonical_text": "Medical claim",
+          "source_text_digest": "25adc0a22cd285af5a029791a1c0ff4bbdb2fb9c1bea8a75d2bf804a9a407dd8",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:prohibited:003",
+          "canonical_text": "Future stock-check promise",
+          "source_text_digest": "96ce37f48f7ffeed44f38a62a74265c413b7368be75b93828055bd1cebd67d1a",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-GROUNDING:prohibited:004",
+          "canonical_text": "Invented availability or delivery",
+          "source_text_digest": "74c4cc4331c4398f634354ae8acba343a99a5413e905db8fb55d3e6ef00a6c65",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-05",
+        "AC-07",
+        "AC-30"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "catalog_readback",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "inventory_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "tool calls",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "catalog and operational results",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "exact messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "grounding evaluator",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-ORDER-STATUS",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-ORDER-STATUS:checkpoint:001",
+          "canonical_text": "Order-status tool invoked",
+          "source_text_digest": "663885d70fe3a98bca2466c425697146b86fe3d8beedf31299a06115d7f038db",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ORDER-STATUS:checkpoint:002",
+          "canonical_text": "Exact fixture status returned",
+          "source_text_digest": "f283305a029046db9ae2af9044d6ca48507793f5a802bc01468341483e311b49",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ORDER-STATUS:checkpoint:003",
+          "canonical_text": "No unrelated mutation",
+          "source_text_digest": "ea1637e18916f541f5fb31b0adff2ab30baedab1d651c737d5a07d4dd245b931",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-ORDER-STATUS:prohibited:001",
+          "canonical_text": "Guessed status",
+          "source_text_digest": "25c3651ca575941d178dcbc714366aa31dfe49e6659d0cab157826a32a9b418d",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-ORDER-STATUS:prohibited:002",
+          "canonical_text": "Stale quotation state",
+          "source_text_digest": "f33d0216af31c4817f2ee2568188c02e8f3ad9784b7c54d2ffd60be72daf6573",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-ORDER-STATUS:prohibited:003",
+          "canonical_text": "Manager action invented",
+          "source_text_digest": "198c90903f27856ba6a6317c4ff4ef2167735145d47d229582894673fd12f21c",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-08"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "order_status_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "order-status tool",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "conversation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-QUOTE",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-QUOTE:checkpoint:001",
+          "canonical_text": "Natural SKU and quantity parsed",
+          "source_text_digest": "25c8a00ce08f4e3908f85a6fbede4444b9534cb472bab252c55369f524827f54",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:checkpoint:002",
+          "canonical_text": "Only missing fields requested",
+          "source_text_digest": "6fbfbf6c8d86b40964a4a4e8f3183bdd8c7c8b53dcdb5f0248e553e4f553ae06",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:checkpoint:003",
+          "canonical_text": "Customer fields preserved",
+          "source_text_digest": "d67b6a7915a7bee5cf2be2449d45741dbc626cf4aed67c554d3dbfcfa981614f",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:checkpoint:004",
+          "canonical_text": "Quotation and PDF consistent",
+          "source_text_digest": "b78ccabe66470b31b0ddf13217acc9e25e88d5fc10c28ebcf0dd451ae4588195",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:checkpoint:005",
+          "canonical_text": "Decision tied to current quote",
+          "source_text_digest": "43ede8a0337a7959376ab1727374998d9ad286416e010d70b889ac84b36df28e",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-QUOTE:prohibited:001",
+          "canonical_text": "Model number treated as quantity",
+          "source_text_digest": "fb002c21314fa4be0d25af3011e326aaba1ad39146137dc9e603fca97c322463",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:prohibited:002",
+          "canonical_text": "Invented customer field",
+          "source_text_digest": "7b3566be266a9e63ff81c74c6671e0fa72f3b23069c07d1e5811411c4426dafe",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:prohibited:003",
+          "canonical_text": "Catalog-only or missing-price quote",
+          "source_text_digest": "aa5cba7f862fd67cc8cb1df7d08726bb0623d9ed1317b59dbcce1035c639fc80",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-QUOTE:prohibited:004",
+          "canonical_text": "Generic yes acts on stale quote",
+          "source_text_digest": "c20d19692a46fd343655c9c3b550206c1b0aa5fd8e37bed98f3167300184decd",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-10",
+        "AC-14"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "quotation_create",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "crm_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_media",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "order state",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "catalog result",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "Zoho quotation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "PDF hash",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "message and media audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "side-effect ledger",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-CRM",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-CRM:checkpoint:001",
+          "canonical_text": "One contact and deal",
+          "source_text_digest": "b32f41766045a3977b20a7b35fc11f44c0b6a06fe708121c4c3bd939e1b4113d",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:checkpoint:002",
+          "canonical_text": "Field mapping exact",
+          "source_text_digest": "112ba4e55ae4705b33b72dbc95ed539c77bbf3a44432aa936135e000a505e2eb",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:checkpoint:003",
+          "canonical_text": "Stage transition exact",
+          "source_text_digest": "c47698f924b67c37352d006533b27406c6a346e8e8242ce186b7566c65898191",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:checkpoint:004",
+          "canonical_text": "Returning context bounded",
+          "source_text_digest": "69f35cc9e5e7d5b19f6711c6f6d19bb734e2748b933c71f3087eae7aca8f053a",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:checkpoint:005",
+          "canonical_text": "CRM failure remains fail-soft",
+          "source_text_digest": "65a4531ee9ca2b1ad8269f8a6f3296303341fd22a6fe80b343cbbbf1273970e7",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-CRM:prohibited:001",
+          "canonical_text": "Real contact match",
+          "source_text_digest": "a54894e902c760cb94a2a0747b555d726f22c114bb39396ea95ad78a10cd25ff",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:prohibited:002",
+          "canonical_text": "Unapproved overwrite",
+          "source_text_digest": "06173dfd95d27eba4f1eaa920752730db958d0fc1ac8725db1087e2cd0dced07",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:prohibited:003",
+          "canonical_text": "Dropped customer response",
+          "source_text_digest": "00cc2b415f70d2385cc9f123390bf4467e0d098bf80e5414f294730544dd7d30",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CRM:prohibited:004",
+          "canonical_text": "Extra deal",
+          "source_text_digest": "fa665d1422dfac36a15c58a94c1eb2cd9381a46714253be5e771d36e37f1093d",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-02",
+        "AC-11",
+        "AC-12"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "crm_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "crm_stage_transition",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "CRM contact",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "CRM deal",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "stage history",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "conversation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "side-effect ledger",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-ESCALATION",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-ESCALATION:checkpoint:001",
+          "canonical_text": "One escalation row",
+          "source_text_digest": "c46b69389fb7ed4fe12a9cc41ed354589cabb3b1cd441db16f5dc79399814989",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:checkpoint:002",
+          "canonical_text": "One bounded alert",
+          "source_text_digest": "6fde732d0d8eafc8d80240c224ddf35d1a87cf27e07a78f9b002bfa1615e9004",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:checkpoint:003",
+          "canonical_text": "Context tail complete",
+          "source_text_digest": "6df0038e48068f82ad9c1a741b96fa5cb203937923c0c53aa7cc812e9cf1aac0",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:checkpoint:004",
+          "canonical_text": "Manager reply unchanged in fact content",
+          "source_text_digest": "8b21102107582653a955e20b6772e0bd47bf21ceafa7b2b348e5f2952bee34ed",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:checkpoint:005",
+          "canonical_text": "Customer delivery persisted",
+          "source_text_digest": "6c652a5a662d41f3d63108fde3c26709c69f14f275c68ec83b2a9e37feda5f77",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:checkpoint:006",
+          "canonical_text": "Resolution verified",
+          "source_text_digest": "38e85562ac8877b267c014fd17127d672ef7039cae4f6cb16382e1f6d674f0fc",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-ESCALATION:prohibited:001",
+          "canonical_text": "Silence",
+          "source_text_digest": "6c61fe498281f4216fd03973936e6f88b0142654174538f4eb41987dfc4c965a",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:prohibited:002",
+          "canonical_text": "Duplicate alert",
+          "source_text_digest": "f4dd523284445478650552cc62366ffe845f578f95c299c2a607497a22880475",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:prohibited:003",
+          "canonical_text": "Invented manager fact",
+          "source_text_digest": "d6d5ede72a570fb51f84b56bfbfe293b9eb47640494bc415fcf2c25937ee924a",
+          "structured_required": true,
+          "oracle_id": "manager_faithfulness.v1"
+        },
+        {
+          "assertion_id": "SC-ESCALATION:prohibited:004",
+          "canonical_text": "Pending escalation at closeout",
+          "source_text_digest": "e287cc699de4dc6344824bb8c39eab80e50f4f2b20e522a3bc002ab80cb56fab",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-15"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "telegram_alert",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "telegram_callback",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "escalation_resolve",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "escalation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "Telegram alert and callback",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "manager and customer messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "side-effect ledger",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-ESCALATION-AR",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-ESCALATION-AR:checkpoint:001",
+          "canonical_text": "يرد نور بالعربية ويؤكد تحويل الطلب مرة واحدة",
+          "source_text_digest": "0ab5d2e074d72a3fb6a9ff8b45337446f11c6f686dc3109b718bbd7150a19a7c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION-AR:checkpoint:002",
+          "canonical_text": "يحفظ سبب التصعيد والسياق دون فقدان اللغة",
+          "source_text_digest": "16b2deab9dd4be327f92f152e76e42ce3083b16eb54be7856b520299537540d3",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION-AR:checkpoint:003",
+          "canonical_text": "يصل إشعار Telegram المحدود مرة واحدة",
+          "source_text_digest": "859d1c2d7aad285c5d277efccd839c2c4bcb7dc2cbbfc4ffbbaafa9a9f7510f2",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION-AR:checkpoint:004",
+          "canonical_text": "يصل رد المدير العربي إلى العميل بأمانة ويُحفظ ثم يُغلق التصعيد",
+          "source_text_digest": "fe5362acd080d0f5c27f784a9639e5cef9db49cd3364a7bea81e5e674afcdd35",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-ESCALATION-AR:prohibited:001",
+          "canonical_text": "رد احتياطي بلغة غير العربية",
+          "source_text_digest": "5f6916c293634bafe7801b6abc2fed06b101ba2a84d0d082c78e9774713d6d72",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION-AR:prohibited:002",
+          "canonical_text": "إشعار مكرر أو تصعيد قبل الطلب الصريح",
+          "source_text_digest": "c4780f5bc4700f22e194dc9dfb5593d495e4649d309c7cf396831fed5059467b",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-ESCALATION-AR:prohibited:003",
+          "canonical_text": "تحريف رد المدير أو عدم تسليمه للعميل",
+          "source_text_digest": "07db4e7413683e129690f42667149731e1bc2ba5a6a3d5afc009f34ae2f9b302",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-03",
+        "AC-15"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "telegram_alert",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "telegram_callback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "exact Arabic customer messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "escalation reason and status transitions",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "Telegram notification and callback audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "persisted manager reply and customer delivery",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-LIFECYCLE",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-LIFECYCLE:checkpoint:001",
+          "canonical_text": "Decision tied to current quotation",
+          "source_text_digest": "e38b328c5787f898b89d4d311f618b95a111d63bab1bac9ee4edf05a336a7ccc",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:checkpoint:002",
+          "canonical_text": "Arabic retained",
+          "source_text_digest": "b05bc76bca7da1097cb4624c5b864c2986579d5dc0cf3f295c4fa0d0c53b5518",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:checkpoint:003",
+          "canonical_text": "FU3 grace preserved",
+          "source_text_digest": "e5173af5d80376a58ff7b9216cf6c22d06f24d3a856fef7de1daaebc4b0b3116",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:checkpoint:004",
+          "canonical_text": "Explicit rejection stops follow-up",
+          "source_text_digest": "7b793ab3ffd07c23712c3b7fdeb667c14cfa873e191b15eb2fe595b64e1dd1b0",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:checkpoint:005",
+          "canonical_text": "Feedback stored once",
+          "source_text_digest": "ea30a11eea2414c1f86e33f542eae4013ef72364d8c48746f3c5c60fe5ad4f19",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-LIFECYCLE:prohibited:001",
+          "canonical_text": "Immediate rejection after FU3",
+          "source_text_digest": "088237bee3e881e8d11e7b4ba00be9d9d97536c8e6021ebe53b792e06318301a",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:prohibited:002",
+          "canonical_text": "Unapproved payment reminder",
+          "source_text_digest": "8376c8ebfe9d9f8815075a0fc54bc8ccc6ba6fe7d1d140fb846a842530c7f539",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:prohibited:003",
+          "canonical_text": "Duplicate feedback",
+          "source_text_digest": "124049f10c8cc44342d7a174198381ad75b1b63d70ffae5ff6e41d9eff9cd746",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LIFECYCLE:prohibited:004",
+          "canonical_text": "English fallback",
+          "source_text_digest": "c1fac1ad65bc30a1df3faaf48c19ed117fda6c6fb88f5f8303c6faaa227e40da",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-09"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "followup_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "feedback_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "quotation metadata",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "scheduled jobs",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "feedback",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "side-effect ledger",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-PARA-NAME",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-PARA-NAME:checkpoint:001",
+          "canonical_text": "Name accepted once",
+          "source_text_digest": "bebcbe0287182cdefa1f8b1b86b1f99d267c4a4e867e4477cb34559f55a8ed57",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-NAME:checkpoint:002",
+          "canonical_text": "Prior request resumes",
+          "source_text_digest": "552ee46585b1b5055a814fd960befad8181b463e1b4b044675bc6ac4af568eb8",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-NAME:checkpoint:003",
+          "canonical_text": "No quote or media leak",
+          "source_text_digest": "fb6524d0a4d7c35ad554b70b810c1c237af5017be2ce6b979a54fa9b7ec39725",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-PARA-NAME:prohibited:001",
+          "canonical_text": "Repeated name prompt",
+          "source_text_digest": "4aef69b12ef62a6e9364d37c55900840ec78e34da64f8d1329b8dcbdf235270a",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-NAME:prohibited:002",
+          "canonical_text": "Lost request",
+          "source_text_digest": "98cf8c27c0aca1467d7108196fc4b06e1e66e1286787c240ed9ee0e941d6944f",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-NAME:prohibited:003",
+          "canonical_text": "Escalation",
+          "source_text_digest": "35615b824542ec093d6cccb71e83ecf5c16b955a5c6a9febfd29b615c6df690b",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-03",
+        "AC-13"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "conversation state",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-PARA-GROUNDING",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-PARA-GROUNDING:checkpoint:001",
+          "canonical_text": "Equivalent unsafe meanings rejected",
+          "source_text_digest": "697c1800bc04644171466ae559fc13689211220bdfa06f5a2775fb812fed9669",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-GROUNDING:checkpoint:002",
+          "canonical_text": "Safe coordinated negations retained",
+          "source_text_digest": "7a084d225cee37750bf6b74a6f3b5c1524ac00601ec9308a75a40a53f1e0936b",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-PARA-GROUNDING:prohibited:001",
+          "canonical_text": "Evaluator false negative",
+          "source_text_digest": "7e85046426d74b5a112f380674e4f369818be311c36a33455f932254102fad4a",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-GROUNDING:prohibited:002",
+          "canonical_text": "Unsupported promise",
+          "source_text_digest": "f190a92f8e951a28d6caef28b15f21f44a8a049bec40c653a89b0f3065286290",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-07",
+        "AC-30"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "inventory_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "exact messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "tool calls",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "grounding evaluator",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-PARA-QUOTE",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-PARA-QUOTE:checkpoint:001",
+          "canonical_text": "Exact item and quantity retained",
+          "source_text_digest": "0760ebaaaa8087990aa2f052fd013e1ba7bdc66e2b439afdaf8fdde4a54d3912",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-QUOTE:checkpoint:002",
+          "canonical_text": "Only missing data requested",
+          "source_text_digest": "0c0f3d54d5e36a5ecf572ef9ca34b0357f172ef24a12d9f35a2474bc498ec99a",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-QUOTE:checkpoint:003",
+          "canonical_text": "No fake item",
+          "source_text_digest": "0c4f0e228d0414c576f27c701497bd43b1e27e46356108eb3d9b5ed40042826c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-PARA-QUOTE:prohibited:001",
+          "canonical_text": "Model number becomes quantity",
+          "source_text_digest": "b969052ceeba83e9a05063d7dd8e3cdcff521245fdd06ffcd9d09555f0b01340",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-QUOTE:prohibited:002",
+          "canonical_text": "Customer brief becomes item",
+          "source_text_digest": "f6661ad86f7778d05073644e897f1983d47e97ee374c4104c39bd36a9c48fbed",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-QUOTE:prohibited:003",
+          "canonical_text": "Premature escalation",
+          "source_text_digest": "bc2437dac1b92ef736fd6e37028d23fc9a84aac6ddd7c803a270f5c304b3fe6f",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-13",
+        "AC-14"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "order state",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "quotation guard audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-PARA-HANDOFF",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-PARA-HANDOFF:checkpoint:001",
+          "canonical_text": "Hard trigger hands off once",
+          "source_text_digest": "d137fde84a326a26f977e0e10069b4aa9ababb743184eed75c5e385363e74a50",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-HANDOFF:checkpoint:002",
+          "canonical_text": "Ordinary branch continues",
+          "source_text_digest": "cc87dec67abbde1bf5866e66b21a5bda959edc92544fffb14f1636b27be54d45",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-HANDOFF:checkpoint:003",
+          "canonical_text": "Fallback localized",
+          "source_text_digest": "2976f92aa03843c0ef3bbc17d1bbfd3c606a19d7b0cadb9a11ad25f21f01cd31",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-PARA-HANDOFF:prohibited:001",
+          "canonical_text": "Premature handoff",
+          "source_text_digest": "94d3287ee52cab7bff30b5c165f0dcae74713e6bcd5cf3c7c1e93c87a7c2fe10",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-HANDOFF:prohibited:002",
+          "canonical_text": "Silence",
+          "source_text_digest": "6c61fe498281f4216fd03973936e6f88b0142654174538f4eb41987dfc4c965a",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-HANDOFF:prohibited:003",
+          "canonical_text": "Duplicate notification",
+          "source_text_digest": "7f4577053c12816ab1fb93c761d5eeb42273014e70564847c7a01e85448ff5ba",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-15"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "telegram_alert",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "escalation",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "messages",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "Telegram audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-PARA-MEDIA",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-PARA-MEDIA:checkpoint:001",
+          "canonical_text": "Text before media",
+          "source_text_digest": "1e68befe467ae9175e855a90b4e575a4e2dc909395ebdc18f09c42551f443c8b",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-MEDIA:checkpoint:002",
+          "canonical_text": "Exact named product match",
+          "source_text_digest": "bdd1a6733c2c1c0f037fa250d83f5d6ecfa1e97043f9014558162df8cb5e1d5f",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-MEDIA:checkpoint:003",
+          "canonical_text": "No repeat after selection",
+          "source_text_digest": "95c92f6cea4d6fbadb9ef7e03d2a9828bb0fe105d8414c2383fee39de47745eb",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-MEDIA:checkpoint:004",
+          "canonical_text": "Caption not duplicative",
+          "source_text_digest": "20d28a517af3274913075c6ce0c35a0a16a66c193e47bec1db630e07ab8c7bd4",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-PARA-MEDIA:prohibited:001",
+          "canonical_text": "Ordinary chair image for sleeper chair",
+          "source_text_digest": "576391dbd161f262e2364acae0aa3c5e49ad517f42fc1c340a5d33e1405cfca4",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-MEDIA:prohibited:002",
+          "canonical_text": "Raw image URL",
+          "source_text_digest": "7bc229086416eeb57af34ddd945e245df783eadc5bbf617460946c05ab05fc1c",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-PARA-MEDIA:prohibited:003",
+          "canonical_text": "Broken WhatsApp markdown",
+          "source_text_digest": "3e3f8c37e3234d0159d6409ac9023f12c649ee285a5854d3a2c79a62bb0d6406",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-05",
+        "AC-29"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_media",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "catalog records",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "message order",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "media and caption audit",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-LONG-JOURNEY",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:001",
+          "canonical_text": "Name capture and resume",
+          "source_text_digest": "fff367c761386cc6f4a5c322a554ef747fca3c4b4b935df381a7d6d2056088df",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:002",
+          "canonical_text": "Useful discovery",
+          "source_text_digest": "4439e35b2b8a9fb1b4905c6fd3a7f7acdffee2a96c4c12cecd3e89a95ed11987",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:003",
+          "canonical_text": "Facts retained",
+          "source_text_digest": "d333ed10b1394472660f731c6492cc3c5e320d565927c9340e30be1b2d7e8721",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:004",
+          "canonical_text": "Interruption handled then flow resumed",
+          "source_text_digest": "aad11a4495e8ea75013fb0e8242a3be8558bac13df407ad19cd7209bffb70c72",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:005",
+          "canonical_text": "Correction replaces one fact",
+          "source_text_digest": "8b9f8a594761ea88f3161e2e6c02462afdcf131316c0a0b8638d7fa81e391ac9",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:006",
+          "canonical_text": "Faithful context summary",
+          "source_text_digest": "829cb281a9068c4b39dbc8cccfe1385d4afbde7695047f79c2473a32dbf83d8f",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:checkpoint:007",
+          "canonical_text": "Clear next step",
+          "source_text_digest": "bc9d7ac3df0497e6493acb4b0b61c7a7474822c092c3d9420aee595de74d32da",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-LONG-JOURNEY:prohibited:001",
+          "canonical_text": "Lost fact",
+          "source_text_digest": "1a7720d2342a4052c8c2c32873311e4ea9d3488cd60b690d18b7e788417dee9b",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:prohibited:002",
+          "canonical_text": "Stale decision",
+          "source_text_digest": "27a8b2b520e726a0970f551555b1893171817746b91c0e50d52f0c8c9fa7f84f",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:prohibited:003",
+          "canonical_text": "Premature handoff",
+          "source_text_digest": "94d3287ee52cab7bff30b5c165f0dcae74713e6bcd5cf3c7c1e93c87a7c2fe10",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:prohibited:004",
+          "canonical_text": "Invented summary field",
+          "source_text_digest": "7b05a5a37957df563a300261753d7a09d8276a86e9e482bb9812bf11e339328d",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-LONG-JOURNEY:prohibited:005",
+          "canonical_text": "Unapproved quotation",
+          "source_text_digest": "d7ea852b0470aefd365b64233dccfab2f8e2e569d8d4e8b2f100a52fdc13d56d",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-02",
+        "AC-03",
+        "AC-05",
+        "AC-06",
+        "AC-10",
+        "AC-11",
+        "AC-13",
+        "AC-14",
+        "AC-20"
+      ],
+      "required_permissions": [
+        {
+          "name": "application_native_webhook",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_media",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "crm_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "complete transcript",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "customer memory",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "order state",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "facts",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "CRM mutation ledger",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-CANARY-EN",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-CANARY-EN:checkpoint:001",
+          "canonical_text": "Provider ingress correlated",
+          "source_text_digest": "b92692603b9341d3f888a3d5e44b4ffba1cc36d027a3003197a461ae79f67b73",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-EN:checkpoint:002",
+          "canonical_text": "One inbound persisted",
+          "source_text_digest": "470beb2f7fe9c246327c0d2f396a01a0848f73b23c9fb73b9f263839c192ea35",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-EN:checkpoint:003",
+          "canonical_text": "One outbound delivered",
+          "source_text_digest": "2952d99f4843a4baa7ebd02eeae1fa0942d50ea1ecb30ded10abaa2af0d91d9c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-EN:checkpoint:004",
+          "canonical_text": "Provider and audit IDs retained",
+          "source_text_digest": "972098bf43215417e1024f9193557218c2b25d0b959f6207a8ee59a872b55444",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-CANARY-EN:prohibited:001",
+          "canonical_text": "Application-native injection mislabeled as provider ingress",
+          "source_text_digest": "42f35dfd85147211994342fc9b37b2cc8c45f068d48ea1e57fb4c162977c8d99",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-EN:prohibited:002",
+          "canonical_text": "Real-customer send",
+          "source_text_digest": "90e2fd00790a2ebca3a16f7af1969e6270d0c9fefcb25757f3c447f6dbad3050",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-EN:prohibited:003",
+          "canonical_text": "Duplicate response",
+          "source_text_digest": "716e27050df8a25488fc783ef7682f9812cf108888635e12cc026326a600aaf4",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-01",
+        "AC-03",
+        "AC-23"
+      ],
+      "required_permissions": [
+        {
+          "name": "provider_originated_canary",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "provider event",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "inbound row",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "outbound audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "delivery status",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    },
+    {
+      "scenario_id": "SC-CANARY-AR",
+      "checkpoints": [
+        {
+          "assertion_id": "SC-CANARY-AR:checkpoint:001",
+          "canonical_text": "Provider ingress correlated",
+          "source_text_digest": "b92692603b9341d3f888a3d5e44b4ffba1cc36d027a3003197a461ae79f67b73",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-AR:checkpoint:002",
+          "canonical_text": "Arabic response",
+          "source_text_digest": "4019f3533b4382fac2ad1eea1677bc48253a86d7e7b6551a81f1e0fd4a735139",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-AR:checkpoint:003",
+          "canonical_text": "One outbound delivered",
+          "source_text_digest": "2952d99f4843a4baa7ebd02eeae1fa0942d50ea1ecb30ded10abaa2af0d91d9c",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-AR:checkpoint:004",
+          "canonical_text": "Provider and audit IDs retained",
+          "source_text_digest": "972098bf43215417e1024f9193557218c2b25d0b959f6207a8ee59a872b55444",
+          "structured_required": true,
+          "oracle_id": "checkpoint.structured.v2"
+        }
+      ],
+      "prohibited_outcomes": [
+        {
+          "assertion_id": "SC-CANARY-AR:prohibited:001",
+          "canonical_text": "English-only response",
+          "source_text_digest": "ad4998ef111a06c1fa2fe332432d45a3d9895715e30e7e2515baa99ea6380894",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-AR:prohibited:002",
+          "canonical_text": "Real-customer send",
+          "source_text_digest": "90e2fd00790a2ebca3a16f7af1969e6270d0c9fefcb25757f3c447f6dbad3050",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        },
+        {
+          "assertion_id": "SC-CANARY-AR:prohibited:003",
+          "canonical_text": "Duplicate response",
+          "source_text_digest": "716e27050df8a25488fc783ef7682f9812cf108888635e12cc026326a600aaf4",
+          "structured_required": true,
+          "oracle_id": "prohibited.classifier.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-01",
+        "AC-03",
+        "AC-23"
+      ],
+      "required_permissions": [
+        {
+          "name": "provider_originated_canary",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "outbound_text",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ],
+      "required_readbacks": [
+        {
+          "name": "provider event",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "inbound row",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "outbound audit",
+          "oracle_id": "readback.independent.v2"
+        },
+        {
+          "name": "delivery status",
+          "oracle_id": "readback.independent.v2"
+        }
+      ]
+    }
+  ],
+  "evidence_blocks": [
+    {
+      "block_id": "EB-RUNTIME",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-RUNTIME:oracle:001",
+          "canonical_text": "Exact release, migration, endpoint, app, model, service, Redis, PostgreSQL, worker, and channel readback",
+          "source_text_digest": "0b1690a071a9aac3fd00d1cd0dfa4aaf6a1c635b532cd62a885f4b8cc13fed04",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-RUNTIME:oracle:002",
+          "canonical_text": "No unresolved in-scope P0 or P1",
+          "source_text_digest": "d047880f85400f1cdac51082ca8c412a1e01cf6c7a792104b6258863bf37e380",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-RUNTIME:oracle:003",
+          "canonical_text": "First-visible and final timing distribution",
+          "source_text_digest": "9c57cfbc45ca556d2c495aa8bb34581720ef930820f3a1cb8e70793c359c1b24",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-01",
+        "AC-23",
+        "AC-30"
+      ],
+      "required_permissions": [
+        {
+          "name": "production_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-ADMIN",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-ADMIN:oracle:001",
+          "canonical_text": "Authorized operator can read required surfaces",
+          "source_text_digest": "01705de8ab799da23ff849e617f4a85788e2ba8a262ad03aaa8bd456313f4d5d",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-ADMIN:oracle:002",
+          "canonical_text": "Prompt edits and QA/report actions have observable result or explicit disabled state",
+          "source_text_digest": "342ea2c9f317b586816622b7db7fa5f0ae37a0e3b6b05083f39f2082dbd74181",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-16",
+        "AC-19"
+      ],
+      "required_permissions": [
+        {
+          "name": "admin_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-QUALITY",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-QUALITY:oracle:001",
+          "canonical_text": "15-rule weighted bot score with n_a denominator",
+          "source_text_digest": "c8e1693d3b2e6082f694cd55d5252f61ec061eace0ee5f82551d45a838f47261",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-QUALITY:oracle:002",
+          "canonical_text": "Manager assessment only for resolved transcript",
+          "source_text_digest": "c1b385898071cc33b1c67a5bd4dbf1154984a0f8d138dd902a11eb31b85b1a46",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-QUALITY:oracle:003",
+          "canonical_text": "Report metrics trace to records",
+          "source_text_digest": "57b54b2d80414c305de9e2142d763edd38023761ff770467d6c569935c838746",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-17",
+        "AC-18",
+        "AC-19"
+      ],
+      "required_permissions": [
+        {
+          "name": "bounded_quality_evaluation",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "quality_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-LOAD",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-LOAD:oracle:001",
+          "canonical_text": "At least 100 concurrent synthetic conversations",
+          "source_text_digest": "349bbb59001154caeb57854c9a1b33faec97cc2fb080676a22e86f4514672549",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-LOAD:oracle:002",
+          "canonical_text": "No real customer target",
+          "source_text_digest": "3c8901a5a9d7325e4f9f4f5a7404f6a25d91ce11caac39b0b4501b892425c6e2",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-LOAD:oracle:003",
+          "canonical_text": "Errors, latency, saturation, and recovery recorded",
+          "source_text_digest": "9c23b9ed0219f429f698a76ed8258fa0d07cd39c08c9015e3d568fbef3292dc8",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-25"
+      ],
+      "required_permissions": [
+        {
+          "name": "bounded_load_test",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-SECURITY",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-SECURITY:oracle:001",
+          "canonical_text": "HTTPS and auth checks",
+          "source_text_digest": "4e5529eda4af4460be8a64a3de34a4c21df67ddb385f0020172aea48b654f077",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-SECURITY:oracle:002",
+          "canonical_text": "Secrets and PII absent from tracked evidence",
+          "source_text_digest": "ddb1bfb5b82c53c6844dc9fb325abe9a2b5e8bd7a88c22f914dc15b9cd0c55a2",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-SECURITY:oracle:003",
+          "canonical_text": "Prompt injection and soft-deleted knowledge cannot override policy",
+          "source_text_digest": "c3042d5d3cb95fbcde018014464f736fe918846322174ddb5095983b97f2f460",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-22"
+      ],
+      "required_permissions": [
+        {
+          "name": "security_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-BACKUP",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-BACKUP:oracle:001",
+          "canonical_text": "Daily schedule",
+          "source_text_digest": "8224099ad6af0681d530e146a67fef28251a121e5e09fd083c1aac9cd97e3a60",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-BACKUP:oracle:002",
+          "canonical_text": "Thirty-day retention",
+          "source_text_digest": "401be34259494e7de300903f85553d75aa05f292cd7307b2c9fc39642f605c0e",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-BACKUP:oracle:003",
+          "canonical_text": "Integrity and restore proof",
+          "source_text_digest": "94bd112645ae332ae51099aa26d360165be798fcf76a7d7b86254a19fc779918",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-BACKUP:oracle:004",
+          "canonical_text": "Owner and retention disposition",
+          "source_text_digest": "7c70f2815b55df60b1d1871f457ab6d8ddaaef5ebf9349f0515bbdaed680d25f",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-26"
+      ],
+      "required_permissions": [
+        {
+          "name": "backup_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-AVAILABILITY",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-AVAILABILITY:oracle:001",
+          "canonical_text": "Measurement window declared",
+          "source_text_digest": "a7a3eb397c24d48f1850c5540474a19be07d3ba4231a413dc9350b44f5bd011b",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-AVAILABILITY:oracle:002",
+          "canonical_text": "Availability numerator and denominator reproducible",
+          "source_text_digest": "4356f3f00cfa70b92e36421066d4c0c91275ff9ad681a00adf6dba516ad24271",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-AVAILABILITY:oracle:003",
+          "canonical_text": "99% target evaluated without extrapolation",
+          "source_text_digest": "fec14afe3953139f6e0a69b75b3d08b9afe1453e8713c5c8baf3fc2b14be6973",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-24"
+      ],
+      "required_permissions": [
+        {
+          "name": "monitoring_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-CATALOG-COVERAGE",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-CATALOG-COVERAGE:oracle:001",
+          "canonical_text": "Inventory and catalog snapshots joined by SKU",
+          "source_text_digest": "6a55389ecc81dc27ee7f0896b6452b5f6fa734fe3521785921c43c7876c44d38",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-CATALOG-COVERAGE:oracle:002",
+          "canonical_text": "95% and 90% thresholds computed",
+          "source_text_digest": "0afe43a45c3724050b3826369119b2f7260247f55717b4a954beb06114d1dcb7",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-CATALOG-COVERAGE:oracle:003",
+          "canonical_text": "Top-three offer generation timed at or below two seconds",
+          "source_text_digest": "a6ba3400b9e14ce0159b5dea03040942d711927295cd525a5e5d781c1071a9cf",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-27",
+        "AC-28"
+      ],
+      "required_permissions": [
+        {
+          "name": "catalog_readback",
+          "oracle_id": "permission.authorization.v2"
+        },
+        {
+          "name": "inventory_readback",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    },
+    {
+      "block_id": "EB-REFERRAL",
+      "oracle_checks": [
+        {
+          "assertion_id": "EB-REFERRAL:oracle:001",
+          "canonical_text": "Approved business rules exist",
+          "source_text_digest": "042f766e2aaef72f4db023d9b637cdea9c64770e55cc2eccb96e9875929203a0",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-REFERRAL:oracle:002",
+          "canonical_text": "Synthetic reward constraints and terminal disposition are explicit",
+          "source_text_digest": "21f516da32c66736a89b14d93ad81b495d0a40ad78892d3e6353a18a164a800f",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        },
+        {
+          "assertion_id": "EB-REFERRAL:oracle:003",
+          "canonical_text": "No real reward is issued",
+          "source_text_digest": "36f001e5bbdc8deffe22849aecc4f04068dacbfc8dba4b70ec166ad401db8733",
+          "structured_required": true,
+          "oracle_id": "block.oracle.v2"
+        }
+      ],
+      "criterion_ids": [
+        "AC-21"
+      ],
+      "required_permissions": [
+        {
+          "name": "referral_synthetic",
+          "oracle_id": "permission.authorization.v2"
+        }
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-01:oracle:001",
+          "canonical_text": "Exact runtime identity readback",
+          "source_text_digest": "c7a9ba2c4fbbfff643020f614acef1cb2fefb29c2bb63d621bd38a8ee9651ac6",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-01:oracle:002",
+          "canonical_text": "One inbound persisted and one outbound audited",
+          "source_text_digest": "85dbd0c0ddb77a02913730c25d458b3fbc10a1c1c99f7d97c841b7e4d826597e",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-01:oracle:003",
+          "canonical_text": "Separate EN/AR provider correlation or explicit non-pass",
+          "source_text_digest": "12b7cd1ed4f36217198d30c81da97faba1b97edf69e4d4b0feae957898344832",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Any identity mismatch, duplicate/orphaned processing, or unproven provider ingress claimed as PASS",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-OPEN-AR",
+        "SC-CANARY-EN",
+        "SC-CANARY-AR"
+      ],
+      "evidence_block_ids": [
+        "EB-RUNTIME"
+      ]
+    },
+    {
+      "criterion_id": "AC-02",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-02:oracle:001",
+          "canonical_text": "New identity creates only expected synthetic records",
+          "source_text_digest": "0239e57763c425575e7c6311608d76d12e20fe397683ffdae7238e60e8898de6",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-02:oracle:002",
+          "canonical_text": "Returning identity receives relevant bounded context",
+          "source_text_digest": "bf39200da3bf5598925de1d691e046639b88c96e67378fc3993065358263b9cb",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-02:oracle:003",
+          "canonical_text": "No new-customer opener for returning fixture",
+          "source_text_digest": "2281f4fcea706f2ac8d6cd97aa41abb8052f2c09a617407ef54badc9b2797b62",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Wrong customer status, missing expected synthetic record, duplicate record, or leaked/unbounded context",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-OPEN-AR",
+        "SC-CRM",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-03",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-03:oracle:001",
+          "canonical_text": "First EN and AR reply language and identity",
+          "source_text_digest": "5249ea116e1707dd6ad93a23cb7388d13204d31a0a5f67016a6b7aff38c41754",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-03:oracle:002",
+          "canonical_text": "Unknown-name gate has no product/quote side effect",
+          "source_text_digest": "efe8e67407f74cba38e412ec466f1209262be79267dada43e5765a4ec6c2fc80",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-03:oracle:003",
+          "canonical_text": "Bare/labeled name accepted",
+          "source_text_digest": "10025fa8fb553c30b9ab501e383d56b9393a4794a9a3295bd36189406da12d78",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-03:oracle:004",
+          "canonical_text": "Prior request resumes",
+          "source_text_digest": "552ee46585b1b5055a814fd960befad8181b463e1b4b044675bc6ac4af568eb8",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-03:oracle:005",
+          "canonical_text": "Locale remains stable",
+          "source_text_digest": "ed598aa8fa63662a4013cd45019ec0049144d03b377433a6b5afcea8fb5f388f",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Wrong identity or locale, repeated name question, lost prior request, or name-gate side effect",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-OPEN-AR",
+        "SC-PARA-NAME",
+        "SC-LONG-JOURNEY",
+        "SC-CANARY-EN",
+        "SC-CANARY-AR",
+        "SC-ESCALATION-AR"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-04",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-04:oracle:001",
+          "canonical_text": "Prepared EN/AR voice fixture accepted",
+          "source_text_digest": "7ad246efe52bc4f8241f1d318e482d1aa66896ec09aab98f94ed028587f25652",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-04:oracle:002",
+          "canonical_text": "Transcript and response language exact",
+          "source_text_digest": "55f6e27e4450e7742111aa23f9cc5a5a9278524533b4125f8dbe220b0b8b4652",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-04:oracle:003",
+          "canonical_text": "Media/transcript/response audit correlation",
+          "source_text_digest": "1b99e547bed304e063f64bd81ba1d26978d8be965b2129d4ee94d058c8a7449c",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Skipped voice batch, missing transcript/audit, or wrong-language answer",
+      "scenario_ids": [
+        "SC-VOICE-EN",
+        "SC-VOICE-AR"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-05",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-05:oracle:001",
+          "canonical_text": "Named options match catalog identity, description, category, image, and price",
+          "source_text_digest": "c97c95354095dc5a1afc9249207f23e353da263e881860e4338fc9e3faf0a1b2",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-05:oracle:002",
+          "canonical_text": "Delivery statements use applicable verified policy",
+          "source_text_digest": "2d600775a1d1d4679117ea4eaade5e91b771f49ebafe845f296deb5fac50974f",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-05:oracle:003",
+          "canonical_text": "Zoho rate never replaces catalog price",
+          "source_text_digest": "6c6d008215446a80c705f36e93aa702c3bd545c2389a5ca765067cbb0c7345d3",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Any customer catalog fact differs from the bound catalog snapshot or uses a superseded primary source",
+      "scenario_ids": [
+        "SC-DISCOVERY",
+        "SC-GROUNDING",
+        "SC-PARA-MEDIA",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-06",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-06:oracle:001",
+          "canonical_text": "Useful catalog-backed answer",
+          "source_text_digest": "b0a3d145ac47d170b17a9ae2f23be91e99ff77d280ce8364bce58547d2c7aabd",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-06:oracle:002",
+          "canonical_text": "At most one bounded useful clarification after value",
+          "source_text_digest": "aa52d8ac317367d6e0d6fabf6be4ed40324e13d65a611c9c65df7e6a471f1f73",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-06:oracle:003",
+          "canonical_text": "Objection and alternatives are safe",
+          "source_text_digest": "b0234d79c7df4a1f02e0bcd3f7bc7f34e1930d64bc0c8cbbf36bc0ac4580886b",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-06:oracle:004",
+          "canonical_text": "Cross-sell follows core need",
+          "source_text_digest": "da72174be6ba1459939b110cbc798d16abd1ea37121b262bf8c9d9691f32562d",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Unhelpful interrogation, invented benefit/discount, false match, fake SKU, or premature handoff",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-DISCOVERY",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-07",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-07:oracle:001",
+          "canonical_text": "Exact tool/FAQ/manager evidence correlates to each claim",
+          "source_text_digest": "264f424d91aa1af9f812b6fc483422c3b93e20c498ffc14856cfeddf52910403",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-07:oracle:002",
+          "canonical_text": "Unknown remains unconfirmed",
+          "source_text_digest": "422a389a0d3de44e00f2066750b4d8baae0ef62df88edbff3408cd6e19753a23",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-07:oracle:003",
+          "canonical_text": "No future-check promise",
+          "source_text_digest": "08b07a19c270e38b631bbeaf03328e78bdcf47f10b6a9a613f6244ccbfdc17bc",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-07:oracle:004",
+          "canonical_text": "No unsupported health/showroom/sample claim",
+          "source_text_digest": "2451662efb0f05a45220792e716d77c2a657d8b981547f99caabc773b5defefe",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Any unsupported commercial fact, future-check promise, specific-product trial promise, or policy override",
+      "scenario_ids": [
+        "SC-GROUNDING",
+        "SC-PARA-GROUNDING"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-08",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-08:oracle:001",
+          "canonical_text": "Authorized order fixture queried",
+          "source_text_digest": "f0d58748aeac6ad4fc15e68c32de85c58810112be10ac50262d6c5e44a78532f",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-08:oracle:002",
+          "canonical_text": "Returned confirmation, delivery, and payment state matches readback",
+          "source_text_digest": "f7783a6949e398b527dc95dbfc2824d2f4aaeda439ef1787aa1f286ca541de16",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-08:oracle:003",
+          "canonical_text": "No write occurs",
+          "source_text_digest": "ab050d8101ceb10527685fc47157fad386367c00ae2f1afe1c993a067f93c8d2",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Guessed, stale, mismatched, or unverified order status",
+      "scenario_ids": [
+        "SC-ORDER-STATUS"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-09",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-09:oracle:001",
+          "canonical_text": "Decision bound to current quotation prompt",
+          "source_text_digest": "f3da259167717734afaa4f4020280658e7dbeca4755f12a4038379bc835ad4a8",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-09:oracle:002",
+          "canonical_text": "FU3 grace preserved",
+          "source_text_digest": "e5173af5d80376a58ff7b9216cf6c22d06f24d3a856fef7de1daaebc4b0b3116",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-09:oracle:003",
+          "canonical_text": "Explicit rejection terminal",
+          "source_text_digest": "77d5cb0b97415af9c517f20dca49f9fcdfd81776d80b18dc9da03a1f4ba0a8dd",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-09:oracle:004",
+          "canonical_text": "Arabic remains Arabic",
+          "source_text_digest": "14f7a9c72f3acb542b6c7cce6641a910a8f859536ee5f15960f9a8558a773507",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-09:oracle:005",
+          "canonical_text": "Feedback deduplicated",
+          "source_text_digest": "1bbed80a938b63f1e4bbe3003d901e14383cfc43273df888564e99238d9ff93d",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-09:oracle:006",
+          "canonical_text": "Unapproved reminders absent",
+          "source_text_digest": "2dae1e2763b60b5c62e3d3569caaee978ccc06d942c2e0604072551c946c9e86",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Stale decision, wrong locale, immediate FU3 rejection, duplicate feedback, or unauthorized lifecycle send",
+      "scenario_ids": [
+        "SC-LIFECYCLE"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-10",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-10:oracle:001",
+          "canonical_text": "Line items and quantity exact",
+          "source_text_digest": "33aa332aaf2d6f1e7ff5e6a3cf486bd66610092828f5651a63e8073da2fdfe2a",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-10:oracle:002",
+          "canonical_text": "Catalog price exact",
+          "source_text_digest": "8b4086d03982ce104624c75221d74120124bafb971e2e0952fff27ce6af5886f",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-10:oracle:003",
+          "canonical_text": "Every adjustment provenance explicit",
+          "source_text_digest": "da8394cc2ba71e9262008126565b04ada35670b140cfe2c639a07a9294226a54",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-10:oracle:004",
+          "canonical_text": "Computed total reproducible",
+          "source_text_digest": "29b8b59770e5f14b5c6b2529142c5dd6f5df802a24901a2c96270098795a4e0a",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-10:oracle:005",
+          "canonical_text": "Segment rule exact",
+          "source_text_digest": "e77be57f14e2f715e04cdfb7496cb166829853ec5ee25706183edcf44225206e",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Wrong price/quantity/total, unapproved adjustment, or missing personalization provenance",
+      "scenario_ids": [
+        "SC-QUOTE",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-11",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-11:oracle:001",
+          "canonical_text": "Synthetic CRM fields equal input fixture",
+          "source_text_digest": "f2c04ae99ba75bf9f7dd5b88010dfa29592715c908c3bfcc3c0616b1224a1ea3",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-11:oracle:002",
+          "canonical_text": "Original/latest attribution policy observed",
+          "source_text_digest": "2144af84d2c42698e7f11a5cccc166b7562718c823a3cebc79fd50e48513841d",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-11:oracle:003",
+          "canonical_text": "Failure path preserves customer response and emits operation signal",
+          "source_text_digest": "f0bc7a8810e194af6bfb0597f287fab4013695726bddab6b54f6ace7d3cc5bf8",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Missing/wrong field, unsafe overwrite, duplicate record, secret leak, or dropped inbound batch",
+      "scenario_ids": [
+        "SC-CRM",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-12",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-12:oracle:001",
+          "canonical_text": "Authorized synthetic deal starts at mapped New Deal",
+          "source_text_digest": "836d6d74e712677b15bfac1e6b54c17fdaa2fe74d163a84d6d01eeee9a2e11fc",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-12:oracle:002",
+          "canonical_text": "Each authorized transition produces expected mapped stage",
+          "source_text_digest": "ead1fd1a838ac734dc8901a81b4a5ccb5169ef8bb6c53b0d461ec842d54bf79a",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-12:oracle:003",
+          "canonical_text": "Stage history readback complete",
+          "source_text_digest": "195b27db4f3dfd99cc66794e27dfbf81eb77fa387dc5962094957c9c8a591d07",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Missing, skipped, duplicated, or incorrectly mapped stage transition",
+      "scenario_ids": [
+        "SC-CRM"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-13",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-13:oracle:001",
+          "canonical_text": "Long-journey fact matrix retained",
+          "source_text_digest": "08b19321e467fe7631f437ff4294ccc22184387f2186019a6b4038f936cde361",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-13:oracle:002",
+          "canonical_text": "Compact answers attach to expected frame",
+          "source_text_digest": "58997f342f58cc47a4bf2b3ef47de2da4d493a71299ff8b7c60cc3f9ae49bc0a",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-13:oracle:003",
+          "canonical_text": "Interruption resumes",
+          "source_text_digest": "354d5ff92ff7e4790dd70ec90bb01380c07e49ab21fb08738dd8dd29dc0ffc99",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-13:oracle:004",
+          "canonical_text": "Correction changes one fact",
+          "source_text_digest": "415ba3eb343c773f90b098c016ecedfe9cfb953250740244a0dff56356802fee",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-13:oracle:005",
+          "canonical_text": "New request clears stale decision",
+          "source_text_digest": "83ba6e9d9e70f4860a3800651d788e0245945457e8550a19067c70a12883d99d",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Lost, invented, conflicted, wrongly attached, or stale fact/state",
+      "scenario_ids": [
+        "SC-PARA-NAME",
+        "SC-PARA-QUOTE",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-14",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-14:oracle:001",
+          "canonical_text": "Variant parser resolves intended SKU and quantity",
+          "source_text_digest": "3d2b6f4694c3185060884e882f6933ce94ee95b8ef13ea21b388d35129afe274",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-14:oracle:002",
+          "canonical_text": "Only missing details requested",
+          "source_text_digest": "d8dc8143aa0d8b8dc50903eef7aa299c35572cedba02230fe7b2d93a48d59a6a",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-14:oracle:003",
+          "canonical_text": "Customer fields exact",
+          "source_text_digest": "5e6537d800a7df1bcc0c815a79ef0f0ce22f1ea0c00c001197080704b442e530",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-14:oracle:004",
+          "canonical_text": "Mutation occurs only after gates",
+          "source_text_digest": "ebfe7556fa0a41eb46cce2d266b20db15c7b95a98fe1da79a347ec905116a5dc",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-14:oracle:005",
+          "canonical_text": "PDF/audit/decision/readback consistent",
+          "source_text_digest": "e1c909e1235b50f3395c657f7e4ceb16ca82b4c7e9327849d8dce7b20c34c6e7",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Fake/wrong item or quantity, invented data, premature escalation or mutation, fail-open quote, or inconsistent document/state",
+      "scenario_ids": [
+        "SC-QUOTE",
+        "SC-PARA-QUOTE",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-15",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-15:oracle:001",
+          "canonical_text": "Hard trigger creates one durable escalation and alert",
+          "source_text_digest": "7576bd988604717188210a2253f7f624b90f54b1fdf1224dcead41c162823c99",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-15:oracle:002",
+          "canonical_text": "Pending state returns localized fallback",
+          "source_text_digest": "035425dab9f27e93e08a33f7cfb96c739f2c6f13e67db5dcfffe13331fc3bd0d",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-15:oracle:003",
+          "canonical_text": "Context complete",
+          "source_text_digest": "0ac175288312cabf4bf36e18b6759d866a6ef8da0a6090a522fa2272fabec2b8",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-15:oracle:004",
+          "canonical_text": "Manager reply facts preserved",
+          "source_text_digest": "00fade73ba7f71c12599e2bc113882c6571e2dc51d7807ef499e756e79671d85",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-15:oracle:005",
+          "canonical_text": "Resolution terminal",
+          "source_text_digest": "b43b8fd16839235137ee8fc49126d489c931fcde1174ea420dffdcd0da04a386",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-15:oracle:006",
+          "canonical_text": "Ordinary branch has no handoff",
+          "source_text_digest": "210927f7da57b59ee3fb38c745c74c28ad4890c0e41f386d021b5f54361745d4",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Silence, premature/duplicate handoff, incomplete context, invented manager fact, or unresolved synthetic escalation",
+      "scenario_ids": [
+        "SC-ESCALATION",
+        "SC-PARA-HANDOFF",
+        "SC-ESCALATION-AR"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-16",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-16:oracle:001",
+          "canonical_text": "Authorized manager role reaches each required surface",
+          "source_text_digest": "f2a891ab6a852e88c4428d02143cf02f0e2c9e47df7477aa3906211e9e2549eb",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-16:oracle:002",
+          "canonical_text": "Conversation/audit/prompt/QA/cost/status data visible",
+          "source_text_digest": "6418b1673c21da2671e196fde7927ee53294b245a6b40433df93efcdf4eff745",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-16:oracle:003",
+          "canonical_text": "Actions report persisted result or explicit disabled/error state",
+          "source_text_digest": "6875e03fce87664ac1a920cb81b4330a2deed6502fc3e9a623247ef1aea7dbf5",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Unauthorized access, missing required surface, silent action, or hidden 5xx",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-ADMIN"
+      ]
+    },
+    {
+      "criterion_id": "AC-17",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-17:oracle:001",
+          "canonical_text": "Fifteen rules present",
+          "source_text_digest": "dc75971e5ec0bbd81233f47583b4b08b21f58e2adf632d6e9074e7e9963eb261",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-17:oracle:002",
+          "canonical_text": "Four block weights exact",
+          "source_text_digest": "d6b22c47f74ca3fa1ce1919e43c33915294f817bc96cb6e96cf6a7fbfc30fb00",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-17:oracle:003",
+          "canonical_text": "Only applicable rules enter denominator",
+          "source_text_digest": "5b4e8e418d428b5ea97980a9647a20059f336182818a3ef6208e9c4ebec240f4",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-17:oracle:004",
+          "canonical_text": "Strengths/improvements/recommendations persisted",
+          "source_text_digest": "e9ed18aaf8d45a52bd00ce3a8e54f80fc9f538126338091cd2de726a3788b3c1",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Wrong rule set/weights/denominator or missing evidence-backed narrative",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-QUALITY"
+      ]
+    },
+    {
+      "criterion_id": "AC-18",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-18:oracle:001",
+          "canonical_text": "Completed/resolved eligibility",
+          "source_text_digest": "d44c46e4411b7f5ab2e8c5dad35fd23c81fa042b501689a4c12dd076c838ad56",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-18:oracle:002",
+          "canonical_text": "Ten qualitative criteria cite transcript",
+          "source_text_digest": "6bfe224a4ede0d70bf4a79a68aedaa93ca624780fd726413cf127d278a3f2b00",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-18:oracle:003",
+          "canonical_text": "Q1-Q4 metrics derive from DB/CRM",
+          "source_text_digest": "e2a0f56b3253b3ae212d9a0cd44c2132be21f3080c7547b4f07ee6286a4f0699",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Premature assessment, unsupported qualitative score, or incorrect quantitative metric",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-QUALITY"
+      ]
+    },
+    {
+      "criterion_id": "AC-19",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-19:oracle:001",
+          "canonical_text": "Each required report opens or produces explicit disabled state",
+          "source_text_digest": "30417498a5d64957079574c87cc847896e4c673d350e3b068710c1475db7221e",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-19:oracle:002",
+          "canonical_text": "Metrics reconcile to source records",
+          "source_text_digest": "98c376e6beae0ee5e46be50250e5f3c084a337fc68903931f66de99be3356b1a",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-19:oracle:003",
+          "canonical_text": "No uncontrolled scheduled model run",
+          "source_text_digest": "c3a52efa3b40d3660bb45aec183245e8771210c6cc8770a3acee973d8e0febd4",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Missing report, silent action, irreproducible metric, or uncontrolled spend",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-ADMIN",
+        "EB-QUALITY"
+      ]
+    },
+    {
+      "criterion_id": "AC-20",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-20:oracle:001",
+          "canonical_text": "Recommendation exists in bound catalog",
+          "source_text_digest": "abfa2aed173a4f05fb65389068b3248ec38f8f6111f4022761fbca56d5dc9e2b",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-20:oracle:002",
+          "canonical_text": "Rationale cites stated need/context",
+          "source_text_digest": "55364d56ac83aaad1cd2cdfabf6b2bae743592a658f81217ded91d53119d353d",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-20:oracle:003",
+          "canonical_text": "Alternative labeled when not exact",
+          "source_text_digest": "ad1a3aa6bf647d49c89ed925e0c8a6503d0685c6ed8d092d51f478787edfcb13",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-20:oracle:004",
+          "canonical_text": "Complement follows core need",
+          "source_text_digest": "2ea1fca27b6f7479c50893748dbae4b43f0a063af54da502b13cea438660f108",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Off-catalog exact-match claim, irrelevant option, or unsupported personalization",
+      "scenario_ids": [
+        "SC-DISCOVERY",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-21",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-21:oracle:001",
+          "canonical_text": "Approved rules and reward constraints exist",
+          "source_text_digest": "818a705cc1516205d247f79af5a84da979145e637e8ccba08cb175bfed063007",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-21:oracle:002",
+          "canonical_text": "All targets synthetic",
+          "source_text_digest": "f6528f579f5d1e895b24c10a18a11c985cb59997f5cf68c7127721fd467637cd",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-21:oracle:003",
+          "canonical_text": "No real reward",
+          "source_text_digest": "1e9e2d8b0fdae4a0c9733691eb167ad33522c1eeac0ab74e69b01b3b934adca0",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-21:oracle:004",
+          "canonical_text": "Terminal ledger disposition",
+          "source_text_digest": "5262c4998cd8a7c827e4612eeaae5b2d2f8a88a759ef04998116d3c4101a37aa",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Missing client rules, real reward/target, or unresolved side effect",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-REFERRAL"
+      ]
+    },
+    {
+      "criterion_id": "AC-22",
+      "evidence_mode": "reused_exact",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-22:oracle:001",
+          "canonical_text": "HTTPS/auth/config checks",
+          "source_text_digest": "4a51b86add9cbf8f75afe6b5ba9e8fcbadf6f2c4eca6e172ed0529e84877fe16",
+          "structured_required": true,
+          "oracle_id": "criterion.reused_exact.v2"
+        },
+        {
+          "assertion_id": "AC-22:oracle:002",
+          "canonical_text": "Tracked evidence secret/PII scan",
+          "source_text_digest": "2ca83e3faa860e1035e0c6dd00553e1f9cfde9c8739e6a8af0f8862d732faa38",
+          "structured_required": true,
+          "oracle_id": "criterion.reused_exact.v2"
+        },
+        {
+          "assertion_id": "AC-22:oracle:003",
+          "canonical_text": "Prompt injection rejected",
+          "source_text_digest": "ed9fd8bb2b16d3888062a54ef7a48d0cd166104e11a1863f828d27bff2e6c6a2",
+          "structured_required": true,
+          "oracle_id": "criterion.reused_exact.v2"
+        },
+        {
+          "assertion_id": "AC-22:oracle:004",
+          "canonical_text": "Soft-deleted knowledge absent",
+          "source_text_digest": "33e123aeea24b45d832986d955813167ded5d315d96db4aae5224f5e2ae645f1",
+          "structured_required": true,
+          "oracle_id": "criterion.reused_exact.v2"
+        },
+        {
+          "assertion_id": "AC-22:oracle:005",
+          "canonical_text": "Least-privilege scopes inspected",
+          "source_text_digest": "d5826550241ae1bd7a1e6a60e6fb93861320ef6d9ed49bdf468dfc3369d8b3db",
+          "structured_required": true,
+          "oracle_id": "criterion.reused_exact.v2"
+        }
+      ],
+      "failure_condition": "Unauthorized access, secret/PII exposure, policy override, or stale deleted knowledge leak",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-SECURITY"
+      ]
+    },
+    {
+      "criterion_id": "AC-23",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-23:oracle:001",
+          "canonical_text": "First-visible, final-text, media, and scenario timestamps",
+          "source_text_digest": "b33f661a23421271b17215660bc447ce1d0422ef1bf734f3d50cdd58b3162f9a",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-23:oracle:002",
+          "canonical_text": "p50/p95/max plus timeout/retry counts",
+          "source_text_digest": "c533fe9e178596b086f32c5db678e1377722d148a45f9914ffaad2e28ca8e9b4",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-23:oracle:003",
+          "canonical_text": "External-model and local delivery latency separated",
+          "source_text_digest": "ac7dd6f0401acc8e446a040263c2e2c417919a982eae2032743841c4ebd5e6c3",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Any contractual measurement at or above 10 seconds, missing timing boundary, or hidden timeout",
+      "scenario_ids": [
+        "SC-CANARY-EN",
+        "SC-CANARY-AR"
+      ],
+      "evidence_block_ids": [
+        "EB-RUNTIME"
+      ]
+    },
+    {
+      "criterion_id": "AC-24",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-24:oracle:001",
+          "canonical_text": "Authoritative monitor and time window bound",
+          "source_text_digest": "8c7dc37b6114123f72d0963a4347ac7daac6ead41a97a5d089224e6866b47aa5",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-24:oracle:002",
+          "canonical_text": "Availability numerator/denominator reproducible",
+          "source_text_digest": "ab686593eef861ebf824cfb2f7f250e2f6c2c8d869d36af9e001bb7d1ca412fa",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-24:oracle:003",
+          "canonical_text": "Incident exclusions explicit",
+          "source_text_digest": "6afe6b09a4aea5583c8e39251e763e9c415e697113181b6e33d7b69035d96c57",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Computed uptime below 99%, missing authoritative window, or unsupported extrapolation",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-AVAILABILITY"
+      ]
+    },
+    {
+      "criterion_id": "AC-25",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-25:oracle:001",
+          "canonical_text": "At least 100 concurrent synthetic conversations",
+          "source_text_digest": "349bbb59001154caeb57854c9a1b33faec97cc2fb080676a22e86f4514672549",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-25:oracle:002",
+          "canonical_text": "No real targets",
+          "source_text_digest": "cbd45dbf4fcf873ededb6f0d2b13cc897088327f4c1826c3536933960ce9ca98",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-25:oracle:003",
+          "canonical_text": "Error/latency/saturation/recovery evidence",
+          "source_text_digest": "6012d7431c84a41eba9091ca7ec6e853e142ef7fbb1364398fbcf2ba0d3a6927",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Concurrency below target, unsafe target set, capacity failure, or missing recovery evidence",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-LOAD"
+      ]
+    },
+    {
+      "criterion_id": "AC-26",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-26:oracle:001",
+          "canonical_text": "Daily schedule evidence",
+          "source_text_digest": "d364ef6afde1dd47561016f9fa955f760605e4bef273f7e14269c3b86e819c26",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-26:oracle:002",
+          "canonical_text": "Thirty-day retention sample",
+          "source_text_digest": "89fd9c591487b0842ec70ec527ea81a47c08a0d106884271ce45b70cfaba11dd",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-26:oracle:003",
+          "canonical_text": "Integrity check",
+          "source_text_digest": "c4cd9564966896201ff10b8f5641db795273d0fe1d59a6a957d423d2ac7456de",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-26:oracle:004",
+          "canonical_text": "Authorized restore proof",
+          "source_text_digest": "7b4485c613703e1a965b1e042949303c80f989ff21d1912ee6afa1b94af23794",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-26:oracle:005",
+          "canonical_text": "Owner and disposition",
+          "source_text_digest": "6186d37e4fe38477808cdb61e6b2e94f78393acd1da6d47905e7e5465b23216d",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Missing day, retention below 30 days, failed/unproven restore, or missing ownership",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-BACKUP"
+      ]
+    },
+    {
+      "criterion_id": "AC-27",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-27:oracle:001",
+          "canonical_text": "Co-temporal SKU population denominators",
+          "source_text_digest": "5e1f0a77f5011fd9b1ed1e96abcee51d5357f5bc3e0711fe3f6cd8f6d264667c",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-27:oracle:002",
+          "canonical_text": "Inventory/API availability percentage",
+          "source_text_digest": "01045e8843b7b8624664cc59fd0db749294ed26a80189d23c14141dd6c8787bb",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-27:oracle:003",
+          "canonical_text": "Photo/description percentage",
+          "source_text_digest": "84a9511058dd1f665ab68e372d1d8cfb6bbfd102c0bbf11dd81fdba5295f766e",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-27:oracle:004",
+          "canonical_text": "Catalog price provenance",
+          "source_text_digest": "4ca0e29521e3620ff135133e878f26e1abe8cfc36dad531f47fd1caaf5823ea0",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-27:oracle:005",
+          "canonical_text": "Segment-price sample",
+          "source_text_digest": "1c54c2091ad054bb955904d88949abe02b9da27de6809646c362277b6bf27e78",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Coverage below 95% or 90%, wrong denominator, non-catalog customer price, or wrong segment price",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-CATALOG-COVERAGE"
+      ]
+    },
+    {
+      "criterion_id": "AC-28",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-28:oracle:001",
+          "canonical_text": "Exact query and snapshots bound",
+          "source_text_digest": "820f4c0d89247fbc002f0614d8ecc1f951fa00dcd0957fb560c6a8f1dd36bc97",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-28:oracle:002",
+          "canonical_text": "Exactly top three result set recorded",
+          "source_text_digest": "ce0b138e7826bf29c03dd55b2273288bbde82a9326b8cdb7e3f16a9f0ea5834d",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-28:oracle:003",
+          "canonical_text": "Offer-generation timing boundary at or below two seconds",
+          "source_text_digest": "daf116fa01d7b70b24e48616e0ec3d760c5d6427450351a00b2ef3dc43542665",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Timing above two seconds, wrong result count, or unbound query/catalog identity",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-CATALOG-COVERAGE"
+      ]
+    },
+    {
+      "criterion_id": "AC-29",
+      "evidence_mode": "fresh",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-29:oracle:001",
+          "canonical_text": "Text audit precedes media",
+          "source_text_digest": "084d8aed36d0fd21b5b1bf8635c4630173b164aceff874e5b3fd41a2d5aeb9d4",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-29:oracle:002",
+          "canonical_text": "Image matches final named SKU/variant",
+          "source_text_digest": "4a4fcc14971438fe45637cd987e120900202fb02e80c137ee2b5e2790f4beb18",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-29:oracle:003",
+          "canonical_text": "No repeat after terminal state",
+          "source_text_digest": "670b8a63c67beb7c306b0c96387e6274189fb28f20866ac982bb05cd5255168e",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-29:oracle:004",
+          "canonical_text": "Caption non-duplicative",
+          "source_text_digest": "ad0445fa01b49e992bf73e6baacbfef099b11cb07e5d02ec729f7d43d70ba699",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        },
+        {
+          "assertion_id": "AC-29:oracle:005",
+          "canonical_text": "Formatting invariants pass",
+          "source_text_digest": "1a782ddbd3037a8bdcd9879b162c98642c11e78c06f1b9cb3cd18f23800d7ce2",
+          "structured_required": true,
+          "oracle_id": "criterion.fresh.v2"
+        }
+      ],
+      "failure_condition": "Mismatched/repeated/early media, redundant caption, raw URL, or malformed WhatsApp formatting",
+      "scenario_ids": [
+        "SC-DISCOVERY",
+        "SC-PARA-MEDIA"
+      ],
+      "evidence_block_ids": []
+    },
+    {
+      "criterion_id": "AC-30",
+      "evidence_mode": "external_gate",
+      "oracle_checks": [
+        {
+          "assertion_id": "AC-30:oracle:001",
+          "canonical_text": "tj-r1f3 status closed",
+          "source_text_digest": "85d704beccb49a2c651917b87b2bfcde3fd7564e2512c7c1297a57e3cebe1a6a",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-30:oracle:002",
+          "canonical_text": "Fresh deployed release and exact model/service readback",
+          "source_text_digest": "87dbd16b493eae54db05c1e6dd2cf6bff7291c764a513f56e61d55bd2870f8a8",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-30:oracle:003",
+          "canonical_text": "Fresh five-call provider smoke passes 5/5",
+          "source_text_digest": "43e74c8ffe37f85465916883ad13d892929bea8e14467800fa93fc779ddd2d15",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-30:oracle:004",
+          "canonical_text": "Manual semantic review passes",
+          "source_text_digest": "27c548ee033beb4c39fe62d713956c8421ba066167acd6c9cb0ec964fa9ed017",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        },
+        {
+          "assertion_id": "AC-30:oracle:005",
+          "canonical_text": "No unresolved in-scope P0/P1",
+          "source_text_digest": "089cf203be671467afd9f318029118111637fc7addaf77ee400ab1f127d343d1",
+          "structured_required": true,
+          "oracle_id": "criterion.external_gate.v2"
+        }
+      ],
+      "failure_condition": "Dependency is not freshly closed/proven, target release is assumed, provider smoke is not 5/5, or an in-scope P0/P1 remains",
+      "scenario_ids": [
+        "SC-GROUNDING",
+        "SC-PARA-GROUNDING"
+      ],
+      "evidence_block_ids": [
+        "EB-RUNTIME"
+      ]
+    }
+  ]
+}
+
