@@ -69,8 +69,8 @@ verification:
   - "GitHub Actions run 26956067120": passed
   - "GitHub Actions run 26956771039": passed
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed
-  - "production E2E on +79262810921#tj-pii-off-e2e-20260604170643": passed
-  - "production E2E on +79262810921#tj-pii-off-e2e-resume-20260604170643": passed
+  - "production E2E on [PROTECTED_TEST_PHONE]#tj-pii-off-e2e-20260604170643": passed
+  - "production E2E on [PROTECTED_TEST_PHONE]#tj-pii-off-e2e-resume-20260604170643": passed
 changed_files:
   - src/core/config.py
   - src/llm/pii.py
@@ -129,7 +129,7 @@ Final deployment:
 # Final E2E
 
 Scenario 1 identity:
-`+79262810921#tj-pii-off-e2e-20260604170643`
+`[PROTECTED_TEST_PHONE]#tj-pii-off-e2e-20260604170643`
 
 Conversation:
 `20bf6801-e24a-4474-a015-2c4be31bc50e`
@@ -137,7 +137,7 @@ Conversation:
 Message:
 
 ```text
-Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +79262810921. Please confirm these selected items using these details.
+Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. My name is Victor PII Test, individual, delivery address Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone [PROTECTED_TEST_PHONE]. Please confirm these selected items using these details.
 ```
 
 Observed:
@@ -150,7 +150,7 @@ Observed:
 - `contains_pii_placeholder=False`.
 
 Scenario 2 identity:
-`+79262810921#tj-pii-off-e2e-resume-20260604170643`
+`[PROTECTED_TEST_PHONE]#tj-pii-off-e2e-resume-20260604170643`
 
 Conversation:
 `f9e669ef-b46e-43cf-9096-bd0e50167819`
@@ -158,7 +158,7 @@ Conversation:
 Messages:
 
 ```text
-Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone +79262810921. Please confirm these selected items.
+Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, JLT Dubai, email victor.pii.e2e@example.com, phone [PROTECTED_TEST_PHONE]. Please confirm these selected items.
 ```
 
 ```text
@@ -186,7 +186,7 @@ readback:
 - `20bf6801-e24a-4474-a015-2c4be31bc50e`
 - `f9e669ef-b46e-43cf-9096-bd0e50167819`
 
-The real unsuffixed `+79262810921` conversation was not mutated.
+The real unsuffixed `[PROTECTED_TEST_PHONE]` conversation was not mutated.
 
 # Verification
 

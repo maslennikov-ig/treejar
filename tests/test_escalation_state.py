@@ -86,8 +86,8 @@ def test_pending_escalation_classification_uses_repository_state_policy(
     ("phone", "expected"),
     [
         ("+971500000000", "real"),
-        ("+79262810921#tj-final27-quality-1", "synthetic"),
-        ("+79262810921#smoke-tool-final", "synthetic"),
+        ("+15550001111#tj-final27-quality-1", "synthetic"),
+        ("+15550001111#smoke-tool-final", "synthetic"),
         ("+971500000000#archived-reset-abc", "real_archived"),
         ("+971500000000#unrecognized", "tagged_unknown"),
     ],

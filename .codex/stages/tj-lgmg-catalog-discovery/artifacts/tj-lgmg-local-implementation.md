@@ -109,7 +109,7 @@ after a fresh fast-forward check. GitHub Actions run `27873799695` passed
 `2e41bfd2cf5487b2997ff8c87cc31848336471a7`. Production smoke passed with
 `8 passed, 0 failed`.
 
-Controlled live E2E on the approved `+79262810921` test phone passed for the
+Controlled live E2E on the approved `[PROTECTED_TEST_PHONE]` test phone passed for the
 restaurant, wardrobe resume, and kids beds scenarios with `escalation_status`
 remaining `none`. See `tj-lgmg-delivery-live-e2e.md` for details.
 

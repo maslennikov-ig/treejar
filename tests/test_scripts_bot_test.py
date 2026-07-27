@@ -28,13 +28,13 @@ def test_build_conversations_url_uses_trailing_slash_and_query_encoding() -> Non
 
     url = bot_test.build_conversations_url(
         base_url="https://noor.starec.ai",
-        phone="+79262810921",
+        phone="+15550001111",
         page_size=5,
     )
 
     assert (
         url
-        == "https://noor.starec.ai/api/v1/conversations/?phone=%2B79262810921&page_size=5"
+        == "https://noor.starec.ai/api/v1/conversations/?phone=%2B15550001111&page_size=5"
     )
 
 
@@ -51,7 +51,7 @@ def test_parse_json_response_rejects_html_body() -> None:
     with pytest.raises(ValueError, match="Expected JSON"):
         bot_test.parse_json_response(
             body="<!doctype html><html><body>spa</body></html>",
-            url="https://noor.starec.ai/api/v1/conversations?phone=%2B79262810921",
+            url="https://noor.starec.ai/api/v1/conversations?phone=%2B15550001111",
             content_type="text/html; charset=utf-8",
         )
 
@@ -151,7 +151,7 @@ def test_build_webhook_payload_includes_channel_id_and_marker() -> None:
     sent_at = dt.datetime(2026, 4, 11, 15, 8, 10, tzinfo=dt.UTC)
 
     payload = bot_test.build_webhook_payload(
-        phone="+79262810921",
+        phone="+15550001111",
         author_type="client",
         text="Smoke path check\n[smoke:abc123]",
         message_id="smoke-123",
@@ -233,7 +233,7 @@ def test_poll_for_reply_runs_final_grace_check_for_recent_marker(
 
     matched_conversation_id, _, _, assistant_message = bot_test.poll_for_reply(
         base_url="https://noor.starec.ai",
-        phone="+79262810921",
+        phone="+15550001111",
         marker="[smoke:abc123]",
         started_at=started_at,
         wait_secs=1,
@@ -300,7 +300,7 @@ def test_poll_for_reply_checks_phone_conversations_even_when_list_updated_at_is_
 
     matched_conversation_id, _, _, assistant_message = bot_test.poll_for_reply(
         base_url="https://noor.starec.ai",
-        phone="+79262810921",
+        phone="+15550001111",
         marker="[smoke:stale]",
         started_at=started_at,
         wait_secs=1,
@@ -358,7 +358,7 @@ def test_poll_for_reply_sends_api_key_to_conversation_requests(
 
     bot_test.poll_for_reply(
         base_url="https://noor.starec.ai",
-        phone="+79262810921",
+        phone="+15550001111",
         marker="[smoke:auth]",
         started_at=started_at,
         wait_secs=1,

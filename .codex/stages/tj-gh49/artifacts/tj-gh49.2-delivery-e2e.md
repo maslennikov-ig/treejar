@@ -98,7 +98,7 @@ Runtime context:
 - Release SHA: `5bd91b9013cedcc7d3101f7a6c64d2c71b35ab7f`
 - Release run id: `26942597892`
 - Synthetic phone/chat id:
-  `+79262810921-tjgh49-20260604092424`
+  `[PROTECTED_TEST_PHONE]-tjgh49-20260604092424`
 - Conversation id: `25e10461-0121-4bc2-b259-df637d0ac64a`
 - The synthetic conversation was marked `closed` after evidence capture.
 

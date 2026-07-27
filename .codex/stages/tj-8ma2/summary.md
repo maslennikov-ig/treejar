@@ -73,7 +73,7 @@ Local verification:
   outside the project range `>=22.12.0 <23`.
 
 Production E2E:
-- Approved test number: `+79262810921`, using synthetic `tj-8ma2-*` suffixes.
+- Approved test number: `[PROTECTED_TEST_PHONE]`, using synthetic `tj-8ma2-*` suffixes.
 - Exact quote route check created `Quotation Fr3315` in conversation
   `d8a82c9a-99fb-4823-aca4-d0ab360c67d0`; this verified the general quote
   path but was not the target sales-order path.

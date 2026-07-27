@@ -72,7 +72,7 @@ Delivered:
 Production E2E:
 
 - Synthetic chat id:
-  `+79262810921-tjgh49-20260604092424`.
+  `[PROTECTED_TEST_PHONE]-tjgh49-20260604092424`.
 - Conversation id: `25e10461-0121-4bc2-b259-df637d0ac64a`.
 - Flow: customer asks for 4-person workstation, storage cabinets, and assembly;
   Noor asks for name; customer replies `Lili`; Noor stores `customer_name=Lili`

@@ -64,7 +64,7 @@ The stage covers:
 - Local fix preserves labeled product identifiers during PII masking. Verification: RED PII regression failed before fix; relevant PII/context/LLM slice passed `62`; ruff, format, and mypy passed.
 - Deployed fix SHA `d93b95480ec4ca53459f3a0bd527b1a27eb73358`; GitHub Actions run `24963241165` passed through deploy.
 - Post-deploy smoke passed: `verify_api.py` 7/0, health ok, anonymous `/dashboard/` -> `401`, anonymous `/api/v1/conversations/` -> `403`, Alembic `2026_04_26_outbound_audit (head)`.
-- Narrow production recheck conversation `8ad66895-1caa-45df-9f03-8907cc96f21f` for `79262810921#tj-prl26-sku-recheck-20260426180210` returned SKU `00-07024023`, stock `12`, price `685.00 AED`, pending recheck conversations `0`, and outbound audit `f3f63b53-5b98-4c96-9979-569b03544c16` with `status=sent`.
+- Narrow production recheck conversation `8ad66895-1caa-45df-9f03-8907cc96f21f` for `[PROTECTED_TEST_PHONE]#tj-prl26-sku-recheck-20260426180210` returned SKU `00-07024023`, stock `12`, price `685.00 AED`, pending recheck conversations `0`, and outbound audit `f3f63b53-5b98-4c96-9979-569b03544c16` with `status=sent`.
 
 ## Read-Only Readiness Evidence
 

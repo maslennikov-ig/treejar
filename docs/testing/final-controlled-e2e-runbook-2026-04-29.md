@@ -29,7 +29,7 @@ Without that approval, only local docs/verification commands may run.
 
 Proposed test identity, based on prior accepted E2E evidence:
 
-- WhatsApp test number: `79262810921`.
+- WhatsApp test number: `[PROTECTED_TEST_PHONE]`.
 - Runtime/channel: production Wazzup WhatsApp channel already configured for `https://noor.starec.ai`.
 - Local helper: `scripts/bot_test.py` may be used only after approval, with `--phone` set to a unique synthetic suffix and `--channel-id` supplied from the existing environment. Do not print raw secrets.
 
@@ -40,13 +40,13 @@ Do not use a real customer or any non-approved number. Do not use a non-approved
 Use one unique phone string per scenario:
 
 ```text
-+79262810921#tj-final27-<scenario>-<YYYYMMDDHHMM>
+[PROTECTED_TEST_PHONE]#tj-final27-<scenario>-<YYYYMMDDHHMM>
 ```
 
 If the existing production evidence style without a leading plus is required by the local helper, use:
 
 ```text
-79262810921#tj-final27-<scenario>-<YYYYMMDDHHMM>
+[PROTECTED_TEST_PHONE]#tj-final27-<scenario>-<YYYYMMDDHHMM>
 ```
 
 Rules:

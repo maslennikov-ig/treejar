@@ -39,7 +39,7 @@ explicit_defers:
 # Summary
 
 `tj-m7wz` was deployed and tested live on the user-approved number
-`+79262810921`. The final production runtime is
+`[PROTECTED_TEST_PHONE]`. The final production runtime is
 `6d91fde34f85936bb018d9ac0a778a918c05c066`.
 
 # Delivery Evidence
@@ -60,15 +60,15 @@ readback for synthetic conversations.
 
 # Live E2E Matrix
 
-Approved number: `+79262810921`.
+Approved number: `[PROTECTED_TEST_PHONE]`.
 
 Production Wazzup channel: `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
 
 | Scenario | Phone suffix | Conversation | Result |
 | --- | --- | --- | --- |
-| GH #43/#46 quote resume, GH #44/#45 field provenance | `+79262810921#tj-m7wz-resume11-20260525a` | `28bb2ce2-fc48-48e3-9e15-a67125bbd2bc` | Details reply and `Ok I can buy` both resumed 4 x CH 140 context and asked only for explicit email; explicit email created quotation `Fr3306`; no stale company/email |
-| GH #41/#42 bare quantity | `+79262810921#tj-m7wz-qty-final-20260525a` | `378db845-bebf-4e14-b50c-cfdf29edeea4` | After product quantity clarification, bare `5` produced `selection-confirmation` with `Quantity: 5` for CH 140; no generic opener |
-| Review-fix mixed item correction plus details | `+79262810921#tj-m7wz-reviewfix-20260525a` | `be351e49-0ea2-4769-b6d1-ccef94be0d4a` | After a prior 4 x CH 140 offer, `5 CH 140 / Lil / individual purchase / 2 street / lil.reviewfix.20260525@example.com` produced `selection-confirmation` with `Quantity: 5`; `Yes prepare the quotation` created `Fr3307`; no stale company/email |
+| GH #43/#46 quote resume, GH #44/#45 field provenance | `[PROTECTED_TEST_PHONE]#tj-m7wz-resume11-20260525a` | `28bb2ce2-fc48-48e3-9e15-a67125bbd2bc` | Details reply and `Ok I can buy` both resumed 4 x CH 140 context and asked only for explicit email; explicit email created quotation `Fr3306`; no stale company/email |
+| GH #41/#42 bare quantity | `[PROTECTED_TEST_PHONE]#tj-m7wz-qty-final-20260525a` | `378db845-bebf-4e14-b50c-cfdf29edeea4` | After product quantity clarification, bare `5` produced `selection-confirmation` with `Quantity: 5` for CH 140; no generic opener |
+| Review-fix mixed item correction plus details | `[PROTECTED_TEST_PHONE]#tj-m7wz-reviewfix-20260525a` | `be351e49-0ea2-4769-b6d1-ccef94be0d4a` | After a prior 4 x CH 140 offer, `5 CH 140 / Lil / individual purchase / 2 street / lil.reviewfix.20260525@example.com` produced `selection-confirmation` with `Quantity: 5`; `Yes prepare the quotation` created `Fr3307`; no stale company/email |
 
 # Production Evidence
 

@@ -15,7 +15,7 @@ cleanup_status: cleaned
 cleanup_notes: Pre-fix synthetic conversation was closed and its test escalation was marked resolved after evidence capture. Post-deploy synthetic conversation ec3c9c10-4677-4a0b-9a7b-d0e8e51c5fef was closed with no escalation. The real base phone conversation was not mutated.
 risk_level: medium
 verification:
-  - "production live E2E on +79262810921#tj-gh48-eaf-20260602172558": failed before local fix; simple delivery/assembly interruption returned z-ai/glm-5|verified-policy and created a pending escalation
+  - "production live E2E on [PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260602172558": failed before local fix; simple delivery/assembly interruption returned z-ai/glm-5|verified-policy and created a pending escalation
   - "production cleanup for conversation a1decf1a-b37d-492a-ae50-25dfc02a1962": passed; conversation closed and synthetic escalation resolved
   - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_process_message_delivery_assembly_interruption_in_expected_frame_answers_without_handoff -v --tb=short": failed before fix, then passed
   - "OPENROUTER_API_KEY=dummy uv run pytest tests/test_llm_engine.py::test_dialogue_kernel_shadow_records_verified_policy_handoff_route tests/test_llm_engine.py::test_process_message_high_risk_partial_bypasses_agent_with_handoff tests/test_llm_engine.py::test_process_message_high_risk_verified_uses_service_policy_mode tests/test_verified_answers.py -v --tb=short": passed, 40 passed
@@ -30,7 +30,7 @@ verification:
   - "GitHub Actions run 26841843489": passed, deploy job success
   - "runtime readback /opt/noor/.release-sha": 3d91e54a8de36fa379ac6e2ec1bfcf778cace11e
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 8 passed and 0 failed
-  - "production live E2E on +79262810921#tj-gh48-eaf-20260603055821": passed for delivery/assembly interruption, z-ai/glm-5|service-availability, no escalation
+  - "production live E2E on [PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260603055821": passed for delivery/assembly interruption, z-ai/glm-5|service-availability, no escalation
   - "production shadow trace for product preference answer": kernel route product_preference_answer, frame fulfilled workspace_preference=open; visible legacy response remained generic because production mode is shadow
 changed_files:
   - src/llm/engine.py
@@ -50,7 +50,7 @@ preference answer could be tested: a simple service interruption,
 manager handoff.
 
 The production failure was captured on synthetic profile
-`+79262810921#tj-gh48-eaf-20260602172558`, conversation
+`[PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260602172558`, conversation
 `a1decf1a-b37d-492a-ae50-25dfc02a1962`. The base phone conversation was not
 cleaned or changed.
 
@@ -80,7 +80,7 @@ Runtime readback confirms `/opt/noor/.release-sha` is
 `3d91e54a8de36fa379ac6e2ec1bfcf778cace11e`.
 
 Post-deploy production E2E used synthetic profile
-`+79262810921#tj-gh48-eaf-20260603055821`, conversation
+`[PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260603055821`, conversation
 `ec3c9c10-4677-4a0b-9a7b-d0e8e51c5fef`.
 
 - `Can delivery and assembly be arranged in Dubai?` returned

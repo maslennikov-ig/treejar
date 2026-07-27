@@ -86,7 +86,7 @@ skip_no_wazzup = pytest.mark.skipif(
 )
 
 # Phone number of the user for real WhatsApp delivery tests
-USER_WHATSAPP_PHONE = "79262810921"
+USER_WHATSAPP_PHONE = "15550001111"
 
 # Active Wazzup channel ID (Treejar, +971551220665)
 WAZZUP_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"

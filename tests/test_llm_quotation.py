@@ -610,7 +610,7 @@ async def test_resolve_inventory_customer_id_strips_synthetic_suffix_for_zoho() 
     }
 
     result = await resolve_inventory_customer_id(
-        phone="+79262810921#tj-8ma2-salesorder-mixed-20260526-200552",
+        phone="+15550001111#tj-8ma2-salesorder-mixed-20260526-200552",
         customer_name="Lilia",
         customer_email="Lfdsf@kfsl.ru",
         customer_company="LLD",
@@ -618,10 +618,10 @@ async def test_resolve_inventory_customer_id_strips_synthetic_suffix_for_zoho() 
     )
 
     assert result == "created-inventory-contact"
-    mock_inventory.find_customer_by_phone.assert_awaited_once_with("+79262810921")
+    mock_inventory.find_customer_by_phone.assert_awaited_once_with("+15550001111")
     payload = mock_inventory.create_contact.await_args.args[0]
-    assert payload["contact_persons"][0]["phone"] == "+79262810921"
-    assert payload["contact_persons"][0]["mobile"] == "+79262810921"
+    assert payload["contact_persons"][0]["phone"] == "+15550001111"
+    assert payload["contact_persons"][0]["mobile"] == "+15550001111"
 
 
 @pytest.mark.asyncio
@@ -652,7 +652,7 @@ async def test_resolve_inventory_customer_id_recovers_from_duplicate_name_confli
     )
 
     result = await resolve_inventory_customer_id(
-        phone="+79262810921",
+        phone="+15550001111",
         customer_name="None Игорь",
         customer_email="",
         customer_company="None Игорь",

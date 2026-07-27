@@ -27,7 +27,7 @@ TEST_CONTACT_NAME = "Integration TestBot"
 TEST_CONTACT_EMAIL = "integration-test@treejar.test"
 
 # User's WhatsApp for PDF delivery
-USER_WHATSAPP_PHONE = "79262810921"
+USER_WHATSAPP_PHONE = "15550001111"
 WAZZUP_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
 
 # Results tracking

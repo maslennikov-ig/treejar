@@ -39,7 +39,7 @@ explicit_defers:
 
 `tj-mmj8` was already merged, pushed, and deployed before this turn. This turn
 reconfirmed the deployed runtime, ran controlled production E2E on the
-owner-approved number `+79262810921`, verified the sent PDF contents, cleaned
+owner-approved number `[PROTECTED_TEST_PHONE]`, verified the sent PDF contents, cleaned
 test conversations, and recorded follow-up bugs for out-of-scope findings.
 
 # Runtime Evidence
@@ -63,19 +63,19 @@ conversations.
 
 # Scenario Matrix
 
-Approved number: `+79262810921`.
+Approved number: `[PROTECTED_TEST_PHONE]`.
 
 Production Wazzup channel: `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
 
 | Scenario | Phone suffix | Conversation | Result |
 | --- | --- | --- | --- |
-| A: exact SKU clarification | `+79262810921#tj-mmj8-fr3309-a-20260526` | `af5b44cf-00d8-45bf-ab3a-39c0651c1c66` | Failed out-of-scope: after exact SKU clarification, bot still asked for item/quantity; tracked as `tj-4cm4` |
-| B: original slash brief plus later ambiguous individual/address | `+79262810921#tj-mmj8-fr3309-b-20260526` | `dac20020-f102-4ee5-8bb8-a3240537571d` | Passed: `Lilia / LLD / Lfdsf@kfsl.ru / 2 street` created `Fr3310`; later `individual / dubay 2 street 7` did not overwrite `LLD` |
-| C: sales-order resume then multiline brief | `+79262810921#tj-mmj8-fr3309-c-20260526` | `dc7328a0-809e-4f57-87ba-b5556dfe98d5` | Failed out-of-scope: stored brief details but reinterpreted them as unresolved item text; tracked as `tj-8ma2` |
-| D: low-confidence address confirmation | `+79262810921#tj-mmj8-fr3309-d-20260526` | `a259f7c1-4e08-4a1e-9e10-bba8ba17fbb9` | Passed: asked confirmation for `Address: Dubai`; `yes` created `Fr3312` |
-| E: comma-separated ordered brief | `+79262810921#tj-mmj8-fr3309-e-20260526` | `70bb56fe-a97b-432b-b085-f0fa3e36f730` | Failed coverage gap: stored name/email/address but missed company `LLD`; tracked as `tj-nzob` |
-| F: labeled fields | `+79262810921#tj-mmj8-fr3309-f-20260526` | `b916aee2-df6d-4b32-bd13-1b373a71d779` | Passed: labeled details created `Fr3313` |
-| G: clean multiline ordered brief | `+79262810921#tj-mmj8-fr3309-g-20260526` | `8947af78-d039-4e1c-bad3-a35a243e5bd6` | Passed: multiline details created `Fr3311` |
+| A: exact SKU clarification | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-a-20260526` | `af5b44cf-00d8-45bf-ab3a-39c0651c1c66` | Failed out-of-scope: after exact SKU clarification, bot still asked for item/quantity; tracked as `tj-4cm4` |
+| B: original slash brief plus later ambiguous individual/address | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-b-20260526` | `dac20020-f102-4ee5-8bb8-a3240537571d` | Passed: `Lilia / LLD / Lfdsf@kfsl.ru / 2 street` created `Fr3310`; later `individual / dubay 2 street 7` did not overwrite `LLD` |
+| C: sales-order resume then multiline brief | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-c-20260526` | `dc7328a0-809e-4f57-87ba-b5556dfe98d5` | Failed out-of-scope: stored brief details but reinterpreted them as unresolved item text; tracked as `tj-8ma2` |
+| D: low-confidence address confirmation | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-d-20260526` | `a259f7c1-4e08-4a1e-9e10-bba8ba17fbb9` | Passed: asked confirmation for `Address: Dubai`; `yes` created `Fr3312` |
+| E: comma-separated ordered brief | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-e-20260526` | `70bb56fe-a97b-432b-b085-f0fa3e36f730` | Failed coverage gap: stored name/email/address but missed company `LLD`; tracked as `tj-nzob` |
+| F: labeled fields | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-f-20260526` | `b916aee2-df6d-4b32-bd13-1b373a71d779` | Passed: labeled details created `Fr3313` |
+| G: clean multiline ordered brief | `[PROTECTED_TEST_PHONE]#tj-mmj8-fr3309-g-20260526` | `8947af78-d039-4e1c-bad3-a35a243e5bd6` | Passed: multiline details created `Fr3311` |
 
 # Core Production Evidence
 

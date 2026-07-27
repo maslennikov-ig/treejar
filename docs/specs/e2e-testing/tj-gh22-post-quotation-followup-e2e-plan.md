@@ -34,7 +34,7 @@ Live WhatsApp E2E must not start until these are confirmed for the run:
 
 1. Approved test number and channel. Use the existing controlled-test guardrail
    from `docs/testing/final-controlled-e2e-runbook-2026-04-29.md`; the usual
-   approved number is `+79262810921`, with unique synthetic suffixes.
+   approved number is `[PROTECTED_TEST_PHONE]`, with unique synthetic suffixes.
 2. Approved execution window and scenario list for live sends.
 3. API/admin access sufficient to record conversation ids, outbound audit rows,
    quotation ids, follow-up state, and cleanup evidence.
@@ -54,8 +54,8 @@ template-path checks only, and record FU2/FU3 as blocked by WABA setup.
 Use unique synthetic phone suffixes per scenario:
 
 ```text
-+79262810921#tj-gh22-<scenario>-<YYYYMMDDHHMM>
-79262810921#tj-gh22-<scenario>-<YYYYMMDDHHMM>
+[PROTECTED_TEST_PHONE]#tj-gh22-<scenario>-<YYYYMMDDHHMM>
+[PROTECTED_TEST_PHONE]#tj-gh22-<scenario>-<YYYYMMDDHHMM>
 ```
 
 Do not reuse suffixes across reruns. Outbound Wazzup sends must strip the suffix
@@ -93,7 +93,7 @@ secrets supplied by the environment:
 ```bash
 uv run python scripts/bot_test.py \
   --base-url https://noor.starec.ai \
-  --phone "79262810921#tj-gh22-s1-$(date +%Y%m%d%H%M)" \
+  --phone "[PROTECTED_TEST_PHONE]#tj-gh22-s1-$(date +%Y%m%d%H%M)" \
   --channel-id "$WAZZUP_TEST_CHANNEL_ID" \
   --api-key "$BOT_TEST_API_KEY" \
   --message "Hello Noor, I need one Skyland Novo meeting table and two CH 616 chairs. Please prepare a quotation for Office 1201, Dubai."

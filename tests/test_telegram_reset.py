@@ -41,8 +41,8 @@ async def test_reset_command_sends_preview_and_does_not_mutate_db(
     redis = AsyncMock()
     telegram = AsyncMock()
     preview = ResetPreview(
-        phone="+79262810921",
-        phone_variants=("+79262810921", "79262810921"),
+        phone="+15550001111",
+        phone_variants=("+15550001111", "15550001111"),
         conversation_count=2,
         latest_conversation_id=uuid.uuid4(),
         message_count=5,
@@ -69,7 +69,7 @@ async def test_reset_command_sends_preview_and_does_not_mutate_db(
             {
                 "chat": {"id": -100123456789},
                 "from": {"id": 777},
-                "text": "/reset +7 926 281-09-21",
+                "text": "/reset +1 555 000-11-11",
             }
         )
 
@@ -79,7 +79,7 @@ async def test_reset_command_sends_preview_and_does_not_mutate_db(
     assert redis.setex.await_args.args[0].startswith("tg_reset_pending:")
     assert redis.setex.await_args.args[1] == 300
     pending_payload = json.loads(redis.setex.await_args.args[2])
-    assert pending_payload["phone"] == "+79262810921"
+    assert pending_payload["phone"] == "+15550001111"
     assert pending_payload["requested_by_telegram_user_id"] == 777
     telegram.send_message_with_inline_keyboard.assert_awaited_once()
     text = telegram.send_message_with_inline_keyboard.await_args.args[0]
@@ -104,7 +104,7 @@ async def test_reset_command_from_non_admin_chat_is_ignored(
             {
                 "chat": {"id": -100999999999},
                 "from": {"id": 777},
-                "text": "/reset +79262810921",
+                "text": "/reset +15550001111",
             }
         )
 
@@ -145,7 +145,7 @@ async def test_reset_confirm_by_same_user_executes_reset(
     redis = AsyncMock()
     redis.get.return_value = json.dumps(
         {
-            "phone": "+79262810921",
+            "phone": "+15550001111",
             "requested_by_telegram_user_id": 777,
             "chat_id": -100123456789,
         }
@@ -154,7 +154,7 @@ async def test_reset_confirm_by_same_user_executes_reset(
     db = AsyncMock()
     new_conv = Conversation(
         id=uuid.uuid4(),
-        phone="+79262810921",
+        phone="+15550001111",
         sales_stage="greeting",
         language="en",
         status="active",
@@ -175,7 +175,7 @@ async def test_reset_confirm_by_same_user_executes_reset(
             "src.api.telegram_webhook.execute_conversation_reset",
             new=AsyncMock(
                 return_value=ResetResult(
-                    phone="+79262810921",
+                    phone="+15550001111",
                     archived_count=2,
                     new_conversation=new_conv,
                 )
@@ -194,7 +194,7 @@ async def test_reset_confirm_by_same_user_executes_reset(
     redis.get.assert_awaited_once_with(f"tg_reset_pending:{token}")
     execute_reset.assert_awaited_once_with(
         db,
-        "+79262810921",
+        "+15550001111",
         requested_by_telegram_user_id=777,
     )
     db.commit.assert_awaited_once()
@@ -218,7 +218,7 @@ async def test_reset_confirm_by_different_user_is_rejected(
     redis = AsyncMock()
     redis.get.return_value = json.dumps(
         {
-            "phone": "+79262810921",
+            "phone": "+15550001111",
             "requested_by_telegram_user_id": 777,
             "chat_id": -100123456789,
         }
@@ -259,7 +259,7 @@ async def test_reset_cancel_deletes_pending_token_without_mutation(
     redis = AsyncMock()
     redis.get.return_value = json.dumps(
         {
-            "phone": "+79262810921",
+            "phone": "+15550001111",
             "requested_by_telegram_user_id": 777,
             "chat_id": -100123456789,
         }

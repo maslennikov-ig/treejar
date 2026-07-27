@@ -62,7 +62,7 @@ stored as customer details and did not overwrite the item selection.
 
 # Live E2E Evidence
 
-Approved number: `+79262810921`.
+Approved number: `[PROTECTED_TEST_PHONE]`.
 
 Synthetic profiles:
 

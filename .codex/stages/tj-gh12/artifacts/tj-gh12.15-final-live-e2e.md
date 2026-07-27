@@ -18,10 +18,10 @@ verification:
   - "GitHub Actions CI 25793771538": passed
   - "ssh noor-server release marker readback": passed
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed
-  - "bot_test first-turn product request on 79262810921#tj-gh12-final-20260513133925": passed
-  - "bot_test name-only reply on 79262810921#tj-gh12-final-20260513133925": passed
-  - "bot_test showroom Maps on 79262810921#tj-gh12-final-20260513133925": passed
-  - "bot_test missing quotation data on 79262810921#tj-gh12-final-20260513133925": passed
+  - "bot_test first-turn product request on [PROTECTED_TEST_PHONE]#tj-gh12-final-20260513133925": passed
+  - "bot_test name-only reply on [PROTECTED_TEST_PHONE]#tj-gh12-final-20260513133925": passed
+  - "bot_test showroom Maps on [PROTECTED_TEST_PHONE]#tj-gh12-final-20260513133925": passed
+  - "bot_test missing quotation data on [PROTECTED_TEST_PHONE]#tj-gh12-final-20260513133925": passed
   - "read-only DB evidence for c7be1bf8-20c2-4cf2-9f55-d7ca207a9b1c": passed
   - "cleanup readback for d82cb1ca-4cde-4042-9f18-4c3129901f93": passed
 changed_files:
@@ -38,7 +38,7 @@ explicit_defers:
 
 # Summary
 
-Final production E2E on `main@df3f3b10f4ee0ab4ee36aa523d4e9cfa4beb2456` passed the approved text-only scenarios using suffix `79262810921#tj-gh12-final-20260513133925`.
+Final production E2E on `main@df3f3b10f4ee0ab4ee36aa523d4e9cfa4beb2456` passed the approved text-only scenarios using suffix `[PROTECTED_TEST_PHONE]#tj-gh12-final-20260513133925`.
 
 Release readback matched the deployed hotfix:
 

@@ -32,7 +32,7 @@ verification:
   - "main fast-forward merge and push: passed, 93e9bc4..2b841f9"
   - "GitHub Actions run 25149869000: passed, deploy job 73717907853 passed"
   - "Runtime release check: /opt/noor/.release-sha=2b841f95546137de4b698cecadc5a69dce9e813d, /api/v1/health ok, verify_api.py 7 passed / 0 failed"
-  - "Controlled live WhatsApp E2E on 79262810921 with suffix tj-final27-11-*: price and retention returned no pending escalation but fell through to z-ai/glm-5; off-catalog returned z-ai/glm-5|sales-fallback"
+  - "Controlled live WhatsApp E2E on [PROTECTED_TEST_PHONE] with suffix tj-final27-11-*: price and retention returned no pending escalation but fell through to z-ai/glm-5; off-catalog returned z-ai/glm-5|sales-fallback"
   - "Hotfix RED targeted tests for live product objection/retention phrasings: failed, 4 failed"
   - "Hotfix GREEN targeted tests for live product objection/retention phrasings: passed, 4 passed"
   - "uv run --extra dev python -m pytest -s tests/test_verified_answers.py tests/test_llm_engine.py -q after hotfix: passed, 94 passed"
@@ -41,7 +41,7 @@ verification:
   - "main second fast-forward merge and push: passed, 2b841f9..ab89787"
   - "GitHub Actions run 25150153084: passed, deploy job 73718851402 passed"
   - "Runtime release check: /opt/noor/.release-sha=ab897878e2f0ee339bd7626b63d5c6f3a9497042, /api/v1/health ok, verify_api.py 7 passed / 0 failed"
-  - "Controlled live WhatsApp E2E on 79262810921 with suffix tj-final27-11-*-hotfix-20260430T060831Z: price, retention, and off-catalog all returned z-ai/glm-5|sales-fallback with escalation_status=none"
+  - "Controlled live WhatsApp E2E on [PROTECTED_TEST_PHONE] with suffix tj-final27-11-*-hotfix-20260430T060831Z: price, retention, and off-catalog all returned z-ai/glm-5|sales-fallback with escalation_status=none"
   - "Conversation API readback for phone_match=fuzzy tj-final27-11: total=6, pending=0"
 changed_files:
   - src/llm/engine.py
@@ -84,7 +84,7 @@ After the first production deploy, controlled live E2E showed that product-quali
 - GREEN targeted tests passed: `8 passed`.
 - Extended targeted suite passed before hotfix: `tests/test_verified_answers.py tests/test_llm_engine.py`, `92 passed`.
 - First deploy evidence passed: GitHub Actions run `25149869000`, deploy job `73717907853`, runtime `.release-sha=2b841f95546137de4b698cecadc5a69dce9e813d`, health ok, `verify_api.py` `7 passed / 0 failed`.
-- First live E2E on approved test number `79262810921` showed `0` pending escalations, but price objection and retention fell through to `z-ai/glm-5`; off-catalog used `z-ai/glm-5|sales-fallback`.
+- First live E2E on approved test number `[PROTECTED_TEST_PHONE]` showed `0` pending escalations, but price objection and retention fell through to `z-ai/glm-5`; off-catalog used `z-ai/glm-5|sales-fallback`.
 - Hotfix RED targeted tests failed on live product objection/retention phrasings: `4 failed`.
 - Hotfix GREEN targeted tests passed on the same phrasings: `4 passed`.
 - Extended targeted suite after hotfix passed: `tests/test_verified_answers.py tests/test_llm_engine.py`, `94 passed`.

@@ -83,7 +83,7 @@ prompt bulk.
   item-before-quantity forms.
 - Direct production runtime check for #38 returned `sales-order-clarify`, stored
   `pending_quote_selection`, and had no escalation or media.
-- Approved cleanup for `79262810921` / `+79262810921` prefixes cleared matching
+- Approved cleanup for `[PROTECTED_TEST_PHONE]` / `[PROTECTED_TEST_PHONE]` prefixes cleared matching
   production state before live E2E.
 - Live webhook E2E conversation `58550f16-7530-4177-9980-224d1513c995` passed:
   first turn returned `name-gate`; bare `Lili` stored the name, cleared

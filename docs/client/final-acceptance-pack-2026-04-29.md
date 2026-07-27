@@ -48,7 +48,7 @@ Delivered product and runtime evidence:
 - `tj-final27.3`: payment reminders are disabled by default; manual/scheduled modes are guarded and capped; out-of-window WhatsApp reminder sends require approved templates; locally created Wazzup providers are closed.
 - `tj-z911`: strict price fail-closed behavior and payment-reminder scan hard caps were added. Full local pytest with `-s` passed `818 passed, 19 skipped`; ruff, format, mypy, and artifact validation passed.
 - `tj-final27.9`: final acceptance pack and controlled E2E runbook were prepared; the approved functional E2E subset passed; a bounded quality pass confirmed safe behavior for tested hard-facts scenarios and identified sales-copy quality follow-ups.
-- `tj-final27.11`: compact deterministic sales fallback was deployed for price objection, retention/drop-off, and known off-catalog requests. Controlled text-only E2E on `79262810921` passed for all three scenarios with `z-ai/glm-5|sales-fallback`, `escalation_status=none`, and `0` pending conversations.
+- `tj-final27.11`: compact deterministic sales fallback was deployed for price objection, retention/drop-off, and known off-catalog requests. Controlled text-only E2E on `[PROTECTED_TEST_PHONE]` passed for all three scenarios with `z-ai/glm-5|sales-fallback`, `escalation_status=none`, and `0` pending conversations.
 - `tj-jy5i`: commercial offer/business proposal clarification routing was deployed so incomplete proposal requests ask for missing items/quantities without verified-policy escalation, while high-risk payment terms still route to manager confirmation.
 - `tj-final27.13`: payment-reminder run-level provider reuse was deployed without changing the existing scan-loop or hard-cap warning. Payment reminders remain disabled by default.
 

@@ -56,7 +56,7 @@ verification:
   - GitHub Actions CI run 26447466860: failed before project code on external codeload/actions checkout 403; deploy did not run
   - manual scripts/vps-deploy.sh deploy to /opt/noor: passed, active release 40ee6928adfa60f3f3297cf6e52af63c6960fdd8
   - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed, 8 passed / 0 failed
-  - controlled live retest on 79262810921#tj-final27-17-price-202605261219: passed, conversation 7da0bb42-0404-4f69-b2ad-3f7c6a0030db
+  - controlled live retest on [PROTECTED_TEST_PHONE]#tj-final27-17-price-202605261219: passed, conversation 7da0bb42-0404-4f69-b2ad-3f7c6a0030db
   - protected production readback for tj-final27.17: passed, no pending_quote_selection and fuzzy_17_pending=0
 changed_files:
   - src/llm/engine.py

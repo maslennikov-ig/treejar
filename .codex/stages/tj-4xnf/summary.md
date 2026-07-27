@@ -12,9 +12,9 @@ returned HTTP 400.
 
 Root cause:
 - The live synthetic conversation phone was
-  `+79262810921#tj-8ma2-salesorder-mixed-20260526-200552`.
+  `[PROTECTED_TEST_PHONE]#tj-8ma2-salesorder-mixed-20260526-200552`.
 - Inventory lookup used all digits from the suffix, producing queries such as
-  `+792628109218220260526200552` and `phone_contains=0526200552`.
+  `[PROTECTED_TEST_PHONE]8220260526200552` and `phone_contains=0526200552`.
 - Contact creation also received the synthetic suffix in the phone/mobile
   payload, which can make Zoho reject the request before duplicate-name
   fallback helps.
@@ -55,7 +55,7 @@ Verification:
 - Production smoke:
   `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` ->
   `8 passed, 0 failed`.
-- Live E2E on approved test number `+79262810921` with suffix
+- Live E2E on approved test number `[PROTECTED_TEST_PHONE]` with suffix
   `tj-4xnf-clean-20260527-073550` passed:
   - first-turn name gate asked for name and accepted `Lilia`;
   - `sales order 5 x CH 620` asked to confirm exact catalog item;
@@ -65,7 +65,7 @@ Verification:
   - readback showed `quote_customer_details.company=LLD`,
     `quotation_decision_status=pending`, and `pending_escalations=0`.
 - Wazzup echo showed PDF caption `Your Treejar quotation: Fr3316` delivered to
-  base chat `79262810921`, confirming the synthetic suffix was stripped at the
+  base chat `[PROTECTED_TEST_PHONE]`, confirming the synthetic suffix was stripped at the
   outbound provider boundary too.
 
 Prior-work check:

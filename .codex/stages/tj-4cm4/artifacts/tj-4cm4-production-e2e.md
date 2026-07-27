@@ -46,10 +46,10 @@ docs_review_notes: Stage summary, artifact, and handoff updated with live E2E ev
 verification:
   - curl -fsS https://noor.starec.ai/api/v1/health: passed
   - ssh noor-server 'cat /opt/noor/.release-sha; cat /opt/noor/.release-run-id': passed, 77f96f3a483b201a70c969177b8203585f6b5682 / 26460815449
-  - python3 scripts/bot_test.py "Hi, I need a quotation for 5 x CH 620." --phone "+79262810921#tj-4cm4-live-20260526-193430" --wait 60: passed, conversation e895e4ed-6c11-448c-906f-d606d65db614, model name-gate
-  - python3 scripts/bot_test.py "Victor" --phone "+79262810921#tj-4cm4-live-20260526-193430" --wait 80: passed, model z-ai/glm-5|exact-quote-clarify-item, asked to confirm exact catalog item/SKU for 5 x CH 620
-  - python3 scripts/bot_test.py "The exact SKU is CH 620 grey, quantity 5." --phone "+79262810921#tj-4cm4-live-20260526-193430" --wait 100: passed, model z-ai/glm-5|quote-resume-missing-details, asked only for customer quote details
-  - python3 scripts/bot_test.py "Victor Test / TJ Test LLC / tj4cm4-live@example.com / Dubai test street 2" --phone "+79262810921#tj-4cm4-live-20260526-193430" --wait 140: passed, model z-ai/glm-5|quote-resume, created Quotation Fr3314
+  - python3 scripts/bot_test.py "Hi, I need a quotation for 5 x CH 620." --phone "[PROTECTED_TEST_PHONE]#tj-4cm4-live-20260526-193430" --wait 60: passed, conversation e895e4ed-6c11-448c-906f-d606d65db614, model name-gate
+  - python3 scripts/bot_test.py "Victor" --phone "[PROTECTED_TEST_PHONE]#tj-4cm4-live-20260526-193430" --wait 80: passed, model z-ai/glm-5|exact-quote-clarify-item, asked to confirm exact catalog item/SKU for 5 x CH 620
+  - python3 scripts/bot_test.py "The exact SKU is CH 620 grey, quantity 5." --phone "[PROTECTED_TEST_PHONE]#tj-4cm4-live-20260526-193430" --wait 100: passed, model z-ai/glm-5|quote-resume-missing-details, asked only for customer quote details
+  - python3 scripts/bot_test.py "Victor Test / TJ Test LLC / tj4cm4-live@example.com / Dubai test street 2" --phone "[PROTECTED_TEST_PHONE]#tj-4cm4-live-20260526-193430" --wait 140: passed, model z-ai/glm-5|quote-resume, created Quotation Fr3314
   - protected conversation detail readback: passed, quote_customer_details address="Dubai test street 2", company="TJ Test LLC", email="tj4cm4-live@example.com", name="Victor Test", quotation_quote_number="Fr3314"
   - protected conversation PATCH {"status":"closed"}: passed, status=closed, escalation_status=none
   - protected cleanup query for exact phone suffix: passed, total=1, non_closed_or_escalated=0
@@ -62,7 +62,7 @@ explicit_defers:
 # Summary
 
 The approved production E2E retested the original `tj-4cm4` failure path on the
-user-approved phone suffix `+79262810921#tj-4cm4-live-20260526-193430`.
+user-approved phone suffix `[PROTECTED_TEST_PHONE]#tj-4cm4-live-20260526-193430`.
 
 Production first asked for the customer name, then restored the pending exact
 quote and asked to confirm the exact item for `5 x CH 620`. After the exact

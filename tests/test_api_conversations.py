@@ -119,7 +119,7 @@ async def test_list_conversations_filters_phone_exact_by_default(
     ) as ac:
         response = await ac.get(
             "/api/v1/conversations/",
-            params={"phone": "+79262810921"},
+            params={"phone": "+15550001111"},
             headers=AUTH_HEADERS,
         )
 

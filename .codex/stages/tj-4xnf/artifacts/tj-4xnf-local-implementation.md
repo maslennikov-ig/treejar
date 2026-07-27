@@ -85,9 +85,9 @@ unfixed, but it is a separate quote-brief parser task.
 
 The new regression failed before implementation because
 `find_customer_by_phone` received
-`+79262810921#tj-8ma2-salesorder-mixed-20260526-200552`. After the fix it passed
+`[PROTECTED_TEST_PHONE]#tj-8ma2-salesorder-mixed-20260526-200552`. After the fix it passed
 and asserted that both lookup and create-contact phone/mobile payloads use
-`+79262810921`.
+`[PROTECTED_TEST_PHONE]`.
 
 Targeted quotation, Inventory, and engine quote-resume tests passed. Ruff,
 format check, and mypy passed after formatting the new test.

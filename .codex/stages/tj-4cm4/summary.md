@@ -45,7 +45,7 @@ Verification:
   https://noor.starec.ai` -> `8 passed, 0 failed`.
 - Approved production E2E on 2026-05-26:
   - phone suffix:
-    `+79262810921#tj-4cm4-live-20260526-193430`.
+    `[PROTECTED_TEST_PHONE]#tj-4cm4-live-20260526-193430`.
   - conversation:
     `e895e4ed-6c11-448c-906f-d606d65db614`.
   - first message `Hi, I need a quotation for 5 x CH 620.` returned

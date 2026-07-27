@@ -59,7 +59,7 @@ verify_api.py --base-url https://noor.starec.ai -> 7 passed, 0 failed
 Scenario A send/readback:
 
 ```text
-suffix=79262810921#tj-gh12-e2e-a2-20260513121800
+suffix=[PROTECTED_TEST_PHONE]#tj-gh12-e2e-a2-20260513121800
 conversation_id=1916ea0a-2877-4214-a12e-55dd79ce55eb
 assistant_model=name-gate
 assistant_reply=Hello, I'm Noor from Treejar. May I know your name so I can address you properly?
@@ -74,7 +74,7 @@ llm_attempts_count=0
 Scenario B blocker:
 
 ```text
-suffix=79262810921#tj-gh12-e2e-b-20260513124400
+suffix=[PROTECTED_TEST_PHONE]#tj-gh12-e2e-b-20260513124400
 conversation_id=561e5767-5b3d-4d9f-b0be-75e2186aa915
 first reply model=name-gate
 second reply model=z-ai/glm-5|verified-policy

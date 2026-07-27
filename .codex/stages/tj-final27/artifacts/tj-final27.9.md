@@ -96,7 +96,7 @@ Later delivered follow-ups are also relevant to current acceptance posture: `tj-
 
 # Controlled E2E Runbook Summary
 
-The runbook proposes the previously used real test WhatsApp number `79262810921` and production Wazzup channel, but only after explicit approval. Synthetic identities must use a unique `tj-final27` suffix per scenario, for example `+79262810921#tj-final27-quote-approve-YYYYMMDDHHMM`. Exact readback uses the full suffix; fuzzy readback is reserved for aggregate pending-count checks.
+The runbook proposes the previously used real test WhatsApp number `[PROTECTED_TEST_PHONE]` and production Wazzup channel, but only after explicit approval. Synthetic identities must use a unique `tj-final27` suffix per scenario, for example `[PROTECTED_TEST_PHONE]#tj-final27-quote-approve-YYYYMMDDHHMM`. Exact readback uses the full suffix; fuzzy readback is reserved for aggregate pending-count checks.
 
 Scenarios are ordered from read-only runtime smoke to customer discovery, exact SKU price/stock truth, quotation approve/reject, manager private reply, active escalation fallback, CRM attribution/returning context, payment-reminder disabled defaults, QA/reporting disabled defaults, feedback, referral, and voice/audio. Feedback, referral, payment-reminder sends, media beyond approved quotation artifacts, and voice/audio are approval-only branches.
 
@@ -129,12 +129,12 @@ The SSH key was found via the local `noor-server` alias. Read-only runtime check
 
 Approved controlled live scenarios then passed:
 
-- Customer discovery: suffix `79262810921#tj-final27-chat-202604291709`, conversation `aaec088f-6727-4791-8fa5-569f472fd91f`. Bot proposed concrete office-chair options and did not escalate.
-- Exact SKU/price/stock: suffix `79262810921#tj-final27-sku-202604291710`, conversation `f148f28f-bab5-4954-836f-129104c270ff`. Bot returned `12 items` and `310.65 AED`, matching read-only DB evidence.
-- Quotation approve: suffix `79262810921#tj-final27-quote-approve-202604291710`, conversation `bba5d36e-c133-42c3-9c9b-51101db90596`, quotation `Fr3167`. `order_confirm` callback returned HTTP `200`; order-status copy says quotation `Fr3167` approved, sale order `Fr3167`, shipment approved/processing; escalation resolved.
-- Quotation reject: suffix `79262810921#tj-final27-quote-reject-202604291713`, conversation `30ba5ba5-cec4-4a6e-954c-00583c8ae0f3`, quotation `Fr3168`. `order_reject` callback returned HTTP `200`; order-status copy says quotation `Fr3168` rejected and no active order is linked; escalation resolved.
-- Manager private reply: suffix `79262810921#tj-final27-manager-202604291715`, conversation `5be359c6-87c8-4cac-aa4a-744c8eeca474`. `faq_private` callback and synthetic manager message returned HTTP `200`; readback shows `escalation_status=resolved` and persisted assistant message `model=manager_reply`.
-- Active escalation fallback: suffix `79262810921#tj-final27-escalation-202604291716`, conversation `5e5e68ec-b43a-4bd5-a6d7-95dbc13e8d6f`. Follow-up while pending created a separate assistant message `model=fallback`; synthetic manager reply then resolved the escalation with a persisted `manager_reply`.
+- Customer discovery: suffix `[PROTECTED_TEST_PHONE]#tj-final27-chat-202604291709`, conversation `aaec088f-6727-4791-8fa5-569f472fd91f`. Bot proposed concrete office-chair options and did not escalate.
+- Exact SKU/price/stock: suffix `[PROTECTED_TEST_PHONE]#tj-final27-sku-202604291710`, conversation `f148f28f-bab5-4954-836f-129104c270ff`. Bot returned `12 items` and `310.65 AED`, matching read-only DB evidence.
+- Quotation approve: suffix `[PROTECTED_TEST_PHONE]#tj-final27-quote-approve-202604291710`, conversation `bba5d36e-c133-42c3-9c9b-51101db90596`, quotation `Fr3167`. `order_confirm` callback returned HTTP `200`; order-status copy says quotation `Fr3167` approved, sale order `Fr3167`, shipment approved/processing; escalation resolved.
+- Quotation reject: suffix `[PROTECTED_TEST_PHONE]#tj-final27-quote-reject-202604291713`, conversation `30ba5ba5-cec4-4a6e-954c-00583c8ae0f3`, quotation `Fr3168`. `order_reject` callback returned HTTP `200`; order-status copy says quotation `Fr3168` rejected and no active order is linked; escalation resolved.
+- Manager private reply: suffix `[PROTECTED_TEST_PHONE]#tj-final27-manager-202604291715`, conversation `5be359c6-87c8-4cac-aa4a-744c8eeca474`. `faq_private` callback and synthetic manager message returned HTTP `200`; readback shows `escalation_status=resolved` and persisted assistant message `model=manager_reply`.
+- Active escalation fallback: suffix `[PROTECTED_TEST_PHONE]#tj-final27-escalation-202604291716`, conversation `5e5e68ec-b43a-4bd5-a6d7-95dbc13e8d6f`. Follow-up while pending created a separate assistant message `model=fallback`; synthetic manager reply then resolved the escalation with a persisted `manager_reply`.
 
 Final readback:
 
@@ -183,7 +183,7 @@ Quality conclusion:
 
 # 2026-05-26 Controlled Text-Only Refresh
 
-User approval to proceed was received on 2026-05-26 after the artifact-schema normalization merge. Scope stayed bounded to production smoke and text-only WhatsApp messages on the approved test number `79262810921` with `tj-final27-*` suffixes. No referral, feedback, voice/audio, payment-reminder send/template, broad production suite, scheduled AI Quality Control, deploy, production config change, or `scripts/verify_wazzup.py` was run.
+User approval to proceed was received on 2026-05-26 after the artifact-schema normalization merge. Scope stayed bounded to production smoke and text-only WhatsApp messages on the approved test number `[PROTECTED_TEST_PHONE]` with `tj-final27-*` suffixes. No referral, feedback, voice/audio, payment-reminder send/template, broad production suite, scheduled AI Quality Control, deploy, production config change, or `scripts/verify_wazzup.py` was run.
 
 Read-only smoke passed with `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`: `8 passed`, `0 failed`. Runtime `.release-sha` on `noor-server` was `000798e4eb19d868c0aa2891683cdcdbc55a9b65`, matching the deployed final27 port; the local artifact-normalization commits are docs/orchestration-only and were not deployed.
 
@@ -191,8 +191,8 @@ The run used server-side `scripts/bot_test.py` so production `API_KEY` and `WAZZ
 
 Results:
 
-- Chat canary: suffix `79262810921#tj-final27-chat-202605261152`, conversation `94cf2757-9b4f-4f77-8a2c-408dd390a8c3`. Webhook and protected polling passed; bot returned the name-gate prompt; `escalation_status=none`.
-- SKU truth: suffix `79262810921#tj-final27-sku-202605261152`, conversation `e22c786c-3bad-40f5-afe1-ca3a3dd639f6`. The first combined name+SKU message still hit name-gate; after explicit name reply, the repeated SKU request returned `00-07024023`, `310.65 AED`, `12 items available`, `escalation_status=none`.
+- Chat canary: suffix `[PROTECTED_TEST_PHONE]#tj-final27-chat-202605261152`, conversation `94cf2757-9b4f-4f77-8a2c-408dd390a8c3`. Webhook and protected polling passed; bot returned the name-gate prompt; `escalation_status=none`.
+- SKU truth: suffix `[PROTECTED_TEST_PHONE]#tj-final27-sku-202605261152`, conversation `e22c786c-3bad-40f5-afe1-ca3a3dd639f6`. The first combined name+SKU message still hit name-gate; after explicit name reply, the repeated SKU request returned `00-07024023`, `310.65 AED`, `12 items available`, `escalation_status=none`.
 - Price objection: same SKU conversation. Customer asked: `This price is higher than I expected. Can you give me a discount or a better value option?` The bot did not promise a discount, but incorrectly routed to `z-ai/glm-5|selection-confirmation` and captured unresolved item `1 x better value option?`, then returned manager-verification copy. This is not the expected price-objection sales fallback.
 
 Stop decision: the run stopped at the price-objection defect instead of widening into off-catalog, quote, manager, referral, feedback, voice, or payment branches. Beads bug `tj-final27.17` tracks the defect. Final readback for 2026-05-26 `tj-final27` suffixes showed `2` conversations and `0` pending escalations.

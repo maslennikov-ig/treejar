@@ -57,11 +57,11 @@ WhatsApp/media/voice channels before separate approval.
 ## Live E2E / Hotfix Evidence
 
 Explicit live WhatsApp E2E approval was received for personal number
-`+79262810921`.
+`[PROTECTED_TEST_PHONE]`.
 
 Initial live scenario exposed a production blocker:
 
-- Suffix `79262810921#tj-gh14-live-quote-20260514153622`.
+- Suffix `[PROTECTED_TEST_PHONE]#tj-gh14-live-quote-20260514153622`.
 - First turn `Hi, I need 5 x CH 190.` returned `name-gate`.
 - Second turn `My name is E2E Tester.` escalated via verified-policy handoff.
 
@@ -84,11 +84,11 @@ Final hotfix verification:
 
 Final live WhatsApp E2E:
 
-- Quote suffix `79262810921#tj-gh14-live-quote-20260514165102`:
+- Quote suffix `[PROTECTED_TEST_PHONE]#tj-gh14-live-quote-20260514165102`:
   first turn returned `name-gate`; name reply returned
   `z-ai/glm-5|exact-quote-missing-details`, escalation `none`, and
   `pending_quote_selection` for `CH-190` quantity `5`.
-- Product suffix `79262810921#tj-gh14-live-product-20260514165102`:
+- Product suffix `[PROTECTED_TEST_PHONE]#tj-gh14-live-product-20260514165102`:
   `I need 5 office chairs.` returned product options, escalation `none`.
   Product media audits show media provider message ids, caption rows with
   `provider_message_id = None` and `details.customer_visible = false`.

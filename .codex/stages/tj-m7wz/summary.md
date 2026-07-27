@@ -52,7 +52,7 @@ Verification:
 - Production smoke `uv run python scripts/verify_api.py --base-url
   https://noor.starec.ai`: `7 passed, 0 failed`.
 - Live #43/#46/#44/#45 E2E on approved
-  `+79262810921#tj-m7wz-resume11-20260525a`: details and buy intent resumed
+  `[PROTECTED_TEST_PHONE]#tj-m7wz-resume11-20260525a`: details and buy intent resumed
   known 4 x CH 140 context, asked only for explicit email, created quotation
   `Fr3306`, and metadata contained `name=Lil`, `customer_type=individual`,
   `address=2 street`, and the explicit email only.
@@ -60,11 +60,11 @@ Verification:
   `Test LLC` or `test@test.com`; `proposal_followup.kp_message_id` =
   `9a9e4243-f6f1-4431-915c-68480e85614a`.
 - Live #41/#42 final replay on approved
-  `+79262810921#tj-m7wz-qty-final-20260525a`: after quantity clarification,
+  `[PROTECTED_TEST_PHONE]#tj-m7wz-qty-final-20260525a`: after quantity clarification,
   bare `5` produced `selection-confirmation` with `Quantity: 5` for CH 140,
   not a generic opener.
 - Live review-fix replay on approved
-  `+79262810921#tj-m7wz-reviewfix-20260525a`: after a prior 4 x CH 140 offer,
+  `[PROTECTED_TEST_PHONE]#tj-m7wz-reviewfix-20260525a`: after a prior 4 x CH 140 offer,
   mixed reply
   `5 CH 140 / Lil / individual purchase / 2 street / lil.reviewfix.20260525@example.com`
   produced `selection-confirmation` with `Quantity: 5` for CH 140, then

@@ -84,16 +84,16 @@ Verification:
     `worker`, `nginx`, `db`, and `redis` up.
   - `uv run python scripts/verify_api.py --base-url https://noor.starec.ai`
     passed: `8 passed, 0 failed`.
-- Controlled live E2E on approved test phone `+79262810921`:
-  - `+79262810921#tj-lgmg-live-restaurant-20260620T142253Z`: initial name gate,
+- Controlled live E2E on approved test phone `[PROTECTED_TEST_PHONE]`:
+  - `[PROTECTED_TEST_PHONE]#tj-lgmg-live-restaurant-20260620T142253Z`: initial name gate,
     then `Angela` resumed restaurant discovery with catalog alternatives;
     `escalation_status=none`.
-  - `+79262810921#tj-lgmg-live-wardrobe-20260620T142253Z`: initial name gate,
+  - `[PROTECTED_TEST_PHONE]#tj-lgmg-live-wardrobe-20260620T142253Z`: initial name gate,
     then `Angela` resumed living-room wardrobe discovery with catalog wardrobe
     options; `escalation_status=none`.
   - Same wardrobe suffix, `I also want two beds for kids.`: returned catalog
     alternatives/clarification for kids beds with `escalation_status=none`.
-  - Production readback for `+79262810921#tj-lgmg-live-%` returned 2 synthetic
+  - Production readback for `[PROTECTED_TEST_PHONE]#tj-lgmg-live-%` returned 2 synthetic
     conversations, 0 escalation rows, and 0 pending escalations.
 
 Documentation:

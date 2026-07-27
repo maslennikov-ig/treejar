@@ -53,7 +53,7 @@ Deployment/recheck:
 - Production `/opt/noor/.release-sha` reports `d93b95480ec4ca53459f3a0bd527b1a27eb73358`; `/opt/noor/.release-run-id` reports `24963241165`.
 - Post-deploy `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> `7 passed, 0 failed`.
 - Post-deploy `/api/v1/health` -> ok with Redis ok; anonymous `/dashboard/` -> `401`; anonymous `/api/v1/conversations/` -> `403`; Alembic -> `2026_04_26_outbound_audit (head)`.
-- Narrow synthetic production recheck conversation `8ad66895-1caa-45df-9f03-8907cc96f21f` for `79262810921#tj-prl26-sku-recheck-20260426180210` returned SKU `00-07024023`, stock `12`, and price `685.00 AED` instead of saying the SKU does not exist.
+- Narrow synthetic production recheck conversation `8ad66895-1caa-45df-9f03-8907cc96f21f` for `[PROTECTED_TEST_PHONE]#tj-prl26-sku-recheck-20260426180210` returned SKU `00-07024023`, stock `12`, and price `685.00 AED` instead of saying the SKU does not exist.
 - Read-only DB readback for the recheck found `escalation_status='none'`, pending recheck conversations `0`, persisted user/assistant messages, and outbound audit `f3f63b53-5b98-4c96-9979-569b03544c16` with `status='sent'`, provider message id, and `crm_message_id`.
 
 # Verification

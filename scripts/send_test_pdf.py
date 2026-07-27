@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("send_pdf")
 
 WAZZUP_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
-USER_WHATSAPP_PHONE = "79262810921"
+USER_WHATSAPP_PHONE = "15550001111"
 TEST_CONTACT_PHONE = "+971000000001"
 
 
