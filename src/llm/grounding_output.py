@@ -41,6 +41,10 @@ _EN_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
     r"(?:chair|product|item|model)\b"
     r"(?!\s+(?:quality|range|selection|catalog)\b)"
 )
+_EN_SKU_TRIAL_RE = re.compile(
+    r"\b(?:try|test|experience)\s+(?:out\s+)?(?:the\s+)?"
+    r"(?=[a-z0-9-]*\d)(?=[a-z0-9-]*-)[a-z0-9-]{3,}\b"
+)
 _EN_NEGATION_RE = re.compile(
     r"\b(?:not|never|cannot|can't|cant|unable to|unconfirmed|"
     r"without confirmation|don't|do not|no)\b"
@@ -73,6 +77,19 @@ _EN_DELEGATED_FUTURE_CHECK_RE = re.compile(
     r"(?P<object>.{0,100}?)"
     r"(?:\band\s+|\bthen\s+)?"
     r"(?:get back|contact|reply|respond|update)\b"
+)
+_EN_TEAM_FUTURE_CHECK_RE = re.compile(
+    r"\b(?:(?:our|the)\s+)?"
+    r"(?:inventory team|warehouse team|team|staff|colleagues?)\s+"
+    r"(?:will|'ll)\s+(?:check|confirm|look up|verify)\b"
+    r"(?P<object>.{0,100}?)"
+    r"(?:\band\s+|\bthen\s+)?"
+    r"(?:get back|contact|reply|respond|update)\b"
+)
+_EN_PRESENT_STOCK_CONFIRMATION_RE = re.compile(
+    r"\b(?:i|we)\s+can\s+confirm\s+availability\s*:\s*"
+    r"(?:\d+\s+units?\s+are\s+)?(?:currently\s+)?"
+    r"(?:in stock|available)\b"
 )
 _EN_UNRELATED_CHECK_OBJECT_RE = re.compile(
     r"\b(?:dimension|measurement|size|colour|color|finish|delivery|timeline|"
@@ -156,13 +173,14 @@ def _has_specific_product_showroom_trial(sentence: str) -> bool:
     visible = _without_quoted_text(sentence)
     normalized = _normalized(visible)
     if _EN_SHOWROOM_RE.search(normalized):
-        for match in _EN_SPECIFIC_PRODUCT_TRIAL_RE.finditer(normalized):
-            if _is_asserted_match(
-                normalized,
-                match,
-                negation_pattern=_EN_NEGATION_RE,
-            ):
-                return True
+        for pattern in (_EN_SPECIFIC_PRODUCT_TRIAL_RE, _EN_SKU_TRIAL_RE):
+            for match in pattern.finditer(normalized):
+                if _is_asserted_match(
+                    normalized,
+                    match,
+                    negation_pattern=_EN_NEGATION_RE,
+                ):
+                    return True
 
     if _AR_SHOWROOM_RE.search(visible):
         for match in _AR_SPECIFIC_PRODUCT_TRIAL_RE.finditer(visible):
@@ -195,15 +213,37 @@ def _has_meaningful_check_object(
     return full_text_has_stock_context and not residue
 
 
-def _has_future_stock_check(sentence: str, *, full_text: str) -> bool:
+def _has_future_stock_check(
+    sentence: str,
+    *,
+    full_text: str,
+    inventory_confirmed: bool,
+) -> bool:
     visible = _without_quoted_text(sentence)
     full_visible = _without_quoted_text(full_text)
     normalized = _normalized(visible)
     normalized_full = _normalized(full_visible)
     full_has_stock = _STOCK_CONTEXT_RE.search(normalized_full) is not None
 
-    for pattern in (_EN_DIRECT_FUTURE_CHECK_RE, _EN_DELEGATED_FUTURE_CHECK_RE):
+    present_confirmation_spans = (
+        [
+            (match.start(), match.end())
+            for match in _EN_PRESENT_STOCK_CONFIRMATION_RE.finditer(normalized)
+        ]
+        if inventory_confirmed
+        else []
+    )
+    for pattern in (
+        _EN_DIRECT_FUTURE_CHECK_RE,
+        _EN_DELEGATED_FUTURE_CHECK_RE,
+        _EN_TEAM_FUTURE_CHECK_RE,
+    ):
         for match in pattern.finditer(normalized):
+            if any(
+                start <= match.start() < end
+                for start, end in present_confirmation_spans
+            ):
+                continue
             if not _is_asserted_match(
                 normalized,
                 match,
@@ -240,28 +280,48 @@ def _classify_sentence(
     sentence: str,
     *,
     full_text: str,
+    inventory_confirmed: bool,
 ) -> tuple[GroundingViolation, ...]:
     violations: list[GroundingViolation] = []
     if _has_specific_product_showroom_trial(sentence):
         violations.append(GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL)
-    if _has_future_stock_check(sentence, full_text=full_text):
+    if _has_future_stock_check(
+        sentence,
+        full_text=full_text,
+        inventory_confirmed=inventory_confirmed,
+    ):
         violations.append(GroundingViolation.FUTURE_STOCK_CHECK)
     return tuple(violations)
 
 
-def _classify(text: str) -> tuple[GroundingViolation, ...]:
+def _classify(
+    text: str,
+    *,
+    inventory_confirmed: bool,
+) -> tuple[GroundingViolation, ...]:
     violations: list[GroundingViolation] = []
     for sentence in _sentence_parts(text):
-        for violation in _classify_sentence(sentence, full_text=text):
+        for violation in _classify_sentence(
+            sentence,
+            full_text=text,
+            inventory_confirmed=inventory_confirmed,
+        ):
             if violation not in violations:
                 violations.append(violation)
     return tuple(violations)
 
 
-def classify_grounding_output(text: str) -> tuple[GroundingViolation, ...]:
+def classify_grounding_output(
+    text: str,
+    *,
+    inventory_confirmed: bool = False,
+) -> tuple[GroundingViolation, ...]:
     """Classify the two bounded unsupported semantics in customer text."""
 
-    return _classify(str(text or ""))
+    return _classify(
+        str(text or ""),
+        inventory_confirmed=inventory_confirmed,
+    )
 
 
 def contains_specific_product_showroom_trial(text: str) -> bool:
@@ -296,12 +356,16 @@ def enforce_grounding_output(
     text: str,
     *,
     language: str,
+    inventory_confirmed: bool = False,
 ) -> GroundingOutputResult:
     """Remove bounded violating sentences or fail closed with localized text."""
 
     original = str(text or "")
     try:
-        violations = _classify(original)
+        violations = _classify(
+            original,
+            inventory_confirmed=inventory_confirmed,
+        )
         if not violations:
             return GroundingOutputResult(
                 text=original,
@@ -312,10 +376,17 @@ def enforce_grounding_output(
         retained = [
             sentence
             for sentence in _sentence_parts(original)
-            if not _classify_sentence(sentence, full_text=original)
+            if not _classify_sentence(
+                sentence,
+                full_text=original,
+                inventory_confirmed=inventory_confirmed,
+            )
         ]
         repaired = " ".join(retained).strip()
-        if repaired and not _classify(repaired):
+        if repaired and not _classify(
+            repaired,
+            inventory_confirmed=inventory_confirmed,
+        ):
             return GroundingOutputResult(
                 text=repaired,
                 violations=violations,

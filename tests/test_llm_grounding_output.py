@@ -36,6 +36,50 @@ def test_classify_grounding_output_finds_exact_attempt_3_violations() -> None:
     )
 
 
+def test_present_stock_confirmation_requires_current_turn_inventory_evidence() -> None:
+    text = "I can confirm availability: 7 units are currently in stock."
+
+    assert classify_grounding_output(text) == (GroundingViolation.FUTURE_STOCK_CHECK,)
+    assert classify_grounding_output(text, inventory_confirmed=True) == ()
+
+    rejected = enforce_grounding_output(text, language="en")
+    confirmed = enforce_grounding_output(
+        text,
+        language="en",
+        inventory_confirmed=True,
+    )
+    assert rejected.action is GroundingOutputAction.REPLACED
+    assert "unconfirmed" in rejected.text.casefold()
+    assert confirmed.action is GroundingOutputAction.UNCHANGED
+    assert confirmed.text == text
+
+
+@pytest.mark.parametrize(
+    ("text", "violation"),
+    [
+        (
+            (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "availability and get back to you."
+            ),
+            GroundingViolation.FUTURE_STOCK_CHECK,
+        ),
+        (
+            (
+                "I can't confirm it reduces back pain. Visit our showroom to "
+                "experience the AX-E1 in person."
+            ),
+            GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL,
+        ),
+    ],
+)
+def test_classify_grounding_output_covers_review_regressions(
+    text: str,
+    violation: GroundingViolation,
+) -> None:
+    assert classify_grounding_output(text) == (violation,)
+
+
 @pytest.mark.parametrize(
     "text",
     [

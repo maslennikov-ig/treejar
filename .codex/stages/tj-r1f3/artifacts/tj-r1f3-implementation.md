@@ -65,7 +65,7 @@ status: returned
 delivery_method: not accepted
 accepted_by_orchestrator: no
 cleanup_status: pending
-cleanup_notes: Implementation is committed for orchestrator review; orchestrator owns acceptance and worktree cleanup.
+cleanup_notes: Implementation and review fixes are returned for orchestrator review; orchestrator owns acceptance and worktree cleanup.
 risk_level: high
 verification_tier: delta
 risk_tags:
@@ -81,8 +81,10 @@ docs_reviewed: updated
 docs_review_notes: Added the tracked implementation artifact and TDD report; Graphify remains optional and is not configured.
 verification:
   - exact attempt-3 process_message and smoke RED reproducers: failed for the intended raw-output and false-negative reasons before implementation
+  - three independent review regression reproducers: failed for the intended evidence-context and classifier-grammar reasons before review fixes
+  - uv run pytest the eight focused review regression cases -q --tb=short: passed with 8 tests
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 396 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 404 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/llm/grounding_output.py src/llm/engine.py: passed
@@ -117,6 +119,12 @@ The model-route smoke evaluator imports the production classifier, so the exact
 attempt-3 delegated-stock false negative and equivalent team/staff forms cannot
 drift from runtime enforcement.
 
+The review correction makes present stock confirmation evidence-aware: the
+customer text is preserved only after successful current-turn inventory tool
+evidence, including routes that run with copied dependency objects. Without
+that evidence the same claim fails closed. Explicit inventory-team promises and
+SKU-only showroom trials are now covered by the same shared classifier.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -137,10 +145,12 @@ GREEN covers exact outputs, EN/AR safe and unsafe matrices, safe negations,
 general showroom quality, conditional samples, unconfirmed stock, real
 tool-backed stock confirmation, quoted and unrelated checks, deterministic
 fallback, preserved model/token/cost metadata, and media selection from the
-enforced text.
+enforced text. Review RED/GREEN additionally covers evidence-gated present
+stock confirmation, an explicit inventory-team future promise, and a SKU-only
+showroom trial at pure, `process_message()`, and smoke boundaries.
 
-Focused Pytest passed 57 tests; the complete three affected test files passed
-396 tests. Focused Ruff, format, and production-path Mypy passed. The detailed
+The eight review regressions passed; the complete three affected test files
+passed 404 tests. Focused Ruff, format, and production-path Mypy passed. The detailed
 commands and failure evidence are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.
 

@@ -101,6 +101,49 @@ The broader focused Mypy probe that also named
 `no-any-return` at line 622. The implementation did not touch that return
 boundary; fixing unrelated script typing was intentionally not bundled.
 
+## Review correction RED/GREEN
+
+Independent review identified three reproducible boundary gaps:
+
+1. A successful current-turn stock tool result was not available to the guard,
+   so `I can confirm availability: 7 units are currently in stock` was replaced.
+2. `Our inventory team will check availability and get back to you` bypassed
+   the first-person delegated grammar.
+3. `experience the AX-E1` bypassed the product-noun trial grammar.
+
+The focused RED command collected eight cases and produced seven intended
+failures plus one existing unconfirmed fail-closed pass. The failures showed an
+unsupported `inventory_confirmed` argument, replacement of a real tool-backed
+confirmation, and unchanged pure/process/smoke outputs for the two grammar
+gaps.
+
+The correction is bounded:
+
+- successful `get_stock` evidence is propagated from copied run dependencies
+  to the per-turn dependencies consumed by `_build_llm_response()`;
+- present confirmation is exempted only for the narrow current-stock wording
+  and only when that evidence flag is true;
+- without evidence the same wording still fails closed and smoke still rejects
+  it;
+- explicit inventory/warehouse-team future callbacks and SKU-shaped showroom
+  trials add two classifier grammar branches.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py::test_present_stock_confirmation_requires_current_turn_inventory_evidence tests/test_llm_grounding_output.py::test_classify_grounding_output_covers_review_regressions tests/test_llm_engine.py::test_process_message_preserves_tool_backed_present_stock_confirmation tests/test_llm_engine.py::test_process_message_rejects_present_stock_confirmation_without_tool_evidence tests/test_llm_engine.py::test_process_message_repairs_review_regression_outputs tests/test_scripts_verify_model_routes.py::test_sales_case_evaluation_covers_review_regressions -q --tb=short
+```
+
+Result: `8 passed`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `404 passed`.
+
 ## Remaining environment-level checks
 
 - Independent delta review.

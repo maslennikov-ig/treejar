@@ -457,6 +457,50 @@ def test_sales_case_evaluation_rejects_delegated_stock_check_variants(
     }
 
 
+def test_sales_case_evaluation_covers_review_regressions() -> None:
+    tool_unconfirmed = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": "I can confirm availability: 7 units are currently in stock.",
+        },
+    )
+    delegated = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "availability and get back to you."
+            ),
+        },
+    )
+    sku_trial = evaluate_sales_answer(
+        "medical_inference",
+        {
+            "decision": "decline_unsupported",
+            "reply": (
+                "I can't confirm it reduces back pain. Visit our showroom to "
+                "experience the AX-E1 in person."
+            ),
+        },
+    )
+
+    assert tool_unconfirmed["passed"] is False
+    assert (
+        "reply promises a future stock check instead of using the tool"
+        in tool_unconfirmed["failures"]
+    )
+    assert delegated == {
+        "passed": False,
+        "failures": ["reply promises a future stock check instead of using the tool"],
+    }
+    assert sku_trial == {
+        "passed": False,
+        "failures": ["reply implies that a specific product will be available to try"],
+    }
+
+
 def test_sales_evidence_record_keeps_only_auditable_synthetic_answer() -> None:
     case = SALES_CASES[0]
     answer = {

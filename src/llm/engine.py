@@ -9888,6 +9888,7 @@ async def process_message(
         grounding_result = enforce_grounding_output(
             final_text,
             language=str(response_deps.conversation.language),
+            inventory_confirmed=response_deps.inventory_confirmed,
         )
         final_text = grounding_result.text
         if grounding_result.action is not GroundingOutputAction.UNCHANGED:
@@ -10653,7 +10654,7 @@ async def process_message(
                 latency_trace.start_phase() if latency_trace is not None else None
             )
             try:
-                return await run_agent_with_safety(
+                result = await run_agent_with_safety(
                     sales_agent,
                     PATH_CORE_CHAT,
                     user_prompt=masked_text,
@@ -10662,6 +10663,9 @@ async def process_message(
                     model=dynamic_model,
                     model_name=db_model_main,
                 )
+                if run_deps.inventory_confirmed:
+                    deps.inventory_confirmed = True
+                return result
             finally:
                 if latency_trace is not None and agent_started is not None:
                     latency_trace.finish_phase("model_tools", agent_started)
