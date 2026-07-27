@@ -118,13 +118,15 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
         reason="The delivered reply adds a fact absent from the draft.",
     )
     context = registry.verified_evidence_context
-    registry._replace_verified_evidence_context(
+    object.__setattr__(
+        registry,
+        "_TrustedAcceptanceRegistry__verified_evidence_context",
         context.model_copy(
             update={
                 "classifier_digests": context.classifier_digests
                 | {result.artifact_digest}
             }
-        )
+        ),
     )
     decision = registry.evaluate_oracle(
         binding.assertion_id,
@@ -169,13 +171,15 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
     )
 
     context = registry.verified_evidence_context
-    registry._replace_verified_evidence_context(
+    object.__setattr__(
+        registry,
+        "_TrustedAcceptanceRegistry__verified_evidence_context",
         context.model_copy(
             update={
                 "readback_digests": context.readback_digests
                 | {baseline.content_digest, stale_final.content_digest}
             }
-        )
+        ),
     )
     with pytest.raises(policy.PolicyValidationError, match="final readback.*after"):
         registry.validate_readback_window(

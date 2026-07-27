@@ -802,14 +802,6 @@ class TrustedAcceptanceRegistry:
     def verified_evidence_context(self) -> VerifiedEvidenceContext:
         return self.__verified_evidence_context
 
-    def _replace_verified_evidence_context(
-        self,
-        context: VerifiedEvidenceContext,
-    ) -> None:
-        if not isinstance(context, VerifiedEvidenceContext):
-            raise PolicyValidationError("verified evidence context type drift")
-        self.__verified_evidence_context = context
-
     def classifier_evaluator_digest(self, assertion_id: str) -> str:
         assertion = self._assertions.get(assertion_id)
         if assertion is None or assertion.oracle.kind != "classifier_result":

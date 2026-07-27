@@ -574,6 +574,7 @@ def test_registry_trust_context_is_frozen_and_has_no_mutable_digest_stores() -> 
         "_trusted_attempt_digests",
     ):
         assert not hasattr(registry, name)
+    assert not hasattr(registry, "_replace_verified_evidence_context")
     context = registry.verified_evidence_context
     assert isinstance(context.classifier_digests, frozenset)
     with pytest.raises((AttributeError, TypeError)):

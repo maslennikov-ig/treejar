@@ -722,25 +722,29 @@ def _load_decisive_evidence(
         ):
             raise TrustedRunError("classifier protected receipt binding drift")
         context = registry.verified_evidence_context
-        registry._replace_verified_evidence_context(
+        object.__setattr__(
+            registry,
+            "_TrustedAcceptanceRegistry__verified_evidence_context",
             context.model_copy(
                 update={
                     "classifier_digests": context.classifier_digests
                     | {artifact.artifact_digest}
                 }
-            )
+            ),
         )
     else:
         if assertion.oracle.kind == "classifier_result":
             raise TrustedRunError("structured decisive oracle kind drift")
         context = registry.verified_evidence_context
-        registry._replace_verified_evidence_context(
+        object.__setattr__(
+            registry,
+            "_TrustedAcceptanceRegistry__verified_evidence_context",
             context.model_copy(
                 update={
                     "structured_digests": context.structured_digests
                     | {artifact.artifact_digest}
                 }
-            )
+            ),
         )
 
 
@@ -1492,13 +1496,15 @@ def _load_verified_run(
     except EvidenceError as exc:
         raise TrustedRunError(f"report privacy validation failed: {exc}") from exc
     context = registry.verified_evidence_context
-    registry._replace_verified_evidence_context(
+    object.__setattr__(
+        registry,
+        "_TrustedAcceptanceRegistry__verified_evidence_context",
         context.model_copy(
             update={
                 "attempt_digests": context.attempt_digests
                 | frozenset(verified_attempt_digests)
             }
-        )
+        ),
     )
 
     rollups = {

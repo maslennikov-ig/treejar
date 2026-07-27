@@ -54,13 +54,15 @@ def _trust_decisive_for_unit(registry, *items) -> None:
             classifier_digests = classifier_digests | {item.artifact_digest}
         else:
             structured_digests = structured_digests | {item.artifact_digest}
-    registry._replace_verified_evidence_context(
+    object.__setattr__(
+        registry,
+        "_TrustedAcceptanceRegistry__verified_evidence_context",
         context.model_copy(
             update={
                 "classifier_digests": classifier_digests,
                 "structured_digests": structured_digests,
             }
-        )
+        ),
     )
 
 
