@@ -13,6 +13,11 @@ from typing import Any
 
 import pytest
 from dotenv import dotenv_values
+from scripts.live_test_destination import (
+    LIVE_WHATSAPP_PHONE_ENV,
+    LiveDestinationError,
+    load_live_whatsapp_phone,
+)
 
 # ---------------------------------------------------------------------------
 # Known test contact in Zoho CRM (do NOT delete from CRM!)
@@ -79,14 +84,28 @@ skip_no_openrouter = pytest.mark.skipif(
 skip_no_db = pytest.mark.skipif(not _has_db, reason="DATABASE_URL not found in .env")
 skip_no_redis = pytest.mark.skipif(not _has_redis, reason="REDIS_URL not found in .env")
 
-_has_wazzup = bool(_get("WAZZUP_API_KEY") and _get("WAZZUP_API_URL"))
+try:
+    USER_WHATSAPP_PHONE = (
+        load_live_whatsapp_phone(
+            {LIVE_WHATSAPP_PHONE_ENV: _get(LIVE_WHATSAPP_PHONE_ENV)},
+            required=False,
+        )
+        or ""
+    )
+except LiveDestinationError as exc:
+    raise pytest.UsageError(str(exc)) from exc
 
-skip_no_wazzup = pytest.mark.skipif(
-    not _has_wazzup, reason="Wazzup credentials not found in .env"
+_has_wazzup = bool(
+    _get("WAZZUP_API_KEY") and _get("WAZZUP_API_URL") and USER_WHATSAPP_PHONE
 )
 
-# Phone number of the user for real WhatsApp delivery tests
-USER_WHATSAPP_PHONE = "15550001111"
+skip_no_wazzup = pytest.mark.skipif(
+    not _has_wazzup,
+    reason=(
+        "Wazzup credentials or explicit "
+        f"{LIVE_WHATSAPP_PHONE_ENV} destination not found in .env"
+    ),
+)
 
 # Active Wazzup channel ID (Treejar, +971551220665)
 WAZZUP_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"

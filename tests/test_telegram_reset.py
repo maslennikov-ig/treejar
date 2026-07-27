@@ -132,6 +132,7 @@ async def test_reset_command_invalid_phone_returns_usage(
     assert handled is True
     telegram.send_message.assert_awaited_once()
     assert "Использование" in telegram.send_message.await_args.args[0]
+    assert "&lt;country-code-and-number&gt;" in telegram.send_message.await_args.args[0]
 
 
 @pytest.mark.asyncio
