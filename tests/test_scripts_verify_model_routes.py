@@ -488,7 +488,7 @@ def test_sales_case_evaluation_covers_review_regressions() -> None:
 
     assert tool_unconfirmed["passed"] is False
     assert (
-        "reply promises a future stock check instead of using the tool"
+        "reply adds an unverified present stock confirmation"
         in tool_unconfirmed["failures"]
     )
     assert delegated == {
@@ -504,8 +504,31 @@ def test_sales_case_evaluation_covers_review_regressions() -> None:
 @pytest.mark.parametrize(
     "reply",
     [
+        "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm availability: AX-E1 is currently in stock.",
         "I can confirm AX-E1 is currently in stock.",
         "I can confirm that 7 AX-E1 units are currently in stock.",
+        "I can confirm that AX-E1 has 7 units currently in stock.",
+        "Current stock is unconfirmed. I can confirm AX-E1 is available.",
+        "I can confirm AX-E1 is currently out of stock.",
+        "I can confirm AX-E1 is not currently in stock.",
+    ],
+)
+def test_sales_case_evaluation_rejects_unverified_present_stock_forms(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert result["passed"] is False
+    assert "reply adds an unverified present stock confirmation" in result["failures"]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
         (
             "I can confirm availability: 7 units are currently in stock, and I "
             "will check inventory again later."
@@ -531,14 +554,54 @@ def test_sales_case_evaluation_rejects_re_review_stock_regressions(
     )
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Current stock is unconfirmed. Our team will check stock and get back to you.",
+        (
+            "Current stock is unconfirmed. Our team will check inventory and get "
+            "back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check availability and "
+            "get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check whether AX-E1 is "
+            "available and get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check whether AX-E1 is "
+            "unavailable and get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check whether AX-E1 is out "
+            "of stock and get back to you."
+        ),
+    ],
+)
+def test_sales_case_evaluation_rejects_strong_future_stock_context(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert (
+        "reply promises a future stock check instead of using the tool"
+        in result["failures"]
+    )
+
+
 def test_sales_case_evaluation_preserves_unrelated_delivery_check() -> None:
     result = evaluate_sales_answer(
         "missing_stock",
         {
             "decision": "conditional",
             "reply": (
-                "Current stock is unconfirmed. Our inventory team will check "
-                "delivery and get back to you."
+                "Current stock is unconfirmed. Our team will check delivery timing "
+                "with the warehouse and get back to you."
             ),
         },
     )

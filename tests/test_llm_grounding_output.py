@@ -40,14 +40,21 @@ def test_classify_grounding_output_finds_exact_attempt_3_violations() -> None:
     "text",
     [
         "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm availability: AX-E1 is currently in stock.",
         "I can confirm AX-E1 is currently in stock.",
         "I can confirm that 7 AX-E1 units are currently in stock.",
+        "I can confirm that AX-E1 has 7 units currently in stock.",
+        "I can confirm AX-E1 is available.",
+        "I can confirm AX-E1 is currently out of stock.",
+        "I can confirm AX-E1 is not currently in stock.",
     ],
 )
 def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
     text: str,
 ) -> None:
-    assert classify_grounding_output(text) == (GroundingViolation.FUTURE_STOCK_CHECK,)
+    assert classify_grounding_output(text) == (
+        GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION,
+    )
     assert classify_grounding_output(text, inventory_confirmed=True) == ()
 
     rejected = enforce_grounding_output(text, language="en")
@@ -81,15 +88,51 @@ def test_confirmed_present_stock_does_not_authorize_later_future_check() -> None
     assert "will check" not in result.text.casefold()
 
 
-def test_mixed_stock_and_delivery_check_is_unsafe_but_delivery_only_is_safe() -> None:
-    mixed = "Our inventory team will check stock and delivery and get back to you."
-    delivery_only = (
-        "Current stock is unconfirmed. Our inventory team will check delivery "
-        "and get back to you."
+def test_unverified_present_stock_and_future_check_remain_distinct() -> None:
+    text = (
+        "I can confirm AX-E1 is currently in stock, and I will check inventory "
+        "again later."
     )
 
-    assert classify_grounding_output(mixed) == (GroundingViolation.FUTURE_STOCK_CHECK,)
-    assert classify_grounding_output(delivery_only) == ()
+    assert classify_grounding_output(text) == (
+        GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION,
+        GroundingViolation.FUTURE_STOCK_CHECK,
+    )
+    assert classify_grounding_output(text, inventory_confirmed=True) == (
+        GroundingViolation.FUTURE_STOCK_CHECK,
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Our team will check stock and get back to you.",
+        "Our team will check inventory and get back to you.",
+        "Our team will check availability and get back to you.",
+        "Our team will check whether AX-E1 is available and get back to you.",
+        "Our team will check whether AX-E1 is unavailable and get back to you.",
+        "Our team will check whether AX-E1 is out of stock and get back to you.",
+        "Our inventory team will check stock and delivery and get back to you.",
+    ],
+)
+def test_future_check_with_strong_stock_context_is_unsafe(text: str) -> None:
+    assert classify_grounding_output(text) == (GroundingViolation.FUTURE_STOCK_CHECK,)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Our team will check delivery timing with the warehouse and get back to you.",
+        (
+            "Current stock is unconfirmed. Our inventory team will check delivery "
+            "and get back to you."
+        ),
+    ],
+)
+def test_delivery_only_check_is_safe_even_with_weak_warehouse_context(
+    text: str,
+) -> None:
+    assert classify_grounding_output(text) == ()
 
 
 @pytest.mark.parametrize(

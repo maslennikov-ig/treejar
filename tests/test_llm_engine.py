@@ -2436,11 +2436,16 @@ async def test_process_message_uses_arabic_grounding_fallback(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "confirmed_reply",
+    ("confirmed_reply", "stock_on_hand"),
     [
-        "I can confirm availability: 7 units are currently in stock.",
-        "I can confirm AX-E1 is currently in stock.",
-        "I can confirm that 7 AX-E1 units are currently in stock.",
+        ("I can confirm availability: 7 units are currently in stock.", 7),
+        ("I can confirm availability: AX-E1 is currently in stock.", 7),
+        ("I can confirm AX-E1 is currently in stock.", 7),
+        ("I can confirm that 7 AX-E1 units are currently in stock.", 7),
+        ("I can confirm that AX-E1 has 7 units currently in stock.", 7),
+        ("I can confirm AX-E1 is available.", 7),
+        ("I can confirm AX-E1 is currently out of stock.", 0),
+        ("I can confirm AX-E1 is not currently in stock.", 0),
     ],
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
@@ -2453,6 +2458,7 @@ async def test_process_message_preserves_tool_backed_present_stock_confirmation(
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
     confirmed_reply: str,
+    stock_on_hand: int,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -2467,7 +2473,7 @@ async def test_process_message_preserves_tool_backed_present_stock_confirmation(
     mock_search_knowledge.return_value = []
     zoho.get_stock.return_value = {
         "sku": "AX-E1",
-        "stock_on_hand": 7,
+        "stock_on_hand": stock_on_hand,
         "rate": 1073.0,
         "currency_code": "AED",
     }
@@ -2483,7 +2489,7 @@ async def test_process_message_preserves_tool_backed_present_stock_confirmation(
             usage=RunUsage(),
         )
         stock_result = await engine_module.get_stock(ctx, "AX-E1")
-        assert "7 items available" in str(stock_result)
+        assert f"{stock_on_hand} items available" in str(stock_result)
         assert run_deps.inventory_confirmed is True
         return _FakeAgentResult(confirmed_reply)
 
@@ -2568,6 +2574,19 @@ async def test_process_message_removes_future_check_after_tool_backed_confirmati
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsupported_reply",
+    [
+        "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm availability: AX-E1 is currently in stock.",
+        "I can confirm AX-E1 is currently in stock.",
+        "I can confirm that 7 AX-E1 units are currently in stock.",
+        "I can confirm that AX-E1 has 7 units currently in stock.",
+        "Current stock is unconfirmed. I can confirm AX-E1 is available.",
+        "I can confirm AX-E1 is currently out of stock.",
+        "I can confirm AX-E1 is not currently in stock.",
+    ],
+)
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -2577,6 +2596,7 @@ async def test_process_message_rejects_present_stock_confirmation_without_tool_e
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
+    unsupported_reply: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -2584,7 +2604,6 @@ async def test_process_message_rejects_present_stock_confirmation_without_tool_e
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = "Test User"
     text = "I need a few workstations for my new office."
-    unsupported_reply = "I can confirm availability: 7 units are currently in stock."
     mock_build_history.return_value = _non_first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -2602,6 +2621,46 @@ async def test_process_message_rejects_present_stock_confirmation_without_tool_e
 
     assert response.text != unsupported_reply
     assert "unconfirmed" in response.text.casefold()
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_preserves_delivery_only_warehouse_check(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    safe_reply = (
+        "Current stock is unconfirmed. Our team will check delivery timing with "
+        "the warehouse and get back to you."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(safe_reply)
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == safe_reply
     mock_run.assert_awaited_once()
 
 

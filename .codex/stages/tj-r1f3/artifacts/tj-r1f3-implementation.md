@@ -85,11 +85,13 @@ verification:
   - uv run pytest the eight focused review regression cases -q --tb=short: passed with 8 tests
   - three re-review clause-boundary reproducers with negative controls: nine intended failures and eight passes before fixes
   - uv run pytest the seventeen focused re-review cases -q --tb=short: passed with 17 tests
+  - third re-review structural stock matrices: pure failed 12 cases, runtime failed 6 cases, and smoke failed 12 cases for the intended typed-present, natural-phrasing, and warehouse/delivery boundary reasons before fixes
+  - third re-review focused GREEN: pure passed 40 tests, runtime passed 18 selected tests, and smoke passed 18 selected tests
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 418 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 457 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
-  - uv run mypy src/llm/grounding_output.py src/llm/engine.py: passed
+  - uv run mypy src/: passed with 163 source files
   - uv run python scripts/orchestration/validate_artifact.py on this artifact: passed
   - uv run python scripts/orchestration/lint_stage_sizing.py --stage tj-r1f3: passed
   - git diff --check: passed
@@ -134,6 +136,16 @@ mixed-object checks, explicit stock or inventory now takes precedence over
 unrelated delivery wording; standalone delivery, dimension, and colour checks
 remain unchanged.
 
+The third review correction makes that distinction explicit in the output
+contract. A bounded present stock statement now has its own
+`UNVERIFIED_STOCK_CONFIRMATION` reason and is classified independently from a
+future/delegated check. Current-turn inventory evidence authorizes only the
+present statement; it never suppresses a later promise. Natural positive and
+negative present forms are covered. Strong stock words such as stock,
+inventory, availability, available, unavailable, and out-of-stock wording
+remain unsafe in future checks. Warehouse is weak context, so an explicit
+delivery-only check is preserved while mixed stock-and-delivery remains unsafe.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -159,11 +171,14 @@ stock confirmation, an explicit inventory-team future promise, and a SKU-only
 showroom trial at pure, `process_message()`, and smoke boundaries. Re-review
 coverage locks two additional present-confirmation forms, same-sentence
 present-plus-future repair, mixed stock/delivery classification, and standalone
-unrelated-check controls.
+unrelated-check controls. Third-review coverage adds typed unverified-present
+classification, natural availability/quantity/positive/negative forms, strong
+future-stock lexemes, and delivery-only warehouse controls at all three
+boundaries.
 
-The seventeen re-review cases passed; the complete three affected test files
-passed 418 tests. Focused Ruff, format, and production-path Mypy passed. The detailed
-commands and failure evidence are in
+The complete three affected test files passed 457 tests. Focused Ruff and
+format plus full `src/` Mypy passed. The detailed commands and failure evidence
+are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.
 
 # Delivery / Cleanup

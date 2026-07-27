@@ -26,6 +26,7 @@ from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
 from src.llm.grounding_output import (
     contains_future_stock_check,
     contains_specific_product_showroom_trial,
+    contains_unverified_stock_confirmation,
 )
 
 MAIN_MODEL_ID = "z-ai/glm-5.2"
@@ -468,6 +469,8 @@ def evaluate_sales_answer(
             failures.append(
                 "reply promises a future stock check instead of using the tool"
             )
+        if contains_unverified_stock_confirmation(reply):
+            failures.append("reply adds an unverified present stock confirmation")
         for phrase in ("currently in stock", "is in stock", "available now"):
             if _contains_asserted_phrase(reply, phrase):
                 failures.append(f"unsupported stock claim: {phrase}")

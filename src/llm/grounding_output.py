@@ -11,6 +11,7 @@ class GroundingViolation(StrEnum):
     """Customer-output semantics that must not pass through from a model."""
 
     SPECIFIC_PRODUCT_SHOWROOM_TRIAL = "specific_product_showroom_trial"
+    UNVERIFIED_STOCK_CONFIRMATION = "unverified_stock_confirmation"
     FUTURE_STOCK_CHECK = "future_stock_check"
 
 
@@ -60,10 +61,14 @@ _AR_NEGATION_RE = re.compile(
     r"(?:لا\s+(?:أستطيع|استطيع|يمكنني)|لا\s+يمكن|لن|ليس|ليست|غير\s+مؤكد)"
 )
 
-_STOCK_CONTEXT_RE = re.compile(
-    r"\b(?:stock|inventory|availability|warehouse)\b"
-    r"|(?:المخزون|مخزون|التوفر|التوافر|المستودع|المخازن)"
+_EN_STRONG_STOCK_CONTEXT_RE = re.compile(
+    r"\b(?:stock|inventory|availability|available|unavailable)\b"
 )
+_EN_WEAK_STOCK_CONTEXT_RE = re.compile(r"\bwarehouse\b")
+_AR_STRONG_STOCK_CONTEXT_RE = re.compile(
+    r"(?:المخزون|مخزون|التوفر|التوافر|متوفر|متاحة|متاح|غير\s+متوفر)"
+)
+_AR_WEAK_STOCK_CONTEXT_RE = re.compile(r"(?:المستودع|المخازن)")
 _EN_DIRECT_FUTURE_CHECK_RE = re.compile(
     r"\b(?:let me|i can|i will|i'll|we can|we will|we'll)\s+"
     r"(?:also\s+)?(?:check|confirm|look up|verify)\b"
@@ -86,16 +91,24 @@ _EN_TEAM_FUTURE_CHECK_RE = re.compile(
     r"(?:\band\s+|\bthen\s+)?"
     r"(?:get back|contact|reply|respond|update)\b"
 )
+_EN_SKU_PATTERN = r"(?=[a-z0-9-]*\d)(?=[a-z0-9-]*-)[a-z0-9-]+"
+_EN_PRESENT_STOCK_STATUS_PATTERN = (
+    r"(?:not\s+currently\s+in\s+stock"
+    r"|currently\s+(?:in\s+stock|out\s+of\s+stock)"
+    r"|(?:currently\s+)?(?:available|unavailable|in\s+stock|out\s+of\s+stock))"
+)
+_EN_PRESENT_STOCK_SUBJECT_PATTERN = (
+    rf"(?:(?:\d+\s+)?{_EN_SKU_PATTERN}(?:\s+units?)?"
+    rf"\s+(?:is|are)\s+{_EN_PRESENT_STOCK_STATUS_PATTERN}"
+    rf"|{_EN_SKU_PATTERN}\s+has\s+\d+\s+units?"
+    rf"\s+{_EN_PRESENT_STOCK_STATUS_PATTERN}"
+    rf"|\d+\s+units?\s+(?:is|are)\s+{_EN_PRESENT_STOCK_STATUS_PATTERN})"
+)
 _EN_PRESENT_STOCK_CONFIRMATION_RE = re.compile(
-    r"\b(?:i|we)\s+can\s+confirm(?:"
-    r"\s+availability\s*:\s*"
-    r"(?:\d+\s+units?\s+are\s+)?(?:currently\s+)?"
-    r"(?:in stock|available)"
-    r"|\s+(?:that\s+)?(?:\d+\s+)?"
-    r"(?=[a-z0-9-]*\d)(?=[a-z0-9-]*-)[a-z0-9-]+"
-    r"(?:\s+units?)?\s+(?:is|are)\s+(?:currently\s+)?"
-    r"(?:in stock|available)"
-    r")\b",
+    rf"\b(?:i|we)\s+can\s+confirm(?:"
+    rf"\s+availability\s*:\s*{_EN_PRESENT_STOCK_SUBJECT_PATTERN}"
+    rf"|\s+(?:that\s+)?{_EN_PRESENT_STOCK_SUBJECT_PATTERN}"
+    rf")\b",
     re.IGNORECASE,
 )
 _EN_UNRELATED_CHECK_OBJECT_RE = re.compile(
@@ -203,43 +216,56 @@ def _has_specific_product_showroom_trial(sentence: str) -> bool:
 def _has_meaningful_check_object(
     value: str,
     *,
-    stock_context: re.Pattern[str],
+    strong_stock_context: re.Pattern[str],
+    weak_stock_context: re.Pattern[str],
     unrelated_context: re.Pattern[str],
-    full_text_has_stock_context: bool,
+    full_text_has_strong_stock_context: bool,
+    full_text_has_weak_stock_context: bool,
 ) -> bool:
-    if stock_context.search(value):
+    if strong_stock_context.search(value):
         return True
     if unrelated_context.search(value):
         return False
+    if weak_stock_context.search(value):
+        return True
     residue = re.sub(
         r"\b(?:and|then|with|for|to|you|your|our|the|a|an|also|later|shortly)\b",
         " ",
         value,
     )
     residue = re.sub(r"[\s,;:،؛-]+", "", residue)
-    return full_text_has_stock_context and not residue
+    return (
+        full_text_has_strong_stock_context or full_text_has_weak_stock_context
+    ) and not residue
+
+
+def _present_stock_confirmation_spans(text: str) -> list[tuple[int, int]]:
+    return [
+        (match.start(), match.end())
+        for match in _EN_PRESENT_STOCK_CONFIRMATION_RE.finditer(text)
+    ]
+
+
+def _has_present_stock_confirmation(sentence: str) -> bool:
+    visible = _without_quoted_text(sentence)
+    return bool(_present_stock_confirmation_spans(visible))
 
 
 def _has_future_stock_check(
     sentence: str,
     *,
     full_text: str,
-    inventory_confirmed: bool,
 ) -> bool:
     visible = _without_quoted_text(sentence)
     full_visible = _without_quoted_text(full_text)
     normalized = _normalized(visible)
     normalized_full = _normalized(full_visible)
-    full_has_stock = _STOCK_CONTEXT_RE.search(normalized_full) is not None
-
-    present_confirmation_spans = (
-        [
-            (match.start(), match.end())
-            for match in _EN_PRESENT_STOCK_CONFIRMATION_RE.finditer(normalized)
-        ]
-        if inventory_confirmed
-        else []
+    full_has_strong_stock = (
+        _EN_STRONG_STOCK_CONTEXT_RE.search(normalized_full) is not None
     )
+    full_has_weak_stock = _EN_WEAK_STOCK_CONTEXT_RE.search(normalized_full) is not None
+
+    present_confirmation_spans = _present_stock_confirmation_spans(normalized)
     future_text = list(normalized)
     for start, end in present_confirmation_spans:
         future_text[start:end] = " " * (end - start)
@@ -258,12 +284,18 @@ def _has_future_stock_check(
                 continue
             if _has_meaningful_check_object(
                 match.group("object"),
-                stock_context=_STOCK_CONTEXT_RE,
+                strong_stock_context=_EN_STRONG_STOCK_CONTEXT_RE,
+                weak_stock_context=_EN_WEAK_STOCK_CONTEXT_RE,
                 unrelated_context=_EN_UNRELATED_CHECK_OBJECT_RE,
-                full_text_has_stock_context=full_has_stock,
+                full_text_has_strong_stock_context=full_has_strong_stock,
+                full_text_has_weak_stock_context=full_has_weak_stock,
             ):
                 return True
 
+    full_has_ar_strong_stock = (
+        _AR_STRONG_STOCK_CONTEXT_RE.search(full_visible) is not None
+    )
+    full_has_ar_weak_stock = _AR_WEAK_STOCK_CONTEXT_RE.search(full_visible) is not None
     for pattern in (_AR_DIRECT_FUTURE_CHECK_RE, _AR_DELEGATED_FUTURE_CHECK_RE):
         for match in pattern.finditer(visible):
             if not _is_asserted_match(
@@ -274,9 +306,11 @@ def _has_future_stock_check(
                 continue
             if _has_meaningful_check_object(
                 match.group("object"),
-                stock_context=_STOCK_CONTEXT_RE,
+                strong_stock_context=_AR_STRONG_STOCK_CONTEXT_RE,
+                weak_stock_context=_AR_WEAK_STOCK_CONTEXT_RE,
                 unrelated_context=_AR_UNRELATED_CHECK_OBJECT_RE,
-                full_text_has_stock_context=full_has_stock,
+                full_text_has_strong_stock_context=full_has_ar_strong_stock,
+                full_text_has_weak_stock_context=full_has_ar_weak_stock,
             ):
                 return True
     return False
@@ -306,10 +340,11 @@ def _classify_sentence(
     violations: list[GroundingViolation] = []
     if _has_specific_product_showroom_trial(sentence):
         violations.append(GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL)
+    if _has_present_stock_confirmation(sentence) and not inventory_confirmed:
+        violations.append(GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION)
     if _has_future_stock_check(
         sentence,
         full_text=full_text,
-        inventory_confirmed=inventory_confirmed,
     ):
         violations.append(GroundingViolation.FUTURE_STOCK_CHECK)
     return tuple(violations)
@@ -337,7 +372,7 @@ def classify_grounding_output(
     *,
     inventory_confirmed: bool = False,
 ) -> tuple[GroundingViolation, ...]:
-    """Classify the two bounded unsupported semantics in customer text."""
+    """Classify bounded unsupported showroom and inventory semantics."""
 
     return _classify(
         str(text or ""),
@@ -356,6 +391,13 @@ def contains_future_stock_check(text: str) -> bool:
     return GroundingViolation.FUTURE_STOCK_CHECK in classify_grounding_output(text)
 
 
+def contains_unverified_stock_confirmation(text: str) -> bool:
+    return (
+        GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION
+        in classify_grounding_output(text)
+    )
+
+
 def _is_arabic_language(language: str) -> bool:
     return str(language or "").strip().casefold() in {"ar", "arabic", "العربية"}
 
@@ -366,7 +408,10 @@ def _fallback(
     language: str,
 ) -> str:
     arabic = _is_arabic_language(language)
-    if GroundingViolation.FUTURE_STOCK_CHECK in violations:
+    if (
+        GroundingViolation.FUTURE_STOCK_CHECK in violations
+        or GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION in violations
+    ):
         return _AR_STOCK_FALLBACK if arabic else _EN_STOCK_FALLBACK
     if GroundingViolation.SPECIFIC_PRODUCT_SHOWROOM_TRIAL in violations:
         return _AR_SHOWROOM_FALLBACK if arabic else _EN_SHOWROOM_FALLBACK

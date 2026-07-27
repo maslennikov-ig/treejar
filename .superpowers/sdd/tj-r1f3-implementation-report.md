@@ -188,6 +188,70 @@ uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/
 
 Result: `418 passed`.
 
+## Third re-review structural stock-classifier correction
+
+The third independent review exposed that present and future stock semantics
+were still coupled:
+
+1. `Current stock is unconfirmed. I can confirm AX-E1 is available.` bypassed
+   the guard because `available` was absent from the stock context.
+2. Evidence-backed natural present forms using an SKU after the availability
+   colon, `has 7 units`, `out of stock`, and `not currently in stock` were
+   misclassified as future promises.
+3. `warehouse` was treated as strong stock context before delivery was
+   considered, so a delivery-timing callback was removed.
+
+The RED runs were separated by contract boundary. The pure module produced 12
+intended failures, runtime produced 6, and shared smoke produced 12. The failures
+proved the missing typed present violation, the rejected natural evidence-backed
+forms, the unblocked `available` assertion, and the false-positive delivery
+repair.
+
+The structural correction is bounded:
+
+- added `UNVERIFIED_STOCK_CONFIRMATION` as a distinct typed reason;
+- present stock confirmation is classified independently and gated only by
+  successful current-turn inventory evidence;
+- recognized present spans are excluded from future scanning regardless of
+  evidence, while a later future clause remains independently unsafe;
+- present grammar covers bounded SKU/quantity positive and negative stock
+  statuses without widening into general factual-claim filtering;
+- future checks distinguish strong stock words from weak warehouse context;
+  explicit delivery wins over warehouse alone, but explicit stock, inventory,
+  availability, available, unavailable, out-of-stock, and mixed
+  stock-and-delivery objects remain unsafe;
+- the shared smoke evaluator imports the same unverified-present classifier and
+  reports a distinct failure reason.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py -q --tb=short
+uv run pytest tests/test_llm_engine.py -q --tb=short -k 'preserves_tool_backed_present_stock_confirmation or rejects_present_stock_confirmation_without_tool_evidence or preserves_delivery_only_warehouse_check or removes_future_check_after_tool_backed_confirmation'
+uv run pytest tests/test_scripts_verify_model_routes.py -q --tb=short -k 'covers_review_regressions or rejects_unverified_present_stock_forms or rejects_re_review_stock_regressions or rejects_strong_future_stock_context or preserves_unrelated_delivery_check'
+```
+
+Results: `40 passed`; `18 passed, 348 deselected`; and
+`18 passed, 33 deselected`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `457 passed`.
+
+Fresh static checks:
+
+```text
+uv run ruff check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run ruff format --check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run mypy src/
+```
+
+Results: Ruff and format passed; Mypy passed over 163 source files.
+
 ## Remaining environment-level checks
 
 - Independent delta review.
