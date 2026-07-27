@@ -83,8 +83,10 @@ verification:
   - exact attempt-3 process_message and smoke RED reproducers: failed for the intended raw-output and false-negative reasons before implementation
   - three independent review regression reproducers: failed for the intended evidence-context and classifier-grammar reasons before review fixes
   - uv run pytest the eight focused review regression cases -q --tb=short: passed with 8 tests
+  - three re-review clause-boundary reproducers with negative controls: nine intended failures and eight passes before fixes
+  - uv run pytest the seventeen focused re-review cases -q --tb=short: passed with 17 tests
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 404 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 418 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/llm/grounding_output.py src/llm/engine.py: passed
@@ -125,6 +127,13 @@ evidence, including routes that run with copied dependency objects. Without
 that evidence the same claim fails closed. Explicit inventory-team promises and
 SKU-only showroom trials are now covered by the same shared classifier.
 
+The re-review correction generalizes that evidence allowance across bounded
+SKU/quantity present-confirmation forms while keeping it clause-local. Any later
+future-check clause is still removed, even in the same sentence. For delegated
+mixed-object checks, explicit stock or inventory now takes precedence over
+unrelated delivery wording; standalone delivery, dimension, and colour checks
+remain unchanged.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -147,10 +156,13 @@ tool-backed stock confirmation, quoted and unrelated checks, deterministic
 fallback, preserved model/token/cost metadata, and media selection from the
 enforced text. Review RED/GREEN additionally covers evidence-gated present
 stock confirmation, an explicit inventory-team future promise, and a SKU-only
-showroom trial at pure, `process_message()`, and smoke boundaries.
+showroom trial at pure, `process_message()`, and smoke boundaries. Re-review
+coverage locks two additional present-confirmation forms, same-sentence
+present-plus-future repair, mixed stock/delivery classification, and standalone
+unrelated-check controls.
 
-The eight review regressions passed; the complete three affected test files
-passed 404 tests. Focused Ruff, format, and production-path Mypy passed. The detailed
+The seventeen re-review cases passed; the complete three affected test files
+passed 418 tests. Focused Ruff, format, and production-path Mypy passed. The detailed
 commands and failure evidence are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.
 

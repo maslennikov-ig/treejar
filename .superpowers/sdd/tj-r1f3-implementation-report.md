@@ -144,6 +144,50 @@ uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/
 
 Result: `404 passed`.
 
+## Re-review clause-boundary correction
+
+The second independent review confirmed three more bounded classifier edges:
+
+1. Evidence-backed present confirmation was overfit to the colon wording and
+   rejected `I can confirm AX-E1 is currently in stock` plus the equivalent
+   quantity/SKU form.
+2. The prior allow span skipped a greedy direct match that also contained a
+   later `I will check inventory again later` clause.
+3. Mixed `check stock and delivery` was treated as unrelated because delivery
+   was evaluated before the explicit stock object.
+
+The focused RED command collected seventeen cases: nine failed for the intended
+reasons and eight existing/negative controls passed. It proved failures at the
+pure and `process_message()` boundaries, plus the mixed-object smoke false
+negative.
+
+The correction remains narrow:
+
+- the evidence allowance recognizes bounded present confirmation with
+  availability, SKU, and optional quantity forms;
+- only the completed present-confirmation span is masked before future
+  classification;
+- same-sentence bounded repair retains that confirmed span and removes the
+  later future clause;
+- explicit stock/inventory in a mixed check object wins unsafe classification,
+  while standalone delivery, dimension, and colour objects remain safe.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py::test_present_stock_confirmation_requires_current_turn_inventory_evidence tests/test_llm_grounding_output.py::test_confirmed_present_stock_does_not_authorize_later_future_check tests/test_llm_grounding_output.py::test_mixed_stock_and_delivery_check_is_unsafe_but_delivery_only_is_safe tests/test_llm_engine.py::test_process_message_preserves_tool_backed_present_stock_confirmation tests/test_llm_engine.py::test_process_message_removes_future_check_after_tool_backed_confirmation tests/test_llm_engine.py::test_process_message_repairs_review_regression_outputs tests/test_scripts_verify_model_routes.py::test_sales_case_evaluation_rejects_re_review_stock_regressions tests/test_scripts_verify_model_routes.py::test_sales_case_evaluation_preserves_unrelated_delivery_check -q --tb=short
+```
+
+Result: `17 passed`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `418 passed`.
+
 ## Remaining environment-level checks
 
 - Independent delta review.

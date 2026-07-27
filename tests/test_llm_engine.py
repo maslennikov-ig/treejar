@@ -2435,6 +2435,14 @@ async def test_process_message_uses_arabic_grounding_fallback(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "confirmed_reply",
+    [
+        "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm AX-E1 is currently in stock.",
+        "I can confirm that 7 AX-E1 units are currently in stock.",
+    ],
+)
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -2444,6 +2452,7 @@ async def test_process_message_preserves_tool_backed_present_stock_confirmation(
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
+    confirmed_reply: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -2453,7 +2462,6 @@ async def test_process_message_preserves_tool_backed_present_stock_confirmation(
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = "Test User"
     text = "I need a few workstations for my new office."
-    confirmed_reply = "I can confirm availability: 7 units are currently in stock."
     mock_build_history.return_value = _non_first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -2493,6 +2501,69 @@ async def test_process_message_preserves_tool_backed_present_stock_confirmation(
 
     assert response.text == confirmed_reply
     assert response.model == "mock-model"
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_removes_future_check_after_tool_backed_confirmation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    unsafe_reply = (
+        "I can confirm availability: 7 units are currently in stock, and I "
+        "will check inventory again later."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    zoho.get_stock.return_value = {
+        "sku": "AX-E1",
+        "stock_on_hand": 7,
+        "rate": 1073.0,
+        "currency_code": "AED",
+    }
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        run_deps = kwargs["deps"]
+        ctx = RunContext(
+            deps=run_deps,
+            retry=0,
+            messages=[],
+            prompt="",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+        await engine_module.get_stock(ctx, "AX-E1")
+        return _FakeAgentResult(unsafe_reply)
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "7 units are currently in stock" in response.text
+    assert "will check inventory" not in response.text.casefold()
     mock_run.assert_awaited_once()
 
 
@@ -2551,6 +2622,13 @@ async def test_process_message_rejects_present_stock_confirmation_without_tool_e
                 "experience the AX-E1 in person."
             ),
             "experience the AX-E1",
+        ),
+        (
+            (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "stock and delivery and get back to you."
+            ),
+            "will check stock",
         ),
     ],
 )

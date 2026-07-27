@@ -501,6 +501,51 @@ def test_sales_case_evaluation_covers_review_regressions() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I can confirm AX-E1 is currently in stock.",
+        "I can confirm that 7 AX-E1 units are currently in stock.",
+        (
+            "I can confirm availability: 7 units are currently in stock, and I "
+            "will check inventory again later."
+        ),
+        (
+            "Current stock is unconfirmed. Our inventory team will check stock "
+            "and delivery and get back to you."
+        ),
+    ],
+)
+def test_sales_case_evaluation_rejects_re_review_stock_regressions(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert result["passed"] is False
+    assert (
+        "reply promises a future stock check instead of using the tool"
+        in result["failures"]
+    )
+
+
+def test_sales_case_evaluation_preserves_unrelated_delivery_check() -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "delivery and get back to you."
+            ),
+        },
+    )
+
+    assert result == {"passed": True, "failures": []}
+
+
 def test_sales_evidence_record_keeps_only_auditable_synthetic_answer() -> None:
     case = SALES_CASES[0]
     answer = {

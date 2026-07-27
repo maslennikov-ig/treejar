@@ -36,9 +36,17 @@ def test_classify_grounding_output_finds_exact_attempt_3_violations() -> None:
     )
 
 
-def test_present_stock_confirmation_requires_current_turn_inventory_evidence() -> None:
-    text = "I can confirm availability: 7 units are currently in stock."
-
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm AX-E1 is currently in stock.",
+        "I can confirm that 7 AX-E1 units are currently in stock.",
+    ],
+)
+def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
+    text: str,
+) -> None:
     assert classify_grounding_output(text) == (GroundingViolation.FUTURE_STOCK_CHECK,)
     assert classify_grounding_output(text, inventory_confirmed=True) == ()
 
@@ -52,6 +60,36 @@ def test_present_stock_confirmation_requires_current_turn_inventory_evidence() -
     assert "unconfirmed" in rejected.text.casefold()
     assert confirmed.action is GroundingOutputAction.UNCHANGED
     assert confirmed.text == text
+
+
+def test_confirmed_present_stock_does_not_authorize_later_future_check() -> None:
+    text = (
+        "I can confirm availability: 7 units are currently in stock, and I "
+        "will check inventory again later."
+    )
+
+    assert classify_grounding_output(text, inventory_confirmed=True) == (
+        GroundingViolation.FUTURE_STOCK_CHECK,
+    )
+    result = enforce_grounding_output(
+        text,
+        language="en",
+        inventory_confirmed=True,
+    )
+    assert result.action is GroundingOutputAction.REPAIRED
+    assert result.text == "I can confirm availability: 7 units are currently in stock"
+    assert "will check" not in result.text.casefold()
+
+
+def test_mixed_stock_and_delivery_check_is_unsafe_but_delivery_only_is_safe() -> None:
+    mixed = "Our inventory team will check stock and delivery and get back to you."
+    delivery_only = (
+        "Current stock is unconfirmed. Our inventory team will check delivery "
+        "and get back to you."
+    )
+
+    assert classify_grounding_output(mixed) == (GroundingViolation.FUTURE_STOCK_CHECK,)
+    assert classify_grounding_output(delivery_only) == ()
 
 
 @pytest.mark.parametrize(
@@ -93,6 +131,10 @@ def test_classify_grounding_output_covers_review_regressions(
         (
             "Current stock is unconfirmed. Our team will check the workstation "
             "dimensions and get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our inventory team will check the "
+            "colour and get back to you."
         ),
         "Our manager will review the quotation and contact you.",
         "يمكنك زيارة معرضنا لتجربة جودة منتجاتنا.",

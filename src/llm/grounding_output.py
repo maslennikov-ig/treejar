@@ -87,9 +87,16 @@ _EN_TEAM_FUTURE_CHECK_RE = re.compile(
     r"(?:get back|contact|reply|respond|update)\b"
 )
 _EN_PRESENT_STOCK_CONFIRMATION_RE = re.compile(
-    r"\b(?:i|we)\s+can\s+confirm\s+availability\s*:\s*"
+    r"\b(?:i|we)\s+can\s+confirm(?:"
+    r"\s+availability\s*:\s*"
     r"(?:\d+\s+units?\s+are\s+)?(?:currently\s+)?"
-    r"(?:in stock|available)\b"
+    r"(?:in stock|available)"
+    r"|\s+(?:that\s+)?(?:\d+\s+)?"
+    r"(?=[a-z0-9-]*\d)(?=[a-z0-9-]*-)[a-z0-9-]+"
+    r"(?:\s+units?)?\s+(?:is|are)\s+(?:currently\s+)?"
+    r"(?:in stock|available)"
+    r")\b",
+    re.IGNORECASE,
 )
 _EN_UNRELATED_CHECK_OBJECT_RE = re.compile(
     r"\b(?:dimension|measurement|size|colour|color|finish|delivery|timeline|"
@@ -144,7 +151,7 @@ def _normalized(text: str) -> str:
 
 
 def _without_quoted_text(text: str) -> str:
-    return _QUOTED_TEXT_RE.sub(" ", text)
+    return _QUOTED_TEXT_RE.sub(lambda match: " " * len(match.group()), text)
 
 
 def _sentence_parts(text: str) -> list[str]:
@@ -200,10 +207,10 @@ def _has_meaningful_check_object(
     unrelated_context: re.Pattern[str],
     full_text_has_stock_context: bool,
 ) -> bool:
-    if unrelated_context.search(value):
-        return False
     if stock_context.search(value):
         return True
+    if unrelated_context.search(value):
+        return False
     residue = re.sub(
         r"\b(?:and|then|with|for|to|you|your|our|the|a|an|also|later|shortly)\b",
         " ",
@@ -233,19 +240,18 @@ def _has_future_stock_check(
         if inventory_confirmed
         else []
     )
+    future_text = list(normalized)
+    for start, end in present_confirmation_spans:
+        future_text[start:end] = " " * (end - start)
+    normalized_future = "".join(future_text)
     for pattern in (
         _EN_DIRECT_FUTURE_CHECK_RE,
         _EN_DELEGATED_FUTURE_CHECK_RE,
         _EN_TEAM_FUTURE_CHECK_RE,
     ):
-        for match in pattern.finditer(normalized):
-            if any(
-                start <= match.start() < end
-                for start, end in present_confirmation_spans
-            ):
-                continue
+        for match in pattern.finditer(normalized_future):
             if not _is_asserted_match(
-                normalized,
+                normalized_future,
                 match,
                 negation_pattern=_EN_NEGATION_RE,
             ):
@@ -274,6 +280,21 @@ def _has_future_stock_check(
             ):
                 return True
     return False
+
+
+def _confirmed_present_clause(
+    sentence: str,
+    *,
+    inventory_confirmed: bool,
+) -> str | None:
+    if not inventory_confirmed:
+        return None
+    visible = _without_quoted_text(sentence)
+    match = _EN_PRESENT_STOCK_CONFIRMATION_RE.search(visible)
+    if match is None:
+        return None
+    candidate = sentence[: match.end()].rstrip(" ,;،؛")
+    return candidate or None
 
 
 def _classify_sentence(
@@ -373,15 +394,25 @@ def enforce_grounding_output(
                 action=GroundingOutputAction.UNCHANGED,
             )
 
-        retained = [
-            sentence
-            for sentence in _sentence_parts(original)
-            if not _classify_sentence(
+        retained: list[str] = []
+        for sentence in _sentence_parts(original):
+            sentence_violations = _classify_sentence(
                 sentence,
                 full_text=original,
                 inventory_confirmed=inventory_confirmed,
             )
-        ]
+            if not sentence_violations:
+                retained.append(sentence)
+                continue
+            confirmed_clause = _confirmed_present_clause(
+                sentence,
+                inventory_confirmed=inventory_confirmed,
+            )
+            if confirmed_clause and not _classify(
+                confirmed_clause,
+                inventory_confirmed=inventory_confirmed,
+            ):
+                retained.append(confirmed_clause)
         repaired = " ".join(retained).strip()
         if repaired and not _classify(
             repaired,
