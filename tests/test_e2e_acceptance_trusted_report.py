@@ -53,6 +53,7 @@ def _build_verified_run(
     incomplete_turns: bool = False,
     missing_attempt_receipts: bool = False,
     missing_report_receipt: bool = False,
+    protected_attempt_digest_drift: bool = False,
 ):
     policy, execution, trusted = _modules()
     registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
@@ -206,6 +207,9 @@ def _build_verified_run(
                 "transaction_id": transaction_id,
                 "run_id": run_id,
                 "execution_id": identity,
+                "attempt_digest": (
+                    "0" * 64 if protected_attempt_digest_drift else attempt_digest
+                ),
                 "status": "committed",
                 "authorization_digest": authorization_digest,
                 "semantic_digest": semantic_digest,

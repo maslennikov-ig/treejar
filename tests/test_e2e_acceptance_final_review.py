@@ -321,3 +321,38 @@ def test_fixed_root_materializer_and_loader_register_structured_evidence(
     )
 
     assert entry.producer == "protected-structured-oracle"
+
+
+def test_runtime_has_no_replaceable_root_or_public_signer_api() -> None:
+    policy, _, trusted = _modules()
+
+    loader_parameters = inspect.signature(trusted._load_verified_run).parameters
+
+    assert tuple(loader_parameters) == ("registry", "run_id")
+    assert not hasattr(policy.TrustedAcceptanceRegistry, "_fixed_run_roots")
+    assert not hasattr(policy.TrustedAcceptanceRegistry, "open_materializer")
+    assert tuple(
+        inspect.signature(policy.TrustedAcceptanceRegistry.finalize_run).parameters
+    ) == ("self", "run_id")
+
+
+def test_runtime_has_no_local_or_caller_decisive_artifact_loader() -> None:
+    policy, _, _ = _modules()
+
+    for name in (
+        "_load_local_classifier_fixture",
+        "_load_classifier_artifact",
+        "_load_local_structured_fixture",
+        "_register_protected_structured_artifact",
+    ):
+        assert not hasattr(policy.TrustedAcceptanceRegistry, name)
+
+
+def test_attempt_digest_must_match_protected_commit(tmp_path: Path) -> None:
+    registry, _, _ = _build_verified_run(
+        tmp_path,
+        protected_attempt_digest_drift=True,
+    )
+
+    with pytest.raises(Exception, match="attempt.*digest|protected.*commit"):
+        registry.open_run(run_id="synthetic-trusted-run")
