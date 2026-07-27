@@ -27,7 +27,9 @@ COMMERCIAL_CAPABILITIES: dict[str, CommercialCapability] = {
         source="docs/faq.md question 8",
         instruction=(
             "Customers may visit the UAE showroom to experience product quality; "
-            "do not guarantee a particular product, appointment, or test setup."
+            "do not guarantee a particular product, appointment, or test setup, "
+            "and do not say or imply that a specific product will be available "
+            "to try."
         ),
     ),
     "project_samples": CommercialCapability(
@@ -102,6 +104,9 @@ proposed next step.
   into a guarantee.
 - Unknown or unconfirmed does not mean unavailable. If evidence is missing,
   say the detail is unconfirmed and use one verified tool, one useful clarification, or manager handoff.
+- When a required tool is available, invoke it silently in the current turn;
+  never offer or promise to check, confirm, look up, or verify it later. If the
+  tool cannot be invoked, state that the detail remains unconfirmed.
 - Do not infer medical, health, certification, warranty, performance, or other
   product outcomes from ordinary features unless the evidence explicitly states
   that outcome.

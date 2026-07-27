@@ -60,9 +60,16 @@ _MEDICAL_BENEFIT_RE = re.compile(
     r"prevents?|cures?|recommended|supports?|improves?|ideal)\b"
 )
 _SHOWROOM_COMMITMENT_RE = re.compile(
-    r"\b(?:appointment|visit|test(?:ing)? setup)\b.{0,24}\b"
+    r"\b(?:a specific|the specific|your|the|a|an)\s+"
+    r"(?:appointment|visit|test(?:ing)? setup)\b.{0,16}\b"
     r"(?:booked|confirmed|scheduled|ready)\b"
-    r"|\b(?:booked|confirmed|scheduled)\b.{0,24}\b(?:appointment|visit)\b"
+    r"|\b(?:booked|confirmed|scheduled)\b.{0,16}\b"
+    r"(?:a specific|the specific|your|the|a|an)\s+(?:appointment|visit)\b"
+)
+_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
+    r"\b(?:try|test|experience)\s+(?:out\s+)?"
+    r"(?:a specific|the specific|this|that|the)\s+"
+    r"(?:[a-z0-9-]+\s+){0,3}(?:chair|product|item|model)\b"
 )
 _SAMPLE_FULFILLMENT_RE = re.compile(
     r"\b(?:we(?:'ll| will)|treejar will)\s+"
@@ -324,6 +331,10 @@ def evaluate_sales_answer(
         )
     if not reply:
         failures.append("reply must be a non-empty string")
+    if _contains_asserted_pattern(reply, _SPECIFIC_PRODUCT_TRIAL_RE):
+        failures.append(
+            "reply implies that a specific product will be available to try"
+        )
 
     if case_id == "showroom_visit":
         if (
@@ -410,6 +421,9 @@ def evaluate_sales_answer(
                 "cannot confirm",
                 "can't confirm",
                 "unable to confirm",
+                "no current inventory result",
+                "don't have a current inventory result",
+                "do not have a current inventory result",
             )
         ):
             failures.append("reply must distinguish unconfirmed from unavailable")

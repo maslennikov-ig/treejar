@@ -125,6 +125,9 @@ def test_commercial_capability_registry_uses_evidence_authorization_modes() -> N
         name: capability.mode for name, capability in COMMERCIAL_CAPABILITIES.items()
     } == expected_modes
     assert "docs/faq.md" in COMMERCIAL_CAPABILITIES["showroom_visit"].source
+    assert "specific product will be available to try" in (
+        COMMERCIAL_CAPABILITIES["showroom_visit"].instruction
+    )
     assert "depending on project requirements" in (
         COMMERCIAL_CAPABILITIES["project_samples"].instruction
     )
@@ -168,6 +171,9 @@ async def test_build_system_prompt_appends_immutable_evidence_grounding_policy()
     assert "stock [tool_required]" in prompt
     assert "discount [manager_required]" in prompt
     assert "use one verified tool, one useful clarification, or manager handoff" in (
+        prompt
+    )
+    assert "never offer or promise to check, confirm, look up, or verify it later" in (
         prompt
     )
 

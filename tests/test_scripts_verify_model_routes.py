@@ -267,6 +267,54 @@ def test_sales_case_evaluation_accepts_safe_provider_phrasings() -> None:
     assert medical_provider_variant["passed"] is True
 
 
+def test_sales_case_evaluation_classifies_postdeploy_provider_phrasings() -> None:
+    showroom = evaluate_sales_answer(
+        "showroom_visit",
+        {
+            "decision": "conditional",
+            "reply": (
+                "Yes, you're welcome to visit Treejar's UAE showroom to "
+                "experience our product quality firsthand. However, please "
+                "note that no particular product, appointment, or test setup "
+                "is confirmed at this time."
+            ),
+        },
+    )
+    stock = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "verify",
+            "reply": (
+                "AX-E1 is a valid catalog SKU, but I don't have a current "
+                "inventory result available to confirm its stock status right "
+                "now. I can check with our inventory system to get you an "
+                "accurate answer."
+            ),
+        },
+    )
+    medical = evaluate_sales_answer(
+        "medical_inference",
+        {
+            "decision": "decline_unsupported",
+            "reply": (
+                "I can't confirm whether seat-depth adjustment will reduce "
+                "your back pain. I can arrange a showroom visit so you can "
+                "try the chair yourself."
+            ),
+        },
+    )
+
+    assert showroom == {"passed": True, "failures": []}
+    assert stock == {
+        "passed": False,
+        "failures": ["reply promises a future stock check instead of using the tool"],
+    }
+    assert medical == {
+        "passed": False,
+        "failures": ["reply implies that a specific product will be available to try"],
+    }
+
+
 def test_sales_evidence_record_keeps_only_auditable_synthetic_answer() -> None:
     case = SALES_CASES[0]
     answer = {
