@@ -1,0 +1,68 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-5e3k",
+  "goal_id": "tj-5e3k",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "noor-extended-model-battle",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "core-sales-model",
+      "fast-system-model",
+      "openrouter-evaluation",
+      "structured-output"
+    ],
+    "risk_models": [
+      "performance-quality",
+      "evaluation-bias",
+      "external-paid-api",
+      "structured-output-correctness"
+    ],
+    "test_environments": [
+      "local-synthetic-harness",
+      "openrouter-inference"
+    ],
+    "rollback_boundary": "no-production-mutation-local-evidence-only",
+    "acceptance_proofs": [
+      "sales-four-candidate-matrix",
+      "system-four-candidate-matrix",
+      "blinded-quality-review",
+      "route-winner-gates"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-5e3k",
+    "source_digest": "93a85ea693715aef6d4eba75f07608c5a8c0a4ef70e317e36fa8d902b5e1c64b",
+    "criteria": [
+      {
+        "criterion_id": "AC-1",
+        "text": "Run one reproducible production-safe benchmark round with two repetitions per case and freshly rerun all baselines. Core sales candidates: z-ai/glm-5, z-ai/glm-5.2, deepseek/deepseek-v4-flash, and deepseek/deepseek-v4-pro. Fast/system candidates: nex-agi/nex-n2-mini, z-ai/glm-5.2, deepseek/deepseek-v4-flash, and deepseek/deepseek-v4-pro. Use the accepted 12 sales and 24 system synthetic cases, identical route settings, sequential calls, blind sales review before unblinding, structured JSON/schema and semantic gates, latency and reliability evidence, and preserve raw artifacts. Select a route recommendation only after hard correctness gates; document practical rankings even when no candidate passes every release gate. Do not change production routing or use customer data.",
+        "text_digest": "adf9c0c382333c450cef93a4d4b34a07ba6a0bb46076114680c6a61455b8721b"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-5e3k/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "93a85ea693715aef6d4eba75f07608c5a8c0a4ef70e317e36fa8d902b5e1c64b",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-5e3k",
+      "stream_owner": "model-battle-stage-owner",
+      "artifact_path": ".codex/stages/tj-5e3k/artifacts/tj-5e3k.md"
+    }
+  ]
+}
+

@@ -2,8 +2,8 @@
 
 Updated: 2026-07-27
 Current branch: `main`
-Current stage id: `tj-0j7o`
-Current stage status: accepted; comparative model choices recorded
+Current stage id: `tj-5e3k`
+Current stage status: in progress; four-candidate model battle
 
 ## Current Truth
 
@@ -64,11 +64,17 @@ Current stage status: accepted; comparative model choices recorded
   the semantic threshold. Production routing remains unchanged.
 - Durable report: `docs/reports/model-battle-2026-07-27.md`; raw and derived
   evidence: `.codex/stages/tj-0j7o/results/`.
+- Stage `tj-5e3k` extends both routes with `z-ai/glm-5.2` and
+  `deepseek/deepseek-v4-pro`. Both exact IDs and all required structured/tool
+  parameters are present in the live OpenRouter catalog.
+- The new stage reruns every baseline in the same provider window: four sales
+  candidates and four fast/system candidates, using the accepted cases,
+  two repetitions, anonymous sales review, and unchanged hard gates.
 
 ## Boundary and Scope Ledger
 
-- One cohesive stage owned the shared OpenRouter evaluation, correctness,
-  blinding, and evidence boundary.
+- One cohesive active stage owns the shared OpenRouter evaluation,
+  correctness, blinding, and evidence boundary.
 - Root owned implementation and sequential inference. One docs specialist
   reviewed provider/methodology risk, and one context-isolated QA reviewer
   scored anonymous A/B sales responses without reading the model key.
@@ -78,20 +84,19 @@ Current stage status: accepted; comparative model choices recorded
 
 ## Next recommended
 
-Next stage id: `tj-0j7o`
+Next stage id: `tj-5e3k`
 
-Recommended action: start `tj-j13d` to replace the stale Xiaomi fast default
-with guarded DeepSeek V4 Flash locally, add focused fact/red-flag/FAQ/summary
-contracts, and rerun the system suite. `tj-b93r` separately owns the GLM-5
-weak-catalog grounding guard. Deployment remains separately gated.
+Recommended action: complete the four-candidate synthetic benchmark and use
+its new route recommendations to re-evaluate `tj-j13d`. `tj-b93r` separately
+owns the GLM-5 weak-catalog grounding guard. Deployment remains separately
+gated.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-j13d`. Preserve the accepted `tj-0j7o`
-evidence. Configure DeepSeek V4 Flash for fast structured work with reasoning
-disabled and validation/fallback, add focused failing-case contracts, and
-rerun the fast/system benchmark. Keep the GLM-5 empty-catalog guard in
-`tj-b93r`. Ask before deployment or live traffic.
+Use $orchestrator-stage for `tj-5e3k`. Preserve accepted `tj-0j7o` evidence,
+rerun all four candidates per route under the same conditions, finish the
+anonymous sales review before unblinding, and record strict and practical
+rankings. Ask before deployment or live traffic.
 
 ## Approval gates
 
