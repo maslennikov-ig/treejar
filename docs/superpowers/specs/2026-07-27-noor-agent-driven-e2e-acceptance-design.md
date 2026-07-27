@@ -62,16 +62,21 @@ rewriting the original requirement.
 
 Before scenario planning, freeze the goal-level
 `.codex/goals/tj-ee5f/scope-criterion-snapshot.json` using the repository
-`scope-criterion-snapshot/v1` contract. Each normalized criterion must retain:
+`scope-criterion-snapshot/v1` contract. This immutable scope anchor contains
+only the stable criterion ID, exact normalized criterion text, its text digest,
+and the source-set digest required by the repository contract. It is never
+updated with planning or execution state.
 
-- a stable criterion ID, exact source path/section, source text digest, and
-  current precedence decision;
-- an observable oracle and applicable freshness rule;
-- its owning scenario or evidence block;
-- one final disposition: `PASS`, `FAIL`, `BLOCKED`,
-  `EXCLUDED_BY_CLIENT`, or `REUSED_EXACT_EVIDENCE`.
+A separate versioned traceability manifest maps each anchored criterion to its
+exact source path/section and provenance digest, current precedence decision,
+observable oracle, freshness policy, and owning scenario or evidence block.
+Per-run results then record the evidence mode (`fresh`, `reused_exact`, or
+`external_gate`) independently from the outcome (`PASS`, `FAIL`, `BLOCKED`, or
+`EXCLUDED_BY_CLIENT`).
 
-An external gate, exclusion, reused result, or unexecuted criterion is coverage
+Reused evidence counts toward acceptance only when exact-identity validation
+passes and the preserved result is `PASS`. An external gate, exclusion,
+blocked or unexecuted criterion, and a reused failed result are coverage
 information, not a passing result.
 
 ## 3. Chosen Test Architecture
@@ -470,14 +475,18 @@ side-effect manifest keyed by scenario and subsystem. Track every:
 - referral/reward artifact when that block is authorized;
 - local conversation, escalation, audit, and feedback record.
 
-Each entry records the external/local ID, creation path, allowed terminal
-disposition, cleanup owner and authority, follow-up suppression, final
-readback, and one of `voided`, `closed`, `resolved`,
-`retained_as_test_evidence`, or `blocked`.
+Each entry records the external/local ID, creation path, cleanup owner and
+authority, follow-up suppression, final readback, and disposition. Safe
+terminal dispositions are `voided`, `closed`, `resolved`, or
+`retained_as_test_evidence`. Retention is terminal only when it was
+pre-authorized and records a responsible owner, expiry/final-disposition date,
+verified follow-up suppression, and final readback.
 
-An unlisted artifact, missing final readback, or missing disposition blocks
-closeout. A retained external record is reported as retained test evidence and
-never described as cleaned.
+`cleanup_pending`, `cleanup_blocked`, and `unknown` are nonterminal states.
+Any nonterminal state, unlisted artifact, missing final readback, or missing
+disposition blocks closeout and overall acceptance until resolved or
+re-authorized under a new run boundary. A retained external record is reported
+as retained test evidence and never described as cleaned.
 
 ### 6.5 Client deliverable
 
@@ -563,7 +572,8 @@ Use three complementary layers:
 3. **Sales quality:** the current 15-rule weighted evaluation, stage-aware
    applicability, usefulness, clarity, tone, and next-step quality.
 
-Each frozen criterion also declares an evidence mode:
+The traceability manifest assigns each anchored criterion an evidence mode for
+the planned run:
 
 - `fresh`: must run against the target release;
 - `reused_exact`: may reuse prior evidence only when code, environment,
@@ -591,13 +601,14 @@ latency and local delivery latency are separated when trace evidence permits.
 
 The report publishes three independent rollups:
 
-- `coverage_complete`: every frozen criterion has an owner and disposition;
+- `coverage_complete`: every criterion in the immutable scope anchor appears
+  in the traceability manifest and per-run results with an owner and outcome;
 - `execution_complete`: every authorized scenario/evidence block either ran or
-  has an explicit `BLOCKED`/`EXCLUDED_BY_CLIENT` disposition;
-- `requirements_met`: every in-scope criterion is `PASS` or
-  `REUSED_EXACT_EVIDENCE`; any `FAIL`, `BLOCKED`, or `EXCLUDED_BY_CLIENT`
-  disposition makes this rollup false, and no failed contractual target is
-  counted as success.
+  has an explicit `BLOCKED`/`EXCLUDED_BY_CLIENT` outcome;
+- `requirements_met`: every in-scope criterion outcome is `PASS`; the evidence
+  mode may be `fresh`, valid `reused_exact`, or completed `external_gate`.
+  Any `FAIL`, `BLOCKED`, or `EXCLUDED_BY_CLIENT` outcome makes this rollup
+  false, and no failed contractual target is counted as success.
 
 Overall acceptance requires:
 
@@ -607,8 +618,8 @@ Overall acceptance requires:
 - no unresolved in-scope P0/P1 on the exact target release;
 - every found-and-fixed defect shown with before/after evidence;
 - zero unintended pending synthetic escalations or active test workflows;
-- every expected external side effect has a terminal ledger disposition and no
-  unlisted external artifact remains;
+- every expected external side effect has a verified safe terminal ledger
+  disposition, with no nonterminal or unlisted external artifact remaining;
 - protected raw evidence and complete redacted client evidence;
 - client report consistency with structured results.
 

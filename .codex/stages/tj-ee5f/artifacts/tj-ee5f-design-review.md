@@ -14,7 +14,7 @@ task_id: tj-ee5f-design-review
 epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f
-milestone: agent-driven E2E acceptance design review
+milestone: agent-driven E2E acceptance design and resolution review
 milestone_status: replan-required
 agent_type: improvement_reviewer
 subagent_model: inherit_orchestrator
@@ -29,6 +29,7 @@ write_zone:
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f-design-review.md
 success_criteria:
   - identify decision-affecting traceability, isolation, evidence, workflow, reporting, authorization, and feasibility gaps
+  - verify the six original findings against revised design commit 103f163
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -69,9 +70,10 @@ invariants:
   - rollback
 docs_impact: docs-only
 docs_reviewed: updated
-docs_review_notes: review artifact records required design corrections; source design was intentionally not edited
+docs_review_notes: review artifact records the original findings and revised-design resolution review; source design was intentionally not edited
 verification:
   - source design commit 21bebc2 inspected: passed
+  - revised design commit 103f163 delta inspected: passed
   - referenced design Beads status audit: passed
   - git diff --check on review artifact: passed
   - scripts/orchestration/validate_artifact.py on review artifact: passed
@@ -286,7 +288,7 @@ and should be implemented now or tracked in Beads with a bounded reason.
 - Preparation correctly authorizes no live, paid, customer, deployment, or
   business mutation.
 
-# Verdict
+# Original Verdict (21bebc2)
 
 ## Summary
 
@@ -312,3 +314,121 @@ corrections. The source design was intentionally not edited.
   artifacts and Beads state were sufficient for this review.
 - No dependency or library recommendation is made; documentation lookup was not
   applicable.
+
+# Resolution Review (103f163)
+
+## New P0-P2 Findings
+
+### P1 — The immutable scope anchor is overloaded with mutable evidence state
+
+- **Current revised approach:** Design lines 63-75 require the goal-level
+  `scope-criterion-snapshot/v1` to retain oracle, freshness, owner, and one
+  final result disposition. Lines 566-600 then use a separate evidence-mode
+  vocabulary but count `REUSED_EXACT_EVIDENCE` as a passing result, while line
+  74 says a reused result is coverage information rather than a pass.
+- **Repository evidence:** `.codex/scope-criterion-snapshot-template.json`
+  defines the anchor as criterion ID/text/digest from Beads.
+  `scripts/orchestration/lint_stage_sizing.py:269-279` requires the anchor to
+  remain byte-identical to its Git creation blob for material replans. Final
+  dispositions are necessarily learned after that immutable snapshot is
+  created.
+- **Impact:** An implementation following the design literally must either
+  mutate an immutable scope anchor and fail repo validation, or pre-populate
+  unknown results. It also conflates three independent axes—criterion identity,
+  evidence mode, and outcome—so a reused failed result could be treated as
+  requirements met.
+- **Required correction:** Keep the goal snapshot immutable and limited to the
+  exact criterion identity/text/digest contract. Put source provenance,
+  precedence, oracle, freshness, and scenario ownership in a separate
+  traceability manifest; put final `PASS`/`FAIL`/`BLOCKED`/`EXCLUDED_BY_CLIENT`
+  in run results. `fresh`/`reused_exact`/`external_gate` remains a separate
+  evidence mode, and reused evidence counts only when its preserved outcome is
+  `PASS`.
+- **Promotion target:** **design edit** before implementation planning.
+- **Confidence/classification:** High; **must-fix design blocker**.
+
+### P1 — `blocked` is not a safe terminal side-effect disposition
+
+- **Current revised approach:** Design lines 473-480 allow side-effect ledger
+  disposition `blocked`, while lines 602-613 require only a terminal
+  disposition and no unlisted artifact for overall acceptance.
+- **Impact:** Cleanup/readback can be blocked while a quotation, CRM deal,
+  scheduled follow-up, or callback remains active or unknown. Treating that as
+  terminal can satisfy the written acceptance gate without proving operational
+  safety.
+- **Required correction:** Limit safe terminal dispositions to verified states
+  such as `voided`, `closed`, `resolved`, or pre-authorized
+  `retained_as_test_evidence` with follow-up suppression, owner, and expiry.
+  Keep `blocked` as a nonterminal ledger/result state that blocks closeout and
+  overall acceptance until resolved or explicitly re-authorized under a new
+  run boundary.
+- **Promotion target:** **design edit** before implementation planning.
+- **Confidence/classification:** High; **must-fix design blocker**.
+
+No other new P0-P2 issue was found in the bounded delta.
+
+## Six Original Finding Dispositions
+
+1. **Acceptance semantics and traceability — PARTIALLY RESOLVED.** The revised
+   design adds explicit original criteria, three honest rollups, and non-passing
+   gate/exclusion behavior. The remaining blocker is the new schema/state
+   conflation above, not the rollup intent.
+2. **Provider ingress evidence tiers — RESOLVED.** Lines 81-124 and 151-164
+   correctly label synthetic webhook capsules and require separately authorized
+   EN/AR provider-originated canaries or a client-visible `BLOCKED` limitation.
+3. **External side-effect ledger — PARTIALLY RESOLVED.** Lines 461-480 and
+   646-648 cover the required subsystems, baseline, ownership, suppression, and
+   readback. The `blocked` terminal-state defect above must still be removed.
+4. **Immutable acceptance evidence, isolated fix/delivery/retest ownership, and
+   `tj-r1f3` gate — RESOLVED.** Lines 138-149, 535-554 separate open risks,
+   preserve failed evidence, isolate fixes, authorize delivery separately, and
+   create a new release-bound retest attempt.
+5. **Drift-proof authorization and retention — RESOLVED.** Lines 398-413,
+   449-459, and 621-648 bind expected/actual identity, expiry, executor, quotas,
+   abort-on-drift, retention ownership, hashes, redaction validation, and
+   lifecycle disposition.
+6. **Exact evidence reuse and adaptive-agent reproducibility — RESOLVED.**
+   Lines 378-392 and 566-577 version tester/judge/harness inputs, preserve
+   adaptive deviations, bound repeats, require fresh release/core-flow proof,
+   and restrict reuse to exact-identity evidence.
+
+## Delta Verification Evidence
+
+- Exact target: `git rev-parse HEAD` =
+  `103f163b825b001d8554f063570d64cdba329937`.
+- Exact design delta inspected:
+  `git diff 21bebc2..103f163 --
+  docs/superpowers/specs/2026-07-27-noor-agent-driven-e2e-acceptance-design.md`.
+- Revised design lines inspected: 63-75, 81-164, 355-480, 502-648, and
+  675-685.
+- Repository contract evidence inspected:
+  `.codex/scope-criterion-snapshot-template.json`,
+  `.codex/stage-manifest-template.json`, and
+  `scripts/orchestration/lint_stage_sizing.py:148-192,216-280`.
+- No protected raw evidence, live/remote system, provider, deployment, product
+  code, Beads mutation, or broader backlog review was needed.
+
+## Final Verdict
+
+**REVISE.** Four original findings are resolved; findings 1 and 3 are
+substantively improved but remain blocked by the two new P1 state-model errors.
+Both corrections are narrow design edits. No product-code change or wider
+investigation is required before implementation planning can resume.
+
+## Docs Reviewed
+
+`docs-reviewed: updated` — the artifact now records the exact revised-design
+delta, six dispositions, and two narrow required corrections. The design itself
+was not edited by this reviewer.
+
+## Graph Reviewed
+
+`graph-reviewed: no-change-needed` — Graphify remains unconfigured and
+`graphify-out/GRAPH_REPORT.md` is absent.
+
+## Explicit Defers
+
+- The two required design edits, implementation plan, Beads dependency changes,
+  and any artifact generation remain with the root orchestrator.
+- Review stops at the bounded delta; no wider requirements or backlog audit was
+  performed.
