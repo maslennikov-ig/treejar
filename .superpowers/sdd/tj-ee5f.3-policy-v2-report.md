@@ -25,13 +25,21 @@ artifacts with exact seven-phase hash chains, removes caller-selected protected
 roots, binds authorization to the immutable Task1 bundle, and derives the typed
 report from protected execution/report-source evidence.
 
+The alternate-path correction removes every runtime root-injection seam. The
+only public verifier accepts `run_id`; the low-level loader requires a private
+registry capability. Protected producer receipts now bind every attempt to its
+run, execution, raw/tracked bytes, semantic result, authorization, protected
+commit, and unique phase head. The same fixed-root materializer/receipt pattern
+protects decisive structured evidence and binds the report source to the full
+report payload and verified snapshot.
+
 ## Validation
 
-- Final focused trusted execution/report surface: 64 passed.
-- Complete acceptance surface: 166 passed; only the two frozen Task1 checks
+- Final focused trusted execution/report surface: 73 passed.
+- Complete acceptance surface: 175 passed; only the two frozen Task1 checks
   failed when included.
 - Full repository excluding two frozen Task 1 Beads provenance checks:
-  1790 passed, 19 skipped.
+  1799 passed, 19 skipped.
 - Ruff/format, full `src` mypy, strict acceptance-module mypy, and process
   verification passed.
 - Artifact validation and stage sizing passed. Stage readiness remains with the
