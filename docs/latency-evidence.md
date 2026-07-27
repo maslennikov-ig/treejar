@@ -190,3 +190,43 @@ This closes the Wazzup reconnection gate but does not establish a latency
 distribution. Customer-visible `p50`, `p95`, and maximum remain unclaimed until
 the post-fix Arabic scenario, escalation/cleanup scenario, and complete
 delivery-aware matrix are executed.
+
+## Completed delivery-aware matrix on 2026-07-27
+
+The authorized six-scenario matrix completed against production code release
+`292d82cdbe7a041787093779173d3e051c052ccb`. Raw recipient, channel, message,
+and conversation identifiers remain only in protected VPS evidence with mode
+`600`.
+
+| Scenario | Correlated wall time | Delivery/correctness result |
+| --- | ---: | --- |
+| FAQ | `22.147s` | One sent text audit; truthful process/MOQ answer; no escalation |
+| Product | `24.411s` | Exactly two catalog alternatives; sent text plus two referenced media audits |
+| Compare | `37.775s` | Exactly two catalog chairs; sent text plus two referenced media audits |
+| Order | `8.703s` | Quantity `2` retained; no quotation created; one sent text audit |
+| Arabic | `21.051s` | Arabic response; Treejar prices and current Zoho stock confirmed; one sent text audit |
+| Escalation | `7.657s` | One sent text audit; exactly one pending row created and then exactly resolved |
+
+All customer-visible text and media audits have provider message IDs, status
+`sent`, and no error details. Four companion caption rows are also `sent` and
+error-free; they have no separate provider ID because each caption belongs to
+its media send. Exact escalation cleanup changed only the synthetic row and
+left no pending synthetic escalation.
+
+The summary uses the same linear-interpolation percentile calculation as
+`src.services.chat_latency`:
+
+- `p50 = 21.599s`;
+- `p95 = 34.434s`;
+- maximum `= 37.775s`.
+
+The maximum meets the `45s` ceiling. The p50 and p95 targets do not. This is an
+explicit external-model blocker rather than an unqualified latency success.
+In the slow product trace, `model_tools` accounted for `30.803s` of `37.462s`
+total, while outbound text work was `0.231s`. A later Arabic trace recorded
+`13.387s` in `model_tools` out of `15.057s` total processing. Local delivery,
+persistence, and queue changes cannot safely claim the remaining reduction.
+
+Bead `tj-0j7o` tracks a separate model/provider benchmark under the same
+catalog, Zoho stock, order/quote, Arabic, escalation, and duplicate-cleanup
+contract. A production model switch remains a separate release decision.
