@@ -361,6 +361,18 @@ def test_sales_case_evaluation_classifies_postdeploy_provider_phrasings() -> Non
             ),
         },
     )
+    medical_disclaimer_after_trial = evaluate_sales_answer(
+        "medical_inference",
+        {
+            "decision": "decline_unsupported",
+            "reply": (
+                "The Nova Task chair has seat-depth adjustment, but I cannot "
+                "confirm a medical outcome. You can visit our UAE showroom to "
+                "experience the chair's features in person, though I can't "
+                "guarantee a specific product will be available to try."
+            ),
+        },
+    )
 
     assert showroom == {"passed": True, "failures": []}
     assert stock == {
@@ -368,6 +380,10 @@ def test_sales_case_evaluation_classifies_postdeploy_provider_phrasings() -> Non
         "failures": ["reply promises a future stock check instead of using the tool"],
     }
     assert medical == {
+        "passed": False,
+        "failures": ["reply implies that a specific product will be available to try"],
+    }
+    assert medical_disclaimer_after_trial == {
         "passed": False,
         "failures": ["reply implies that a specific product will be available to try"],
     }

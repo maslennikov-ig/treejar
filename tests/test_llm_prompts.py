@@ -176,6 +176,15 @@ async def test_build_system_prompt_appends_immutable_evidence_grounding_policy()
     assert "never offer or promise to check, confirm, look up, or verify it later" in (
         prompt
     )
+    normalized_prompt = " ".join(prompt.split())
+    assert (
+        "A later disclaimer does not cancel an earlier positive promise"
+        in normalized_prompt
+    )
+    assert (
+        "do not suggest a showroom visit or trying a product as evidence or as "
+        "a substitute for medical evidence"
+    ) in normalized_prompt
 
 
 @pytest.mark.asyncio
