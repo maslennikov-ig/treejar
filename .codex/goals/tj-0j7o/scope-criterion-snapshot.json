@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-0j7o",
+  "source_kind": "beads",
+  "source_id": "tj-0j7o",
+  "source_digest": "86ace849aae6d763f084455c2efe48336ab845489fa63532f621b2e0deedb3e5",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "Run a reproducible, production-safe balanced benchmark with two repetitions per case: (1) compare z-ai/glm-5 with deepseek/deepseek-v4-flash on sales correctness, tool behavior, sales quality, and latency; (2) compare nex-agi/nex-n2-mini with deepseek/deepseek-v4-flash on structured JSON/schema correctness, semantic accuracy, helper task quality, tool arguments, reliability, and latency. Use synthetic/fixed evidence only, preserve blinded raw artifacts and scoring rules, select a winner for each route only when hard correctness gates pass, and do not change production routing without separate authorization.",
+      "text_digest": "5800a885810b1f025df3acaf3d9ba8551a19f4838f35a83c7b603f7634b6be9c"
+    }
+  ]
+}

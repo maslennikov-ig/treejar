@@ -2,8 +2,8 @@
 
 Updated: 2026-07-27
 Current branch: `main`
-Current stage id: `tj-15m`
-Current stage status: accepted; delivery-aware matrix complete
+Current stage id: `tj-0j7o`
+Current stage status: in progress; balanced model battle approved
 
 ## Current Truth
 
@@ -49,6 +49,12 @@ Current stage status: accepted; delivery-aware matrix complete
 - Raw recipient/channel/conversation evidence is protected on the VPS with mode
   `600` and is not stored in Git, Beads, handoff, or public logs.
 - Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
+- Model battle `tj-0j7o` is active. The approved core comparison is
+  `z-ai/glm-5` versus `deepseek/deepseek-v4-flash`; the fast/system comparison
+  is `nex-agi/nex-n2-mini` versus `deepseek/deepseek-v4-flash`.
+- The benchmark uses fixed synthetic evidence, two repetitions per case,
+  correctness-first winner gates, blinded sales review, and sequential latency
+  measurements. Production routing remains unchanged.
 
 ## Boundary and Scope Ledger
 
@@ -64,19 +70,17 @@ Current stage status: accepted; delivery-aware matrix complete
 
 Next stage id: `tj-0j7o`
 
-Recommended action: benchmark safe core-chat model/provider or routing
-candidates against the same ordinary-text correctness contract. Do not switch
-production model/provider until a candidate preserves catalog price source,
-Zoho stock truth, order/quote/escalation behavior, Arabic quality, and
-duplicate cleanup and receives explicit release authorization.
+Recommended action: implement and run the approved balanced sales and
+fast/system battles, select route winners through hard correctness gates, and
+publish the evidence without changing production routing.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-0j7o`. Treat `tj-15m` as accepted immutable
-history. Compare viable core-chat model/provider or routing candidates using
-the existing six-scenario correctness contract and privacy-safe latency phases.
-Keep the work local/read-only until a release candidate is evidence-backed;
-ask before any production model/provider switch or new live matrix.
+Use $orchestrator-stage for `tj-0j7o`. Treat the approved balanced methodology
+and paid OpenRouter calls as current scope. Finish the shared synthetic harness,
+run both two-repeat battles sequentially, record blinded sales review and
+structured-output evidence, and choose one winner per route. Do not switch
+production routing.
 
 ## Approval gates
 
@@ -88,8 +92,8 @@ ask before any production model/provider switch or new live matrix.
 
 ## Explicit defers
 
-- `tj-0j7o`: model/provider benchmark; separate quality and release boundary
-  created from the accepted external-model latency blocker.
+- `tj-0j7o`: active balanced model battle; production adoption remains outside
+  this stage.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy
   `tj-9q0`, and Zoho UTM mapping `tj-hye` remain separate external gates.
