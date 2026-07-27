@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import math
 import random
@@ -26,6 +25,28 @@ from src.core.config import settings
 
 SALES_MODELS = ("z-ai/glm-5", "deepseek/deepseek-v4-flash")
 SYSTEM_MODELS = ("nex-agi/nex-n2-mini", "deepseek/deepseek-v4-flash")
+ORIGINAL_PROFILE = "original"
+EXTENDED_PROFILE = "extended-2026-07-27"
+MODEL_PROFILES = {
+    ORIGINAL_PROFILE: {
+        "sales": SALES_MODELS,
+        "system": SYSTEM_MODELS,
+    },
+    EXTENDED_PROFILE: {
+        "sales": (
+            "z-ai/glm-5",
+            "z-ai/glm-5.2",
+            "deepseek/deepseek-v4-flash",
+            "deepseek/deepseek-v4-pro",
+        ),
+        "system": (
+            "nex-agi/nex-n2-mini",
+            "z-ai/glm-5.2",
+            "deepseek/deepseek-v4-flash",
+            "deepseek/deepseek-v4-pro",
+        ),
+    },
+}
 DEFAULT_SEED = 27072026
 _RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 
@@ -275,6 +296,19 @@ def percentile(values: Sequence[float], quantile: float) -> float:
     return float(ordered[lower] + (ordered[upper] - ordered[lower]) * weight)
 
 
+def models_for_profile(profile: str, suite: str) -> tuple[str, ...]:
+    """Return the immutable candidate tuple for one benchmark route."""
+
+    try:
+        profile_suites = MODEL_PROFILES[profile]
+    except KeyError as exc:
+        raise ValueError(f"Unknown benchmark profile: {profile}") from exc
+    try:
+        return profile_suites[suite]
+    except KeyError as exc:
+        raise ValueError(f"Unknown suite: {suite}") from exc
+
+
 def build_blind_pair(
     *,
     case_id: str,
@@ -282,15 +316,15 @@ def build_blind_pair(
     candidates: Mapping[str, str],
     seed: int,
 ) -> dict[str, Any]:
-    """Build a deterministic A/B pair while keeping the reveal separateable."""
+    """Build a deterministic anonymous group with a separate reveal key."""
 
-    if len(candidates) != 2:
-        raise ValueError("Blinded review requires exactly two candidates")
+    if len(candidates) < 2:
+        raise ValueError("Blinded review requires at least two candidates")
+    if len(candidates) > 26:
+        raise ValueError("Blinded review supports at most 26 candidates")
     model_names = sorted(candidates)
-    material = f"{seed}:{case_id}:{repetition}".encode()
-    if hashlib.sha256(material).digest()[0] % 2:
-        model_names.reverse()
-    reveal = {"A": model_names[0], "B": model_names[1]}
+    random.Random(f"{seed}:{case_id}:{repetition}").shuffle(model_names)
+    reveal = {chr(ord("A") + index): model for index, model in enumerate(model_names)}
     return {
         "case_id": case_id,
         "repetition": repetition,
@@ -322,7 +356,9 @@ def evaluate_blind_reviews(
         reveal = key_row.get("reveal")
         if not isinstance(scores, Mapping) or not isinstance(reveal, Mapping):
             raise ValueError(f"{pair}: missing scores or reveal mapping")
-        for label in ("A", "B"):
+        if set(scores) != set(reveal):
+            raise ValueError(f"{pair}: score labels do not match reveal labels")
+        for label in sorted(reveal):
             label_review = scores.get(label)
             model = reveal.get(label)
             if not isinstance(label_review, Mapping) or not isinstance(model, str):
@@ -378,34 +414,45 @@ def select_winner(
 ) -> WinnerDecision:
     """Select a safe winner using hard gates before weighted efficiency."""
 
-    if len(candidates) != 2:
-        raise ValueError("Winner selection requires exactly two candidates")
+    if len(candidates) < 2:
+        raise ValueError("Winner selection requires at least two candidates")
     safe = [candidate for candidate in candidates if candidate.hard_gates_passed]
     if not safe:
         return WinnerDecision(
             outcome="no_safe_replacement",
             winner=None,
-            reason="Both candidates failed at least one hard gate.",
+            reason="All candidates failed at least one hard gate.",
         )
     if len(safe) == 1:
         return WinnerDecision(
             outcome="winner",
             winner=safe[0].model,
-            reason="The other candidate failed at least one hard gate.",
+            reason="Every other candidate failed at least one hard gate.",
         )
 
     ordered = sorted(safe, key=lambda item: item.weighted_score, reverse=True)
-    score_gap = ordered[0].weighted_score - ordered[1].weighted_score
+    leader = ordered[0]
+    score_gap = leader.weighted_score - ordered[1].weighted_score
     if score_gap >= tie_band_points:
         return WinnerDecision(
             outcome="winner",
-            winner=ordered[0].model,
+            winner=leader.model,
             reason=f"Weighted score leads by {score_gap:.2f} points.",
         )
 
-    reliability_gap = abs(ordered[0].reliability - ordered[1].reliability)
+    contenders = [
+        candidate
+        for candidate in ordered
+        if leader.weighted_score - candidate.weighted_score < tie_band_points
+    ]
+    by_reliability = sorted(
+        contenders,
+        key=lambda item: item.reliability,
+        reverse=True,
+    )
+    reliability_gap = by_reliability[0].reliability - by_reliability[1].reliability
     if reliability_gap >= material_reliability_gap:
-        reliable = max(ordered, key=lambda item: item.reliability)
+        reliable = by_reliability[0]
         return WinnerDecision(
             outcome="winner",
             winner=reliable.model,
@@ -415,9 +462,10 @@ def select_winner(
             ),
         )
 
-    faster = min(ordered, key=lambda item: item.p95_ms)
-    slower = max(ordered, key=lambda item: item.p95_ms)
-    if faster.p95_ms <= slower.p95_ms * material_latency_ratio:
+    by_latency = sorted(contenders, key=lambda item: item.p95_ms)
+    faster = by_latency[0]
+    next_fastest = by_latency[1]
+    if faster.p95_ms <= next_fastest.p95_ms * material_latency_ratio:
         return WinnerDecision(
             outcome="winner",
             winner=faster.model,
@@ -429,7 +477,10 @@ def select_winner(
     return WinnerDecision(
         outcome="practical_tie",
         winner=None,
-        reason="Safe candidates are within two points without a material latency or reliability advantage.",
+        reason=(
+            "Leading safe candidates are within two points without a material "
+            "latency or reliability advantage."
+        ),
     )
 
 
@@ -912,15 +963,17 @@ async def _fetch_catalog(
 def assert_catalog_capabilities(
     catalog: Mapping[str, Mapping[str, Any]],
     suites: Sequence[str],
+    *,
+    profile: str = ORIGINAL_PROFILE,
 ) -> None:
     """Fail before paid calls when a candidate lacks a required API feature."""
 
     requirements: dict[str, set[str]] = {}
     if "sales" in suites:
-        for model in SALES_MODELS:
+        for model in models_for_profile(profile, "sales"):
             requirements.setdefault(model, set()).update({"tools", "tool_choice"})
     if "system" in suites:
-        for model in SYSTEM_MODELS:
+        for model in models_for_profile(profile, "system"):
             requirements.setdefault(model, set()).update(
                 {
                     "tools",
@@ -953,14 +1006,15 @@ def _build_jobs(
     suite: str,
     repetitions: int,
     seed: int,
+    profile: str = ORIGINAL_PROFILE,
 ) -> list[tuple[str, Any, int]]:
     from scripts.model_battle_cases import SALES_CASES, SYSTEM_CASES
 
     if suite == "sales":
-        models = SALES_MODELS
+        models = models_for_profile(profile, suite)
         cases = SALES_CASES
     elif suite == "system":
-        models = SYSTEM_MODELS
+        models = models_for_profile(profile, suite)
         cases = SYSTEM_CASES
     else:
         raise ValueError(f"Unknown suite: {suite}")
@@ -1009,7 +1063,7 @@ def _build_blind_files(
                         "dimensions": sorted(_BLIND_REVIEW_DIMENSIONS),
                         "scale": "1=poor, 3=adequate, 5=excellent",
                         "instruction": (
-                            "Score both answers independently using only the "
+                            "Score every answer independently using only the "
                             "synthetic scenario. Mark critical_failure only for "
                             "an invented commercial fact, wrong action/tool "
                             "outcome, wrong required language, or materially "
@@ -1322,6 +1376,7 @@ async def run_battle(
     output_dir: Path,
     repetitions: int,
     seed: int,
+    profile: str = ORIGINAL_PROFILE,
 ) -> None:
     """Execute selected suites sequentially and preserve durable evidence."""
 
@@ -1336,18 +1391,14 @@ async def run_battle(
         "X-Title": "Noor Model Battle",
     }
     all_models = sorted(
-        {
-            model
-            for suite in suites
-            for model in (SALES_MODELS if suite == "sales" else SYSTEM_MODELS)
-        }
+        {model for suite in suites for model in models_for_profile(profile, suite)}
     )
     async with httpx.AsyncClient(
         base_url=settings.openrouter_base_url.rstrip("/"),
         headers=headers,
     ) as client:
         catalog = await _fetch_catalog(client, all_models)
-        assert_catalog_capabilities(catalog, suites)
+        assert_catalog_capabilities(catalog, suites, profile=profile)
         _write_json(output_dir / "model_catalog.json", catalog)
         for suite in suites:
             rows: list[dict[str, Any]] = []
@@ -1355,6 +1406,7 @@ async def run_battle(
                 suite=suite,
                 repetitions=repetitions,
                 seed=seed,
+                profile=profile,
             )
             for index, (model, case, repetition) in enumerate(jobs, start=1):
                 print(
@@ -1394,6 +1446,10 @@ async def run_battle(
             "seed": seed,
             "repetitions": repetitions,
             "suites": list(suites),
+            "profile": profile,
+            "models": {
+                suite: list(models_for_profile(profile, suite)) for suite in suites
+            },
             "production_changed": False,
             "synthetic_evidence_only": True,
         },
@@ -1414,6 +1470,11 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--repetitions", type=int, default=2)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--profile",
+        choices=tuple(MODEL_PROFILES),
+        default=ORIGINAL_PROFILE,
+    )
     parser.add_argument(
         "--score-only",
         action="store_true",
@@ -1443,6 +1504,7 @@ def main() -> None:
             output_dir=args.output_dir,
             repetitions=args.repetitions,
             seed=args.seed,
+            profile=args.profile,
         )
     )
 

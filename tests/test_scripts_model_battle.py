@@ -4,7 +4,9 @@ import json
 
 import pytest
 from scripts.model_battle import (
+    EXTENDED_PROFILE,
     CandidateMetrics,
+    _build_jobs,
     aggregate_rows,
     assert_catalog_capabilities,
     build_base_payload,
@@ -12,6 +14,7 @@ from scripts.model_battle import (
     candidate_metrics_from_evidence,
     evaluate_blind_reviews,
     extract_numeric_tokens,
+    models_for_profile,
     parse_json_content,
     percentile,
     retry_was_used,
@@ -42,6 +45,42 @@ def test_case_sets_cover_the_accepted_battle_shape() -> None:
     }
 
 
+def test_extended_profile_has_four_candidates_per_route() -> None:
+    assert models_for_profile(EXTENDED_PROFILE, "sales") == (
+        "z-ai/glm-5",
+        "z-ai/glm-5.2",
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro",
+    )
+    assert models_for_profile(EXTENDED_PROFILE, "system") == (
+        "nex-agi/nex-n2-mini",
+        "z-ai/glm-5.2",
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro",
+    )
+
+
+def test_extended_profile_builds_complete_deterministic_job_matrix() -> None:
+    first = _build_jobs(
+        suite="sales",
+        repetitions=2,
+        seed=27072026,
+        profile=EXTENDED_PROFILE,
+    )
+    second = _build_jobs(
+        suite="sales",
+        repetitions=2,
+        seed=27072026,
+        profile=EXTENDED_PROFILE,
+    )
+
+    assert first == second
+    assert len(first) == len(SALES_CASES) * 2 * 4
+    assert {model for model, _case, _repetition in first} == set(
+        models_for_profile(EXTENDED_PROFILE, "sales")
+    )
+
+
 def test_catalog_preflight_rejects_missing_required_model_capability() -> None:
     catalog = {
         "z-ai/glm-5": {"supported_parameters": ["tools", "tool_choice"]},
@@ -66,6 +105,27 @@ def test_catalog_preflight_rejects_missing_required_model_capability() -> None:
 
     with pytest.raises(RuntimeError, match="structured_outputs"):
         assert_catalog_capabilities(catalog, ("sales", "system"))
+
+
+def test_catalog_preflight_accepts_extended_profile_capabilities() -> None:
+    all_parameters = [
+        "tools",
+        "tool_choice",
+        "response_format",
+        "reasoning",
+        "structured_outputs",
+    ]
+    catalog = {
+        model: {"supported_parameters": all_parameters}
+        for suite in ("sales", "system")
+        for model in models_for_profile(EXTENDED_PROFILE, suite)
+    }
+
+    assert_catalog_capabilities(
+        catalog,
+        ("sales", "system"),
+        profile=EXTENDED_PROFILE,
+    )
 
 
 def test_base_payload_requires_an_endpoint_supporting_all_parameters() -> None:
@@ -315,6 +375,27 @@ def test_blind_pair_is_deterministic_and_hides_model_names() -> None:
     assert set(first["reveal"]) == {"A", "B"}
 
 
+def test_blind_group_supports_four_anonymous_candidates() -> None:
+    candidates = {
+        "z-ai/glm-5": "Answer one",
+        "z-ai/glm-5.2": "Answer two",
+        "deepseek/deepseek-v4-flash": "Answer three",
+        "deepseek/deepseek-v4-pro": "Answer four",
+    }
+
+    blind = build_blind_pair(
+        case_id="sales-01",
+        repetition=1,
+        candidates=candidates,
+        seed=27072026,
+    )
+
+    assert set(blind["answers"]) == {"A", "B", "C", "D"}
+    assert set(blind["reveal"].values()) == set(candidates)
+    assert set(blind["answers"].values()) == set(candidates.values())
+    assert not any(model in json.dumps(blind["answers"]) for model in candidates)
+
+
 def test_blind_review_scores_map_back_to_models_only_after_review() -> None:
     reviews = [
         {
@@ -360,6 +441,44 @@ def test_blind_review_scores_map_back_to_models_only_after_review() -> None:
     assert quality["right"] == pytest.approx(15 / 25)
     _, hard_gates = evaluate_blind_reviews(reviews, key)
     assert hard_gates == {"left": True, "right": False}
+
+
+def test_blind_review_maps_all_labels_from_reveal_key() -> None:
+    rubric = {
+        "scores": {
+            "clarity": 4,
+            "factual_trust": 5,
+            "persuasion": 4,
+            "concision": 4,
+            "next_step": 3,
+        },
+        "critical_failure": False,
+        "critical_failure_reason": "",
+    }
+    reviews = [
+        {
+            "case_id": "sales-01",
+            "repetition": 1,
+            "scores": {label: dict(rubric) for label in ("A", "B", "C", "D")},
+        }
+    ]
+    key = [
+        {
+            "case_id": "sales-01",
+            "repetition": 1,
+            "reveal": {
+                "A": "one",
+                "B": "two",
+                "C": "three",
+                "D": "four",
+            },
+        }
+    ]
+
+    quality, hard_gates = evaluate_blind_reviews(reviews, key)
+
+    assert quality == {model: 0.8 for model in ("one", "two", "three", "four")}
+    assert hard_gates == {model: True for model in ("one", "two", "three", "four")}
 
 
 def test_blind_review_rejects_missing_pair() -> None:
@@ -454,6 +573,20 @@ def test_select_winner_reports_no_safe_replacement_when_all_fail() -> None:
 
     assert decision.winner is None
     assert decision.outcome == "no_safe_replacement"
+
+
+def test_select_winner_supports_multiple_candidates() -> None:
+    candidates = [
+        CandidateMetrics("unsafe-fast", 99.0, False, 1.0, 100.0),
+        CandidateMetrics("leader", 94.0, True, 1.0, 900.0),
+        CandidateMetrics("runner-up", 90.0, True, 1.0, 600.0),
+        CandidateMetrics("third", 85.0, True, 1.0, 400.0),
+    ]
+
+    decision = select_winner(candidates)
+
+    assert decision.winner == "leader"
+    assert decision.outcome == "winner"
 
 
 def test_sales_candidate_metrics_include_blind_quality_and_hard_gates() -> None:
