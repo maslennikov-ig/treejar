@@ -853,6 +853,40 @@ def _search_products_limit_message(*, include_no_results: bool = False) -> str:
     )
 
 
+def _explicit_product_option_cap(text: str) -> int | None:
+    """Return a small explicit recommendation cap from the customer request."""
+    normalized = " ".join(text.casefold().split())
+    if not normalized:
+        return None
+
+    if re.search(
+        r"\b(?:one|1)\s+(?:or|to)\s+(?:two|2)\b"
+        r"(?=.{0,80}\b(?:options?|alternatives?|recommendations?|products?)\b)",
+        normalized,
+    ):
+        return 2
+    if re.search(r"(?:خيارًا|خيارا)\s+أو\s+خيارين", normalized):
+        return 2
+
+    count_match = re.search(
+        r"\b(?:up to|at most|no more than|recommend|show|suggest|give|compare)"
+        r"(?:\s+me)?\s+(?P<count>one|two|three|1|2|3)\b"
+        r"(?=.{0,80}\b(?:options?|alternatives?|recommendations?|products?)\b)",
+        normalized,
+    )
+    if count_match is None:
+        return None
+
+    return {
+        "one": 1,
+        "1": 1,
+        "two": 2,
+        "2": 2,
+        "three": 3,
+        "3": 3,
+    }[count_match.group("count")]
+
+
 def _product_search_response_contract(
     *,
     match_kind: Literal["exact", "nearby", "missing"] = "exact",
@@ -861,7 +895,7 @@ def _product_search_response_contract(
     if match_kind == "nearby":
         contract_parts = [
             "Catalog results were found, but they are the closest alternatives rather than a confirmed exact match.",
-            "Lead with 2-3 closest alternatives from these results before any generic qualifying questions.",
+            "Lead with up to 3 closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
             "Say honestly that the exact requested item is not confirmed from the catalog results.",
             "Do not claim that these are the exact item requested.",
             "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
@@ -881,7 +915,7 @@ def _product_search_response_contract(
     else:
         contract_parts = [
             "Relevant catalog results were found for this customer message.",
-            "In your next reply, lead with 2-3 concrete options or closest alternatives from these results before any generic qualifying questions.",
+            "In your next reply, lead with up to 3 concrete options or closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
             "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
@@ -8682,7 +8716,7 @@ async def search_products(
     )
     search_query = ProductSearchQuery(
         query=query,
-        limit=3,
+        limit=_explicit_product_option_cap(ctx.deps.user_query) or 3,
         min_price=min_price,
         max_price=max_price,
     )

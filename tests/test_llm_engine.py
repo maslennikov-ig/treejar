@@ -4819,11 +4819,81 @@ async def test_tools_search_products(
         assert "CHAIR-01" in result.return_value
         assert "Customer-facing catalog price: 100.00 USD" in result.return_value
         assert isinstance(result.content, str)
-        assert "lead with 2-3 concrete options" in result.content.lower()
+        assert "lead with up to 3 concrete options" in result.content.lower()
+        assert "explicit smaller maximum" in result.content.lower()
         assert "at most one targeted follow-up" in result.content.lower()
     finally:
         if orig_search:
             engine_module.rag_search_products = orig_search
+
+
+@pytest.mark.asyncio
+async def test_tools_search_products_respects_explicit_customer_option_cap(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from datetime import UTC, datetime
+
+    from pydantic_ai import RunContext
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.usage import RunUsage
+
+    import src.llm.engine as engine_module
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Please recommend one or two acoustic pod options from the catalog."
+        ),
+    )
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                ProductRead(
+                    id=uuid.uuid4(),
+                    sku="POD-1",
+                    name_en="Meeting Booth",
+                    price=12000.0,
+                    currency="AED",
+                    stock=2,
+                    is_active=True,
+                    description_en="Compact acoustic booth",
+                    created_at=datetime.now(UTC),
+                )
+            ],
+            query_interpreted="acoustic pods",
+            total_found=1,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="acoustic pods",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+    original_search = engine_module.rag_search_products
+    engine_module.rag_search_products = mock_search
+
+    try:
+        result = await engine_module.search_products(ctx, "acoustic pods")
+    finally:
+        engine_module.rag_search_products = original_search
+
+    assert mock_search.await_args.kwargs["query"].limit == 2
+    assert isinstance(result, ToolReturn)
+    assert "explicit smaller maximum" in result.content.lower()
 
 
 @pytest.mark.asyncio

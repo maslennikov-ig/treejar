@@ -989,7 +989,8 @@ class TestScenario7OrderHandoffGuard:
         zoho.get_stock.assert_awaited_once_with("CHAIR-01")
         assert model_calls == 3
         assert any(
-            "lead with 2-3 concrete options" in contract.lower()
+            "lead with up to 3 concrete options" in contract.lower()
+            and "explicit smaller maximum" in contract.lower()
             for contract in observed_contracts
         )
         assert any(
