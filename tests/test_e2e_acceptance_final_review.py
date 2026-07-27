@@ -536,6 +536,54 @@ def test_runtime_has_no_replaceable_root_or_public_signer_api() -> None:
     ) == ("self", "run_id")
 
 
+def test_runtime_has_no_mutable_operator_root_hook() -> None:
+    _, _, trusted = _modules()
+
+    assert not hasattr(trusted, "_PROTECTED_STORE_ROOT")
+
+
+def test_registry_trust_context_is_frozen_and_has_no_mutable_digest_stores() -> None:
+    registry = _registry()
+
+    for name in (
+        "_trusted_authorization_digests",
+        "_trusted_authorizations",
+        "_trusted_readback_digests",
+        "_trusted_classifier_digests",
+        "_trusted_structured_digests",
+        "_trusted_attempt_digests",
+    ):
+        assert not hasattr(registry, name)
+    context = registry.verified_evidence_context
+    assert isinstance(context.classifier_digests, frozenset)
+    with pytest.raises((AttributeError, TypeError)):
+        context.classifier_digests.add("0" * 64)
+
+
+def test_finalizer_refuses_caller_authored_staging_snapshot(tmp_path: Path) -> None:
+    registry, _, protected = _build_verified_run(tmp_path)
+    run_id = "caller-staging-only"
+    _write_json(
+        protected.parent / ".staging" / f"{run_id}.json",
+        {
+            "schema_version": "noor-e2e-verified-execution-snapshot/v2",
+            "run_id": run_id,
+        },
+    )
+
+    with pytest.raises(Exception, match="protected committed execution snapshot"):
+        registry.finalize_run(run_id)
+
+
+def test_loader_rejects_publication_without_protected_final_commit_marker(
+    tmp_path: Path,
+) -> None:
+    registry, _, _ = _build_verified_run(tmp_path)
+
+    with pytest.raises(Exception, match="final commit marker"):
+        registry.open_run(run_id="synthetic-trusted-run")
+
+
 def test_runtime_has_no_local_or_caller_decisive_artifact_loader() -> None:
     policy, _, _ = _modules()
 
