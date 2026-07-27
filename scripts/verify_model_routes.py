@@ -60,16 +60,31 @@ _MEDICAL_BENEFIT_RE = re.compile(
     r"prevents?|cures?|recommended|supports?|improves?|ideal)\b"
 )
 _SHOWROOM_COMMITMENT_RE = re.compile(
-    r"\b(?:a specific|the specific|your|the|a|an)\s+"
-    r"(?:appointment|visit|test(?:ing)? setup)\b.{0,16}\b"
+    r"\b(?:(?:a specific|the specific|your|the|a|an)\s+)?"
+    r"(?:appointment|visit|test(?:ing)? setup)\b"
+    r"(?:\s+(?:is|has been))?\s+"
     r"(?:booked|confirmed|scheduled|ready)\b"
-    r"|\b(?:booked|confirmed|scheduled)\b.{0,16}\b"
-    r"(?:a specific|the specific|your|the|a|an)\s+(?:appointment|visit)\b"
+    r"|\b(?:booked|confirmed|scheduled)\s+"
+    r"(?:(?:a specific|the specific|your|the|a|an)\s+)?"
+    r"(?:appointment|visit)\b"
+)
+_SHOWROOM_NEGATED_COMMITMENT_RE = re.compile(
+    r"\bno(?: particular| specific)?\s+"
+    r"(?:product|appointment|visit|test(?:ing)? setup)"
+    r"(?:\s*,\s*(?:product|appointment|visit|test(?:ing)? setup))*"
+    r"(?:\s*,?\s*(?:or|and)\s+"
+    r"(?:product|appointment|visit|test(?:ing)? setup))?"
+    r"(?:\s+(?:is|are|has been|have been))?\s+"
+    r"(?:booked|confirmed|scheduled|ready)\b"
 )
 _SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
     r"\b(?:try|test|experience)\s+(?:out\s+)?"
-    r"(?:a specific|the specific|this|that|the)\s+"
-    r"(?:[a-z0-9-]+\s+){0,3}(?:chair|product|item|model)\b"
+    r"(?:(?:a specific|the specific|this|that|the)\s+"
+    r"(?:[a-z0-9-]+\s+){0,3}"
+    r"|our\s+(?:[a-z0-9-]+\s+){1,3}"
+    r"|(?:[a-z0-9-]+\s+){1,3})"
+    r"(?:chair|product|item|model)\b"
+    r"(?!\s+(?:quality|range|selection|catalog)\b)"
 )
 _SAMPLE_FULFILLMENT_RE = re.compile(
     r"\b(?:we(?:'ll| will)|treejar will)\s+"
@@ -311,6 +326,37 @@ def _contains_asserted_pattern(content: str, pattern: re.Pattern[str]) -> bool:
     )
 
 
+def _contains_asserted_showroom_commitment(content: str) -> bool:
+    negated_spans = [
+        (match.start(), match.end())
+        for match in _SHOWROOM_NEGATED_COMMITMENT_RE.finditer(content)
+    ]
+    for match in _SHOWROOM_COMMITMENT_RE.finditer(content):
+        if any(
+            start <= match.start() and match.end() <= end
+            for start, end in negated_spans
+        ):
+            continue
+        boundaries: list[int] = []
+        for marker in (
+            ".",
+            "!",
+            "?",
+            ";",
+            "\n",
+            " but ",
+            " however ",
+            " yet ",
+        ):
+            marker_index = content.rfind(marker, 0, match.start())
+            if marker_index >= 0:
+                boundaries.append(marker_index + len(marker))
+        coordinated_prefix = content[max(boundaries, default=0) : match.start()]
+        if _CLAUSE_NEGATION_RE.search(coordinated_prefix) is None:
+            return True
+    return False
+
+
 def evaluate_sales_answer(
     case_id: str,
     answer: Mapping[str, Any],
@@ -363,7 +409,7 @@ def evaluate_sales_answer(
         for phrase in ("appointment is confirmed", "specific chair is available"):
             if _contains_asserted_phrase(reply, phrase):
                 failures.append(f"unsupported commitment: {phrase}")
-        if _contains_asserted_pattern(reply, _SHOWROOM_COMMITMENT_RE):
+        if _contains_asserted_showroom_commitment(reply):
             failures.append("reply adds an unsupported showroom commitment")
     elif case_id == "project_samples":
         if "sample" not in reply or "project" not in reply:

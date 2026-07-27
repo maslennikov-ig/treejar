@@ -155,6 +155,24 @@ def test_sales_case_evaluation_rejects_unsupported_claims() -> None:
             ),
         ),
         (
+            "showroom_visit",
+            "allowed",
+            ("You may visit our UAE showroom. Visit is scheduled for tomorrow."),
+        ),
+        (
+            "showroom_visit",
+            "allowed",
+            ("You may visit our UAE showroom. Appointment confirmed for tomorrow."),
+        ),
+        (
+            "showroom_visit",
+            "allowed",
+            (
+                "You may visit our UAE showroom. There is no fee, appointment "
+                "confirmed for tomorrow."
+            ),
+        ),
+        (
             "project_samples",
             "conditional",
             (
@@ -168,6 +186,38 @@ def test_sales_case_evaluation_rejects_unsupported_claims() -> None:
             (
                 "No medical outcome is confirmed, but this adjustment supports "
                 "spinal health."
+            ),
+        ),
+        (
+            "medical_inference",
+            "decline_unsupported",
+            (
+                "No medical outcome is confirmed. You can try our Nova Task "
+                "chair in the showroom."
+            ),
+        ),
+        (
+            "medical_inference",
+            "decline_unsupported",
+            (
+                "No medical outcome is confirmed. You can try Nova Task chair "
+                "in the showroom."
+            ),
+        ),
+        (
+            "medical_inference",
+            "decline_unsupported",
+            (
+                "No medical outcome is confirmed. You can try AX-E1 chair in "
+                "the showroom."
+            ),
+        ),
+        (
+            "medical_inference",
+            "decline_unsupported",
+            (
+                "No medical outcome is confirmed. You can try Nova chair in "
+                "the showroom."
             ),
         ),
         (
@@ -259,12 +309,20 @@ def test_sales_case_evaluation_accepts_safe_provider_phrasings() -> None:
             ),
         },
     )
+    medical_negated_trial = evaluate_sales_answer(
+        "medical_inference",
+        {
+            "decision": "decline_unsupported",
+            "reply": "I can't confirm that you can try the chair.",
+        },
+    )
 
     assert showroom["passed"] is True
     assert stock["passed"] is True
     assert stock_safe_negation["passed"] is True
     assert medical["passed"] is True
     assert medical_provider_variant["passed"] is True
+    assert medical_negated_trial["passed"] is True
 
 
 def test_sales_case_evaluation_classifies_postdeploy_provider_phrasings() -> None:
