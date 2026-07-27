@@ -55,7 +55,7 @@ Local verification before deploy:
 - `scripts/orchestration/run_stage_closeout.py --stage tj-mmj8`: passed.
 
 Production E2E:
-- Approved test number: `+79262810921`, using synthetic chat suffixes
+- Approved test number: `[PROTECTED_TEST_PHONE]`, using synthetic chat suffixes
   `tj-mmj8-fr3309-*` to isolate conversation memory.
 - Slash brief passed: conversation `dac20020-f102-4ee5-8bb8-a3240537571d`,
   quotation `Fr3310`, PDF message `970a566f-9559-49f7-9b7a-28e91c6b7561`.

@@ -19,10 +19,10 @@ verification:
   - "GitHub Actions run 25910228955": passed
   - "ssh noor-server cat /opt/noor/.release-sha": passed, cf966f0e2345da0154c8f11f57c0c60340ff451e
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 7 passed and 0 failed
-  - "production cleanup for 79262810921%": passed, before conversations/messages/outbound/escalations/quality_reviews 72/284/250/41/7, after all 0
-  - "python3 scripts/bot_test.py -p 79262810921 <#36 first request>": passed, assistant model name-gate and escalation none
-  - "python3 scripts/bot_test.py -p 79262810921 Lili": passed, assistant resumed original request and escalation none
-  - "python3 scripts/bot_test.py -p 79262810921 '2 Skyland Novo and 2xten'": passed, product clarification path and escalation none
+  - "production cleanup for [PROTECTED_TEST_PHONE]%": passed, before conversations/messages/outbound/escalations/quality_reviews 72/284/250/41/7, after all 0
+  - "python3 scripts/bot_test.py -p [PROTECTED_TEST_PHONE] <#36 first request>": passed, assistant model name-gate and escalation none
+  - "python3 scripts/bot_test.py -p [PROTECTED_TEST_PHONE] Lili": passed, assistant resumed original request and escalation none
+  - "python3 scripts/bot_test.py -p [PROTECTED_TEST_PHONE] '2 Skyland Novo and 2xten'": passed, product clarification path and escalation none
   - "production DB live assertions for 5e587327-0092-4699-a4ee-df6e23edf0ca": passed
   - "read-only verifier subagent": passed
   - "GitHub issue #36 comment and close": passed, https://github.com/maslennikov-ig/treejar/issues/36#issuecomment-4459034706
@@ -38,7 +38,7 @@ explicit_defers:
 # Summary
 
 Delivered `tj-gh15` to production and completed the approved live E2E on clean
-test phone `79262810921`.
+test phone `[PROTECTED_TEST_PHONE]`.
 
 # Verification
 
@@ -48,7 +48,7 @@ test phone `79262810921`.
 - `/opt/noor/.release-sha` is `cf966f0e2345da0154c8f11f57c0c60340ff451e`;
   `/opt/noor/.release-run-id` is `25910228955`.
 - Production API smoke passed: `7 passed, 0 failed`.
-- Approved cleanup prefix `79262810921%` was cleared in one transaction:
+- Approved cleanup prefix `[PROTECTED_TEST_PHONE]%` was cleared in one transaction:
   before cleanup there were 72 conversations, 284 messages, 250 outbound audit
   rows, 41 escalations, and 7 quality reviews; after cleanup all matching counts
   were 0.

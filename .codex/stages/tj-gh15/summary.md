@@ -18,7 +18,7 @@ conversation without mutating her real WhatsApp thread.
 - `tj-gh15.2` / #37: product/brand plus quantity must stay on product/catalog
   handling and must not route to verified-policy manager handoff.
 - `tj-gh15.3`: after deploy, clean approved production test number
-  `+79262810921`, run live E2E, then comment on and close GitHub #36/#37.
+  `[PROTECTED_TEST_PHONE]`, run live E2E, then comment on and close GitHub #36/#37.
 
 ## Root Cause
 
@@ -64,7 +64,7 @@ handoff because catalog brand/family terms were not product signals.
   `cf966f0e2345da0154c8f11f57c0c60340ff451e`; `/opt/noor/.release-run-id`
   is `25910228955`.
 - Production API smoke passed: `7 passed, 0 failed`.
-- Approved cleanup prefix `79262810921%` was deleted in one transaction:
+- Approved cleanup prefix `[PROTECTED_TEST_PHONE]%` was deleted in one transaction:
   before cleanup there were 72 conversations, 284 messages, 250 outbound audit
   rows, 41 escalations, and 7 quality reviews; after cleanup all matching counts
   were 0.

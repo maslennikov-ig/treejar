@@ -25,14 +25,14 @@ Verification:
 - `scripts/orchestration/run_stage_closeout.py --stage tj-gh23` passed.
 
 Delivery status:
-- User explicitly authorized merge, deploy, production testing, and use of `+79262810921`.
+- User explicitly authorized merge, deploy, production testing, and use of `[PROTECTED_TEST_PHONE]`.
 - Pushed to `main` in two commits:
   - `ffad8fb939323baffe3776f9a95050a172fd05c8` - initial exact quotation frame hardening.
   - `322bee30d667b245a143813dbd5fccbcf120eecf` - production-found suffix SKU disambiguation hotfix.
 - GitHub Actions run `26279825756` succeeded, including deploy.
 - `/opt/noor/.release-sha` verified runtime `322bee30d667b245a143813dbd5fccbcf120eecf`; `/opt/noor/.release-run-id` verified `26279825756`.
 - Production smoke passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
-- Live E2E on approved `+79262810921` and channel `b49b1b9d-757f-4104-b56d-8f43d62cc515` proved:
+- Live E2E on approved `[PROTECTED_TEST_PHONE]` and channel `b49b1b9d-757f-4104-b56d-8f43d62cc515` proved:
   - word quantity exact product creates quotation `Fr3294` after name gate in conversation `cf9f4ade-b261-4f56-b104-69062f861cdd`;
   - numeric quantity exact product creates quotation `Fr3295` after name gate in conversation `e3d30ece-31b5-46a2-a948-dd10096a4bb7`;
   - ambiguous `CH 616 chair` asks a narrow item/SKU clarification with no escalation in conversation `c397b396-b63a-4050-87b6-6b41eab72bea`;

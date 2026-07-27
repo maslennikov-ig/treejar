@@ -348,7 +348,7 @@ async def test_customer_facts_name_gate_details_reply_resumes_pending_request(
             conversation_id=conv.id,
             combined_text=(
                 "Victor Memory Test, individual, delivery address Office 1905, "
-                "JLT Dubai, email victor.memory.e2e@example.com, phone +79262810921."
+                "JLT Dubai, email victor.memory.e2e@example.com, phone +15550001111."
             ),
             db=db,
             redis=redis,

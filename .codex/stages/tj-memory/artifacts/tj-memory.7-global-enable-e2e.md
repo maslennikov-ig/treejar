@@ -65,7 +65,7 @@ verification:
   - "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" OPENROUTER_API_KEY=dummy uv run pytest tests/ -v --tb=short": passed, 1284 passed, 19 skipped
   - "GitHub Actions run 26965492878": passed and deployed
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 8 passed, 0 failed
-  - "production E2E on +79262810921#tj-memory-455-*": passed
+  - "production E2E on [PROTECTED_TEST_PHONE]#tj-memory-455-*": passed
 changed_files:
   - src/llm/fact_extractor.py
   - src/llm/engine.py
@@ -139,7 +139,7 @@ Production config after deploy:
 ```
 
 Scenario 1:
-`+79262810921#tj-memory-455-all-20260604164115`
+`[PROTECTED_TEST_PHONE]#tj-memory-455-all-20260604164115`
 
 - Conversation: `4983dc17-c27c-4756-8a65-3afc0a25b447`.
 - Message included SKU, quantity, name, individual status, address, email, and
@@ -150,7 +150,7 @@ Scenario 1:
   escalation, and no PII placeholders.
 
 Scenario 2:
-`+79262810921#tj-memory-455-resume-20260604164115`
+`[PROTECTED_TEST_PHONE]#tj-memory-455-resume-20260604164115`
 
 - Conversation: `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`.
 - First turn without name returned `name-gate`.
@@ -160,7 +160,7 @@ Scenario 2:
   `conflict_count=0`, no escalation, no PII placeholders.
 
 The synthetic conversations were closed after readback. The real unsuffixed
-`+79262810921` thread was not mutated.
+`[PROTECTED_TEST_PHONE]` thread was not mutated.
 
 # Rollback
 

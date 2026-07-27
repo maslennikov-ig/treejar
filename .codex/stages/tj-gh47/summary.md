@@ -60,7 +60,7 @@ Verification:
 - Production E2E:
   seeded synthetic conversation
   `6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee` on
-  `+79262810921#tj-gh47-pref-20260601173808` with the prior LUMA/NOVO
+  `[PROTECTED_TEST_PHONE]#tj-gh47-pref-20260601173808` with the prior LUMA/NOVO
   preference question, then sent `I prefer more open for team` via the normal
   Wazzup webhook. Production replied with NOVO/open-team product options,
   model `z-ai/glm-5`, `escalation_status=none`, pending escalations `0`, no

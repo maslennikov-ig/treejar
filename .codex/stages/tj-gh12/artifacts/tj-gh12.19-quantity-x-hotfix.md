@@ -22,7 +22,7 @@ verification:
   - "uv run mypy src/": passed
   - "env DYLD_FALLBACK_LIBRARY_PATH=\"${DYLD_FALLBACK_LIBRARY_PATH:-/opt/homebrew/lib}\" uv run pytest tests/ -v --tb=short": passed, 1006 passed and 19 skipped
   - "GitHub Actions CI 25793771538": passed
-  - "production bot_test missing-data quotation prompt on 79262810921#tj-gh12-final-20260513133925": passed
+  - "production bot_test missing-data quotation prompt on [PROTECTED_TEST_PHONE]#tj-gh12-final-20260513133925": passed
   - "read-only DB evidence for c7be1bf8-20c2-4cf2-9f55-d7ca207a9b1c": passed
 changed_files:
   - src/llm/engine.py

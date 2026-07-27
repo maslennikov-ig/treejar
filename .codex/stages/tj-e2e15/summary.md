@@ -8,12 +8,12 @@ Base: `origin/main@7d3579cbf7b84826318d154cb98a3cdc3121db60`
 ## Goal
 
 Run a separate production E2E stress test on the approved personal test number
-`+79262810921` to check whether Noor preserves customer details, product
+`[PROTECTED_TEST_PHONE]` to check whether Noor preserves customer details, product
 context, quantity changes, delivery, and assembly intent over a long dialogue.
 
 ## Scope
 
-- Clean all matching production state for `79262810921%` before testing.
+- Clean all matching production state for `[PROTECTED_TEST_PHONE]%` before testing.
 - Send a 10+ turn long-dialog scenario through the production webhook.
 - Inspect the final transcript and database state.
 - Record any memory loss, context loss, or unnecessary escalation in Beads.

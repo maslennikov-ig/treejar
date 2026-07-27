@@ -69,7 +69,7 @@ async def test_escalation_fallback_sends_message_ar() -> None:
 
     conv = MagicMock()
     conv.id = uuid4()
-    conv.phone = "79262810921"
+    conv.phone = "15550001111"
     conv.language = "ar"
 
     mock_wazzup = AsyncMock()

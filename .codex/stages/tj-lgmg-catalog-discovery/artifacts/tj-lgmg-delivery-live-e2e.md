@@ -56,7 +56,7 @@ verification:
   - "python3 scripts/bot_test.py restaurant live scenario on approved phone suffix": passed
   - "python3 scripts/bot_test.py wardrobe resume live scenario on approved phone suffix": passed
   - "python3 scripts/bot_test.py kids beds live scenario on approved phone suffix": passed
-  - "production readback for +79262810921#tj-lgmg-live-%": passed
+  - "production readback for [PROTECTED_TEST_PHONE]#tj-lgmg-live-%": passed
 changed_files:
   - .codex/handoff.md
   - .codex/stages/tj-lgmg-catalog-discovery/summary.md
@@ -96,7 +96,7 @@ launched for this final stream.
 
 # Live E2E
 
-Approved test phone: `+79262810921`, using synthetic chat suffixes.
+Approved test phone: `[PROTECTED_TEST_PHONE]`, using synthetic chat suffixes.
 
 | Scenario | Phone suffix | Conversation | Result |
 | --- | --- | --- | --- |
@@ -104,7 +104,7 @@ Approved test phone: `+79262810921`, using synthetic chat suffixes.
 | Wardrobe resume | `tj-lgmg-live-wardrobe-20260620T142253Z` | `e3b24580-6082-4fcd-a7c8-b16895a35bd4` | Initial name gate, then `Angela` resumed living-room wardrobe discovery with catalog wardrobe options; `escalation_status=none`. |
 | Kids beds | `tj-lgmg-live-wardrobe-20260620T142253Z` | `e3b24580-6082-4fcd-a7c8-b16895a35bd4` | Returned catalog alternatives/clarification for kids beds; `escalation_status=none`. |
 
-Production DB readback for `+79262810921#tj-lgmg-live-%` returned 2 synthetic
+Production DB readback for `[PROTECTED_TEST_PHONE]#tj-lgmg-live-%` returned 2 synthetic
 conversations, 0 escalation rows, and 0 pending escalations.
 
 # Delivery / Cleanup

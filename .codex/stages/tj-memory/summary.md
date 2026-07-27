@@ -99,7 +99,7 @@ Additional delivery and E2E checkpoint:
   8 passed, 0 failed.
 - Final production E2E conversation
   `0e1feaa8-5922-49b9-abb6-9ab111607d92` on
-  `+79262810921#tj-memory-e2e-20260604-1231`: Noor confirmed `2 x CH 616 black`,
+  `[PROTECTED_TEST_PHONE]#tj-memory-e2e-20260604-1231`: Noor confirmed `2 x CH 616 black`,
   no `616 x chairs`, no repeated full name/email/address request, no escalation,
   pending quote unresolved items empty.
 - DB readback for the E2E: `quote_customer_details` contains Victor, email,
@@ -120,13 +120,13 @@ PII masking default-off delivery checkpoint:
 - `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -
   8 passed, 0 failed.
 - Final E2E scenario 1:
-  `+79262810921#tj-pii-off-e2e-20260604170643`, conversation
+  `[PROTECTED_TEST_PHONE]#tj-pii-off-e2e-20260604170643`, conversation
   `20bf6801-e24a-4474-a015-2c4be31bc50e`; first message included SKU,
   quantity, name, individual, address, email, and phone; Noor returned
   `selection-confirmation`, saved all details, kept escalation `none`, and
   stored no `[PII-...]` placeholders.
 - Final E2E scenario 2:
-  `+79262810921#tj-pii-off-e2e-resume-20260604170643`, conversation
+  `[PROTECTED_TEST_PHONE]#tj-pii-off-e2e-resume-20260604170643`, conversation
   `f9e669ef-b46e-43cf-9096-bd0e50167819`; first message without a name triggered
   `name-gate`, then `Victor PII Test, individual` resumed the original
   `2 x CH 616` request, consumed `name_gate_pending_request`, saved all details,
@@ -146,14 +146,14 @@ Customer facts enforce rollout checkpoint:
 - `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -
   8 passed, 0 failed.
 - Final E2E scenario 1:
-  `+79262810921#tj-memory-455-all-20260604164115`, conversation
+  `[PROTECTED_TEST_PHONE]#tj-memory-455-all-20260604164115`, conversation
   `4983dc17-c27c-4756-8a65-3afc0a25b447`; first message included SKU,
   quantity, name, individual status, address, email, and phone; Noor returned
   `selection-confirmation`, saved all details, kept `2 x CH 616 black`, had
   only one accepted `customer.name` fact, `conflict_count=0`, no escalation, and
   no `[PII-...]` placeholders.
 - Final E2E scenario 2:
-  `+79262810921#tj-memory-455-resume-20260604164115`, conversation
+  `[PROTECTED_TEST_PHONE]#tj-memory-455-resume-20260604164115`, conversation
   `cfeb7a07-d50c-47a3-8cf8-5cd3af570b25`; first message triggered
   `name-gate`, second message provided name/details, Noor consumed
   `name_gate_pending_request`, resumed the original product request, saved

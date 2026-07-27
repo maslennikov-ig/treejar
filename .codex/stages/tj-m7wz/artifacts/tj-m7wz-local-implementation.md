@@ -27,9 +27,9 @@ verification:
   - gh run watch 26404203850 --exit-status: passed
   - ssh noor-server 'cat /opt/noor/.release-sha; cat /opt/noor/.release-run-id': 6d91fde34f85936bb018d9ac0a778a918c05c066 / 26404203850
   - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed (7 passed, 0 failed)
-  - live E2E resume11 on +79262810921: passed, quotation Fr3306, explicit customer fields only
-  - live E2E qty-final on +79262810921: passed, bare quantity 5 resumed CH 140 context
-  - live E2E reviewfix on +79262810921: passed, mixed 5 CH 140 correction selected quantity 5 and quotation Fr3307 used explicit fields only
+  - live E2E resume11 on [PROTECTED_TEST_PHONE]: passed, quotation Fr3306, explicit customer fields only
+  - live E2E qty-final on [PROTECTED_TEST_PHONE]: passed, bare quantity 5 resumed CH 140 context
+  - live E2E reviewfix on [PROTECTED_TEST_PHONE]: passed, mixed 5 CH 140 correction selected quantity 5 and quotation Fr3307 used explicit fields only
 changed_files:
   - .codex/handoff.md
   - .codex/stages/tj-m7wz/summary.md

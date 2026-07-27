@@ -6,7 +6,7 @@ You are running a bounded pre-launch acceptance pass for stage `tj-prl26`, task 
 
 ## Scope
 
-Use real test WhatsApp `79262810921` with unique synthetic suffixes beginning `tj-prl26`. The product is not live with real customer traffic, so this is synthetic pre-launch evidence, not traffic observation.
+Use real test WhatsApp `[PROTECTED_TEST_PHONE]` with unique synthetic suffixes beginning `tj-prl26`. The product is not live with real customer traffic, so this is synthetic pre-launch evidence, not traffic observation.
 
 Cover only:
 

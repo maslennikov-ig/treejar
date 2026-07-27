@@ -49,9 +49,9 @@ Delivery:
   passed: `8 passed, 0 failed`.
 
 Live E2E:
-- Approved base number: `+79262810921`.
+- Approved base number: `[PROTECTED_TEST_PHONE]`.
 - Isolated clean chatId:
-  `+79262810921#tj-gh53-live-clean-20260616164900`.
+  `[PROTECTED_TEST_PHONE]#tj-gh53-live-clean-20260616164900`.
 - Conversation `a73e7b96-26e9-4104-9f52-56463316f36e` passed:
   after the numbered answer list, production replied with table alternatives,
   not `I have the product reference...`.

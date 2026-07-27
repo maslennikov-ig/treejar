@@ -31,7 +31,7 @@ Delivery status:
 E2E status:
 - Execution artifact added: `.codex/stages/tj-gh22/artifacts/tj-gh22.1-e2e-execution.md`.
 - S0 production smoke was freshly executed and passed: `uv run python scripts/verify_api.py --base-url https://noor.starec.ai` -> 7 passed, 0 failed.
-- After the user confirmed permissions and approved `+79262810921`, live synthetic sends were executed through production channel `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
+- After the user confirmed permissions and approved `[PROTECTED_TEST_PHONE]`, live synthetic sends were executed through production channel `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
 - Product/SKU name-gate sanity passed in conversation `c11ac597-9452-4e79-8dd9-50261dbcd768`: `Hello, I need 6 CH 616` -> name gate -> `Alex` -> product/catalog answer with no escalation.
 - Exact quotation creation failed before post-quotation follow-up could be tested:
   - `baa857a8-cc87-4d4f-85c3-aa5a746fcbc1`: word-quantity exact quote request ended in `z-ai/glm-5|exact-quote-fallback` and pending escalation.

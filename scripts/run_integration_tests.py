@@ -2,7 +2,9 @@
 """Integration test runner — runs INSIDE the Docker container.
 
 Usage (from host):
-    docker exec treejar-app-1 python scripts/run_integration_tests.py
+    docker exec \
+      -e NOOR_LIVE_TEST_WHATSAPP_PHONE=<authorized-e164> \
+      treejar-app-1 python scripts/run_integration_tests.py
 
 This script uses real APIs (Zoho CRM, Zoho Inventory, Wazzup) and
 real infrastructure (Redis, DB) to verify the full pipeline works.
@@ -17,6 +19,11 @@ import logging
 import sys
 import traceback
 
+if __package__:
+    from scripts.live_test_destination import load_live_whatsapp_phone
+else:
+    from live_test_destination import load_live_whatsapp_phone
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("integration")
 
@@ -26,8 +33,6 @@ TEST_CONTACT_CRM_ID = "559571000034673035"
 TEST_CONTACT_NAME = "Integration TestBot"
 TEST_CONTACT_EMAIL = "integration-test@treejar.test"
 
-# User's WhatsApp for PDF delivery
-USER_WHATSAPP_PHONE = "79262810921"
 WAZZUP_CHANNEL_ID = "b49b1b9d-757f-4104-b56d-8f43d62cc515"
 
 # Results tracking
@@ -41,6 +46,9 @@ def record(name: str, passed: bool, detail: str = "") -> None:
 
 
 async def main() -> None:
+    user_whatsapp_phone = load_live_whatsapp_phone()
+    assert user_whatsapp_phone is not None
+
     import redis.asyncio as aioredis
 
     from src.core.config import settings
@@ -220,7 +228,7 @@ async def main() -> None:
 
             wazzup = WazzupProvider(channel_id=WAZZUP_CHANNEL_ID)
             msg_id = await wazzup.send_media(
-                chat_id=USER_WHATSAPP_PHONE,
+                chat_id=user_whatsapp_phone,
                 caption="🧪 Integration Test Quotation (INTEG-SERVER-001) — sent from Docker",
                 content=pdf_bytes,
                 content_type="application/pdf",

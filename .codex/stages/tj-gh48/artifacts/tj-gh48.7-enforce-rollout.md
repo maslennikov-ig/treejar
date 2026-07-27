@@ -83,7 +83,7 @@ database readback, live test run, cleanup, and documentation update.
 Production smoke passed with `8 passed, 0 failed`.
 
 Live E2E used synthetic identities under
-`+79262810921#tj-gh48-enforce-20260603081129-*`.
+`[PROTECTED_TEST_PHONE]#tj-gh48-enforce-20260603081129-*`.
 
 Passed scenarios:
 

@@ -9448,7 +9448,7 @@ async def test_process_message_name_gate_resume_accepts_name_plus_customer_type(
     conv.language = "en"
     pending_text = (
         "Hi Noor, I need 2 CH 616 black chairs with delivery to Office 1905, "
-        "JLT Dubai, email victor.pii.e2e@example.com, phone +79262810921. "
+        "JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. "
         "Please confirm these selected items."
     )
     conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
@@ -9517,7 +9517,7 @@ async def test_process_message_name_gate_resume_accepts_name_plus_customer_type(
     assert conv.escalation_status == "none"
     assert conv.metadata_["quote_customer_details"] == {
         "email": "victor.pii.e2e@example.com",
-        "phone": "+79262810921",
+        "phone": "+15550001111",
         "name": "Victor PII Test",
         "address": "Office 1905, JLT Dubai",
         "customer_type": "individual",
@@ -9649,7 +9649,7 @@ async def test_process_message_first_turn_with_name_contacts_and_sku_skips_name_
     text = (
         "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. "
         "My name is Victor PII Test, individual, delivery address Office 1905, "
-        "JLT Dubai, email victor.pii.e2e@example.com, phone +79262810921. "
+        "JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. "
         "Please confirm these selected items using these details."
     )
     mock_build_history.return_value = _first_turn_history(text)
@@ -9703,7 +9703,7 @@ async def test_process_message_first_turn_with_name_contacts_and_sku_skips_name_
     assert conv.escalation_status == "none"
     assert conv.metadata_["quote_customer_details"] == {
         "email": "victor.pii.e2e@example.com",
-        "phone": "+79262810921",
+        "phone": "+15550001111",
         "name": "Victor PII Test",
         "address": "Office 1905, JLT Dubai",
         "customer_type": "individual",
@@ -9744,7 +9744,7 @@ async def test_process_message_name_gate_resume_with_contacts_and_sku_stays_prod
     pending_text = (
         "Hi Noor, I need 2 CH 616 black chairs with delivery and assembly. "
         "My name is Victor PII Test, individual, delivery address Office 1905, "
-        "JLT Dubai, email victor.pii.e2e@example.com, phone +79262810921. "
+        "JLT Dubai, email victor.pii.e2e@example.com, phone +15550001111. "
         "Please confirm these selected items using these details."
     )
     conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
@@ -9815,7 +9815,7 @@ async def test_process_message_name_gate_resume_with_contacts_and_sku_stays_prod
     assert conv.metadata_["quote_customer_details"]["email"] == (
         "victor.pii.e2e@example.com"
     )
-    assert conv.metadata_["quote_customer_details"]["phone"] == "+79262810921"
+    assert conv.metadata_["quote_customer_details"]["phone"] == "+15550001111"
     assert "name_gate_pending_request" not in conv.metadata_
     mock_notify_manager.assert_not_awaited()
     mock_run.assert_not_awaited()

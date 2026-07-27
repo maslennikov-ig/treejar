@@ -72,6 +72,6 @@ GREEN verification completed:
 # Risks / Follow-ups
 
 `tj-gh15.3` remains pending until this branch is merged, deployed, the approved
-production test number `+79262810921` is cleaned in an audited transaction, live
+production test number `[PROTECTED_TEST_PHONE]` is cleaned in an audited transaction, live
 E2E evidence is collected, and GitHub #36/#37 are commented and closed. Lili's
 real WhatsApp conversation was used only for read-only root-cause analysis.

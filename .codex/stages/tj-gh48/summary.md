@@ -32,7 +32,7 @@ paths, legacy fallback, and production shadow safety.
 - Production smoke after deploy passed: `uv run python scripts/verify_api.py
   --base-url https://noor.starec.ai` -> `8 passed, 0 failed`.
 - Live E2E on approved synthetic profile
-  `+79262810921#tj-gh48-eaf-20260602172558` failed before the preference-answer
+  `[PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260602172558` failed before the preference-answer
   turn: `Can delivery and assembly be arranged in Dubai?` returned
   `z-ai/glm-5|verified-policy` and created a pending escalation.
 - The synthetic conversation
@@ -48,7 +48,7 @@ paths, legacy fallback, and production shadow safety.
   `3d91e54a8de36fa379ac6e2ec1bfcf778cace11e`; production smoke passed with
   `8 passed, 0 failed`.
 - Post-deploy live E2E on synthetic profile
-  `+79262810921#tj-gh48-eaf-20260603055821`, conversation
+  `[PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260603055821`, conversation
   `ec3c9c10-4677-4a0b-9a7b-d0e8e51c5fef`, verified the delivery/assembly
   interruption now returns `z-ai/glm-5|service-availability` with no
   escalation.
@@ -60,7 +60,7 @@ paths, legacy fallback, and production shadow safety.
   changed to `dialogue_kernel_mode=enforce` with only
   `dialogue_kernel_enforced_flows=product_selection`.
 - Production E2E on synthetic identities
-  `+79262810921#tj-gh48-enforce-20260603081129-*` passed for:
+  `[PROTECTED_TEST_PHONE]#tj-gh48-enforce-20260603081129-*` passed for:
   product preference after a delivery interruption, exact SKU with price/stock,
   ambiguous SKU without escalation, NOVO 2400 quantity guard, name gate resume,
   and explicit manager request.
@@ -266,7 +266,7 @@ Canonical stage closeout:
 Hotfix `tj-gh48.8` local evidence:
 
 - RED production: live E2E on
-  `+79262810921#tj-gh48-eaf-20260602172558` returned
+  `[PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260602172558` returned
   `z-ai/glm-5|verified-policy` for a low-risk delivery/assembly interruption and
   created a pending escalation.
 - RED/GREEN local regression:
@@ -296,7 +296,7 @@ Hotfix `tj-gh48.8` local evidence:
   -> `8 passed, 0 failed`.
 - Post-deploy E2E:
   `Can delivery and assembly be arranged in Dubai?` on
-  `+79262810921#tj-gh48-eaf-20260603055821` -> model
+  `[PROTECTED_TEST_PHONE]#tj-gh48-eaf-20260603055821` -> model
   `z-ai/glm-5|service-availability`, no escalation.
 - Post-deploy shadow trace:
   `I prefer more open for team` -> kernel route `product_preference_answer`,

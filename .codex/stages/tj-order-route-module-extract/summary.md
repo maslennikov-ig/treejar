@@ -120,7 +120,7 @@ Post-deploy production verification passed:
 Focused live E2E passed after deploy:
 
 - Exact quote resume conversation `dd1c0018-2bd5-4f74-9269-d7a8afacdc0d`
-  on synthetic phone suffix `+79262810921#tj-route-module-20260616-163230`:
+  on synthetic phone suffix `[PROTECTED_TEST_PHONE]#tj-route-module-20260616-163230`:
   `name-gate` -> `exact-quote-clarify-item` ->
   `quote-resume-missing-details` -> `quote-resume`, quotation `Fr3419`.
   Protected metadata readback confirmed `quote_customer_details` for
@@ -128,7 +128,7 @@ Focused live E2E passed after deploy:
   `tj-route-module-20260616@example.com`, and `Dubai test street 16`.
 - Bare ordinal continuation conversation
   `1be20b9b-ce24-4006-bfc2-c5dff8a1994e` on synthetic phone suffix
-  `+79262810921#tj-route-module-ordinal-20260616-163230`: `name-gate` ->
+  `[PROTECTED_TEST_PHONE]#tj-route-module-ordinal-20260616-163230`: `name-gate` ->
   `selection-confirmation`; bare `2` kept the pending catalog choice and
   selected `CH 616 black`, quantity 2.
 

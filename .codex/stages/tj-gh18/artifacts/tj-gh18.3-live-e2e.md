@@ -51,7 +51,7 @@ explicit_defers:
 # Summary
 
 Delivered `tj-gh18` to production and completed deployed E2E for GitHub #39 and
-#35 on the approved production test number `79262810921`.
+#35 on the approved production test number `[PROTECTED_TEST_PHONE]`.
 
 # Delivery
 
@@ -68,7 +68,7 @@ that final run.
 
 # E2E Evidence
 
-Approved cleanup for `79262810921%` / `+79262810921%` removed 1 conversation,
+Approved cleanup for `[PROTECTED_TEST_PHONE]%` / `[PROTECTED_TEST_PHONE]%` removed 1 conversation,
 4 messages, and 2 outbound audit rows; after cleanup all matching counts were 0.
 
 Final #39 live webhook conversation

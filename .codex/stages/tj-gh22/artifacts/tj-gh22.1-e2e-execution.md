@@ -43,7 +43,7 @@ Controlled production E2E execution was started for `tj-gh22.1` on 2026-05-21.
 S0 production smoke passed against `https://noor.starec.ai`.
 
 After the user confirmed permissions and the approved test number
-`+79262810921`, live synthetic sends were executed. The run did not reach the
+`[PROTECTED_TEST_PHONE]`, live synthetic sends were executed. The run did not reach the
 post-quotation follow-up scenarios because exact quotation creation failed first:
 quote-ready customer requests ended in `exact-quote-fallback` and pending
 manager escalation.
@@ -92,8 +92,8 @@ new Beads stage `tj-gh23`.
 
 # Approval And Access State
 
-- Approved phone from the task prompt: `+79262810921`.
-- Required synthetic suffix pattern from the task prompt: `79262810921#tj-gh22-<scenario>-<timestamp>`.
+- Approved phone from the task prompt: `[PROTECTED_TEST_PHONE]`.
+- Required synthetic suffix pattern from the task prompt: `[PROTECTED_TEST_PHONE]#tj-gh22-<scenario>-<timestamp>`.
 - Exact production Wazzup channel id used by `scripts/bot_test.py`: `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
 - Approved production test window: user confirmed permissions in the current task before live sends.
 - Worktree environment:
@@ -128,9 +128,9 @@ new Beads stage `tj-gh23`.
 # Scenario Identifiers And Data Rows
 
 - Live synthetic suffixes used:
-  - `79262810921#tj-gh22-quote-20260521165301`
-  - `79262810921#tj-gh22-quote-num-20260521165301`
-  - `79262810921#tj-gh22-product-20260521165301`
+  - `[PROTECTED_TEST_PHONE]#tj-gh22-quote-20260521165301`
+  - `[PROTECTED_TEST_PHONE]#tj-gh22-quote-num-20260521165301`
+  - `[PROTECTED_TEST_PHONE]#tj-gh22-product-20260521165301`
 - Conversation ids created/read for this run:
   - `baa857a8-cc87-4d4f-85c3-aa5a746fcbc1`
   - `d6fa2284-0029-4019-b304-285e9d352e6f`

@@ -2,7 +2,7 @@
 
 Status: delivered; deployed and scoped E2E recheck passed
 Base worktree: `/home/me/code/treejar/.worktrees/codex-live-triage-20260417`
-Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp `79262810921` and synthetic suffixes.
+Primary evidence: production E2E on `https://noor.starec.ai` with real WhatsApp `[PROTECTED_TEST_PHONE]` and synthetic suffixes.
 
 ## Evidence
 

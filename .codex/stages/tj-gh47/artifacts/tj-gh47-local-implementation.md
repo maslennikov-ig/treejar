@@ -59,7 +59,7 @@ verification:
   - GitHub Actions run 26771029593: passed changes, lint, test, type-check, deploy
   - ssh noor-server cat /opt/noor/.release-sha and .release-run-id: passed, 70500e32e6206462b426b65dd8d7afc8e5ccda72 / 26771029593
   - uv run python scripts/verify_api.py --base-url https://noor.starec.ai: passed, 8 passed / 0 failed
-  - production E2E +79262810921#tj-gh47-pref-20260601173808: passed, conversation 6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee, model z-ai/glm-5, escalation_status none, pending_escalations 0, no manager handoff
+  - production E2E [PROTECTED_TEST_PHONE]#tj-gh47-pref-20260601173808: passed, conversation 6e437d6d-e1b9-46e0-ad58-cfe7fe9e85ee, model z-ai/glm-5, escalation_status none, pending_escalations 0, no manager handoff
 changed_files:
   - src/llm/engine.py
   - src/llm/verified_answers.py
@@ -102,7 +102,7 @@ Actions run `26771029593`. Production runtime readback matched
 `70500e32e6206462b426b65dd8d7afc8e5ccda72`.
 
 Production E2E seeded the original #47 context in a synthetic conversation on
-`+79262810921#tj-gh47-pref-20260601173808`, then sent
+`[PROTECTED_TEST_PHONE]#tj-gh47-pref-20260601173808`, then sent
 `I prefer more open for team` through the normal Wazzup webhook. The production
 reply stayed in the product path, returned NOVO/open-team options, used model
 `z-ai/glm-5`, kept `escalation_status=none`, created zero escalation rows, and

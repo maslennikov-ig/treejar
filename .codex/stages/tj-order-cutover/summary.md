@@ -77,32 +77,32 @@ recovery, or commercial-policy phrases misread as order quantities.
 ## Live WhatsApp E2E
 
 - #52 parse/stock path:
-  `+79262810921#tj-order-cutover-gh52-20260615T083802Z` parsed
+  `[PROTECTED_TEST_PHONE]#tj-order-cutover-gh52-20260615T083802Z` parsed
   `CH 615 NEW black 6 point` as qty 6, resolved CH 615 black, and hit a real
   stock-shortage path instead of an item/quantity loop.
 - #52 quote resume:
-  `+79262810921#tj-order-cutover-gh52quote-20260615T083802Z` resolved
+  `[PROTECTED_TEST_PHONE]#tj-order-cutover-gh52quote-20260615T083802Z` resolved
   `CH 615 NEW black 1 point` as qty 1, then compact details
   `Name company GHP / Address - 2 street / +79137704837` resumed
   `order_runtime.quote_frame.status=collecting_details` and asked only for the
   missing email.
 - #42 original phrase:
-  `+79262810921#tj-order-cutover-gh42-20260615T083802Z` returned catalog
+  `[PROTECTED_TEST_PHONE]#tj-order-cutover-gh42-20260615T083802Z` returned catalog
   options because production has two live SK 45 white products; no quantity
   clarification loop occurred.
 - #42 production-valid equivalent:
-  `+79262810921#tj-order-cutover-gh42exact-20260615T083802Z` asked for quantity
+  `[PROTECTED_TEST_PHONE]#tj-order-cutover-gh42exact-20260615T083802Z` asked for quantity
   for SK 45 white, consumed bare `2`, and stayed in selection confirmation
   rather than a generic opener.
 - #49/#50/#51 combined flow:
-  `+79262810921#tj-order-cutover-gh50-20260615T083802Z` preserved
+  `[PROTECTED_TEST_PHONE]#tj-order-cutover-gh50-20260615T083802Z` preserved
   `2 x SKYLAND NOVO 2400 Meeting Table` plus unresolved `4 x CH 616 chairs`,
   accepted `CH 616 NEW black`, collected details, and created quotation
   `Fr3389`. DB readback shows `order_runtime.quote_frame.status=quoted`, two
   quote lines, details `Lilia / GHP / live-order-cutover@example.com /
   2 street Dubai`, and no consecutive duplicate assistant replies.
 - Commercial blocker hotfix:
-  `+79262810921#tj-order-cutover-blocker2-20260615T090126Z` returned
+  `[PROTECTED_TEST_PHONE]#tj-order-cutover-blocker2-20260615T090126Z` returned
   `z-ai/glm-5|verified-policy` with `escalation_status=pending` for
   `20 percent discount and net 30 payment terms`; no bogus `20 x` selection.
 

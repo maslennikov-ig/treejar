@@ -15,7 +15,7 @@
 Актуальная truth на 11 апреля 2026:
 - canonical host: https://noor.starec.ai
 - canonical runtime path: /opt/noor
-- live test recipient: +79262810921
+- live test recipient: [PROTECTED_TEST_PHONE]
 - canonical Wazzup sender/channel: +971551220665
 - channelId: b49b1b9d-757f-4104-b56d-8f43d62cc515
 - Treejar Catalog API = single source of truth for customer-facing catalog discovery/assets

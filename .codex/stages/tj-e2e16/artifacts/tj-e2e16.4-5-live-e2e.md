@@ -29,7 +29,7 @@ verification:
   - "GitHub Actions run 25932016725": passed, deployed 2b86b0366fde0358fed255e8da3c89aacedf556f
   - "ssh noor-server cat /opt/noor/.release-sha": passed, 2b86b0366fde0358fed255e8da3c89aacedf556f
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 7 passed and 0 failed
-  - "production cleanup for 79262810921% before final E2E": passed, before conversations/messages/outbound/escalations/manager_reviews/quality_reviews/conversation_summaries/feedbacks 1/19/25/1/0/0/1/0, after all 0
+  - "production cleanup for [PROTECTED_TEST_PHONE]% before final E2E": passed, before conversations/messages/outbound/escalations/manager_reviews/quality_reviews/conversation_summaries/feedbacks 1/19/25/1/0/0/1/0, after all 0
   - "live long-dialog E2E conversation ae1c7a38-d7e6-401c-a520-07a0a480cd2e": passed
   - "production DB assertions for ae1c7a38-d7e6-401c-a520-07a0a480cd2e": passed
 changed_files:
@@ -45,7 +45,7 @@ explicit_defers:
 # Summary
 
 Delivered `tj-e2e16` to production and repeated the long-dialog memory E2E on
-the approved phone `79262810921`.
+the approved phone `[PROTECTED_TEST_PHONE]`.
 
 The first deploy (`37c2b88`) fixed neutral detail capture and product/quantity
 turns, but live E2E exposed one remaining gap: a saved-context summary question
@@ -59,7 +59,7 @@ Final deployed production release:
 - GitHub Actions run `25932016725`: success.
 - `/opt/noor/.release-sha`: `2b86b0366fde0358fed255e8da3c89aacedf556f`.
 - Production API smoke: 7 passed, 0 failed.
-- Final cleanup for approved phone prefix `79262810921%`: before cleanup there
+- Final cleanup for approved phone prefix `[PROTECTED_TEST_PHONE]%`: before cleanup there
   were 1 conversation, 19 messages, 25 outbound audit rows, 1 escalation,
   0 manager reviews, 0 quality reviews, 1 conversation summary, and 0 feedbacks;
   after cleanup all matching counts were 0.

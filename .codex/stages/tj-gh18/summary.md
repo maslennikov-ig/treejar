@@ -86,7 +86,7 @@ Beads: `tj-gh18`, `tj-gh18.1`, `tj-gh18.2`, `tj-gh18.3`
   `af39abc4a1f299eb2c37af916c14d476ea2ab1b7`, success; `/opt/noor/.release-sha`
   and `/opt/noor/.release-run-id` match.
 - Production API smoke after final deploy: `7 passed, 0 failed`.
-- Approved production cleanup for `79262810921%` / `+79262810921%` before live
+- Approved production cleanup for `[PROTECTED_TEST_PHONE]%` / `[PROTECTED_TEST_PHONE]%` before live
   testing removed 1 conversation, 4 messages, and 2 outbound audit rows; after
   cleanup all matching counts were 0.
 - Final production parser/policy matrix passed for:

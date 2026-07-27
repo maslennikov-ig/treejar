@@ -46,7 +46,7 @@ The same worker run found a new quotation blocker converted into Bead `tj-gh12.1
 
 # Verification
 
-The E2E worker used only controlled text messages to the approved suffix under `+79262810921`, read-only DB checks through the app container, and local API smoke. It did not run `scripts/verify_wazzup.py`, mutate GitHub issues, mutate production config, send templates, or test voice/audio.
+The E2E worker used only controlled text messages to the approved suffix under `[PROTECTED_TEST_PHONE]`, read-only DB checks through the app container, and local API smoke. It did not run `scripts/verify_wazzup.py`, mutate GitHub issues, mutate production config, send templates, or test voice/audio.
 
 # Risks / Follow-ups / Explicit Defers
 

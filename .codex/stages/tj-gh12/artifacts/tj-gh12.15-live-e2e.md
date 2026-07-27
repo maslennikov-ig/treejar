@@ -40,7 +40,7 @@ The same conversation still became `escalation_status=pending` and sent `product
 - Release SHA: `cc3fcf5a5f3e3dd13249aaf7091a1b0d975a180a`
 - Release run id: `25785931360`
 - API smoke: `7 passed, 0 failed`
-- Test suffix: `79262810921#tj-gh12-e2e-a-20260513081336`
+- Test suffix: `[PROTECTED_TEST_PHONE]#tj-gh12-e2e-a-20260513081336`
 - Bot marker: `[smoke:23137ea4]`
 - Conversation id: `ceb13f3e-2af6-44fa-ad69-b2e56c2bf9e5`
 

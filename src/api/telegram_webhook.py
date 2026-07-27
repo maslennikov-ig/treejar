@@ -334,7 +334,7 @@ async def _handle_reset_command_if_present(message: dict[str, Any]) -> bool:
     phone = normalize_reset_phone(raw_phone)
     if phone is None:
         await client.send_message(
-            "Использование: <code>/reset +79262810921</code>",
+            "Использование: <code>/reset +&lt;country-code-and-number&gt;</code>",
             chat_id=str(chat_id),
         )
         return True

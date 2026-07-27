@@ -30,7 +30,7 @@ verification:
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed, 7 passed and 0 failed
   - "production SKU parser matrix": passed, 8 variants
   - "production direct runtime #38 check": passed, sales-order-clarify, no escalation, no media, pending quote stored
-  - "production cleanup for 79262810921/+79262810921 prefixes": passed, before conversations/messages/outbound/escalations/manager_reviews/quality_reviews/conversation_summaries/feedbacks/llm_attempts 1/16/26/0/0/0/1/0/0, after all 0
+  - "production cleanup for [PROTECTED_TEST_PHONE]/[PROTECTED_TEST_PHONE] prefixes": passed, before conversations/messages/outbound/escalations/manager_reviews/quality_reviews/conversation_summaries/feedbacks/llm_attempts 1/16/26/0/0/0/1/0/0, after all 0
   - "live webhook E2E conversation 58550f16-7530-4177-9980-224d1513c995": passed
 changed_files:
   - src/llm/engine.py
@@ -46,7 +46,7 @@ explicit_defers:
 # Summary
 
 Delivered `tj-gh17` to production and verified GitHub #38 on the approved test
-phone `79262810921`.
+phone `[PROTECTED_TEST_PHONE]`.
 
 # SKU Matrix
 

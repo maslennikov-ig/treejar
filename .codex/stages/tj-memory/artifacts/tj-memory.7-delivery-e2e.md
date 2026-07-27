@@ -64,7 +64,7 @@ verification:
   - "scripts/orchestration/run_process_verification.sh": passed
   - "GitHub Actions run 26951658369": passed
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed
-  - "production E2E on +79262810921#tj-memory-e2e-20260604-1231": passed
+  - "production E2E on [PROTECTED_TEST_PHONE]#tj-memory-e2e-20260604-1231": passed
 changed_files:
   - src/llm/engine.py
   - src/llm/fact_extractor.py
@@ -87,7 +87,7 @@ config-gated.
 # E2E Scenario
 
 Test identity:
-`+79262810921#tj-memory-e2e-20260604-1231`
+`[PROTECTED_TEST_PHONE]#tj-memory-e2e-20260604-1231`
 
 Message:
 

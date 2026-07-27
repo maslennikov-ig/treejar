@@ -46,7 +46,7 @@ explicit_defers:
 # Summary
 
 `tj-gh23` was merged, deployed, and live-tested on the user-approved number
-`+79262810921`.
+`[PROTECTED_TEST_PHONE]`.
 
 The original live blocker is fixed: quote-ready exact product requests now pass
 through name gate and create quotations instead of falling into
@@ -77,17 +77,17 @@ through name gate and create quotations instead of falling into
 
 # Live E2E Matrix
 
-Approved number: `+79262810921`.
+Approved number: `[PROTECTED_TEST_PHONE]`.
 
 Production Wazzup channel: `b49b1b9d-757f-4104-b56d-8f43d62cc515`.
 
 | Scenario | Phone suffix | Conversation | Result |
 | --- | --- | --- | --- |
-| Word quantity exact product | `+79262810921#tj-gh23-word2-20260522a` | `cf9f4ade-b261-4f56-b104-69062f861cdd` | name gate -> `exact-quote-deterministic`; quotation `Fr3294`; no unexpected escalation |
-| Numeric exact product | `+79262810921#tj-gh23-num-20260522a` | `e3d30ece-31b5-46a2-a948-dd10096a4bb7` | name gate -> `exact-quote-deterministic`; quotation `Fr3295`; no escalation |
-| Ambiguous CH 616 stem | `+79262810921#tj-gh23-ambig2-20260522a` | `c397b396-b63a-4050-87b6-6b41eab72bea` | name gate -> `exact-quote-clarify-item`; asks exact item/SKU; no escalation |
-| Post-quotation question | `+79262810921#tj-gh23-word2-20260522a` | `cf9f4ade-b261-4f56-b104-69062f861cdd` | `proposal-clarify`; no escalation, but reply quality is weak |
-| Post-quotation approval | `+79262810921#tj-gh23-word2-20260522a` | `cf9f4ade-b261-4f56-b104-69062f861cdd` | `post-quotation-accepted`; quotation approved; follow-up stopped; expected manager handoff created and then resolved during cleanup |
+| Word quantity exact product | `[PROTECTED_TEST_PHONE]#tj-gh23-word2-20260522a` | `cf9f4ade-b261-4f56-b104-69062f861cdd` | name gate -> `exact-quote-deterministic`; quotation `Fr3294`; no unexpected escalation |
+| Numeric exact product | `[PROTECTED_TEST_PHONE]#tj-gh23-num-20260522a` | `e3d30ece-31b5-46a2-a948-dd10096a4bb7` | name gate -> `exact-quote-deterministic`; quotation `Fr3295`; no escalation |
+| Ambiguous CH 616 stem | `[PROTECTED_TEST_PHONE]#tj-gh23-ambig2-20260522a` | `c397b396-b63a-4050-87b6-6b41eab72bea` | name gate -> `exact-quote-clarify-item`; asks exact item/SKU; no escalation |
+| Post-quotation question | `[PROTECTED_TEST_PHONE]#tj-gh23-word2-20260522a` | `cf9f4ade-b261-4f56-b104-69062f861cdd` | `proposal-clarify`; no escalation, but reply quality is weak |
+| Post-quotation approval | `[PROTECTED_TEST_PHONE]#tj-gh23-word2-20260522a` | `cf9f4ade-b261-4f56-b104-69062f861cdd` | `post-quotation-accepted`; quotation approved; follow-up stopped; expected manager handoff created and then resolved during cleanup |
 
 # Production DB Evidence
 
@@ -130,16 +130,16 @@ PDF; text bot replies do have outbound audit rows.
 # Cleanup
 
 - Old `tj-gh22-*` synthetic conversations:
-  - `79262810921#tj-gh22-product-20260521165301`
-  - `79262810921#tj-gh22-quote-20260521165301`
-  - `79262810921#tj-gh22-quote-num-20260521165301`
+  - `[PROTECTED_TEST_PHONE]#tj-gh22-product-20260521165301`
+  - `[PROTECTED_TEST_PHONE]#tj-gh22-quote-20260521165301`
+  - `[PROTECTED_TEST_PHONE]#tj-gh22-quote-num-20260521165301`
   - all are `closed`, `resolved`, and have zero pending/in-progress escalations.
 - New `tj-gh23-*` synthetic conversations:
-  - `+79262810921#tj-gh23-ambig2-20260522a`
-  - `+79262810921#tj-gh23-ambiguous-20260522a`
-  - `+79262810921#tj-gh23-num-20260522a`
-  - `+79262810921#tj-gh23-word-20260522a`
-  - `+79262810921#tj-gh23-word2-20260522a`
+  - `[PROTECTED_TEST_PHONE]#tj-gh23-ambig2-20260522a`
+  - `[PROTECTED_TEST_PHONE]#tj-gh23-ambiguous-20260522a`
+  - `[PROTECTED_TEST_PHONE]#tj-gh23-num-20260522a`
+  - `[PROTECTED_TEST_PHONE]#tj-gh23-word-20260522a`
+  - `[PROTECTED_TEST_PHONE]#tj-gh23-word2-20260522a`
   - all are `closed`; pending/in-progress escalations are zero.
 
 # Risks / Follow-ups

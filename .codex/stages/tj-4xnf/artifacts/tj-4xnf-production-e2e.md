@@ -77,9 +77,9 @@ Production API smoke passed with `8 passed, 0 failed`.
 
 # Live E2E
 
-Approved number: `+79262810921`.
+Approved number: `[PROTECTED_TEST_PHONE]`.
 
-Acceptance suffix: `+79262810921#tj-4xnf-clean-20260527-073550`.
+Acceptance suffix: `[PROTECTED_TEST_PHONE]#tj-4xnf-clean-20260527-073550`.
 Conversation: `4c2156c6-1763-435e-aa3d-7965631a96f3`.
 
 Flow:
@@ -98,7 +98,7 @@ Readback showed:
 - `pending_escalations=0`
 
 Wazzup echo showed `Your Treejar quotation: Fr3316` delivered to base chat
-`79262810921`, confirming synthetic suffix stripping at the provider boundary.
+`[PROTECTED_TEST_PHONE]`, confirming synthetic suffix stripping at the provider boundary.
 
 # Verification
 

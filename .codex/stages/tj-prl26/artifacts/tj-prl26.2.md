@@ -35,7 +35,7 @@ Bounded pre-launch E2E for `tj-prl26.2` is now passed after the `tj-prl26.5` SKU
 
 The first run stopped on a launch blocker: production public catalog and DB contained SKU `00-07024023`, but the bot said the SKU did not exist. `tj-prl26.5` fixed root cause by preserving labeled product identifiers during PII masking. After deployment of `d93b95480ec4ca53459f3a0bd527b1a27eb73358`, the narrow SKU recheck passed.
 
-The full controlled rerun on 2026-04-26 used real test WhatsApp `79262810921` with unique `tj-prl26-*` suffixes and covered customer discovery/stock/clarification, quotation approve/reject, Telegram private manager reply, active escalation fallback, phone filtering, outbound audit, and final pending-count readback.
+The full controlled rerun on 2026-04-26 used real test WhatsApp `[PROTECTED_TEST_PHONE]` with unique `tj-prl26-*` suffixes and covered customer discovery/stock/clarification, quotation approve/reject, Telegram private manager reply, active escalation fallback, phone filtering, outbound audit, and final pending-count readback.
 
 # Verification
 
@@ -50,7 +50,7 @@ Runtime/API smoke:
 
 Post-fix narrow SKU recheck:
 
-- Synthetic phone suffix: `79262810921#tj-prl26-sku-recheck-20260426180210`.
+- Synthetic phone suffix: `[PROTECTED_TEST_PHONE]#tj-prl26-sku-recheck-20260426180210`.
 - Conversation: `8ad66895-1caa-45df-9f03-8907cc96f21f`.
 - Bot reply returned SKU `00-07024023`, stock `12`, and price `685.00 AED`.
 - Read-only DB readback: `escalation_status='none'`, pending recheck conversations `0`, messages persisted, outbound audit `f3f63b53-5b98-4c96-9979-569b03544c16` persisted with `status='sent'`.
@@ -61,7 +61,7 @@ Run id: `20260426181300`.
 
 Customer chat/product/stock/clarification:
 
-- Phone suffix: `79262810921#tj-prl26-chat-rerun-20260426181300`.
+- Phone suffix: `[PROTECTED_TEST_PHONE]#tj-prl26-chat-rerun-20260426181300`.
 - Conversation: `b7f6e4c2-92ac-4f47-a508-48bd1c188b83`.
 - Discovery reply suggested three IMAGO operative tables and catalog prices `246`, `264`, and `450 AED`.
 - Exact SKU reply for `00-07024023` returned stock `12` and price `685.00 AED`.
@@ -70,7 +70,7 @@ Customer chat/product/stock/clarification:
 
 Quotation approve:
 
-- Phone suffix: `79262810921#tj-prl26-approve-20260426181300`.
+- Phone suffix: `[PROTECTED_TEST_PHONE]#tj-prl26-approve-20260426181300`.
 - Conversation: `03bcd8b9-334b-4dec-b29b-bb4d7a24861a`.
 - Quotation: `Fr3143`.
 - Initial bot reply: quotation prepared and sent to manager for review.
@@ -81,7 +81,7 @@ Quotation approve:
 
 Quotation reject:
 
-- Phone suffix: `79262810921#tj-prl26-reject-20260426181300`.
+- Phone suffix: `[PROTECTED_TEST_PHONE]#tj-prl26-reject-20260426181300`.
 - Conversation: `7c937625-b6d9-4076-95d6-850858d2e8b2`.
 - Quotation: `Fr3144`.
 - Initial bot reply: quotation created and sent to manager for review.
@@ -92,7 +92,7 @@ Quotation reject:
 
 Telegram private manager reply:
 
-- Phone suffix: `79262810921#tj-prl26-manager-20260426181300`.
+- Phone suffix: `[PROTECTED_TEST_PHONE]#tj-prl26-manager-20260426181300`.
 - Conversation: `c103e283-21a7-45e3-960a-1caee8a7df60`.
 - Initial customer message created `escalation_status='pending'`.
 - Telegram webhook callback `faq_private:c103e283-21a7-45e3-960a-1caee8a7df60` -> HTTP `200`, `{"status":"ok"}`.
@@ -102,7 +102,7 @@ Telegram private manager reply:
 
 Active escalation fallback:
 
-- Phone suffix: `79262810921#tj-prl26-escalation-20260426181300`.
+- Phone suffix: `[PROTECTED_TEST_PHONE]#tj-prl26-escalation-20260426181300`.
 - Conversation: `2fb85b1e-83f9-4534-844c-854086bf0852`.
 - Initial customer message created `escalation_status='pending'`.
 - Follow-up while pending produced assistant message `model='fallback'`: `A manager has been notified and will get back to you shortly`.
@@ -111,8 +111,8 @@ Active escalation fallback:
 
 Phone filtering:
 
-- Exact full suffix query for `79262810921#tj-prl26-chat-rerun-20260426181300` -> total `1`.
-- Exact base query for `79262810921` -> total `1`, a separate base-phone conversation; suffix conversation was not included.
+- Exact full suffix query for `[PROTECTED_TEST_PHONE]#tj-prl26-chat-rerun-20260426181300` -> total `1`.
+- Exact base query for `[PROTECTED_TEST_PHONE]` -> total `1`, a separate base-phone conversation; suffix conversation was not included.
 - Exact `phone=tj-prl26` -> total `0`.
 - Explicit fuzzy `phone=tj-prl26&phone_match=fuzzy` -> total `3` at the moment of that check.
 

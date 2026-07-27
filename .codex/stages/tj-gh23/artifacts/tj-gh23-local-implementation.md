@@ -33,7 +33,7 @@ changed_files:
   - tests/test_dialogue_catalog_refs.py
   - tests/test_llm_engine.py
 explicit_defers:
-  - tj-gh23.5: production E2E on +79262810921 remains blocked until explicit merge/deploy authorization and deployed runtime
+  - tj-gh23.5: production E2E on [PROTECTED_TEST_PHONE] remains blocked until explicit merge/deploy authorization and deployed runtime
   - tj-gh22.1: post-quotation follow-up E2E remains blocked until quotation creation is proven live
   - live synthetic pending exact-quote escalations from tj-gh22.1 must be cleaned or resolved before claiming E2E completion
 ---

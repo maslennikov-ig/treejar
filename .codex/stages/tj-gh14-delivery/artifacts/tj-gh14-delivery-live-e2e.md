@@ -22,7 +22,7 @@ verification:
   - "scripts/orchestration/run_process_verification.sh --stage tj-gh14-delivery": passed
   - "GitHub Actions CI 25872745415": passed
   - "uv run python scripts/verify_api.py --base-url https://noor.starec.ai": passed
-  - "Live WhatsApp E2E via scripts/bot_test.py on approved number +79262810921": passed
+  - "Live WhatsApp E2E via scripts/bot_test.py on approved number [PROTECTED_TEST_PHONE]": passed
 changed_files:
   - src/llm/engine.py
   - tests/test_llm_engine.py
@@ -35,7 +35,7 @@ explicit_defers:
 # Summary
 
 Live WhatsApp E2E passed on the user-approved personal number
-`+79262810921` after deploying hotfix release
+`[PROTECTED_TEST_PHONE]` after deploying hotfix release
 `7075be5831dd0e09e29a319d842003f24c6dcf0f`.
 
 The first live attempt exposed a real blocker: `Hi, I need 5 x CH 190.`
@@ -75,12 +75,12 @@ Production smoke:
 
 # Live E2E Evidence
 
-Approved live number: `+79262810921`.
+Approved live number: `[PROTECTED_TEST_PHONE]`.
 
 ## Scenario A: Name Gate + CH 190 Quote Resume
 
 Synthetic chat suffix:
-`79262810921#tj-gh14-live-quote-20260514165102`.
+`[PROTECTED_TEST_PHONE]#tj-gh14-live-quote-20260514165102`.
 
 Conversation ID: `451d7d3b-af68-4d37-b154-c47b787df744`.
 
@@ -109,7 +109,7 @@ DB readback:
 ## Scenario B: Product + Quantity No Handoff + Media Captions
 
 Synthetic chat suffix:
-`79262810921#tj-gh14-live-product-20260514165102`.
+`[PROTECTED_TEST_PHONE]#tj-gh14-live-product-20260514165102`.
 
 Conversation ID: `866e8e62-d760-443b-86b8-4d0c913ab90c`.
 
@@ -136,4 +136,4 @@ DB readback:
 
 No GitHub issue comments/closures were made. No production configuration was
 changed. The only live external side effects were the approved WhatsApp test
-messages/media to `+79262810921`.
+messages/media to `[PROTECTED_TEST_PHONE]`.
