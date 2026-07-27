@@ -170,3 +170,23 @@ No further live messages were sent. Beads `tj-15m.10` tracks the external owner
 action: reconnect/re-authorize the configured WhatsApp session, prove one
 approved synthetic canary is actually delivered, then rerun the post-fix Arabic
 scenario, escalation/cleanup scenario, and delivery-aware matrix.
+
+## Wazzup reconnection canary on 2026-07-27
+
+The exact configured Wazzup channel now reports transport `whatsapp` and state
+`active`. Production health is `ok`; Redis and database dependencies are `ok`,
+and the application, worker, nginx, Redis, and database containers are running.
+
+One previously approved synthetic text canary completed in `6.797s`. Exact
+readback found one user message, one assistant message, and one text outbound
+audit with status `sent`. The audit has a provider message ID and no outbound
+error; the synthetic conversation has escalation status `none`.
+
+Two launcher checks stopped before webhook while validating the protected test
+identity and helper execution path. They created no external messages. Only the
+successful canary created live traffic.
+
+This closes the Wazzup reconnection gate but does not establish a latency
+distribution. Customer-visible `p50`, `p95`, and maximum remain unclaimed until
+the post-fix Arabic scenario, escalation/cleanup scenario, and complete
+delivery-aware matrix are executed.

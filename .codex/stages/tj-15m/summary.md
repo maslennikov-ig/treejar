@@ -1,7 +1,7 @@
 # Stage tj-15m Summary
 
-Updated: 2026-07-24
-Status: blocked on Wazzup WhatsApp channel reconnection
+Updated: 2026-07-27
+Status: in progress; Wazzup delivery restored, full matrix pending
 Branch: `main`
 Beads: `tj-15m`
 
@@ -83,28 +83,38 @@ quotation media, voice, payment, referral, or real-customer traffic.
   - the pre-correction Arabic path reproduced the English name gate in
     `6.285s`; the deployed correction is regression-covered but was not sent
     again after the provider blocker was identified.
-- Delivery boundary:
-  - the configured Wazzup WhatsApp channel was found by the read-only channels
-    API, but reports state `qridle`;
-  - production outbound audits return `MESSAGE_CHANNEL_UNAVAILABLE`;
-  - the durations above therefore prove only assistant-response persistence,
-    not customer-visible WhatsApp delivery;
-  - no customer-visible `p50`, `p95`, or maximum is claimed.
+- Delivery boundary on 2026-07-24:
+  - the configured Wazzup WhatsApp channel reported state `qridle`;
+  - production outbound audits returned `MESSAGE_CHANNEL_UNAVAILABLE`;
+  - the historical durations above therefore prove only assistant-response
+    persistence, not customer-visible WhatsApp delivery.
+- Reconnection acceptance on 2026-07-27:
+  - the exact configured channel is present, transport `whatsapp`, state
+    `active`;
+  - production health is `ok`; Redis, database, app, worker, nginx, and their
+    supporting containers are running;
+  - one approved synthetic canary completed in `6.797s`;
+  - exact readback found one user message, one assistant message, one text
+    outbound audit with status `sent`, a provider message ID, no outbound
+    error, and escalation status `none`;
+  - two preceding launcher checks stopped before webhook while validating the
+    protected identity/helper path; only the successful canary created live
+    traffic.
+- One successful canary is not a latency distribution. Customer-visible
+  `p50`, `p95`, and maximum remain unclaimed until the delivery-aware matrix is
+  completed.
 - One malformed synthetic helper attempt accidentally captured a debug line
   instead of the intended SKU. It affected only the approved synthetic
   recipient and created no quotation, order, or escalation.
-- Stop rule applied: no more live messages were sent after confirming the
-  unavailable channel. The escalation scenario and post-fix Arabic delivery
-  rerun remain unsent.
-- External blocker `tj-15m.10`: the Wazzup account owner must reconnect the
-  configured WhatsApp session, then one approved canary must prove successful
-  provider delivery before the remaining matrix resumes.
+- Wazzup blocker `tj-15m.10` is resolved and accepted. The post-fix Arabic
+  delivery rerun, escalation/cleanup scenario, and full delivery-aware matrix
+  remain pending under `tj-15m.7`.
 
 ## Closeout
 
-- `docs-reviewed: updated` — `docs/latency-evidence.md` separates internal
-  persistence timing from failed Wazzup delivery and records the exact external
-  reconnection gate.
+- `docs-reviewed: updated` — `docs/latency-evidence.md` now records the
+  successful channel reconnection canary while preserving the boundary between
+  one send and a complete latency distribution.
 - `project-index: reviewed-no-change` — no entrypoint change is planned.
 - `graph-reviewed: no-change-needed` — the optional graph report is absent and
   this localized correction does not change architecture or entrypoints.

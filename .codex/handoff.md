@@ -1,8 +1,8 @@
 # Orchestrator Handoff
-Updated: 2026-07-24
+Updated: 2026-07-27
 Current branch: `main`
 Current stage id: `tj-15m`
-Current stage status: blocked on Wazzup WhatsApp reconnection
+Current stage status: in progress; Wazzup restored, full matrix pending
 
 ## Current Truth
 - Stabilization epic `tj-av22` and release task `tj-av22.3` are accepted and
@@ -78,10 +78,11 @@ Current stage status: blocked on Wazzup WhatsApp reconnection
 - GitHub Actions run `30098682854` passed lint, type-check, tests, and deploy.
   Local release gates pass with `1528 passed, 19 skipped`. Production health is
   green on exact release `cee1f7d4ba05eba5107d38bd5388c2b5b4622d55`.
-- The configured Wazzup WhatsApp channel reports `qridle`; outbound attempts
-  return `MESSAGE_CHANNEL_UNAVAILABLE`. Recorded timings are internal response
-  persistence only, not customer-visible delivery. No p50/p95/max target is
-  claimed. Task `tj-15m.10` requires the account owner to reconnect the channel.
+- On 2026-07-27 the exact configured Wazzup WhatsApp channel reported `active`.
+  One approved synthetic canary completed in `6.797s`: one user message, one
+  assistant message, one text outbound audit with status `sent`, a provider
+  message ID, no outbound error, and no escalation. Task `tj-15m.10` is
+  accepted; this single sample is not a p50/p95/max distribution.
 
 ## Audit Baseline
 - Local canonical gates were green at audit time: Ruff, format, Mypy, and full
@@ -92,19 +93,19 @@ Current stage status: blocked on Wazzup WhatsApp reconnection
   visibility, historical 17–42 second latency, and three public `501` routes.
 
 ## Next recommended
-Next stage id: `tj-15m` remains active but blocked.
-Recommended action: the Wazzup account owner reconnects the configured WhatsApp
-session and confirms an active/send-capable state. Then run one approved
-synthetic delivery canary, the post-fix Arabic scenario, the
-escalation-and-cleanup scenario, and the complete delivery-aware matrix.
+Next stage id: `tj-15m` remains active.
+Recommended action: run the post-fix Arabic scenario, the
+escalation-and-cleanup scenario, and the complete delivery-aware matrix under
+`tj-15m.7`; then compute customer-visible p50/p95/max and close the stage if all
+correctness and cleanup gates pass.
 
 ## Starter prompt for next orchestrator
-Use $orchestrator-stage to resume `tj-15m` after the configured Wazzup WhatsApp
-channel is reconnected and read-only status is send-capable. First send one
-approved synthetic canary and verify an audited provider delivery id; only then
-run the remaining Arabic and escalation scenarios plus the delivery-aware
-latency matrix. Treat the Zoho rotation and releases through `cee1f7d` as
-accepted history.
+Use $orchestrator-stage to continue `tj-15m.7`. Treat the Zoho rotation,
+releases through `cee1f7d`, Wazzup `active` readback, and the accepted
+`6.797s` delivery canary as verified history. Run the remaining post-fix Arabic
+and escalation/cleanup scenarios plus the complete delivery-aware latency
+matrix, preserving the existing recipient, suffix, stop, and privacy
+boundaries.
 
 ## Approval gates
 - The user explicitly approved escalation reconciliation, maintenance cron and
@@ -113,12 +114,11 @@ accepted history.
 - Preserve existing unrelated user files and do not change credentials/scopes.
 
 ## Explicit defers
-- `tj-15m`: blocked because Wazzup persisted replies cannot currently be
-  delivered to WhatsApp; resume after `tj-15m.10`.
-- `tj-15m.7`: credential rotation is complete, but its combined matrix
-  acceptance remains blocked by `tj-15m.10`.
-- `tj-15m.10`: external Wazzup account owner must reconnect/re-authorize the
-  configured WhatsApp session.
+- `tj-15m`: in progress; the complete delivery-aware matrix remains.
+- `tj-15m.7`: in progress; credential rotation and Wazzup delivery canary pass,
+  while Arabic, escalation/cleanup, and final latency distribution remain.
+- `tj-15m.10`: accepted and closed after active-channel readback and one
+  successful audited synthetic text send.
 - `tj-5o9r`: accepted and closed.
 - `tj-rt42`: accepted and closed.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
