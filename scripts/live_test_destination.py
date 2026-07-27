@@ -9,6 +9,7 @@ from collections.abc import Mapping
 LIVE_WHATSAPP_PHONE_ENV = "NOOR_LIVE_TEST_WHATSAPP_PHONE"
 
 _E164_PHONE = re.compile(r"^\+[1-9]\d{7,14}$")
+_NANPA_FICTIONAL_PHONE = re.compile(r"^\+1[2-9]\d{2}55501\d{2}$")
 
 
 class LiveDestinationError(ValueError):
@@ -35,6 +36,7 @@ def load_live_whatsapp_phone(
         "PROTECTED_TEST_PHONE" in value.upper()
         or value.startswith("+1555")
         or value.startswith("+971000")
+        or _NANPA_FICTIONAL_PHONE.fullmatch(value) is not None
     )
     if is_placeholder or _E164_PHONE.fullmatch(value) is None:
         raise LiveDestinationError(

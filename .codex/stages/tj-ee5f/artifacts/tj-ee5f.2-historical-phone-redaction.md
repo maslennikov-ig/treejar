@@ -78,8 +78,11 @@ verification:
   - TDD RED for missing scripts.live_test_destination contract: passed by failing with ModuleNotFoundError
   - TDD RED for a generic reset usage placeholder: passed by failing against the synthetic runtime example
   - focused GREEN for the generic reset usage placeholder: passed, 1 test
-  - uv run pytest tests/test_live_test_destination.py: passed, 9 tests
-  - affected pytest slice including live-destination contract: passed, 430 tests
+  - TDD RED for NANPA fictional 555-0100 and 555-0199 boundaries: passed, 2 expected failures
+  - TDD RED for send_test_pdf third-party import ordering: passed by catching top-level httpx import
+  - focused GREEN for fail-before-third-party-import ordering: passed, 1 test
+  - uv run pytest tests/test_live_test_destination.py: passed, 12 tests
+  - affected pytest slice including live-destination contract: passed, 433 tests
   - integration live suite collection without destination: passed, 10 tests collected and no live execution
   - repository-wide exact current-tree tracked scan: passed with zero matches
   - repository-wide separator-insensitive normalized current-tree scan: passed with zero matches
@@ -89,7 +92,7 @@ verification:
   - uv run mypy src/: passed, 162 source files
   - full uv run ruff check src/ tests/: passed
   - full uv run ruff format --check src/ tests/: passed, 304 files
-  - full uv run pytest tests/: passed, 1633 tests and 19 skipped
+  - full uv run pytest tests/: passed, 1636 tests and 19 skipped
   - scripts/orchestration/run_process_verification.sh: passed
   - git diff --check: passed
 changed_files:
@@ -137,16 +140,19 @@ the existing acceptance manifest after integration.
 # Verification
 
 - `uv run pytest tests/test_api_conversations.py tests/test_conversation_reset.py tests/test_escalation_fallback.py tests/test_escalation_state.py tests/test_llm_engine.py tests/test_llm_engine_customer_facts.py tests/test_llm_quotation.py tests/test_messaging_wazzup.py tests/test_scripts_bot_test.py tests/test_telegram_reset.py -q --tb=short`: `421 passed`.
-- `uv run pytest tests/test_live_test_destination.py -q --tb=short`: `9 passed`;
+- `uv run pytest tests/test_live_test_destination.py -q --tb=short`: `12 passed`;
   proves there is no live default, explicit environment binding works,
-  placeholders are rejected, and both live scripts fail before external work.
-- Affected slice: `430 passed`; integration-live collection found 10 tests
+  placeholders and the reserved NANPA fictional range are rejected, and both
+  live scripts fail before external work. An import-hook case also proves that
+  `send_test_pdf.py` validates the destination before importing `httpx`, Redis,
+  or runtime integrations.
+- Affected slice: `433 passed`; integration-live collection found 10 tests
   without executing them.
 - Focused Ruff check and format check over the affected source, scripts, and
   tests: passed.
 - `uv run mypy src/`: passed for 162 source files.
 - Full release gate: Ruff passed, format passed for 304 files, Mypy passed,
-  and Pytest passed with `1633 passed, 19 skipped`.
+  and Pytest passed with `1636 passed, 19 skipped`.
 - `scripts/orchestration/run_process_verification.sh`: passed.
 - Exact tracked scan and separator-insensitive normalized tracked scan: zero
   matches.

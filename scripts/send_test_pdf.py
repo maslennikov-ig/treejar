@@ -15,8 +15,6 @@ import datetime as _dt
 import logging
 from pathlib import Path
 
-import httpx
-
 if __package__:
     from scripts.live_test_destination import load_live_whatsapp_phone
 else:
@@ -33,6 +31,7 @@ async def main() -> None:
     user_whatsapp_phone = load_live_whatsapp_phone()
     assert user_whatsapp_phone is not None
 
+    import httpx
     import redis.asyncio as aioredis
 
     from src.core.config import settings
