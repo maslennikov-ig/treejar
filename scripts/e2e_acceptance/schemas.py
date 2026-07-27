@@ -49,6 +49,11 @@ class ClientEvidenceRequirement(StrEnum):
     EXACT_SYNTHETIC_REWARD_AUTHORIZATION = "exact synthetic reward authorization"
 
 
+class ClientGateResolution(StrEnum):
+    IMPLEMENTED = "implemented"
+    EXCLUDED_BY_CLIENT = "excluded_by_client"
+
+
 class CriterionIdentity(StrictModel):
     criterion_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
@@ -94,6 +99,7 @@ class DependencyGate(StrictModel):
     evidence_required: list[FreshEvidenceRequirement | ClientEvidenceRequirement] = (
         Field(min_length=1)
     )
+    resolution_outcomes: dict[ClientGateResolution, Outcome] | None = None
 
 
 class TraceabilityCriterion(StrictModel):

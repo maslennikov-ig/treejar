@@ -13,9 +13,10 @@ Execution boundary:
 `scripts/e2e_acceptance/manifest.py` loads local contracts, checks the scope
 anchor against its first Git blob, verifies source content digests (including
 only the named Beads records) plus real section locators, rejects path escape or
-symlink traversal, validates exact reciprocal criterion ownership, and rejects
-authorization, scenario-set, stop-condition, or executable-input drift before
-any future live step.
+symlink traversal, hashes and extracts sections from the same safely opened
+descriptor, validates exact reciprocal criterion ownership and code-owned
+evidence-mode maps, and rejects authorization, scenario-set, stop-condition, or
+executable-input drift before any future live step.
 
 ## Commits
 
@@ -38,11 +39,15 @@ RED:
   freshness-required gate and rejected approved placeholder identities.
 - Correction RED failed collection because `build_scenario_binding` and the
   provenance contract loader did not yet exist.
+- Second correction RED reproduced five failures: a manifest edit could change
+  an evidence-mode policy, AC-21 had no typed implementation/exclusion mapping,
+  EB-REFERRAL lacked its synthetic permission, `manager_draft_prompt` was
+  mistaken for a placeholder, and validated sources were reopened by path.
 
 GREEN:
 
 - `uv run python -m pytest tests/test_e2e_acceptance_manifests.py -q --tb=short`
-  — 33 passed.
+  — 43 passed.
 - Focused Ruff and format — passed.
 - Focused strict Mypy with `--explicit-package-bases` — passed.
 - Full Ruff/format and Mypy over 162 source files — passed.
@@ -55,6 +60,8 @@ GREEN:
 - Outcomes are exactly `PASS|FAIL|BLOCKED|EXCLUDED_BY_CLIENT`.
 - Evidence modes are independently
   `fresh|reused_exact|external_gate`.
+- Exact criterion and evidence-block membership for each evidence mode is
+  hardcoded in the validator rather than inferred from the manifests.
 - The draft authorization has zero quotas, no permissions, placeholder
   release/target values, and an expired window. Approved preflight additionally
   requires exact 40-character Git identities and exact equality for runtime,
@@ -68,6 +75,12 @@ GREEN:
 - `SC-ESCALATION-AR` independently proves Arabic localized fallback,
   one-time escalation, and faithful persisted manager-response delivery for
   AC-03 and AC-15.
+- AC-21 is a typed `tj-final27.6` client gate: implementation maps to `PASS`,
+  explicit client exclusion maps only to `EXCLUDED_BY_CLIENT`, and the
+  referral block requires the zero-quota `referral_synthetic` permission.
+- Placeholder matching rejects only explicit sentinel forms such as
+  `DRAFT-`, `DRAFT_`, `REPLACE_`, and `NO_LIVE_ACTION_`; legitimate identifiers
+  containing “draft” remain valid.
 - Original `<10s`, `99%`, `100+`, daily backup/30-day retention, CRM stages,
   personalized price/order total, catalog coverage, and top-three offer
   obligations remain explicit hard criteria.

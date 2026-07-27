@@ -1329,7 +1329,11 @@
         "evidence_required": [
           "client-approved implementation evidence or explicit client exclusion",
           "exact synthetic reward authorization"
-        ]
+        ],
+        "resolution_outcomes": {
+          "implemented": "PASS",
+          "excluded_by_client": "EXCLUDED_BY_CLIENT"
+        }
       },
       "report_owner": "referral-owner"
     },

@@ -1,7 +1,7 @@
 {
   "schema_version": "noor-e2e-scenario-set/v1",
   "goal_id": "tj-ee5f",
-  "scenario_set_version": "2026-07-27.2",
+  "scenario_set_version": "2026-07-27.3",
   "deterministic_seed": 20260727,
   "scenarios": [
     {
@@ -450,7 +450,7 @@
       "oracle_checks": ["Approved business rules exist", "Synthetic reward constraints and terminal disposition are explicit", "No real reward is issued"],
       "freshness_identity": ["business_rule_digest", "release", "synthetic_reward_manifest"],
       "stop_conditions": ["Client rules unresolved", "Any real reward or referral target appears", "Cleanup disposition missing"],
-      "required_permissions": [],
+      "required_permissions": ["referral_synthetic"],
       "report_owner": "referral-owner",
       "external_gate": "tj-final27.6 is blocked pending client-approved launch rules or explicit exclusion"
     }

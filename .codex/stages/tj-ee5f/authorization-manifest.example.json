@@ -70,8 +70,8 @@
     "any expected terminal disposition cannot be proven"
   ],
   "scenario_binding": {
-    "scenario_set_digest": "e1fc6f512877604e8975ad2b8cde781eb82f2a11ab97fd19be80c9c40a081b44",
-    "scenario_set_version": "2026-07-27.2",
+    "scenario_set_digest": "aa71a1681634ccad36bd75c72036ac1512357faaeabd80bb2fe743b7aaae7419",
+    "scenario_set_version": "2026-07-27.3",
     "deterministic_seed": 20260727,
     "scenario_ids": [
       "SC-OPEN-EN",

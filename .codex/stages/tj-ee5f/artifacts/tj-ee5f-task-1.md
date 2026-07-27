@@ -53,6 +53,7 @@ selected_docs:
   - relevant named Beads regressions and tj-r1f3 evidence
 selected_skills:
   - superpowers:test-driven-development
+  - superpowers:receiving-code-review
 selected_agents:
   - python_pro
 catalog_candidates:
@@ -89,7 +90,8 @@ verification:
   - reciprocal traceability focused RED: failed as expected
   - closed-dependency transition and unresolved approved placeholders focused RED: failed as expected
   - correction RED collected no tests because build_scenario_binding was absent
-  - uv run python -m pytest tests/test_e2e_acceptance_manifests.py -q --tb=short: passed 33
+  - second correction RED reproduced five policy placeholder referral and TOCTOU failures
+  - uv run python -m pytest tests/test_e2e_acceptance_manifests.py -q --tb=short: passed 43
   - focused Ruff and format: passed
   - focused Mypy strict explicit-package-bases: passed
   - full Ruff and format over src tests and scripts/e2e_acceptance: passed
@@ -121,26 +123,34 @@ versioned traceability, reproducible scenario ownership, and an exact
 authorization preflight. The correction pass binds the immutable anchor to the
 exact frozen `tj-ee5f` and `tj-ee5f.1` Beads records, hardcodes the grounding
 gate to exactly AC-07 and AC-30, and adds isolated Arabic manager continuity.
-Outcome and evidence mode remain independent.
+The second correction hardcodes the exact criterion/block evidence-mode maps,
+models AC-21 implementation versus client exclusion outcomes, narrows
+placeholder sentinels, and reads each validated source through one no-following
+file descriptor. Outcome and evidence mode remain independent.
 
 # Scope / Routing
 
 The execution boundary is `scripts/e2e_acceptance/manifest.py`: it reads only
 local JSON and Git/Beads provenance, validates Pydantic contracts, compares the
 scope anchor with its first Git blob, verifies actual source content digests,
-section locators, path containment and symlink safety, and rejects authorization
-or canonical scenario/executable-input drift before any future live caller may
-act.
+section locators, path containment and symlink safety from the same descriptor,
+and rejects authorization or canonical scenario/executable-input drift before
+any future live caller may act.
 
 # Verification
 
 TDD demonstrated intended failures for the absent package, source provenance
 drift, non-reciprocal traceability ownership, dependency-transition state, and
 unresolved approved placeholders. The correction RED then failed collection
-because the new scenario-binding API did not exist. The final focused suite
-passes 33 tests, including recursive placeholder keys/leaves, exclusive expiry,
-stop-condition drift, both grounding transition states, source path escape and
-symlink rejection, exact canonical scenario binding, and Arabic escalation.
+because the new scenario-binding API did not exist. The second correction RED
+reproduced five concrete failures: mutable policy maps, absent AC-21 resolution
+semantics, missing referral permission, a legitimate `manager_draft_prompt`
+false positive, and source reopening by path. The final focused suite passes 43
+tests, including recursive placeholder keys/leaves, exclusive expiry,
+stop-condition drift, both grounding transition states, source path escape,
+symlink/no-follow rejection, same-descriptor hashing/section validation, exact
+opened-inode stability across path replacement, canonical scenario binding, and
+Arabic escalation.
 Focused and full Ruff/format, strict focused Mypy, full Mypy over 162 source
 files, stage sizing, artifact validation, and `git diff --check` pass. Full
 Pytest reached 1650 passed and 19 skipped; seven unrelated admin-dashboard

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
+import stat
 import subprocess
 from datetime import datetime
 from typing import Any
@@ -13,6 +15,8 @@ from pydantic import BaseModel, ValidationError
 from scripts.e2e_acceptance.schemas import (
     AuthorizationManifest,
     AuthorizationStatus,
+    ClientEvidenceRequirement,
+    ClientGateResolution,
     EvidenceMode,
     FreshEvidenceRequirement,
     Outcome,
@@ -24,6 +28,61 @@ from scripts.e2e_acceptance.schemas import (
     ScopeSourceProvenance,
     TraceabilityManifest,
 )
+
+CRITERION_EVIDENCE_MODE_POLICY: dict[EvidenceMode, frozenset[str]] = {
+    EvidenceMode.FRESH: frozenset(
+        {
+            "AC-01",
+            "AC-02",
+            "AC-03",
+            "AC-04",
+            "AC-05",
+            "AC-06",
+            "AC-13",
+            "AC-17",
+            "AC-18",
+            "AC-20",
+            "AC-23",
+            "AC-29",
+        }
+    ),
+    EvidenceMode.REUSED_EXACT: frozenset({"AC-22"}),
+    EvidenceMode.EXTERNAL_GATE: frozenset(
+        {
+            "AC-07",
+            "AC-08",
+            "AC-09",
+            "AC-10",
+            "AC-11",
+            "AC-12",
+            "AC-14",
+            "AC-15",
+            "AC-16",
+            "AC-19",
+            "AC-21",
+            "AC-24",
+            "AC-25",
+            "AC-26",
+            "AC-27",
+            "AC-28",
+            "AC-30",
+        }
+    ),
+}
+EVIDENCE_BLOCK_MODE_POLICY: dict[EvidenceMode, frozenset[str]] = {
+    EvidenceMode.FRESH: frozenset({"EB-RUNTIME", "EB-QUALITY"}),
+    EvidenceMode.REUSED_EXACT: frozenset({"EB-SECURITY"}),
+    EvidenceMode.EXTERNAL_GATE: frozenset(
+        {
+            "EB-ADMIN",
+            "EB-LOAD",
+            "EB-BACKUP",
+            "EB-AVAILABILITY",
+            "EB-CATALOG-COVERAGE",
+            "EB-REFERRAL",
+        }
+    ),
+}
 
 
 class ManifestValidationError(ValueError):
@@ -329,6 +388,26 @@ def validate_contract_bundle(
     known_scenarios = set(scenario_ids)
     known_blocks = set(block_ids)
     known_criteria = set(scope_by_id)
+    actual_criterion_modes = {
+        mode: {
+            item.criterion_id
+            for item in traceability.criteria
+            if item.evidence_mode is mode
+        }
+        for mode in EvidenceMode
+    }
+    if actual_criterion_modes != CRITERION_EVIDENCE_MODE_POLICY:
+        raise ManifestValidationError("criterion evidence-mode policy drift")
+    actual_block_modes = {
+        mode: {
+            item.block_id
+            for item in scenario_set.evidence_blocks
+            if item.evidence_mode is mode
+        }
+        for mode in EvidenceMode
+    }
+    if actual_block_modes != EVIDENCE_BLOCK_MODE_POLICY:
+        raise ManifestValidationError("evidence-block mode policy drift")
     scenarios_by_id = {item.scenario_id: item for item in scenario_set.scenarios}
     blocks_by_id = {item.block_id: item for item in scenario_set.evidence_blocks}
     scenario_criteria = {
@@ -454,6 +533,7 @@ def validate_contract_bundle(
             or dependency is None
             or dependency.required_outcome is not Outcome.PASS
             or set(dependency.evidence_required) != required_evidence
+            or dependency.resolution_outcomes is not None
         ):
             raise ManifestValidationError(
                 "tj-r1f3 must remain a fail-closed external evidence gate"
@@ -477,10 +557,44 @@ def validate_contract_bundle(
                 "unresolved tj-r1f3 must remain an explicit non-passing risk"
             )
 
+    client_gate_criteria = [
+        item
+        for item in traceability.criteria
+        if item.dependency is not None and item.dependency.issue_id == "tj-final27.6"
+    ]
+    if {item.criterion_id for item in client_gate_criteria} != {"AC-21"}:
+        raise ManifestValidationError(
+            "tj-final27.6 client gate must apply exactly to AC-21"
+        )
+    client_gate = client_gate_criteria[0]
+    dependency = client_gate.dependency
+    if dependency is None:
+        raise ManifestValidationError("AC-21 client gate is missing")
+    resolution_outcomes = dependency.resolution_outcomes or {}
+    if resolution_outcomes.get(ClientGateResolution.EXCLUDED_BY_CLIENT) is Outcome.PASS:
+        raise ManifestValidationError("client exclusion cannot contribute PASS")
+    expected_resolution_outcomes = {
+        ClientGateResolution.IMPLEMENTED: Outcome.PASS,
+        ClientGateResolution.EXCLUDED_BY_CLIENT: Outcome.EXCLUDED_BY_CLIENT,
+    }
+    referral_block = blocks_by_id.get("EB-REFERRAL")
+    if (
+        client_gate.evidence_mode is not EvidenceMode.EXTERNAL_GATE
+        or dependency.required_outcome is not Outcome.PASS
+        or set(dependency.evidence_required) != set(ClientEvidenceRequirement)
+        or resolution_outcomes != expected_resolution_outcomes
+        or dependency.status not in {"blocked", "implemented", "excluded_by_client"}
+        or referral_block is None
+        or "referral_synthetic" not in referral_block.required_permissions
+    ):
+        raise ManifestValidationError("AC-21 typed client gate policy drift")
+
 
 def _beads_digest(
     traceability: TraceabilityManifest,
-    issues_path: pathlib.Path,
+    content: bytes,
+    *,
+    source_id: str,
 ) -> str:
     referenced = {
         issue_id
@@ -498,13 +612,13 @@ def _beads_digest(
     )
     records: dict[str, dict[str, Any]] = {}
     try:
-        for line in issues_path.read_text(encoding="utf-8").splitlines():
+        for line in content.decode("utf-8").splitlines():
             record = json.loads(line)
             if isinstance(record, dict) and record.get("id") in referenced:
                 records[str(record["id"])] = record
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ManifestValidationError(
-            f"cannot read relevant Beads provenance: {issues_path}: {exc}"
+            f"cannot read relevant Beads provenance: {source_id}: {exc}"
         ) from exc
     missing = sorted(referenced - set(records))
     if missing:
@@ -522,45 +636,67 @@ def _beads_digest(
     ).hexdigest()
 
 
-def _reject_symlink_components(
+def _read_regular_file_at(
     base: pathlib.Path,
     relative: pathlib.PurePosixPath,
     *,
     label: str,
-) -> pathlib.Path:
-    candidate = base
-    for component in relative.parts:
-        candidate = candidate / component
-        if candidate.is_symlink():
-            raise ManifestValidationError(
-                f"{label} source path contains a symlink component: {candidate}"
-            )
+) -> bytes:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if nofollow is None or directory is None or os.open not in os.supports_dir_fd:
+        raise ManifestValidationError(
+            "safe source validation requires O_NOFOLLOW, O_DIRECTORY, and dir_fd"
+        )
+    parts = relative.parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ManifestValidationError(f"{label} has an unsafe source path")
+    close_on_exec = getattr(os, "O_CLOEXEC", 0)
+    root_fd = -1
+    directory_fd = -1
+    file_fd = -1
     try:
-        resolved = candidate.resolve(strict=True)
-        resolved.relative_to(base.resolve())
-    except (OSError, ValueError) as exc:
+        root_fd = os.open(
+            base,
+            os.O_RDONLY | directory | nofollow | close_on_exec,
+        )
+        directory_fd = root_fd
+        for component in parts[:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory | nofollow | close_on_exec,
+                dir_fd=directory_fd,
+            )
+            if directory_fd != root_fd:
+                os.close(directory_fd)
+            directory_fd = next_fd
+        file_fd = os.open(
+            parts[-1],
+            os.O_RDONLY | nofollow | close_on_exec,
+            dir_fd=directory_fd,
+        )
+        if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+            raise ManifestValidationError(f"{label} source is not a regular file")
+        chunks: list[bytes] = []
+        while chunk := os.read(file_fd, 1024 * 1024):
+            chunks.append(chunk)
+        return b"".join(chunks)
+    except ManifestValidationError:
+        raise
+    except OSError as exc:
         raise ManifestValidationError(
-            f"{label} source path escapes its allowed root: {candidate}"
+            f"{label} source path is unsafe or contains a symlink: {exc}"
         ) from exc
-    if not resolved.is_file():
-        raise ManifestValidationError(
-            f"{label} source is not a regular file: {resolved}"
-        )
-    return resolved
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+        if directory_fd >= 0 and directory_fd != root_fd:
+            os.close(directory_fd)
+        if root_fd >= 0:
+            os.close(root_fd)
 
 
-def _source_path(
-    repo_root: pathlib.Path,
-    relative: pathlib.PurePosixPath,
-    *,
-    source_id: str,
-) -> pathlib.Path:
-    if relative.as_posix() != ".beads/issues.jsonl":
-        return _reject_symlink_components(
-            repo_root,
-            relative,
-            label=source_id,
-        )
+def _git_common_repo_root(repo_root: pathlib.Path) -> pathlib.Path:
     common = subprocess.run(
         ["git", "rev-parse", "--git-common-dir"],
         cwd=repo_root,
@@ -573,24 +709,24 @@ def _source_path(
     common_path = pathlib.Path(common.stdout.strip())
     if not common_path.is_absolute():
         common_path = repo_root / common_path
-    git_root = common_path.resolve().parent
-    return _reject_symlink_components(
-        git_root,
-        relative,
-        label=source_id,
-    )
+    try:
+        return common_path.resolve(strict=True).parent
+    except OSError as exc:
+        raise ManifestValidationError(
+            "cannot resolve explicit git-common Beads root"
+        ) from exc
 
 
 def _section_bytes(
-    path: pathlib.Path,
+    content: bytes,
     *,
     source_id: str,
     start_locator: str,
     end_locator: str | None,
 ) -> bytes:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-    except (OSError, UnicodeDecodeError) as exc:
+        lines = content.decode("utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError as exc:
         raise ManifestValidationError(
             f"{source_id} source section cannot be read: {exc}"
         ) from exc
@@ -629,9 +765,22 @@ def validate_source_digests(
         relative = pathlib.PurePosixPath(source.path)
         if relative.is_absolute() or ".." in relative.parts:
             raise ManifestValidationError(f"{source_id} has an unsafe source path")
-        path = _source_path(root, relative, source_id=source_id)
+        source_root = (
+            _git_common_repo_root(root)
+            if relative.as_posix() == ".beads/issues.jsonl"
+            else root
+        )
+        content = _read_regular_file_at(
+            source_root,
+            relative,
+            label=source_id,
+        )
         if relative.as_posix() == ".beads/issues.jsonl":
-            actual = _beads_digest(traceability, path)
+            actual = _beads_digest(
+                traceability,
+                content,
+                source_id=source_id,
+            )
             if (
                 len(source.sections) != 1
                 or source.sections[0].start_locator != "named_issue_records"
@@ -642,11 +791,11 @@ def validate_source_digests(
                     "beads-regressions section locator/digest drift"
                 )
         else:
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            actual = hashlib.sha256(content).hexdigest()
             for section in source.sections:
                 section_digest = hashlib.sha256(
                     _section_bytes(
-                        path,
+                        content,
                         source_id=source_id,
                         start_locator=section.start_locator,
                         end_locator=section.end_locator,
@@ -681,12 +830,25 @@ def validate_preflight(
             raise ManifestValidationError(
                 f"approved authorization has unresolved exact {field}"
             )
-    unresolved_markers = ("REPLACE", "DRAFT", "NO_LIVE_ACTION", "<", ">")
 
     def contains_placeholder(value: object) -> bool:
         if isinstance(value, str):
-            upper = value.upper()
-            return any(marker in upper for marker in unresolved_markers)
+            upper = value.strip().upper()
+            return (
+                upper == "DRAFT"
+                or upper.startswith(("DRAFT-", "DRAFT_"))
+                or upper == "REPLACE"
+                or upper.startswith(("REPLACE-", "REPLACE_"))
+                or upper == "NO_LIVE_ACTION"
+                or upper.startswith(("NO_LIVE_ACTION-", "NO_LIVE_ACTION_"))
+                or (
+                    len(upper) > 2
+                    and upper.startswith("<")
+                    and upper.endswith(">")
+                    and "<" not in upper[1:-1]
+                    and ">" not in upper[1:-1]
+                )
+            )
         if isinstance(value, dict):
             return any(
                 contains_placeholder(key) or contains_placeholder(item)

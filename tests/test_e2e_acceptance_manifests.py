@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from scripts.e2e_acceptance.manifest import (
 from scripts.e2e_acceptance.schemas import (
     AuthorizationManifest,
     AuthorizationStatus,
+    ClientEvidenceRequirement,
     CriterionResult,
     EvidenceMode,
     FreshEvidenceRequirement,
@@ -521,7 +523,6 @@ def test_required_grounding_criteria_cannot_remove_dependency_by_manifest_edit()
                 update={
                     "dependency": None,
                     "open_known_risks": [],
-                    "evidence_mode": EvidenceMode.FRESH,
                 }
             )
             if criterion.criterion_id == "AC-07"
@@ -545,6 +546,7 @@ def test_grounding_gate_requires_exact_typed_fresh_evidence_set() -> None:
         )
         assert criterion.dependency is not None
         assert set(criterion.dependency.evidence_required) == required
+        assert criterion.dependency.resolution_outcomes is None
 
 
 def test_authorization_binds_exact_canonical_scenario_execution_inputs() -> None:
@@ -639,7 +641,10 @@ def test_preflight_recursively_rejects_placeholder_string_leaves(
         )
 
 
-def test_preflight_recursively_rejects_placeholder_quota_key() -> None:
+@pytest.mark.parametrize("placeholder_key", ["REPLACE_QUOTA", "DRAFT_QUOTA"])
+def test_preflight_recursively_rejects_placeholder_quota_key(
+    placeholder_key: str,
+) -> None:
     base = _approved_authorization()
     authorization = base.model_copy(
         update={
@@ -647,7 +652,7 @@ def test_preflight_recursively_rejects_placeholder_quota_key() -> None:
                 update={
                     "subsystem_quotas": {
                         **base.quotas.subsystem_quotas,
-                        "REPLACE_QUOTA": 0,
+                        placeholder_key: 0,
                     }
                 }
             )
@@ -809,3 +814,309 @@ def test_source_path_rejects_escape_and_symlink_component(tmp_path: Path) -> Non
     )
     with pytest.raises(ManifestValidationError, match="symlink"):
         validate_source_digests(linked, tmp_path)
+
+
+def test_evidence_mode_policy_maps_are_code_owned_and_exact() -> None:
+    snapshot, provenance = _scope_and_provenance()
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    scenario_set = load_scenario_set(SCENARIO_SET_PATH)
+    expected_criteria = {
+        EvidenceMode.FRESH: {
+            "AC-01",
+            "AC-02",
+            "AC-03",
+            "AC-04",
+            "AC-05",
+            "AC-06",
+            "AC-13",
+            "AC-17",
+            "AC-18",
+            "AC-20",
+            "AC-23",
+            "AC-29",
+        },
+        EvidenceMode.REUSED_EXACT: {"AC-22"},
+        EvidenceMode.EXTERNAL_GATE: {
+            "AC-07",
+            "AC-08",
+            "AC-09",
+            "AC-10",
+            "AC-11",
+            "AC-12",
+            "AC-14",
+            "AC-15",
+            "AC-16",
+            "AC-19",
+            "AC-21",
+            "AC-24",
+            "AC-25",
+            "AC-26",
+            "AC-27",
+            "AC-28",
+            "AC-30",
+        },
+    }
+    expected_blocks = {
+        EvidenceMode.FRESH: {"EB-RUNTIME", "EB-QUALITY"},
+        EvidenceMode.REUSED_EXACT: {"EB-SECURITY"},
+        EvidenceMode.EXTERNAL_GATE: {
+            "EB-ADMIN",
+            "EB-LOAD",
+            "EB-BACKUP",
+            "EB-AVAILABILITY",
+            "EB-CATALOG-COVERAGE",
+            "EB-REFERRAL",
+        },
+    }
+
+    assert {
+        mode: {
+            item.criterion_id
+            for item in traceability.criteria
+            if item.evidence_mode is mode
+        }
+        for mode in EvidenceMode
+    } == expected_criteria
+    assert {
+        mode: {
+            item.block_id
+            for item in scenario_set.evidence_blocks
+            if item.evidence_mode is mode
+        }
+        for mode in EvidenceMode
+    } == expected_blocks
+
+    criteria = list(traceability.criteria)
+    criteria[0] = criteria[0].model_copy(
+        update={"evidence_mode": EvidenceMode.EXTERNAL_GATE}
+    )
+    with pytest.raises(
+        ManifestValidationError,
+        match="criterion evidence-mode policy drift",
+    ):
+        validate_contract_bundle(
+            snapshot,
+            provenance,
+            traceability.model_copy(update={"criteria": criteria}),
+            scenario_set,
+        )
+
+    blocks = list(scenario_set.evidence_blocks)
+    blocks[0] = blocks[0].model_copy(
+        update={"evidence_mode": EvidenceMode.EXTERNAL_GATE}
+    )
+    with pytest.raises(
+        ManifestValidationError,
+        match="evidence-block mode policy drift",
+    ):
+        validate_contract_bundle(
+            snapshot,
+            provenance,
+            traceability,
+            scenario_set.model_copy(update={"evidence_blocks": blocks}),
+        )
+
+
+def test_ac21_client_gate_has_typed_non_pass_exclusion_semantics() -> None:
+    snapshot, provenance = _scope_and_provenance()
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    scenario_set = load_scenario_set(SCENARIO_SET_PATH)
+    criterion = next(
+        item for item in traceability.criteria if item.criterion_id == "AC-21"
+    )
+    assert criterion.dependency is not None
+    assert criterion.dependency.issue_id == "tj-final27.6"
+    assert set(criterion.dependency.evidence_required) == set(ClientEvidenceRequirement)
+    assert criterion.dependency.model_dump(mode="json")["resolution_outcomes"] == {
+        "implemented": "PASS",
+        "excluded_by_client": "EXCLUDED_BY_CLIENT",
+    }
+
+    weakened = criterion.dependency.model_copy(
+        update={
+            "resolution_outcomes": {
+                "implemented": Outcome.PASS,
+                "excluded_by_client": Outcome.PASS,
+            }
+        }
+    )
+    criteria = [
+        (
+            item.model_copy(update={"dependency": weakened})
+            if item.criterion_id == "AC-21"
+            else item
+        )
+        for item in traceability.criteria
+    ]
+    with pytest.raises(ManifestValidationError, match="client exclusion.*PASS"):
+        validate_contract_bundle(
+            snapshot,
+            provenance,
+            traceability.model_copy(update={"criteria": criteria}),
+            scenario_set,
+        )
+
+
+def test_referral_block_requires_synthetic_permission_with_zero_draft_quota() -> None:
+    scenario_set = load_scenario_set(SCENARIO_SET_PATH)
+    authorization = load_authorization_manifest(AUTHORIZATION_PATH)
+    referral = next(
+        item for item in scenario_set.evidence_blocks if item.block_id == "EB-REFERRAL"
+    )
+
+    assert "referral_synthetic" in referral.required_permissions
+    assert authorization.quotas.subsystem_quotas["referral_synthetic"] == 0
+
+
+def test_preflight_placeholder_sentinels_do_not_reject_legitimate_draft_word() -> None:
+    authorization = _approved_authorization().model_copy(
+        update={"permissions": ["manager_draft_prompt"]}
+    )
+    observation = PreflightObservation(
+        identity=authorization.expected_identity,
+        targets=authorization.targets,
+        executor=authorization.allowed_executor,
+        source=authorization.allowed_source,
+    )
+    request = PreflightRequest(
+        quotas=authorization.quotas,
+        permissions=authorization.permissions,
+        callback_types=authorization.callback_types,
+        test_data_identities=authorization.test_data_identities,
+        cleanup_method=authorization.cleanup_method,
+        readbacks=authorization.readbacks,
+        stop_conditions=authorization.stop_conditions,
+        scenario_binding=authorization.scenario_binding,
+    )
+
+    validate_preflight(
+        authorization,
+        observation,
+        request,
+        now=authorization.issued_at,
+    )
+
+
+@pytest.mark.parametrize("sentinel", ["DRAFT-unresolved", "DRAFT_unresolved"])
+def test_preflight_rejects_exact_draft_sentinels(sentinel: str) -> None:
+    authorization = _approved_authorization().model_copy(
+        update={"permissions": [sentinel]}
+    )
+    observation = PreflightObservation(
+        identity=authorization.expected_identity,
+        targets=authorization.targets,
+        executor=authorization.allowed_executor,
+        source=authorization.allowed_source,
+    )
+    request = PreflightRequest(
+        quotas=authorization.quotas,
+        permissions=authorization.permissions,
+        callback_types=authorization.callback_types,
+        test_data_identities=authorization.test_data_identities,
+        cleanup_method=authorization.cleanup_method,
+        readbacks=authorization.readbacks,
+        stop_conditions=authorization.stop_conditions,
+        scenario_binding=authorization.scenario_binding,
+    )
+
+    with pytest.raises(ManifestValidationError, match="unresolved exact"):
+        validate_preflight(
+            authorization,
+            observation,
+            request,
+            now=authorization.issued_at,
+        )
+
+
+def test_source_validation_reads_each_file_from_one_safe_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    content = b"# Stable\nbody\n"
+    (tmp_path / "source.md").write_bytes(content)
+    source = SourceReference(
+        path="source.md",
+        content_digest=hashlib.sha256(content).hexdigest(),
+        sections=[
+            SourceSection(
+                start_locator="# Stable",
+                end_locator=None,
+                content_digest=hashlib.sha256(content).hexdigest(),
+            )
+        ],
+    )
+    isolated = traceability.model_copy(update={"source_registry": {"isolated": source}})
+
+    def forbid_path_reopen(*args: object, **kwargs: object) -> str:
+        del args, kwargs
+        raise AssertionError("validated source was reopened by path")
+
+    monkeypatch.setattr(Path, "read_bytes", forbid_path_reopen)
+    monkeypatch.setattr(Path, "read_text", forbid_path_reopen)
+
+    validate_source_digests(isolated, tmp_path)
+
+
+def test_source_validation_fails_closed_without_nofollow_support(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    content = b"# Stable\nbody\n"
+    (tmp_path / "source.md").write_bytes(content)
+    source = SourceReference(
+        path="source.md",
+        content_digest=hashlib.sha256(content).hexdigest(),
+        sections=[
+            SourceSection(
+                start_locator="# Stable",
+                end_locator=None,
+                content_digest=hashlib.sha256(content).hexdigest(),
+            )
+        ],
+    )
+    isolated = traceability.model_copy(update={"source_registry": {"isolated": source}})
+    monkeypatch.delattr(os, "O_NOFOLLOW")
+
+    with pytest.raises(ManifestValidationError, match="requires O_NOFOLLOW"):
+        validate_source_digests(isolated, tmp_path)
+
+
+def test_source_validation_uses_opened_inode_when_path_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    content = b"# Stable\noriginal\n"
+    source_path = tmp_path / "source.md"
+    replacement_path = tmp_path / "replacement.md"
+    source_path.write_bytes(content)
+    replacement_path.write_bytes(b"# Stable\ntampered\n")
+    source = SourceReference(
+        path="source.md",
+        content_digest=hashlib.sha256(content).hexdigest(),
+        sections=[
+            SourceSection(
+                start_locator="# Stable",
+                end_locator=None,
+                content_digest=hashlib.sha256(content).hexdigest(),
+            )
+        ],
+    )
+    isolated = traceability.model_copy(update={"source_registry": {"isolated": source}})
+    original_read = os.read
+    replaced = False
+
+    def replace_path_then_read(fd: int, length: int) -> bytes:
+        nonlocal replaced
+        if not replaced:
+            os.replace(replacement_path, source_path)
+            replaced = True
+        return original_read(fd, length)
+
+    monkeypatch.setattr(os, "read", replace_path_then_read)
+
+    validate_source_digests(isolated, tmp_path)
+    assert replaced
+    assert source_path.read_bytes() == b"# Stable\ntampered\n"
