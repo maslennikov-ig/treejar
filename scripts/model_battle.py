@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import random
@@ -57,6 +58,9 @@ _JSON_FENCE_RE = re.compile(
 _PATH_PART_RE = re.compile(r"([^[.\]]+)|\[(\d+)\]")
 _NUMBER_RE = re.compile(r"(?<![\w-])\d[\d,]*(?:\.\d+)?%?")
 _ARABIC_RE = re.compile(r"[\u0600-\u06ff]")
+_PROVIDER_SENSITIVE_TEXT_RE = re.compile(
+    r"""(?i)(['"](?:api_key|authorization|user_id)['"]\s*:\s*['"])[^'"]+(['"])"""
+)
 _DASH_TRANSLATION = str.maketrans({"–": "-", "—": "-", "−": "-"})
 _BLIND_REVIEW_DIMENSIONS = {
     "clarity",
@@ -309,6 +313,59 @@ def models_for_profile(profile: str, suite: str) -> tuple[str, ...]:
         raise ValueError(f"Unknown suite: {suite}") from exc
 
 
+def merge_run_manifest(
+    existing: Mapping[str, Any] | None,
+    *,
+    suites: Sequence[str],
+    profile: str,
+    repetitions: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Merge separately executed suites while rejecting incompatible evidence."""
+
+    previous_suites: list[str] = []
+    if existing:
+        expected_identity = {
+            "seed": seed,
+            "repetitions": repetitions,
+            "profile": profile,
+            "production_changed": False,
+            "synthetic_evidence_only": True,
+        }
+        mismatches = [
+            field
+            for field, expected in expected_identity.items()
+            if existing.get(field) != expected
+        ]
+        if mismatches:
+            raise ValueError(
+                "Existing run manifest is incompatible for fields: "
+                + ", ".join(mismatches)
+            )
+        raw_suites = existing.get("suites")
+        if not isinstance(raw_suites, list) or not all(
+            isinstance(suite, str) for suite in raw_suites
+        ):
+            raise ValueError("Existing run manifest has invalid suites")
+        previous_suites = raw_suites
+
+    requested_suites = set(previous_suites) | set(suites)
+    merged_suites = [
+        suite for suite in ("sales", "system") if suite in requested_suites
+    ]
+    return {
+        "seed": seed,
+        "repetitions": repetitions,
+        "suites": merged_suites,
+        "profile": profile,
+        "models": {
+            suite: list(models_for_profile(profile, suite)) for suite in merged_suites
+        },
+        "production_changed": False,
+        "synthetic_evidence_only": True,
+    }
+
+
 def build_blind_pair(
     *,
     case_id: str,
@@ -323,7 +380,12 @@ def build_blind_pair(
     if len(candidates) > 26:
         raise ValueError("Blinded review supports at most 26 candidates")
     model_names = sorted(candidates)
-    random.Random(f"{seed}:{case_id}:{repetition}").shuffle(model_names)
+    if len(model_names) == 2:
+        material = f"{seed}:{case_id}:{repetition}".encode()
+        if hashlib.sha256(material).digest()[0] % 2:
+            model_names.reverse()
+    else:
+        random.Random(f"{seed}:{case_id}:{repetition}").shuffle(model_names)
     reveal = {chr(ord("A") + index): model for index, model in enumerate(model_names)}
     return {
         "case_id": case_id,
@@ -507,8 +569,41 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _read_json_object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return value
+
+
+def _sanitize_provider_payload(value: Any) -> Any:
+    """Remove provider/account identifiers before preserving raw evidence."""
+
+    if isinstance(value, Mapping):
+        return {
+            str(key): (
+                "[REDACTED]"
+                if str(key).casefold() in {"api_key", "authorization", "user_id"}
+                else _sanitize_provider_payload(child)
+            )
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_provider_payload(item) for item in value]
+    if isinstance(value, str):
+        return _PROVIDER_SENSITIVE_TEXT_RE.sub(
+            r"\1[REDACTED]\2",
+            value,
+        )
+    return value
+
+
 def _safe_error_text(value: Any, limit: int = 500) -> str:
-    text = str(value).replace(settings.openrouter_api_key, "[REDACTED]")
+    sanitized = _sanitize_provider_payload(value)
+    text = str(sanitized)
+    if settings.openrouter_api_key:
+        text = text.replace(settings.openrouter_api_key, "[REDACTED]")
+    text = _PROVIDER_SENSITIVE_TEXT_RE.sub(r"\1[REDACTED]\2", text)
     return text[:limit]
 
 
@@ -536,6 +631,7 @@ async def _request_with_retry(
                     if isinstance(response_payload, dict)
                     else {"value": response_payload}
                 )
+                parsed = _sanitize_provider_payload(parsed)
             except ValueError:
                 parsed = None
             ok = response.is_success and bool(parsed and parsed.get("choices"))
@@ -1097,12 +1193,13 @@ def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
 
     sales_rows = rescore_sales_rows(_read_jsonl(output_dir / "sales_results.jsonl"))
     system_rows = _read_jsonl(output_dir / "system_results.jsonl")
-    blind_scores = json.loads(blind_scores_path.read_text(encoding="utf-8"))
+    blind_scores = parse_json_content(blind_scores_path.read_text(encoding="utf-8"))
     blind_key = json.loads(
         (output_dir / "sales_blind_key.json").read_text(encoding="utf-8")
     )
     if not isinstance(blind_scores, list) or not isinstance(blind_key, list):
         raise ValueError("Blind scores and key must be JSON arrays")
+    _write_json(output_dir / "sales_blind_scores.json", blind_scores)
     _write_jsonl(output_dir / "sales_scored_results.jsonl", sales_rows)
     _write_json(output_dir / "sales_scored_aggregate.json", aggregate_rows(sales_rows))
     blind_quality, blind_hard_gates = evaluate_blind_reviews(
@@ -1247,8 +1344,8 @@ def candidate_metrics_from_evidence(
     """Apply the accepted weights and hard gates to raw run evidence."""
 
     models = sorted({str(row["model"]) for row in rows})
-    if len(models) != 2:
-        raise ValueError("Candidate scoring requires evidence for exactly two models")
+    if len(models) < 2:
+        raise ValueError("Candidate scoring requires evidence for at least two models")
     aggregates = aggregate_rows(rows)
     fastest_p95 = min(float(aggregates[model]["latency_ms"]["p95"]) for model in models)
     metrics: list[CandidateMetrics] = []
@@ -1385,6 +1482,17 @@ async def run_battle(
     from scripts.model_battle_cases import validate_case_sets
 
     validate_case_sets()
+    manifest_path = output_dir / "run_manifest.json"
+    existing_manifest = (
+        _read_json_object(manifest_path) if manifest_path.exists() else None
+    )
+    merged_manifest = merge_run_manifest(
+        existing_manifest,
+        suites=suites,
+        profile=profile,
+        repetitions=repetitions,
+        seed=seed,
+    )
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "HTTP-Referer": "https://noor.starec.ai",
@@ -1399,7 +1507,11 @@ async def run_battle(
     ) as client:
         catalog = await _fetch_catalog(client, all_models)
         assert_catalog_capabilities(catalog, suites, profile=profile)
-        _write_json(output_dir / "model_catalog.json", catalog)
+        catalog_path = output_dir / "model_catalog.json"
+        existing_catalog = (
+            _read_json_object(catalog_path) if catalog_path.exists() else {}
+        )
+        _write_json(catalog_path, {**existing_catalog, **catalog})
         for suite in suites:
             rows: list[dict[str, Any]] = []
             jobs = _build_jobs(
@@ -1440,20 +1552,7 @@ async def run_battle(
                 _write_json(output_dir / "sales_blind_review.json", blind)
                 _write_json(output_dir / "sales_blind_key.json", reveal)
 
-    _write_json(
-        output_dir / "run_manifest.json",
-        {
-            "seed": seed,
-            "repetitions": repetitions,
-            "suites": list(suites),
-            "profile": profile,
-            "models": {
-                suite: list(models_for_profile(profile, suite)) for suite in suites
-            },
-            "production_changed": False,
-            "synthetic_evidence_only": True,
-        },
-    )
+    _write_json(manifest_path, merged_manifest)
 
 
 def _parse_args() -> argparse.Namespace:

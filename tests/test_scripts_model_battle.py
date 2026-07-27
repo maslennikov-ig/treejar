@@ -7,6 +7,8 @@ from scripts.model_battle import (
     EXTENDED_PROFILE,
     CandidateMetrics,
     _build_jobs,
+    _safe_error_text,
+    _sanitize_provider_payload,
     aggregate_rows,
     assert_catalog_capabilities,
     build_base_payload,
@@ -14,6 +16,7 @@ from scripts.model_battle import (
     candidate_metrics_from_evidence,
     evaluate_blind_reviews,
     extract_numeric_tokens,
+    merge_run_manifest,
     models_for_profile,
     parse_json_content,
     percentile,
@@ -81,6 +84,46 @@ def test_extended_profile_builds_complete_deterministic_job_matrix() -> None:
     )
 
 
+def test_run_manifest_merges_separate_suite_invocations() -> None:
+    existing = {
+        "seed": 27072026,
+        "repetitions": 2,
+        "suites": ["sales"],
+        "profile": EXTENDED_PROFILE,
+        "models": {
+            "sales": list(models_for_profile(EXTENDED_PROFILE, "sales")),
+        },
+        "production_changed": False,
+        "synthetic_evidence_only": True,
+    }
+
+    merged = merge_run_manifest(
+        existing,
+        suites=("system",),
+        profile=EXTENDED_PROFILE,
+        repetitions=2,
+        seed=27072026,
+    )
+
+    assert merged["suites"] == ["sales", "system"]
+    assert set(merged["models"]) == {"sales", "system"}
+    assert merged["models"]["sales"] == list(
+        models_for_profile(EXTENDED_PROFILE, "sales")
+    )
+    assert merged["models"]["system"] == list(
+        models_for_profile(EXTENDED_PROFILE, "system")
+    )
+
+    reverse = merge_run_manifest(
+        {**existing, "suites": ["system"], "models": {"system": []}},
+        suites=("sales",),
+        profile=EXTENDED_PROFILE,
+        repetitions=2,
+        seed=27072026,
+    )
+    assert reverse["suites"] == ["sales", "system"]
+
+
 def test_catalog_preflight_rejects_missing_required_model_capability() -> None:
     catalog = {
         "z-ai/glm-5": {"supported_parameters": ["tools", "tool_choice"]},
@@ -138,6 +181,22 @@ def test_base_payload_requires_an_endpoint_supporting_all_parameters() -> None:
 
     assert payload["provider"] == {"require_parameters": True}
     assert payload["reasoning"] == {"enabled": False}
+
+
+def test_provider_evidence_redacts_account_identifiers() -> None:
+    payload = {
+        "error": {"message": "Provider returned error"},
+        "user_id": "user_private_account",
+        "nested": {"authorization": "Bearer private"},
+        "error_text": "{'user_id': 'user_private_account'}",
+    }
+
+    sanitized = _sanitize_provider_payload(payload)
+
+    assert sanitized["user_id"] == "[REDACTED]"
+    assert sanitized["nested"]["authorization"] == "[REDACTED]"
+    assert "user_private_account" not in sanitized["error_text"]
+    assert "user_private_account" not in _safe_error_text(payload)
 
 
 @pytest.mark.parametrize("status", [408, 409, 429, 500, 502, 503, 504])
@@ -373,6 +432,21 @@ def test_blind_pair_is_deterministic_and_hides_model_names() -> None:
     assert "glm" not in json.dumps(first["answers"]).lower()
     assert "deepseek" not in json.dumps(first["answers"]).lower()
     assert set(first["reveal"]) == {"A", "B"}
+
+
+def test_original_pair_keeps_accepted_label_algorithm() -> None:
+    pair = build_blind_pair(
+        case_id="sales-02",
+        repetition=1,
+        candidates={
+            "z-ai/glm-5": "First neutral answer",
+            "deepseek/deepseek-v4-flash": "Second neutral answer",
+        },
+        seed=27072026,
+    )
+
+    assert pair["reveal"]["A"] == "deepseek/deepseek-v4-flash"
+    assert pair["reveal"]["B"] == "z-ai/glm-5"
 
 
 def test_blind_group_supports_four_anonymous_candidates() -> None:
@@ -624,6 +698,38 @@ def test_sales_candidate_metrics_include_blind_quality_and_hard_gates() -> None:
     assert by_model["right"].hard_gates_passed is False
     assert details["left"]["blind_quality"] == 0.8
     assert by_model["right"].weighted_score > by_model["left"].weighted_score
+
+
+def test_candidate_metrics_support_four_models() -> None:
+    models = ("one", "two", "three", "four")
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": "sales-01",
+            "model": model,
+            "first_pass_success": True,
+            "retry_used": False,
+            "latency_ms": 500.0,
+            "objective": {
+                "checks_passed": 5,
+                "checks_total": 5,
+                "passed": True,
+                "hard_gate_passed": True,
+                "tool_sequence_ok": True,
+                "tool_arguments_ok": True,
+            },
+        }
+        for model in models
+    ]
+
+    metrics, details = candidate_metrics_from_evidence(
+        suite="sales",
+        rows=rows,
+        blind_quality={model: 0.8 for model in models},
+    )
+
+    assert {metric.model for metric in metrics} == set(models)
+    assert set(details) == set(models)
 
 
 def test_system_candidate_metrics_enforce_schema_and_semantic_gates() -> None:

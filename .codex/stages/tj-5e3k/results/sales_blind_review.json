@@ -1,0 +1,866 @@
+[
+  {
+    "case_id": "sales-01",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence: The Axis ergonomic chair has a 5-year manufacturer warranty.\nTreejar can arrange a product specialist callback, but no callback time is\nguaranteed in this case.\n",
+      "user_prompt": "Hi, what warranty comes with the Axis chair?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Hi! The Axis ergonomic chair comes with a **5-year manufacturer warranty**.\n\nWould you like more details about the Axis chair's features, or are you interested in a quotation?",
+      "B": "The Axis ergonomic chair comes with a 5-year manufacturer warranty. \n\nWould you like me to arrange a callback from a product specialist to discuss it further, or would you like a formal quotation for the chair?",
+      "C": "The Axis ergonomic chair comes with a 5-year manufacturer warranty.\n\nIf you’d like more details or have other questions, I can arrange for a product specialist to call you back—just let me know.",
+      "D": "The Axis ergonomic chair comes with a **5-year manufacturer warranty**.\n\nWould you like me to arrange a product specialist callback to help with any other questions about the Axis chair?"
+    }
+  },
+  {
+    "case_id": "sales-01",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence: The Axis ergonomic chair has a 5-year manufacturer warranty.\nTreejar can arrange a product specialist callback, but no callback time is\nguaranteed in this case.\n",
+      "user_prompt": "Hi, what warranty comes with the Axis chair?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "The Axis ergonomic chair comes with a 5-year manufacturer warranty. If you'd like more details, I can arrange a product specialist to call you back.",
+      "B": "The Axis ergonomic chair comes with a **5-year manufacturer warranty**.\n\nIf you'd like more details about the chair or help with a quote, I can arrange a product specialist callback for you. Would that be helpful?",
+      "C": "The Axis ergonomic chair includes a **5‑year manufacturer warranty**.\n\nIf you’d like to dive deeper into features or have specific ergonomic questions, I can request a callback from our product specialist — please note the exact callback time isn’t guaranteed. Alternatively, I can share more details right here. What would suit you best?",
+      "D": "Hi! The Axis ergonomic chair comes with a **5-year manufacturer warranty**.\n\nWould you like me to share more details about the Axis chair's features or check current availability for you?"
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nThe customer explicitly requested a catalog lookup. Call search_catalog once\nwith query exactly \"ergonomic chair\" and limit 2, then recommend from its\nresult only.\n",
+      "user_prompt": "Please search for an ergonomic chair for long workdays. Use no more than two options.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Here are two ergonomic chairs from our catalog that suit long workdays:\n\n1. **Axis Ergo** (SKU: AX-E1) — **AED 1,450**\n   - Adjustable lumbar support\n   - Mesh back for breathability\n\n2. **Nova Task** (SKU: NV-T2) — **AED 980**\n   - Seat-depth adjustment\n   - Fabric back\n\nBoth offer features that help with comfort during extended sitting. The Axis Ergo's adjustable lumbar and mesh back are great for posture and airflow, while the Nova Task's seat-depth adjustment lets you fine-tune the fit at a lower price point.\n\nWould you like me to check live stock and pricing for either of these, or arrange a trial sit at our UAE showroom?",
+      "B": "Here are two ergonomic chair options for long workdays:\n\n1. **Axis Ergo** (SKU: AX-E1) — AED 1,450\n   - Adjustable lumbar support\n   - Mesh back\n\n2. **Nova Task** (SKU: NV-T2) — AED 980\n   - Seat-depth adjustment\n   - Fabric back\n\nBoth chairs offer ergonomic features suited for extended use. Would you like me to check current availability or share more details on either model?",
+      "C": "Here are two ergonomic chair options from our catalog for long workdays:\n\n1. **Axis Ergo** (SKU: AX-E1) – **AED 1,450**\n   - Adjustable lumbar support\n   - Mesh back (breathable for long hours)\n\n2. **Nova Task** (SKU: NV-T2) – **AED 980**\n   - Seat-depth adjustment\n   - Fabric back\n\nBoth are designed for comfort during extended sitting. Would you like me to check current stock availability or get more details on either model?",
+      "D": "Here are two ergonomic chair options suited for long workdays:\n\n---\n\n**1. Axis Ergo** (SKU: AX-E1)\n- **Price:** AED 1,450\n- **Features:** Adjustable lumbar support, mesh back\n- The mesh back provides breathability during extended sitting, and the adjustable lumbar helps maintain proper posture throughout the day.\n\n**2. Nova Task** (SKU: NV-T2)\n- **Price:** AED 980\n- **Features:** Seat-depth adjustment, fabric back\n- The seat-depth adjustment allows you to customize the fit for your legs, promoting better circulation over long hours.\n\n---\n\nBoth are solid ergonomic choices. The Axis Ergo offers lumbar adjustability and a cooler mesh back, while the Nova Task is more budget-friendly with seat-depth customization.\n\nWould you like to check current availability for either of these, or would you prefer to know more about delivery options? I can look into that for you."
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nThe customer explicitly requested a catalog lookup. Call search_catalog once\nwith query exactly \"ergonomic chair\" and limit 2, then recommend from its\nresult only.\n",
+      "user_prompt": "Please search for an ergonomic chair for long workdays. Use no more than two options.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Here are two ergonomic chairs from our catalog that suit long workdays:\n\n---\n\n**1. Axis Ergo** (SKU: AX-E1)\n- **Price:** AED 1,450\n- **Key features:** Adjustable lumbar support, mesh back (great for breathability during long hours)\n\n**2. Nova Task** (SKU: NV-T2)\n- **Price:** AED 980\n- **Key features:** Seat-depth adjustment, fabric back\n\n---\n\n**Quick take:** The Axis Ergo offers adjustable lumbar and a cooler mesh back — ideal if back support and airflow are priorities. The Nova Task gives you seat-depth adjustability at a more modest price point.\n\nWould you like me to check current stock and availability for either (or both), or would you prefer to visit our showroom to try them in person?",
+      "B": "Here are two ergonomic chair options from our catalog that are great for long workdays:\n\n---\n\n**1. Axis Ergo** (SKU: AX-E1) — **AED 1,450**\n- Adjustable lumbar support\n- Mesh back (breathable for long hours)\n\n**2. Nova Task** (SKU: NV-T2) — **AED 980**\n- Seat-depth adjustment\n- Fabric back\n\n---\n\nBoth are designed for comfort during extended sitting. The **Axis Ergo** offers better airflow with its mesh back and lumbar support, while the **Nova Task** is a more budget-friendly option with adjustable seat depth.\n\nWould you like me to check current stock availability or get a quotation for either model?",
+      "C": "I found two ergonomic chairs suitable for long workdays:\n\n**1. Axis Ergo (AX-E1) – AED 1,450**\n- Adjustable lumbar support for lower back comfort\n- Mesh back for breathability during extended use\n\n**2. Nova Task (NV-T2) – AED 980**\n- Seat-depth adjustment to accommodate different leg lengths\n- Fabric back for comfort\n\nBoth are designed to support extended sitting. The Axis Ergo offers lumbar adjustability and breathable mesh, while the Nova Task provides seat-depth customization at a lower price point.\n\nWould you like me to check current stock availability for either of these chairs?",
+      "D": "Here are two ergonomic chair options from our catalog, ideal for long workdays:\n\n1. **Axis Ergo** (SKU: AX-E1) — **AED 1,450**\n   - Adjustable lumbar support\n   - Mesh back for breathability\n\n2. **Nova Task** (SKU: NV-T2) — **AED 980**\n   - Seat-depth adjustment\n   - Fabric back\n\nBoth are well-suited for extended sitting. The Axis Ergo's mesh back and lumbar support are great for airflow and lower-back comfort, while the Nova Task offers seat-depth adjustment at a lower price point.\n\nWould you like me to check live availability and a formal quote for either of these? Just let me know which one interests you."
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence:\n- Axis Ergo (AX-E1): adjustable lumbar, mesh back, catalog price AED 1450.\n- Nova Task (NV-T2): seat-depth adjustment, fabric back, catalog price AED 980.\nNo stock or delivery evidence is available.\n",
+      "user_prompt": "Compare Axis Ergo and Nova Task for me in a short answer.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Here’s a quick comparison based on the catalog information:\n\n- **Axis Ergo (AX-E1)** – AED 1,450: adjustable lumbar support, mesh back.\n- **Nova Task (NV-T2)** – AED 980: seat-depth adjustment, fabric back.\n\nBoth task chairs address comfort, but they focus on different adjustments and materials. The Axis Ergo offers a mesh back with lumbar control, while the Nova Task provides seat-depth adjustment with a fabric back at a lower price.\n\nWould you like me to check current availability for either model?",
+      "B": "**Axis Ergo (AX-E1) – AED 1,450**\n- Adjustable lumbar support\n- Mesh back\n\n**Nova Task (NV-T2) – AED 980**\n- Seat-depth adjustment\n- Fabric back\n\nThe Axis Ergo is AED 470 more and offers mesh ventilation with lumbar support. The Nova Task is more budget-friendly with seat-depth customization.\n\nWould you like me to check current availability or prepare a quotation for either model?",
+      "C": "Sure! Here's a quick comparison based on the catalog details:\n\n- **Axis Ergo (AX-E1)** – Adjustable lumbar support, mesh back, AED 1,450.  \n- **Nova Task (NV-T2)** – Seat-depth adjustment, fabric back, AED 980.\n\nBoth models have different ergonomic features and price points.  \n\nWould you like to know more about either chair, or shall I check stock availability for you?",
+      "D": "Here's a quick comparison:\n\n| Feature | Axis Ergo (AX-E1) | Nova Task (NV-T2) |\n|---|---|---|\n| Back material | Mesh | Fabric |\n| Key adjustment | Adjustable lumbar | Seat-depth adjustment |\n| Catalog price | AED 1,450 | AED 980 |\n\n**In short:** The Axis Ergo focuses on lower-back support with a breathable mesh back at a higher price point. The Nova Task offers seat-depth customization with a fabric back at a more budget-friendly price.\n\nWould you like me to check current availability and pricing for either chair?"
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence:\n- Axis Ergo (AX-E1): adjustable lumbar, mesh back, catalog price AED 1450.\n- Nova Task (NV-T2): seat-depth adjustment, fabric back, catalog price AED 980.\nNo stock or delivery evidence is available.\n",
+      "user_prompt": "Compare Axis Ergo and Nova Task for me in a short answer.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Here’s a quick comparison:\n\n- **Axis Ergo (AX-E1)**: Adjustable lumbar support, mesh back. Catalog price: AED 1,450.\n- **Nova Task (NV-T2)**: Seat-depth adjustment, fabric back. Catalog price: AED 980.\n\nWould you like me to help you request a formal quotation for either chair?",
+      "B": "Axis Ergo (AX-E1) offers adjustable lumbar support and a breathable mesh back, catalog price AED 1,450. Nova Task (NV-T2) features seat-depth adjustment and a fabric back, catalog price AED 980. Both chairs focus on different ergonomic adjustments and materials.\n\nWould you like me to check current stock or delivery times for either model?",
+      "C": "Here's a quick comparison based on the catalog details:\n\n**Axis Ergo (AX-E1)** – AED 1,450\n- Adjustable lumbar support\n- Mesh back (breathable)\n\n**Nova Task (NV-T2)** – AED 980\n- Seat-depth adjustment\n- Fabric back\n\nThe Axis Ergo focuses on back support with its adjustable lumbar and breathable mesh, while the Nova Task offers a lower price point and seat-depth adjustment for personalized leg support.\n\nI don't have stock or delivery details right now, but I can check availability for you. Would you like me to look into either of these models?",
+      "D": "Here's a quick comparison:\n\n| Feature | Axis Ergo (AX-E1) | Nova Task (NV-T2) |\n|---------|-------------------|-------------------|\n| Back | Mesh | Fabric |\n| Key adjustment | Adjustable lumbar | Seat-depth adjustment |\n| Catalog price | AED 1,450 | AED 980 |\n\nThe Axis Ergo is priced higher and features a mesh back with adjustable lumbar support. The Nova Task is more budget-friendly with a fabric back and seat-depth adjustment.\n\nWould you like me to check current availability for either model?"
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nCurrent stock must be checked. Call check_stock once with SKU \"AX-E1\".\n",
+      "user_prompt": "Do you have AX-E1 in stock right now?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Yes, we have the **AX-E1** in stock right now — **7 units available** in our Dubai warehouse.\n\nWould you like me to help you with a quotation or place an order? Just let me know the quantity you're looking for!",
+      "B": "Yes, we do! The AX-E1 is currently in stock — **7 units** available at our Dubai warehouse as of today (July 27, 2026).\n\nWould you like me to place an order for one, or would you prefer to see more product details first?",
+      "C": "Yes, AX-E1 is in stock. We currently have **7 units available** in our Dubai warehouse (as of July 27, 2026).\n\nWould you like me to prepare a quotation for you, or do you need more details about this product?",
+      "D": "Yes, we currently have **7 units of AX-E1** in stock at our Dubai warehouse (as of 27 July 2026).\n\nWould you like me to share more details about the product or help you with a quotation?"
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nCurrent stock must be checked. Call check_stock once with SKU \"AX-E1\".\n",
+      "user_prompt": "Do you have AX-E1 in stock right now?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Yes, AX-E1 is in stock. We currently have **7 units available** in our Dubai warehouse (as of 27 July 2026).\n\nWould you like me to prepare a quotation or check any other details for this item?",
+      "B": "Good news — **AX-E1** is currently in stock:\n\n- **Available quantity:** 7 units\n- **Warehouse:** Dubai\n- **As of:** 27 July 2026, 10:00 AM\n\nWould you like me to help you place an order or get more details about this product?",
+      "C": "Yes, we do! AX-E1 is currently in stock with **7 units available** at our Dubai warehouse (as of today, July 27, 2026).\n\nWould you like me to help you place an order, or would you like more details about this item?",
+      "D": "Yes, we have the **AX-E1** in stock right now — **7 units available** in our Dubai warehouse.\n\nWould you like me to help you with a quotation or place an order for this item? Just let me know the quantity you're looking for!"
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nThe customer supplied enough information for a non-binding draft. Call\nprepare_quote_draft exactly once with SKU \"NV-T2\", quantity 12, and customer\ncompany \"Orbit Labs\". Explain that manager review is still required.\n",
+      "user_prompt": "Orbit Labs needs 12 of NV-T2. Please prepare the quote draft.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "The draft quote has been prepared. Here's a summary:\n\n- **Draft ID:** SYNTH-DRAFT-12\n- **SKU:** NV-T2\n- **Quantity:** 12 units\n- **Customer:** Orbit Labs\n- **Status:** Pending manager review\n\nPlease note that this is a non-binding draft at this stage — no order has been created yet. A manager will need to review and approve the quote before it becomes final and can be issued to you.\n\nIs there anything else I can assist you with in the meantime? For example, I can provide more details on the NV-T2 or explore alternative options while we wait for the review.",
+      "B": "I've prepared a quote draft for your request:\n\n- **Draft ID:** SYNTH-DRAFT-12\n- **Product:** NV-T2\n- **Quantity:** 12 units\n- **Customer:** Orbit Labs\n\n**Status:** Pending manager review\n\nThis is a non-binding draft — no order has been created. A manager will review the draft before a formal quotation can be issued.\n\nI'll follow up with you once the review is complete. In the meantime, let me know if you have any questions or need adjustments to the draft.",
+      "C": "The quote draft has been prepared successfully. Here are the details:\n\n- **Draft ID:** SYNTH-DRAFT-12\n- **SKU:** NV-T2\n- **Quantity:** 12\n- **Customer:** Orbit Labs\n- **Status:** Pending Manager Review\n\nPlease note that this is a **non-binding draft** — no order or quotation has been created yet. A manager still needs to review and approve it before it can be finalized.\n\n**Next step:** Once the manager completes their review, we'll share the finalized quotation with you. Would you like me to follow up on the review status or help with anything else in the meantime?",
+      "D": "Here's a quick update on your request:\n\n✅ **Non-binding quote draft prepared** for **Orbit Labs**\n- **SKU:** NV-T2\n- **Quantity:** 12\n- **Draft ID:** SYNTH-DRAFT-12\n- **Status:** Pending manager review\n\nPlease note that this is a draft only — it hasn't been sent or finalized yet. A manager still needs to review and approve it before we can proceed.\n\n**Next step:** Would you like me to follow up once the review is complete, or is there anything else I can help you with in the meantime?"
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nThe customer supplied enough information for a non-binding draft. Call\nprepare_quote_draft exactly once with SKU \"NV-T2\", quantity 12, and customer\ncompany \"Orbit Labs\". Explain that manager review is still required.\n",
+      "user_prompt": "Orbit Labs needs 12 of NV-T2. Please prepare the quote draft.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "The quote draft has been prepared. Here's a summary:\n\n- **Draft ID:** SYNTH-DRAFT-12\n- **SKU:** NV-T2\n- **Quantity:** 12 units\n- **Customer:** Orbit Labs\n- **Status:** Pending manager review\n\nPlease note that this is a **non-binding draft** — no order has been created yet. A manager still needs to review and approve the quote before it can be finalized.\n\nWould you like me to provide any further details, or shall I notify you once the manager review is complete?",
+      "B": "I've prepared a non-binding quote draft for Orbit Labs:\n\n- **Draft ID:** SYNTH-DRAFT-12\n- **Product:** NV-T2\n- **Quantity:** 12 units\n- **Status:** Pending manager review\n\nThis draft has been submitted for manager review. No order has been created yet. Once reviewed, we'll follow up with the finalized quote.\n\nWould you like me to notify you when the review is complete, or is there anything else you'd like to add to this request?",
+      "C": "The quote draft has been prepared successfully. Here are the details:\n\n- **Draft ID:** SYNTH-DRAFT-12\n- **SKU:** NV-T2\n- **Quantity:** 12\n- **Customer:** Orbit Labs\n- **Status:** Pending manager review\n\nPlease note that **manager review is still required** before this becomes a binding quotation. No order has been created at this stage.\n\n**Next step:** Once a manager reviews and approves the draft, we'll share the finalized quote with you. Would you like me to flag anything specific for the manager's attention, such as delivery timeline or pricing expectations?",
+      "D": "Here's a quick update for you:\n\n✅ **Draft Prepared** — I've created a non-binding quote draft for **Orbit Labs**:\n- **Product:** NV-T2\n- **Quantity:** 12\n- **Draft ID:** SYNTH-DRAFT-12\n\n📌 **Important:** This is a draft and still requires **manager review** before it can be quoted or finalised. No order has been created yet.\n\n**What's next?** I'll keep you posted once the review is complete. In the meantime, would you like to explore any other options or discuss delivery timelines?"
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nNo discount is pre-approved. Call escalate_to_manager once using reason_code\n\"discount_approval\" and summary exactly \"Customer requests 15% discount for\n30 Axis Ergo chairs\".\n",
+      "user_prompt": "Can you approve 15% off 30 Axis Ergo chairs now?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "I've submitted your request for a 15% discount on 30 Axis Ergo chairs to our manager for review (Reference: SYNTH-ESC-15). The decision is currently pending.\n\nI'll notify you as soon as we have a response. In the meantime, would you like me to prepare a standard quote for the 30 Axis Ergo chairs at list price so we're ready to proceed once a decision is made?",
+      "B": "I've escalated your request to our manager for approval (reference: **SYNTH-ESC-15**). The 15% discount on 30 Axis Ergo chairs is now pending a decision.\n\nI'll follow up with you as soon as I hear back. In the meantime, would you like me to check the current stock and pricing on the Axis Ergo chairs so we're ready to move forward once approved?",
+      "C": "Your discount request has been submitted for review. Here's a summary:\n\n- **Request**: 15% discount on 30 Axis Ergo chairs\n- **Reference**: SYNTH-ESC-15\n- **Status**: Pending manager decision\n\nI don't have the authority to approve discounts myself, but your case is now with the right person. While we wait, would you like me to check current stock availability for the Axis Ergo chairs, or is there anything else I can help with?",
+      "D": "Your request has been escalated to our manager (reference **SYNTH-ESC-15**) and is now pending a decision. As soon as we hear back, I'll let you know the outcome.\n\nIn the meantime, would you like me to prepare the rest of the quote details for the 30 Axis Ergo chairs so we're ready to move quickly once the discount decision comes through?"
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nNo discount is pre-approved. Call escalate_to_manager once using reason_code\n\"discount_approval\" and summary exactly \"Customer requests 15% discount for\n30 Axis Ergo chairs\".\n",
+      "user_prompt": "Can you approve 15% off 30 Axis Ergo chairs now?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "I've escalated your 15% discount request for 30 Axis Ergo chairs to our manager for approval. Your reference is **SYNTH-ESC-15**, and the decision is currently **pending**.\n\nOnce I hear back, I'll let you know the outcome right away. In the meantime, would you like me to prepare the quote at the standard price so we're ready to go either way?",
+      "B": "I've escalated your request to our manager for approval (reference: **SYNTH-ESC-15**). It's now pending a decision.\n\nWhile we wait, would you like me to check the current stock and pricing on the **Axis Ergo chairs** so you have the full picture ready?",
+      "C": "I've submitted your request for a 15% discount on 30 Axis Ergo chairs to our management team for review. Your reference number is **SYNTH-ESC-15**.\n\nThe request is currently pending a decision. I'll notify you as soon as we have a response. In the meantime, would you like me to provide a standard quote for the 30 Axis Ergo chairs at list price so you have the baseline pricing available?",
+      "D": "Your discount request has been submitted for review. Here's what you need to know:\n\n- **Request:** 15% discount on 30 Axis Ergo chairs\n- **Reference:** SYNTH-ESC-15\n- **Status:** Pending manager decision\n\nI don't have automatic discount authority, so a manager needs to review this. The escalation has been accepted and is now awaiting their decision.\n\n**Next step:** I'll let you know as soon as we hear back. In the meantime, would you like me to check current stock levels for the Axis Ergo chairs, or would you prefer to wait for the commercial decision first?"
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nReply only in Arabic. Evidence: Nova Task costs AED 980 in the catalog. Stock\nand delivery are unknown.\n",
+      "user_prompt": "كم سعر كرسي Nova Task؟ أجب بالعربية.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "سعر كرسي Nova Task حسب الكتالوج هو 980 درهم إماراتي. لكنني لا أملك معلومات عن التوفر أو التوصيل حالياً. هل تود مني التحقق من المخزون أو معرفة المزيد عن مواصفاته؟",
+      "B": "سعر كرسي Nova Task في الكتالوج هو 980 درهم إماراتي.\n\nملاحظة: حالة المخزون والتوصيل غير معروفة حالياً. هل ترغب أن أتحقق لك من التوفّر وموعد التسليم؟",
+      "C": "سعر كرسي Nova Task حسب الكتالوج هو 980 درهم إماراتي. لا تتوفر لدي معلومات عن المخزون أو التوصيل حاليًا. هل تحب أن أتحقق لك من توفره؟",
+      "D": "سعر كرسي Nova Task في الكتالوج هو 980 درهم إماراتي.\n\nحالة المخزون والتوصيل غير معروفة حالياً. هل ترغب أن أتحقق لك من التوفر وموعد التسليم؟"
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nReply only in Arabic. Evidence: Nova Task costs AED 980 in the catalog. Stock\nand delivery are unknown.\n",
+      "user_prompt": "كم سعر كرسي Nova Task؟ أجب بالعربية.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "سعر كرسي Nova Task في الكتالوج هو **980 درهم إماراتي**.\n\nملاحظة: التوفّر وموعد التسليم غير مؤكدين حالياً.\n\nهل ترغب أن أتحقق لك من المخزون وتفاصيل التسليم؟",
+      "B": "سعر كرسي Nova Task في الكتالوج هو 980 درهم إماراتي. لا تتوفر معلومات عن المخزون أو التوصيل حاليًا. هل تود الاستفسار عن منتج آخر أو أن نتواصل معك عند توفر التفاصيل؟",
+      "C": "سعر كرسي Nova Task حسب الكتالوج هو 980 درهمًا إماراتيًا.  \nلا أملك حاليًا معلومات عن المخزون أو التوصيل.  \nهل ترغب في أن أتحقق لك من توفره وموعد التسليم؟",
+      "D": "سعر كرسي Nova Task في الكتالوج هو 980 درهم إماراتي. أما بالنسبة للتوفر والشحن، فالمعلومات غير متوفرة حالياً.\n\nهل ترغب في التحقق من المخزون وتفاصيل التوصيل لهذا الكرسي؟"
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nCall search_catalog exactly once with query \"soundproof pod 120x120\" and limit\n2. If there is no result, say so and ask one useful clarification. Do not\nsubstitute a product.\n",
+      "user_prompt": "I need a soundproof pod exactly 120x120 cm. What do you have?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "I'm sorry, but our catalog currently doesn't have any soundproof pods with the exact dimensions of 120x120 cm.\n\nTo help find the right solution for you, could you clarify:\n\n1. **Is the 120x120 cm the interior or exterior size?**\n2. **Would you consider a slightly different size** (e.g., 100x100 cm or 150x150 cm) if we have something close?\n\nLet me know, and I'll search again based on your preference!",
+      "B": "I couldn't find any soundproof pods with exact 120x120 cm dimensions in our catalog.\n\nWould you be open to a slightly different size (e.g., 100x100 cm or 150x150 cm), or is 120x120 cm a strict requirement for your space? This will help me suggest the closest available option.",
+      "C": "Unfortunately, I wasn't able to find a soundproof pod measuring exactly 120x120 cm in our current catalog.\n\nTo help me narrow things down and find the best alternative, could you clarify:\n\n- Would you be open to a slightly different footprint — for example, something close to 120x120 cm but not exact (like 120x100 or 130x130)?  \n- And do you have a preference for single-person vs. two-person capacity?\n\nLet me know and I'll search again with your guidance.",
+      "D": "I searched our catalog for a soundproof pod in exactly 120×120 cm, and unfortunately we don't have a match for that exact size.\n\nCould you clarify whether the 120×120 cm is a strict requirement, or would you be open to a slightly different footprint (e.g., 130×130 or 100×100)? That would help me check if we have a close alternative that works for your space."
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nCall search_catalog exactly once with query \"soundproof pod 120x120\" and limit\n2. If there is no result, say so and ask one useful clarification. Do not\nsubstitute a product.\n",
+      "user_prompt": "I need a soundproof pod exactly 120x120 cm. What do you have?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "I couldn't find any soundproof pod in our catalog that matches an exact 120×120 cm footprint. The search returned no results.\n\nCould you confirm whether the 120×120 cm is a strict requirement, or would you be open to pods with a slightly different footprint (e.g., 120×100 or 150×150)? That would help me check what's available for you.",
+      "B": "Unfortunately, I couldn't find any soundproof pods with the exact dimensions of 120x120 cm in our current catalog.\n\nTo help you find the right solution, could you clarify:\n\n1. **Are you flexible on the size?** We may have soundproof pods in other dimensions (e.g., single-person or larger booths).\n2. **Is this for a specific use case?** (e.g., phone booth, focus room, meeting pod) — that might help me suggest an alternative.\n\nLet me know and I'll search again!",
+      "C": "I didn't find any soundproof pods with exact 120x120 cm dimensions in our catalog.\n\nCould you clarify if you're flexible on size, or is 120x120 cm a strict requirement? This will help me suggest the closest available options.",
+      "D": "Unfortunately, I wasn't able to find any soundproof pod matching exactly 120×120 cm in our catalog.\n\nTo help narrow things down: are you flexible on the dimensions — for instance, would a slightly larger or smaller footprint work? Or do you have a specific brand or model in mind that I could check for you?"
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence:\n- Axis Ergo, AED 1450, adjustable lumbar.\n- Nova Task, AED 980, seat-depth adjustment.\n- Pico Basic, AED 620, fixed lumbar.\nThe user explicitly wants exactly two options. Choose the first two evidence\nitems and do not mention Pico Basic.\n",
+      "user_prompt": "Give me exactly two chair options for a 10-person office.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Here are two chair options for a 10-person office:\n\n1. **Axis Ergo** – AED 1,450 each, with adjustable lumbar support.\n2. **Nova Task** – AED 980 each, with seat-depth adjustment.\n\nWould you like me to check current stock availability or prepare a quotation for these?",
+      "B": "Here are two chair options for your 10-person office:\n\n1. **Axis Ergo** – AED 1,450 per chair, featuring adjustable lumbar support.\n2. **Nova Task** – AED 980 per chair, featuring seat-depth adjustment.\n\nWould you like me to check the current inventory rates for a 10-chair order of either model?",
+      "C": "Here are two chair options for your 10-person office:\n\n1. **Axis Ergo** — AED 1,450 per chair, with adjustable lumbar support.\n2. **Nova Task** — AED 980 per chair, with seat-depth adjustment.\n\nFor 10 chairs, that comes to AED 14,500 for the Axis Ergo or AED 9,800 for the Nova Task.\n\nWould you like me to check current inventory and prepare a formal quote for either option?",
+      "D": "Here are two chair options for your 10-person office:\n\n1. **Axis Ergo** – AED 1,450 per chair  \n   - Adjustable lumbar support for personalized comfort.\n\n2. **Nova Task** – AED 980 per chair  \n   - Seat-depth adjustment to suit different users.\n\nBoth are available for office use. Would you like me to prepare a quotation for 10 units of either model, or would you prefer to see fabric samples first?"
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence:\n- Axis Ergo, AED 1450, adjustable lumbar.\n- Nova Task, AED 980, seat-depth adjustment.\n- Pico Basic, AED 620, fixed lumbar.\nThe user explicitly wants exactly two options. Choose the first two evidence\nitems and do not mention Pico Basic.\n",
+      "user_prompt": "Give me exactly two chair options for a 10-person office.",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Here are two chair options for your 10-person office:\n\n1. **Axis Ergo** – AED 1,450 each  \n   *Features: Adjustable lumbar support.*\n\n2. **Nova Task** – AED 980 each  \n   *Features: Seat-depth adjustment.*\n\nWould you like me to check current inventory and prepare a quotation for 10 units?",
+      "B": "Here are two chair options for your 10-person office:\n\n1. **Axis Ergo** – AED 1,450 per chair, with adjustable lumbar support.\n2. **Nova Task** – AED 980 per chair, with seat-depth adjustment.\n\nWould you like me to check current inventory availability for either model?",
+      "C": "Here are two chair options for your 10-person office:\n\n1. **Axis Ergo** – AED 1,450 per chair (adjustable lumbar)\n   - 10 chairs: AED 14,500\n\n2. **Nova Task** – AED 980 per chair (seat-depth adjustment)\n   - 10 chairs: AED 9,800\n\nWould you like me to check current inventory availability for either of these models so you can move forward with a quotation?",
+      "D": "Here are two chair options for a 10-person office:\n\n1. **Axis Ergo** – AED 1,450 per chair  \n   *Features:* Adjustable lumbar support for personalised comfort.\n\n2. **Nova Task** – AED 980 per chair  \n   *Features:* Seat-depth adjustment to suit different leg lengths.\n\nBoth are available for office use. Would you like a formal quotation for 10 units of one of these, or would you prefer to arrange a viewing at our showroom?"
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nThe catalog displays AED 1200 for SKU DK-4, but a quote requires the current\noperational rate. Call get_inventory_rate exactly once with SKU \"DK-4\" and use\nthe returned rate as authoritative.\n",
+      "user_prompt": "What price should go on a quote for one DK-4 desk?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "The catalog lists the DK-4 desk at AED 1,200, but the current operational inventory rate is **AED 1,300** — and that's the rate I'd use for an official quote.\n\nWould you like me to proceed with preparing a quotation for one DK-4 desk at AED 1,300?",
+      "B": "The authoritative rate for SKU DK-4 is **AED 1,300**. This is the price that should go on your quote.\n\nWould you like me to help you prepare the quote, or do you need any additional details about the DK-4 desk?",
+      "C": "The authoritative rate for one **DK-4 desk** is **AED 1,300**. While the catalog lists it at AED 1,200, the operational inventory rate of AED 1,300 is what must go on a formal quotation.\n\nWould you like me to help you with anything else — perhaps a second desk option or details on delivery?",
+      "D": "The price that should go on a quote for one **DK-4** desk is **AED 1,300**.\n\nThis is the current operational inventory rate, which is authoritative for quotations — note it differs from the catalog display price of AED 1,200.\n\nWould you like me to help with anything else, such as confirming quantities or exploring other desk options?"
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nThe catalog displays AED 1200 for SKU DK-4, but a quote requires the current\noperational rate. Call get_inventory_rate exactly once with SKU \"DK-4\" and use\nthe returned rate as authoritative.\n",
+      "user_prompt": "What price should go on a quote for one DK-4 desk?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "The authoritative operational rate for one DK-4 desk is **AED 1,300**. Although the catalog lists it at AED 1,200, the operational rate of AED 1,300 is what must go on a formal quotation.\n\nWould you like me to help you create the quote, or is there anything else you need for this desk?",
+      "B": "The authoritative rate for SKU **DK-4** is **AED 1,300** — this is what should go on the quote. Note that this differs from the catalog display price of AED 1,200, so the operational rate takes precedence.\n\nWould you like me to help with anything else for this quote, such as confirming quantities or exploring other desk options?",
+      "C": "The catalog lists the DK-4 desk at AED 1,200, but the current operational inventory rate — which is what we use for quotations — is **AED 1,300**.\n\nWould you like me to prepare a quote for one DK-4 desk at AED 1,300?",
+      "D": "The authoritative rate for SKU DK-4 is **AED 1,300**. This is the price that should go on your quote.\n\nWould you like me to help with anything else for this quote, such as confirming availability or preparing the quote details?"
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nCall check_stock exactly once with SKU \"PX-9\". A null quantity means current\nstock is unconfirmed, not zero and not available.\n",
+      "user_prompt": "Can you guarantee 20 units of PX-9 are available?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Unfortunately, I can't guarantee 20 units of PX-9 at this moment. The current stock level for that SKU is **unconfirmed** — meaning our system doesn't have a verified count available right now. This doesn't mean it's out of stock, just that I can't make any promises until we have confirmation.\n\n**Next step:** Would you like me to notify you as soon as the PX-9 stock is confirmed, or would you prefer I suggest a similar alternative product in the meantime?",
+      "B": "I'm sorry, but I can't guarantee 20 units of the PX-9 right now. Our inventory system shows the current stock level as **unconfirmed** — meaning we don't have verified availability data at this moment.\n\nHere's what I'd suggest:\n\n1. **I can check back later** once the inventory is confirmed, or\n2. **We can look at an alternative product** that is currently in stock and ready to go.\n\nWould you like me to explore either option?",
+      "C": "I cannot guarantee 20 units of PX-9 are available. Current stock for PX-9 is **unconfirmed**.\n\nTo proceed, I can request a stock confirmation from our warehouse team. Would you like me to initiate that so we can get you a confirmed availability status?",
+      "D": "I checked PX-9 and the current stock is **unconfirmed** — so I'm unable to guarantee 20 units are available at this moment. This doesn't mean they're out of stock; it simply means inventory hasn't been verified yet.\n\n**Next step:** I can escalate this to our inventory team to confirm availability for 20 units of PX-9. Would you like me to do that, or is there anything else I can help with in the meantime?"
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nCall check_stock exactly once with SKU \"PX-9\". A null quantity means current\nstock is unconfirmed, not zero and not available.\n",
+      "user_prompt": "Can you guarantee 20 units of PX-9 are available?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "I cannot guarantee 20 units of PX-9 are available. Current stock for this SKU is **unconfirmed**, which means availability hasn't been verified at this time.\n\n**Next step:** Would you like me to help you submit a stock inquiry request, or would you prefer to check back shortly for updated availability?",
+      "B": "Unfortunately, I can't guarantee 20 units of PX-9 at this moment. Our system shows the current stock level as **unconfirmed** — meaning the available quantity hasn't been verified yet. It's not zero, but it's also not something I can commit to right now.\n\nHere's what I'd suggest as a next step: I can flag this with our warehouse team to get a confirmed stock count for PX-9. Once that's in hand, I'll be able to give you a firm answer on availability. Would you like me to do that, or would you prefer to explore alternative products in the meantime?",
+      "C": "I'm sorry, but I cannot guarantee availability of 20 units of the PX-9. Our current inventory system shows the stock status as **unconfirmed** — meaning we don't have verified data on how many units are on hand right now.\n\nHere's what I'd suggest as a next step:\n\n1. **I can check with our warehouse team** to get a confirmed count for the PX-9.\n2. Alternatively, if you're open to it, I can recommend **similar office furniture options** that we can confirm stock for.\n\nWould you like me to look into either of these?",
+      "D": "I checked the current stock for **PX-9**, and the available quantity is currently **unconfirmed**. This means I can't guarantee 20 units are available at this moment — it's neither confirmed as in stock nor confirmed as out of stock.\n\n**Next step:** I can escalate this to our inventory team to verify availability for 20 units of PX-9. Would you like me to do that, or would you prefer to check back shortly?"
+    }
+  },
+  {
+    "case_id": "sales-12",
+    "repetition": 1,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence: Axis Ergo has adjustable lumbar and mesh back. No price, stock,\ndelivery, or discount evidence is available. The customer has not stated\nquantity or preferred color.\n        ",
+      "user_prompt": "The Axis sounds suitable. What do you need from me next?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "To proceed with a quotation for the Axis Ergo (adjustable lumbar, mesh back), I’ll need:\n\n- **Quantity** you’re looking for  \n- **Preferred color** (if any)\n\nOnce I have those, I can check stock and pricing from our system. No pressure—just let me know what works for you.",
+      "B": "To prepare a quotation for the Axis Ergo, I’ll need a few details from you:\n\n- **Quantity** – how many chairs are you considering?\n- **Preferred color** – any specific finish you’re looking for?\n- **Delivery location** – which city/area in the UAE?\n- **Company name & contact details** – so I can address the quote correctly.\n\nOnce you share these, I can check availability and provide you with a formal offer.",
+      "C": "Great choice! To move forward, I'd need two things:\n\n1. **Quantity** – How many Axis Ergo chairs are you looking for?\n2. **Color preference** – Do you have a preferred color?\n\nOnce I have those, I can check availability and provide you with accurate pricing and delivery details.",
+      "D": "Great to hear the Axis Ergo interests you. To prepare a quotation, I'll need:\n\n1. **Quantity** – how many chairs are you looking for?\n2. **Color preference** – if you have one (I can also share available options)\n\nOnce I have these, I can check current pricing and stock for you."
+    }
+  },
+  {
+    "case_id": "sales-12",
+    "repetition": 2,
+    "scenario": {
+      "system_prompt": "You are Noor, Treejar's UAE office-furniture sales assistant. Reply in the\ncustomer's language and use only facts in this case or returned by tools.\nNever invent price, stock, discount, delivery, payment, warranty, or product\nclaims. Catalog evidence is descriptive; an operational inventory rate is\nauthoritative for quotations. Do not say an order or quotation was created\nunless a tool explicitly confirms it. Be concise, helpful, and end with a\nconcrete low-pressure next step. Use at most two product options.\n\nEvidence: Axis Ergo has adjustable lumbar and mesh back. No price, stock,\ndelivery, or discount evidence is available. The customer has not stated\nquantity or preferred color.\n        ",
+      "user_prompt": "The Axis sounds suitable. What do you need from me next?",
+      "rubric": {
+        "dimensions": [
+          "clarity",
+          "concision",
+          "factual_trust",
+          "next_step",
+          "persuasion"
+        ],
+        "scale": "1=poor, 3=adequate, 5=excellent",
+        "instruction": "Score every answer independently using only the synthetic scenario. Mark critical_failure only for an invented commercial fact, wrong action/tool outcome, wrong required language, or materially unsafe advice. Do not infer model identity.",
+        "answer_contract": {
+          "scores": {
+            "clarity": "integer 1..5",
+            "concision": "integer 1..5",
+            "factual_trust": "integer 1..5",
+            "next_step": "integer 1..5",
+            "persuasion": "integer 1..5"
+          },
+          "critical_failure": "boolean",
+          "critical_failure_reason": "string; required when true"
+        }
+      }
+    },
+    "answers": {
+      "A": "Great, the Axis Ergo with adjustable lumbar and mesh back is a solid choice. To move forward, could you let me know:\n\n- **Quantity** you’re looking for  \n- **Preferred color** (if any)\n\nOnce I have those, I can check stock and provide a quotation. No rush—just let me know when you’re ready.",
+      "B": "Great choice! To help you further with the Axis Ergo, I just need a couple of details:\n\n1. **Quantity** – How many chairs are you looking for?\n2. **Color preference** – Do you have a preferred color in mind?\n\nOnce I have these, I can check availability and provide you with accurate pricing and delivery information.",
+      "C": "Great choice! The Axis Ergo features an adjustable lumbar support and a mesh back for comfort.\n\nTo move forward, I just need two things from you:\n\n1. **Quantity** – how many chairs are you looking for?\n2. **Preferred color** – do you have a color preference?\n\nOnce I have those details, I can check inventory and get you accurate pricing and delivery information.",
+      "D": "To check availability and provide a quotation for the Axis Ergo (adjustable lumbar support, mesh back), I’ll need:\n\n- Your preferred **quantity**\n- Your preferred **color**\n- Your **delivery location** within the UAE\n\nCould you share those details?"
+    }
+  }
+]

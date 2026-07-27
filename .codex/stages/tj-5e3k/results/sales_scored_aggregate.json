@@ -1,0 +1,58 @@
+{
+  "deepseek/deepseek-v4-flash": {
+    "model": "deepseek/deepseek-v4-flash",
+    "runs": 24,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 9378.113916666667,
+      "p50": 9042.4595,
+      "p95": 20060.75584999999,
+      "max": 21730.974
+    },
+    "objective_correctness": 0.905704365079365,
+    "case_pass_rate": 0.375
+  },
+  "deepseek/deepseek-v4-pro": {
+    "model": "deepseek/deepseek-v4-pro",
+    "runs": 24,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 8912.836125,
+      "p50": 9189.4455,
+      "p95": 12483.520849999999,
+      "max": 13736.176
+    },
+    "objective_correctness": 0.9071924603174604,
+    "case_pass_rate": 0.4166666666666667
+  },
+  "z-ai/glm-5": {
+    "model": "z-ai/glm-5",
+    "runs": 24,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 7597.078624999999,
+      "p50": 7958.9529999999995,
+      "p95": 10709.7691,
+      "max": 14416.149
+    },
+    "objective_correctness": 0.9022156084656084,
+    "case_pass_rate": 0.375
+  },
+  "z-ai/glm-5.2": {
+    "model": "z-ai/glm-5.2",
+    "runs": 24,
+    "first_pass_reliability": 1.0,
+    "retry_rate": 0.0,
+    "latency_ms": {
+      "mean": 6152.842250000001,
+      "p50": 4977.9490000000005,
+      "p95": 14114.27834999999,
+      "max": 21853.931
+    },
+    "objective_correctness": 0.864732142857143,
+    "case_pass_rate": 0.20833333333333334
+  }
+}

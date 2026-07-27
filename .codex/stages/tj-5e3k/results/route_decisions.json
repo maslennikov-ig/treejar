@@ -1,0 +1,209 @@
+{
+  "sales": {
+    "candidates": [
+      {
+        "model": "deepseek/deepseek-v4-flash",
+        "weighted_score": 86.556,
+        "hard_gates_passed": false,
+        "reliability": 1.0,
+        "p95_ms": 20060.75584999999
+      },
+      {
+        "model": "deepseek/deepseek-v4-pro",
+        "weighted_score": 89.942,
+        "hard_gates_passed": false,
+        "reliability": 1.0,
+        "p95_ms": 12483.520849999999
+      },
+      {
+        "model": "z-ai/glm-5",
+        "weighted_score": 93.85,
+        "hard_gates_passed": true,
+        "reliability": 1.0,
+        "p95_ms": 10709.7691
+      },
+      {
+        "model": "z-ai/glm-5.2",
+        "weighted_score": 87.711,
+        "hard_gates_passed": false,
+        "reliability": 1.0,
+        "p95_ms": 14114.27834999999
+      }
+    ],
+    "details": {
+      "deepseek/deepseek-v4-flash": {
+        "objective_correctness": 0.905704365079365,
+        "blind_quality": 0.9116666666666666,
+        "tool_route_score": 1.0,
+        "latency_score": 0.53386667880712,
+        "hard_gates": {
+          "zero_critical_failures": true,
+          "zero_blind_review_critical_failures": false
+        },
+        "weighted_score": 86.556,
+        "hard_gates_passed": false,
+        "p95_ms": 20060.75584999999
+      },
+      "deepseek/deepseek-v4-pro": {
+        "objective_correctness": 0.9071924603174604,
+        "blind_quality": 0.85,
+        "tool_route_score": 1.0,
+        "latency_score": 0.8579125415567356,
+        "hard_gates": {
+          "zero_critical_failures": true,
+          "zero_blind_review_critical_failures": false
+        },
+        "weighted_score": 89.942,
+        "hard_gates_passed": false,
+        "p95_ms": 12483.520849999999
+      },
+      "z-ai/glm-5": {
+        "objective_correctness": 0.9022156084656084,
+        "blind_quality": 0.93,
+        "tool_route_score": 1.0,
+        "latency_score": 1.0,
+        "hard_gates": {
+          "zero_critical_failures": true,
+          "zero_blind_review_critical_failures": true
+        },
+        "weighted_score": 93.85,
+        "hard_gates_passed": true,
+        "p95_ms": 10709.7691
+      },
+      "z-ai/glm-5.2": {
+        "objective_correctness": 0.864732142857143,
+        "blind_quality": 0.8966666666666666,
+        "tool_route_score": 1.0,
+        "latency_score": 0.7587897046114304,
+        "hard_gates": {
+          "zero_critical_failures": false,
+          "zero_blind_review_critical_failures": false
+        },
+        "weighted_score": 87.711,
+        "hard_gates_passed": false,
+        "p95_ms": 14114.27834999999
+      }
+    },
+    "decision": {
+      "outcome": "winner",
+      "winner": "z-ai/glm-5",
+      "reason": "Every other candidate failed at least one hard gate."
+    }
+  },
+  "system": {
+    "candidates": [
+      {
+        "model": "deepseek/deepseek-v4-flash",
+        "weighted_score": 84.133,
+        "hard_gates_passed": false,
+        "reliability": 1.0,
+        "p95_ms": 15298.35149999999
+      },
+      {
+        "model": "deepseek/deepseek-v4-pro",
+        "weighted_score": 81.36,
+        "hard_gates_passed": false,
+        "reliability": 1.0,
+        "p95_ms": 12168.319149999996
+      },
+      {
+        "model": "nex-agi/nex-n2-mini",
+        "weighted_score": 80.603,
+        "hard_gates_passed": false,
+        "reliability": 0.8541666666666666,
+        "p95_ms": 5799.2734
+      },
+      {
+        "model": "z-ai/glm-5.2",
+        "weighted_score": 78.786,
+        "hard_gates_passed": false,
+        "reliability": 1.0,
+        "p95_ms": 36205.989049999975
+      }
+    ],
+    "details": {
+      "deepseek/deepseek-v4-flash": {
+        "json_schema_first_pass": 1.0,
+        "semantic_accuracy": 0.7378640776699029,
+        "reliability": 1.0,
+        "tool_quality": 1.0,
+        "latency_score": 0.3790783209550391,
+        "consistently_failing_cases": [
+          "system-red-01"
+        ],
+        "hard_gates": {
+          "no_consistently_failing_case": false,
+          "no_critical_tool_argument_error": true,
+          "json_schema_at_least_97_5": true,
+          "semantic_at_least_95": false
+        },
+        "weighted_score": 84.133,
+        "hard_gates_passed": false,
+        "p95_ms": 15298.35149999999
+      },
+      "deepseek/deepseek-v4-pro": {
+        "json_schema_first_pass": 1.0,
+        "semantic_accuracy": 0.7184466019417476,
+        "reliability": 1.0,
+        "tool_quality": 0.75,
+        "latency_score": 0.4765878777924724,
+        "consistently_failing_cases": [
+          "system-red-03"
+        ],
+        "hard_gates": {
+          "no_consistently_failing_case": false,
+          "no_critical_tool_argument_error": false,
+          "json_schema_at_least_97_5": true,
+          "semantic_at_least_95": false
+        },
+        "weighted_score": 81.36,
+        "hard_gates_passed": false,
+        "p95_ms": 12168.319149999996
+      },
+      "nex-agi/nex-n2-mini": {
+        "json_schema_first_pass": 0.7,
+        "semantic_accuracy": 0.6407766990291263,
+        "reliability": 0.8541666666666666,
+        "tool_quality": 1.0,
+        "latency_score": 1.0,
+        "consistently_failing_cases": [
+          "system-red-02",
+          "system-faq-03",
+          "system-red-03"
+        ],
+        "hard_gates": {
+          "no_consistently_failing_case": false,
+          "no_critical_tool_argument_error": true,
+          "json_schema_at_least_97_5": false,
+          "semantic_at_least_95": false
+        },
+        "weighted_score": 80.603,
+        "hard_gates_passed": false,
+        "p95_ms": 5799.2734
+      },
+      "z-ai/glm-5.2": {
+        "json_schema_first_pass": 1.0,
+        "semantic_accuracy": 0.6553398058252428,
+        "reliability": 1.0,
+        "tool_quality": 1.0,
+        "latency_score": 0.16017442285560224,
+        "consistently_failing_cases": [],
+        "hard_gates": {
+          "no_consistently_failing_case": true,
+          "no_critical_tool_argument_error": true,
+          "json_schema_at_least_97_5": true,
+          "semantic_at_least_95": false
+        },
+        "weighted_score": 78.786,
+        "hard_gates_passed": false,
+        "p95_ms": 36205.989049999975
+      }
+    },
+    "decision": {
+      "outcome": "no_safe_replacement",
+      "winner": null,
+      "reason": "All candidates failed at least one hard gate."
+    }
+  },
+  "production_changed": false
+}

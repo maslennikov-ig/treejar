@@ -1,0 +1,242 @@
+[
+  {
+    "case_id": "sales-01",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-01",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5.2",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5.2",
+      "B": "z-ai/glm-5",
+      "C": "deepseek/deepseek-v4-flash",
+      "D": "deepseek/deepseek-v4-pro"
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-pro",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "z-ai/glm-5",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-pro",
+      "B": "z-ai/glm-5",
+      "C": "deepseek/deepseek-v4-flash",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5.2",
+      "B": "deepseek/deepseek-v4-pro",
+      "C": "deepseek/deepseek-v4-flash",
+      "D": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "deepseek/deepseek-v4-pro",
+      "C": "z-ai/glm-5",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "z-ai/glm-5.2",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-pro",
+      "B": "z-ai/glm-5",
+      "C": "z-ai/glm-5.2",
+      "D": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-pro",
+      "B": "z-ai/glm-5",
+      "C": "z-ai/glm-5.2",
+      "D": "deepseek/deepseek-v4-flash"
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 1,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5.2",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "z-ai/glm-5",
+      "D": "deepseek/deepseek-v4-pro"
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5.2",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5.2",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5.2",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "z-ai/glm-5",
+      "D": "deepseek/deepseek-v4-pro"
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5",
+      "C": "z-ai/glm-5.2",
+      "D": "deepseek/deepseek-v4-pro"
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5",
+      "C": "z-ai/glm-5.2",
+      "D": "deepseek/deepseek-v4-pro"
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5",
+      "C": "deepseek/deepseek-v4-pro",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-pro",
+      "B": "z-ai/glm-5.2",
+      "C": "deepseek/deepseek-v4-flash",
+      "D": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-pro",
+      "B": "deepseek/deepseek-v4-flash",
+      "C": "z-ai/glm-5",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 2,
+    "reveal": {
+      "A": "z-ai/glm-5",
+      "B": "deepseek/deepseek-v4-pro",
+      "C": "deepseek/deepseek-v4-flash",
+      "D": "z-ai/glm-5.2"
+    }
+  },
+  {
+    "case_id": "sales-12",
+    "repetition": 1,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "deepseek/deepseek-v4-pro",
+      "C": "z-ai/glm-5.2",
+      "D": "z-ai/glm-5"
+    }
+  },
+  {
+    "case_id": "sales-12",
+    "repetition": 2,
+    "reveal": {
+      "A": "deepseek/deepseek-v4-flash",
+      "B": "z-ai/glm-5",
+      "C": "z-ai/glm-5.2",
+      "D": "deepseek/deepseek-v4-pro"
+    }
+  }
+]
