@@ -361,7 +361,8 @@ def evaluate_sales_answer(
 
     decision = answer.get("decision")
     reply_raw = answer.get("reply")
-    reply = _normalized(reply_raw) if isinstance(reply_raw, str) else ""
+    grounding_reply = reply_raw if isinstance(reply_raw, str) else ""
+    reply = _normalized(grounding_reply)
     failures: list[str] = []
     if decision not in case.expected_decisions:
         failures.append(
@@ -369,7 +370,7 @@ def evaluate_sales_answer(
         )
     if not reply:
         failures.append("reply must be a non-empty string")
-    if contains_specific_product_showroom_trial(reply):
+    if contains_specific_product_showroom_trial(grounding_reply):
         failures.append(
             "reply implies that a specific product will be available to try"
         )
@@ -465,11 +466,11 @@ def evaluate_sales_answer(
             )
         ):
             failures.append("reply must distinguish unconfirmed from unavailable")
-        if contains_future_stock_check(reply):
+        if contains_future_stock_check(grounding_reply):
             failures.append(
                 "reply promises a future stock check instead of using the tool"
             )
-        if contains_unverified_stock_confirmation(reply):
+        if contains_unverified_stock_confirmation(grounding_reply):
             failures.append("reply adds an unverified present stock confirmation")
         for phrase in ("currently in stock", "is in stock", "available now"):
             if _contains_asserted_phrase(reply, phrase):

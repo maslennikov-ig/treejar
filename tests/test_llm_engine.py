@@ -2449,12 +2449,23 @@ async def test_process_message_uses_arabic_grounding_fallback(
         ("I can confirm AX-E1 is not in stock.", 0),
         ("I can confirm AX-E1 is currently not in stock.", 0),
         ("I can confirm AX-E1 is not available.", 0),
+        ("I can confirm AX-E1 isn't in stock.", 0),
+        ("I can confirm AX-E1 isn’t available.", 0),
+        ("I can confirm that 7 AX-E1 units aren't available.", 0),
         ("Current stock is unconfirmed. AX-E1 is available.", 7),
         ("Current stock is unconfirmed. AX-E1 is unavailable.", 0),
         ("Current stock is unconfirmed. AX-E1 is out of stock.", 0),
         ("Current stock is unconfirmed. AX-E1 is currently in stock.", 7),
         ("Current stock is unconfirmed, but AX-E1 is available.", 7),
         ("For AX-E1, AX-E1 is out of stock.", 0),
+        ("Current stock is unconfirmed. AX-E1 isn't available.", 0),
+        ("Current stock is unconfirmed. AX-E1 isn’t in stock.", 0),
+        ("Current stock is unconfirmed — AX-E1 is available.", 7),
+        ("Current stock is unconfirmed – AX-E1 is available.", 7),
+        ("Current stock is unconfirmed\nAX-E1 is available.", 7),
+        ("Current stock is unconfirmed:\n- AX-E1 is available.", 7),
+        ("Current stock is unconfirmed:\n• AX-E1 is available.", 7),
+        ("Treejar's note: AX-E1 is available.", 7),
     ],
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
@@ -2597,12 +2608,23 @@ async def test_process_message_removes_future_check_after_tool_backed_confirmati
         "I can confirm AX-E1 is not in stock.",
         "I can confirm AX-E1 is currently not in stock.",
         "I can confirm AX-E1 is not available.",
+        "I can confirm AX-E1 isn't in stock.",
+        "I can confirm AX-E1 isn’t available.",
+        "I can confirm that 7 AX-E1 units aren't available.",
         "Current stock is unconfirmed. AX-E1 is available.",
         "Current stock is unconfirmed. AX-E1 is unavailable.",
         "Current stock is unconfirmed. AX-E1 is out of stock.",
         "Current stock is unconfirmed. AX-E1 is currently in stock.",
         "Current stock is unconfirmed, but AX-E1 is available.",
         "For AX-E1, AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 isn't available.",
+        "Current stock is unconfirmed. AX-E1 isn’t in stock.",
+        "Current stock is unconfirmed — AX-E1 is available.",
+        "Current stock is unconfirmed – AX-E1 is available.",
+        "Current stock is unconfirmed\nAX-E1 is available.",
+        "Current stock is unconfirmed:\n- AX-E1 is available.",
+        "Current stock is unconfirmed:\n• AX-E1 is available.",
+        "Treejar's note: AX-E1 is available.",
     ],
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
@@ -2706,6 +2728,17 @@ async def test_process_message_preserves_delivery_only_warehouse_check(
         "If AX-E1 is available, a current inventory result is still required.",
         "We need to determine whether AX-E1 is available.",
         "When AX-E1 is available, contact me.",
+        "Treejar's AX-E1 catalog entry is documented.",
+        "Current stock is unconfirmed. The note says 'AX-E1 is available.'",
+        "Current stock is unconfirmed. The note says ‘AX-E1 is available.’",
+        (
+            "Current stock is unconfirmed. The note says, 'Our team will check "
+            "stock and get back to you.'"
+        ),
+        (
+            "Current stock is unconfirmed. The note says, ‘Our team will check "
+            "stock and get back to you.’"
+        ),
     ],
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)

@@ -31,7 +31,14 @@ class GroundingOutputResult:
 
 
 _SENTENCE_RE = re.compile(r".+?(?:[.!?؟]+(?=\s|$)|\Z)", re.DOTALL)
-_QUOTED_TEXT_RE = re.compile(r'"(?:\\.|[^"\\])*"|“[^”]*”|«[^»]*»', re.DOTALL)
+_QUOTED_TEXT_RE = re.compile(
+    r'"(?:\\.|[^"\\])*"'
+    r"|“[^”]*”"
+    r"|«[^»]*»"
+    r"|(?<![\w])'(?=\S)(?:[^'\n]|(?<=\w)'(?=\w))*?(?<=\S)'(?!\w)"
+    r"|‘(?=\S)(?:[^’\n]|(?<=\w)’(?=\w))*?(?<=\S)’(?!\w)",
+    re.DOTALL,
+)
 _EN_SHOWROOM_RE = re.compile(r"\bshowroom\b")
 _EN_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
     r"\b(?:try|test|experience)\s+(?:out\s+)?"
@@ -99,15 +106,18 @@ _EN_PRESENT_STOCK_STATUS_PATTERN = (
     rf"{_EN_PRESENT_STOCK_MODIFIER_PATTERN}"
     r"(?:available|unavailable|in\s+stock|out\s+of\s+stock)"
 )
+_EN_PRESENT_STOCK_COPULA_PATTERN = r"(?:is|are|isn't|aren't)"
 _EN_SKU_PRESENT_STOCK_SUBJECT_PATTERN = (
     rf"(?:(?:\d+\s+)?{_EN_SKU_PATTERN}(?:\s+units?)?"
-    rf"\s+(?:is|are)\s+{_EN_PRESENT_STOCK_STATUS_PATTERN}"
+    rf"\s+{_EN_PRESENT_STOCK_COPULA_PATTERN}\s+"
+    rf"{_EN_PRESENT_STOCK_STATUS_PATTERN}"
     rf"|{_EN_SKU_PATTERN}\s+has\s+\d+\s+units?"
     rf"\s+{_EN_PRESENT_STOCK_STATUS_PATTERN})"
 )
 _EN_CONFIRMED_PRESENT_STOCK_SUBJECT_PATTERN = (
     rf"(?:{_EN_SKU_PRESENT_STOCK_SUBJECT_PATTERN}"
-    rf"|\d+\s+units?\s+(?:is|are)\s+{_EN_PRESENT_STOCK_STATUS_PATTERN})"
+    rf"|\d+\s+units?\s+{_EN_PRESENT_STOCK_COPULA_PATTERN}\s+"
+    rf"{_EN_PRESENT_STOCK_STATUS_PATTERN})"
 )
 _EN_PREFIXED_PRESENT_STOCK_ASSERTION_RE = re.compile(
     rf"\b(?:i|we)\s+can\s+confirm(?:"
@@ -121,7 +131,7 @@ _EN_DIRECT_SKU_PRESENT_STOCK_ASSERTION_RE = re.compile(
     re.IGNORECASE,
 )
 _EN_ASSERTION_CLAUSE_BOUNDARY_RE = re.compile(
-    r"(?:^|[.;:,]\s*|\b(?:but|however)\s*)$",
+    r"(?:^|[.;:,—–]\s*|(?:^|\n)\s*(?:[-*•]\s*)?|\b(?:but|however)\s*)$",
     re.IGNORECASE,
 )
 _EN_CONDITIONAL_CLAUSE_RE = re.compile(
@@ -178,6 +188,10 @@ _AR_GENERIC_FALLBACK = (
 
 def _normalized(text: str) -> str:
     return " ".join(text.casefold().replace("’", "'").split())
+
+
+def _with_normalized_apostrophes(text: str) -> str:
+    return text.replace("’", "'")
 
 
 def _without_quoted_text(text: str) -> str:
@@ -271,7 +285,7 @@ def _present_stock_confirmation_spans(text: str) -> list[tuple[int, int]]:
 
 
 def _has_present_stock_confirmation(sentence: str) -> bool:
-    visible = _without_quoted_text(sentence)
+    visible = _with_normalized_apostrophes(_without_quoted_text(sentence))
     return bool(_present_stock_confirmation_spans(visible))
 
 
@@ -347,7 +361,7 @@ def _confirmed_present_clause(
 ) -> str | None:
     if not inventory_confirmed:
         return None
-    visible = _without_quoted_text(sentence)
+    visible = _with_normalized_apostrophes(_without_quoted_text(sentence))
     spans = _present_stock_confirmation_spans(visible)
     if not spans:
         return None

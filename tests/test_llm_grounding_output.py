@@ -50,6 +50,9 @@ def test_classify_grounding_output_finds_exact_attempt_3_violations() -> None:
         "I can confirm AX-E1 is not in stock.",
         "I can confirm AX-E1 is currently not in stock.",
         "I can confirm AX-E1 is not available.",
+        "I can confirm AX-E1 isn't in stock.",
+        "I can confirm AX-E1 isn’t available.",
+        "I can confirm that 7 AX-E1 units aren't available.",
     ],
 )
 def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
@@ -81,6 +84,14 @@ def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
         "Current stock is unconfirmed. AX-E1 is currently in stock.",
         "Current stock is unconfirmed, but AX-E1 is available.",
         "For AX-E1, AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 isn't available.",
+        "Current stock is unconfirmed. AX-E1 isn’t in stock.",
+        "Current stock is unconfirmed — AX-E1 is available.",
+        "Current stock is unconfirmed – AX-E1 is available.",
+        "Current stock is unconfirmed\nAX-E1 is available.",
+        "Current stock is unconfirmed:\n- AX-E1 is available.",
+        "Current stock is unconfirmed:\n• AX-E1 is available.",
+        "Treejar's note: AX-E1 is available.",
     ],
 )
 def test_direct_sku_stock_assertion_requires_current_turn_inventory_evidence(
@@ -229,6 +240,17 @@ def test_classify_grounding_output_covers_review_regressions(
         "If AX-E1 is available, a current inventory result is still required.",
         "When AX-E1 is available, contact me.",
         "AX-E1 stock is unconfirmed.",
+        "Treejar's AX-E1 catalog entry is documented.",
+        "Current stock is unconfirmed. The note says 'AX-E1 is available.'",
+        "Current stock is unconfirmed. The note says ‘AX-E1 is available.’",
+        (
+            "Current stock is unconfirmed. The note says, 'Our team will check "
+            "stock and get back to you.'"
+        ),
+        (
+            "Current stock is unconfirmed. The note says, ‘Our team will check "
+            "stock and get back to you.’"
+        ),
         "Our manager will review the quotation and contact you.",
         "يمكنك زيارة معرضنا لتجربة جودة منتجاتنا.",
         "لا أستطيع تأكيد توفر كرسي محدد لتجربته في المعرض.",

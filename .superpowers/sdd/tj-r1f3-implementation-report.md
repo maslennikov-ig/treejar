@@ -317,6 +317,66 @@ uv run mypy src/
 
 Results: Ruff and format passed; Mypy passed over 163 source files.
 
+## Final bounded contraction, boundary, and quote correction
+
+The final bounded review found three grammar and wiring gaps:
+
+1. Common negative present copulas `isn't` and `aren't`, including curly
+   apostrophes, were not part of the evidence-gated present grammar.
+2. Direct SKU assertions after em/en dashes, newlines, and newline list markers
+   were outside the assertion-boundary grammar.
+3. Single-quoted text was not masked, so a quoted delegated future-stock promise
+   could be treated as an asserted promise. The smoke evaluator also normalized
+   raw replies before shared classification, destroying newline structure and
+   curly quote pairing.
+
+RED was symmetric across the customer-output path: pure, runtime, and shared
+smoke each produced 12 intended failures.
+
+The correction is limited to shared grammar primitives and classifier wiring:
+
+- the bounded present copula accepts `is`, `are`, `isn't`, and `aren't`;
+- curly apostrophes are normalized after quote masking with a same-length
+  replacement, preserving match offsets used by bounded repair;
+- assertion boundaries include em dash, en dash, newline, and newline-prefixed
+  hyphen, asterisk, or bullet list items;
+- paired straight and curly single quotes are masked only when they form
+  standalone quote delimiters; word-internal apostrophes remain visible, so
+  contractions and possessives are not mistaken for quotes;
+- conditional `if`/`whether`/`when` controls remain unchanged;
+- the smoke evaluator passes raw reply text to all imported production
+  grounding classifiers and keeps normalized text only for its legacy local
+  checks.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py -q --tb=short
+uv run pytest tests/test_llm_engine.py -q --tb=short -k 'preserves_tool_backed_present_stock_confirmation or rejects_present_stock_confirmation_without_tool_evidence or preserves_conditional_sku_stock_control'
+uv run pytest tests/test_scripts_verify_model_routes.py -q --tb=short -k 'rejects_unverified_present_stock_forms or preserves_conditional_sku_stock_control'
+```
+
+Results: `80 passed`; `65 passed, 359 deselected`; and
+`37 passed, 52 deselected`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `593 passed`.
+
+Fresh static checks:
+
+```text
+uv run ruff check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run ruff format --check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run mypy src/
+```
+
+Results: Ruff and format passed; Mypy passed over 163 source files.
+
 ## Remaining environment-level checks
 
 - Independent delta review.

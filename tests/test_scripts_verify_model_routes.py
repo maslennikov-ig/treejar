@@ -515,12 +515,23 @@ def test_sales_case_evaluation_covers_review_regressions() -> None:
         "I can confirm AX-E1 is not in stock.",
         "I can confirm AX-E1 is currently not in stock.",
         "I can confirm AX-E1 is not available.",
+        "I can confirm AX-E1 isn't in stock.",
+        "I can confirm AX-E1 isn’t available.",
+        "I can confirm that 7 AX-E1 units aren't available.",
         "Current stock is unconfirmed. AX-E1 is available.",
         "Current stock is unconfirmed. AX-E1 is unavailable.",
         "Current stock is unconfirmed. AX-E1 is out of stock.",
         "Current stock is unconfirmed. AX-E1 is currently in stock.",
         "Current stock is unconfirmed, but AX-E1 is available.",
         "Current stock is unconfirmed. For AX-E1, AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 isn't available.",
+        "Current stock is unconfirmed. AX-E1 isn’t in stock.",
+        "Current stock is unconfirmed — AX-E1 is available.",
+        "Current stock is unconfirmed – AX-E1 is available.",
+        "Current stock is unconfirmed\nAX-E1 is available.",
+        "Current stock is unconfirmed:\n- AX-E1 is available.",
+        "Current stock is unconfirmed:\n• AX-E1 is available.",
+        "Current stock is unconfirmed. Treejar's note: AX-E1 is available.",
     ],
 )
 def test_sales_case_evaluation_rejects_unverified_present_stock_forms(
@@ -642,6 +653,17 @@ def test_sales_case_evaluation_preserves_unrelated_warehouse_check(
         ("Current stock is unconfirmed. If AX-E1 is available, contact me."),
         "Current stock is unconfirmed. We need to determine whether AX-E1 is available.",
         "Current stock is unconfirmed. When AX-E1 is available, contact me.",
+        "Current stock is unconfirmed. Treejar's AX-E1 catalog entry is documented.",
+        "Current stock is unconfirmed. The note says 'AX-E1 is available.'",
+        "Current stock is unconfirmed. The note says ‘AX-E1 is available.’",
+        (
+            "Current stock is unconfirmed. The note says, 'Our team will check "
+            "stock and get back to you.'"
+        ),
+        (
+            "Current stock is unconfirmed. The note says, ‘Our team will check "
+            "stock and get back to you.’"
+        ),
     ],
 )
 def test_sales_case_evaluation_preserves_conditional_sku_stock_control(

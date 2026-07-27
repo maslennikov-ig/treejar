@@ -89,8 +89,10 @@ verification:
   - third re-review focused GREEN: pure passed 40 tests, runtime passed 18 selected tests, and smoke passed 18 selected tests
   - fourth re-review RED: pure, runtime, and smoke each failed 12 cases for the intended status-order, direct-SKU, and plural unrelated-object reasons; coordination follow-up failed 2 pure, 2 runtime, and 3 smoke cases
   - fourth re-review focused GREEN: pure passed 64 tests, runtime passed 49 selected tests, and smoke passed 37 selected tests
+  - final bounded review RED: pure, runtime, and smoke each failed 12 cases for contracted copulas, dash/newline/list boundaries, and single-quoted future text
+  - final bounded review focused GREEN: pure passed 80 tests, runtime passed 65 selected tests, and smoke passed 37 selected tests
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 534 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 593 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
@@ -158,6 +160,14 @@ fixture was corrected from an unsupported no-tool `CH-620 is available` claim
 to neutral request-continuation wording; no fabricated inventory evidence was
 introduced.
 
+The final bounded correction adds common `isn't`/`aren't` copulas, with curly
+apostrophes normalized without changing span offsets. Assertion boundaries now
+include em/en dashes, newlines, and newline list markers. Paired straight and
+curly single-quoted text is masked while word-internal apostrophes remain
+visible, so contractions and possessives cannot masquerade as quotations. The
+smoke evaluator now passes raw reply text to all shared production grounding
+classifiers; its normalized copy remains limited to legacy smoke checks.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -188,9 +198,11 @@ classification, natural availability/quantity/positive/negative forms, strong
 future-stock lexemes, and delivery-only warehouse controls at all three
 boundaries. Fourth-review coverage adds optional modifier order, direct
 SKU-status assertions after sentence/coordination boundaries, conditional and
-non-SKU controls, and singular/plural unrelated warehouse checks.
+non-SKU controls, and singular/plural unrelated warehouse checks. Final-review
+coverage adds contracted negative states, dash/newline/list assertions, paired
+single-quote safety, and contraction/possessive negative controls.
 
-The complete three affected test files passed 534 tests. Focused Ruff and
+The complete three affected test files passed 593 tests. Focused Ruff and
 format plus full `src/` Mypy passed. The detailed commands and failure evidence
 are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.
