@@ -3,7 +3,7 @@
 Updated: 2026-07-27
 Current branch: `main`
 Current stage id: `tj-j13d`
-Current stage status: in progress; grounded model adoption and authorized deployment
+Current stage status: accepted, deployed, and production-smoked
 
 ## Current Truth
 
@@ -17,8 +17,8 @@ Current stage status: in progress; grounded model adoption and authorized deploy
 - Stage `tj-15m` completed its authorized FAQ, product, comparison, order,
   Arabic, and escalation matrix on the approved synthetic recipient.
 - Exact production code release
-  `292d82cdbe7a041787093779173d3e051c052ccb` was delivered by GitHub Actions
-  run `30251148113`; lint, type-check, tests, and deploy passed.
+  `8ec2f71f3acb3ba37d514b2b220720c724c9f410` was delivered by GitHub Actions
+  run `30270308830`; lint, type-check, tests, and deploy passed.
 - Production health is `ok`, version `0.4.0`; Redis and PostgreSQL are `ok`;
   app, worker, nginx, Redis, and database containers are running.
 - Accepted stage fixes:
@@ -29,7 +29,7 @@ Current stage status: in progress; grounded model adoption and authorized deploy
   - deferred product media is reconciled to final-response references;
   - translated `NEW` variants retain stable model-code media matching.
 - Latest local release gates passed Ruff, format, Mypy over `162` source files,
-  and Pytest (`1588 passed, 19 skipped`).
+  and Pytest (`1608 passed, 19 skipped`).
 - Final six-scenario delivery-aware durations:
   - FAQ `22.147s`;
   - product `24.411s`;
@@ -79,6 +79,15 @@ Current stage status: in progress; grounded model adoption and authorized deploy
   samples. The new policy preserves those capabilities while keeping stock,
   operational price, quotation, order state, discounts, and exceptional terms
   behind their existing evidence/tool/manager gates.
+- Production readback confirms `z-ai/glm-5.2` for main and
+  `deepseek/deepseek-v4-flash` for fast. V4 Flash reasoning is disabled through
+  the centralized safety policy, including customer fact extraction.
+- Pre-deploy and production-container model-route smoke both passed `5/5`.
+  Public API verification passed `8/8`; app, worker, nginx, Redis, and
+  PostgreSQL are healthy, with no fresh matching app/worker error entries.
+- Previous release `292d82c`, GLM-5, Xiaomi V2 Flash, and the protected
+  production `.env` remain available in verified mode-`600` rollback
+  snapshots. Rollback was not required.
 
 ## Boundary and Scope Ledger
 
@@ -87,25 +96,23 @@ Current stage status: in progress; grounded model adoption and authorized deploy
 - Root owns the sequential implementation and deploy chain. One
   context-isolated combined reviewer is reserved for the release boundary.
 - No scope criterion was dropped and no v2.19 material split occurred.
-- Excluded actions remained excluded: production routing, customer traffic,
-  quotation/order creation, Zoho/Wazzup mutations, and real customer data.
+- Excluded actions remained excluded: customer traffic, quotation/order
+  creation, Zoho/Wazzup mutations, and real customer data.
 
 ## Next recommended
 
-Next stage id: `tj-j13d`
+Next stage id: `tj-n8p6`
 
-Recommended action: implement the approved GLM-5.2/V4 Flash routing and shared
-grounding policy through TDD, release review, authorized deploy, rollback
-capture, and bounded post-deploy smoke. `tj-b93r` remains separate historical
-grounding evidence and must not duplicate this stage.
+Recommended action: optionally clean the pre-existing Ruff drift isolated to
+`scripts/orchestration/`. This is maintenance-only; the model adoption outcome
+is complete. `tj-b93r` remains separate historical grounding evidence and must
+not duplicate the delivered shared policy.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-j13d`. Execute
-`docs/superpowers/plans/2026-07-27-noor-model-switch-grounding.md`, preserve the
-accepted benchmark evidence, and deploy only the locally verified release.
-Run bounded synthetic post-deploy tests without outbound customer messaging or
-business-system mutations.
+Use $orchestrator-stage for `tj-n8p6`. Remove the already-recorded Ruff drift
+only from `scripts/orchestration/`, preserve behavior, and run the process and
+orchestration-script verification required by its Beads acceptance criteria.
 
 ## Approval gates
 
@@ -119,8 +126,10 @@ business-system mutations.
 
 ## Explicit defers
 
-- No adoption defer remains inside `tj-j13d`; deployment is gated by its local
-  release, provider, review, rollback, and post-deploy acceptance checks.
+- No adoption defer remains inside `tj-j13d`; all release, provider, review,
+  rollback, deployment, and post-deploy acceptance checks passed.
+- Pre-existing broad scripts-lint debt is tracked by `tj-n8p6`; canonical
+  project gates and `scripts/verify_model_routes.py` are clean.
 - GLM-5 weak-catalog grounding is tracked by `tj-b93r`.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy

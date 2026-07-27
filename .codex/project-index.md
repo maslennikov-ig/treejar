@@ -63,6 +63,9 @@ Stable navigation map for this repository. Keep operational state in
 - `scripts/analyze_chat_latency.py` and
   `scripts/benchmark_chat_delivery_boundary.py` - privacy-safe latency analysis
   and controlled local delivery-boundary evidence.
+- `scripts/verify_model_routes.py` - bounded, synthetic OpenRouter capability,
+  sales-grounding, and strict helper-JSON verification without business-system
+  mutations.
 
 ## Verification
 
