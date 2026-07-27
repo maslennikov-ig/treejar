@@ -706,6 +706,34 @@ def test_finalizer_recovers_crash_after_tracked_publication(tmp_path: Path) -> N
     assert (protected / "final-commit.json").is_file()
 
 
+@pytest.mark.parametrize(
+    "marker_bytes",
+    (
+        b"",
+        b'{"schema_version":"noor-e2e-published-run-commit/v2"',
+        b"{}\n",
+    ),
+    ids=("empty", "truncated", "invalid-contract"),
+)
+def test_finalizer_recovers_partial_final_commit_marker(
+    tmp_path: Path,
+    marker_bytes: bytes,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    marker = protected / "final-commit.json"
+    marker.write_bytes(marker_bytes)
+    marker.chmod(0o600)
+
+    registry.finalize_run(run_id)
+    registry.open_run(run_id=run_id)
+
+    recovered = json.loads(marker.read_text(encoding="utf-8"))
+    assert recovered["status"] == "committed"
+    assert not tuple(protected.glob(".final-commit.*"))
+
+
 def test_finalizer_removes_orphan_staging_for_same_run(tmp_path: Path) -> None:
     registry, tracked, protected = _build_verified_run(tmp_path)
     run_id = "synthetic-trusted-run"
