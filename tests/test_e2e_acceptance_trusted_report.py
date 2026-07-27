@@ -46,6 +46,9 @@ def _build_verified_run(
     *,
     partial_scope: bool = False,
     leaked_answer: bool = False,
+    task1_digest_drift: bool = False,
+    invalid_blocked_gate: bool = False,
+    self_authorized_exclusion: bool = False,
 ):
     policy, execution, trusted = _modules()
     registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
@@ -61,7 +64,7 @@ def _build_verified_run(
         status="approved",
         issued_at=now - timedelta(minutes=2),
         expires_at=now + timedelta(hours=1),
-        task1_authorization_digest="1" * 64,
+        task1_authorization_digest=("0" * 64 if task1_digest_drift else "1" * 64),
         task1_input_digests={"synthetic-task1-input": "7" * 64},
         preflight_digest="8" * 64,
         readback_collector_digest="9" * 64,
@@ -122,7 +125,7 @@ def _build_verified_run(
             "reused_exact_identity": {"source": "synthetic-security-proof"},
         },
         "gate": {
-            "status": "blocked",
+            "status": "passed" if invalid_blocked_gate else "blocked",
             "external_gate_resolution": "blocked",
         },
     }
@@ -164,6 +167,15 @@ def _build_verified_run(
                 "reasoning": "Synthetic local contract evidence.",
             }
         )
+    if self_authorized_exclusion:
+        criterion = next(
+            row for row in criteria if row["criterion_id"] == "AC-21"
+        )
+        criterion["outcome"] = "EXCLUDED_BY_CLIENT"
+        criterion["obligation_outcomes"] = {
+            identity: "EXCLUDED_BY_CLIENT"
+            for identity in criterion["obligation_outcomes"]
+        }
     if partial_scope:
         criteria = criteria[:1]
     executions = [
