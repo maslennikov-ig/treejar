@@ -65,6 +65,11 @@
       "task_id": "tj-r1f3-root-cause",
       "stream_owner": "debugger",
       "artifact_path": ".codex/stages/tj-r1f3/artifacts/tj-r1f3-root-cause.md"
+    },
+    {
+      "task_id": "tj-r1f3-implementation",
+      "stream_owner": "ai-engineer-output-enforcement",
+      "artifact_path": ".codex/stages/tj-r1f3/artifacts/tj-r1f3-implementation.md"
     }
   ]
 }

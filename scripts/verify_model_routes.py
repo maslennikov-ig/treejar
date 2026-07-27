@@ -23,6 +23,10 @@ import httpx
 
 from src.core.config import settings
 from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
+from src.llm.grounding_output import (
+    contains_future_stock_check,
+    contains_specific_product_showroom_trial,
+)
 
 MAIN_MODEL_ID = "z-ai/glm-5.2"
 FAST_MODEL_ID = "deepseek/deepseek-v4-flash"
@@ -77,15 +81,6 @@ _SHOWROOM_NEGATED_COMMITMENT_RE = re.compile(
     r"(?:\s+(?:is|are|has been|have been))?\s+"
     r"(?:booked|confirmed|scheduled|ready)\b"
 )
-_SPECIFIC_PRODUCT_TRIAL_RE = re.compile(
-    r"\b(?:try|test|experience)\s+(?:out\s+)?"
-    r"(?:(?:a specific|the specific|this|that|the)\s+"
-    r"(?:[a-z0-9-]+\s+){0,3}"
-    r"|our\s+(?:[a-z0-9-]+\s+){1,3}"
-    r"|(?:[a-z0-9-]+\s+){1,3})"
-    r"(?:chair|product|item|model)\b"
-    r"(?!\s+(?:quality|range|selection|catalog)\b)"
-)
 _SAMPLE_FULFILLMENT_RE = re.compile(
     r"\b(?:we(?:'ll| will)|treejar will)\s+"
     r"(?:send|provide|deliver|courier|ship|dispatch)\b"
@@ -97,10 +92,6 @@ _STOCK_ASSERTION_RE = re.compile(
     r"(?:currently\s+)?(?:have|has|hold|holds|carry|carries)\b"
     r"|\b(?:\d+\s+)?units?\b.{0,24}\b(?:available|in stock|on hand)\b"
     r"|\b(?:available|on hand)\b.{0,24}\b(?:inventory|warehouse|stock)\b"
-)
-_FUTURE_CHECK_RE = re.compile(
-    r"\b(?:let me|i can|i will|i'll|we can|we will|we'll)\s+"
-    r"(?:check|confirm|look up|verify)\b"
 )
 
 
@@ -377,7 +368,7 @@ def evaluate_sales_answer(
         )
     if not reply:
         failures.append("reply must be a non-empty string")
-    if _contains_asserted_pattern(reply, _SPECIFIC_PRODUCT_TRIAL_RE):
+    if contains_specific_product_showroom_trial(reply):
         failures.append(
             "reply implies that a specific product will be available to try"
         )
@@ -473,7 +464,7 @@ def evaluate_sales_answer(
             )
         ):
             failures.append("reply must distinguish unconfirmed from unavailable")
-        if _contains_asserted_pattern(reply, _FUTURE_CHECK_RE):
+        if contains_future_stock_check(reply):
             failures.append(
                 "reply promises a future stock check instead of using the tool"
             )
