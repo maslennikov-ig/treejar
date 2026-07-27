@@ -287,11 +287,24 @@ class AuthorizationManifest(StrictModel):
         return self
 
 
+class PreflightReadbackIdentity(StrictModel):
+    source_id: str = Field(min_length=1)
+    observed_at: datetime
+    content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _timezone_aware(self) -> PreflightReadbackIdentity:
+        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
+            raise ValueError("readback observation time must be timezone-aware")
+        return self
+
+
 class PreflightObservation(StrictModel):
     identity: RuntimeIdentity
     targets: AuthorizationTargets
     executor: str = Field(min_length=1)
     source: str = Field(min_length=1)
+    readback_identity: PreflightReadbackIdentity | None = None
 
 
 class PreflightRequest(StrictModel):
