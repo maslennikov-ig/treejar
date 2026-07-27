@@ -1,7 +1,7 @@
 # Noor Model Battle Design
 
-**Date:** 2026-07-27  
-**Beads:** `tj-0j7o`  
+**Date:** 2026-07-27
+**Beads:** `tj-0j7o`
 **Runtime:** OpenRouter, production configuration unchanged
 
 ## Goal
@@ -37,6 +37,8 @@ commercial, schema, or tool-argument failure.
   prompt, tools, evidence, output limit, and retry contract.
 - Raw responses, timings, validation results, and blinded labels are preserved
   in stage evidence.
+- OpenRouter endpoint selection requires support for every sent parameter, so
+  strict schema/tool behavior cannot be silently dropped by provider routing.
 - Transient provider failures are recorded. One bounded retry may measure
   recoverability, but first-pass reliability remains a separate metric.
 
@@ -76,7 +78,8 @@ Hard sales gates:
 
 After deterministic scoring, outputs are presented under blinded labels for a
 pairwise qualitative review. Model identity is revealed only after the review
-is recorded.
+is recorded. Five dimensions are scored from 1 to 5: clarity, factual trust,
+persuasion, concision, and next-step quality.
 
 ## Battle B: Fast/System Work
 
