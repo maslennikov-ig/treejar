@@ -20,6 +20,7 @@ from scripts.e2e_acceptance.execution import (
     ExecutionAuthorizationV2,
     OutcomeValue,
     aggregate_criterion_outcome,
+    store_root_digest,
 )
 from scripts.e2e_acceptance.policy import (
     PolicyValidationError,
@@ -524,6 +525,13 @@ def load_verified_run(
         or run.report_payload_digest != anchor.report_payload_sha256
     ):
         raise TrustedRunError("tracked run digest binding drift")
+    stores = run.authorization.store_ids
+    if (
+        stores.raw_root_digest != store_root_digest(protected_root)
+        or stores.anchor_root_digest != store_root_digest(protected_root)
+        or stores.tracked_root_digest != store_root_digest(tracked_root)
+    ):
+        raise TrustedRunError("authorization store root binding drift")
 
     registry._load_execution_authorization(run.authorization)
     registry.validate_execution_authorization(run.authorization)

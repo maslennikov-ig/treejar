@@ -61,6 +61,9 @@ def _authorization(registry, *, trusted: bool = True, **updates):
             raw_store_id="synthetic-raw-store",
             tracked_store_id="synthetic-tracked-store",
             anchor_store_id="synthetic-anchor-store",
+            raw_root_digest="b" * 64,
+            tracked_root_digest="c" * 64,
+            anchor_root_digest="b" * 64,
         ),
         "registry_id": registry.registry_id,
         "quotas": execution.ProtectedQuotas(
@@ -221,6 +224,57 @@ def test_phase_machine_uses_cursor_and_digest_causality(tmp_path: Path) -> None:
             run_id="synthetic-run",
             authorization=authorization,
         )
+
+
+def test_phase_machine_closes_in_exact_causal_order(tmp_path: Path) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    authorization = _authorization(registry)
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+        authorization=authorization,
+    )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
+        observed_at=datetime.now(UTC) - timedelta(minutes=1),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+    journal.anchor_final_turn(
+        event_digest="a" * 64,
+        occurred_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    assert journal.previous_event_digest is not None
+    final = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-final",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest=journal.previous_event_digest,
+        observed_at=datetime.now(UTC),
+        inventory={"synthetic:item": {"state": "closed"}},
+    )
+    journal.seal_final_readback(final)
+    journal.mark_evaluated(evaluation_digest="b" * 64)
+    journal.commit_phase(attempt_chain_digest="c" * 64)
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+        authorization=authorization,
+    )
+    assert reopened.phase == "attempt_committed"
+    assert reopened.cursor == 7
 
 
 def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(

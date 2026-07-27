@@ -77,6 +77,9 @@ def _build_verified_run(
             raw_store_id="synthetic-raw-store",
             tracked_store_id="synthetic-tracked-store",
             anchor_store_id="synthetic-anchor-store",
+            raw_root_digest=execution.store_root_digest(protected_run),
+            tracked_root_digest=execution.store_root_digest(tracked_run),
+            anchor_root_digest=execution.store_root_digest(protected_run),
         ),
         registry_id=registry.registry_id,
         quotas=execution.ProtectedQuotas(

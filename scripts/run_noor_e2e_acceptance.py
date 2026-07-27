@@ -1,85 +1,61 @@
 #!/usr/bin/env python3
-"""Run the local Noor E2E acceptance fixture harness."""
+"""Validate local acceptance contracts or an already anchored local run."""
 
 from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime
 from pathlib import Path
 
 from pydantic import ValidationError
-from scripts.e2e_acceptance.manifest import (
-    ManifestValidationError,
-    load_authorization_manifest,
-    load_scenario_set,
+from scripts.e2e_acceptance.policy import (
+    PolicyValidationError,
+    TrustedAcceptanceRegistry,
 )
-from scripts.e2e_acceptance.runner import (
-    AcceptanceRunner,
-    RunnerError,
-    load_dry_run_fixture,
-    load_side_effect_readback,
-)
-from scripts.e2e_acceptance.schemas import PreflightObservation, PreflightRequest
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run Noor E2E acceptance fixtures (Task 2 dry-run only)."
+        description="Local-only Noor acceptance policy v2 verifier."
     )
-    parser.add_argument("--dry-run", action="store_true", required=True)
-    parser.add_argument("--repo-root", type=Path, required=True)
-    parser.add_argument("--protected-root", type=Path, required=True)
-    parser.add_argument("--scenario-set", type=Path, required=True)
-    parser.add_argument("--authorization", type=Path, required=True)
-    parser.add_argument("--observation", type=Path, required=True)
-    parser.add_argument("--request", type=Path, required=True)
-    parser.add_argument("--readback", type=Path, required=True)
-    parser.add_argument("--preflight-now", required=True)
-    parser.add_argument("--fixture", type=Path, required=True)
-    parser.add_argument("--run-id", required=True)
+    subcommands = parser.add_subparsers(dest="command", required=True)
+    contracts = subcommands.add_parser("validate-contracts")
+    contracts.add_argument("--repo-root", type=Path, required=True)
+    verify = subcommands.add_parser("verify-run")
+    verify.add_argument("--repo-root", type=Path, required=True)
+    verify.add_argument("--protected-root", type=Path, required=True)
+    verify.add_argument("--run-id", required=True)
+    verify.add_argument("--report-output", type=Path, required=True)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        scenario_set = load_scenario_set(args.scenario_set)
-        authorization = load_authorization_manifest(args.authorization)
-        observation = PreflightObservation.model_validate_json(
-            args.observation.read_text(encoding="utf-8")
+        result: dict[str, object]
+        registry = TrustedAcceptanceRegistry.open_contracts(
+            args.repo_root.resolve(strict=True)
         )
-        request = PreflightRequest.model_validate_json(
-            args.request.read_text(encoding="utf-8")
-        )
-        readback = load_side_effect_readback(args.readback)
-        preflight_now = datetime.fromisoformat(args.preflight_now)
-        fixture = load_dry_run_fixture(args.fixture)
-        result = AcceptanceRunner(
-            repo_root=args.repo_root,
-            protected_root=args.protected_root,
-            dry_run=args.dry_run,
-            scenario_set=scenario_set,
-            scenario_set_path=args.scenario_set,
-            authorization=authorization,
-            observation=observation,
-            request=request,
-            readback=readback,
-            preflight_now=preflight_now,
-        ).run_fixture(
-            run_id=args.run_id,
-            fixture=fixture,
-        )
-    except (
-        ManifestValidationError,
-        OSError,
-        RunnerError,
-        ValidationError,
-        ValueError,
-    ) as exc:
+        if args.command == "validate-contracts":
+            result = {
+                "policy_digest": registry.compiled_policy.policy_digest,
+                "compiled_plan_digest": registry.compiled_plan.plan_digest,
+                "scenario_count": len(registry.compiled_policy.scenarios),
+                "evidence_block_count": len(registry.compiled_policy.evidence_blocks),
+                "criterion_count": len(registry.compiled_plan.criteria),
+                "adapter_ids": ["fake-local-adapter"],
+            }
+        else:
+            registry.open_run(
+                protected_root=args.protected_root.resolve(strict=True),
+                run_id=args.run_id,
+            )
+            registry.write_report(args.report_output.absolute())
+            result = dict(registry.calculate_rollups())
+    except (OSError, PolicyValidationError, ValidationError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 2
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

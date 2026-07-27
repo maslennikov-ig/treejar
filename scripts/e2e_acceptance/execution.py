@@ -167,6 +167,9 @@ class StoreIdentities(_StrictModel):
     raw_store_id: str = Field(min_length=1)
     tracked_store_id: str = Field(min_length=1)
     anchor_store_id: str = Field(min_length=1)
+    raw_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    anchor_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def _stores_are_distinct(self) -> StoreIdentities:
@@ -236,6 +239,19 @@ class ExecutionAuthorizationV2(_StrictModel):
 
 def authorization_digest(authorization: ExecutionAuthorizationV2) -> str:
     return _digest(authorization.model_dump(mode="json"))
+
+
+def store_root_digest(root: Path) -> str:
+    if not root.is_absolute() or any(
+        part in {"", ".", ".."} for part in root.parts[1:]
+    ):
+        raise ExecutionValidationError("store root must be absolute and normalized")
+    return _digest(
+        {
+            "schema_version": "noor-e2e-store-root/v2",
+            "absolute_path": str(root),
+        }
+    )
 
 
 def validate_execution_authorization(
@@ -909,6 +925,13 @@ class ProtectedExecutionJournal:
     def seal_baseline(self, observation: ReadbackObservation) -> None:
         if observation.phase != "baseline":
             raise ExecutionValidationError("baseline observation phase drift")
+        if (
+            observation.run_id != self.run_id
+            or observation.preflight_digest != self.authorization.preflight_digest
+            or observation.collector_artifact_digest
+            != self.authorization.readback_collector_digest
+        ):
+            raise ExecutionValidationError("baseline preflight/run binding drift")
         self._transition(
             expected="prepared",
             target="baseline_sealed",
@@ -1150,6 +1173,13 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError(
                 "unknown or uncompleted action blocks final-turn closeout"
             )
+        if (
+            len(event_digest) != 64
+            or any(character not in "0123456789abcdef" for character in event_digest)
+            or occurred_at.tzinfo is None
+            or occurred_at.utcoffset() is None
+        ):
+            raise ExecutionValidationError("final-turn anchor identity is invalid")
         self._transition(
             expected="executing",
             target="final_turn_anchored",
@@ -1158,6 +1188,55 @@ class ProtectedExecutionJournal:
                 "event_digest": event_digest,
                 "occurred_at": occurred_at.isoformat(),
             },
+        )
+
+    def seal_final_readback(self, observation: ReadbackObservation) -> None:
+        if (
+            observation.phase != "final"
+            or observation.run_id != self.run_id
+            or observation.preflight_digest != self.authorization.preflight_digest
+            or observation.collector_artifact_digest
+            != self.authorization.readback_collector_digest
+            or observation.causal_event_digest != self.previous_event_digest
+        ):
+            raise ExecutionValidationError(
+                "final readback protected causality/preflight binding drift"
+            )
+        self._transition(
+            expected="final_turn_anchored",
+            target="final_readback_sealed",
+            kind="final_readback_sealed",
+            data={
+                "source_id": observation.source_id,
+                "collector_id": observation.collector_id,
+                "observed_at": observation.observed_at.isoformat(),
+                "content_digest": observation.content_digest,
+                "causal_event_digest": observation.causal_event_digest,
+            },
+        )
+
+    def mark_evaluated(self, *, evaluation_digest: str) -> None:
+        if len(evaluation_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in evaluation_digest
+        ):
+            raise ExecutionValidationError("evaluation digest must be SHA-256")
+        self._transition(
+            expected="final_readback_sealed",
+            target="evaluated",
+            kind="evaluated",
+            data={"evaluation_digest": evaluation_digest},
+        )
+
+    def commit_phase(self, *, attempt_chain_digest: str) -> None:
+        if len(attempt_chain_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in attempt_chain_digest
+        ):
+            raise ExecutionValidationError("attempt chain digest must be SHA-256")
+        self._transition(
+            expected="evaluated",
+            target="attempt_committed",
+            kind="attempt_committed",
+            data={"attempt_chain_digest": attempt_chain_digest},
         )
 
     def begin_attempt(
