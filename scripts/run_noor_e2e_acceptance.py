@@ -32,9 +32,9 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         result: dict[str, object]
-        registry = TrustedAcceptanceRegistry.open_contracts(
-            args.repo_root.resolve(strict=True)
-        )
+        registry = TrustedAcceptanceRegistry.from_canonical_repo()
+        if args.repo_root.resolve(strict=True) != registry.repo_root:
+            raise PolicyValidationError("CLI repository root is not canonical")
         if args.command == "validate-contracts":
             result = {
                 "policy_digest": registry.compiled_policy.policy_digest,
