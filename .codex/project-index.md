@@ -66,6 +66,10 @@ Stable navigation map for this repository. Keep operational state in
 - `scripts/verify_model_routes.py` - bounded, synthetic OpenRouter capability,
   sales-grounding, and strict helper-JSON verification without business-system
   mutations.
+- `scripts/run_noor_e2e_acceptance.py` and `scripts/e2e_acceptance/` -
+  local-only, registry-bound acceptance policy compilation, trusted execution,
+  evidence publication, and redacted report generation. Live/provider use
+  remains separately authorized and fail-closed.
 
 ## Verification
 

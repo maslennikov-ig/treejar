@@ -227,6 +227,11 @@
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-task-1.md"
     },
     {
+      "task_id": "tj-ee5f.2",
+      "stream_owner": "tj_ee5f_phone_redaction",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.2-historical-phone-redaction.md"
+    },
+    {
       "task_id": "tj-ee5f.3-policy-v2",
       "stream_owner": "ai-product-engineer-policy-v2",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.3-policy-v2.md"

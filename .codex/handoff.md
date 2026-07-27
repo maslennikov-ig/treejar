@@ -1,11 +1,11 @@
 # Orchestrator Handoff
 
-Updated: 2026-07-27
-Current branch: `main`
+Updated: 2026-07-28
+Current branch: `codex/tj-ee5f-delivery`
 Current stage id: `tj-ee5f`
-Current stage status: design, independent review, implementation plan, Beads
-execution task, and launcher prompt prepared; live execution blocked by
-`tj-r1f3`
+Current stage status: reviewed local Task 1, policy-v2, privacy cleanup, and
+`tj-r1f3` implementation integrated; stage remains open pending canonical
+delivery and fresh external `tj-r1f3` proof
 
 ## Current Truth
 
@@ -33,8 +33,13 @@ execution task, and launcher prompt prepared; live execution blocked by
 ## Grounding blocker
 
 - Beads `tj-r1f3` remains `in_progress` and P1.
-- Prompt-tail assembly, grounding language, and deterministic smoke semantics
-  were corrected through TDD and an accepted independent delta review.
+- Deterministic customer-output enforcement and expanded evaluator semantics
+  were corrected through TDD and accepted independent review, then integrated
+  locally into `codex/tj-ee5f-delivery`.
+- Full local release proof on the reviewed source branch passed Ruff, format,
+  Mypy, process verification, and Pytest.
+- Canonical integration/delivery, deploy/readback, and one freshly authorized
+  bounded provider smoke with manual semantic review remain outstanding.
 - Three post-deploy smoke attempts are preserved under
   `.codex/stages/tj-r1f3/results/`.
 - Final attempt on `b8de75c` made exactly five paid synthetic calls and no
@@ -55,6 +60,24 @@ execution task, and launcher prompt prepared; live execution blocked by
 
 - Epic: `tj-ee5f`.
 - Execution task: `tj-ee5f.1`, blocked by `tj-r1f3`.
+- Task 1 immutable contracts and the reviewed generic policy-v2 trust boundary
+  are integrated locally.
+- The current tracked tree redacts the protected historical test identity and
+  live scripts require an explicit validated destination; Git-history exposure
+  remains an explicit destructive-action defer.
+- `.codex/stages/tj-ee5f/stage-manifest.json` registers Task 1, policy-v2, and
+  the privacy artifact. The stage remains `in_progress`.
+- Beads `tj-ee5f.2` and `tj-ee5f.3` are closed after combined-tree acceptance;
+  `tj-ee5f` and `tj-ee5f.1` remain open.
+- Combined-tree integration gates passed: acceptance `192 passed` with exactly
+  two frozen Task 1 source-provenance checks deselected after they were first
+  observed failing closed; `tj-r1f3` `612 passed`; privacy slice `92 passed`;
+  full Pytest `2069 passed, 19 skipped, 2 deselected`; Ruff, format, Mypy,
+  process verification, artifact validation, stage sizing, and stage-ready
+  checks passed.
+- Current-tree exact and separator-normalized privacy scans found zero matches,
+  and none of the six commits unique to the contaminated returned Task 2 branch
+  is present in delivery ancestry.
 - Accepted design:
   `docs/superpowers/specs/2026-07-27-noor-agent-driven-e2e-acceptance-design.md`.
 - Accepted independent design review:
@@ -77,9 +100,10 @@ execution task, and launcher prompt prepared; live execution blocked by
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: recover `tj-r1f3`, replan it around reliable
-customer-output enforcement and delegated-future-check detection, then close
-its deploy/smoke gate before implementing and executing the approved E2E plan.
+Recommended action: finish review and delivery of the integrated local
+`tj-r1f3` output-enforcement release, then obtain fresh exact authorization for
+deploy/readback and the bounded provider smoke before executing the approved
+E2E plan.
 
 - Local preparation for `tj-ee5f.1` may proceed from `main`.
 - Mutation-capable E2E cannot begin until `tj-r1f3` closes with a freshly
