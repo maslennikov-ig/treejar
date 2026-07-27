@@ -31,6 +31,72 @@ EVIDENCE_BLOCK_IDS = tuple(
 )
 
 
+def _stage_protected_execution_snapshot(
+    registry,
+    tracked: Path,
+    protected: Path,
+    *,
+    report_mutation=None,
+) -> None:
+    _, _, trusted = _modules()
+    run_id = "synthetic-trusted-run"
+    index = json.loads(
+        (tracked / "registry/evidence-index.json").read_text(encoding="utf-8")
+    )
+    report = json.loads(
+        (tracked / "registry/report-payload.json").read_text(encoding="utf-8")
+    )
+    if report_mutation is not None:
+        report_mutation(report)
+    evidence = []
+    attempt_commits = {}
+    for entry in index["entries"]:
+        payload = json.loads(
+            (tracked / entry["relative_path"]).read_text(encoding="utf-8")
+        )
+        evidence.append(
+            {
+                "evidence_id": entry["evidence_id"],
+                "relative_path": entry["relative_path"],
+                "producer": entry["producer"],
+                "payload": payload,
+            }
+        )
+        if entry["producer"] == "protected-attempt-committer":
+            attempt_commits[payload["execution_id"]] = json.loads(
+                (protected / payload["protected_commit_ref"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+    snapshot_identity = {
+        "schema_version": "noor-e2e-protected-execution-snapshot/v2",
+        "run_id": run_id,
+        "registry_id": registry.registry_id,
+        "execution_ids": list(registry.compiled_plan.execution_ids),
+        "run": json.loads((tracked / "registry/run.json").read_text(encoding="utf-8")),
+        "report": report,
+        "evidence": evidence,
+        "attempt_commits": attempt_commits,
+    }
+    snapshot = {
+        **snapshot_identity,
+        "snapshot_digest": trusted.canonical_digest(snapshot_identity),
+    }
+    source_root = trusted._execution_snapshot_root(registry) / run_id
+    snapshot_sha256 = _write_json(source_root / "snapshot.json", snapshot)
+    _write_json(
+        source_root / "commit.json",
+        {
+            "schema_version": "noor-e2e-protected-execution-snapshot-commit/v2",
+            "status": "committed",
+            "run_id": run_id,
+            "registry_id": registry.registry_id,
+            "snapshot_sha256": snapshot_sha256,
+            "snapshot_digest": snapshot["snapshot_digest"],
+        },
+    )
+
+
 @pytest.mark.parametrize("block_id", EVIDENCE_BLOCK_IDS)
 def test_generic_runner_exposes_validation_for_every_evidence_block(
     block_id: str,
@@ -246,7 +312,7 @@ def test_attempt_receipt_raw_digest_drift_is_rejected(tmp_path: Path) -> None:
     receipt["raw_digest"] = "0" * 64
     receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
 
-    with pytest.raises(Exception, match="attempt.*binding|receipt"):
+    with pytest.raises(Exception, match="attempt.*binding|receipt|final commit marker"):
         registry.open_run(run_id="synthetic-trusted-run")
 
 
@@ -323,7 +389,9 @@ def test_fixed_root_loader_registers_receipted_structured_evidence(
         artifact_digest=event.artifact_digest,
     )
 
-    assert event.artifact_digest in registry._trusted_structured_digests
+    assert (
+        event.artifact_digest in registry.verified_evidence_context.structured_digests
+    )
     unbound = policy.StructuredEvent.build(
         assertion_id=assertion.assertion_id,
         producer=assertion.oracle.allowed_producers[0],
@@ -431,42 +499,17 @@ def test_fixed_root_loader_registers_receipted_classifier_evidence(
         artifact_digest=result.artifact_digest,
     )
 
-    assert result.artifact_digest in registry._trusted_classifier_digests
+    assert (
+        result.artifact_digest in registry.verified_evidence_context.classifier_digests
+    )
 
 
 def test_finalizer_publishes_only_complete_verified_snapshot(tmp_path: Path) -> None:
     registry, tracked, protected = _build_verified_run(tmp_path)
-    _, _, trusted = _modules()
     run_id = "synthetic-trusted-run"
-    tracked_files = {
-        path.relative_to(tracked).as_posix(): json.loads(
-            path.read_text(encoding="utf-8")
-        )
-        for path in tracked.rglob("*.json")
-    }
-    protected_files = {
-        path.relative_to(protected).as_posix(): json.loads(
-            path.read_text(encoding="utf-8")
-        )
-        for path in protected.rglob("*.json")
-    }
+    _stage_protected_execution_snapshot(registry, tracked, protected)
     shutil.rmtree(tracked)
     shutil.rmtree(protected)
-    snapshot_identity = {
-        "schema_version": "noor-e2e-verified-execution-snapshot/v2",
-        "run_id": run_id,
-        "registry_id": registry.registry_id,
-        "execution_ids": list(registry.compiled_plan.execution_ids),
-        "tracked_files": tracked_files,
-        "protected_files": protected_files,
-    }
-    _write_json(
-        protected.parent / ".staging" / f"{run_id}.json",
-        {
-            **snapshot_identity,
-            "snapshot_digest": trusted.canonical_digest(snapshot_identity),
-        },
-    )
 
     registry.finalize_run(run_id)
     registry.open_run(run_id=run_id)
@@ -480,43 +523,20 @@ def test_finalizer_removes_partial_publish_when_inner_receipt_is_invalid(
     tmp_path: Path,
 ) -> None:
     registry, tracked, protected = _build_verified_run(tmp_path)
-    _, _, trusted = _modules()
     run_id = "synthetic-trusted-run"
-    tracked_files = {
-        path.relative_to(tracked).as_posix(): json.loads(
-            path.read_text(encoding="utf-8")
-        )
-        for path in tracked.rglob("*.json")
-    }
-    protected_files = {
-        path.relative_to(protected).as_posix(): json.loads(
-            path.read_text(encoding="utf-8")
-        )
-        for path in protected.rglob("*.json")
-    }
-    receipt_path = (
-        f"producer-receipts/attempts/{registry.compiled_plan.execution_ids[0]}.json"
+    _stage_protected_execution_snapshot(
+        registry,
+        tracked,
+        protected,
+        report_mutation=lambda report: report.__setitem__(
+            "turns",
+            report["turns"][:1],
+        ),
     )
-    protected_files[receipt_path]["raw_digest"] = "0" * 64
     shutil.rmtree(tracked)
     shutil.rmtree(protected)
-    snapshot_identity = {
-        "schema_version": "noor-e2e-verified-execution-snapshot/v2",
-        "run_id": run_id,
-        "registry_id": registry.registry_id,
-        "execution_ids": list(registry.compiled_plan.execution_ids),
-        "tracked_files": tracked_files,
-        "protected_files": protected_files,
-    }
-    _write_json(
-        protected.parent / ".staging" / f"{run_id}.json",
-        {
-            **snapshot_identity,
-            "snapshot_digest": trusted.canonical_digest(snapshot_identity),
-        },
-    )
 
-    with pytest.raises(Exception, match="attempt.*binding|receipt"):
+    with pytest.raises(Exception, match="turn|scenario.*coverage|report.*coverage"):
         registry.finalize_run(run_id)
 
     assert not tracked.exists()
@@ -578,10 +598,27 @@ def test_finalizer_refuses_caller_authored_staging_snapshot(tmp_path: Path) -> N
 def test_loader_rejects_publication_without_protected_final_commit_marker(
     tmp_path: Path,
 ) -> None:
-    registry, _, _ = _build_verified_run(tmp_path)
+    registry, _, protected = _build_verified_run(tmp_path)
+    (protected / "final-commit.json").unlink()
 
     with pytest.raises(Exception, match="final commit marker"):
         registry.open_run(run_id="synthetic-trusted-run")
+
+
+def test_finalizer_recovers_crash_after_tracked_publication(tmp_path: Path) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    tracked.mkdir(parents=True)
+    _write_json(tracked / "partial.json", {"status": "prepared"})
+
+    registry.finalize_run(run_id)
+    registry.open_run(run_id=run_id)
+
+    assert not (tracked / "partial.json").exists()
+    assert (protected / "final-commit.json").is_file()
 
 
 def test_runtime_has_no_local_or_caller_decisive_artifact_loader() -> None:

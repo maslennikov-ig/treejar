@@ -40,6 +40,17 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class VerifiedEvidenceContext(_StrictModel):
+    """Immutable identities established only by protected artifact verification."""
+
+    authorization_digests: frozenset[str] = frozenset()
+    preflight_collectors: frozenset[tuple[str, str]] = frozenset()
+    readback_digests: frozenset[str] = frozenset()
+    classifier_digests: frozenset[str] = frozenset()
+    structured_digests: frozenset[str] = frozenset()
+    attempt_digests: frozenset[str] = frozenset()
+
+
 OracleKind = Literal[
     "structured_event",
     "classifier_result",
@@ -754,7 +765,7 @@ class TrustedAcceptanceRegistry:
     def __init__(self, *, repo_root: Path, compiled_policy: CompiledPolicy) -> None:
         from scripts.e2e_acceptance.execution import build_compiled_plan
 
-        self._repo_root = repo_root
+        self.__repo_root = repo_root.resolve(strict=True)
         self.compiled_policy = compiled_policy
         self.compiled_plan = build_compiled_plan(compiled_policy)
         self.registry_id = _canonical_digest(
@@ -768,12 +779,7 @@ class TrustedAcceptanceRegistry:
         self._assertions = compiled_policy.assertions
         self._verified_rollups: dict[str, bool] | None = None
         self._report_bytes: bytes | None = None
-        self._trusted_authorization_digests: set[str] = set()
-        self._trusted_authorizations: dict[str, object] = {}
-        self._trusted_readback_digests: set[str] = set()
-        self._trusted_classifier_digests: set[str] = set()
-        self._trusted_structured_digests: set[str] = set()
-        self._trusted_attempt_digests: set[str] = set()
+        self.__verified_evidence_context = VerifiedEvidenceContext()
         task1_paths = (
             _SCOPE_PATH,
             _PROVENANCE_PATH,
@@ -787,6 +793,22 @@ class TrustedAcceptanceRegistry:
         self.task1_authorization_digest = hashlib.sha256(
             _safe_json(repo_root, _TASK1_AUTHORIZATION_PATH)[1]
         ).hexdigest()
+
+    @property
+    def repo_root(self) -> Path:
+        return self.__repo_root
+
+    @property
+    def verified_evidence_context(self) -> VerifiedEvidenceContext:
+        return self.__verified_evidence_context
+
+    def _replace_verified_evidence_context(
+        self,
+        context: VerifiedEvidenceContext,
+    ) -> None:
+        if not isinstance(context, VerifiedEvidenceContext):
+            raise PolicyValidationError("verified evidence context type drift")
+        self.__verified_evidence_context = context
 
     def classifier_evaluator_digest(self, assertion_id: str) -> str:
         assertion = self._assertions.get(assertion_id)
@@ -827,7 +849,8 @@ class TrustedAcceptanceRegistry:
                 and item.policy_digest == self.compiled_policy.policy_digest
                 and item.evaluator_digest
                 == self.classifier_evaluator_digest(assertion_id)
-                and item.artifact_digest in self._trusted_classifier_digests
+                and item.artifact_digest
+                in self.__verified_evidence_context.classifier_digests
                 and item.classifier_id == oracle.classifier_id
                 and item.producer in oracle.allowed_producers
             ]
@@ -851,7 +874,8 @@ class TrustedAcceptanceRegistry:
             )
             if item.assertion_id == assertion_id
             and item.producer in oracle.allowed_producers
-            and item.artifact_digest in self._trusted_structured_digests
+            and item.artifact_digest
+            in self.__verified_evidence_context.structured_digests
         ]
         if not structured_matches:
             raise PolicyValidationError(
@@ -885,7 +909,7 @@ class TrustedAcceptanceRegistry:
                 "authorization Task 1 immutable bundle digest drift"
             )
         digest = authorization_digest(validated)
-        if digest not in self._trusted_authorization_digests:
+        if digest not in self.__verified_evidence_context.authorization_digests:
             raise PolicyValidationError(
                 "trusted execution authorization has not been loaded"
             )
@@ -912,25 +936,40 @@ class TrustedAcceptanceRegistry:
                 "authorization Task 1 immutable bundle digest drift"
             )
         digest = authorization_digest(validated)
-        self._trusted_authorization_digests.add(digest)
-        self._trusted_authorizations[digest] = validated
+        context = self.__verified_evidence_context
+        self.__verified_evidence_context = context.model_copy(
+            update={
+                "authorization_digests": context.authorization_digests | {digest},
+                "preflight_collectors": context.preflight_collectors
+                | {
+                    (
+                        validated.preflight_digest,
+                        validated.readback_collector_digest,
+                    )
+                },
+            }
+        )
 
     def _is_trusted_authorization_digest(self, digest: str) -> bool:
-        return digest in self._trusted_authorization_digests
+        return digest in self.__verified_evidence_context.authorization_digests
 
     def _load_trusted_readback(self, observation: ReadbackObservation) -> None:
-        if not self._trusted_authorizations:
+        context = self.__verified_evidence_context
+        if not context.authorization_digests:
             raise PolicyValidationError(
                 "trusted authorization required before readback loading"
             )
-        if not any(
-            observation.preflight_digest == getattr(item, "preflight_digest", None)
-            and observation.collector_artifact_digest
-            == getattr(item, "readback_collector_digest", None)
-            for item in self._trusted_authorizations.values()
-        ):
+        if (
+            observation.preflight_digest,
+            observation.collector_artifact_digest,
+        ) not in context.preflight_collectors:
             raise PolicyValidationError("preflight-bound readback collector drift")
-        self._trusted_readback_digests.add(observation.content_digest)
+        self.__verified_evidence_context = context.model_copy(
+            update={
+                "readback_digests": context.readback_digests
+                | {observation.content_digest}
+            }
+        )
 
     def load_decisive_evidence(
         self,
@@ -956,8 +995,10 @@ class TrustedAcceptanceRegistry:
         action_at: Sequence[datetime],
     ) -> None:
         if (
-            baseline.content_digest not in self._trusted_readback_digests
-            or final.content_digest not in self._trusted_readback_digests
+            baseline.content_digest
+            not in self.__verified_evidence_context.readback_digests
+            or final.content_digest
+            not in self.__verified_evidence_context.readback_digests
         ):
             raise PolicyValidationError(
                 "trusted preflight-bound readback artifacts are required"

@@ -117,7 +117,15 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
         passed=False,
         reason="The delivered reply adds a fact absent from the draft.",
     )
-    registry._trusted_classifier_digests.add(result.artifact_digest)
+    context = registry.verified_evidence_context
+    registry._replace_verified_evidence_context(
+        context.model_copy(
+            update={
+                "classifier_digests": context.classifier_digests
+                | {result.artifact_digest}
+            }
+        )
+    )
     decision = registry.evaluate_oracle(
         binding.assertion_id,
         policy.OracleEvidence(
@@ -160,8 +168,15 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
         inventory={"synthetic:conversation": {"state": "closed"}},
     )
 
-    registry._trusted_readback_digests.add(baseline.content_digest)
-    registry._trusted_readback_digests.add(stale_final.content_digest)
+    context = registry.verified_evidence_context
+    registry._replace_verified_evidence_context(
+        context.model_copy(
+            update={
+                "readback_digests": context.readback_digests
+                | {baseline.content_digest, stale_final.content_digest}
+            }
+        )
+    )
     with pytest.raises(policy.PolicyValidationError, match="final readback.*after"):
         registry.validate_readback_window(
             baseline=baseline,

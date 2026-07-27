@@ -39,14 +39,44 @@ class TrustedRunError(PolicyValidationError):
     """A tracked run and its protected anchor do not form one trusted result."""
 
 
-_PROTECTED_STORE_ROOT = (
-    Path.home()
-    / ".local"
-    / "state"
-    / "treejar"
-    / "noor-e2e-acceptance"
-    / "protected-runs"
-)
+def _git_common_dir(repo_root: Path) -> Path:
+    marker = repo_root / ".git"
+    if marker.is_dir() and not marker.is_symlink():
+        return marker
+    if not marker.is_file() or marker.is_symlink():
+        raise TrustedRunError("canonical git metadata root is unavailable")
+    try:
+        prefix, raw_git_dir = marker.read_text(encoding="utf-8").strip().split(":", 1)
+    except (OSError, ValueError) as exc:
+        raise TrustedRunError("canonical git worktree marker is invalid") from exc
+    if prefix != "gitdir":
+        raise TrustedRunError("canonical git worktree marker is invalid")
+    git_dir = Path(raw_git_dir.strip())
+    if not git_dir.is_absolute():
+        git_dir = (repo_root / git_dir).resolve(strict=True)
+    common_marker = git_dir / "commondir"
+    if common_marker.is_file() and not common_marker.is_symlink():
+        common_dir = Path(common_marker.read_text(encoding="utf-8").strip())
+        if not common_dir.is_absolute():
+            common_dir = (git_dir / common_dir).resolve(strict=True)
+        return common_dir
+    return git_dir
+
+
+def _operator_root(registry: Any) -> Path:
+    return (
+        _git_common_dir(registry.repo_root)
+        / "codex-orchestration"
+        / "noor-e2e-acceptance"
+    )
+
+
+def _published_protected_root(registry: Any) -> Path:
+    return _operator_root(registry) / "published-runs"
+
+
+def _execution_snapshot_root(registry: Any) -> Path:
+    return _operator_root(registry) / "execution-snapshots"
 
 
 class _StrictModel(BaseModel):
@@ -437,14 +467,42 @@ class VerifiedRun(_StrictModel):
     report_bytes: bytes
 
 
-class VerifiedExecutionSnapshot(_StrictModel):
-    schema_version: Literal["noor-e2e-verified-execution-snapshot/v2"]
+class ProtectedEvidenceRecord(_StrictModel):
+    evidence_id: str = Field(min_length=1)
+    relative_path: str = Field(min_length=1)
+    producer: str = Field(min_length=1)
+    payload: dict[str, Any]
+
+
+class ProtectedCommittedExecutionSnapshot(_StrictModel):
+    schema_version: Literal["noor-e2e-protected-execution-snapshot/v2"]
     run_id: str = Field(min_length=1)
     registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     execution_ids: tuple[str, ...] = Field(min_length=29, max_length=29)
-    tracked_files: dict[str, dict[str, Any]] = Field(min_length=32)
-    protected_files: dict[str, dict[str, Any]] = Field(min_length=31)
+    run: dict[str, Any]
+    report: dict[str, Any]
+    evidence: tuple[ProtectedEvidenceRecord, ...] = Field(min_length=30)
+    attempt_commits: dict[str, dict[str, Any]] = Field(min_length=29, max_length=29)
     snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ProtectedSnapshotCommit(_StrictModel):
+    schema_version: Literal["noor-e2e-protected-execution-snapshot-commit/v2"]
+    status: Literal["committed"]
+    run_id: str = Field(min_length=1)
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class PublishedRunCommit(_StrictModel):
+    schema_version: Literal["noor-e2e-published-run-commit/v2"]
+    status: Literal["committed"]
+    run_id: str = Field(min_length=1)
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_tree_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    protected_tree_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 def _report_sections_digest(payload: ClientReportPayload) -> str:
@@ -598,9 +656,9 @@ def _load_decisive_evidence(
     artifact_digest: str,
 ) -> None:
     tracked_root = (
-        registry._repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+        registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
     )
-    protected_root = _PROTECTED_STORE_ROOT / run_id
+    protected_root = _published_protected_root(registry) / run_id
     relative = f"evidence/decisive/{artifact_digest}.json"
     tracked_payload = _read_file(tracked_root, relative)
     try:
@@ -643,10 +701,11 @@ def _load_decisive_evidence(
         or receipt.preflight_digest != artifact.preflight_digest
         or receipt.assertion_id != artifact.assertion_id
         or receipt.producer != artifact.producer
-        or artifact.attempt_digest not in registry._trusted_attempt_digests
+        or artifact.attempt_digest
+        not in registry.verified_evidence_context.attempt_digests
         or not any(
-            artifact.preflight_digest == getattr(item, "preflight_digest", None)
-            for item in registry._trusted_authorizations.values()
+            artifact.preflight_digest == preflight
+            for preflight, _ in registry.verified_evidence_context.preflight_collectors
         )
     ):
         raise TrustedRunError("decisive evidence protected receipt drift")
@@ -662,11 +721,27 @@ def _load_decisive_evidence(
             or artifact.classifier_id != assertion.oracle.classifier_id
         ):
             raise TrustedRunError("classifier protected receipt binding drift")
-        registry._trusted_classifier_digests.add(artifact.artifact_digest)
+        context = registry.verified_evidence_context
+        registry._replace_verified_evidence_context(
+            context.model_copy(
+                update={
+                    "classifier_digests": context.classifier_digests
+                    | {artifact.artifact_digest}
+                }
+            )
+        )
     else:
         if assertion.oracle.kind == "classifier_result":
             raise TrustedRunError("structured decisive oracle kind drift")
-        registry._trusted_structured_digests.add(artifact.artifact_digest)
+        context = registry.verified_evidence_context
+        registry._replace_verified_evidence_context(
+            context.model_copy(
+                update={
+                    "structured_digests": context.structured_digests
+                    | {artifact.artifact_digest}
+                }
+            )
+        )
 
 
 def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> bytes:
@@ -795,74 +870,270 @@ def _write_snapshot_tree(
             os.close(fd)
 
 
+def _fsync_directory(path: Path) -> None:
+    fd = os.open(path, _directory_flags())
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _tree_digest(root: Path, *, exclude: frozenset[str] = frozenset()) -> str:
+    if not root.is_dir() or root.is_symlink():
+        raise TrustedRunError("published run tree is unavailable")
+    manifest: dict[str, str] = {}
+    for directory, directories, files in os.walk(root, followlinks=False):
+        base = Path(directory)
+        if any((base / name).is_symlink() for name in (*directories, *files)):
+            raise TrustedRunError("published run tree contains a symlink")
+        for name in files:
+            relative = (base / name).relative_to(root).as_posix()
+            if relative not in exclude:
+                manifest[relative] = _sha256(
+                    _read_file(root, relative, protected=False)
+                )
+    return canonical_digest(manifest)
+
+
+def _load_protected_execution_snapshot(
+    registry: Any,
+    run_id: str,
+) -> ProtectedCommittedExecutionSnapshot:
+    root = _execution_snapshot_root(registry) / run_id
+    try:
+        snapshot_payload = _read_file(root, "snapshot.json", protected=True)
+        snapshot = ProtectedCommittedExecutionSnapshot.model_validate(
+            _parse_json(snapshot_payload, "protected committed execution snapshot")
+        )
+        commit = ProtectedSnapshotCommit.model_validate(
+            _parse_json(
+                _read_file(root, "commit.json", protected=True),
+                "protected committed execution snapshot marker",
+            )
+        )
+    except (TrustedRunError, ValueError) as exc:
+        raise TrustedRunError(
+            f"protected committed execution snapshot is invalid: {exc}"
+        ) from exc
+    identity = snapshot.model_dump(mode="json", exclude={"snapshot_digest"})
+    if (
+        snapshot.run_id != run_id
+        or snapshot.registry_id != registry.registry_id
+        or snapshot.execution_ids != registry.compiled_plan.execution_ids
+        or snapshot.snapshot_digest != canonical_digest(identity)
+        or commit.run_id != run_id
+        or commit.registry_id != registry.registry_id
+        or commit.snapshot_sha256 != _sha256(snapshot_payload)
+        or commit.snapshot_digest != snapshot.snapshot_digest
+    ):
+        raise TrustedRunError("protected committed execution snapshot binding drift")
+    return snapshot
+
+
+def _derive_publication(
+    registry: Any,
+    snapshot: ProtectedCommittedExecutionSnapshot,
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    try:
+        run = TrustedRunDocument.model_validate(snapshot.run)
+        report = ClientReportPayload.model_validate(snapshot.report)
+    except ValueError as exc:
+        raise TrustedRunError(
+            f"protected execution semantics are invalid: {exc}"
+        ) from exc
+    if run.run_id != snapshot.run_id or report.run_id != snapshot.run_id:
+        raise TrustedRunError("protected execution semantic run identity drift")
+    records = [
+        record
+        for record in snapshot.evidence
+        if record.evidence_id != "report-source"
+        and record.producer != "protected-report-materializer"
+    ]
+    evidence_ids = {record.evidence_id for record in records}
+    if len(evidence_ids) != len(records):
+        raise TrustedRunError("protected execution evidence identity drift")
+    tracked_files = {record.relative_path: record.payload for record in records}
+    if len(tracked_files) != len(records):
+        raise TrustedRunError("protected execution evidence path drift")
+    report_payload = report.model_dump(mode="json")
+    report_payload_sha256 = _sha256(_canonical_bytes(report_payload))
+    report_snapshot_digest = _verified_report_snapshot_digest(report)
+    report_source = ReportSourceArtifact(
+        schema_version="noor-e2e-report-source/v2",
+        registry_id=registry.registry_id,
+        report_sections_digest=_report_sections_digest(report),
+        report_payload_sha256=report_payload_sha256,
+        verified_snapshot_digest=report_snapshot_digest,
+    )
+    report_source_payload = report_source.model_dump(mode="json")
+    tracked_files["evidence/report-source.json"] = report_source_payload
+    entries = [
+        EvidenceIndexEntry(
+            evidence_id=record.evidence_id,
+            relative_path=record.relative_path,
+            sha256=_sha256(_canonical_bytes(record.payload)),
+            producer=record.producer,
+        )
+        for record in records
+    ]
+    report_source_sha256 = _sha256(_canonical_bytes(report_source_payload))
+    entries.append(
+        EvidenceIndexEntry(
+            evidence_id="report-source",
+            relative_path="evidence/report-source.json",
+            sha256=report_source_sha256,
+            producer="protected-report-materializer",
+        )
+    )
+    index = EvidenceIndex(
+        schema_version="noor-e2e-evidence-index/v2",
+        run_id=snapshot.run_id,
+        entries=tuple(entries),
+    )
+    index_payload = index.model_dump(mode="json")
+    index_sha256 = _sha256(_canonical_bytes(index_payload))
+    run_payload = {
+        **run.model_dump(mode="json"),
+        "evidence_index_digest": index_sha256,
+        "report_payload_digest": report_payload_sha256,
+    }
+    run = TrustedRunDocument.model_validate(run_payload)
+    run_payload = run.model_dump(mode="json")
+    tracked_files.update(
+        {
+            "registry/run.json": run_payload,
+            "registry/evidence-index.json": index_payload,
+            "registry/report-payload.json": report_payload,
+        }
+    )
+    authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
+    attempts_by_execution: dict[str, tuple[CommittedExecutionArtifact, str]] = {}
+    for entry in entries:
+        if entry.producer != "protected-attempt-committer":
+            continue
+        attempt = CommittedExecutionArtifact.model_validate(
+            tracked_files[entry.relative_path]
+        )
+        _validate_attempt_phase_chain(attempt)
+        attempts_by_execution[attempt.execution_id] = (attempt, entry.sha256)
+    if set(attempts_by_execution) != set(snapshot.execution_ids):
+        raise TrustedRunError("protected execution attempt scope drift")
+    protected_files: dict[str, dict[str, Any]] = {}
+    for execution_id in snapshot.execution_ids:
+        attempt, tracked_sha256 = attempts_by_execution[execution_id]
+        commit_payload = snapshot.attempt_commits.get(execution_id)
+        if commit_payload is None:
+            raise TrustedRunError("protected execution attempt commit is missing")
+        commit_bytes = _canonical_bytes(commit_payload)
+        if _sha256(commit_bytes) != attempt.protected_commit_digest:
+            raise TrustedRunError("protected execution attempt commit digest drift")
+        _validate_protected_attempt_commit(
+            commit_bytes,
+            artifact=attempt,
+            authorization_digest=authorization_digest,
+        )
+        protected_files[attempt.protected_commit_ref] = commit_payload
+        protected_files[f"producer-receipts/attempts/{execution_id}.json"] = (
+            AttemptProducerReceipt(
+                schema_version="noor-e2e-attempt-producer-receipt/v2",
+                registry_id=registry.registry_id,
+                run_id=snapshot.run_id,
+                execution_id=execution_id,
+                attempt_digest=attempt.attempt_digest,
+                authorization_digest=authorization_digest,
+                semantic_digest=attempt.semantic_digest,
+                raw_digest=attempt.raw_digest,
+                tracked_digest=attempt.tracked_digest,
+                phase_head_digest=attempt.phase_head_digest,
+                tracked_sha256=tracked_sha256,
+                protected_commit_digest=attempt.protected_commit_digest,
+            ).model_dump(mode="json")
+        )
+    protected_files["producer-receipts/report-source.json"] = ReportProducerReceipt(
+        schema_version="noor-e2e-report-producer-receipt/v2",
+        registry_id=registry.registry_id,
+        tracked_sha256=report_source_sha256,
+        report_sections_digest=report_source.report_sections_digest,
+        report_payload_sha256=report_payload_sha256,
+        verified_snapshot_digest=report_snapshot_digest,
+    ).model_dump(mode="json")
+    protected_files["registry/anchor.json"] = TrustedRunAnchor(
+        schema_version="noor-e2e-trusted-run-anchor/v2",
+        run_id=snapshot.run_id,
+        policy_digest=registry.compiled_policy.policy_digest,
+        compiled_plan_digest=registry.compiled_plan.plan_digest,
+        authorization_digest=authorization_digest,
+        baseline_digest=run.baseline.content_digest,
+        final_digest=run.final.content_digest,
+        run_document_sha256=_sha256(_canonical_bytes(run_payload)),
+        evidence_index_sha256=index_sha256,
+        report_payload_sha256=report_payload_sha256,
+        criterion_ids=tuple(row.criterion_id for row in run.criteria),
+        execution_ids=tuple(row.execution_id for row in run.executions),
+        phase_journal_head_digest=run.final.causal_event_digest,
+        attempt_chain_heads={
+            execution_id: attempts_by_execution[execution_id][0].phase_head_digest
+            for execution_id in snapshot.execution_ids
+        },
+    ).model_dump(mode="json")
+    return tracked_files, protected_files
+
+
 def _finalize_verified_run(registry: Any, run_id: str) -> None:
-    """Publish one independently verified protected snapshot by run identity."""
+    """Derive and commit one run from protected committed execution semantics."""
 
     if not run_id or any(
         character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
         for character in run_id.lower()
     ):
         raise TrustedRunError("finalization run identity is unsafe")
-    staging_payload = _read_file(
-        _PROTECTED_STORE_ROOT,
-        f".staging/{run_id}.json",
-        protected=True,
-    )
-    try:
-        snapshot = VerifiedExecutionSnapshot.model_validate(
-            _parse_json(staging_payload, "verified execution snapshot")
-        )
-    except ValueError as exc:
-        raise TrustedRunError(f"verified execution snapshot invalid: {exc}") from exc
-    identity = snapshot.model_dump(mode="json", exclude={"snapshot_digest"})
-    expected_executions = registry.compiled_plan.execution_ids
-    expected_attempts = {
-        f"attempts/{execution_id}.json" for execution_id in expected_executions
-    }
-    expected_receipts = {
-        f"producer-receipts/attempts/{execution_id}.json"
-        for execution_id in expected_executions
-    }
-    required_tracked = {
-        "registry/run.json",
-        "registry/evidence-index.json",
-        "registry/report-payload.json",
-        "evidence/report-source.json",
-        *expected_attempts,
-    }
-    required_protected = {
-        "registry/anchor.json",
-        "producer-receipts/report-source.json",
-        *expected_receipts,
-    }
-    if (
-        snapshot.run_id != run_id
-        or snapshot.registry_id != registry.registry_id
-        or snapshot.execution_ids != expected_executions
-        or snapshot.snapshot_digest != canonical_digest(identity)
-        or not required_tracked <= set(snapshot.tracked_files)
-        or not required_protected <= set(snapshot.protected_files)
-    ):
-        raise TrustedRunError("verified execution snapshot scope/digest drift")
+    snapshot = _load_protected_execution_snapshot(registry, run_id)
+    tracked_files, protected_files = _derive_publication(registry, snapshot)
     tracked_root = (
-        registry._repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+        registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
     )
-    protected_root = _PROTECTED_STORE_ROOT / run_id
+    protected_parent = _published_protected_root(registry)
+    protected_root = protected_parent / run_id
+    if protected_root.exists() and (protected_root / "final-commit.json").is_file():
+        _load_verified_run(registry, run_id)
+        return
     if tracked_root.exists() or protected_root.exists():
-        raise TrustedRunError("finalized run identity already exists")
+        shutil.rmtree(tracked_root, ignore_errors=True)
+        shutil.rmtree(protected_root, ignore_errors=True)
     tracked_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    _PROTECTED_STORE_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    protected_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     tracked_staging = Path(
         tempfile.mkdtemp(prefix=f".{run_id}.", dir=tracked_root.parent)
     )
     protected_staging = Path(
-        tempfile.mkdtemp(prefix=f".{run_id}.", dir=_PROTECTED_STORE_ROOT)
+        tempfile.mkdtemp(prefix=f".{run_id}.", dir=protected_parent)
     )
     try:
-        _write_snapshot_tree(tracked_staging, snapshot.tracked_files)
-        _write_snapshot_tree(protected_staging, snapshot.protected_files)
+        _write_snapshot_tree(tracked_staging, tracked_files)
+        _write_snapshot_tree(protected_staging, protected_files)
+        _fsync_directory(tracked_staging)
+        _fsync_directory(protected_staging)
+        tracked_tree_digest = _tree_digest(tracked_staging)
+        protected_tree_digest = _tree_digest(protected_staging)
         os.rename(tracked_staging, tracked_root)
         os.rename(protected_staging, protected_root)
+        _fsync_directory(tracked_root.parent)
+        _fsync_directory(protected_parent)
+        _write_snapshot_tree(
+            protected_root,
+            {
+                "final-commit.json": PublishedRunCommit(
+                    schema_version="noor-e2e-published-run-commit/v2",
+                    status="committed",
+                    run_id=run_id,
+                    registry_id=registry.registry_id,
+                    snapshot_digest=snapshot.snapshot_digest,
+                    tracked_tree_digest=tracked_tree_digest,
+                    protected_tree_digest=protected_tree_digest,
+                ).model_dump(mode="json")
+            },
+        )
+        _fsync_directory(protected_root)
         _load_verified_run(registry, run_id)
     except Exception:
         shutil.rmtree(tracked_staging, ignore_errors=True)
@@ -884,9 +1155,35 @@ def _load_verified_run(
     ):
         raise TrustedRunError("trusted run identity is unsafe")
     tracked_root = (
-        registry._repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+        registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
     )
-    protected_root = _PROTECTED_STORE_ROOT / run_id
+    protected_root = _published_protected_root(registry) / run_id
+    try:
+        final_commit = PublishedRunCommit.model_validate(
+            _parse_json(
+                _read_file(
+                    protected_root,
+                    "final-commit.json",
+                    protected=True,
+                ),
+                "protected final commit marker",
+            )
+        )
+    except (TrustedRunError, ValueError) as exc:
+        raise TrustedRunError(
+            f"protected final commit marker is invalid: {exc}"
+        ) from exc
+    if (
+        final_commit.run_id != run_id
+        or final_commit.registry_id != registry.registry_id
+        or final_commit.tracked_tree_digest != _tree_digest(tracked_root)
+        or final_commit.protected_tree_digest
+        != _tree_digest(
+            protected_root,
+            exclude=frozenset({"final-commit.json"}),
+        )
+    ):
+        raise TrustedRunError("protected final commit marker binding drift")
     run_payload = _read_file(tracked_root, "registry/run.json")
     index_payload = _read_file(tracked_root, "registry/evidence-index.json")
     report_payload_bytes = _read_file(tracked_root, "registry/report-payload.json")
@@ -1194,7 +1491,15 @@ def _load_verified_run(
         validate_redacted_payload(report.model_dump(mode="json"))
     except EvidenceError as exc:
         raise TrustedRunError(f"report privacy validation failed: {exc}") from exc
-    registry._trusted_attempt_digests.update(verified_attempt_digests)
+    context = registry.verified_evidence_context
+    registry._replace_verified_evidence_context(
+        context.model_copy(
+            update={
+                "attempt_digests": context.attempt_digests
+                | frozenset(verified_attempt_digests)
+            }
+        )
+    )
 
     rollups = {
         "coverage_complete": True,

@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 import os
+import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -56,9 +57,25 @@ def _build_verified_run(
     protected_attempt_digest_drift: bool = False,
 ):
     policy, execution, trusted = _modules()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    source_registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    contract_paths = (
+        ".codex/goals/tj-ee5f/scope-criterion-snapshot.json",
+        ".codex/goals/tj-ee5f/scope-source-provenance.json",
+        ".codex/stages/tj-ee5f/traceability-manifest.json",
+        ".codex/stages/tj-ee5f/scenario-set.json",
+        ".codex/stages/tj-ee5f/authorization-manifest.example.json",
+    )
+    for relative in contract_paths:
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(PROJECT_ROOT / relative, destination)
+    (tmp_path / ".git").mkdir()
+    registry = policy.TrustedAcceptanceRegistry(
+        repo_root=tmp_path,
+        compiled_policy=source_registry.compiled_policy,
+    )
     tracked = tmp_path / ".codex/stages/tj-ee5f/results"
-    protected = tmp_path / "operator-protected"
+    protected = trusted._published_protected_root(registry)
     run_id = "synthetic-trusted-run"
     tracked_run = tracked / run_id
     protected_run = protected / run_id
@@ -499,8 +516,30 @@ def _build_verified_run(
         "attempt_chain_heads": attempt_chain_heads,
     }
     _write_json(protected_run / "registry/anchor.json", anchor)
-    registry._repo_root = tmp_path
-    trusted._PROTECTED_STORE_ROOT = protected
+    tracked_manifest = {
+        path.relative_to(tracked_run).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in tracked_run.rglob("*.json")
+    }
+    protected_manifest = {
+        path.relative_to(protected_run).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in protected_run.rglob("*.json")
+    }
+    _write_json(
+        protected_run / "final-commit.json",
+        {
+            "schema_version": "noor-e2e-published-run-commit/v2",
+            "status": "committed",
+            "run_id": run_id,
+            "registry_id": registry.registry_id,
+            "snapshot_digest": "7" * 64,
+            "tracked_tree_digest": trusted.canonical_digest(tracked_manifest),
+            "protected_tree_digest": trusted.canonical_digest(protected_manifest),
+        },
+    )
     return registry, tracked_run, protected_run
 
 

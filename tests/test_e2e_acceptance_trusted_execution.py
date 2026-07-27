@@ -44,6 +44,26 @@ def _registry():
     return policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
 
 
+def _trust_decisive_for_unit(registry, *items) -> None:
+    policy, _ = _modules()
+    context = registry.verified_evidence_context
+    classifier_digests = context.classifier_digests
+    structured_digests = context.structured_digests
+    for item in items:
+        if isinstance(item, policy.ClassifierResult):
+            classifier_digests = classifier_digests | {item.artifact_digest}
+        else:
+            structured_digests = structured_digests | {item.artifact_digest}
+    registry._replace_verified_evidence_context(
+        context.model_copy(
+            update={
+                "classifier_digests": classifier_digests,
+                "structured_digests": structured_digests,
+            }
+        )
+    )
+
+
 def _authorization(registry, *, trusted: bool = True, **updates):
     _, execution = _modules()
     now = datetime.now(UTC)
@@ -375,7 +395,7 @@ def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:
         passed=True,
         reason="Structured classifier passed.",
     )
-    registry._trusted_classifier_digests.add(result.artifact_digest)
+    _trust_decisive_for_unit(registry, result)
     evidence = policy.OracleEvidence(
         assertion_id=second.assertion_id,
         structured_events=(),
@@ -787,13 +807,13 @@ def test_generic_runner_validates_every_canonical_scenario(
     registry._load_trusted_readback(final)
     for item in oracle_evidence:
         for classifier in item.classifier_results:
-            registry._trusted_classifier_digests.add(classifier.artifact_digest)
+            _trust_decisive_for_unit(registry, classifier)
         for structured in (
             *item.structured_events,
             *item.tool_results,
             *item.readbacks,
         ):
-            registry._trusted_structured_digests.add(structured.artifact_digest)
+            _trust_decisive_for_unit(registry, structured)
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id=f"run-{scenario_id.lower()}",
@@ -890,7 +910,7 @@ def test_generic_runner_validates_every_canonical_evidence_block(
                 passed=True,
                 reason="Structured classifier passed.",
             )
-            registry._trusted_classifier_digests.add(classifier.artifact_digest)
+            _trust_decisive_for_unit(registry, classifier)
             item = policy.OracleEvidence(
                 assertion_id=assertion_id,
                 structured_events=(),
@@ -912,7 +932,7 @@ def test_generic_runner_validates_every_canonical_evidence_block(
                 attempt_digest=plan_digest,
                 preflight_digest=authorization.preflight_digest,
             )
-            registry._trusted_structured_digests.add(event.artifact_digest)
+            _trust_decisive_for_unit(registry, event)
             item = policy.OracleEvidence(
                 assertion_id=assertion_id,
                 structured_events=(event,),
