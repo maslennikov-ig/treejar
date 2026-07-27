@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-27T16:17:41.220007+00:00",
+  "run_id": "tj-r1f3-postdeploy-3",
+  "release_sha": "b8de75c215d2678eb8d2cff06f91a49e48e0e4a9",
+  "release_run_id": "30283789902",
+  "synthetic_evidence_only": true,
+  "external_business_mutations": false,
+  "models": {
+    "main": "z-ai/glm-5.2",
+    "fast": "deepseek/deepseek-v4-flash"
+  },
+  "preflight": {
+    "passed": true,
+    "main_required_parameters": [
+      "tool_choice",
+      "tools"
+    ],
+    "fast_required_parameters": [
+      "reasoning",
+      "response_format",
+      "structured_outputs",
+      "tool_choice",
+      "tools"
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "showroom_visit",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "conditional",
+      "reply": "You're welcome to visit Treejar's UAE showroom to experience our product quality. However, I can't confirm that a specific chair model or test setup will be available to try during your visit. If you'd like, I can help arrange a visit — just let me know your preferred time, and I can pass along your interest so the team can prepare as best as possible.",
+      "latency_ms": 4838.622,
+      "status_code": 200
+    },
+    {
+      "case_id": "project_samples",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "conditional",
+      "reply": "Samples may be arranged depending on your project requirements. No specific material sample or delivery is confirmed at this stage. Could you share more details about your project so we can assess what samples might be possible?",
+      "latency_ms": 5831.069,
+      "status_code": 200
+    },
+    {
+      "case_id": "medical_inference",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": false,
+      "failures": [
+        "reply implies that a specific product will be available to try"
+      ],
+      "observed_decision": "decline_unsupported",
+      "reply": "The Nova Task chair does have a seat-depth adjustment, but I can't confirm that it will reduce back pain. There is no medical or health-outcome evidence available for this product. For health concerns, I'd recommend consulting a qualified healthcare professional. If you'd like, you can visit our UAE showroom to experience the chair's build quality and features in person.",
+      "latency_ms": 5044.048,
+      "status_code": 200
+    },
+    {
+      "case_id": "missing_stock",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "conditional",
+      "reply": "AX-E1 is a valid catalog SKU, but I'm unable to confirm its current stock status right now as no inventory result is available. Could you let me know the quantity you need and your delivery timeline? I can also arrange for our team to check and get back to you, or you're welcome to visit our UAE showroom to experience our product quality firsthand.",
+      "latency_ms": 4952.041,
+      "status_code": 200
+    },
+    {
+      "case_id": "structured_json",
+      "route": "fast",
+      "model": "deepseek/deepseek-v4-flash",
+      "passed": true,
+      "failures": [],
+      "latency_ms": 16042.46,
+      "status_code": 200,
+      "reasoning_requested": false
+    }
+  ],
+  "summary": {
+    "passed": false,
+    "paid_calls": 5,
+    "max_paid_calls": 5
+  }
+}
