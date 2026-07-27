@@ -68,6 +68,7 @@ class CriterionPlan(_StrictModel):
     scenario_ids: tuple[str, ...]
     evidence_block_ids: tuple[str, ...]
     obligation_ids: tuple[str, ...] = Field(min_length=1)
+    allows_client_exclusion: bool
 
 
 class CompiledExecutionPlan(_StrictModel):
@@ -105,6 +106,7 @@ def build_compiled_plan(policy: CompiledPolicy) -> CompiledExecutionPlan:
             scenario_ids=criterion.scenario_ids,
             evidence_block_ids=criterion.evidence_block_ids,
             obligation_ids=obligation_ids,
+            allows_client_exclusion=criterion.allows_client_exclusion,
         )
     if len(criteria) != 30:
         raise ExecutionValidationError("compiled criterion scope must be exact 30")
@@ -393,6 +395,15 @@ class ScenarioAttemptV2(_StrictModel):
     judge_config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class EvidenceBlockAttemptV2(_StrictModel):
+    schema_version: Literal["noor-e2e-evidence-block-attempt/v2"]
+    execution_id: str = Field(min_length=1)
+    evidence_collection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator_config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    oracle_evidence: tuple[OracleEvidence, ...] = Field(min_length=1)
+    permission_evidence: tuple[str, ...]
+
+
 class ValidatedAttempt(_StrictModel):
     execution_id: str
     plan_digest: str
@@ -424,6 +435,16 @@ def scenario_plan_digest(attempt: ScenarioAttemptV2) -> str:
         planned_turns=attempt.planned_turns,
         tester_config_digest=attempt.tester_config_digest,
         judge_config_digest=attempt.judge_config_digest,
+    )
+
+
+def evidence_block_input_digest(attempt: EvidenceBlockAttemptV2) -> str:
+    return _digest(
+        {
+            "execution_id": attempt.execution_id,
+            "evidence_collection_digest": attempt.evidence_collection_digest,
+            "evaluator_config_digest": attempt.evaluator_config_digest,
+        }
     )
 
 
@@ -568,6 +589,64 @@ class GenericAcceptanceRunner:
             plan_digest=plan_digest,
             attempt_digest=_digest(attempt.model_dump(mode="json")),
             outcome=outcome,
+            oracle_decisions=tuple(item.model_dump(mode="json") for item in decisions),
+        )
+
+    def validate_evidence_block(
+        self,
+        attempt: EvidenceBlockAttemptV2,
+    ) -> ValidatedAttempt:
+        block = self.registry.compiled_policy.evidence_blocks.get(attempt.execution_id)
+        if block is None:
+            raise ExecutionValidationError(
+                "generic evidence runner requires a canonical evidence block"
+            )
+        plan_digest = evidence_block_input_digest(attempt)
+        if (
+            self.authorization.execution_input_digests.get(attempt.execution_id)
+            != plan_digest
+        ):
+            raise ExecutionValidationError(
+                "authorized evidence-block input digest drift"
+            )
+        canonical_assertions = {
+            item.assertion_id for item in block.oracle_checks.values()
+        }
+        for criterion_id in block.criterion_ids:
+            canonical_assertions.update(
+                item.assertion_id
+                for item in self.registry.compiled_policy.criteria[
+                    criterion_id
+                ].oracle_checks.values()
+            )
+        evidence_by_assertion = {
+            item.assertion_id: item for item in attempt.oracle_evidence
+        }
+        if (
+            len(evidence_by_assertion) != len(attempt.oracle_evidence)
+            or set(evidence_by_assertion) != canonical_assertions
+        ):
+            raise ExecutionValidationError(
+                "evidence-block structured oracle coverage drift"
+            )
+        if set(attempt.permission_evidence) != set(block.required_permissions):
+            raise ExecutionValidationError("evidence-block permission coverage drift")
+        if self.journal.phase != "executing":
+            raise ExecutionValidationError(
+                "evidence-block validation requires executing phase"
+            )
+        decisions = tuple(
+            self.registry.evaluate_oracle(
+                assertion_id,
+                evidence_by_assertion[assertion_id],
+            )
+            for assertion_id in sorted(canonical_assertions)
+        )
+        return ValidatedAttempt(
+            execution_id=attempt.execution_id,
+            plan_digest=plan_digest,
+            attempt_digest=_digest(attempt.model_dump(mode="json")),
+            outcome=("PASS" if all(item.passed for item in decisions) else "FAIL"),
             oracle_decisions=tuple(item.model_dump(mode="json") for item in decisions),
         )
 
@@ -786,6 +865,7 @@ class ProtectedExecutionJournal:
         self._authorization_scenarios = 0
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head: str | None = None
+        self._final_turn_occurred_at: datetime | None = None
 
     @classmethod
     def create(
@@ -878,6 +958,11 @@ class ProtectedExecutionJournal:
             self._actions[str(data["action_id"])] = "unknown"
         elif kind == "attempt_intent":
             self._attempted_executions.append(str(data["execution_id"]))
+        elif kind == "final_turn_anchored":
+            occurred_at = datetime.fromisoformat(str(data["occurred_at"]))
+            if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+                raise ExecutionValidationError("final-turn anchor timestamp is invalid")
+            self._final_turn_occurred_at = occurred_at
 
     def _append_event(
         self,
@@ -1189,8 +1274,16 @@ class ProtectedExecutionJournal:
                 "occurred_at": occurred_at.isoformat(),
             },
         )
+        self._final_turn_occurred_at = occurred_at
 
     def seal_final_readback(self, observation: ReadbackObservation) -> None:
+        if (
+            self._final_turn_occurred_at is None
+            or observation.observed_at < self._final_turn_occurred_at
+        ):
+            raise ExecutionValidationError(
+                "final readback timestamp predates final-turn anchor"
+            )
         if (
             observation.phase != "final"
             or observation.run_id != self.run_id

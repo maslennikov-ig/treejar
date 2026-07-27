@@ -49,6 +49,8 @@ def _build_verified_run(
     task1_digest_drift: bool = False,
     invalid_blocked_gate: bool = False,
     self_authorized_exclusion: bool = False,
+    without_attempts: bool = False,
+    incomplete_turns: bool = False,
 ):
     policy, execution, trusted = _modules()
     registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
@@ -64,8 +66,10 @@ def _build_verified_run(
         status="approved",
         issued_at=now - timedelta(minutes=2),
         expires_at=now + timedelta(hours=1),
-        task1_authorization_digest=("0" * 64 if task1_digest_drift else "1" * 64),
-        task1_input_digests={"synthetic-task1-input": "7" * 64},
+        task1_authorization_digest=(
+            "0" * 64 if task1_digest_drift else registry.task1_authorization_digest
+        ),
+        task1_input_digests=registry.task1_input_digests,
         preflight_digest="8" * 64,
         readback_collector_digest="9" * 64,
         policy_digest=registry.compiled_policy.policy_digest,
@@ -141,12 +145,6 @@ def _build_verified_run(
                 "producer": "trusted-evidence-registry",
             }
         )
-    index = {
-        "schema_version": "noor-e2e-evidence-index/v2",
-        "run_id": run_id,
-        "entries": index_entries,
-    }
-    index_digest = _write_json(tracked_run / "registry/evidence-index.json", index)
     criteria = []
     for criterion in registry.compiled_plan.criteria.values():
         if criterion.evidence_mode.value == "fresh":
@@ -168,9 +166,7 @@ def _build_verified_run(
             }
         )
     if self_authorized_exclusion:
-        criterion = next(
-            row for row in criteria if row["criterion_id"] == "AC-21"
-        )
+        criterion = next(row for row in criteria if row["criterion_id"] == "AC-21")
         criterion["outcome"] = "EXCLUDED_BY_CLIENT"
         criterion["obligation_outcomes"] = {
             identity: "EXCLUDED_BY_CLIENT"
@@ -178,14 +174,74 @@ def _build_verified_run(
         }
     if partial_scope:
         criteria = criteria[:1]
-    executions = [
-        {
+    authorization_digest = trusted.canonical_digest(
+        authorization.model_dump(mode="json")
+    )
+    attempt_chain_heads = {}
+    executions = []
+    for identity in registry.compiled_plan.execution_ids:
+        attempt_ref = f"attempt:{identity}"
+        executions.append(
+            {
+                "execution_id": identity,
+                "outcome": "PASS",
+                "evidence_refs": ["fresh"],
+                "attempt_ref": attempt_ref,
+            }
+        )
+        if without_attempts:
+            continue
+        previous = None
+        phase_chain = []
+        for cursor, phase in enumerate(
+            (
+                "prepared",
+                "baseline_sealed",
+                "executing",
+                "final_turn_anchored",
+                "final_readback_sealed",
+                "evaluated",
+                "attempt_committed",
+            ),
+            start=1,
+        ):
+            event = {
+                "cursor": cursor,
+                "phase": phase,
+                "previous_event_digest": previous,
+            }
+            previous = trusted.canonical_digest(event)
+            phase_chain.append({**event, "event_digest": previous})
+        attempt = {
+            "schema_version": "noor-e2e-committed-execution/v2",
             "execution_id": identity,
             "outcome": "PASS",
+            "authorization_digest": authorization_digest,
+            "attempt_digest": hashlib.sha256(identity.encode()).hexdigest(),
+            "semantic_digest": hashlib.sha256(
+                f"semantic:{identity}".encode()
+            ).hexdigest(),
+            "phase_chain": phase_chain,
             "evidence_refs": ["fresh"],
         }
-        for identity in registry.compiled_plan.execution_ids
-    ]
+        relative = f"attempts/{identity}.json"
+        digest = _write_json(tracked_run / relative, attempt)
+        attempt_chain_heads[identity] = digest
+        index_entries.append(
+            {
+                "evidence_id": attempt_ref,
+                "relative_path": relative,
+                "sha256": digest,
+                "producer": "protected-attempt-committer",
+            }
+        )
+    if without_attempts:
+        attempt_chain_heads = {
+            identity: "6" * 64 for identity in registry.compiled_plan.execution_ids
+        }
+    scenario_ids = tuple(registry.compiled_policy.scenarios)
+    if incomplete_turns:
+        scenario_ids = scenario_ids[:1]
     report_payload = {
         "schema_version": "noor-e2e-client-report/v2",
         "run_id": run_id,
@@ -199,28 +255,31 @@ def _build_verified_run(
             "migration_head": "synthetic-migration",
             "models": ["fixture/model"],
             "services": {"api": "synthetic-ready"},
+            "evidence_refs": ["report-source"],
         },
         "tester": {
             "model": "fixture/tester",
             "reasoning_effort": "none",
             "seed": 20260727,
             "config_digest": "3" * 64,
+            "evidence_refs": ["report-source"],
         },
         "judge": {
             "model": "fixture/judge",
             "reasoning_effort": "none",
             "seed": 20260727,
             "config_digest": "4" * 64,
+            "evidence_refs": ["report-source"],
         },
         "turns": [
             {
-                "execution_id": "SC-OPEN-EN",
-                "attempt_id": "attempt-001",
-                "turn_id": "turn-001",
+                "execution_id": identity,
+                "attempt_id": f"attempt:{identity}",
+                "turn_id": f"turn-{position:03d}",
                 "question": "Synthetic exact question.",
                 "answer": (
                     "Contact +15550001111"
-                    if leaked_answer
+                    if leaked_answer and position == 1
                     else "Synthetic exact answer."
                 ),
                 "sent_at": now.isoformat(),
@@ -228,9 +287,9 @@ def _build_verified_run(
                 "first_visible_at": (now + timedelta(seconds=2)).isoformat(),
                 "final_visible_at": (now + timedelta(seconds=3)).isoformat(),
                 "delivered_at": (now + timedelta(seconds=4)).isoformat(),
-                "conversation_id": "synthetic-conversation",
-                "message_id": "synthetic-message",
-                "provider_message_id": "synthetic-provider",
+                "conversation_id": f"synthetic-conversation-{position}",
+                "message_id": f"synthetic-message-{position}",
+                "provider_message_id": f"synthetic-provider-{position}",
                 "model": "fixture/model",
                 "tools": ["fixture_tool"],
                 "tool_outcomes": ["fixture outcome"],
@@ -240,7 +299,21 @@ def _build_verified_run(
                 "cost_usd": 0,
                 "deviation": None,
                 "evaluator_reasoning": "Structured checks passed.",
+                "evidence_refs": [
+                    f"attempt:{identity}",
+                    "report-source",
+                ],
             }
+            for position, identity in enumerate(scenario_ids, start=1)
+        ],
+        "executions": [
+            {
+                "execution_id": row["execution_id"],
+                "outcome": row["outcome"],
+                "attempt_ref": row["attempt_ref"],
+                "evidence_refs": row["evidence_refs"],
+            }
+            for row in executions
         ],
         "criteria": [
             {
@@ -261,10 +334,15 @@ def _build_verified_run(
                 "final": {"state": "closed"},
                 "disposition": "closed",
                 "owner": "acceptance-owner",
-                "checksum_refs": ["fresh"],
+                "checksum_refs": ["report-source"],
             }
         ],
-        "latency": {"p50_ms": 1000, "p95_ms": 2000, "max_ms": 3000},
+        "latency": {
+            "p50_ms": 1000,
+            "p95_ms": 2000,
+            "max_ms": 3000,
+            "evidence_refs": ["report-source"],
+        },
         "limitations": ["Synthetic local dry-run only."],
         "external_gates": ["Live execution is not authorized."],
         "defects": [
@@ -274,10 +352,33 @@ def _build_verified_run(
                 "violated_invariant": "Synthetic invariant.",
                 "fix": "Synthetic fix.",
                 "retest": "Synthetic retest.",
-                "checksum_refs": ["fresh"],
+                "checksum_refs": ["report-source"],
             }
         ],
     }
+    validated_report = trusted.ClientReportPayload.model_validate(report_payload)
+    report_source = {
+        "schema_version": "noor-e2e-report-source/v2",
+        "report_sections_digest": trusted._report_sections_digest(validated_report),
+    }
+    report_source_digest = _write_json(
+        tracked_run / "evidence/report-source.json",
+        report_source,
+    )
+    index_entries.append(
+        {
+            "evidence_id": "report-source",
+            "relative_path": "evidence/report-source.json",
+            "sha256": report_source_digest,
+            "producer": "protected-report-materializer",
+        }
+    )
+    index = {
+        "schema_version": "noor-e2e-evidence-index/v2",
+        "run_id": run_id,
+        "entries": index_entries,
+    }
+    index_digest = _write_json(tracked_run / "registry/evidence-index.json", index)
     report_digest = _write_json(
         tracked_run / "registry/report-payload.json",
         report_payload,
@@ -299,9 +400,6 @@ def _build_verified_run(
         "report_payload_digest": report_digest,
     }
     run_digest = _write_json(tracked_run / "registry/run.json", run_document)
-    authorization_digest = trusted.canonical_digest(
-        authorization.model_dump(mode="json")
-    )
     anchor = {
         "schema_version": "noor-e2e-trusted-run-anchor/v2",
         "run_id": run_id,
@@ -316,9 +414,7 @@ def _build_verified_run(
         "criterion_ids": [row["criterion_id"] for row in criteria],
         "execution_ids": list(registry.compiled_plan.execution_ids),
         "phase_journal_head_digest": "5" * 64,
-        "attempt_chain_heads": {
-            identity: "6" * 64 for identity in registry.compiled_plan.execution_ids
-        },
+        "attempt_chain_heads": attempt_chain_heads,
     }
     _write_json(protected_run / "registry/anchor.json", anchor)
     return registry, tracked_run, protected_run

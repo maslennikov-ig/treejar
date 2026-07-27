@@ -23,6 +23,14 @@ SCENARIO_IDS = tuple(
         )
     )["scenarios"]
 )
+EVIDENCE_BLOCK_IDS = tuple(
+    item["block_id"]
+    for item in json.loads(
+        (PROJECT_ROOT / ".codex/stages/tj-ee5f/scenario-set.json").read_text(
+            encoding="utf-8"
+        )
+    )["evidence_blocks"]
+)
 
 
 def _modules():
@@ -45,8 +53,8 @@ def _authorization(registry, *, trusted: bool = True, **updates):
         "status": "approved",
         "issued_at": now - timedelta(minutes=1),
         "expires_at": now + timedelta(hours=1),
-        "task1_authorization_digest": "a" * 64,
-        "task1_input_digests": {"synthetic-task1-input": "7" * 64},
+        "task1_authorization_digest": registry.task1_authorization_digest,
+        "task1_input_digests": registry.task1_input_digests,
         "preflight_digest": "8" * 64,
         "readback_collector_digest": "9" * 64,
         "policy_digest": registry.compiled_policy.policy_digest,
@@ -707,7 +715,7 @@ def test_generic_runner_validates_every_canonical_scenario(
                 )
             )
         else:
-            event = policy.StructuredEvent(
+            event = policy.StructuredEvent.build(
                 assertion_id=assertion_id,
                 producer=assertion.oracle.allowed_producers[0],
                 source_id=f"{assertion_id}:event",
@@ -715,6 +723,9 @@ def test_generic_runner_validates_every_canonical_scenario(
                 observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
                 passed=True,
                 reason="Structured evidence passed.",
+                run_id=f"run-{scenario_id.lower()}",
+                attempt_digest=attempt_binding_digest,
+                preflight_digest="8" * 64,
             )
             oracle_evidence.append(
                 policy.OracleEvidence(
@@ -781,6 +792,17 @@ def test_generic_runner_validates_every_canonical_scenario(
                 run_id=f"run-{scenario_id.lower()}",
                 attempt_digest=plan_digest,
             )
+        for structured in (
+            *item.structured_events,
+            *item.tool_results,
+            *item.readbacks,
+        ):
+            registry._load_structured_artifact(
+                structured,
+                run_id=f"run-{scenario_id.lower()}",
+                attempt_digest=plan_digest,
+                preflight_digest="8" * 64,
+            )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id=f"run-{scenario_id.lower()}",
@@ -813,3 +835,138 @@ def test_generic_runner_validates_every_canonical_scenario(
             ).encode("utf-8")
         ).hexdigest()
     )
+
+
+@pytest.mark.parametrize("block_id", EVIDENCE_BLOCK_IDS)
+def test_generic_runner_validates_every_canonical_evidence_block(
+    tmp_path: Path,
+    block_id: str,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    block = registry.compiled_policy.evidence_blocks[block_id]
+    assertion_ids = {item.assertion_id for item in block.oracle_checks.values()}
+    for criterion_id in block.criterion_ids:
+        assertion_ids.update(
+            item.assertion_id
+            for item in registry.compiled_policy.criteria[
+                criterion_id
+            ].oracle_checks.values()
+        )
+    input_seed = execution.EvidenceBlockAttemptV2(
+        schema_version="noor-e2e-evidence-block-attempt/v2",
+        execution_id=block_id,
+        evidence_collection_digest="1" * 64,
+        evaluator_config_digest="2" * 64,
+        oracle_evidence=(
+            policy.OracleEvidence(
+                assertion_id=next(iter(assertion_ids)),
+                structured_events=(),
+                tool_results=(),
+                readbacks=(),
+                classifier_results=(),
+                text_supplements=(),
+            ),
+        ),
+        permission_evidence=block.required_permissions,
+    )
+    plan_digest = execution.evidence_block_input_digest(input_seed)
+    run_id = f"run-{block_id.lower()}"
+    input_digests = {
+        identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
+    }
+    input_digests[block_id] = plan_digest
+    authorization = _authorization(
+        registry,
+        execution_input_digests=input_digests,
+    )
+    oracle_evidence = []
+    for assertion_id in sorted(assertion_ids):
+        assertion = registry.compiled_policy.assertions[assertion_id]
+        if assertion.oracle.kind == "classifier_result":
+            classifier = policy.ClassifierResult.build(
+                assertion_id=assertion_id,
+                policy_digest=registry.compiled_policy.policy_digest,
+                evaluator_digest=registry.classifier_evaluator_digest(assertion_id),
+                run_id=run_id,
+                attempt_digest=plan_digest,
+                preflight_digest=authorization.preflight_digest,
+                classifier_id=assertion.oracle.classifier_id,
+                producer=assertion.oracle.allowed_producers[0],
+                source_id=f"{assertion_id}:classifier",
+                source_digest="3" * 64,
+                observed_at=datetime.now(UTC),
+                passed=True,
+                reason="Structured classifier passed.",
+            )
+            registry._load_classifier_artifact(
+                classifier,
+                run_id=run_id,
+                attempt_digest=plan_digest,
+            )
+            item = policy.OracleEvidence(
+                assertion_id=assertion_id,
+                structured_events=(),
+                tool_results=(),
+                readbacks=(),
+                classifier_results=(classifier,),
+                text_supplements=(),
+            )
+        else:
+            event = policy.StructuredEvent.build(
+                assertion_id=assertion_id,
+                producer=assertion.oracle.allowed_producers[0],
+                source_id=f"{assertion_id}:event",
+                source_digest="4" * 64,
+                observed_at=datetime.now(UTC),
+                passed=True,
+                reason="Structured evidence passed.",
+                run_id=run_id,
+                attempt_digest=plan_digest,
+                preflight_digest=authorization.preflight_digest,
+            )
+            registry._load_structured_artifact(
+                event,
+                run_id=run_id,
+                attempt_digest=plan_digest,
+                preflight_digest=authorization.preflight_digest,
+            )
+            item = policy.OracleEvidence(
+                assertion_id=assertion_id,
+                structured_events=(event,),
+                tool_results=(),
+                readbacks=(),
+                classifier_results=(),
+                text_supplements=(),
+            )
+        oracle_evidence.append(item)
+    attempt = input_seed.model_copy(update={"oracle_evidence": tuple(oracle_evidence)})
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+        authorization=authorization,
+    )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id=f"{block_id}:baseline",
+        run_id=run_id,
+        preflight_digest=authorization.preflight_digest,
+        collector_artifact_digest=authorization.readback_collector_digest,
+        causal_event_digest="5" * 64,
+        observed_at=datetime.now(UTC),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+    runner = execution.GenericAcceptanceRunner(
+        registry=registry,
+        authorization=authorization,
+        journal=journal,
+    )
+
+    result = runner.validate_evidence_block(attempt)
+
+    assert result.execution_id == block_id
+    assert result.outcome == "PASS"
+    assert result.plan_digest == plan_digest

@@ -159,6 +159,36 @@ class ExecutionRow(_StrictModel):
     execution_id: str = Field(min_length=1)
     outcome: OutcomeValue
     evidence_refs: tuple[str, ...] = Field(min_length=1)
+    attempt_ref: str = Field(min_length=1)
+
+
+AttemptPhaseName = Literal[
+    "prepared",
+    "baseline_sealed",
+    "executing",
+    "final_turn_anchored",
+    "final_readback_sealed",
+    "evaluated",
+    "attempt_committed",
+]
+
+
+class AttemptPhase(_StrictModel):
+    cursor: int = Field(ge=1, le=7)
+    phase: AttemptPhaseName
+    previous_event_digest: str | None
+    event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CommittedExecutionArtifact(_StrictModel):
+    schema_version: Literal["noor-e2e-committed-execution/v2"]
+    execution_id: str = Field(min_length=1)
+    outcome: OutcomeValue
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    phase_chain: tuple[AttemptPhase, ...] = Field(min_length=7, max_length=7)
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
 class CriterionRow(_StrictModel):
@@ -222,6 +252,7 @@ class RuntimeIdentityReport(_StrictModel):
     migration_head: str
     models: tuple[str, ...]
     services: dict[str, str]
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
 class EvaluatorReport(_StrictModel):
@@ -229,6 +260,7 @@ class EvaluatorReport(_StrictModel):
     reasoning_effort: str
     seed: int
     config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
 class TurnReport(_StrictModel):
@@ -254,6 +286,14 @@ class TurnReport(_StrictModel):
     cost_usd: float = Field(ge=0)
     deviation: str | None
     evaluator_reasoning: str
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
+
+
+class ReportExecution(_StrictModel):
+    execution_id: str = Field(min_length=1)
+    outcome: OutcomeValue
+    attempt_ref: str = Field(min_length=1)
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
 class ReportCriterion(_StrictModel):
@@ -279,6 +319,7 @@ class LatencyReport(_StrictModel):
     p50_ms: int = Field(ge=0)
     p95_ms: int = Field(ge=0)
     max_ms: int = Field(ge=0)
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
 class DefectReport(_StrictModel):
@@ -290,6 +331,11 @@ class DefectReport(_StrictModel):
     checksum_refs: tuple[str, ...]
 
 
+class ReportSourceArtifact(_StrictModel):
+    schema_version: Literal["noor-e2e-report-source/v2"]
+    report_sections_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ClientReportPayload(_StrictModel):
     schema_version: Literal["noor-e2e-client-report/v2"]
     run_id: str
@@ -299,6 +345,7 @@ class ClientReportPayload(_StrictModel):
     tester: EvaluatorReport
     judge: EvaluatorReport
     turns: tuple[TurnReport, ...]
+    executions: tuple[ReportExecution, ...] = Field(min_length=1)
     criteria: tuple[ReportCriterion, ...] = Field(min_length=1)
     side_effects: tuple[SideEffectReport, ...]
     latency: LatencyReport
@@ -310,6 +357,23 @@ class ClientReportPayload(_StrictModel):
 class VerifiedRun(_StrictModel):
     rollups: dict[str, bool]
     report_bytes: bytes
+
+
+def _report_sections_digest(payload: ClientReportPayload) -> str:
+    return canonical_digest(
+        {
+            "identity": payload.identity.model_dump(mode="json"),
+            "tester": payload.tester.model_dump(mode="json"),
+            "judge": payload.judge.model_dump(mode="json"),
+            "turns": [item.model_dump(mode="json") for item in payload.turns],
+            "executions": [item.model_dump(mode="json") for item in payload.executions],
+            "side_effects": [
+                item.model_dump(mode="json") for item in payload.side_effects
+            ],
+            "latency": payload.latency.model_dump(mode="json"),
+            "defects": [item.model_dump(mode="json") for item in payload.defects],
+        }
+    )
 
 
 def _unique[T](items: tuple[T, ...], field: str, label: str) -> dict[str, T]:
@@ -327,27 +391,70 @@ def _validate_evidence_mode(
     evidence: dict[str, dict[str, Any]],
 ) -> bool:
     objects = [evidence[identity] for identity in row.evidence_refs]
-    if row.outcome != "PASS":
-        return True
+    expected_status = {
+        "PASS": "passed",
+        "FAIL": "failed",
+        "BLOCKED": "blocked",
+        "EXCLUDED_BY_CLIENT": "excluded",
+    }[row.outcome]
     if row.evidence_mode is EvidenceMode.FRESH:
         return all(
-            item.get("status") == "passed"
+            item.get("status") == expected_status
             and isinstance(item.get("freshness_identity"), dict)
             and bool(item["freshness_identity"])
             for item in objects
         )
     if row.evidence_mode is EvidenceMode.REUSED_EXACT:
         return all(
-            item.get("status") == "passed"
+            item.get("status") == expected_status
             and isinstance(item.get("reused_exact_identity"), dict)
             and bool(item["reused_exact_identity"])
             for item in objects
         )
+    expected_resolution = {
+        "PASS": "implemented",
+        "FAIL": "failed",
+        "BLOCKED": "blocked",
+        "EXCLUDED_BY_CLIENT": "excluded_by_client",
+    }[row.outcome]
     return all(
-        item.get("status") == "passed"
-        and item.get("external_gate_resolution") == "implemented"
+        item.get("status") == expected_status
+        and item.get("external_gate_resolution") == expected_resolution
         for item in objects
     )
+
+
+_ATTEMPT_PHASES: tuple[AttemptPhaseName, ...] = (
+    "prepared",
+    "baseline_sealed",
+    "executing",
+    "final_turn_anchored",
+    "final_readback_sealed",
+    "evaluated",
+    "attempt_committed",
+)
+
+
+def _validate_attempt_phase_chain(artifact: CommittedExecutionArtifact) -> None:
+    previous: str | None = None
+    for cursor, (phase, event) in enumerate(
+        zip(_ATTEMPT_PHASES, artifact.phase_chain, strict=True),
+        start=1,
+    ):
+        identity = {
+            "cursor": cursor,
+            "phase": phase,
+            "previous_event_digest": previous,
+        }
+        expected = canonical_digest(identity)
+        if (
+            event.cursor != cursor
+            or event.phase != phase
+            or event.previous_event_digest != previous
+            or event.event_digest != expected
+        ):
+            raise TrustedRunError(f"attempt phase chain drift: {artifact.execution_id}")
+        previous = expected
 
 
 def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> bytes:
@@ -485,6 +592,11 @@ def load_verified_run(
     criteria = _unique(run.criteria, "criterion_id", "criterion result")
     executions = _unique(run.executions, "execution_id", "execution result")
     report_criteria = _unique(report.criteria, "criterion_id", "report criterion")
+    report_executions = _unique(
+        report.executions,
+        "execution_id",
+        "report execution",
+    )
     if (
         len(criteria) != 30
         or set(criteria) != set(expected_criteria)
@@ -502,6 +614,8 @@ def load_verified_run(
         raise TrustedRunError("execution scope must be exact canonical 29")
     if set(report_criteria) != set(expected_criteria):
         raise TrustedRunError("typed report criterion scope drift")
+    if tuple(report_executions) != expected_executions:
+        raise TrustedRunError("typed report execution scope drift")
 
     expected_anchor = {
         "policy_digest": registry.compiled_policy.policy_digest,
@@ -563,14 +677,23 @@ def load_verified_run(
             raise TrustedRunError(f"criterion evidence mode drift: {identity}")
         if not set(criterion_row.evidence_refs) <= set(evidence):
             raise TrustedRunError(f"criterion evidence reference drift: {identity}")
+        exclusion_evidence_is_valid = (
+            plan.allows_client_exclusion
+            and criterion_row.outcome == "EXCLUDED_BY_CLIENT"
+            and all(
+                evidence[ref].get("status") == "excluded"
+                and evidence[ref].get("external_gate_resolution")
+                == "excluded_by_client"
+                for ref in criterion_row.evidence_refs
+            )
+        )
         aggregate = aggregate_criterion_outcome(
             plan,
             criterion_row.obligation_outcomes,
             valid_exclusions=frozenset(
                 key
                 for key, outcome in criterion_row.obligation_outcomes.items()
-                if outcome == "EXCLUDED_BY_CLIENT"
-                and plan.evidence_mode is EvidenceMode.EXTERNAL_GATE
+                if outcome == "EXCLUDED_BY_CLIENT" and exclusion_evidence_is_valid
             ),
         )
         if aggregate != criterion_row.outcome:
@@ -585,9 +708,93 @@ def load_verified_run(
         ):
             raise TrustedRunError(f"typed report criterion binding drift: {identity}")
 
+    authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
     for identity, execution_row in executions.items():
         if not set(execution_row.evidence_refs) <= set(evidence):
             raise TrustedRunError(f"execution evidence reference drift: {identity}")
+        if execution_row.attempt_ref not in evidence:
+            raise TrustedRunError(
+                f"execution committed attempt reference missing: {identity}"
+            )
+        entry = entries[execution_row.attempt_ref]
+        if entry.producer != "protected-attempt-committer":
+            raise TrustedRunError(
+                f"execution attempt producer is not trusted: {identity}"
+            )
+        try:
+            attempt = CommittedExecutionArtifact.model_validate(
+                evidence[execution_row.attempt_ref]
+            )
+        except ValueError as exc:
+            raise TrustedRunError(
+                f"execution committed attempt schema invalid: {identity}: {exc}"
+            ) from exc
+        _validate_attempt_phase_chain(attempt)
+        if (
+            attempt.execution_id != identity
+            or attempt.outcome != execution_row.outcome
+            or attempt.authorization_digest != authorization_digest
+            or attempt.evidence_refs != execution_row.evidence_refs
+            or anchor.attempt_chain_heads[identity] != entry.sha256
+        ):
+            raise TrustedRunError(
+                f"execution committed attempt binding drift: {identity}"
+            )
+        report_execution = report_executions[identity]
+        if (
+            report_execution.outcome != execution_row.outcome
+            or report_execution.attempt_ref != execution_row.attempt_ref
+            or report_execution.evidence_refs != execution_row.evidence_refs
+        ):
+            raise TrustedRunError(f"typed report execution binding drift: {identity}")
+
+    scenario_ids = tuple(registry.compiled_policy.scenarios)
+    turn_execution_ids = tuple(turn.execution_id for turn in report.turns)
+    if (
+        len(report.turns) != len(scenario_ids)
+        or len(set(turn_execution_ids)) != len(scenario_ids)
+        or set(turn_execution_ids) != set(scenario_ids)
+    ):
+        raise TrustedRunError("typed report scenario turn coverage drift")
+    for turn in report.turns:
+        execution_row = executions[turn.execution_id]
+        if (
+            turn.attempt_id != execution_row.attempt_ref
+            or execution_row.attempt_ref not in turn.evidence_refs
+            or not set(turn.evidence_refs) <= set(evidence)
+        ):
+            raise TrustedRunError(
+                f"typed report turn evidence binding drift: {turn.execution_id}"
+            )
+    report_refs = (
+        *report.identity.evidence_refs,
+        *report.tester.evidence_refs,
+        *report.judge.evidence_refs,
+        *report.latency.evidence_refs,
+        *(ref for item in report.side_effects for ref in item.checksum_refs),
+        *(ref for item in report.defects for ref in item.checksum_refs),
+    )
+    if not set(report_refs) <= set(evidence):
+        raise TrustedRunError("typed report evidence reference drift")
+    report_sources = [
+        entry
+        for entry in index.entries
+        if entry.producer == "protected-report-materializer"
+    ]
+    if len(report_sources) != 1:
+        raise TrustedRunError("typed report requires one protected report source")
+    report_source_entry = report_sources[0]
+    try:
+        report_source = ReportSourceArtifact.model_validate(
+            evidence[report_source_entry.evidence_id]
+        )
+    except ValueError as exc:
+        raise TrustedRunError(f"protected report source schema invalid: {exc}") from exc
+    if (
+        report_source_entry.evidence_id not in report_refs
+        or report_source.report_sections_digest != _report_sections_digest(report)
+    ):
+        raise TrustedRunError("typed report protected source binding drift")
     try:
         validate_redacted_payload(report.model_dump(mode="json"))
     except EvidenceError as exc:

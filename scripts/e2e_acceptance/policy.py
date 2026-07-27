@@ -25,6 +25,9 @@ _SCOPE_PATH = Path(".codex/goals/tj-ee5f/scope-criterion-snapshot.json")
 _PROVENANCE_PATH = Path(".codex/goals/tj-ee5f/scope-source-provenance.json")
 _TRACEABILITY_PATH = Path(".codex/stages/tj-ee5f/traceability-manifest.json")
 _SCENARIO_SET_PATH = Path(".codex/stages/tj-ee5f/scenario-set.json")
+_TASK1_AUTHORIZATION_PATH = Path(
+    ".codex/stages/tj-ee5f/authorization-manifest.example.json"
+)
 _POLICY_PATH = Path(".codex/stages/tj-ee5f/execution-policy-v2.json")
 _POLICY_SHA256 = "4c36af96ea2ad304265fe72d1ca75b57b1105f0a03b25148d0d664501ab67b2c"
 
@@ -205,6 +208,7 @@ class CompiledCriterion(_StrictModel):
     failure_condition: str
     scenario_ids: tuple[str, ...]
     evidence_block_ids: tuple[str, ...]
+    allows_client_exclusion: bool
 
 
 class CompiledPolicy(_StrictModel):
@@ -225,11 +229,27 @@ class _EvidenceItem(_StrictModel):
     observed_at: datetime
     passed: bool
     reason: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def build(cls, **values: Any) -> _EvidenceItem:
+        identity = {
+            key: value.isoformat() if isinstance(value, datetime) else value
+            for key, value in values.items()
+        }
+        return cls(**values, artifact_digest=_canonical_digest(identity))
 
     @model_validator(mode="after")
     def _aware_time(self) -> _EvidenceItem:
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
             raise ValueError("oracle evidence timestamp must be timezone-aware")
+        identity = self.model_dump(mode="python", exclude={"artifact_digest"})
+        identity["observed_at"] = self.observed_at.isoformat()
+        if self.artifact_digest != _canonical_digest(identity):
+            raise ValueError("oracle evidence artifact digest mismatch")
         return self
 
 
@@ -656,6 +676,17 @@ def _compile_policy(repo_root: Path) -> CompiledPolicy:
             failure_condition=criterion_spec.failure_condition,
             scenario_ids=criterion_spec.scenario_ids,
             evidence_block_ids=criterion_spec.evidence_block_ids,
+            allows_client_exclusion=bool(
+                canonical_criterion.dependency
+                and canonical_criterion.dependency.resolution_outcomes
+                and any(
+                    resolution.value == "excluded_by_client"
+                    and outcome.value == "EXCLUDED_BY_CLIENT"
+                    for resolution, outcome in (
+                        canonical_criterion.dependency.resolution_outcomes.items()
+                    )
+                )
+            ),
         )
 
     all_assertions = {
@@ -741,6 +772,20 @@ class TrustedAcceptanceRegistry:
         self._trusted_authorizations: dict[str, object] = {}
         self._trusted_readback_digests: set[str] = set()
         self._trusted_classifier_digests: set[str] = set()
+        self._trusted_structured_digests: set[str] = set()
+        task1_paths = (
+            _SCOPE_PATH,
+            _PROVENANCE_PATH,
+            _TRACEABILITY_PATH,
+            _SCENARIO_SET_PATH,
+        )
+        self.task1_input_digests = {
+            path.as_posix(): hashlib.sha256(_safe_json(repo_root, path)[1]).hexdigest()
+            for path in task1_paths
+        }
+        self.task1_authorization_digest = hashlib.sha256(
+            _safe_json(repo_root, _TASK1_AUTHORIZATION_PATH)[1]
+        ).hexdigest()
 
     def classifier_evaluator_digest(self, assertion_id: str) -> str:
         assertion = self._assertions.get(assertion_id)
@@ -805,10 +850,11 @@ class TrustedAcceptanceRegistry:
             )
             if item.assertion_id == assertion_id
             and item.producer in oracle.allowed_producers
+            and item.artifact_digest in self._trusted_structured_digests
         ]
         if not structured_matches:
             raise PolicyValidationError(
-                "required structured oracle evidence is missing"
+                "required trusted structured artifact evidence is missing"
             )
         passed = all(item.passed for item in structured_matches)
         return OracleDecision(
@@ -830,6 +876,13 @@ class TrustedAcceptanceRegistry:
             plan=self.compiled_plan,
             registry_id=self.registry_id,
         )
+        if (
+            validated.task1_authorization_digest != self.task1_authorization_digest
+            or validated.task1_input_digests != self.task1_input_digests
+        ):
+            raise PolicyValidationError(
+                "authorization Task 1 immutable bundle digest drift"
+            )
         digest = authorization_digest(validated)
         if digest not in self._trusted_authorization_digests:
             raise PolicyValidationError(
@@ -850,6 +903,13 @@ class TrustedAcceptanceRegistry:
             plan=self.compiled_plan,
             registry_id=self.registry_id,
         )
+        if (
+            validated.task1_authorization_digest != self.task1_authorization_digest
+            or validated.task1_input_digests != self.task1_input_digests
+        ):
+            raise PolicyValidationError(
+                "authorization Task 1 immutable bundle digest drift"
+            )
         digest = authorization_digest(validated)
         self._trusted_authorization_digests.add(digest)
         self._trusted_authorizations[digest] = validated
@@ -901,6 +961,28 @@ class TrustedAcceptanceRegistry:
                 "classifier run/attempt/preflight registry binding drift"
             )
         self._trusted_classifier_digests.add(result.artifact_digest)
+
+    def _load_structured_artifact(
+        self,
+        result: _EvidenceItem,
+        *,
+        run_id: str,
+        attempt_digest: str,
+        preflight_digest: str,
+    ) -> None:
+        assertion = self._assertions.get(result.assertion_id)
+        if (
+            assertion is None
+            or assertion.oracle.kind == "classifier_result"
+            or result.producer not in assertion.oracle.allowed_producers
+            or result.run_id != run_id
+            or result.attempt_digest != attempt_digest
+            or result.preflight_digest != preflight_digest
+        ):
+            raise PolicyValidationError(
+                "structured artifact protected provenance binding drift"
+            )
+        self._trusted_structured_digests.add(result.artifact_digest)
 
     def _load_local_classifier_fixture(self, result: ClassifierResult) -> None:
         if (
@@ -977,7 +1059,6 @@ class TrustedAcceptanceRegistry:
     def open_run(
         self,
         *,
-        protected_root: Path,
         run_id: str,
     ) -> None:
         if not run_id or any(
@@ -987,6 +1068,14 @@ class TrustedAcceptanceRegistry:
             raise PolicyValidationError("trusted run identity is unsafe")
         tracked_root = (
             self._repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+        )
+        protected_root = (
+            Path.home()
+            / ".local"
+            / "state"
+            / "treejar"
+            / "noor-e2e-acceptance"
+            / "protected-runs"
         )
         self._load_verified_run_roots(
             tracked_root,

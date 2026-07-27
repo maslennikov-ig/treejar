@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_e2e_acceptance_trusted_execution import (
+    _authorization,
+    _registry,
+)
 from tests.test_e2e_acceptance_trusted_report import (
     PROJECT_ROOT,
     _build_verified_run,
     _modules,
-)
-from tests.test_e2e_acceptance_trusted_execution import (
-    _authorization,
-    _registry,
 )
 
 EVIDENCE_BLOCK_IDS = tuple(
@@ -47,7 +47,10 @@ def test_generic_runner_exposes_validation_for_every_evidence_block(
 def test_trusted_run_rejects_execution_rows_without_committed_attempt_artifacts(
     tmp_path: Path,
 ) -> None:
-    registry, tracked, protected = _build_verified_run(tmp_path)
+    registry, tracked, protected = _build_verified_run(
+        tmp_path,
+        without_attempts=True,
+    )
 
     with pytest.raises(Exception, match="attempt|commit|phase"):
         registry._load_verified_run_roots(tracked, protected)
@@ -56,7 +59,10 @@ def test_trusted_run_rejects_execution_rows_without_committed_attempt_artifacts(
 def test_trusted_report_rejects_one_turn_for_twenty_scenario_executions(
     tmp_path: Path,
 ) -> None:
-    registry, tracked, protected = _build_verified_run(tmp_path)
+    registry, tracked, protected = _build_verified_run(
+        tmp_path,
+        incomplete_turns=True,
+    )
 
     with pytest.raises(Exception, match="turn|scenario.*coverage|report.*coverage"):
         registry._load_verified_run_roots(tracked, protected)
@@ -65,9 +71,7 @@ def test_trusted_report_rejects_one_turn_for_twenty_scenario_executions(
 def test_public_open_run_does_not_accept_caller_selected_protected_root() -> None:
     policy, _, _ = _modules()
 
-    parameters = inspect.signature(
-        policy.TrustedAcceptanceRegistry.open_run
-    ).parameters
+    parameters = inspect.signature(policy.TrustedAcceptanceRegistry.open_run).parameters
 
     assert "protected_root" not in parameters
 
@@ -112,7 +116,7 @@ def test_caller_forged_structured_pass_is_not_decisive() -> None:
         for item in registry.compiled_policy.assertions.values()
         if item.oracle.kind == "structured_event"
     )
-    forged = policy.StructuredEvent(
+    forged = policy.StructuredEvent.build(
         assertion_id=assertion.assertion_id,
         producer=assertion.oracle.allowed_producers[0],
         source_id="caller-authored",
@@ -120,6 +124,9 @@ def test_caller_forged_structured_pass_is_not_decisive() -> None:
         observed_at=datetime.now(UTC),
         passed=True,
         reason="Caller says this passed.",
+        run_id="caller-run",
+        attempt_digest="b" * 64,
+        preflight_digest="c" * 64,
     )
     evidence = policy.OracleEvidence(
         assertion_id=assertion.assertion_id,

@@ -23,7 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
     contracts.add_argument("--repo-root", type=Path, required=True)
     verify = subcommands.add_parser("verify-run")
     verify.add_argument("--repo-root", type=Path, required=True)
-    verify.add_argument("--protected-root", type=Path, required=True)
     verify.add_argument("--run-id", required=True)
     verify.add_argument("--report-output", type=Path, required=True)
     return parser
@@ -47,7 +46,6 @@ def main() -> int:
             }
         else:
             registry.open_run(
-                protected_root=args.protected_root.resolve(strict=True),
                 run_id=args.run_id,
             )
             registry.write_report(args.report_output.absolute())
