@@ -226,5 +226,11 @@
       "stream_owner": "python-pro-task-1",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-task-1.md"
     }
-  ]
+  ],
+  "scope_provenance": {
+    "path": ".codex/goals/tj-ee5f/scope-source-provenance.json",
+    "digest": "d62c90f6262aa5f08e1a82f2c08b3f39883caca6c798dab2f1e280bae8fbc349",
+    "anchor_creation_commit": "b77cc34ac7bed163c293761fe9998b4c78b45359",
+    "anchor_blob_digest": "e997f5139dff929e777707817392a59bc72088d354a5e0ca1827bf6b1fe04871"
+  }
 }

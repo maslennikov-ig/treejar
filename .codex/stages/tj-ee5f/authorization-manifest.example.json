@@ -68,5 +68,48 @@
     "any unlisted local or external side effect appears",
     "any subsystem quota would be exceeded",
     "any expected terminal disposition cannot be proven"
-  ]
+  ],
+  "scenario_binding": {
+    "scenario_set_digest": "e1fc6f512877604e8975ad2b8cde781eb82f2a11ab97fd19be80c9c40a081b44",
+    "scenario_set_version": "2026-07-27.2",
+    "deterministic_seed": 20260727,
+    "scenario_ids": [
+      "SC-OPEN-EN",
+      "SC-OPEN-AR",
+      "SC-VOICE-EN",
+      "SC-VOICE-AR",
+      "SC-DISCOVERY",
+      "SC-GROUNDING",
+      "SC-ORDER-STATUS",
+      "SC-QUOTE",
+      "SC-CRM",
+      "SC-ESCALATION",
+      "SC-ESCALATION-AR",
+      "SC-LIFECYCLE",
+      "SC-PARA-NAME",
+      "SC-PARA-GROUNDING",
+      "SC-PARA-QUOTE",
+      "SC-PARA-HANDOFF",
+      "SC-PARA-MEDIA",
+      "SC-LONG-JOURNEY",
+      "SC-CANARY-EN",
+      "SC-CANARY-AR"
+    ],
+    "evidence_block_ids": [
+      "EB-RUNTIME",
+      "EB-ADMIN",
+      "EB-QUALITY",
+      "EB-LOAD",
+      "EB-SECURITY",
+      "EB-BACKUP",
+      "EB-AVAILABILITY",
+      "EB-CATALOG-COVERAGE",
+      "EB-REFERRAL"
+    ],
+    "executable_input_digests": {
+      "REPLACE_TESTER_PROMPT_DIGEST": "0000000000000000000000000000000000000000000000000000000000000000",
+      "REPLACE_JUDGE_PROMPT_DIGEST": "0000000000000000000000000000000000000000000000000000000000000000",
+      "REPLACE_ARABIC_MANAGER_FIXTURE_DIGEST": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
 }

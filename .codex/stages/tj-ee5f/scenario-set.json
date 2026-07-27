@@ -1,7 +1,7 @@
 {
   "schema_version": "noor-e2e-scenario-set/v1",
   "goal_id": "tj-ee5f",
-  "scenario_set_version": "2026-07-27.1",
+  "scenario_set_version": "2026-07-27.2",
   "deterministic_seed": 20260727,
   "scenarios": [
     {
@@ -173,6 +173,23 @@
       "criterion_ids": ["AC-15"],
       "required_permissions": ["application_native_webhook", "outbound_text", "telegram_alert", "telegram_callback", "escalation_resolve"],
       "report_owner": "manager-continuity-owner"
+    },
+    {
+      "scenario_id": "SC-ESCALATION-AR",
+      "kind": "isolated_customer",
+      "language": "ar",
+      "variant_family": null,
+      "persona": "عميل اصطناعي يطلب التحدث مع مدير باللغة العربية",
+      "starting_state": "عميل اصطناعي جديد بلا تصعيد أو بيانات مشتركة",
+      "goal": "إثبات التصعيد مرة واحدة، والرد المحلي، ثم تسليم رد المدير بأمانة",
+      "facts": ["الطلب الصريح للمدير هو محفز تصعيد معتمد", "هوية العميل اصطناعية ومعزولة عن بقية السيناريوهات"],
+      "checkpoints": ["يرد نور بالعربية ويؤكد تحويل الطلب مرة واحدة", "يحفظ سبب التصعيد والسياق دون فقدان اللغة", "يصل إشعار Telegram المحدود مرة واحدة", "يصل رد المدير العربي إلى العميل بأمانة ويُحفظ ثم يُغلق التصعيد"],
+      "prohibited_outcomes": ["رد احتياطي بلغة غير العربية", "إشعار مكرر أو تصعيد قبل الطلب الصريح", "تحريف رد المدير أو عدم تسليمه للعميل"],
+      "stop_conditions": ["تعذر إثبات أن الهوية اصطناعية ومعزولة", "حصة Telegram أو callback غير مصرح بها", "ظهر أي عميل حقيقي أو بيانات عميل حقيقي"],
+      "readbacks": ["exact Arabic customer messages", "escalation reason and status transitions", "Telegram notification and callback audit", "persisted manager reply and customer delivery"],
+      "criterion_ids": ["AC-03", "AC-15"],
+      "required_permissions": ["application_native_webhook", "outbound_text", "telegram_alert", "telegram_callback"],
+      "report_owner": "arabic-manager-continuity-owner"
     },
     {
       "scenario_id": "SC-LIFECYCLE",

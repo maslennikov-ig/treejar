@@ -88,13 +88,18 @@ verification:
   - source digest drift focused RED: failed as expected
   - reciprocal traceability focused RED: failed as expected
   - closed-dependency transition and unresolved approved placeholders focused RED: failed as expected
-  - uv run python -m pytest tests/test_e2e_acceptance_manifests.py -q --tb=short: passed 19
+  - correction RED collected no tests because build_scenario_binding was absent
+  - uv run python -m pytest tests/test_e2e_acceptance_manifests.py -q --tb=short: passed 33
   - focused Ruff and format: passed
   - focused Mypy strict explicit-package-bases: passed
+  - full Ruff and format over src tests and scripts/e2e_acceptance: passed
+  - full Mypy over 162 source files: passed
+  - full Pytest: 1650 passed, 19 skipped, 7 unrelated frontend failures because esbuild is absent in this worktree
   - stage sizing and artifact validators: passed
   - git diff --check: passed
 changed_files:
   - .codex/goals/tj-ee5f/scope-criterion-snapshot.json
+  - .codex/goals/tj-ee5f/scope-source-provenance.json
   - .codex/stages/tj-ee5f/stage-manifest.json
   - .codex/stages/tj-ee5f/traceability-manifest.json
   - .codex/stages/tj-ee5f/scenario-set.json
@@ -113,22 +118,33 @@ explicit_defers:
 
 Implemented the local Task 1 contract boundary: immutable scope identity,
 versioned traceability, reproducible scenario ownership, and an exact
-authorization preflight. Outcome and evidence mode remain independent.
+authorization preflight. The correction pass binds the immutable anchor to the
+exact frozen `tj-ee5f` and `tj-ee5f.1` Beads records, hardcodes the grounding
+gate to exactly AC-07 and AC-30, and adds isolated Arabic manager continuity.
+Outcome and evidence mode remain independent.
 
 # Scope / Routing
 
 The execution boundary is `scripts/e2e_acceptance/manifest.py`: it reads only
 local JSON and Git/Beads provenance, validates Pydantic contracts, compares the
 scope anchor with its first Git blob, verifies actual source content digests,
-and rejects authorization drift before any future live caller may act.
+section locators, path containment and symlink safety, and rejects authorization
+or canonical scenario/executable-input drift before any future live caller may
+act.
 
 # Verification
 
 TDD demonstrated intended failures for the absent package, source provenance
 drift, non-reciprocal traceability ownership, dependency-transition state, and
-unresolved approved placeholders. The final focused suite passes 19 tests.
-Focused Ruff, format, strict Mypy, stage sizing, artifact validation, and
-`git diff --check` pass.
+unresolved approved placeholders. The correction RED then failed collection
+because the new scenario-binding API did not exist. The final focused suite
+passes 33 tests, including recursive placeholder keys/leaves, exclusive expiry,
+stop-condition drift, both grounding transition states, source path escape and
+symlink rejection, exact canonical scenario binding, and Arabic escalation.
+Focused and full Ruff/format, strict focused Mypy, full Mypy over 162 source
+files, stage sizing, artifact validation, and `git diff --check` pass. Full
+Pytest reached 1650 passed and 19 skipped; seven unrelated admin-dashboard
+Node tests could not import the missing local `esbuild` package.
 
 # Delivery / Cleanup
 

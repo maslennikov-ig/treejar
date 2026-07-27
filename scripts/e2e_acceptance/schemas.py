@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -34,6 +34,21 @@ class AuthorizationStatus(StrEnum):
     REVOKED = "revoked"
 
 
+class FreshEvidenceRequirement(StrEnum):
+    BEADS_ISSUE_CLOSED = "beads_issue_closed"
+    DEPLOYED_RELEASE_IDENTITY = "deployed_release_identity"
+    RUNTIME_MODEL_SERVICE_READBACK = "runtime_model_service_readback"
+    PROVIDER_SMOKE_5_OF_5 = "provider_smoke_5_of_5"
+    MANUAL_SEMANTIC_REVIEW_PASS = "manual_semantic_review_pass"
+
+
+class ClientEvidenceRequirement(StrEnum):
+    APPROVED_IMPLEMENTATION_OR_EXCLUSION = (
+        "client-approved implementation evidence or explicit client exclusion"
+    )
+    EXACT_SYNTHETIC_REWARD_AUTHORIZATION = "exact synthetic reward authorization"
+
+
 class CriterionIdentity(StrictModel):
     criterion_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
@@ -49,10 +64,16 @@ class ScopeSnapshot(StrictModel):
     criteria: list[CriterionIdentity] = Field(min_length=1)
 
 
+class SourceSection(StrictModel):
+    start_locator: str = Field(min_length=1)
+    end_locator: str | None
+    content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class SourceReference(StrictModel):
     path: str = Field(min_length=1)
-    section: str = Field(min_length=1)
     content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sections: list[SourceSection] = Field(min_length=1)
 
 
 class PrecedenceDecision(StrictModel):
@@ -70,7 +91,9 @@ class DependencyGate(StrictModel):
     issue_id: str = Field(min_length=1)
     status: str = Field(min_length=1)
     required_outcome: Outcome
-    evidence_required: list[str] = Field(min_length=1)
+    evidence_required: list[FreshEvidenceRequirement | ClientEvidenceRequirement] = (
+        Field(min_length=1)
+    )
 
 
 class TraceabilityCriterion(StrictModel):
@@ -102,6 +125,8 @@ class TraceabilityManifest(StrictModel):
     schema_version: Literal["noor-e2e-traceability/v1"]
     goal_id: Literal["tj-ee5f"]
     scope_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    scope_provenance_path: str = Field(min_length=1)
+    scope_provenance_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     precedence_order: list[str] = Field(min_length=1)
     outcome_values: list[Outcome]
@@ -206,6 +231,27 @@ class AuthorizationQuotas(StrictModel):
         return self
 
 
+class ScenarioExecutionBinding(StrictModel):
+    scenario_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    scenario_set_version: str = Field(min_length=1)
+    deterministic_seed: int = Field(ge=0)
+    scenario_ids: list[str] = Field(min_length=1)
+    evidence_block_ids: list[str] = Field(min_length=1)
+    executable_input_digests: dict[str, str]
+
+    @model_validator(mode="after")
+    def _explicit_executable_inputs(self) -> ScenarioExecutionBinding:
+        if not self.executable_input_digests:
+            raise ValueError("executable input digests must be explicit")
+        if any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in self.executable_input_digests.values()
+        ):
+            raise ValueError("executable input digests must be SHA-256 hex values")
+        return self
+
+
 class AuthorizationManifest(StrictModel):
     schema_version: Literal["noor-e2e-authorization/v1"]
     authorization_id: str = Field(min_length=1)
@@ -224,6 +270,7 @@ class AuthorizationManifest(StrictModel):
     cleanup_method: str = Field(min_length=1)
     readbacks: list[str] = Field(min_length=1)
     stop_conditions: list[str] = Field(min_length=1)
+    scenario_binding: ScenarioExecutionBinding
 
     @model_validator(mode="after")
     def _valid_window(self) -> AuthorizationManifest:
@@ -248,6 +295,26 @@ class PreflightRequest(StrictModel):
     test_data_identities: list[str]
     cleanup_method: str = Field(min_length=1)
     readbacks: list[str]
+    stop_conditions: list[str]
+    scenario_binding: ScenarioExecutionBinding
+
+
+class FrozenBeadsRecord(StrictModel):
+    issue_id: Literal["tj-ee5f", "tj-ee5f.1"]
+    canonical_record: dict[str, Any]
+    canonical_record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ScopeSourceProvenance(StrictModel):
+    schema_version: Literal["scope-source-provenance/v1"]
+    goal_id: Literal["tj-ee5f"]
+    scope_anchor_path: Literal[".codex/goals/tj-ee5f/scope-criterion-snapshot.json"]
+    criteria_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    anchor_creation_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    anchor_blob_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    beads_records: list[FrozenBeadsRecord] = Field(min_length=2, max_length=2)
+    beads_records_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provenance_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class CriterionResult(StrictModel):

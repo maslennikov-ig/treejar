@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -8,8 +9,10 @@ import pytest
 from pydantic import ValidationError
 from scripts.e2e_acceptance.manifest import (
     ManifestValidationError,
+    build_scenario_binding,
     load_authorization_manifest,
     load_scenario_set,
+    load_scope_provenance,
     load_scope_snapshot,
     load_traceability_manifest,
     validate_contract_bundle,
@@ -22,9 +25,14 @@ from scripts.e2e_acceptance.schemas import (
     AuthorizationStatus,
     CriterionResult,
     EvidenceMode,
+    FreshEvidenceRequirement,
     Outcome,
     PreflightObservation,
     PreflightRequest,
+    ScopeSnapshot,
+    ScopeSourceProvenance,
+    SourceReference,
+    SourceSection,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +43,19 @@ SCOPE_PATH = (
 TRACEABILITY_PATH = STAGE_ROOT / "traceability-manifest.json"
 SCENARIO_SET_PATH = STAGE_ROOT / "scenario-set.json"
 AUTHORIZATION_PATH = STAGE_ROOT / "authorization-manifest.example.json"
+PROVENANCE_PATH = (
+    REPO_ROOT / ".codex" / "goals" / "tj-ee5f" / "scope-source-provenance.json"
+)
+
+
+def _scope_and_provenance() -> tuple[ScopeSnapshot, ScopeSourceProvenance]:
+    snapshot = load_scope_snapshot(SCOPE_PATH)
+    provenance = load_scope_provenance(
+        PROVENANCE_PATH,
+        snapshot=snapshot,
+        repo_root=REPO_ROOT,
+    )
+    return snapshot, provenance
 
 
 def test_outcome_and_evidence_mode_are_independent_axes() -> None:
@@ -74,7 +95,7 @@ def test_scope_snapshot_is_pure_and_matches_immutable_creation_blob() -> None:
     assert snapshot.schema_version == "scope-criterion-snapshot/v1"
     assert len(snapshot.criteria) == 30
     assert all(item.text_digest for item in snapshot.criteria)
-    assert validate_scope_anchor_immutable(REPO_ROOT, SCOPE_PATH) is None
+    validate_scope_anchor_immutable(REPO_ROOT, SCOPE_PATH)
 
     raw = json.loads(SCOPE_PATH.read_text(encoding="utf-8"))
     assert set(raw) == {
@@ -103,11 +124,11 @@ def test_scope_snapshot_schema_rejects_mutable_traceability_state(
 
 
 def test_traceability_covers_every_scope_criterion_with_owner_and_oracle() -> None:
-    snapshot = load_scope_snapshot(SCOPE_PATH)
+    snapshot, provenance = _scope_and_provenance()
     traceability = load_traceability_manifest(TRACEABILITY_PATH)
     scenario_set = load_scenario_set(SCENARIO_SET_PATH)
 
-    validate_contract_bundle(snapshot, traceability, scenario_set)
+    validate_contract_bundle(snapshot, provenance, traceability, scenario_set)
 
     assert {item.criterion_id for item in traceability.criteria} == {
         item.criterion_id for item in snapshot.criteria
@@ -117,7 +138,7 @@ def test_traceability_covers_every_scope_criterion_with_owner_and_oracle() -> No
 
 
 def test_traceability_and_scenario_links_must_be_reciprocal() -> None:
-    snapshot = load_scope_snapshot(SCOPE_PATH)
+    snapshot, provenance = _scope_and_provenance()
     traceability = load_traceability_manifest(TRACEABILITY_PATH)
     scenario_set = load_scenario_set(SCENARIO_SET_PATH)
     scenarios = list(scenario_set.scenarios)
@@ -131,7 +152,7 @@ def test_traceability_and_scenario_links_must_be_reciprocal() -> None:
     drifted = scenario_set.model_copy(update={"scenarios": scenarios})
 
     with pytest.raises(ManifestValidationError, match="owner mismatch"):
-        validate_contract_bundle(snapshot, traceability, drifted)
+        validate_contract_bundle(snapshot, provenance, traceability, drifted)
 
 
 def test_traceability_source_digests_match_repository_content() -> None:
@@ -165,7 +186,7 @@ def test_open_grounding_dependency_is_a_non_passing_external_gate() -> None:
 
 
 def test_grounding_dependency_has_a_versioned_closed_freshness_transition() -> None:
-    snapshot = load_scope_snapshot(SCOPE_PATH)
+    snapshot, provenance = _scope_and_provenance()
     traceability = load_traceability_manifest(TRACEABILITY_PATH)
     scenario_set = load_scenario_set(SCENARIO_SET_PATH)
     criteria = []
@@ -191,7 +212,7 @@ def test_grounding_dependency_has_a_versioned_closed_freshness_transition() -> N
         )
     transitioned = traceability.model_copy(update={"criteria": criteria})
 
-    validate_contract_bundle(snapshot, transitioned, scenario_set)
+    validate_contract_bundle(snapshot, provenance, transitioned, scenario_set)
 
 
 def test_scenario_set_has_isolated_languages_variants_journey_and_blocks() -> None:
@@ -260,6 +281,15 @@ def _approved_authorization() -> AuthorizationManifest:
             ),
             "test_data_identities": ["synthetic-identity-set"],
             "cleanup_method": "exact-application-path-reconciliation",
+            "scenario_binding": draft.scenario_binding.model_copy(
+                update={
+                    "executable_input_digests": {
+                        "tester_prompt": "c" * 64,
+                        "judge_prompt": "d" * 64,
+                        "arabic_manager_fixture": "e" * 64,
+                    }
+                }
+            ),
         }
     )
 
@@ -284,6 +314,8 @@ def _approved_preflight() -> tuple[
         test_data_identities=authorization.test_data_identities,
         cleanup_method=authorization.cleanup_method,
         readbacks=authorization.readbacks,
+        stop_conditions=authorization.stop_conditions,
+        scenario_binding=authorization.scenario_binding,
     )
 
     validate_preflight(authorization, observation, request, now=now)
@@ -294,7 +326,7 @@ def test_exact_authorization_preflight_accepts_only_matching_contract() -> None:
     observation, request, now = _approved_preflight()
     authorization = _approved_authorization()
 
-    assert validate_preflight(authorization, observation, request, now=now) is None
+    validate_preflight(authorization, observation, request, now=now)
 
 
 @pytest.mark.parametrize(
@@ -441,6 +473,8 @@ def test_preflight_rejects_approved_manifest_with_unresolved_placeholders() -> N
         test_data_identities=unresolved.test_data_identities,
         cleanup_method=unresolved.cleanup_method,
         readbacks=unresolved.readbacks,
+        stop_conditions=unresolved.stop_conditions,
+        scenario_binding=unresolved.scenario_binding,
     )
 
     with pytest.raises(ManifestValidationError, match="unresolved exact"):
@@ -457,7 +491,7 @@ def test_schema_rejects_outcome_used_as_evidence_mode() -> None:
         CriterionResult(
             criterion_id="AC-01",
             outcome=Outcome.PASS,
-            evidence_mode="PASS",  # type: ignore[arg-type]
+            evidence_mode="PASS",
             evidence_refs=[],
         )
 
@@ -473,3 +507,305 @@ def test_preflight_requires_timezone_aware_current_time() -> None:
             request,
             now=datetime.now(tz=UTC).replace(tzinfo=None),
         )
+
+
+def test_required_grounding_criteria_cannot_remove_dependency_by_manifest_edit() -> (
+    None
+):
+    snapshot, provenance = _scope_and_provenance()
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    scenario_set = load_scenario_set(SCENARIO_SET_PATH)
+    criteria = [
+        (
+            criterion.model_copy(
+                update={
+                    "dependency": None,
+                    "open_known_risks": [],
+                    "evidence_mode": EvidenceMode.FRESH,
+                }
+            )
+            if criterion.criterion_id == "AC-07"
+            else criterion
+        )
+        for criterion in traceability.criteria
+    ]
+    weakened = traceability.model_copy(update={"criteria": criteria})
+
+    with pytest.raises(ManifestValidationError, match="AC-07.*AC-30"):
+        validate_contract_bundle(snapshot, provenance, weakened, scenario_set)
+
+
+def test_grounding_gate_requires_exact_typed_fresh_evidence_set() -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    required = set(FreshEvidenceRequirement)
+
+    for criterion_id in {"AC-07", "AC-30"}:
+        criterion = next(
+            item for item in traceability.criteria if item.criterion_id == criterion_id
+        )
+        assert criterion.dependency is not None
+        assert set(criterion.dependency.evidence_required) == required
+
+
+def test_authorization_binds_exact_canonical_scenario_execution_inputs() -> None:
+    scenario_set = load_scenario_set(SCENARIO_SET_PATH)
+    authorization = load_authorization_manifest(AUTHORIZATION_PATH)
+
+    assert authorization.scenario_binding == build_scenario_binding(
+        scenario_set,
+        SCENARIO_SET_PATH,
+        executable_input_digests=(
+            authorization.scenario_binding.executable_input_digests
+        ),
+    )
+
+
+def test_preflight_rejects_scenario_set_and_executable_input_drift() -> None:
+    observation, request, now = _approved_preflight()
+    authorization = _approved_authorization()
+    changed_binding = request.scenario_binding.model_copy(
+        update={
+            "scenario_set_digest": "f" * 64,
+            "scenario_set_version": "unexpected-version",
+            "deterministic_seed": request.scenario_binding.deterministic_seed + 1,
+            "scenario_ids": request.scenario_binding.scenario_ids[:-1],
+            "evidence_block_ids": request.scenario_binding.evidence_block_ids[:-1],
+            "executable_input_digests": {"tester_prompt": "e" * 64},
+        }
+    )
+    drifted = request.model_copy(update={"scenario_binding": changed_binding})
+
+    with pytest.raises(ManifestValidationError, match="scenario execution drift"):
+        validate_preflight(authorization, observation, drifted, now=now)
+
+
+def test_scope_provenance_binds_anchor_and_exact_goal_records() -> None:
+    snapshot = load_scope_snapshot(SCOPE_PATH)
+    provenance = load_scope_provenance(
+        PROVENANCE_PATH,
+        snapshot=snapshot,
+        repo_root=REPO_ROOT,
+    )
+
+    assert provenance.criteria_digest == snapshot.source_digest
+    assert provenance.anchor_creation_commit == (
+        "b77cc34ac7bed163c293761fe9998b4c78b45359"
+    )
+    assert provenance.anchor_blob_digest == (
+        "e997f5139dff929e777707817392a59bc72088d354a5e0ca1827bf6b1fe04871"
+    )
+    assert {record.issue_id for record in provenance.beads_records} == {
+        "tj-ee5f",
+        "tj-ee5f.1",
+    }
+
+
+@pytest.mark.parametrize(
+    "authorization_update",
+    [
+        {"permissions": ["safe", "REPLACE_PERMISSION"]},
+        {"callback_types": ["REPLACE_CALLBACK"]},
+        {"readbacks": ["REPLACE_READBACK"]},
+        {"stop_conditions": ["REPLACE_STOP_CONDITION"]},
+    ],
+)
+def test_preflight_recursively_rejects_placeholder_string_leaves(
+    authorization_update: dict[str, list[str]],
+) -> None:
+    authorization = _approved_authorization().model_copy(update=authorization_update)
+    observation = PreflightObservation(
+        identity=authorization.expected_identity,
+        targets=authorization.targets,
+        executor=authorization.allowed_executor,
+        source=authorization.allowed_source,
+    )
+    request = PreflightRequest(
+        quotas=authorization.quotas,
+        permissions=authorization.permissions,
+        callback_types=authorization.callback_types,
+        test_data_identities=authorization.test_data_identities,
+        cleanup_method=authorization.cleanup_method,
+        readbacks=authorization.readbacks,
+        stop_conditions=authorization.stop_conditions,
+        scenario_binding=authorization.scenario_binding,
+    )
+
+    with pytest.raises(ManifestValidationError, match="unresolved exact"):
+        validate_preflight(
+            authorization,
+            observation,
+            request,
+            now=authorization.issued_at,
+        )
+
+
+def test_preflight_recursively_rejects_placeholder_quota_key() -> None:
+    base = _approved_authorization()
+    authorization = base.model_copy(
+        update={
+            "quotas": base.quotas.model_copy(
+                update={
+                    "subsystem_quotas": {
+                        **base.quotas.subsystem_quotas,
+                        "REPLACE_QUOTA": 0,
+                    }
+                }
+            )
+        }
+    )
+    observation = PreflightObservation(
+        identity=authorization.expected_identity,
+        targets=authorization.targets,
+        executor=authorization.allowed_executor,
+        source=authorization.allowed_source,
+    )
+    request = PreflightRequest(
+        quotas=authorization.quotas,
+        permissions=authorization.permissions,
+        callback_types=authorization.callback_types,
+        test_data_identities=authorization.test_data_identities,
+        cleanup_method=authorization.cleanup_method,
+        readbacks=authorization.readbacks,
+        stop_conditions=authorization.stop_conditions,
+        scenario_binding=authorization.scenario_binding,
+    )
+
+    with pytest.raises(ManifestValidationError, match="unresolved exact"):
+        validate_preflight(
+            authorization,
+            observation,
+            request,
+            now=authorization.issued_at,
+        )
+
+
+def test_preflight_binds_stop_conditions_and_expiry_is_exclusive() -> None:
+    observation, request, _ = _approved_preflight()
+    authorization = _approved_authorization()
+    drifted = request.model_copy(update={"stop_conditions": ["different-stop"]})
+
+    with pytest.raises(ManifestValidationError, match="stop-condition drift"):
+        validate_preflight(
+            authorization,
+            observation,
+            drifted,
+            now=authorization.issued_at,
+        )
+    with pytest.raises(ManifestValidationError, match="expired"):
+        validate_preflight(
+            authorization,
+            observation,
+            request,
+            now=authorization.expires_at,
+        )
+
+
+def test_isolated_arabic_manager_scenario_is_bidirectionally_traced() -> None:
+    snapshot, provenance = _scope_and_provenance()
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    scenario_set = load_scenario_set(SCENARIO_SET_PATH)
+    scenario = next(
+        item
+        for item in scenario_set.scenarios
+        if item.scenario_id == "SC-ESCALATION-AR"
+    )
+
+    assert scenario.kind == "isolated_customer"
+    assert scenario.language == "ar"
+    assert {"AC-03", "AC-15"} <= set(scenario.criterion_ids)
+    validate_contract_bundle(snapshot, provenance, traceability, scenario_set)
+
+    criteria = [
+        (
+            criterion.model_copy(
+                update={
+                    "scenario_ids": [
+                        item
+                        for item in criterion.scenario_ids
+                        if item != "SC-ESCALATION-AR"
+                    ]
+                }
+            )
+            if criterion.criterion_id == "AC-15"
+            else criterion
+        )
+        for criterion in traceability.criteria
+    ]
+    one_way = traceability.model_copy(update={"criteria": criteria})
+    with pytest.raises(ManifestValidationError, match="bidirectional mapping drift"):
+        validate_contract_bundle(snapshot, provenance, one_way, scenario_set)
+
+    duplicated = traceability.model_copy(
+        update={
+            "criteria": [
+                (
+                    criterion.model_copy(
+                        update={
+                            "scenario_ids": [
+                                *criterion.scenario_ids,
+                                "SC-ESCALATION-AR",
+                            ]
+                        }
+                    )
+                    if criterion.criterion_id == "AC-15"
+                    else criterion
+                )
+                for criterion in traceability.criteria
+            ]
+        }
+    )
+    with pytest.raises(ManifestValidationError, match="bidirectional mapping drift"):
+        validate_contract_bundle(snapshot, provenance, duplicated, scenario_set)
+
+
+def test_source_section_locators_and_digests_are_real() -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+
+    validate_source_digests(traceability, REPO_ROOT)
+
+    registry = dict(traceability.source_registry)
+    project_tz = registry["project-tz"]
+    sections = list(project_tz.sections)
+    sections[0] = sections[0].model_copy(update={"start_locator": "## missing heading"})
+    registry["project-tz"] = project_tz.model_copy(update={"sections": sections})
+    missing = traceability.model_copy(update={"source_registry": registry})
+    with pytest.raises(ManifestValidationError, match="section locator"):
+        validate_source_digests(missing, REPO_ROOT)
+
+
+def test_source_path_rejects_escape_and_symlink_component(tmp_path: Path) -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    source = next(iter(traceability.source_registry.values()))
+    escaped = traceability.model_copy(
+        update={
+            "source_registry": {
+                "escaped": source.model_copy(update={"path": "../outside.md"})
+            }
+        }
+    )
+    with pytest.raises(ManifestValidationError, match="unsafe source path"):
+        validate_source_digests(escaped, REPO_ROOT)
+
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    content = "# Stable\nbody\n"
+    real_file = real_dir / "source.md"
+    real_file.write_text(content, encoding="utf-8")
+    linked_dir = tmp_path / "linked"
+    linked_dir.symlink_to(real_dir, target_is_directory=True)
+    linked_source = SourceReference(
+        path="linked/source.md",
+        content_digest=hashlib.sha256(content.encode()).hexdigest(),
+        sections=[
+            SourceSection(
+                start_locator="# Stable",
+                end_locator=None,
+                content_digest=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        ],
+    )
+    linked = traceability.model_copy(
+        update={"source_registry": {"linked": linked_source}}
+    )
+    with pytest.raises(ManifestValidationError, match="symlink"):
+        validate_source_digests(linked, tmp_path)
