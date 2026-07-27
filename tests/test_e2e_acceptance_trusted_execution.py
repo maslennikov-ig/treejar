@@ -238,10 +238,184 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
 
 def test_fake_adapter_refuses_unreserved_call() -> None:
     _, execution = _modules()
-    adapter = execution.FakeLocalAdapter("fake-local-adapter")
+    registry = _registry()
+    authorization = _authorization(registry)
+    adapter = execution.FakeLocalAdapter(
+        adapter_id="fake-local-adapter",
+        journal=None,
+    )
 
     with pytest.raises(Exception, match="reservation"):
         adapter.execute(None)
+
+
+def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:
+    policy, _ = _modules()
+    registry = _registry()
+    classified = [
+        assertion
+        for assertion in registry.compiled_policy.assertions.values()
+        if assertion.oracle.kind == "classifier_result"
+        and assertion.oracle.classifier_id == "scenario_policy.v2"
+    ]
+    first, second = classified[:2]
+    evidence = policy.OracleEvidence(
+        assertion_id=second.assertion_id,
+        structured_events=(),
+        tool_results=(),
+        readbacks=(),
+        classifier_results=(
+            policy.ClassifierResult(
+                assertion_id=first.assertion_id,
+                policy_digest=registry.compiled_policy.policy_digest,
+                evaluator_digest=registry.classifier_evaluator_digest(
+                    first.assertion_id
+                ),
+                classifier_id="scenario_policy.v2",
+                producer="production-policy-classifier",
+                source_id="synthetic-classifier-event",
+                source_digest="a" * 64,
+                observed_at=datetime.now(UTC),
+                passed=True,
+                reason="Structured classifier passed.",
+            ),
+        ),
+        text_supplements=(),
+    )
+
+    with pytest.raises(Exception, match="assertion.*binding"):
+        registry.evaluate_oracle(second.assertion_id, evidence)
+
+
+def test_fake_adapter_rejects_publicly_forged_reservation(tmp_path: Path) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    authorization = _authorization(registry)
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+        authorization=authorization,
+    )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-baseline",
+        observed_at=datetime.now(UTC) - timedelta(minutes=1),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+    forged = execution.ActionReservation(
+        action_id="forged",
+        adapter_id="fake-local-adapter",
+        subsystem="outbound_text",
+        messages=0,
+        model_calls=0,
+        cost_usd=0,
+        reservation_digest="f" * 64,
+    )
+    adapter = execution.FakeLocalAdapter(
+        adapter_id="fake-local-adapter",
+        journal=journal,
+    )
+
+    with pytest.raises(Exception, match="protected.*reservation|forged"):
+        adapter.execute(forged)
+
+
+def test_negative_quota_inputs_and_max_scenarios_are_enforced(
+    tmp_path: Path,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    authorization = _authorization(
+        registry,
+        quotas=execution.ProtectedQuotas(
+            max_scenarios=1,
+            max_messages=2,
+            max_model_calls=2,
+            max_cost_usd=1,
+            subsystem_quotas={"outbound_text": 2},
+        ),
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+        authorization=authorization,
+    )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-baseline",
+        observed_at=datetime.now(UTC) - timedelta(minutes=1),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+
+    with pytest.raises(Exception, match="non-negative|greater than or equal"):
+        journal.reserve_action(
+            action_id="negative",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            messages=-1,
+            model_calls=-1,
+            cost_usd=-1,
+        )
+    journal.begin_attempt(
+        execution_id=registry.compiled_plan.execution_ids[0],
+        attempt_number=1,
+        intent_digest="a" * 64,
+    )
+    with pytest.raises(Exception, match="scenario.*quota"):
+        journal.begin_attempt(
+            execution_id=registry.compiled_plan.execution_ids[1],
+            attempt_number=1,
+            intent_digest="b" * 64,
+        )
+
+
+def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    authorization = _authorization(registry)
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+        authorization=authorization,
+    )
+    execution_id = registry.compiled_plan.execution_ids[0]
+    transaction = journal.begin_attempt(
+        execution_id=execution_id,
+        attempt_number=1,
+        intent_digest="a" * 64,
+    )
+    transaction.write_raw(
+        {
+            "schema_version": "noor-e2e-attempt-result/v2",
+            "execution_id": execution_id,
+            "outcome": "FAIL",
+            "semantic_digest": "c" * 64,
+        }
+    )
+    transaction.write_tracked(
+        {
+            "schema_version": "noor-e2e-attempt-result/v2",
+            "execution_id": execution_id,
+            "outcome": "PASS",
+            "semantic_digest": "c" * 64,
+        }
+    )
+
+    with pytest.raises(Exception, match="raw.*tracked|semantic"):
+        transaction.commit()
+
+    with pytest.raises(Exception, match="canonical execution"):
+        journal.begin_attempt(
+            execution_id="SC-NOT-CANONICAL",
+            attempt_number=1,
+            intent_digest="d" * 64,
+        )
 
 
 def test_interrupted_two_phase_attempt_recovers_as_aborted(tmp_path: Path) -> None:
