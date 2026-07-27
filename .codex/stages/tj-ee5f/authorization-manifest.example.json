@@ -1,0 +1,72 @@
+{
+  "schema_version": "noor-e2e-authorization/v1",
+  "authorization_id": "DRAFT-REPLACE-BEFORE-EXECUTION",
+  "status": "draft",
+  "issuer": "REPLACE_WITH_CURRENT_AUTHORIZER",
+  "issued_at": "2026-07-27T00:00:00Z",
+  "expires_at": "2026-07-27T00:01:00Z",
+  "allowed_executor": "REPLACE_WITH_EXACT_EXECUTOR",
+  "allowed_source": "REPLACE_WITH_EXACT_SOURCE",
+  "expected_identity": {
+    "repository_commit": "REPLACE_AFTER_TJ_R1F3",
+    "deployed_release_sha": "REPLACE_AFTER_TJ_R1F3",
+    "ci_run_id": "REPLACE_AFTER_TJ_R1F3",
+    "endpoint": "https://noor.starec.ai",
+    "app_version": "REPLACE_AFTER_TJ_R1F3",
+    "migration_head": "REPLACE_AFTER_TJ_R1F3",
+    "main_model": "REPLACE_AFTER_TJ_R1F3",
+    "fast_model": "REPLACE_AFTER_TJ_R1F3"
+  },
+  "targets": {
+    "recipient": "REPLACE_WITH_EXACT_SYNTHETIC_RECIPIENT",
+    "wazzup_channel": "REPLACE_WITH_EXACT_CHANNEL",
+    "telegram_target": "REPLACE_WITH_EXACT_SYNTHETIC_TARGET",
+    "synthetic_suffix": "REPLACE_WITH_EXACT_RUN_SUFFIX"
+  },
+  "quotas": {
+    "max_scenarios": 0,
+    "max_messages": 0,
+    "max_model_calls": 0,
+    "max_cost_usd": 0,
+    "subsystem_quotas": {
+      "application_native_webhook": 0,
+      "provider_originated_canary": 0,
+      "outbound_text": 0,
+      "outbound_media": 0,
+      "voice_fixture": 0,
+      "quotation_create": 0,
+      "sale_order_create": 0,
+      "crm_contact_create": 0,
+      "crm_deal_create": 0,
+      "crm_stage_transition": 0,
+      "telegram_alert": 0,
+      "telegram_callback": 0,
+      "followup_synthetic": 0,
+      "feedback_synthetic": 0,
+      "referral_synthetic": 0,
+      "load_conversations": 0
+    }
+  },
+  "permissions": [],
+  "callback_types": [],
+  "test_data_identities": [
+    "REPLACE_WITH_EXACT_SYNTHETIC_IDENTITY_SET"
+  ],
+  "cleanup_method": "NO_LIVE_ACTION_UNTIL_REPLACED_WITH_EXACT_APPLICATION_PATH",
+  "readbacks": [
+    "local_contracts_only"
+  ],
+  "stop_conditions": [
+    "status is not approved",
+    "authorization is expired or not yet valid",
+    "tj-r1f3 is not closed with a freshly deployed passing release and provider smoke",
+    "target release has an unresolved in-scope P0 or P1",
+    "repository commit, deployed release, CI run, endpoint, app version, migration head, or model route differs",
+    "executor, source, recipient, Wazzup channel, Telegram target, or synthetic suffix differs",
+    "requested quota, permission, callback, test-data identity, cleanup method, or readback differs",
+    "any real customer or real customer data appears",
+    "any unlisted local or external side effect appears",
+    "any subsystem quota would be exceeded",
+    "any expected terminal disposition cannot be proven"
+  ]
+}

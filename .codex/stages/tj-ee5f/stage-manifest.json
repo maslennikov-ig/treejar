@@ -220,6 +220,11 @@
       "task_id": "tj-ee5f-design-review",
       "stream_owner": "improvement_reviewer",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-design-review.md"
+    },
+    {
+      "task_id": "tj-ee5f-task-1",
+      "stream_owner": "python-pro-task-1",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-task-1.md"
     }
   ]
 }

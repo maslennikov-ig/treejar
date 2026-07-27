@@ -1,0 +1,1667 @@
+{
+  "schema_version": "noor-e2e-traceability/v1",
+  "goal_id": "tj-ee5f",
+  "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
+  "source_set_digest": "15f0f6867c44ac8b5e3f72428b13b49dd94243b1abac91ebe9e84fad6a422351",
+  "precedence_order": [
+    "current repository and runtime contracts",
+    "original and updated requirements",
+    "sales and evaluation rules",
+    "catalog and evidence policy",
+    "closed Beads defects and accepted stage evidence",
+    "later accepted decisions that intentionally supersede older requirements"
+  ],
+  "outcome_values": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "EXCLUDED_BY_CLIENT"
+  ],
+  "evidence_mode_values": [
+    "fresh",
+    "reused_exact",
+    "external_gate"
+  ],
+  "source_registry": {
+    "repo-contract": {
+      "path": "AGENTS.md",
+      "section": "Repository Shape; Canonical Verification; Safety Boundaries",
+      "content_digest": "59a83a9021917a6873f5e0b31457d12839a22abbacfea644860df94df8ec1cd4"
+    },
+    "orchestration-contract": {
+      "path": ".codex/orchestrator.toml",
+      "section": "verification; stage_sizing; verification_policy",
+      "content_digest": "22c5c583933ac85f5bdab1f78ef14b10949a751824f87cc1b8b5e71317793b52"
+    },
+    "runtime-truth": {
+      "path": ".codex/handoff.md",
+      "section": "Current Truth; Grounding blocker; Approval gates",
+      "content_digest": "af83e61fa126129548cd4ac3c4431e9c0571e6867b6f0a7982e81e3606a3109e"
+    },
+    "project-index": {
+      "path": ".codex/project-index.md",
+      "section": "Runtime Shape; Integrations And Sources Of Truth",
+      "content_digest": "0851f013691be015d95b23054adaa94e31fa6dad964c0b4ba44801e54068aa80"
+    },
+    "tz-basic": {
+      "path": "docs/01-tz-basic.md",
+      "section": "2.1 Основные функции; 3 Данные и интеграции",
+      "content_digest": "ac1052718f00b1ed448dbdca3d4d46d7e140bc3bfec823b00518b7edff755ce9"
+    },
+    "tz-extended": {
+      "path": "docs/02-tz-extended.md",
+      "section": "2.1 Основные функции; 3 Данные и интеграции",
+      "content_digest": "9562296012a25ec5a7d27cf5fb376ae713708c12809167d01b4b6bdbb705cda5"
+    },
+    "agent-requirements": {
+      "path": "docs/03-ai-agent-requirements.md",
+      "section": "2 Функциональные требования к ИИ-агенту",
+      "content_digest": "037ac3d71bf8253455e9fce2dc679e944f6ca5bc9d381158ae7d0688e41f3b77"
+    },
+    "dialogue-rules": {
+      "path": "docs/04-sales-dialogue-guidelines.md",
+      "section": "Treejar Sales Dialogue Guidelines; follow-up and quotation additions",
+      "content_digest": "5783a218145d5eae66480671ac8ac650bc1d4db412ba963f5527d8f95efe36b4"
+    },
+    "company-values": {
+      "path": "docs/05-company-values.md",
+      "section": "Ценности Treejar; Treejar Values",
+      "content_digest": "1042689b4a45b36ab40b2b67e92e0112568290dd2b71ac2219dae11c08093023"
+    },
+    "bot-quality": {
+      "path": "docs/06-dialogue-evaluation-checklist.md",
+      "section": "Методика оценки; Dialogue Evaluation Checklist",
+      "content_digest": "d23160fb9f87762fd022c095879d5664cd5e5f6abcc6901e9b70ee3df3d68ff0"
+    },
+    "knowledge-base": {
+      "path": "docs/07-knowledge-base-spec.md",
+      "section": "2 Sources; 4 Merge policy; 4.1 Noor behavior; 13 Acceptance criteria",
+      "content_digest": "bcf66f8e7332a17f90ece999af534692d9fdd39ea7afe813fd955f6db4a74c76"
+    },
+    "manager-quality": {
+      "path": "docs/08-manager-evaluation-criteria.md",
+      "section": "Qualitative assessment; quantitative metrics",
+      "content_digest": "d2f88fdeb172368a6da83f395a8659b9a199babc20c6492dd7f561861aa01876"
+    },
+    "project-tz": {
+      "path": "docs/tz.md",
+      "section": "2 Functional requirements; 3 Nonfunctional requirements; 7 Acceptance",
+      "content_digest": "b813a86716068592642628ede07fb84eb59c4c749af95f52ad9e719a5ac9007f"
+    },
+    "accepted-design": {
+      "path": "docs/superpowers/specs/2026-07-27-noor-agent-driven-e2e-acceptance-design.md",
+      "section": "2 Sources and precedence; 4 Coverage; 8 Scoring; 9 Authorization",
+      "content_digest": "9eb20fadeef42a19b8c16d46b878af13fa62dc7a79e23a115183367e047491b8"
+    },
+    "grounding-policy": {
+      "path": "src/llm/communication_policy.py",
+      "section": "COMMERCIAL_CAPABILITIES; EVIDENCE_GROUNDING_POLICY",
+      "content_digest": "3e3387b9621c9cf2daafd2adce4b3c5c4318b8c722159da40864034d700427e4"
+    },
+    "grounding-blocker": {
+      "path": ".codex/stages/tj-r1f3/results/postdeploy-verification.md",
+      "section": "Bounded provider evidence; Blocker and next boundary",
+      "content_digest": "94a43f183e7aa150e322a99bb6fbe7bd338bfd5facbb70b84069d9821aec5466"
+    },
+    "beads-regressions": {
+      "path": ".beads/issues.jsonl",
+      "section": "Named closed regressions and open tj-r1f3/tj-final27.6 records",
+      "content_digest": "83b255b6e035d913c820dcf5527fc59dc2e5da3758ee0918a28b5ccad28b52da"
+    }
+  },
+  "criteria": [
+    {
+      "criterion_id": "AC-01",
+      "criterion_text_digest": "f893c1da547c0e52dd3aba2c237e606721768082bd4330f23feabac099fbbb4f",
+      "sources": [
+        "repo-contract",
+        "runtime-truth",
+        "project-index",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_runtime_contract",
+        "rationale": "The canonical runtime is Noor at https://noor.starec.ai; application-native webhook evidence and provider-originated ingress are distinct evidence tiers.",
+        "supersedes": [
+          "Any claim that direct webhook injection alone proves provider-to-provider WhatsApp ingress"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Exact runtime identity readback",
+          "One inbound persisted and one outbound audited",
+          "Separate EN/AR provider correlation or explicit non-pass"
+        ],
+        "failure_condition": "Any identity mismatch, duplicate/orphaned processing, or unproven provider ingress claimed as PASS"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "repository_commit",
+        "release",
+        "CI run",
+        "endpoint",
+        "app version",
+        "migration",
+        "models",
+        "channel"
+      ],
+      "owner": "transport-owner",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-OPEN-AR",
+        "SC-CANARY-EN",
+        "SC-CANARY-AR"
+      ],
+      "evidence_block_ids": [
+        "EB-RUNTIME"
+      ],
+      "accepted_regressions": [
+        "tj-zj9",
+        "tj-2i3",
+        "tj-av22.11",
+        "tj-15m.5.1",
+        "tj-15m.6",
+        "tj-e2e26"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "runtime-owner"
+    },
+    {
+      "criterion_id": "AC-02",
+      "criterion_text_digest": "521543bc66ef3f05c68d028135d4c2211e69abc7ee76e3b7bed6bda10dd80db4",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_crm_mapping",
+        "rationale": "New and returning behavior follows the current CRM identity and bounded-context implementation.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "New identity creates only expected synthetic records",
+          "Returning identity receives relevant bounded context",
+          "No new-customer opener for returning fixture"
+        ],
+        "failure_condition": "Wrong customer status, missing expected synthetic record, duplicate record, or leaked/unbounded context"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "CRM mapping",
+        "synthetic identifier",
+        "CRM fixture"
+      ],
+      "owner": "crm-owner",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-OPEN-AR",
+        "SC-CRM",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-p9ui",
+        "tj-memory",
+        "tj-final27.2",
+        "tj-qs72",
+        "tj-mamw"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "crm-owner"
+    },
+    {
+      "criterion_id": "AC-03",
+      "criterion_text_digest": "6892739af3cced0929e94ebf65f2621ced09d2e411f397871e68253b7fa138d9",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "dialogue-rules",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "noor_identity_supersedes_siyyad",
+        "rationale": "The current customer-facing identity is Noor; the old Siyyad wording is retained only as historical provenance.",
+        "supersedes": [
+          "docs/04-sales-dialogue-guidelines.md rule 1 Siyyad wording",
+          "tj-final27.14 historical Siyyad acceptance wording"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "First EN and AR reply language and identity",
+          "Unknown-name gate has no product/quote side effect",
+          "Bare/labeled name accepted",
+          "Prior request resumes",
+          "Locale remains stable"
+        ],
+        "failure_condition": "Wrong identity or locale, repeated name question, lost prior request, or name-gate side effect"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "prompt digest",
+        "dialogue kernel",
+        "locale policy",
+        "scenario seed"
+      ],
+      "owner": "customer-flow-owner",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-OPEN-AR",
+        "SC-PARA-NAME",
+        "SC-LONG-JOURNEY",
+        "SC-CANARY-EN",
+        "SC-CANARY-AR"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-gh12.1",
+        "tj-gh12.16",
+        "tj-gh12.18",
+        "tj-gh14.3",
+        "tj-gh14-delivery.4",
+        "tj-gh15.1",
+        "tj-gh49.1",
+        "tj-final27.14",
+        "tj-15m.9"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "customer-flow-owner"
+    },
+    {
+      "criterion_id": "AC-04",
+      "criterion_text_digest": "093c4fffb1ea50322e911a3226cb770ff8984247845b1c3d603ce310c32c2bf2",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_voice_audit_contract",
+        "rationale": "Voice acceptance requires persisted transcript, locale response, and audit correlation, not merely provider receipt.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Prepared EN/AR voice fixture accepted",
+          "Transcript and response language exact",
+          "Media/transcript/response audit correlation"
+        ],
+        "failure_condition": "Skipped voice batch, missing transcript/audit, or wrong-language answer"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "transcription model",
+        "voice fixture digest",
+        "locale policy"
+      ],
+      "owner": "media-voice-owner",
+      "scenario_ids": [
+        "SC-VOICE-EN",
+        "SC-VOICE-AR"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-a5n"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "media-voice-owner"
+    },
+    {
+      "criterion_id": "AC-05",
+      "criterion_text_digest": "1fd94ff94bc1c679f071f43757c55b63358996b9a178d5df357529b3a1752e33",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "knowledge-base",
+        "project-index",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "treejar_catalog_is_customer_truth",
+        "rationale": "Treejar Catalog API owns customer-facing catalog fields; Zoho Inventory is operational confirmation and quotation/SaleOrder state.",
+        "supersedes": [
+          "Older bazara/site/Google Sheet catalog wording",
+          "Zoho Inventory as primary customer-facing catalog"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Named options match catalog identity, description, category, image, and price",
+          "Delivery statements use applicable verified policy",
+          "Zoho rate never replaces catalog price"
+        ],
+        "failure_condition": "Any customer catalog fact differs from the bound catalog snapshot or uses a superseded primary source"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "catalog snapshot",
+        "catalog connector",
+        "operational Inventory snapshot"
+      ],
+      "owner": "catalog-sales-owner",
+      "scenario_ids": [
+        "SC-DISCOVERY",
+        "SC-GROUNDING",
+        "SC-PARA-MEDIA",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-final27.10",
+        "tj-prl26.5",
+        "tj-4gtc"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "catalog-sales-owner"
+    },
+    {
+      "criterion_id": "AC-06",
+      "criterion_text_digest": "e53c617b70442180f77bcffff20a1593c5237aaa775e4800d888baa745896a81",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "dialogue-rules",
+        "company-values",
+        "accepted-design",
+        "grounding-policy",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "dialogue_rules_subject_to_evidence_policy",
+        "rationale": "Consultative selling and values apply only where evidence and capability policy authorize the claim.",
+        "supersedes": [
+          "Unconditional discount, payment, warranty, delivery, stock, or sample wording in older values"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Useful catalog-backed answer",
+          "At most one bounded useful clarification after value",
+          "Objection and alternatives are safe",
+          "Cross-sell follows core need"
+        ],
+        "failure_condition": "Unhelpful interrogation, invented benefit/discount, false match, fake SKU, or premature handoff"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "dialogue rules digest",
+        "values digest",
+        "prompt digest",
+        "scenario seed"
+      ],
+      "owner": "catalog-sales-owner",
+      "scenario_ids": [
+        "SC-OPEN-EN",
+        "SC-DISCOVERY",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-7z2n",
+        "tj-v4rl",
+        "tj-pgms",
+        "tj-gh47",
+        "tj-gh48.8",
+        "tj-6r78",
+        "tj-lgmg",
+        "tj-tauh",
+        "tj-15m.3",
+        "tj-15m.5.2",
+        "tj-final27.17"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "catalog-sales-owner"
+    },
+    {
+      "criterion_id": "AC-07",
+      "criterion_text_digest": "f5915830996e571d5a6aa4e44cf8f692cb41961467e22cee9dc92d3e8a81a30f",
+      "sources": [
+        "knowledge-base",
+        "grounding-policy",
+        "accepted-design",
+        "grounding-blocker",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "verified_capability_gate",
+        "rationale": "Exact commercial claims use catalog, operational tool, approved conditional capability, or manager gate; missing evidence stays unconfirmed.",
+        "supersedes": [
+          "Plausible industry practice as evidence",
+          "Promise to check later when an in-turn tool is required"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Exact tool/FAQ/manager evidence correlates to each claim",
+          "Unknown remains unconfirmed",
+          "No future-check promise",
+          "No unsupported health/showroom/sample claim"
+        ],
+        "failure_condition": "Any unsupported commercial fact, future-check promise, specific-product trial promise, or policy override"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "main model",
+        "prompt tail",
+        "output enforcement",
+        "tool result",
+        "evaluator digest"
+      ],
+      "owner": "commercial-safety-owner",
+      "scenario_ids": [
+        "SC-GROUNDING",
+        "SC-PARA-GROUNDING"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-final27.10",
+        "tj-prl26.5",
+        "tj-5cb2",
+        "tj-4gtc",
+        "tj-hwls.1",
+        "tj-j13d"
+      ],
+      "open_known_risks": [
+        "tj-r1f3"
+      ],
+      "dependency": {
+        "issue_id": "tj-r1f3",
+        "status": "in_progress",
+        "required_outcome": "PASS",
+        "evidence_required": [
+          "closed Beads status",
+          "fresh deployed release",
+          "exact release and model readback",
+          "fresh passing five-call provider smoke",
+          "manual semantic review"
+        ]
+      },
+      "report_owner": "commercial-safety-owner"
+    },
+    {
+      "criterion_id": "AC-08",
+      "criterion_text_digest": "c8bb18dc412c8cbb3e356a6102af367866ccc5f6258d56dbaa1c05d4f9ada13e",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "accepted-design"
+      ],
+      "precedence": {
+        "disposition": "operational_tool_required",
+        "rationale": "Order confirmation, delivery, and payment state come from the current operational status path.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Authorized order fixture queried",
+          "Returned confirmation, delivery, and payment state matches readback",
+          "No write occurs"
+        ],
+        "failure_condition": "Guessed, stale, mismatched, or unverified order status"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "order fixture",
+        "status tool",
+        "operational source"
+      ],
+      "owner": "order-lifecycle-owner",
+      "scenario_ids": [
+        "SC-ORDER-STATUS"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-order-state",
+        "tj-order-cutover"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "order-lifecycle-owner"
+    },
+    {
+      "criterion_id": "AC-09",
+      "criterion_text_digest": "bc897567080877f872e52915f759328c86deeccf731d0c23cf2f1f3b952c9057",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "dialogue-rules",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "approved_lifecycle_policy_only",
+        "rationale": "FU1/FU2/FU3 and feedback follow delivered policy; payment reminders and unresolved templates remain disabled/non-pass until separately approved.",
+        "supersedes": [
+          "Unconditional reminder and dozhim wording in original requirements"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Decision bound to current quotation prompt",
+          "FU3 grace preserved",
+          "Explicit rejection terminal",
+          "Arabic remains Arabic",
+          "Feedback deduplicated",
+          "Unapproved reminders absent"
+        ],
+        "failure_condition": "Stale decision, wrong locale, immediate FU3 rejection, duplicate feedback, or unauthorized lifecycle send"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "quotation fixture",
+        "template IDs",
+        "service window",
+        "scheduler policy"
+      ],
+      "owner": "lifecycle-owner",
+      "scenario_ids": [
+        "SC-LIFECYCLE"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-gh21.1",
+        "tj-gh21.2",
+        "tj-gh21.3",
+        "tj-gh21.4",
+        "tj-gh21.5",
+        "tj-gh22",
+        "tj-xu1",
+        "tj-final27.3",
+        "tj-final27.5",
+        "tj-lzt"
+      ],
+      "open_known_risks": [
+        "client-owned payment-reminder template and timing approval"
+      ],
+      "dependency": null,
+      "report_owner": "lifecycle-owner"
+    },
+    {
+      "criterion_id": "AC-10",
+      "criterion_text_digest": "6b242ef584e0e7b6f6cdef8c451be77c5f9e9766212d249a784ad8f59eae2aa1",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "knowledge-base",
+        "project-tz",
+        "accepted-design"
+      ],
+      "precedence": {
+        "disposition": "catalog_price_plus_approved_adjustments",
+        "rationale": "Catalog price is customer-facing truth; delivery, discounts, markups, tax, and segment pricing require approved inputs.",
+        "supersedes": [
+          "Zoho rate as customer-facing price",
+          "Unverified Google Sheet pricing"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Line items and quantity exact",
+          "Catalog price exact",
+          "Every adjustment provenance explicit",
+          "Computed total reproducible",
+          "Segment rule exact"
+        ],
+        "failure_condition": "Wrong price/quantity/total, unapproved adjustment, or missing personalization provenance"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "catalog snapshot",
+        "segment rule",
+        "delivery rule",
+        "tax rule",
+        "customer fixture"
+      ],
+      "owner": "quotation-owner",
+      "scenario_ids": [
+        "SC-QUOTE",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-final27.10"
+      ],
+      "open_known_risks": [
+        "client-owned personalized pricing rules when absent"
+      ],
+      "dependency": null,
+      "report_owner": "quotation-owner"
+    },
+    {
+      "criterion_id": "AC-11",
+      "criterion_text_digest": "c5db12f8ae0d4ef15b66009bbe7664a2ab07a83a24dfa21874f897c51f22e32a",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_crm_field_policy",
+        "rationale": "Current mapping owns source, original/latest UTM, segment, address, and overwrite behavior.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Synthetic CRM fields equal input fixture",
+          "Original/latest attribution policy observed",
+          "Failure path preserves customer response and emits operation signal"
+        ],
+        "failure_condition": "Missing/wrong field, unsafe overwrite, duplicate record, secret leak, or dropped inbound batch"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "CRM schema",
+        "mapping digest",
+        "OAuth client",
+        "synthetic fixture"
+      ],
+      "owner": "crm-owner",
+      "scenario_ids": [
+        "SC-CRM",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-p9ui",
+        "tj-memory",
+        "tj-final27.2",
+        "tj-qs72",
+        "tj-mamw"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "crm-owner"
+    },
+    {
+      "criterion_id": "AC-12",
+      "criterion_text_digest": "6e8464ac7891aa39e5e10827d02e3a30fa505c6adc944e65ca5fe1723aae1547",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "accepted-design"
+      ],
+      "precedence": {
+        "disposition": "contractual_stage_sequence_preserved",
+        "rationale": "The original New Deal, In Progress, Negotiation, Paid acceptance sequence remains explicit and must be mapped to current CRM values.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Authorized synthetic deal starts at mapped New Deal",
+          "Each authorized transition produces expected mapped stage",
+          "Stage history readback complete"
+        ],
+        "failure_condition": "Missing, skipped, duplicated, or incorrectly mapped stage transition"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "CRM pipeline ID",
+        "stage mapping",
+        "synthetic deal"
+      ],
+      "owner": "crm-owner",
+      "scenario_ids": [
+        "SC-CRM"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-final27.2"
+      ],
+      "open_known_risks": [
+        "exact client CRM pipeline mapping must be bound"
+      ],
+      "dependency": null,
+      "report_owner": "crm-owner"
+    },
+    {
+      "criterion_id": "AC-13",
+      "criterion_text_digest": "d4bc9dcda5ead35d2a725292ec2cdae08b55cb14e217fc1a693858a0e253071f",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "typed_runtime_and_memory_contract",
+        "rationale": "Current dialogue frames, OrderState, and customer memory own fact attachment and stale-state boundaries.",
+        "supersedes": [
+          "Assistant-prose recovery as primary state"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Long-journey fact matrix retained",
+          "Compact answers attach to expected frame",
+          "Interruption resumes",
+          "Correction changes one fact",
+          "New request clears stale decision"
+        ],
+        "failure_condition": "Lost, invented, conflicted, wrongly attached, or stale fact/state"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "dialogue kernel",
+        "OrderState schema",
+        "memory schema",
+        "scenario seed"
+      ],
+      "owner": "longitudinal-owner",
+      "scenario_ids": [
+        "SC-PARA-NAME",
+        "SC-PARA-QUOTE",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-e2e15.2",
+        "tj-e2e16.5",
+        "tj-memory.8",
+        "tj-memory.11",
+        "tj-gh47",
+        "tj-gh48",
+        "tj-gh49",
+        "tj-m7wz.1",
+        "tj-m7wz.2",
+        "tj-order-state"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "longitudinal-owner"
+    },
+    {
+      "criterion_id": "AC-14",
+      "criterion_text_digest": "ef2328f565b3acadecea6fcc1b42129843cd553f3f1028361ed836584468bdb8",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "knowledge-base",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "exact_sku_quantity_and_fail_closed",
+        "rationale": "Quotation requires exact SKU, quantity, explicit customer data, valid catalog price, and operational item confirmation.",
+        "supersedes": [
+          "Manager approval as a replacement for a successfully generated customer quotation",
+          "Zoho rate fallback for missing catalog price"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Variant parser resolves intended SKU and quantity",
+          "Only missing details requested",
+          "Customer fields exact",
+          "Mutation occurs only after gates",
+          "PDF/audit/decision/readback consistent"
+        ],
+        "failure_condition": "Fake/wrong item or quantity, invented data, premature escalation or mutation, fail-open quote, or inconsistent document/state"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "OrderState",
+        "catalog snapshot",
+        "Inventory snapshot",
+        "quotation template",
+        "synthetic customer"
+      ],
+      "owner": "quotation-owner",
+      "scenario_ids": [
+        "SC-QUOTE",
+        "SC-PARA-QUOTE",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-va4o",
+        "tj-gh12.2",
+        "tj-gh12.4",
+        "tj-gh12.7",
+        "tj-gh12.12",
+        "tj-gh12.19",
+        "tj-gh14.1",
+        "tj-gh14.2",
+        "tj-gh15.2",
+        "tj-gh17.1",
+        "tj-gh17.2",
+        "tj-gh18.1",
+        "tj-gh19.1",
+        "tj-gh19.2",
+        "tj-gh23.1",
+        "tj-gh23.2",
+        "tj-gh23.3",
+        "tj-gh23.4",
+        "tj-m7wz.1",
+        "tj-m7wz.2",
+        "tj-m7wz.3",
+        "tj-4cm4",
+        "tj-8ma2",
+        "tj-nzob",
+        "tj-mmj8",
+        "tj-order-state",
+        "tj-order-cutover",
+        "tj-e2e26"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "quotation-owner"
+    },
+    {
+      "criterion_id": "AC-15",
+      "criterion_text_digest": "83191e7289289ebc6f1ab80a4e9bdfd8407f6aff60a946cb8f4b305e85e36d9e",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_hard_trigger_policy",
+        "rationale": "Only current hard triggers hand off; ordinary discovery, detail capture, and supported low-risk service answers stay with Noor.",
+        "supersedes": [
+          "Broad verified-policy handoff for ordinary requests"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Hard trigger creates one durable escalation and alert",
+          "Pending state returns localized fallback",
+          "Context complete",
+          "Manager reply facts preserved",
+          "Resolution terminal",
+          "Ordinary branch has no handoff"
+        ],
+        "failure_condition": "Silence, premature/duplicate handoff, incomplete context, invented manager fact, or unresolved synthetic escalation"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "trigger policy",
+        "Telegram target",
+        "callback adapter",
+        "synthetic identity"
+      ],
+      "owner": "manager-continuity-owner",
+      "scenario_ids": [
+        "SC-ESCALATION",
+        "SC-PARA-HANDOFF"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-zj9",
+        "tj-lgmg",
+        "tj-e2e15.2",
+        "tj-gh12.17",
+        "tj-jy5i",
+        "tj-19ti",
+        "tj-19ol.3.7",
+        "tj-19ol.3.9",
+        "tj-19ol.3.11",
+        "tj-19ol.3.13"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "manager-continuity-owner"
+    },
+    {
+      "criterion_id": "AC-16",
+      "criterion_text_digest": "4b6cbc7f6d86707b96cd918579fb65514d3c81ebed5aec1c6882604ed3285e8e",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "operator_authorization_required",
+        "rationale": "Admin evidence is separately authorized and actions must be observable rather than silently assumed.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Authorized manager role reaches each required surface",
+          "Conversation/audit/prompt/QA/cost/status data visible",
+          "Actions report persisted result or explicit disabled/error state"
+        ],
+        "failure_condition": "Unauthorized access, missing required surface, silent action, or hidden 5xx"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "frontend bundle",
+        "operator role",
+        "admin API",
+        "database schema"
+      ],
+      "owner": "admin-reporting-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-ADMIN"
+      ],
+      "accepted_regressions": [
+        "tj-qh8e",
+        "tj-wpzl",
+        "tj-final27.7"
+      ],
+      "open_known_risks": [
+        "exact operator identity requires approval"
+      ],
+      "dependency": null,
+      "report_owner": "admin-reporting-owner"
+    },
+    {
+      "criterion_id": "AC-17",
+      "criterion_text_digest": "552c6047e021a345faee09227d6afd69d062c3075b9695dcda80af479f70b914",
+      "sources": [
+        "bot-quality",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_weighted_stage_aware_method",
+        "rationale": "The current 15-rule four-block weighted method with n_a supersedes a flat denominator.",
+        "supersedes": [
+          "Flat 0-30 sum that penalizes unreached dialogue stages"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Fifteen rules present",
+          "Four block weights exact",
+          "Only applicable rules enter denominator",
+          "Strengths/improvements/recommendations persisted"
+        ],
+        "failure_condition": "Wrong rule set/weights/denominator or missing evidence-backed narrative"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "rubric digest",
+        "judge model",
+        "prompt digest",
+        "transcript digest"
+      ],
+      "owner": "quality-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-QUALITY"
+      ],
+      "accepted_regressions": [
+        "tj-ruue",
+        "tj-final27.7"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "quality-owner"
+    },
+    {
+      "criterion_id": "AC-18",
+      "criterion_text_digest": "d157e2dd4dae86a1d728d75af7ccfa4a5b283f37fbe53ab41f9d19c1e9e5df07",
+      "sources": [
+        "manager-quality",
+        "project-tz",
+        "accepted-design"
+      ],
+      "precedence": {
+        "disposition": "resolved_transcript_only",
+        "rationale": "Manager assessment applies only after escalation resolution or CRM close and must cite transcript evidence.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Completed/resolved eligibility",
+          "Ten qualitative criteria cite transcript",
+          "Q1-Q4 metrics derive from DB/CRM"
+        ],
+        "failure_condition": "Premature assessment, unsupported qualitative score, or incorrect quantitative metric"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "manager rubric",
+        "judge model",
+        "resolved transcript",
+        "CRM metric snapshot"
+      ],
+      "owner": "quality-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-QUALITY"
+      ],
+      "accepted_regressions": [
+        "tj-final27.7"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "quality-owner"
+    },
+    {
+      "criterion_id": "AC-19",
+      "criterion_text_digest": "e0ee83078368350476084d213b7d8c6bb6197957bc20a360a706f08afa1c7c96",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "agent-requirements",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "observable_bounded_reporting",
+        "rationale": "Required bot, manager, conversion, refusal, and operational reports must be observable and bounded by cost controls.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Each required report opens or produces explicit disabled state",
+          "Metrics reconcile to source records",
+          "No uncontrolled scheduled model run"
+        ],
+        "failure_condition": "Missing report, silent action, irreproducible metric, or uncontrolled spend"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "report schema",
+        "admin bundle",
+        "metric query digest",
+        "cost-control config"
+      ],
+      "owner": "admin-reporting-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-ADMIN",
+        "EB-QUALITY"
+      ],
+      "accepted_regressions": [
+        "tj-ruue",
+        "tj-final27.7",
+        "tj-qh8e",
+        "tj-wpzl"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "admin-reporting-owner"
+    },
+    {
+      "criterion_id": "AC-20",
+      "criterion_text_digest": "aa374f67ceefd698d8354cc4016230f0a42596898a5f703dee6a0d1eeb6d292a",
+      "sources": [
+        "agent-requirements",
+        "dialogue-rules",
+        "company-values",
+        "knowledge-base",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "catalog_backed_recommendations",
+        "rationale": "Alternatives and complements are useful only when catalog-backed and tied to the customer's need/context.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Recommendation exists in bound catalog",
+          "Rationale cites stated need/context",
+          "Alternative labeled when not exact",
+          "Complement follows core need"
+        ],
+        "failure_condition": "Off-catalog exact-match claim, irrelevant option, or unsupported personalization"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "catalog snapshot",
+        "customer context",
+        "recommendation logic",
+        "scenario seed"
+      ],
+      "owner": "catalog-sales-owner",
+      "scenario_ids": [
+        "SC-DISCOVERY",
+        "SC-LONG-JOURNEY"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-tauh",
+        "tj-15m.5.2",
+        "tj-final27.17"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "catalog-sales-owner"
+    },
+    {
+      "criterion_id": "AC-21",
+      "criterion_text_digest": "3e47cd478b4f474ba98c33c734ec113a387396947aeace6f750b114cfb7ed4c1",
+      "sources": [
+        "project-tz",
+        "accepted-design",
+        "runtime-truth",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "client_input_external_gate",
+        "rationale": "Referral launch remains blocked until exact client business rules and synthetic reward constraints are approved or explicitly excluded.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Approved rules and reward constraints exist",
+          "All targets synthetic",
+          "No real reward",
+          "Terminal ledger disposition"
+        ],
+        "failure_condition": "Missing client rules, real reward/target, or unresolved side effect"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "business rules digest",
+        "release",
+        "synthetic reward manifest",
+        "authorization"
+      ],
+      "owner": "referral-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-REFERRAL"
+      ],
+      "accepted_regressions": [],
+      "open_known_risks": [
+        "tj-final27.6"
+      ],
+      "dependency": {
+        "issue_id": "tj-final27.6",
+        "status": "blocked",
+        "required_outcome": "PASS",
+        "evidence_required": [
+          "client-approved implementation evidence or explicit client exclusion",
+          "exact synthetic reward authorization"
+        ]
+      },
+      "report_owner": "referral-owner"
+    },
+    {
+      "criterion_id": "AC-22",
+      "criterion_text_digest": "925911aecc1a4512ae2d0a12a2defefb0f9a5a4ee6094b1f0894da6ddd550160",
+      "sources": [
+        "tz-basic",
+        "tz-extended",
+        "knowledge-base",
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_security_and_evidence_policy",
+        "rationale": "Security acceptance combines transport/admin controls, least privilege, data minimization, and policy isolation.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "HTTPS/auth/config checks",
+          "Tracked evidence secret/PII scan",
+          "Prompt injection rejected",
+          "Soft-deleted knowledge absent",
+          "Least-privilege scopes inspected"
+        ],
+        "failure_condition": "Unauthorized access, secret/PII exposure, policy override, or stale deleted knowledge leak"
+      },
+      "evidence_mode": "reused_exact",
+      "freshness_identity": [
+        "release",
+        "security config",
+        "migration",
+        "auth policy",
+        "test vector digest"
+      ],
+      "owner": "security-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-SECURITY"
+      ],
+      "accepted_regressions": [
+        "tj-5cb2",
+        "tj-final27.8",
+        "tj-av22"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "security-owner"
+    },
+    {
+      "criterion_id": "AC-23",
+      "criterion_text_digest": "bf05ef6acf58389df2b4e56f8d2446f429c78cb8cb6ddae6bd5505d5dc4d44ac",
+      "sources": [
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "contractual_target_preserved",
+        "rationale": "The original less-than-10-second visible-response target remains a hard criterion; later internal p50/p95 targets do not replace it.",
+        "supersedes": [
+          "Treating the tj-15m p50/p95 optimization target as acceptance of the original <10s contract"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "First-visible, final-text, media, and scenario timestamps",
+          "p50/p95/max plus timeout/retry counts",
+          "External-model and local delivery latency separated"
+        ],
+        "failure_condition": "Any contractual measurement at or above 10 seconds, missing timing boundary, or hidden timeout"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "models",
+        "provider",
+        "endpoint",
+        "scenario set",
+        "measurement code"
+      ],
+      "owner": "runtime-owner",
+      "scenario_ids": [
+        "SC-CANARY-EN",
+        "SC-CANARY-AR"
+      ],
+      "evidence_block_ids": [
+        "EB-RUNTIME"
+      ],
+      "accepted_regressions": [
+        "tj-15m",
+        "tj-15m.5.1",
+        "tj-15m.6"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "runtime-owner"
+    },
+    {
+      "criterion_id": "AC-24",
+      "criterion_text_digest": "f3d64118de14d2b72bae52facd5d7db6229a1c672cc180f0691e68d93da2fbf1",
+      "sources": [
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "contractual_target_preserved",
+        "rationale": "The 99% uptime target requires a declared authoritative window; point-in-time health is not uptime proof.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Authoritative monitor and time window bound",
+          "Availability numerator/denominator reproducible",
+          "Incident exclusions explicit"
+        ],
+        "failure_condition": "Computed uptime below 99%, missing authoritative window, or unsupported extrapolation"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "monitor source",
+        "measurement window",
+        "incident set"
+      ],
+      "owner": "nonfunctional-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-AVAILABILITY"
+      ],
+      "accepted_regressions": [
+        "tj-final27.8",
+        "tj-av22"
+      ],
+      "open_known_risks": [
+        "client acceptance window and monitor source must be confirmed"
+      ],
+      "dependency": null,
+      "report_owner": "nonfunctional-owner"
+    },
+    {
+      "criterion_id": "AC-25",
+      "criterion_text_digest": "81bc6af0a6c885a0cb5a7a6df2a7fb5c0c9add61c24ceec3736416193c1d7a3e",
+      "sources": [
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "contractual_target_preserved",
+        "rationale": "The 100+ concurrent-dialogue target requires a separately authorized synthetic load block and cannot be inferred from unit tests.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "At least 100 concurrent synthetic conversations",
+          "No real targets",
+          "Error/latency/saturation/recovery evidence"
+        ],
+        "failure_condition": "Concurrency below target, unsafe target set, capacity failure, or missing recovery evidence"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "infrastructure",
+        "load profile",
+        "endpoint"
+      ],
+      "owner": "nonfunctional-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-LOAD"
+      ],
+      "accepted_regressions": [
+        "tj-final27.8"
+      ],
+      "open_known_risks": [
+        "exact load authorization required"
+      ],
+      "dependency": null,
+      "report_owner": "nonfunctional-owner"
+    },
+    {
+      "criterion_id": "AC-26",
+      "criterion_text_digest": "7b22c06c580b9fe113fffd887015842f8f2da3230f44d71c8efca19e044c93cc",
+      "sources": [
+        "project-tz",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "contractual_target_preserved",
+        "rationale": "Daily backups and 30-day retention require restore/integrity evidence; policy configuration alone is insufficient.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Daily schedule evidence",
+          "Thirty-day retention sample",
+          "Integrity check",
+          "Authorized restore proof",
+          "Owner and disposition"
+        ],
+        "failure_condition": "Missing day, retention below 30 days, failed/unproven restore, or missing ownership"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "database cluster",
+        "backup policy",
+        "backup set",
+        "restore evidence",
+        "measurement date"
+      ],
+      "owner": "nonfunctional-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-BACKUP"
+      ],
+      "accepted_regressions": [
+        "tj-final27.8",
+        "tj-av22"
+      ],
+      "open_known_risks": [
+        "protected restore metadata and authorization required"
+      ],
+      "dependency": null,
+      "report_owner": "nonfunctional-owner"
+    },
+    {
+      "criterion_id": "AC-27",
+      "criterion_text_digest": "93bc7e86bb2a9d5e55a87a106c3b78262840be183a6a7d67b9b19ada091eccd8",
+      "sources": [
+        "knowledge-base",
+        "accepted-design"
+      ],
+      "precedence": {
+        "disposition": "catalog_split_with_original_thresholds",
+        "rationale": "Original 95% Inventory/API and 90% photo/description thresholds remain explicit while Treejar Catalog API owns customer-facing price.",
+        "supersedes": [
+          "Zoho rate as customer-facing price"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "Co-temporal SKU population denominators",
+          "Inventory/API availability percentage",
+          "Photo/description percentage",
+          "Catalog price provenance",
+          "Segment-price sample"
+        ],
+        "failure_condition": "Coverage below 95% or 90%, wrong denominator, non-catalog customer price, or wrong segment price"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "catalog snapshot",
+        "Inventory snapshot",
+        "segment rules",
+        "query time"
+      ],
+      "owner": "catalog-sales-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-CATALOG-COVERAGE"
+      ],
+      "accepted_regressions": [
+        "tj-final27.10",
+        "tj-prl26.5",
+        "tj-4gtc"
+      ],
+      "open_known_risks": [
+        "exact co-temporal catalog and Inventory snapshots require readback approval"
+      ],
+      "dependency": null,
+      "report_owner": "catalog-sales-owner"
+    },
+    {
+      "criterion_id": "AC-28",
+      "criterion_text_digest": "c927a7f33c2c6e5108e19a2c9e91fd6d327bf28406db78a06c37646759e17b4d",
+      "sources": [
+        "knowledge-base",
+        "accepted-design"
+      ],
+      "precedence": {
+        "disposition": "contractual_target_preserved",
+        "rationale": "The top-three offer-generation target remains at most two seconds with an explicit timing boundary.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Exact query and snapshots bound",
+          "Exactly top three result set recorded",
+          "Offer-generation timing boundary at or below two seconds"
+        ],
+        "failure_condition": "Timing above two seconds, wrong result count, or unbound query/catalog identity"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "release",
+        "catalog snapshot",
+        "query set",
+        "segment",
+        "measurement code"
+      ],
+      "owner": "catalog-sales-owner",
+      "scenario_ids": [],
+      "evidence_block_ids": [
+        "EB-CATALOG-COVERAGE"
+      ],
+      "accepted_regressions": [
+        "tj-15m.3",
+        "tj-15m.5.2"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "catalog-sales-owner"
+    },
+    {
+      "criterion_id": "AC-29",
+      "criterion_text_digest": "ea7a744246f5c87d169ceaaf6da620cb259de56116e5d330f4a2582ed1f34c71",
+      "sources": [
+        "tz-extended",
+        "knowledge-base",
+        "accepted-design",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "current_media_and_whatsapp_contract",
+        "rationale": "Media follows final named products and the main text, with suppression after terminal product/quote/handoff states.",
+        "supersedes": []
+      },
+      "oracle": {
+        "checks": [
+          "Text audit precedes media",
+          "Image matches final named SKU/variant",
+          "No repeat after terminal state",
+          "Caption non-duplicative",
+          "Formatting invariants pass"
+        ],
+        "failure_condition": "Mismatched/repeated/early media, redundant caption, raw URL, or malformed WhatsApp formatting"
+      },
+      "evidence_mode": "fresh",
+      "freshness_identity": [
+        "release",
+        "catalog media snapshot",
+        "message order",
+        "formatter",
+        "scenario seed"
+      ],
+      "owner": "media-voice-owner",
+      "scenario_ids": [
+        "SC-DISCOVERY",
+        "SC-PARA-MEDIA"
+      ],
+      "evidence_block_ids": [],
+      "accepted_regressions": [
+        "tj-a82d",
+        "tj-adca",
+        "tj-q0ou",
+        "tj-gh17.3",
+        "tj-gh18.2",
+        "tj-jyig",
+        "tj-a5n",
+        "tj-8yn",
+        "tj-bp2",
+        "tj-15m"
+      ],
+      "open_known_risks": [],
+      "dependency": null,
+      "report_owner": "media-voice-owner"
+    },
+    {
+      "criterion_id": "AC-30",
+      "criterion_text_digest": "d7dd9ca902ce5acc0d932241ca4ca542bcda2deb896c7c0a4e89babef77c8265",
+      "sources": [
+        "runtime-truth",
+        "accepted-design",
+        "grounding-blocker",
+        "beads-regressions"
+      ],
+      "precedence": {
+        "disposition": "hard_dependency_non_pass",
+        "rationale": "tj-r1f3 remains in progress after failed deployed provider evidence; no target release may be assumed and affected acceptance cannot pass until fresh closure proof exists.",
+        "supersedes": [
+          "Treating tj-j13d closure or b8de75c deployment as sufficient grounding acceptance"
+        ]
+      },
+      "oracle": {
+        "checks": [
+          "tj-r1f3 status closed",
+          "Fresh deployed release and exact model/service readback",
+          "Fresh five-call provider smoke passes 5/5",
+          "Manual semantic review passes",
+          "No unresolved in-scope P0/P1"
+        ],
+        "failure_condition": "Dependency is not freshly closed/proven, target release is assumed, provider smoke is not 5/5, or an in-scope P0/P1 remains"
+      },
+      "evidence_mode": "external_gate",
+      "freshness_identity": [
+        "Beads status",
+        "release",
+        "CI run",
+        "models",
+        "provider smoke attempt",
+        "manual semantic review"
+      ],
+      "owner": "runtime-owner",
+      "scenario_ids": [
+        "SC-GROUNDING",
+        "SC-PARA-GROUNDING"
+      ],
+      "evidence_block_ids": [
+        "EB-RUNTIME"
+      ],
+      "accepted_regressions": [
+        "tj-j13d"
+      ],
+      "open_known_risks": [
+        "tj-r1f3"
+      ],
+      "dependency": {
+        "issue_id": "tj-r1f3",
+        "status": "in_progress",
+        "required_outcome": "PASS",
+        "evidence_required": [
+          "closed Beads status",
+          "fresh deployed release",
+          "fresh exact runtime/model readback",
+          "fresh passing provider smoke 5/5",
+          "manual semantic PASS"
+        ]
+      },
+      "report_owner": "runtime-owner"
+    }
+  ]
+}
