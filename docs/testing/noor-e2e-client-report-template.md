@@ -69,4 +69,3 @@ baseline, expected effect, creation path, owner/authority, suppression,
 - requirements_met:
 - открытые P0/P1:
 - ограничения и внешние gates:
-

@@ -1,10 +1,10 @@
 # tj-ee5f.3 SDD brief — generic acceptance policy v2
 
-Status: approved-lineage implementation brief  
-Base: `e9a1888`  
-Immediate consumer: the later authorized `tj-ee5f.1` acceptance execution  
+Status: approved-lineage implementation brief
+Base: `e9a1888`
+Immediate consumer: the later authorized `tj-ee5f.1` acceptance execution
 Public facade: local manifest compiler, dry-run runner, immutable evidence store,
-trusted rollups, typed Russian report serializer, and strictly local CLI  
+trusted rollups, typed Russian report serializer, and strictly local CLI
 Non-goals: live/provider/model/customer/production/Wazzup/Zoho/CRM/quotation/
 order/callback/deploy/cleanup/PDF actions
 

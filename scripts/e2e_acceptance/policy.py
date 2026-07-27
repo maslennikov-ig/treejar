@@ -30,7 +30,7 @@ _TASK1_AUTHORIZATION_PATH = Path(
     ".codex/stages/tj-ee5f/authorization-manifest.example.json"
 )
 _POLICY_PATH = Path(".codex/stages/tj-ee5f/execution-policy-v2.json")
-_POLICY_SHA256 = "4c36af96ea2ad304265fe72d1ca75b57b1105f0a03b25148d0d664501ab67b2c"
+_POLICY_SHA256 = "607360c7feb5bba71e2b3f409d3108f55e8392b31e5f423e765d9e2896a05d0e"
 _CANONICAL_REMOTE = "https://github.com/maslennikov-ig/treejar.git"
 
 
