@@ -377,6 +377,60 @@ uv run mypy src/
 
 Results: Ruff and format passed; Mypy passed over 163 source files.
 
+## Bounded quote/list interaction correction
+
+The interaction review found two exact composition defects:
+
+1. Production correctly ignored a single-quoted present claim, but the smoke
+   evaluator independently scanned raw phrases such as `currently in stock`
+   and falsely rejected the otherwise valid reply.
+2. A direct SKU list item immediately scoped by `whether:`, `if:`, or `when:`
+   was treated as asserted because newline/list boundary recognition discarded
+   the preceding conditional scope.
+
+RED produced three conditional-list failures in pure and runtime tests. Smoke
+produced those three plus the quoted-present false rejection.
+
+The correction is intentionally small:
+
+- removed the duplicate smoke raw phrase loop for bounded SKU present states;
+  the imported quote-aware production classifier now owns that decision;
+- retained the existing broad smoke pattern for separate non-SKU inventory
+  assertions such as unsupported quantity/warehouse claims;
+- extended only the immediate conditional suffix grammar across an optional
+  colon and one newline/list marker;
+- kept ordinary newline/list assertions unsafe when no immediate
+  `if`/`whether`/`when` introducer exists.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py::test_classify_grounding_output_preserves_safe_controls tests/test_llm_grounding_output.py::test_direct_sku_stock_assertion_requires_current_turn_inventory_evidence -q --tb=short
+uv run pytest tests/test_llm_engine.py -q --tb=short -k 'preserves_conditional_sku_stock_control or rejects_present_stock_confirmation_without_tool_evidence'
+uv run pytest tests/test_scripts_verify_model_routes.py -q --tb=short -k 'preserves_conditional_sku_stock_control or rejects_unverified_present_stock_forms or rejects_contradictory_safe_sounding_answers'
+```
+
+Results: `43 passed`; `41 passed, 387 deselected`; and
+`59 passed, 34 deselected`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `605 passed`.
+
+Fresh static checks:
+
+```text
+uv run ruff check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run ruff format --check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run mypy src/
+```
+
+Results: Ruff and format passed; Mypy passed over 163 source files.
+
 ## Remaining environment-level checks
 
 - Independent delta review.

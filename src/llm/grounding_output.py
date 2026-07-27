@@ -135,7 +135,9 @@ _EN_ASSERTION_CLAUSE_BOUNDARY_RE = re.compile(
     re.IGNORECASE,
 )
 _EN_CONDITIONAL_CLAUSE_RE = re.compile(
-    r"^\s*(?:if|when)\b|\b(?:if|whether|when)\s*$",
+    r"^\s*(?:if|when)\b"
+    r"|\b(?:if|whether|when)(?:[ \t]*:)?"
+    r"(?:[ \t]*\n[ \t]*(?:[-*•][ \t]*)?)?[ \t]*$",
     re.IGNORECASE,
 )
 _EN_UNRELATED_CHECK_OBJECT_RE = re.compile(

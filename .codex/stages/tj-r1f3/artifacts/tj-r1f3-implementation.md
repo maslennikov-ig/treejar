@@ -91,8 +91,10 @@ verification:
   - fourth re-review focused GREEN: pure passed 64 tests, runtime passed 49 selected tests, and smoke passed 37 selected tests
   - final bounded review RED: pure, runtime, and smoke each failed 12 cases for contracted copulas, dash/newline/list boundaries, and single-quoted future text
   - final bounded review focused GREEN: pure passed 80 tests, runtime passed 65 selected tests, and smoke passed 37 selected tests
+  - bounded interaction RED: three immediate conditional-list cases failed in pure and runtime; smoke additionally false-rejected one quoted present claim
+  - bounded interaction focused GREEN: 43 pure, 41 runtime-selected, and 59 smoke-selected tests passed with ordinary unquoted/list assertions retained as negative controls
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 593 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 605 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
@@ -168,6 +170,12 @@ visible, so contractions and possessives cannot masquerade as quotations. The
 smoke evaluator now passes raw reply text to all shared production grounding
 classifiers; its normalized copy remains limited to legacy smoke checks.
 
+The bounded interaction correction removes the smoke-only raw phrase loop for
+SKU present claims, leaving the shared quote-aware production classifier as the
+single decision source. Immediate `if`/`whether`/`when` scope now propagates
+across one colon/newline list boundary. Ordinary newline/list SKU assertions
+without that immediate conditional introducer remain evidence-gated.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -200,9 +208,11 @@ boundaries. Fourth-review coverage adds optional modifier order, direct
 SKU-status assertions after sentence/coordination boundaries, conditional and
 non-SKU controls, and singular/plural unrelated warehouse checks. Final-review
 coverage adds contracted negative states, dash/newline/list assertions, paired
-single-quote safety, and contraction/possessive negative controls.
+single-quote safety, and contraction/possessive negative controls. Interaction
+coverage locks quoted-present smoke alignment and immediate conditional-list
+scope while retaining unquoted/list negative controls.
 
-The complete three affected test files passed 593 tests. Focused Ruff and
+The complete three affected test files passed 605 tests. Focused Ruff and
 format plus full `src/` Mypy passed. The detailed commands and failure evidence
 are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.

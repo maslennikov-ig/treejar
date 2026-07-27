@@ -243,6 +243,10 @@ def test_classify_grounding_output_covers_review_regressions(
         "Treejar's AX-E1 catalog entry is documented.",
         "Current stock is unconfirmed. The note says 'AX-E1 is available.'",
         "Current stock is unconfirmed. The note says ‘AX-E1 is available.’",
+        "Current stock is unconfirmed. The note says 'AX-E1 is currently in stock.'",
+        "Current stock is unconfirmed. Determine whether:\n- AX-E1 is available.",
+        "Current stock is unconfirmed. Check if:\n• AX-E1 is available.",
+        "Current stock is unconfirmed. Tell me when:\n- AX-E1 is available.",
         (
             "Current stock is unconfirmed. The note says, 'Our team will check "
             "stock and get back to you.'"

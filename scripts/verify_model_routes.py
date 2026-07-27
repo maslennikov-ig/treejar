@@ -472,9 +472,6 @@ def evaluate_sales_answer(
             )
         if contains_unverified_stock_confirmation(grounding_reply):
             failures.append("reply adds an unverified present stock confirmation")
-        for phrase in ("currently in stock", "is in stock", "available now"):
-            if _contains_asserted_phrase(reply, phrase):
-                failures.append(f"unsupported stock claim: {phrase}")
         if _contains_asserted_pattern(reply, _STOCK_ASSERTION_RE):
             failures.append("reply adds unsupported inventory availability")
         for phrase in (
