@@ -1410,6 +1410,7 @@ class ProtectedExecutionJournal:
             f"attempts/{transaction_id}/tracked.json"
         )
         execution_id: str | None = None
+        attempt_digest: str | None = None
         semantic_digest: str | None = None
         status: Literal["committed", "aborted"]
         if abort or raw_digest is None or tracked_digest is None:
@@ -1462,6 +1463,7 @@ class ProtectedExecutionJournal:
                     "attempt raw/tracked semantic binding drift"
                 )
             execution_id = str(expected_execution)
+            attempt_digest = str(intent["intent_digest"])
             semantic_digest = str(raw["semantic_digest"])
             status = "committed"
         record = {
@@ -1469,6 +1471,7 @@ class ProtectedExecutionJournal:
             "transaction_id": transaction_id,
             "run_id": self.run_id,
             "execution_id": execution_id,
+            "attempt_digest": attempt_digest,
             "status": status,
             "authorization_digest": self.authorization_digest,
             "semantic_digest": semantic_digest,

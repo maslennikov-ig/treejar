@@ -773,7 +773,7 @@ class TrustedAcceptanceRegistry:
         self._trusted_readback_digests: set[str] = set()
         self._trusted_classifier_digests: set[str] = set()
         self._trusted_structured_digests: set[str] = set()
-        self.__run_loader_capability = object()
+        self._trusted_attempt_digests: set[str] = set()
         task1_paths = (
             _SCOPE_PATH,
             _PROVENANCE_PATH,
@@ -918,10 +918,6 @@ class TrustedAcceptanceRegistry:
     def _is_trusted_authorization_digest(self, digest: str) -> bool:
         return digest in self._trusted_authorization_digests
 
-    def _validate_run_loader_capability(self, capability: object) -> None:
-        if capability is not self.__run_loader_capability:
-            raise PolicyValidationError("trusted run loader capability is required")
-
     def _load_trusted_readback(self, observation: ReadbackObservation) -> None:
         if not self._trusted_authorizations:
             raise PolicyValidationError(
@@ -936,115 +932,19 @@ class TrustedAcceptanceRegistry:
             raise PolicyValidationError("preflight-bound readback collector drift")
         self._trusted_readback_digests.add(observation.content_digest)
 
-    def _load_local_readback_fixture(self, observation: ReadbackObservation) -> None:
-        """Test-only seam for temporal contract tests; never used by run loading."""
-
-        if (
-            observation.collector_id != "independent-readback-collector"
-            or observation.preflight_digest != "8" * 64
-            or observation.collector_artifact_digest != "9" * 64
-        ):
-            raise PolicyValidationError("local readback fixture binding drift")
-        self._trusted_readback_digests.add(observation.content_digest)
-
-    def _load_classifier_artifact(
-        self,
-        result: ClassifierResult,
-        *,
-        run_id: str,
-        attempt_digest: str,
-    ) -> None:
-        if (
-            result.run_id != run_id
-            or result.attempt_digest != attempt_digest
-            or result.policy_digest != self.compiled_policy.policy_digest
-            or result.evaluator_digest
-            != self.classifier_evaluator_digest(result.assertion_id)
-            or not any(
-                result.preflight_digest == getattr(item, "preflight_digest", None)
-                for item in self._trusted_authorizations.values()
-            )
-        ):
-            raise PolicyValidationError(
-                "classifier run/attempt/preflight registry binding drift"
-            )
-        self._trusted_classifier_digests.add(result.artifact_digest)
-
-    def _register_protected_structured_artifact(
-        self,
-        result: _EvidenceItem,
-        *,
-        receipt: Mapping[str, object],
-        capability: object,
-    ) -> None:
-        self._validate_run_loader_capability(capability)
-        assertion = self._assertions.get(result.assertion_id)
-        if (
-            assertion is None
-            or assertion.oracle.kind == "classifier_result"
-            or result.producer not in assertion.oracle.allowed_producers
-            or receipt.get("registry_id") != self.registry_id
-            or receipt.get("artifact_digest") != result.artifact_digest
-            or receipt.get("run_id") != result.run_id
-            or receipt.get("attempt_digest") != result.attempt_digest
-            or receipt.get("preflight_digest") != result.preflight_digest
-            or receipt.get("assertion_id") != result.assertion_id
-            or receipt.get("producer") != result.producer
-            or receipt.get("evidence_id") != f"structured:{result.artifact_digest}"
-            or receipt.get("relative_path")
-            != f"evidence/structured/{result.artifact_digest}.json"
-            or not any(
-                result.preflight_digest == getattr(item, "preflight_digest", None)
-                for item in self._trusted_authorizations.values()
-            )
-        ):
-            raise PolicyValidationError(
-                "structured artifact protected provenance binding drift"
-            )
-        self._trusted_structured_digests.add(result.artifact_digest)
-
-    def _load_local_structured_fixture(self, result: _EvidenceItem) -> None:
-        if (
-            result.preflight_digest != "8" * 64
-            or result.source_digest != "4" * 64
-            or not result.run_id.startswith("run-")
-        ):
-            raise PolicyValidationError("local structured fixture binding drift")
-        assertion = self._assertions.get(result.assertion_id)
-        if (
-            assertion is None
-            or assertion.oracle.kind == "classifier_result"
-            or result.producer not in assertion.oracle.allowed_producers
-        ):
-            raise PolicyValidationError("local structured fixture oracle drift")
-        self._trusted_structured_digests.add(result.artifact_digest)
-
-    def load_structured_evidence(
+    def load_decisive_evidence(
         self,
         *,
         run_id: str,
         artifact_digest: str,
     ) -> None:
-        from scripts.e2e_acceptance.trusted_run import _load_structured_evidence
+        from scripts.e2e_acceptance.trusted_run import _load_decisive_evidence
 
-        tracked_root, protected_root = self._fixed_run_roots(run_id)
-        _load_structured_evidence(
+        _load_decisive_evidence(
             self,
-            tracked_root,
-            protected_root,
+            run_id,
             artifact_digest=artifact_digest,
-            capability=self.__run_loader_capability,
         )
-
-    def _load_local_classifier_fixture(self, result: ClassifierResult) -> None:
-        if (
-            result.preflight_digest != "8" * 64
-            or result.policy_digest != self.compiled_policy.policy_digest
-            or result.evaluator_digest
-            != self.classifier_evaluator_digest(result.assertion_id)
-        ):
-            raise PolicyValidationError("local classifier fixture binding drift")
-        self._trusted_classifier_digests.add(result.artifact_digest)
 
     def validate_readback_window(
         self,
@@ -1095,38 +995,6 @@ class TrustedAcceptanceRegistry:
             )
         return dict(self._verified_rollups)
 
-    def _fixed_run_roots(self, run_id: str) -> tuple[Path, Path]:
-        if not run_id or any(
-            character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
-            for character in run_id.lower()
-        ):
-            raise PolicyValidationError("trusted run identity is unsafe")
-        tracked_root = (
-            self._repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
-        )
-        protected_root = (
-            Path.home()
-            / ".local"
-            / "state"
-            / "treejar"
-            / "noor-e2e-acceptance"
-            / "protected-runs"
-            / run_id
-        )
-        return tracked_root, protected_root
-
-    def open_materializer(self, *, run_id: str) -> Any:
-        from scripts.e2e_acceptance.trusted_run import TrustedArtifactMaterializer
-
-        tracked_root, protected_root = self._fixed_run_roots(run_id)
-        return TrustedArtifactMaterializer(
-            registry=self,
-            run_id=run_id,
-            tracked_root=tracked_root,
-            protected_root=protected_root,
-            capability=self.__run_loader_capability,
-        )
-
     def open_run(
         self,
         *,
@@ -1134,15 +1002,14 @@ class TrustedAcceptanceRegistry:
     ) -> None:
         from scripts.e2e_acceptance.trusted_run import _load_verified_run
 
-        tracked_root, protected_root = self._fixed_run_roots(run_id)
-        verified = _load_verified_run(
-            self,
-            tracked_root,
-            protected_root,
-            capability=self.__run_loader_capability,
-        )
+        verified = _load_verified_run(self, run_id)
         self._verified_rollups = dict(verified.rollups)
         self._report_bytes = verified.report_bytes
+
+    def finalize_run(self, run_id: str) -> None:
+        from scripts.e2e_acceptance.trusted_run import _finalize_verified_run
+
+        _finalize_verified_run(self, run_id)
 
     def write_report(self, output_path: Path) -> None:
         parent_fd, name = _open_output_parent(output_path)

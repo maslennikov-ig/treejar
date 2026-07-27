@@ -57,8 +57,8 @@ def _build_verified_run(
 ):
     policy, execution, trusted = _modules()
     registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
-    tracked = tmp_path / "tracked"
-    protected = tmp_path / "protected"
+    tracked = tmp_path / ".codex/stages/tj-ee5f/results"
+    protected = tmp_path / "operator-protected"
     run_id = "synthetic-trusted-run"
     tracked_run = tracked / run_id
     protected_run = protected / run_id
@@ -499,11 +499,8 @@ def _build_verified_run(
         "attempt_chain_heads": attempt_chain_heads,
     }
     _write_json(protected_run / "registry/anchor.json", anchor)
-    registry._fixed_run_roots = lambda requested_run_id: (
-        (tracked_run, protected_run)
-        if requested_run_id == run_id
-        else (_ for _ in ()).throw(ValueError("unexpected fixture run identity"))
-    )
+    registry._repo_root = tmp_path
+    trusted._PROTECTED_STORE_ROOT = protected
     return registry, tracked_run, protected_run
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from tests.test_e2e_acceptance_trusted_report import (
     PROJECT_ROOT,
     _build_verified_run,
     _modules,
+    _write_json,
 )
 
 EVIDENCE_BLOCK_IDS = tuple(
@@ -222,30 +224,6 @@ def test_trusted_run_rejects_report_producer_without_protected_receipt(
         registry.open_run(run_id="synthetic-trusted-run")
 
 
-def test_registry_materializer_uses_fixed_roots() -> None:
-    policy, _, _ = _modules()
-
-    parameters = inspect.signature(
-        policy.TrustedAcceptanceRegistry.open_materializer
-    ).parameters
-
-    assert "tracked_root" not in parameters
-    assert "protected_root" not in parameters
-
-
-def test_private_root_loader_rejects_wrong_capability(tmp_path: Path) -> None:
-    registry, tracked, protected = _build_verified_run(tmp_path)
-    _, _, trusted = _modules()
-
-    with pytest.raises(Exception, match="capability"):
-        trusted._load_verified_run(
-            registry,
-            tracked,
-            protected,
-            capability=object(),
-        )
-
-
 def test_attempt_phase_heads_are_unique_and_execution_bound(
     tmp_path: Path,
 ) -> None:
@@ -272,11 +250,11 @@ def test_attempt_receipt_raw_digest_drift_is_rejected(tmp_path: Path) -> None:
         registry.open_run(run_id="synthetic-trusted-run")
 
 
-def test_public_structured_loader_uses_identities_not_roots() -> None:
+def test_public_decisive_loader_uses_identities_not_roots() -> None:
     policy, _, _ = _modules()
 
     parameters = inspect.signature(
-        policy.TrustedAcceptanceRegistry.load_structured_evidence
+        policy.TrustedAcceptanceRegistry.load_decisive_evidence
     ).parameters
 
     assert "tracked_root" not in parameters
@@ -287,10 +265,10 @@ def test_public_structured_loader_uses_identities_not_roots() -> None:
     )
 
 
-def test_fixed_root_materializer_and_loader_register_structured_evidence(
+def test_fixed_root_loader_registers_receipted_structured_evidence(
     tmp_path: Path,
 ) -> None:
-    registry, _, _ = _build_verified_run(tmp_path)
+    registry, tracked, protected = _build_verified_run(tmp_path)
     policy, _, _ = _modules()
     registry.open_run(run_id="synthetic-trusted-run")
     assertion = next(
@@ -298,6 +276,11 @@ def test_fixed_root_materializer_and_loader_register_structured_evidence(
         for item in registry.compiled_policy.assertions.values()
         if item.oracle.kind == "structured_event"
     )
+    attempt_digest = json.loads(
+        (
+            tracked / "attempts" / f"{registry.compiled_plan.execution_ids[0]}.json"
+        ).read_text(encoding="utf-8")
+    )["attempt_digest"]
     event = policy.StructuredEvent.build(
         assertion_id=assertion.assertion_id,
         producer=assertion.oracle.allowed_producers[0],
@@ -307,20 +290,237 @@ def test_fixed_root_materializer_and_loader_register_structured_evidence(
         passed=True,
         reason="Protected structured evidence passed.",
         run_id="synthetic-trusted-run",
-        attempt_digest="e" * 64,
+        attempt_digest=attempt_digest,
         preflight_digest="8" * 64,
     )
-    materializer = registry.open_materializer(
-        run_id="synthetic-trusted-run",
+    relative = f"evidence/decisive/{event.artifact_digest}.json"
+    tracked_sha256 = _write_json(
+        tracked / relative,
+        {
+            "schema_version": "noor-e2e-decisive-evidence-envelope/v2",
+            "evidence_kind": "structured_event",
+            "artifact": event.model_dump(mode="json"),
+        },
     )
-
-    entry = materializer.write_structured_evidence(event)
-    registry.load_structured_evidence(
+    _write_json(
+        protected / f"producer-receipts/decisive/{event.artifact_digest}.json",
+        {
+            "schema_version": "noor-e2e-decisive-producer-receipt/v2",
+            "registry_id": registry.registry_id,
+            "artifact_digest": event.artifact_digest,
+            "run_id": event.run_id,
+            "attempt_digest": event.attempt_digest,
+            "preflight_digest": event.preflight_digest,
+            "assertion_id": event.assertion_id,
+            "producer": event.producer,
+            "evidence_id": f"decisive:{event.artifact_digest}",
+            "relative_path": relative,
+            "tracked_sha256": tracked_sha256,
+        },
+    )
+    registry.load_decisive_evidence(
         run_id="synthetic-trusted-run",
         artifact_digest=event.artifact_digest,
     )
 
-    assert entry.producer == "protected-structured-oracle"
+    assert event.artifact_digest in registry._trusted_structured_digests
+    unbound = policy.StructuredEvent.build(
+        assertion_id=assertion.assertion_id,
+        producer=assertion.oracle.allowed_producers[0],
+        source_id="protected-structured-source",
+        source_digest="d" * 64,
+        observed_at=datetime.now(UTC),
+        passed=True,
+        reason="Receipt exists but attempt was never committed.",
+        run_id="synthetic-trusted-run",
+        attempt_digest="0" * 64,
+        preflight_digest="8" * 64,
+    )
+    unbound_relative = f"evidence/decisive/{unbound.artifact_digest}.json"
+    unbound_sha256 = _write_json(
+        tracked / unbound_relative,
+        {
+            "schema_version": "noor-e2e-decisive-evidence-envelope/v2",
+            "evidence_kind": "structured_event",
+            "artifact": unbound.model_dump(mode="json"),
+        },
+    )
+    _write_json(
+        protected / f"producer-receipts/decisive/{unbound.artifact_digest}.json",
+        {
+            "schema_version": "noor-e2e-decisive-producer-receipt/v2",
+            "registry_id": registry.registry_id,
+            "artifact_digest": unbound.artifact_digest,
+            "run_id": unbound.run_id,
+            "attempt_digest": unbound.attempt_digest,
+            "preflight_digest": unbound.preflight_digest,
+            "assertion_id": unbound.assertion_id,
+            "producer": unbound.producer,
+            "evidence_id": f"decisive:{unbound.artifact_digest}",
+            "relative_path": unbound_relative,
+            "tracked_sha256": unbound_sha256,
+        },
+    )
+
+    with pytest.raises(Exception, match="receipt|attempt"):
+        registry.load_decisive_evidence(
+            run_id="synthetic-trusted-run",
+            artifact_digest=unbound.artifact_digest,
+        )
+
+
+def test_fixed_root_loader_registers_receipted_classifier_evidence(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    policy, _, _ = _modules()
+    registry.open_run(run_id="synthetic-trusted-run")
+    assertion = next(
+        item
+        for item in registry.compiled_policy.assertions.values()
+        if item.oracle.kind == "classifier_result"
+    )
+    attempt_digest = json.loads(
+        (
+            tracked / "attempts" / f"{registry.compiled_plan.execution_ids[0]}.json"
+        ).read_text(encoding="utf-8")
+    )["attempt_digest"]
+    result = policy.ClassifierResult.build(
+        assertion_id=assertion.assertion_id,
+        policy_digest=registry.compiled_policy.policy_digest,
+        evaluator_digest=registry.classifier_evaluator_digest(assertion.assertion_id),
+        run_id="synthetic-trusted-run",
+        attempt_digest=attempt_digest,
+        preflight_digest="8" * 64,
+        classifier_id=assertion.oracle.classifier_id,
+        producer=assertion.oracle.allowed_producers[0],
+        source_id="protected-classifier-source",
+        source_digest="d" * 64,
+        observed_at=datetime.now(UTC),
+        passed=True,
+        reason="Protected classifier evidence passed.",
+    )
+    relative = f"evidence/decisive/{result.artifact_digest}.json"
+    tracked_sha256 = _write_json(
+        tracked / relative,
+        {
+            "schema_version": "noor-e2e-decisive-evidence-envelope/v2",
+            "evidence_kind": "classifier_result",
+            "artifact": result.model_dump(mode="json"),
+        },
+    )
+    _write_json(
+        protected / f"producer-receipts/decisive/{result.artifact_digest}.json",
+        {
+            "schema_version": "noor-e2e-decisive-producer-receipt/v2",
+            "registry_id": registry.registry_id,
+            "artifact_digest": result.artifact_digest,
+            "run_id": result.run_id,
+            "attempt_digest": result.attempt_digest,
+            "preflight_digest": result.preflight_digest,
+            "assertion_id": result.assertion_id,
+            "producer": result.producer,
+            "evidence_id": f"decisive:{result.artifact_digest}",
+            "relative_path": relative,
+            "tracked_sha256": tracked_sha256,
+        },
+    )
+
+    registry.load_decisive_evidence(
+        run_id="synthetic-trusted-run",
+        artifact_digest=result.artifact_digest,
+    )
+
+    assert result.artifact_digest in registry._trusted_classifier_digests
+
+
+def test_finalizer_publishes_only_complete_verified_snapshot(tmp_path: Path) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    _, _, trusted = _modules()
+    run_id = "synthetic-trusted-run"
+    tracked_files = {
+        path.relative_to(tracked).as_posix(): json.loads(
+            path.read_text(encoding="utf-8")
+        )
+        for path in tracked.rglob("*.json")
+    }
+    protected_files = {
+        path.relative_to(protected).as_posix(): json.loads(
+            path.read_text(encoding="utf-8")
+        )
+        for path in protected.rglob("*.json")
+    }
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    snapshot_identity = {
+        "schema_version": "noor-e2e-verified-execution-snapshot/v2",
+        "run_id": run_id,
+        "registry_id": registry.registry_id,
+        "execution_ids": list(registry.compiled_plan.execution_ids),
+        "tracked_files": tracked_files,
+        "protected_files": protected_files,
+    }
+    _write_json(
+        protected.parent / ".staging" / f"{run_id}.json",
+        {
+            **snapshot_identity,
+            "snapshot_digest": trusted.canonical_digest(snapshot_identity),
+        },
+    )
+
+    registry.finalize_run(run_id)
+    registry.open_run(run_id=run_id)
+
+    assert registry.calculate_rollups()["coverage_complete"] is True
+    assert (tracked / "registry/run.json").is_file()
+    assert (protected / "registry/anchor.json").is_file()
+
+
+def test_finalizer_removes_partial_publish_when_inner_receipt_is_invalid(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    _, _, trusted = _modules()
+    run_id = "synthetic-trusted-run"
+    tracked_files = {
+        path.relative_to(tracked).as_posix(): json.loads(
+            path.read_text(encoding="utf-8")
+        )
+        for path in tracked.rglob("*.json")
+    }
+    protected_files = {
+        path.relative_to(protected).as_posix(): json.loads(
+            path.read_text(encoding="utf-8")
+        )
+        for path in protected.rglob("*.json")
+    }
+    receipt_path = (
+        f"producer-receipts/attempts/{registry.compiled_plan.execution_ids[0]}.json"
+    )
+    protected_files[receipt_path]["raw_digest"] = "0" * 64
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    snapshot_identity = {
+        "schema_version": "noor-e2e-verified-execution-snapshot/v2",
+        "run_id": run_id,
+        "registry_id": registry.registry_id,
+        "execution_ids": list(registry.compiled_plan.execution_ids),
+        "tracked_files": tracked_files,
+        "protected_files": protected_files,
+    }
+    _write_json(
+        protected.parent / ".staging" / f"{run_id}.json",
+        {
+            **snapshot_identity,
+            "snapshot_digest": trusted.canonical_digest(snapshot_identity),
+        },
+    )
+
+    with pytest.raises(Exception, match="attempt.*binding|receipt"):
+        registry.finalize_run(run_id)
+
+    assert not tracked.exists()
+    assert not protected.exists()
 
 
 def test_runtime_has_no_replaceable_root_or_public_signer_api() -> None:

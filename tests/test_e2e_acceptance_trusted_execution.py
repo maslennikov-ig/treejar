@@ -375,7 +375,7 @@ def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:
         passed=True,
         reason="Structured classifier passed.",
     )
-    registry._load_local_classifier_fixture(result)
+    registry._trusted_classifier_digests.add(result.artifact_digest)
     evidence = policy.OracleEvidence(
         assertion_id=second.assertion_id,
         structured_events=(),
@@ -787,17 +787,13 @@ def test_generic_runner_validates_every_canonical_scenario(
     registry._load_trusted_readback(final)
     for item in oracle_evidence:
         for classifier in item.classifier_results:
-            registry._load_classifier_artifact(
-                classifier,
-                run_id=f"run-{scenario_id.lower()}",
-                attempt_digest=plan_digest,
-            )
+            registry._trusted_classifier_digests.add(classifier.artifact_digest)
         for structured in (
             *item.structured_events,
             *item.tool_results,
             *item.readbacks,
         ):
-            registry._load_local_structured_fixture(structured)
+            registry._trusted_structured_digests.add(structured.artifact_digest)
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id=f"run-{scenario_id.lower()}",
@@ -894,11 +890,7 @@ def test_generic_runner_validates_every_canonical_evidence_block(
                 passed=True,
                 reason="Structured classifier passed.",
             )
-            registry._load_classifier_artifact(
-                classifier,
-                run_id=run_id,
-                attempt_digest=plan_digest,
-            )
+            registry._trusted_classifier_digests.add(classifier.artifact_digest)
             item = policy.OracleEvidence(
                 assertion_id=assertion_id,
                 structured_events=(),
@@ -920,7 +912,7 @@ def test_generic_runner_validates_every_canonical_evidence_block(
                 attempt_digest=plan_digest,
                 preflight_digest=authorization.preflight_digest,
             )
-            registry._load_local_structured_fixture(event)
+            registry._trusted_structured_digests.add(event.artifact_digest)
             item = policy.OracleEvidence(
                 assertion_id=assertion_id,
                 structured_events=(event,),
