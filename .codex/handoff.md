@@ -3,7 +3,7 @@
 Updated: 2026-07-27
 Current branch: `main`
 Current stage id: `tj-5e3k`
-Current stage status: in progress; four-candidate model battle
+Current stage status: accepted; four-candidate model battle
 
 ## Current Truth
 
@@ -29,7 +29,7 @@ Current stage status: in progress; four-candidate model battle
   - deferred product media is reconciled to final-response references;
   - translated `NEW` variants retain stable model-code media matching.
 - Latest local release gates passed Ruff, format, Mypy over `162` source files,
-  and Pytest (`1532 passed, 19 skipped`).
+  and Pytest (`1588 passed, 19 skipped`).
 - Final six-scenario delivery-aware durations:
   - FAQ `22.147s`;
   - product `24.411s`;
@@ -49,54 +49,58 @@ Current stage status: in progress; four-candidate model battle
 - Raw recipient/channel/conversation evidence is protected on the VPS with mode
   `600` and is not stored in Git, Beads, handoff, or public logs.
 - Graphify is not configured; `graphify-out/GRAPH_REPORT.md` is absent.
-- Model battle `tj-0j7o` is accepted. The core comparison was
-  `z-ai/glm-5` versus `deepseek/deepseek-v4-flash`; the fast/system comparison
-  was `nex-agi/nex-n2-mini` versus `deepseek/deepseek-v4-flash`.
-- Comparative sales choice: keep GLM-5. It scored `92.879` versus `85.395`,
-  had equivalent blind quality (`91.33%` versus `91.00%`), and led p95 latency
-  (`11.229s` versus `21.962s`).
-- Comparative fast/system choice: prefer DeepSeek V4 Flash with reasoning
-  disabled and structured validation/fallback. It achieved `97.5%` first-pass
-  JSON/schema versus Nex `72.5%` and higher semantic field accuracy (`71.84%`
-  versus `64.08%`), while Nex led p95 latency (`5.553s` versus `14.804s`).
-- Strict release-gate outcome is `no_safe_replacement` for both battles. Sales
-  had one blind critical finding per candidate; both fast candidates missed
-  the semantic threshold. Production routing remains unchanged.
-- Durable report: `docs/reports/model-battle-2026-07-27.md`; raw and derived
-  evidence: `.codex/stages/tj-0j7o/results/`.
-- Stage `tj-5e3k` extends both routes with `z-ai/glm-5.2` and
-  `deepseek/deepseek-v4-pro`. Both exact IDs and all required structured/tool
-  parameters are present in the live OpenRouter catalog.
-- The new stage reruns every baseline in the same provider window: four sales
-  candidates and four fast/system candidates, using the accepted cases,
-  two repetitions, anonymous sales review, and unchanged hard gates.
+- Extended model battle `tj-5e3k` is accepted. It compared four candidates per
+  route with two repetitions: 96 sales and 192 fast/system calls using only
+  fixed synthetic cases. Production routing remained unchanged.
+- Sales strict winner: keep `z-ai/glm-5`. It scored `93.975`, passed every hard
+  gate, achieved `93.50%` blind quality and `10.710s` p95. GLM-5.2, DeepSeek
+  V4 Flash, and DeepSeek V4 Pro each had at least one blind critical finding.
+- Fast/system strict outcome: `no_safe_replacement`; every candidate missed
+  the `95%` semantic gate.
+- Practical fast/system hardening target: `deepseek/deepseek-v4-pro`, weighted
+  `85.353`, with `100%` first-pass JSON/schema, reliability, tool arguments,
+  and reasoning-disable compliance, plus `12.168s` p95. It reached `72.82%`
+  semantic accuracy and consistently failed `system-red-03`.
+- DeepSeek V4 Flash remains the semantic reference at `73.79%`, weighted
+  `84.133`, and consistently failed `system-red-01`.
+- Nex-N2-Mini ignored reasoning disable in all 48 runs, returned seven
+  first-attempt 502 errors, and achieved only `70%` JSON/schema. GLM-5.2 was
+  not selected for either route.
+- Review corrections and final hardening cover negated claims, exact
+  suite/model/matrix provenance, punctuation normalization, explicit reasoning
+  diagnostics, balanced anonymous labels, and both final P3 regressions.
+- Durable report:
+  `docs/reports/model-battle-glm52-v4pro-2026-07-27.md`; raw and derived
+  evidence: `.codex/stages/tj-5e3k/results/`.
 
 ## Boundary and Scope Ledger
 
 - One cohesive active stage owns the shared OpenRouter evaluation,
   correctness, blinding, and evidence boundary.
-- Root owned implementation and sequential inference. One docs specialist
-  reviewed provider/methodology risk, and one context-isolated QA reviewer
-  scored anonymous A/B sales responses without reading the model key.
+- Root owned implementation and sequential inference. Context-isolated
+  reviewers performed anonymous A/B/C/D sales scoring and targeted correctness
+  review without production access.
 - No scope criterion was dropped and no v2.19 material split occurred.
 - Excluded actions remained excluded: production routing, customer traffic,
   quotation/order creation, Zoho/Wazzup mutations, and real customer data.
 
 ## Next recommended
 
-Next stage id: `tj-5e3k`
+Next stage id: `tj-j13d`
 
-Recommended action: complete the four-candidate synthetic benchmark and use
-its new route recommendations to re-evaluate `tj-j13d`. `tj-b93r` separately
-owns the GLM-5 weak-catalog grounding guard. Deployment remains separately
-gated.
+Recommended action: harden DeepSeek V4 Pro locally for the structured routes,
+using DeepSeek V4 Flash as the semantic reference. Require the accepted
+JSON/schema, semantic, consistent-case, tool-argument, reasoning-control, and
+fallback gates before any production switch. `tj-b93r` separately owns the
+GLM-5 weak-catalog grounding guard.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-5e3k`. Preserve accepted `tj-0j7o` evidence,
-rerun all four candidates per route under the same conditions, finish the
-anonymous sales review before unblinding, and record strict and practical
-rankings. Ask before deployment or live traffic.
+Use $orchestrator-stage for `tj-j13d`. Preserve accepted `tj-5e3k` evidence,
+harden `deepseek/deepseek-v4-pro` for fast structured routes with reasoning
+disabled, validation and bounded fallback, and compare it against
+`deepseek/deepseek-v4-flash`. Close every acceptance gate locally before
+proposing a production switch. Ask before deployment or live traffic.
 
 ## Approval gates
 
@@ -108,8 +112,9 @@ rankings. Ask before deployment or live traffic.
 
 ## Explicit defers
 
-- Model adoption and deployment remain outside accepted stage `tj-0j7o` and
-  must use `tj-j13d` and a separately approved release boundary.
+- DeepSeek V4 Pro hardening is tracked by `tj-j13d`; model adoption and
+  deployment require that task to pass its gates and a separately approved
+  release boundary.
 - GLM-5 weak-catalog grounding is tracked by `tj-b93r`.
 - Referral launch `tj-final27.6`, WABA approval `tj-gh21`, catalog GH #54
   `tj-2pkk`, new soft/hard escalation policy `tj-g3f`, delivery-source policy

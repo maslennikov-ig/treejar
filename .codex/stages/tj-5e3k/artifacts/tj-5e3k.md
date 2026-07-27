@@ -18,7 +18,7 @@ epic_id: n/a
 stage_id: tj-5e3k
 session_id: n/a
 milestone: cohesive-vertical-slice
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -50,11 +50,11 @@ parallel_group: noor-extended-model-battle
 depends_on_streams:
   - none
 parallel_decision: sequential inference followed by isolated read-only scoring
-status: returned
+status: accepted
 delivery_method: manual integration
-accepted_by_orchestrator: no
-cleanup_status: pending
-cleanup_notes: Stage uses the root worktree; unrelated untracked user files remain untouched.
+accepted_by_orchestrator: yes
+cleanup_status: cleaned
+cleanup_notes: No stage worktree or branch was created; reviewers left no runtime tail, and unrelated untracked user files remain untouched.
 risk_level: high
 verification_tier: release
 risk_tags:
@@ -66,14 +66,23 @@ invariants:
   - structured-output
   - production-unchanged
 docs_impact: behavior
-docs_reviewed: pending
-docs_review_notes: Durable report and handoff update are pending benchmark evidence.
+docs_reviewed: updated
+docs_review_notes: Durable report, design, plan, stage summary, and handoff record the final evidence and qualified route decisions.
 verification:
-  - pending
+  - uv run pytest tests/test_scripts_model_battle.py -q -p no:cacheprovider: passed with 56 tests
+  - uv run ruff check src/ tests/: passed
+  - uv run ruff format --check src/ tests/: passed over 302 files
+  - uv run mypy src/: passed over 162 source files
+  - uv run pytest tests/ -v --tb=short: passed with 1588 passed and 19 skipped
+  - score-only regeneration from preserved raw evidence: passed
+  - benchmark evidence integrity: passed for 96 sales and 192 system rows
+  - canonical release closeout: passed, including 133 integration checks
 changed_files:
   - scripts/model_battle.py
   - tests/test_scripts_model_battle.py
   - .codex/stages/tj-5e3k/results/
+  - .codex/stages/tj-5e3k/review.md
+  - .codex/stages/tj-5e3k/review-delta.md
   - docs/reports/model-battle-glm52-v4pro-2026-07-27.md
 explicit_defers:
   - Production adoption and deployment remain separately gated.
@@ -81,15 +90,34 @@ explicit_defers:
 
 # Summary
 
-The stage is in progress. The accepted profile will be extended through TDD,
-then the full synthetic inference matrix and anonymous sales review will run
-before route recommendations are recorded.
+## Delivered
+
+- Four-candidate, two-repeat comparison for both Noor model routes.
+- Ninety-six sales and 192 structured/system calls, all synthetic and
+  sequential.
+- Counterbalanced anonymous A/B/C/D sales review completed before reveal.
+- Provider capability, raw response, latency, retry, reasoning-control,
+  JSON/schema, semantic, tool-argument, and hard-gate evidence.
+- Review fixes for negated claims, suite/matrix provenance, punctuation,
+  reasoning diagnostics, and balanced blinding, including final P3 hardening.
+- Durable decision report and reproducible raw/derived artifacts.
 
 # Verification
 
-- Pending implementation and benchmark execution.
+- Focused benchmark suite: `56 passed`.
+- Full release gates: Ruff and Ruff format passed; Mypy passed over 162 source
+  files; Pytest passed with `1588 passed, 19 skipped`.
+- Targeted correctness delta-review disposition: `merge`.
 
 # Risks / Follow-ups
 
-- Production adoption and deployment remain separately gated.
-
+- Sales strict winner is `z-ai/glm-5` at `93.975`.
+- Fast/system strict outcome is `no_safe_replacement`; DeepSeek V4 Pro is only
+  the practical hardening target at `85.353`.
+- `docs-reviewed: updated` — final evidence, limitations, and follow-up
+  boundary are recorded.
+- `project-index: reviewed-no-change` — no stable application entrypoint,
+  route, API, integration, or ownership boundary changed.
+- `graph-reviewed: no-change-needed` — Graphify is not configured and no graph
+  report exists.
+- Production adoption and deployment remain separately gated under `tj-j13d`.

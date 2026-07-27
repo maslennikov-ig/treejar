@@ -11,6 +11,7 @@ from scripts.model_battle import (
     _sanitize_provider_payload,
     aggregate_rows,
     assert_catalog_capabilities,
+    assert_existing_run_evidence,
     build_base_payload,
     build_blind_pair,
     candidate_metrics_from_evidence,
@@ -18,8 +19,11 @@ from scripts.model_battle import (
     extract_numeric_tokens,
     merge_run_manifest,
     models_for_profile,
+    normalize_blind_reviews,
     parse_json_content,
     percentile,
+    reasoning_was_observed,
+    rescore_system_rows,
     retry_was_used,
     score_blind_reviews,
     score_expected_fields,
@@ -114,14 +118,79 @@ def test_run_manifest_merges_separate_suite_invocations() -> None:
         models_for_profile(EXTENDED_PROFILE, "system")
     )
 
+    reverse_existing = {
+        **existing,
+        "suites": ["system"],
+        "models": {
+            "system": list(models_for_profile(EXTENDED_PROFILE, "system")),
+        },
+    }
     reverse = merge_run_manifest(
-        {**existing, "suites": ["system"], "models": {"system": []}},
+        reverse_existing,
         suites=("sales",),
         profile=EXTENDED_PROFILE,
         repetitions=2,
         seed=27072026,
     )
     assert reverse["suites"] == ["sales", "system"]
+
+    with pytest.raises(ValueError, match="models"):
+        merge_run_manifest(
+            {**reverse_existing, "models": {"system": []}},
+            suites=("sales",),
+            profile=EXTENDED_PROFILE,
+            repetitions=2,
+            seed=27072026,
+        )
+
+
+def test_existing_suite_evidence_rejects_incomplete_matrix(tmp_path) -> None:
+    manifest = {
+        "seed": 27072026,
+        "repetitions": 2,
+        "suites": ["sales"],
+        "profile": EXTENDED_PROFILE,
+        "models": {
+            "sales": list(models_for_profile(EXTENDED_PROFILE, "sales")),
+        },
+        "production_changed": False,
+        "synthetic_evidence_only": True,
+    }
+    (tmp_path / "sales_results.jsonl").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="incomplete"):
+        assert_existing_run_evidence(tmp_path, manifest)
+
+
+def test_existing_suite_evidence_rejects_wrong_suite_tag(tmp_path) -> None:
+    manifest = {
+        "seed": 27072026,
+        "repetitions": 1,
+        "suites": ["sales"],
+        "profile": EXTENDED_PROFILE,
+        "models": {
+            "sales": list(models_for_profile(EXTENDED_PROFILE, "sales")),
+        },
+        "production_changed": False,
+        "synthetic_evidence_only": True,
+    }
+    rows = [
+        {
+            "suite": "system",
+            "case_id": case.case_id,
+            "repetition": 1,
+            "model": model,
+        }
+        for case in SALES_CASES
+        for model in models_for_profile(EXTENDED_PROFILE, "sales")
+    ]
+    (tmp_path / "sales_results.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="suite tag"):
+        assert_existing_run_evidence(tmp_path, manifest)
 
 
 def test_catalog_preflight_rejects_missing_required_model_capability() -> None:
@@ -181,6 +250,36 @@ def test_base_payload_requires_an_endpoint_supporting_all_parameters() -> None:
 
     assert payload["provider"] == {"require_parameters": True}
     assert payload["reasoning"] == {"enabled": False}
+
+
+def test_reasoning_diagnostic_detects_ignored_disable_control() -> None:
+    attempts = [
+        {
+            "response": {
+                "choices": [{"message": {"reasoning": "hidden work"}}],
+                "usage": {
+                    "completion_tokens_details": {"reasoning_tokens": 12},
+                },
+            }
+        }
+    ]
+
+    assert reasoning_was_observed(attempts) is True
+    assert (
+        reasoning_was_observed(
+            [
+                {
+                    "response": {
+                        "choices": [{"message": {"reasoning": None}}],
+                        "usage": {
+                            "completion_tokens_details": {"reasoning_tokens": 0},
+                        },
+                    }
+                }
+            ]
+        )
+        is False
+    )
 
 
 def test_provider_evidence_redacts_account_identifiers() -> None:
@@ -330,6 +429,16 @@ def test_score_expected_fields_normalizes_strings_but_not_numbers() -> None:
     assert mismatches == ["$.quantity: expected 2, got 3"]
 
 
+def test_score_expected_fields_ignores_terminal_punctuation() -> None:
+    correct, total, mismatches = score_expected_fields(
+        {"summary": "Customer requests 15% discount."},
+        {"summary": "Customer requests 15% discount"},
+    )
+
+    assert (correct, total) == (1, 1)
+    assert mismatches == []
+
+
 def test_score_expected_fields_supports_semantic_text_fragments() -> None:
     payload = {"translation": "السعر هو 1,450 درهم إماراتي، والضمان لمدة 5 سنوات."}
     expected = {
@@ -369,6 +478,39 @@ def test_sales_scoring_blocks_ungrounded_numbers_and_wrong_language() -> None:
     assert score["ungrounded_numbers"] == ["99"]
     assert score["passed"] is False
     assert extract_numeric_tokens("AED 1,450 and 15%") == {"1450", "15"}
+
+
+def test_sales_scoring_does_not_treat_negated_claim_as_asserted() -> None:
+    score = score_sales_response(
+        content=(
+            "Stock is unconfirmed, so I can't guarantee 20 units are "
+            "available at this moment."
+        ),
+        required_phrases=("unconfirmed",),
+        forbidden_phrases=("20 units are available",),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="en",
+        allowed_numbers={"20"},
+    )
+
+    assert score["forbidden_phrases"] == {"20 units are available": True}
+    assert score["hard_gate_passed"] is True
+
+
+def test_sales_scoring_detects_assertion_after_negated_prior_clause() -> None:
+    score = score_sales_response(
+        content="Stock is not unconfirmed, and 20 units are available.",
+        required_phrases=(),
+        forbidden_phrases=("20 units are available",),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="en",
+        allowed_numbers={"20"},
+    )
+
+    assert score["forbidden_phrases"] == {"20 units are available": False}
+    assert score["hard_gate_passed"] is False
 
 
 def test_tool_rounds_do_not_count_as_provider_retries() -> None:
@@ -470,6 +612,34 @@ def test_blind_group_supports_four_anonymous_candidates() -> None:
     assert not any(model in json.dumps(blind["answers"]) for model in candidates)
 
 
+def test_four_way_blinding_is_counterbalanced_across_groups() -> None:
+    candidates = {
+        "one": "Answer one",
+        "two": "Answer two",
+        "three": "Answer three",
+        "four": "Answer four",
+    }
+    counts = {
+        model: {label: 0 for label in ("A", "B", "C", "D")} for model in candidates
+    }
+
+    for assignment_index in range(8):
+        blind = build_blind_pair(
+            case_id=f"sales-{assignment_index:02d}",
+            repetition=1,
+            candidates=candidates,
+            seed=27072026,
+            assignment_index=assignment_index,
+        )
+        for label, model in blind["reveal"].items():
+            counts[model][label] += 1
+
+    assert all(
+        label_counts == {"A": 2, "B": 2, "C": 2, "D": 2}
+        for label_counts in counts.values()
+    )
+
+
 def test_blind_review_scores_map_back_to_models_only_after_review() -> None:
     reviews = [
         {
@@ -553,6 +723,21 @@ def test_blind_review_maps_all_labels_from_reveal_key() -> None:
 
     assert quality == {model: 0.8 for model in ("one", "two", "three", "four")}
     assert hard_gates == {model: True for model in ("one", "two", "three", "four")}
+
+
+def test_blind_review_normalizes_answers_alias_to_scores() -> None:
+    rows = normalize_blind_reviews(
+        [
+            {
+                "case_id": "sales-01",
+                "repetition": 1,
+                "answers": {"A": {"scores": {"clarity": 5}}},
+            }
+        ]
+    )
+
+    assert "answers" not in rows[0]
+    assert rows[0]["scores"] == {"A": {"scores": {"clarity": 5}}}
 
 
 def test_blind_review_rejects_missing_pair() -> None:
@@ -776,3 +961,26 @@ def test_system_candidate_metrics_enforce_schema_and_semantic_gates() -> None:
     assert by_model["safe"].hard_gates_passed is True
     assert by_model["unsafe"].hard_gates_passed is False
     assert details["unsafe"]["hard_gates"]["json_schema_at_least_97_5"] is False
+
+
+def test_rescore_system_rows_applies_current_text_normalization() -> None:
+    rows = rescore_system_rows(
+        [
+            {
+                "suite": "system",
+                "case_id": "system-tool-03",
+                "category": "tool_arguments",
+                "model": "candidate",
+                "parsed": {
+                    "reason_code": "discount_approval",
+                    "summary": "Customer requests 15% discount.",
+                },
+                "json_parse_ok": True,
+                "observed_tool": "escalate_to_manager",
+                "expected_tool": "escalate_to_manager",
+            }
+        ]
+    )
+
+    assert rows[0]["semantic_correct"] == rows[0]["semantic_total"]
+    assert rows[0]["semantic_mismatches"] == []

@@ -33,8 +33,10 @@ Fast/system:
 - `deepseek/deepseek-v4-pro`.
 
 The sales route uses provider-default reasoning consistently. The fast/system
-route disables reasoning consistently because Noor needs compact structured
-responses and this was the accepted profile in the prior round.
+route requests disabled reasoning consistently because Noor needs compact
+structured responses and this was the accepted profile in the prior round.
+Observed reasoning tokens are recorded separately so provider/model
+noncompliance is visible rather than assumed away.
 
 ## Test Contract
 
@@ -45,7 +47,8 @@ responses and this was the accepted profile in the prior round.
 - Require OpenRouter endpoints that support every requested parameter.
 - Preserve raw responses, timings, retry history, schema and semantic results,
   blind labels, and scoring inputs.
-- Score sales responses anonymously before reading the reveal key.
+- Score sales responses anonymously before reading the reveal key, with each
+  candidate occupying A/B/C/D exactly six times.
 - Rank candidates even if none passes every release gate, but label a route
   winner as safe only when its hard correctness gates pass.
 
@@ -75,4 +78,3 @@ comparable with the accepted benchmark. The durable report must distinguish:
 - No claim that a synthetic benchmark alone authorizes deployment.
 - Provider availability and required parameters are verified before paid
   inference calls.
-

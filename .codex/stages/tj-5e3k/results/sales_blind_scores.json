@@ -6,10 +6,10 @@
       "A": {
         "scores": {
           "clarity": 5,
+          "concision": 4,
           "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 4
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -17,10 +17,10 @@
       "B": {
         "scores": {
           "clarity": 5,
+          "concision": 5,
           "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -28,10 +28,10 @@
       "C": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
           "concision": 5,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -39,10 +39,10 @@
       "D": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
           "concision": 5,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -56,10 +56,10 @@
       "A": {
         "scores": {
           "clarity": 5,
+          "concision": 4,
           "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 4
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -67,10 +67,10 @@
       "B": {
         "scores": {
           "clarity": 5,
+          "concision": 5,
           "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
+          "next_step": 4,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -78,10 +78,10 @@
       "C": {
         "scores": {
           "clarity": 5,
+          "concision": 5,
           "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 5
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -89,10 +89,10 @@
       "D": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
           "concision": 5,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 3
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -106,982 +106,32 @@
       "A": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 2,
-          "persuasion": 4,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
           "concision": 3,
-          "next_step": 4
-        },
-        "critical_failure": true,
-        "critical_failure_reason": "Invents unsupported product benefits and the ability to arrange a trial sit at a UAE showroom."
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 2,
-          "persuasion": 4,
-          "concision": 2,
-          "next_step": 4
-        },
-        "critical_failure": true,
-        "critical_failure_reason": "Invents material posture, leg-fit, and circulation benefits not returned by the catalog search."
-      }
-    }
-  },
-  {
-    "case_id": "sales-02",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 3,
-          "persuasion": 5,
-          "concision": 3,
-          "next_step": 4
-        },
-        "critical_failure": true,
-        "critical_failure_reason": "Invents the unsupported commercial option of visiting a showroom to try the chairs."
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-03",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 3,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 3,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-03",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 3,
-          "concision": 5,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-04",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-04",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-05",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 4,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-05",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 3,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-06",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-06",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 3,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-07",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-07",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 3,
-          "concision": 5,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-08",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 3
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 3
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-08",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 3
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 3
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-09",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 3,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 2,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 2
-        },
-        "critical_failure": true,
-        "critical_failure_reason": "Invents availability for office use and the unsupported commercial option of providing fabric samples."
-      }
-    }
-  },
-  {
-    "case_id": "sales-09",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 3,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 2,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 2
-        },
-        "critical_failure": true,
-        "critical_failure_reason": "Invents availability and the unsupported commercial ability to arrange a showroom viewing."
-      }
-    }
-  },
-  {
-    "case_id": "sales-10",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 3,
-          "concision": 4,
-          "next_step": 3
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 3,
-          "concision": 4,
-          "next_step": 3
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-10",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-11",
-    "repetition": 1,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 4
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 2,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 3
-        },
-        "critical_failure": true,
-        "critical_failure_reason": "Invents that an alternative product is currently in stock and ready to go without supporting inventory evidence."
-      },
-      "C": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "D": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 4,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      }
-    }
-  },
-  {
-    "case_id": "sales-11",
-    "repetition": 2,
-    "scores": {
-      "A": {
-        "scores": {
-          "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
-          "concision": 5,
-          "next_step": 5
-        },
-        "critical_failure": false,
-        "critical_failure_reason": ""
-      },
-      "B": {
-        "scores": {
-          "clarity": 4,
           "factual_trust": 1,
-          "persuasion": 3,
-          "concision": 3,
-          "next_step": 4
+          "next_step": 3,
+          "persuasion": 4
         },
         "critical_failure": true,
-        "critical_failure_reason": "Materially misstates the null stock result as meaning the quantity is not zero; the result only means stock is unconfirmed."
+        "critical_failure_reason": "Offers a UAE showroom trial without any evidence that this service is available."
       },
       "C": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
           "concision": 4,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1089,10 +139,960 @@
       "D": {
         "scores": {
           "clarity": 5,
+          "concision": 3,
+          "factual_trust": 2,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": true,
+        "critical_failure_reason": "Claims the seat-depth adjustment promotes better circulation, an unsupported product-health benefit."
+      }
+    }
+  },
+  {
+    "case_id": "sales-02",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
           "factual_trust": 5,
-          "persuasion": 4,
+          "next_step": 5,
+          "persuasion": 5
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
           "concision": 4,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 1,
+          "next_step": 3,
+          "persuasion": 4
+        },
+        "critical_failure": true,
+        "critical_failure_reason": "Offers an in-person showroom trial without evidence that a showroom trial is available."
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 4,
+          "next_step": 5,
+          "persuasion": 5
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-03",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 5
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-04",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 4,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-05",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 4,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-06",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-07",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 3,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 3,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-08",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 3,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 2,
+          "next_step": 3,
+          "persuasion": 4
+        },
+        "critical_failure": true,
+        "critical_failure_reason": "Offers fabric samples without evidence that this commercial service or material option is available."
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 5
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-09",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 1,
+          "next_step": 2,
+          "persuasion": 4
+        },
+        "critical_failure": true,
+        "critical_failure_reason": "Offers a showroom viewing without evidence that this commercial service is available."
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 5
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 3,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-10",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 4,
+          "persuasion": 3
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 1,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 1,
+          "next_step": 2,
+          "persuasion": 3
+        },
+        "critical_failure": true,
+        "critical_failure_reason": "Claims an alternative product is currently in stock and ready without any supporting stock evidence."
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 4,
+          "next_step": 4,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      }
+    }
+  },
+  {
+    "case_id": "sales-11",
+    "repetition": 2,
+    "scores": {
+      "A": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "B": {
+        "scores": {
+          "clarity": 5,
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "C": {
+        "scores": {
+          "clarity": 5,
+          "concision": 4,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
+        },
+        "critical_failure": false,
+        "critical_failure_reason": ""
+      },
+      "D": {
+        "scores": {
+          "clarity": 5,
+          "concision": 3,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1106,10 +1106,10 @@
       "A": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 5,
           "concision": 5,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1117,10 +1117,10 @@
       "B": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
-          "concision": 3,
-          "next_step": 4
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1128,10 +1128,10 @@
       "C": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1139,10 +1139,10 @@
       "D": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 4,
           "concision": 4,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1156,10 +1156,10 @@
       "A": {
         "scores": {
           "clarity": 5,
+          "concision": 4,
           "factual_trust": 5,
-          "persuasion": 5,
-          "concision": 5,
-          "next_step": 5
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1167,10 +1167,10 @@
       "B": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
           "concision": 4,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1178,10 +1178,10 @@
       "C": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 4,
-          "persuasion": 5,
-          "concision": 4,
-          "next_step": 5
+          "concision": 5,
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""
@@ -1189,10 +1189,10 @@
       "D": {
         "scores": {
           "clarity": 5,
-          "factual_trust": 5,
-          "persuasion": 4,
           "concision": 5,
-          "next_step": 5
+          "factual_trust": 5,
+          "next_step": 5,
+          "persuasion": 4
         },
         "critical_failure": false,
         "critical_failure_reason": ""

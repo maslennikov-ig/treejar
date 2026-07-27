@@ -236,7 +236,7 @@ def _normalize_expected_value(value: Any) -> Any:
     if not isinstance(value, str):
         return value
     normalized = value.translate(_DASH_TRANSLATION).casefold()
-    return " ".join(normalized.split())
+    return " ".join(normalized.split()).rstrip(" .!?،؛")
 
 
 def _matches_expected(actual: Any, expected: Any) -> bool:
@@ -348,6 +348,19 @@ def merge_run_manifest(
         ):
             raise ValueError("Existing run manifest has invalid suites")
         previous_suites = raw_suites
+        raw_models = existing.get("models")
+        if not isinstance(raw_models, Mapping):
+            raise ValueError("Existing run manifest has invalid models")
+        invalid_model_suites = [
+            suite
+            for suite in previous_suites
+            if raw_models.get(suite) != list(models_for_profile(profile, suite))
+        ]
+        if invalid_model_suites:
+            raise ValueError(
+                "Existing run manifest has incompatible models for suites: "
+                + ", ".join(invalid_model_suites)
+            )
 
     requested_suites = set(previous_suites) | set(suites)
     merged_suites = [
@@ -372,6 +385,7 @@ def build_blind_pair(
     repetition: int,
     candidates: Mapping[str, str],
     seed: int,
+    assignment_index: int | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic anonymous group with a separate reveal key."""
 
@@ -385,7 +399,15 @@ def build_blind_pair(
         if hashlib.sha256(material).digest()[0] % 2:
             model_names.reverse()
     else:
-        random.Random(f"{seed}:{case_id}:{repetition}").shuffle(model_names)
+        random.Random(f"{seed}:multi-model-order").shuffle(model_names)
+        if assignment_index is None:
+            material = f"{seed}:{case_id}:{repetition}".encode()
+            assignment_index = int.from_bytes(
+                hashlib.sha256(material).digest()[:4],
+                "big",
+            )
+        offset = assignment_index % len(model_names)
+        model_names = model_names[offset:] + model_names[:offset]
     reveal = {chr(ord("A") + index): model for index, model in enumerate(model_names)}
     return {
         "case_id": case_id,
@@ -393,6 +415,20 @@ def build_blind_pair(
         "answers": {label: candidates[model] for label, model in reveal.items()},
         "reveal": reveal,
     }
+
+
+def normalize_blind_reviews(
+    reviews: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Normalize the single common reviewer alias without changing scores."""
+
+    normalized: list[dict[str, Any]] = []
+    for source in reviews:
+        row = dict(source)
+        if "scores" not in row and isinstance(row.get("answers"), Mapping):
+            row["scores"] = row.pop("answers")
+        normalized.append(row)
+    return normalized
 
 
 def evaluate_blind_reviews(
@@ -569,6 +605,45 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     ]
 
 
+def assert_existing_run_evidence(
+    output_dir: Path,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Reject a partial prior suite before merging new evidence metadata."""
+
+    from scripts.model_battle_cases import SALES_CASES, SYSTEM_CASES
+
+    profile = str(manifest["profile"])
+    repetitions = int(manifest["repetitions"])
+    case_ids = {
+        "sales": [case.case_id for case in SALES_CASES],
+        "system": [case.case_id for case in SYSTEM_CASES],
+    }
+    for suite in manifest.get("suites", []):
+        if suite not in case_ids:
+            raise ValueError(f"Existing run manifest has unknown suite: {suite}")
+        path = output_dir / f"{suite}_results.jsonl"
+        if not path.exists():
+            raise ValueError(f"Existing {suite} evidence is incomplete: file missing")
+        rows = _read_jsonl(path)
+        if any(str(row.get("suite")) != suite for row in rows):
+            raise ValueError(f"Existing {suite} evidence contains a wrong suite tag")
+        expected = {
+            (case_id, repetition, model)
+            for case_id in case_ids[suite]
+            for repetition in range(1, repetitions + 1)
+            for model in models_for_profile(profile, suite)
+        }
+        actual = [
+            (str(row["case_id"]), int(row["repetition"]), str(row["model"]))
+            for row in rows
+        ]
+        if len(actual) != len(expected) or set(actual) != expected:
+            raise ValueError(
+                f"Existing {suite} evidence is incomplete or contains duplicates"
+            )
+
+
 def _read_json_object(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -684,6 +759,39 @@ def _usage(attempts: Sequence[ProviderAttempt]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def reasoning_was_observed(
+    attempts: Sequence[ProviderAttempt | Mapping[str, Any]],
+) -> bool:
+    """Detect reasoning returned despite a reasoning-disabled request."""
+
+    for attempt in attempts:
+        response = (
+            attempt.response
+            if isinstance(attempt, ProviderAttempt)
+            else attempt.get("response")
+        )
+        if not isinstance(response, Mapping):
+            continue
+        usage = response.get("usage")
+        if isinstance(usage, Mapping):
+            details = usage.get("completion_tokens_details")
+            if isinstance(details, Mapping):
+                tokens = details.get("reasoning_tokens")
+                if isinstance(tokens, int | float) and tokens > 0:
+                    return True
+        choices = response.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, Mapping):
+                    continue
+                message = choice.get("message")
+                if isinstance(message, Mapping) and (
+                    message.get("reasoning") or message.get("reasoning_details")
+                ):
+                    return True
+    return False
+
+
 def should_retry_status(status_code: int) -> bool:
     return status_code in _RETRYABLE_STATUS_CODES
 
@@ -734,6 +842,28 @@ def _normal_text(value: str) -> str:
     return " ".join(value.translate(_DASH_TRANSLATION).casefold().split())
 
 
+def _contains_asserted_phrase(content: str, phrase: str) -> bool:
+    """Return true when a forbidden phrase occurs outside a negated clause."""
+
+    start = 0
+    while True:
+        index = content.find(phrase, start)
+        if index < 0:
+            return False
+        boundaries = [
+            content.rfind(marker, 0, index) + len(marker)
+            for marker in (".", "!", "?", ";", ",", "\n", " but ", " however ")
+        ]
+        clause_prefix = content[max(boundaries) : index]
+        negated = re.search(
+            r"\b(?:not|never|cannot|can't|cant|unable to|unconfirmed)\b",
+            clause_prefix,
+        )
+        if negated is None:
+            return True
+        start = index + len(phrase)
+
+
 def extract_numeric_tokens(value: str) -> set[str]:
     """Extract normalized numeric tokens for factual grounding checks."""
 
@@ -776,7 +906,8 @@ def score_sales_response(
         phrase: _normal_text(phrase) in normalized for phrase in required_phrases
     }
     forbidden_results = {
-        phrase: _normal_text(phrase) not in normalized for phrase in forbidden_phrases
+        phrase: not _contains_asserted_phrase(normalized, _normal_text(phrase))
+        for phrase in forbidden_phrases
     }
     expected_tool_ok = list(observed_tools) == list(expected_tools)
     language_ok = _language_matches(content, expected_language)
@@ -1020,6 +1151,8 @@ async def _run_system_case(
         "success": bool(message),
         "first_pass_success": bool(attempts and attempts[0].ok),
         "retry_used": len(attempts) > 1,
+        "reasoning_requested": False,
+        "reasoning_observed": reasoning_was_observed(attempts),
         "latency_ms": round(sum(item.elapsed_ms for item in attempts), 3),
         "provider_attempts": [asdict(item) for item in attempts],
         "usage": _usage(attempts),
@@ -1141,12 +1274,15 @@ def _build_blind_files(
 
     blind_rows: list[dict[str, Any]] = []
     reveal_rows: list[dict[str, Any]] = []
-    for (case_id, repetition), candidates in sorted(grouped.items()):
+    for assignment_index, ((case_id, repetition), candidates) in enumerate(
+        sorted(grouped.items())
+    ):
         pair = build_blind_pair(
             case_id=case_id,
             repetition=repetition,
             candidates=candidates,
             seed=seed,
+            assignment_index=assignment_index,
         )
         blind_rows.append(
             {
@@ -1192,16 +1328,22 @@ def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
     """Turn raw evidence plus completed blind scores into route decisions."""
 
     sales_rows = rescore_sales_rows(_read_jsonl(output_dir / "sales_results.jsonl"))
-    system_rows = _read_jsonl(output_dir / "system_results.jsonl")
+    system_rows = rescore_system_rows(_read_jsonl(output_dir / "system_results.jsonl"))
     blind_scores = parse_json_content(blind_scores_path.read_text(encoding="utf-8"))
     blind_key = json.loads(
         (output_dir / "sales_blind_key.json").read_text(encoding="utf-8")
     )
     if not isinstance(blind_scores, list) or not isinstance(blind_key, list):
         raise ValueError("Blind scores and key must be JSON arrays")
+    blind_scores = normalize_blind_reviews(blind_scores)
     _write_json(output_dir / "sales_blind_scores.json", blind_scores)
     _write_jsonl(output_dir / "sales_scored_results.jsonl", sales_rows)
     _write_json(output_dir / "sales_scored_aggregate.json", aggregate_rows(sales_rows))
+    _write_jsonl(output_dir / "system_scored_results.jsonl", system_rows)
+    _write_json(
+        output_dir / "system_scored_aggregate.json",
+        aggregate_rows(system_rows),
+    )
     blind_quality, blind_hard_gates = evaluate_blind_reviews(
         blind_scores,
         blind_key,
@@ -1276,6 +1418,52 @@ def rescore_sales_rows(
     return rescored
 
 
+def rescore_system_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Reapply current semantic normalization without new provider calls."""
+
+    from scripts.model_battle_cases import SYSTEM_CASES
+
+    cases_by_id = {case.case_id: case for case in SYSTEM_CASES}
+    rescored: list[dict[str, Any]] = []
+    for source_row in rows:
+        row = dict(source_row)
+        case = cases_by_id[str(row["case_id"])]
+        parsed = row.get("parsed")
+        parse_ok = bool(row.get("json_parse_ok"))
+        if parse_ok:
+            correct, total, mismatches = score_expected_fields(
+                parsed,
+                case.expected_fields,
+            )
+        else:
+            correct = 0
+            total = len(case.expected_fields)
+            unavailable = (
+                "tool arguments unavailable"
+                if case.tools
+                else "structured result unavailable"
+            )
+            mismatches = [f"$: {unavailable}"]
+
+        if case.tools:
+            observed_tool = str(row.get("observed_tool") or "")
+            if observed_tool != case.expected_tool:
+                mismatches.append(
+                    f"$.tool: expected {case.expected_tool!r}, got {observed_tool!r}"
+                )
+            else:
+                correct += 1
+            total += 1
+
+        row["semantic_correct"] = correct
+        row["semantic_total"] = total
+        row["semantic_mismatches"] = mismatches
+        rescored.append(row)
+    return rescored
+
+
 def aggregate_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     aggregate: dict[str, Any] = {}
     for model in sorted({str(row["model"]) for row in rows}):
@@ -1330,6 +1518,9 @@ def aggregate_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                 1,
                 sum(row["category"] == "tool_arguments" for row in model_rows),
             )
+            entry["reasoning_disable_honored"] = sum(
+                not bool(row.get("reasoning_observed", False)) for row in model_rows
+            ) / len(model_rows)
         aggregate[model] = entry
     return aggregate
 
@@ -1445,6 +1636,9 @@ def candidate_metrics_from_evidence(
                 "semantic_accuracy": semantic_accuracy,
                 "reliability": reliability,
                 "tool_quality": tool_quality,
+                "reasoning_disable_honored": float(
+                    aggregate["reasoning_disable_honored"]
+                ),
                 "latency_score": latency_score,
                 "consistently_failing_cases": consistently_failing,
                 "hard_gates": hard_gates,
@@ -1486,6 +1680,8 @@ async def run_battle(
     existing_manifest = (
         _read_json_object(manifest_path) if manifest_path.exists() else None
     )
+    if existing_manifest is not None:
+        assert_existing_run_evidence(output_dir, existing_manifest)
     merged_manifest = merge_run_manifest(
         existing_manifest,
         suites=suites,

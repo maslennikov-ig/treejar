@@ -27,8 +27,8 @@
       "max": 19144.766
     },
     "json_schema_first_pass": 1.0,
-    "semantic_accuracy": 0.7184466019417476,
-    "tool_case_pass_rate": 0.75,
+    "semantic_accuracy": 0.7281553398058253,
+    "tool_case_pass_rate": 1.0,
     "reasoning_disable_honored": 1.0
   },
   "nex-agi/nex-n2-mini": {

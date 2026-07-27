@@ -52,7 +52,7 @@
       "p95": 14114.27834999999,
       "max": 21853.931
     },
-    "objective_correctness": 0.864732142857143,
-    "case_pass_rate": 0.20833333333333334
+    "objective_correctness": 0.8766369047619048,
+    "case_pass_rate": 0.2916666666666667
   }
 }
