@@ -65,6 +65,7 @@ from src.llm.closed_question_guard import (
     apply_closed_question_guard,
     response_asks_customer_name,
 )
+from src.llm.communication_policy import finalize_evidence_grounding_prompt
 from src.llm.context import build_message_history
 from src.llm.fact_extractor import (
     CustomerFactExtractionResult,
@@ -8723,7 +8724,7 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
         )
         base_prompt += f"\n\n[RUNTIME DIRECTIVES]\n{directives_block}\n"
 
-    return base_prompt
+    return finalize_evidence_grounding_prompt(base_prompt)
 
 
 # NOTE: Function name MUST match prompt references (prompts.py) exactly.

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.llm.communication_policy import (
     COMMUNICATION_RULES_POLICY,
-    EVIDENCE_GROUNDING_POLICY,
+    finalize_evidence_grounding_prompt,
 )
 from src.models.system_prompt import SystemPrompt
 from src.schemas.common import Language, SalesStage
@@ -275,7 +275,8 @@ async def build_system_prompt(
         communication_policy.strip(),
         lang_directive.strip(),
         stage_rule.strip(),
-        EVIDENCE_GROUNDING_POLICY,
     ]
 
-    return "\n\n".join(part for part in parts if part) + "\n"
+    return finalize_evidence_grounding_prompt(
+        "\n\n".join(part for part in parts if part)
+    )

@@ -53,10 +53,32 @@ _CLAUSE_NEGATION_RE = re.compile(
 )
 _MEDICAL_BENEFIT_RE = re.compile(
     r"\b(?:great|good|helpful|beneficial|helps?|relieves?|reduces?|prevents?|"
-    r"cures?|recommended)\b.{0,36}\b(?:back pain|back health|pain relief)\b"
-    r"|\b(?:back pain|back health|pain relief)\b.{0,36}\b"
-    r"(?:great|good|helpful|beneficial|helps?|relieves?|reduces?|prevents?|"
-    r"cures?|recommended)\b"
+    r"cures?|recommended|supports?|improves?|ideal)\b.{0,48}\b"
+    r"(?:back pain|back health|pain relief|spinal health|spine|lumbar)\b"
+    r"|\b(?:back pain|back health|pain relief|spinal health|spine|lumbar)\b"
+    r".{0,48}\b(?:great|good|helpful|beneficial|helps?|relieves?|reduces?|"
+    r"prevents?|cures?|recommended|supports?|improves?|ideal)\b"
+)
+_SHOWROOM_COMMITMENT_RE = re.compile(
+    r"\b(?:appointment|visit|test(?:ing)? setup)\b.{0,24}\b"
+    r"(?:booked|confirmed|scheduled|ready)\b"
+    r"|\b(?:booked|confirmed|scheduled)\b.{0,24}\b(?:appointment|visit)\b"
+)
+_SAMPLE_FULFILLMENT_RE = re.compile(
+    r"\b(?:we(?:'ll| will)|treejar will)\s+"
+    r"(?:send|provide|deliver|courier|ship|dispatch)\b"
+    r"|\b(?:samples?|swatches?)\b.{0,32}\b"
+    r"(?:will arrive|are guaranteed|are confirmed for delivery)\b"
+)
+_STOCK_ASSERTION_RE = re.compile(
+    r"\b(?:we|treejar|our (?:inventory|warehouse))\s+"
+    r"(?:currently\s+)?(?:have|has|hold|holds|carry|carries)\b"
+    r"|\b(?:\d+\s+)?units?\b.{0,24}\b(?:available|in stock|on hand)\b"
+    r"|\b(?:available|on hand)\b.{0,24}\b(?:inventory|warehouse|stock)\b"
+)
+_FUTURE_CHECK_RE = re.compile(
+    r"\b(?:let me|i can|i will|i'll|we can|we will|we'll)\s+"
+    r"(?:check|confirm|look up|verify)\b"
 )
 
 
@@ -275,6 +297,13 @@ def _contains_asserted_phrase(content: str, phrase: str) -> bool:
         start = index + len(phrase)
 
 
+def _contains_asserted_pattern(content: str, pattern: re.Pattern[str]) -> bool:
+    return any(
+        _contains_asserted_phrase(content, match.group())
+        for match in pattern.finditer(content)
+    )
+
+
 def evaluate_sales_answer(
     case_id: str,
     answer: Mapping[str, Any],
@@ -323,6 +352,8 @@ def evaluate_sales_answer(
         for phrase in ("appointment is confirmed", "specific chair is available"):
             if _contains_asserted_phrase(reply, phrase):
                 failures.append(f"unsupported commitment: {phrase}")
+        if _contains_asserted_pattern(reply, _SHOWROOM_COMMITMENT_RE):
+            failures.append("reply adds an unsupported showroom commitment")
     elif case_id == "project_samples":
         if "sample" not in reply or "project" not in reply:
             failures.append("reply must preserve the project-sample context")
@@ -353,6 +384,8 @@ def evaluate_sales_answer(
         for phrase in ("will provide", "will send", "guaranteed"):
             if _contains_asserted_phrase(reply, phrase):
                 failures.append(f"unsupported sample promise: {phrase}")
+        if _contains_asserted_pattern(reply, _SAMPLE_FULFILLMENT_RE):
+            failures.append("reply adds unsupported sample fulfillment")
     elif case_id == "medical_inference":
         medical_benefit = _MEDICAL_BENEFIT_RE.search(reply)
         if medical_benefit and _contains_asserted_phrase(
@@ -377,15 +410,18 @@ def evaluate_sales_answer(
                 "cannot confirm",
                 "can't confirm",
                 "unable to confirm",
-                "need to check",
-                "can check",
-                "let me check",
             )
         ):
             failures.append("reply must distinguish unconfirmed from unavailable")
+        if _contains_asserted_pattern(reply, _FUTURE_CHECK_RE):
+            failures.append(
+                "reply promises a future stock check instead of using the tool"
+            )
         for phrase in ("currently in stock", "is in stock", "available now"):
             if _contains_asserted_phrase(reply, phrase):
                 failures.append(f"unsupported stock claim: {phrase}")
+        if _contains_asserted_pattern(reply, _STOCK_ASSERTION_RE):
+            failures.append("reply adds unsupported inventory availability")
         for phrase in (
             "ready to ship",
             "ready for shipment",

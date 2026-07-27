@@ -88,11 +88,23 @@ Current stage status: accepted, deployed, and production-smoked
 - Previous release `292d82c`, GLM-5, Xiaomi V2 Flash, and the protected
   production `.env` remain available in verified mode-`600` rollback
   snapshots. Rollback was not required.
+- Post-release review task `tj-r1f3` found that mutable runtime blocks followed
+  the intended grounding tail and that the bounded smoke accepted several
+  contradictory/deferred-check phrasings.
+- The local correction now finalizes exactly one grounding-policy copy after
+  every runtime block and rejects the reproduced unsafe equivalents while
+  preserving safe negation. The affected slice passed `374` tests; Mypy, Ruff,
+  format, and final delta-review passed with no remaining P0-P3 finding.
+- This correction is local-only and not deployed. The accepted historical
+  provider `5/5` used the previous validator; a new bounded provider smoke,
+  push/deploy, release readback, and health check require current authorization.
 
 ## Boundary and Scope Ledger
 
-- One cohesive active stage owns model routing, grounding policy, provider
+- Accepted stage `tj-j13d` owns model routing, grounding policy, provider
   verification, deployment, rollback, and post-deploy smoke.
+- Local follow-up `tj-r1f3` owns only the post-release prompt-tail and
+  smoke-validator corrections plus their local evidence.
 - Root owns the sequential implementation and deploy chain. One
   context-isolated combined reviewer is reserved for the release boundary.
 - No scope criterion was dropped and no v2.19 material split occurred.
@@ -101,18 +113,19 @@ Current stage status: accepted, deployed, and production-smoked
 
 ## Next recommended
 
-Next stage id: `tj-n8p6`
+Next stage id: `tj-r1f3`
 
-Recommended action: optionally clean the pre-existing Ruff drift isolated to
-`scripts/orchestration/`. This is maintenance-only; the model adoption outcome
-is complete. `tj-b93r` remains separate historical grounding evidence and must
-not duplicate the delivered shared policy.
+Recommended action: after explicit authorization, push the accepted local
+correction, allow the canonical deployment, rerun the bounded five-call model
+smoke with the hardened validator, then verify release/model readback and
+health. `tj-n8p6` remains separate maintenance-only lint work.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage for `tj-n8p6`. Remove the already-recorded Ruff drift
-only from `scripts/orchestration/`, preserve behavior, and run the process and
-orchestration-script verification required by its Beads acceptance criteria.
+Use $orchestrator-stage for `tj-r1f3`. Deliver the already accepted local
+prompt-tail and hardened-smoke correction only after current authorization,
+then run the bounded provider smoke and production health/readback checks
+without customer or business-system mutation.
 
 ## Approval gates
 
@@ -120,6 +133,9 @@ orchestration-script verification required by its Beads acceptance criteria.
   exact synthetic cleanup.
 - The user explicitly authorized this stage's production model switch, deploy,
   and bounded post-deploy tests.
+- The current post-release review pass explicitly stops before remote, deploy,
+  provider, or other live actions; request fresh authorization for those
+  actions.
 - Outbound customer messaging, quotation/order creation, and Zoho mutations
   remain outside that authorization.
 - Preserve protected credentials and unrelated user files.
@@ -128,6 +144,8 @@ orchestration-script verification required by its Beads acceptance criteria.
 
 - No adoption defer remains inside `tj-j13d`; all release, provider, review,
   rollback, deployment, and post-deploy acceptance checks passed.
+- `tj-r1f3` is locally accepted but not pushed or deployed; hardened provider
+  smoke and runtime readback remain its explicit external delivery gate.
 - Pre-existing broad scripts-lint debt is tracked by `tj-n8p6`; canonical
   project gates and `scripts/verify_model_routes.py` are clean.
 - GLM-5 weak-catalog grounding is tracked by `tj-b93r`.

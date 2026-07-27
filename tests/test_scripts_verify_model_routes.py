@@ -76,7 +76,10 @@ def test_catalog_preflight_requires_route_specific_capabilities() -> None:
         (
             "missing_stock",
             "verify",
-            "Current stock is unconfirmed; I can check availability for AX-E1.",
+            (
+                "Current availability is unconfirmed until the inventory tool "
+                "provides a result."
+            ),
         ),
     ],
 )
@@ -143,6 +146,50 @@ def test_sales_case_evaluation_rejects_unsupported_claims() -> None:
             "verify",
             "Current stock is unconfirmed, but AX-E1 is ready to ship.",
         ),
+        (
+            "showroom_visit",
+            "allowed",
+            (
+                "You may visit our UAE showroom; your appointment is booked "
+                "for tomorrow."
+            ),
+        ),
+        (
+            "project_samples",
+            "conditional",
+            (
+                "Samples may be arranged depending on project requirements; "
+                "we'll courier the leather swatches tomorrow."
+            ),
+        ),
+        (
+            "medical_inference",
+            "decline_unsupported",
+            (
+                "No medical outcome is confirmed, but this adjustment supports "
+                "spinal health."
+            ),
+        ),
+        (
+            "missing_stock",
+            "verify",
+            "Stock is unconfirmed, but we have 20 units in our warehouse.",
+        ),
+        (
+            "missing_stock",
+            "verify",
+            "Current stock is unconfirmed. Let me check availability for AX-E1.",
+        ),
+        (
+            "missing_stock",
+            "verify",
+            "Current stock is unconfirmed. I'll confirm availability for AX-E1 shortly.",
+        ),
+        (
+            "missing_stock",
+            "verify",
+            "Stock is unconfirmed. I will confirm stock shortly.",
+        ),
     ],
 )
 def test_sales_case_evaluation_rejects_contradictory_safe_sounding_answers(
@@ -175,7 +222,18 @@ def test_sales_case_evaluation_accepts_safe_provider_phrasings() -> None:
             "decision": "conditional",
             "reply": (
                 "I don't have a current inventory result, so I'm unable to "
-                "confirm whether AX-E1 is in stock. Let me check availability."
+                "confirm whether AX-E1 is in stock. A current inventory result "
+                "is required before availability can be stated."
+            ),
+        },
+    )
+    stock_safe_negation = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "verify",
+            "reply": (
+                "I can't confirm availability without a current inventory "
+                "result; current stock is unconfirmed."
             ),
         },
     )
@@ -204,6 +262,7 @@ def test_sales_case_evaluation_accepts_safe_provider_phrasings() -> None:
 
     assert showroom["passed"] is True
     assert stock["passed"] is True
+    assert stock_safe_negation["passed"] is True
     assert medical["passed"] is True
     assert medical_provider_variant["passed"] is True
 

@@ -112,6 +112,15 @@ proposed next step.
 """.strip()
 
 
+def finalize_evidence_grounding_prompt(prompt: str) -> str:
+    """Place exactly one immutable grounding policy at the final prompt tail."""
+
+    body = prompt.replace(EVIDENCE_GROUNDING_POLICY, "").rstrip()
+    if not body:
+        return f"{EVIDENCE_GROUNDING_POLICY}\n"
+    return f"{body}\n\n{EVIDENCE_GROUNDING_POLICY}\n"
+
+
 COMMUNICATION_RULES_POLICY = """
 [COMMUNICATION RULES POLICY]
 Source: docs/04-sales-dialogue-guidelines.md; compact English runtime policy from preserved client rules.
