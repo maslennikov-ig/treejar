@@ -1069,6 +1069,7 @@ _PRODUCT_REFERENCE_VARIANT_WORDS = frozenset(
         "green",
         "grey",
         "gray",
+        "new",
         "orange",
         "red",
         "walnut",

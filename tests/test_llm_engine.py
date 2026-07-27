@@ -30,6 +30,7 @@ from src.llm.engine import (
     SalesDeps,
     _extract_bare_name_gate_reply,
     _extract_quote_customer_details,
+    _product_media_is_referenced,
     extract_exact_quote_candidate,
     inject_system_prompt,
     process_message,
@@ -2144,6 +2145,23 @@ async def test_process_message_suppresses_unreferenced_deferred_product_media(
 
     assert response.deferred_product_media == (referenced,)
     messaging.send_media.assert_not_called()
+
+
+def test_product_media_reference_matches_arabic_response_by_stable_model_code() -> None:
+    media = ProductMediaPayload(
+        url="https://example.com/chair.jpg",
+        caption="Operative Office Chair CH 145 M grey NEW — 557.00 AED",
+        product_key="ch-145-m-grey-new",
+        reference_tokens=(
+            "Operative Office Chair CH 145 M grey NEW",
+            "CH 145 M grey NEW",
+        ),
+    )
+
+    assert _product_media_is_referenced(
+        media,
+        "الخيار الأول: كرسي مكتب CH 145 M رمادي جديد",
+    )
 
 
 @pytest.mark.asyncio
