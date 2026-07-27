@@ -52,7 +52,7 @@ success_criteria:
   - sealed raw to redacted tracked attempt chain and exact phase causality
   - exact 29 committed execution artifacts with seven-phase hash chains
   - exact 20-turn and 29-execution report reconciliation to protected evidence
-  - run-id-only public verifier and protected-snapshot finalizer with fixed roots
+  - run-id-only verifier and derived finalizer under canonical git-common roots
   - protected attempt all-decisive-evidence and report producer receipts
   - canonical evidence-mode rollups and typed privacy-checked Russian report
 selected_docs:
@@ -109,8 +109,9 @@ verification:
   - final reviewer RED reproduced 17 evidence-block attempt report root Task1 exclusion structured-evidence and timestamp bypasses
   - alternate-path RED reproduced 4 public-loader and self-declared producer bypasses
   - same-process RED reproduced 3 arbitrary-root local-loader and attempt-digest bypasses
-  - final focused trust-boundary suite passed 104
-  - combined acceptance suite passed 179 with exactly 2 frozen Beads provenance tests deselected
+  - final publication RED reproduced 4 mutable-root mutable-context caller-snapshot and missing-marker bypasses
+  - final focused trust-boundary suite passed 109
+  - combined acceptance suite passed 184 with exactly 2 frozen Beads provenance tests deselected
   - strict module-mode mypy passed the 3 latest changed acceptance runtime modules
   - full Ruff and format passed 311 src and test files; changed acceptance runtime files also passed
   - full mypy passed 162 source files
@@ -118,7 +119,7 @@ verification:
   - artifact validator and stage sizing linter passed
   - stage-ready check remains orchestrator-owned because current workspace stage is tj-j13d and tj-ee5f summary is not yet present
   - frontend regression passed 11 after offline lockfile install
-  - full pytest excluding exactly 2 frozen Beads provenance tests passed 1803 with 19 skipped
+  - full pytest excluding exactly 2 frozen Beads provenance tests passed 1808 with 19 skipped
   - branch delta and history secret scans found no blocked credential pattern
   - changed non-test files contain no synthetic full-phone fixtures
   - git diff check passed
@@ -166,11 +167,15 @@ baseline/final readbacks, and timestamped digest/cursor phase causality. All 20
 scenarios and 9 evidence blocks use the same generic runner. A trusted run is
 complete only after all 29 indexed committed-attempt artifacts pass exact
 seven-phase hash-chain, authorization, outcome, semantic, and protected-anchor
-checks. The public verifier and finalizer accept only a run identity and resolve
-fixed registry-owned roots. Finalization consumes one independently protected,
-digest-bound execution snapshot, publishes tracked data before the protected
-anchor becomes visible, verifies the complete result, and removes both trees
-if inner verification fails. Every tracked attempt, classifier result,
+checks. The public verifier and finalizer accept only a run identity and derive
+the operator root from immutable repository/git-common layout; there is no
+mutable root hook. Trust identities live in one frozen
+`VerifiedEvidenceContext`, not caller-mutable registry sets. Finalization
+consumes one committed protected execution snapshot and derives the run,
+evidence index, report source, attempt/report receipts, and anchor. It fsyncs
+prepared trees, publishes tracked then protected data, appends a protected
+whole-tree final commit marker last, and recovers marker-less partial
+publication before retry. Every tracked attempt, classifier result,
 structured event, tool/readback result, and report source requires an exact
 protected producer receipt. Attempt receipts and protected commits bind the
 run, execution, attempt, raw, tracked, semantic, authorization, protected
@@ -183,12 +188,12 @@ protected evidence.
 
 # Verification
 
-The final focused trust-boundary surface passed 104 tests and the complete
-acceptance surface passed 179 tests with the two frozen checks deselected.
+The final focused trust-boundary surface passed 109 tests and the complete
+acceptance surface passed 184 tests with the two frozen checks deselected.
 Ruff/format passed over 311 `src` and test files plus the changed acceptance
 runtime files, mypy passed all 162 `src` files, strict module-mode mypy passed
 the three latest changed acceptance runtime modules, and process verification
-passed. The full repository passed 1803 tests with 19
+passed. The full repository passed 1808 tests with 19
 environment skips after deselecting exactly the two known frozen Task 1 Beads
 provenance checks. Those two checks still fail as designed against changed
 shared Beads state.

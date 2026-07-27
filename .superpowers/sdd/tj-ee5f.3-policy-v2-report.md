@@ -27,9 +27,13 @@ report from protected execution/report-source evidence.
 
 The same-process correction removes every runtime root-injection and local
 self-authorization seam. The public verifier and finalizer accept only
-`run_id`; finalization consumes a protected, digest-bound execution snapshot,
-publishes the protected anchor last, and cleans both trees if full verification
-fails. Protected receipts now cover classifier, structured event, tool,
+`run_id`; the operator root is derived from canonical git-common layout and
+trust identities are exposed only through a frozen `VerifiedEvidenceContext`.
+Finalization consumes a committed protected execution snapshot and derives the
+run, index, report source, receipts, and anchor. It fsyncs prepared trees,
+publishes tracked then protected data, appends a whole-tree protected final
+commit marker last, and recovers marker-less partial publication. Protected
+receipts cover classifier, structured event, tool,
 readback, attempt, and report-source artifacts. Decisive evidence must bind an
 attempt whose protected commit and receipt already passed verification, and
 the attempt commit itself now binds the attempt digest alongside raw/tracked
@@ -37,11 +41,11 @@ bytes, semantic result, authorization, and unique phase head.
 
 ## Validation
 
-- Final focused trust-boundary surface: 104 passed.
-- Complete acceptance surface: 179 passed with exactly the two frozen Task1
+- Final focused trust-boundary surface: 109 passed.
+- Complete acceptance surface: 184 passed with exactly the two frozen Task1
   checks deselected; those two fail when included.
 - Full repository excluding two frozen Task 1 Beads provenance checks:
-  1803 passed, 19 skipped.
+  1808 passed, 19 skipped.
 - Ruff/format, full `src` mypy, strict acceptance-module mypy, and process
   verification passed.
 - Artifact validation and stage sizing passed. Stage readiness remains with the
