@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,6 +84,12 @@ def test_policy_compiler_has_no_scenario_id_branch_or_free_text_inference() -> N
         for scenario in registry.compiled_policy.scenarios.values()
         for binding in scenario.prohibited_outcomes.values()
     )
+    for assertion in registry.compiled_policy.assertions.values():
+        assert (
+            assertion.source_text_digest
+            == hashlib.sha256(assertion.canonical_text.encode("utf-8")).hexdigest()
+        )
+        assert assertion.structured_required is True
 
 
 def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> None:
@@ -124,22 +131,18 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
 def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
     policy = _policy_module()
     registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
-    baseline = policy.ReadbackObservation(
-        schema_version="noor-e2e-readback/v2",
+    baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline-source",
         observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=timezone.utc),
-        content_digest="b" * 64,
         inventory={"synthetic:conversation": {"state": "absent"}},
     )
-    stale_final = policy.ReadbackObservation(
-        schema_version="noor-e2e-readback/v2",
+    stale_final = policy.ReadbackObservation.build(
         phase="final",
         collector_id="independent-readback-collector",
         source_id="synthetic-final-source",
         observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=timezone.utc),
-        content_digest="c" * 64,
         inventory={"synthetic:conversation": {"state": "closed"}},
     )
 

@@ -62,19 +62,41 @@ serialization, and creates a new file only through a no-follow descriptor chain.
   bound by source/timestamp/digest and follows every `final_visible_at`,
   `delivered_at`, and action timestamp.
 - Attempt integrity: prior tracked bytes, index, checksums, quota totals, and
-  retest chain match a protected external `O_EXCL` anchor before append.
+  retest chain match a protected external `O_EXCL` anchor before append. Every
+  adapter action first enters protected `reserved`; quota is consumed for
+  `reserved`, `failed`, and `unknown`, and `unknown` blocks closeout. Attempts
+  use protected intent → raw → tracked → commit, with recovery recording an
+  explicit aborted disposition instead of silently deleting partial state.
+- Execution causality: the protected phase machine is exactly
+  `prepared → baseline_sealed → executing → final_turn_anchored →
+  final_readback_sealed → evaluated → attempt_committed`. Each transition binds
+  the prior event digest and monotonic cursor; timestamps alone never prove
+  order.
+- Authorization v2: the executor rejects v1 and binds the policy digest,
+  compiler identity, compiled-plan digest, exact canonical 29 execution IDs,
+  adapter IDs, evidence-store IDs, quotas, and protected registry identity.
+- Criterion lattice: explicit `CriterionPlan` obligations retain all canonical
+  owners and use `all_required`; unavailable owners remain `BLOCKED`, and only a
+  valid Task 1 exclusion gate may produce `EXCLUDED_BY_CLIENT`. Authorization
+  cannot shrink the canonical execution set.
 - Filesystem/privacy: every parent is opened with `O_DIRECTORY|O_NOFOLLOW`; raw
   mode is `0600`; tracked payloads and final report are recursively redacted;
   existing or symlink output is refused.
 - Outcome semantics: `BLOCKED` and `EXCLUDED_BY_CLIENT` never become `PASS`;
   `fresh`, `reused_exact`, and `external_gate` retain their Task 1 rules.
 
+Every DSL assertion also binds the SHA-256 of its exact canonical source text
+and states `structured_required=true`; text supplements can never satisfy it.
+
 Mandatory RED matrix covers all returned-review bypasses: all 19 non-opening
 scenarios, manager-draft semantic addition, stale final readback, 1-of-30 and
 partial-execution rollups, intermediate-parent symlink, authorization/preflight
 drift, actual/plan/oracle drift, all quota dimensions and cumulative retests,
 anchor/index/checksum tampering, recursive redaction, side-effect closeout, and
-exclusive report output.
+exclusive report output. It additionally covers pre-action reservation,
+unknown-action closeout, multi-owner criterion lattice, v1 authorization
+rejection, exact 29-ID binding, event-cursor causality, text-only structured
+assertion rejection, and interrupted two-phase attempt recovery.
 
 ## Technical premortem
 
