@@ -60,5 +60,11 @@
   "scope_anchor": ".codex/goals/tj-r1f3/scope-criterion-snapshot.json",
   "scope_anchor_digest": "359451386dd19b98c25bedee19ee9f6ba9df923dcd87050f053eccabb31200b6",
   "scope_ledger": "none",
-  "stream_artifacts": []
+  "stream_artifacts": [
+    {
+      "task_id": "tj-r1f3-root-cause",
+      "stream_owner": "debugger",
+      "artifact_path": ".codex/stages/tj-r1f3/artifacts/tj-r1f3-root-cause.md"
+    }
+  ]
 }
