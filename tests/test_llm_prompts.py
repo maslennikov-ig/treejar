@@ -2,6 +2,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src.llm.communication_policy import (
+    COMMERCIAL_CAPABILITIES,
+    EVIDENCE_GROUNDING_POLICY,
+)
 from src.llm.prompts import build_system_prompt
 from src.schemas.common import SalesStage
 
@@ -102,6 +106,69 @@ async def test_build_system_prompt_keeps_policy_when_base_prompt_is_overridden()
     )
     assert prompt.index("The user prefers to communicate in English") < prompt.index(
         "CUSTOM STAGE RULE"
+    )
+
+
+def test_commercial_capability_registry_uses_evidence_authorization_modes() -> None:
+    expected_modes = {
+        "showroom_visit": "direct",
+        "project_samples": "conditional",
+        "stock": "tool_required",
+        "operational_price": "tool_required",
+        "quotation": "tool_required",
+        "order_status": "tool_required",
+        "discount": "manager_required",
+        "exceptional_terms": "manager_required",
+    }
+
+    assert {
+        name: capability.mode for name, capability in COMMERCIAL_CAPABILITIES.items()
+    } == expected_modes
+    assert "docs/faq.md" in COMMERCIAL_CAPABILITIES["showroom_visit"].source
+    assert "depending on project requirements" in (
+        COMMERCIAL_CAPABILITIES["project_samples"].instruction
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_appends_immutable_evidence_grounding_policy() -> (
+    None
+):
+    db, redis = AsyncMock(), AsyncMock()
+
+    async def fake_component(
+        _db: AsyncMock, _redis: AsyncMock, name: str, default: str
+    ) -> str:
+        if name == "base_prompt":
+            return "CUSTOM BASE PROMPT WITHOUT GROUNDING"
+        if name == "communication_rules_policy":
+            return "CUSTOM COMMUNICATION POLICY WITHOUT GROUNDING"
+        if name.startswith("stage_"):
+            return "CUSTOM STAGE RULE WITHOUT GROUNDING"
+        return default
+
+    with patch(
+        "src.llm.prompts.get_system_prompt_component",
+        side_effect=fake_component,
+    ):
+        prompt = await build_system_prompt(
+            db, redis, SalesStage.SOLUTION.value, language="en"
+        )
+
+    marker = "[EVIDENCE GROUNDING POLICY]"
+    assert marker in EVIDENCE_GROUNDING_POLICY
+    assert prompt.count(marker) == 1
+    assert prompt.index("CUSTOM BASE PROMPT") < prompt.index(marker)
+    assert prompt.index("CUSTOM COMMUNICATION POLICY") < prompt.index(marker)
+    assert prompt.index("CUSTOM STAGE RULE") < prompt.index(marker)
+    assert "Unknown or unconfirmed does not mean unavailable" in prompt
+    assert "Do not infer medical" in prompt
+    assert "showroom_visit [direct]" in prompt
+    assert "project_samples [conditional]" in prompt
+    assert "stock [tool_required]" in prompt
+    assert "discount [manager_required]" in prompt
+    assert "use one verified tool, one useful clarification, or manager handoff" in (
+        prompt
     )
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Awaitable, Callable, Iterable
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -14,9 +14,11 @@ from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import order_lines_snapshot
 from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN
-
-if TYPE_CHECKING:
-    from pydantic_ai.settings import ModelSettings
+from src.llm.safety import (
+    PATH_FACT_EXTRACTION,
+    model_settings_for_path,
+    usage_limits_for_path,
+)
 
 CustomerFactScope = Literal[
     "persistent_profile",
@@ -27,11 +29,6 @@ CustomerFactConfidence = Literal["high", "medium", "low"]
 CustomerFactSource = Literal["deterministic", "fast_model"]
 
 MAX_EVIDENCE_CHARS = 160
-FAST_MODEL_MAX_TOKENS = 700
-FAST_MODEL_TIMEOUT_SECONDS = 30.0
-FAST_MODEL_OUTPUT_TOKEN_LIMIT = 700
-FAST_MODEL_TOTAL_TOKEN_LIMIT = 3000
-
 _COMPANY_PATTERN = re.compile(
     r"\b(?:company\s+name|company|account|organization|organisation)"
     r"\s*(?:is|:|-)?\s*(?P<value>[^,.;\n]+)",
@@ -230,17 +227,17 @@ class PydanticAIFastCustomerFactExtractor:
         self,
         request: FastCustomerFactExtractionRequest,
     ) -> FastCustomerFactExtractionOutput:
-        from pydantic_ai import Agent, UsageLimits
+        from pydantic_ai import Agent
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-        model_settings = cast(
-            "ModelSettings",
-            {
-                "max_tokens": FAST_MODEL_MAX_TOKENS,
-                "timeout": FAST_MODEL_TIMEOUT_SECONDS,
-            },
+        model_settings = model_settings_for_path(
+            PATH_FACT_EXTRACTION,
+            model_name=self.model_name,
         )
+        usage_limits = usage_limits_for_path(PATH_FACT_EXTRACTION)
+        if usage_limits is None:
+            raise RuntimeError("Fact extraction safety policy must be non-core")
         model = OpenAIChatModel(
             self.model_name,
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
@@ -257,11 +254,7 @@ class PydanticAIFastCustomerFactExtractor:
             _build_fast_model_prompt(request),
             model=model,
             model_settings=model_settings,
-            usage_limits=UsageLimits(
-                request_limit=1,
-                output_tokens_limit=FAST_MODEL_OUTPUT_TOKEN_LIMIT,
-                total_tokens_limit=FAST_MODEL_TOTAL_TOKEN_LIMIT,
-            ),
+            usage_limits=usage_limits,
         )
         return result.output
 

@@ -4,7 +4,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.llm.communication_policy import COMMUNICATION_RULES_POLICY
+from src.llm.communication_policy import (
+    COMMUNICATION_RULES_POLICY,
+    EVIDENCE_GROUNDING_POLICY,
+)
 from src.models.system_prompt import SystemPrompt
 from src.schemas.common import Language, SalesStage
 from src.services.customer_language import customer_language_name
@@ -272,6 +275,7 @@ async def build_system_prompt(
         communication_policy.strip(),
         lang_directive.strip(),
         stage_rule.strip(),
+        EVIDENCE_GROUNDING_POLICY,
     ]
 
     return "\n\n".join(part for part in parts if part) + "\n"

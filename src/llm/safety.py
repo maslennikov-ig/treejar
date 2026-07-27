@@ -29,6 +29,7 @@ PATH_QUALITY_FINAL = "quality_final"
 PATH_QUALITY_RED_FLAGS = "quality_red_flags"
 PATH_QUALITY_MANAGER = "quality_manager"
 PATH_CONVERSATION_SUMMARY = "conversation_summary"
+PATH_FACT_EXTRACTION = "fact_extraction"
 PATH_VOICE_TRANSCRIPTION = "voice_transcription"
 PATH_RESPONSE_ADAPTER = "response_adapter"
 PATH_AUTO_FAQ_TRANSLATE = "auto_faq_translate"
@@ -36,6 +37,7 @@ PATH_AUTO_FAQ_CANDIDATE = "auto_faq_candidate"
 OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
 _OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
+_OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset({"deepseek/deepseek-v4-flash"})
 
 
 class LLMBudgetBlocked(RuntimeError):
@@ -108,6 +110,16 @@ _POLICIES: dict[str, LLMPathPolicy] = {
         total_tokens_limit=5000,
         request_limit=1,
         max_attempts=2,
+    ),
+    PATH_FACT_EXTRACTION: LLMPathPolicy(
+        path=PATH_FACT_EXTRACTION,
+        scope="non_core",
+        max_tokens=700,
+        timeout_seconds=30.0,
+        output_tokens_limit=700,
+        total_tokens_limit=3000,
+        request_limit=1,
+        max_attempts=1,
     ),
     PATH_VOICE_TRANSCRIPTION: LLMPathPolicy(
         path=PATH_VOICE_TRANSCRIPTION,
@@ -243,12 +255,16 @@ def _openrouter_extra_body(
     model_name: str | None,
     cache_telemetry_enabled: bool,
 ) -> dict[str, Any]:
-    if not cache_telemetry_enabled:
-        return {}
-
-    extra_body: dict[str, Any] = {"usage": {"include": True}}
-    if model_name and openrouter_supports_prompt_cache_control(model_name):
-        extra_body["cache_control"] = {"type": "ephemeral"}
+    extra_body: dict[str, Any] = {}
+    if cache_telemetry_enabled:
+        extra_body["usage"] = {"include": True}
+        if model_name and openrouter_supports_prompt_cache_control(model_name):
+            extra_body["cache_control"] = {"type": "ephemeral"}
+    if (
+        model_name
+        and model_name.strip().lower() in _OPENROUTER_REASONING_DISABLED_MODEL_IDS
+    ):
+        extra_body["reasoning"] = {"enabled": False}
     return extra_body
 
 

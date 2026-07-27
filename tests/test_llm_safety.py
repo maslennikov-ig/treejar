@@ -26,6 +26,7 @@ class _FakeRunResult:
         ("quality_red_flags", 900),
         ("quality_manager", 2000),
         ("conversation_summary", 900),
+        ("fact_extraction", 700),
         ("voice_transcription", 700),
         ("response_adapter", 700),
         ("auto_faq_translate", 700),
@@ -41,7 +42,7 @@ def test_llm_path_policy_sets_expected_provider_max_tokens(
     assert model_settings_for_path(path)["max_tokens"] == expected_max_tokens
 
 
-def test_default_model_routing_keeps_glm5_only_for_core_paths(
+def test_default_model_routing_uses_glm52_for_core_and_v4_flash_for_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.core.config import settings
@@ -51,6 +52,7 @@ def test_default_model_routing_keeps_glm5_only_for_core_paths(
         PATH_CONVERSATION_SUMMARY,
         PATH_CORE_CHAT,
         PATH_CORE_FOLLOWUP,
+        PATH_FACT_EXTRACTION,
         PATH_QUALITY_FINAL,
         PATH_QUALITY_MANAGER,
         PATH_QUALITY_RED_FLAGS,
@@ -59,8 +61,12 @@ def test_default_model_routing_keeps_glm5_only_for_core_paths(
         model_name_for_path,
     )
 
-    monkeypatch.setattr(settings, "openrouter_model_main", "z-ai/glm-5-20260211")
-    monkeypatch.setattr(settings, "openrouter_model_fast", "xiaomi/mimo-v2-flash")
+    monkeypatch.setattr(settings, "openrouter_model_main", "z-ai/glm-5.2")
+    monkeypatch.setattr(
+        settings,
+        "openrouter_model_fast",
+        "deepseek/deepseek-v4-flash",
+    )
 
     assert is_glm5_model_name(model_name_for_path(PATH_CORE_CHAT))
     assert is_glm5_model_name(model_name_for_path(PATH_CORE_FOLLOWUP))
@@ -69,12 +75,51 @@ def test_default_model_routing_keeps_glm5_only_for_core_paths(
         PATH_QUALITY_RED_FLAGS,
         PATH_QUALITY_MANAGER,
         PATH_CONVERSATION_SUMMARY,
+        PATH_FACT_EXTRACTION,
         PATH_RESPONSE_ADAPTER,
         PATH_AUTO_FAQ_TRANSLATE,
         PATH_AUTO_FAQ_CANDIDATE,
     ):
-        assert model_name_for_path(path) == "xiaomi/mimo-v2-flash"
+        assert model_name_for_path(path) == "deepseek/deepseek-v4-flash"
         assert not is_glm5_model_name(model_name_for_path(path))
+
+
+def test_v4_flash_disables_reasoning_without_affecting_other_models_or_providers() -> (
+    None
+):
+    from src.llm.safety import PATH_QUALITY_FINAL, model_settings_for_path
+
+    v4_flash = model_settings_for_path(
+        PATH_QUALITY_FINAL,
+        model_name="deepseek/deepseek-v4-flash",
+    )
+    assert v4_flash["extra_body"]["reasoning"] == {"enabled": False}
+
+    glm = model_settings_for_path(
+        PATH_QUALITY_FINAL,
+        model_name="z-ai/glm-5.2",
+    )
+    assert "reasoning" not in glm["extra_body"]
+
+    other_provider = model_settings_for_path(
+        PATH_QUALITY_FINAL,
+        model_name="deepseek/deepseek-v4-flash",
+        provider="other",
+    )
+    assert "extra_body" not in other_provider
+
+
+def test_fact_extraction_route_uses_central_v4_flash_safety_settings() -> None:
+    from src.llm.safety import PATH_FACT_EXTRACTION, model_settings_for_path
+
+    model_settings = model_settings_for_path(
+        PATH_FACT_EXTRACTION,
+        model_name="deepseek/deepseek-v4-flash",
+    )
+
+    assert model_settings["max_tokens"] == 700
+    assert model_settings["timeout"] == 30.0
+    assert model_settings["extra_body"]["reasoning"] == {"enabled": False}
 
 
 def test_openrouter_cache_control_requires_enabled_supported_model() -> None:

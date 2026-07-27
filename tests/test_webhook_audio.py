@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from src.core.config import settings
+from src.core.config import Settings, settings
 from src.integrations.messaging.wazzup import WazzupProvider
 from src.models.message import Message
 from src.schemas.webhook import WazzupIncomingMessage, WazzupMedia
@@ -16,9 +16,12 @@ class TestVoxtralConfig:
         assert hasattr(settings, "voxtral_model")
         assert settings.voxtral_model == "openai/gpt-audio-mini"
 
-    def test_main_model_unchanged(self) -> None:
-        """Test that main LLM model was NOT changed to voxtral."""
-        assert settings.openrouter_model_main == "z-ai/glm-5"
+    def test_default_openrouter_models_use_approved_routes(self) -> None:
+        """Test model defaults without reading developer-local environment files."""
+        defaults = Settings(_env_file=None)
+
+        assert defaults.openrouter_model_main == "z-ai/glm-5.2"
+        assert defaults.openrouter_model_fast == "deepseek/deepseek-v4-flash"
 
 
 class TestMessageModelAudioFields:
