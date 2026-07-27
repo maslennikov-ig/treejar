@@ -3,7 +3,7 @@
   "stage_id": "tj-ee5f",
   "goal_id": "tj-ee5f",
   "profile_at_creation": "balanced-v2.19",
-  "status": "planned",
+  "status": "in_progress",
   "sequence": 1,
   "acceptance_boundary_id": "noor-agent-driven-e2e-acceptance",
   "acceptance_owner": "root-orchestrator",

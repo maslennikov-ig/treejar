@@ -62,9 +62,9 @@ parallel_group: tj-ee5f-acceptance-contracts
 depends_on_streams:
   - accepted tj-ee5f design review
 parallel_decision: sequential
-status: returned
-delivery_method: cherry-pick
-accepted_by_orchestrator: no
+status: accepted
+delivery_method: n/a
+accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: dedicated worktree retained for orchestrator review; no external or runtime state was created
 risk_level: high
@@ -97,6 +97,7 @@ verification:
   - full Ruff and format over src tests and scripts/e2e_acceptance: passed
   - full Mypy over 162 source files: passed
   - full Pytest: 1650 passed, 19 skipped, 7 unrelated frontend failures because esbuild is absent in this worktree
+  - after npm ci in frontend/admin, the exact admin frontend regression file passed 11 tests
   - stage sizing and artifact validators: passed
   - git diff --check: passed
 changed_files:
@@ -154,11 +155,13 @@ Arabic escalation.
 Focused and full Ruff/format, strict focused Mypy, full Mypy over 162 source
 files, stage sizing, artifact validation, and `git diff --check` pass. Full
 Pytest reached 1650 passed and 19 skipped; seven unrelated admin-dashboard
-Node tests could not import the missing local `esbuild` package.
+Node tests initially could not import the missing local `esbuild` package.
+After installing the lockfile dependencies in this worktree, the exact admin
+frontend regression file passed 11 tests.
 
 # Delivery / Cleanup
 
-The branch is committed for orchestrator review and cherry-pick. No live,
+The stream is accepted on the same branch for Task 2 consumption. No live,
 provider, paid, customer, production, CRM, Zoho, quotation, order, deploy, or
 cleanup action occurred; there is no external test state to reconcile.
 
