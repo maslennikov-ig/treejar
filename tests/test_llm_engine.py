@@ -198,6 +198,15 @@ def _split_first_turn_history(*parts: str) -> list[ModelRequest]:
     return history
 
 
+def _non_first_turn_history(text: str) -> list[ModelRequest | ModelResponse]:
+    return [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content="I need office furniture.")]),
+        ModelResponse(parts=[TextPart(content="Which products are you considering?")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+
+
 class _FakeAgentResult:
     def __init__(
         self,
@@ -2223,6 +2232,620 @@ def test_product_media_reference_matches_arabic_response_by_stable_model_code() 
 
 
 @pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_repairs_specific_product_showroom_trial(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = "Tell me more about the Nova Task chair."
+    unsafe_reply = (
+        "The Nova Task chair does have a seat-depth adjustment, but I can't "
+        "confirm that it will reduce back pain. There is no medical or "
+        "health-outcome evidence available for this product. For health "
+        "concerns, I'd recommend consulting a qualified healthcare "
+        "professional. If you'd like, you can visit our UAE showroom to "
+        "experience the chair's build quality and features in person."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        unsafe_reply,
+        input_tokens=37,
+        output_tokens=53,
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "can't confirm that it will reduce back pain" in response.text
+    assert "experience the chair" not in response.text.casefold()
+    assert response.model == "mock-model"
+    assert response.tokens_in == 37
+    assert response.tokens_out == 53
+    assert response.cost is None
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_repairs_delegated_future_stock_check(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    unsafe_reply = (
+        "AX-E1 is a valid catalog SKU, but I'm unable to confirm its current "
+        "stock status right now as no inventory result is available. Could "
+        "you let me know the quantity you need and your delivery timeline? I "
+        "can also arrange for our team to check and get back to you, or you're "
+        "welcome to visit our UAE showroom to experience our product quality "
+        "firsthand."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        unsafe_reply,
+        input_tokens=41,
+        output_tokens=61,
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "unable to confirm its current stock status" in response.text
+    assert "arrange for our team to check" not in response.text.casefold()
+    assert "get back to you" not in response.text.casefold()
+    assert response.model == "mock-model"
+    assert response.tokens_in == 41
+    assert response.tokens_out == 61
+    assert response.cost is None
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_media_follows_enforced_customer_text(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    media = ProductMediaPayload(
+        url="https://example.com/nova.jpg",
+        caption="Nova Task chair",
+        product_key="nova-task",
+        reference_tokens=("Nova Task chair",),
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.pending_product_media.append(media)
+        return _FakeAgentResult(
+            "I can't confirm a medical outcome. You can visit our UAE showroom "
+            "to experience the Nova Task chair in person."
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "Nova Task chair" not in response.text
+    assert response.deferred_product_media == ()
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_uses_arabic_grounding_fallback(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "ليلى"
+    conv.language = "ar"
+    text = "أحتاج إلى عدة محطات عمل للمكتب الجديد."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "يمكنني أن أطلب من فريقنا التحقق من المخزون والرد عليك لاحقًا.",
+        input_tokens=29,
+        output_tokens=17,
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "المخزون غير مؤكد" in response.text
+    assert "فريقنا" not in response.text
+    assert response.model == "mock-model"
+    assert response.tokens_in == 29
+    assert response.tokens_out == 17
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("confirmed_reply", "stock_on_hand"),
+    [
+        ("I can confirm availability: 7 units are currently in stock.", 7),
+        ("I can confirm availability: AX-E1 is currently in stock.", 7),
+        ("I can confirm AX-E1 is currently in stock.", 7),
+        ("I can confirm that 7 AX-E1 units are currently in stock.", 7),
+        ("I can confirm that AX-E1 has 7 units currently in stock.", 7),
+        ("I can confirm AX-E1 is available.", 7),
+        ("I can confirm AX-E1 is currently out of stock.", 0),
+        ("I can confirm AX-E1 is not currently in stock.", 0),
+        ("I can confirm AX-E1 is not in stock.", 0),
+        ("I can confirm AX-E1 is currently not in stock.", 0),
+        ("I can confirm AX-E1 is not available.", 0),
+        ("I can confirm AX-E1 isn't in stock.", 0),
+        ("I can confirm AX-E1 isn’t available.", 0),
+        ("I can confirm that 7 AX-E1 units aren't available.", 0),
+        ("Current stock is unconfirmed. AX-E1 is available.", 7),
+        ("Current stock is unconfirmed. AX-E1 is unavailable.", 0),
+        ("Current stock is unconfirmed. AX-E1 is out of stock.", 0),
+        ("Current stock is unconfirmed. AX-E1 is currently in stock.", 7),
+        ("Current stock is unconfirmed, but AX-E1 is available.", 7),
+        ("For AX-E1, AX-E1 is out of stock.", 0),
+        ("Current stock is unconfirmed. AX-E1 isn't available.", 0),
+        ("Current stock is unconfirmed. AX-E1 isn’t in stock.", 0),
+        ("Current stock is unconfirmed — AX-E1 is available.", 7),
+        ("Current stock is unconfirmed – AX-E1 is available.", 7),
+        ("Current stock is unconfirmed\nAX-E1 is available.", 7),
+        ("Current stock is unconfirmed:\n- AX-E1 is available.", 7),
+        ("Current stock is unconfirmed:\n• AX-E1 is available.", 7),
+        ("Treejar's note: AX-E1 is available.", 7),
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_preserves_tool_backed_present_stock_confirmation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    confirmed_reply: str,
+    stock_on_hand: int,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    zoho.get_stock.return_value = {
+        "sku": "AX-E1",
+        "stock_on_hand": stock_on_hand,
+        "rate": 1073.0,
+        "currency_code": "AED",
+    }
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        run_deps = kwargs["deps"]
+        ctx = RunContext(
+            deps=run_deps,
+            retry=0,
+            messages=[],
+            prompt="",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+        stock_result = await engine_module.get_stock(ctx, "AX-E1")
+        assert f"{stock_on_hand} items available" in str(stock_result)
+        assert run_deps.inventory_confirmed is True
+        return _FakeAgentResult(confirmed_reply)
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == confirmed_reply
+    assert response.model == "mock-model"
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_removes_future_check_after_tool_backed_confirmation(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    unsafe_reply = (
+        "I can confirm availability: 7 units are currently in stock, and I "
+        "will check inventory again later."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    zoho.get_stock.return_value = {
+        "sku": "AX-E1",
+        "stock_on_hand": 7,
+        "rate": 1073.0,
+        "currency_code": "AED",
+    }
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        run_deps = kwargs["deps"]
+        ctx = RunContext(
+            deps=run_deps,
+            retry=0,
+            messages=[],
+            prompt="",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+        await engine_module.get_stock(ctx, "AX-E1")
+        return _FakeAgentResult(unsafe_reply)
+
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "7 units are currently in stock" in response.text
+    assert "will check inventory" not in response.text.casefold()
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unsupported_reply",
+    [
+        "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm availability: AX-E1 is currently in stock.",
+        "I can confirm AX-E1 is currently in stock.",
+        "I can confirm that 7 AX-E1 units are currently in stock.",
+        "I can confirm that AX-E1 has 7 units currently in stock.",
+        "Current stock is unconfirmed. I can confirm AX-E1 is available.",
+        "I can confirm AX-E1 is currently out of stock.",
+        "I can confirm AX-E1 is not currently in stock.",
+        "I can confirm AX-E1 is not in stock.",
+        "I can confirm AX-E1 is currently not in stock.",
+        "I can confirm AX-E1 is not available.",
+        "I can confirm AX-E1 isn't in stock.",
+        "I can confirm AX-E1 isn’t available.",
+        "I can confirm that 7 AX-E1 units aren't available.",
+        "Current stock is unconfirmed. AX-E1 is available.",
+        "Current stock is unconfirmed. AX-E1 is unavailable.",
+        "Current stock is unconfirmed. AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 is currently in stock.",
+        "Current stock is unconfirmed, but AX-E1 is available.",
+        "For AX-E1, AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 isn't available.",
+        "Current stock is unconfirmed. AX-E1 isn’t in stock.",
+        "Current stock is unconfirmed — AX-E1 is available.",
+        "Current stock is unconfirmed – AX-E1 is available.",
+        "Current stock is unconfirmed\nAX-E1 is available.",
+        "Current stock is unconfirmed:\n- AX-E1 is available.",
+        "Current stock is unconfirmed:\n• AX-E1 is available.",
+        "Treejar's note: AX-E1 is available.",
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_rejects_present_stock_confirmation_without_tool_evidence(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    unsupported_reply: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(unsupported_reply)
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text != unsupported_reply
+    assert "unconfirmed" in response.text.casefold()
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "check_object",
+    [
+        "dimension",
+        "dimensions",
+        "measurement",
+        "measurements",
+        "size",
+        "sizes",
+        "colour",
+        "colours",
+        "color",
+        "colors",
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_preserves_delivery_only_warehouse_check(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    check_object: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    safe_reply = (
+        f"Current stock is unconfirmed. Our team will check {check_object} with "
+        "the warehouse and get back to you."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(safe_reply)
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == safe_reply
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "safe_reply",
+    [
+        "AX-E1 stock is unconfirmed.",
+        "If AX-E1 is available, a current inventory result is still required.",
+        "We need to determine whether AX-E1 is available.",
+        "When AX-E1 is available, contact me.",
+        "Treejar's AX-E1 catalog entry is documented.",
+        "Current stock is unconfirmed. The note says 'AX-E1 is available.'",
+        "Current stock is unconfirmed. The note says ‘AX-E1 is available.’",
+        "Current stock is unconfirmed. The note says 'AX-E1 is currently in stock.'",
+        "Current stock is unconfirmed. Determine whether:\n- AX-E1 is available.",
+        "Current stock is unconfirmed. Check if:\n• AX-E1 is available.",
+        "Current stock is unconfirmed. Tell me when:\n- AX-E1 is available.",
+        (
+            "Current stock is unconfirmed. The note says, 'Our team will check "
+            "stock and get back to you.'"
+        ),
+        (
+            "Current stock is unconfirmed. The note says, ‘Our team will check "
+            "stock and get back to you.’"
+        ),
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_preserves_conditional_sku_stock_control(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    safe_reply: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(safe_reply)
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == safe_reply
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("unsafe_reply", "forbidden"),
+    [
+        (
+            (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "availability and get back to you."
+            ),
+            "will check availability",
+        ),
+        (
+            (
+                "I can't confirm it reduces back pain. Visit our showroom to "
+                "experience the AX-E1 in person."
+            ),
+            "experience the AX-E1",
+        ),
+        (
+            (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "stock and delivery and get back to you."
+            ),
+            "will check stock",
+        ),
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_repairs_review_regression_outputs(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    unsafe_reply: str,
+    forbidden: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(unsafe_reply)
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert forbidden.casefold() not in response.text.casefold()
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
@@ -3015,7 +3638,9 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
             "Continue the customer's prior request" in directive
             for directive in deps.runtime_directives
         )
-        return _FakeAgentResult("Thank you, E2E Tester. CH-620 is available.")
+        return _FakeAgentResult(
+            "Thank you, E2E Tester. I'm continuing with your CH-620 request."
+        )
 
     mock_run.side_effect = run_side_effect
 
@@ -3032,7 +3657,7 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
     assert conv.customer_name == "E2E Tester"
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
     assert response.model == "mock-model"
-    assert "CH-620 is available" in response.text
+    assert "CH-620 request" in response.text
     assert (
         "How can I help you with your office furniture requirement?"
         not in response.text
@@ -5487,6 +6112,7 @@ async def test_tools_get_stock_returns_zoho_confirmed_price_and_stock(
     assert isinstance(result, str)
     assert "7 items available" in result
     assert "1073.00 AED" in result
+    assert deps.inventory_confirmed is True
 
 
 @pytest.mark.asyncio

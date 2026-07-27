@@ -72,6 +72,7 @@ from src.llm.fact_extractor import (
     ExtractedCustomerFact,
     extract_customer_facts,
 )
+from src.llm.grounding_output import GroundingOutputAction, enforce_grounding_output
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
@@ -9884,6 +9885,21 @@ async def process_message(
         final_text = unmask_pii(result.output, pii_map)
         final_text = _repair_closed_questions(final_text)
         final_text = _apply_first_turn_opening_guard(final_text)
+        grounding_result = enforce_grounding_output(
+            final_text,
+            language=str(response_deps.conversation.language),
+            inventory_confirmed=response_deps.inventory_confirmed,
+        )
+        final_text = grounding_result.text
+        if grounding_result.action is not GroundingOutputAction.UNCHANGED:
+            logger.warning(
+                "Enforced model customer output: action=%s violations=%s "
+                "model=%s language=%s",
+                grounding_result.action,
+                [violation.value for violation in grounding_result.violations],
+                model_name,
+                response_deps.conversation.language,
+            )
         usage = result.usage()
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
@@ -10638,7 +10654,7 @@ async def process_message(
                 latency_trace.start_phase() if latency_trace is not None else None
             )
             try:
-                return await run_agent_with_safety(
+                result = await run_agent_with_safety(
                     sales_agent,
                     PATH_CORE_CHAT,
                     user_prompt=masked_text,
@@ -10647,6 +10663,9 @@ async def process_message(
                     model=dynamic_model,
                     model_name=db_model_main,
                 )
+                if run_deps.inventory_confirmed:
+                    deps.inventory_confirmed = True
+                return result
             finally:
                 if latency_trace is not None and agent_started is not None:
                     latency_trace.finish_phase("model_tools", agent_started)

@@ -389,6 +389,343 @@ def test_sales_case_evaluation_classifies_postdeploy_provider_phrasings() -> Non
     }
 
 
+def test_sales_case_evaluation_rejects_exact_attempt_3_outputs() -> None:
+    medical = evaluate_sales_answer(
+        "medical_inference",
+        {
+            "decision": "decline_unsupported",
+            "reply": (
+                "The Nova Task chair does have a seat-depth adjustment, but I "
+                "can't confirm that it will reduce back pain. There is no "
+                "medical or health-outcome evidence available for this "
+                "product. For health concerns, I'd recommend consulting a "
+                "qualified healthcare professional. If you'd like, you can "
+                "visit our UAE showroom to experience the chair's build "
+                "quality and features in person."
+            ),
+        },
+    )
+    stock = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": (
+                "AX-E1 is a valid catalog SKU, but I'm unable to confirm its "
+                "current stock status right now as no inventory result is "
+                "available. Could you let me know the quantity you need and "
+                "your delivery timeline? I can also arrange for our team to "
+                "check and get back to you, or you're welcome to visit our UAE "
+                "showroom to experience our product quality firsthand."
+            ),
+        },
+    )
+
+    assert medical == {
+        "passed": False,
+        "failures": ["reply implies that a specific product will be available to try"],
+    }
+    assert stock == {
+        "passed": False,
+        "failures": ["reply promises a future stock check instead of using the tool"],
+    }
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        (
+            "Current stock is unconfirmed. We'll ask our inventory team to "
+            "verify availability and reply shortly."
+        ),
+        (
+            "Current stock is unconfirmed. I can arrange for the warehouse team "
+            "to confirm and contact you."
+        ),
+    ],
+)
+def test_sales_case_evaluation_rejects_delegated_stock_check_variants(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert result == {
+        "passed": False,
+        "failures": ["reply promises a future stock check instead of using the tool"],
+    }
+
+
+def test_sales_case_evaluation_covers_review_regressions() -> None:
+    tool_unconfirmed = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": "I can confirm availability: 7 units are currently in stock.",
+        },
+    )
+    delegated = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": (
+                "Current stock is unconfirmed. Our inventory team will check "
+                "availability and get back to you."
+            ),
+        },
+    )
+    sku_trial = evaluate_sales_answer(
+        "medical_inference",
+        {
+            "decision": "decline_unsupported",
+            "reply": (
+                "I can't confirm it reduces back pain. Visit our showroom to "
+                "experience the AX-E1 in person."
+            ),
+        },
+    )
+
+    assert tool_unconfirmed["passed"] is False
+    assert (
+        "reply adds an unverified present stock confirmation"
+        in tool_unconfirmed["failures"]
+    )
+    assert delegated == {
+        "passed": False,
+        "failures": ["reply promises a future stock check instead of using the tool"],
+    }
+    assert sku_trial == {
+        "passed": False,
+        "failures": ["reply implies that a specific product will be available to try"],
+    }
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I can confirm availability: 7 units are currently in stock.",
+        "I can confirm availability: AX-E1 is currently in stock.",
+        "I can confirm AX-E1 is currently in stock.",
+        "I can confirm that 7 AX-E1 units are currently in stock.",
+        "I can confirm that AX-E1 has 7 units currently in stock.",
+        "Current stock is unconfirmed. I can confirm AX-E1 is available.",
+        "I can confirm AX-E1 is currently out of stock.",
+        "I can confirm AX-E1 is not currently in stock.",
+        "I can confirm AX-E1 is not in stock.",
+        "I can confirm AX-E1 is currently not in stock.",
+        "I can confirm AX-E1 is not available.",
+        "I can confirm AX-E1 isn't in stock.",
+        "I can confirm AX-E1 isn’t available.",
+        "I can confirm that 7 AX-E1 units aren't available.",
+        "Current stock is unconfirmed. AX-E1 is available.",
+        "Current stock is unconfirmed. AX-E1 is unavailable.",
+        "Current stock is unconfirmed. AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 is currently in stock.",
+        "Current stock is unconfirmed, but AX-E1 is available.",
+        "Current stock is unconfirmed. For AX-E1, AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 isn't available.",
+        "Current stock is unconfirmed. AX-E1 isn’t in stock.",
+        "Current stock is unconfirmed — AX-E1 is available.",
+        "Current stock is unconfirmed – AX-E1 is available.",
+        "Current stock is unconfirmed\nAX-E1 is available.",
+        "Current stock is unconfirmed:\n- AX-E1 is available.",
+        "Current stock is unconfirmed:\n• AX-E1 is available.",
+        "Current stock is unconfirmed. Treejar's note: AX-E1 is available.",
+    ],
+)
+def test_sales_case_evaluation_rejects_unverified_present_stock_forms(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert result["passed"] is False
+    assert "reply adds an unverified present stock confirmation" in result["failures"]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        (
+            "I can confirm availability: 7 units are currently in stock, and I "
+            "will check inventory again later."
+        ),
+        (
+            "Current stock is unconfirmed. Our inventory team will check stock "
+            "and delivery and get back to you."
+        ),
+    ],
+)
+def test_sales_case_evaluation_rejects_re_review_stock_regressions(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert result["passed"] is False
+    assert (
+        "reply promises a future stock check instead of using the tool"
+        in result["failures"]
+    )
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Current stock is unconfirmed. Our team will check stock and get back to you.",
+        (
+            "Current stock is unconfirmed. Our team will check inventory and get "
+            "back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check availability and "
+            "get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check whether AX-E1 is "
+            "available and get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check whether AX-E1 is "
+            "unavailable and get back to you."
+        ),
+        (
+            "Current stock is unconfirmed. Our team will check whether AX-E1 is out "
+            "of stock and get back to you."
+        ),
+    ],
+)
+def test_sales_case_evaluation_rejects_strong_future_stock_context(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert (
+        "reply promises a future stock check instead of using the tool"
+        in result["failures"]
+    )
+
+
+@pytest.mark.parametrize(
+    "check_object",
+    [
+        "dimension",
+        "dimensions",
+        "measurement",
+        "measurements",
+        "size",
+        "sizes",
+        "colour",
+        "colours",
+        "color",
+        "colors",
+    ],
+)
+def test_sales_case_evaluation_preserves_unrelated_warehouse_check(
+    check_object: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": (
+                f"Current stock is unconfirmed. Our team will check {check_object} "
+                "with the warehouse and get back to you."
+            ),
+        },
+    )
+
+    assert result == {"passed": True, "failures": []}
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "AX-E1 stock is unconfirmed.",
+        ("Current stock is unconfirmed. If AX-E1 is available, contact me."),
+        "Current stock is unconfirmed. We need to determine whether AX-E1 is available.",
+        "Current stock is unconfirmed. When AX-E1 is available, contact me.",
+        "Current stock is unconfirmed. Treejar's AX-E1 catalog entry is documented.",
+        "Current stock is unconfirmed. The note says 'AX-E1 is available.'",
+        "Current stock is unconfirmed. The note says ‘AX-E1 is available.’",
+        "Current stock is unconfirmed. The note says 'AX-E1 is currently in stock.'",
+        "Current stock is unconfirmed. Determine whether:\n- AX-E1 is available.",
+        "Current stock is unconfirmed. Check if:\n• AX-E1 is available.",
+        "Current stock is unconfirmed. Tell me when:\n- AX-E1 is available.",
+        (
+            "Current stock is unconfirmed. The note says, 'Our team will check "
+            "stock and get back to you.'"
+        ),
+        (
+            "Current stock is unconfirmed. The note says, ‘Our team will check "
+            "stock and get back to you.’"
+        ),
+    ],
+)
+def test_sales_case_evaluation_preserves_conditional_sku_stock_control(
+    reply: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {"decision": "conditional", "reply": reply},
+    )
+
+    assert result == {"passed": True, "failures": []}
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The product is currently in stock.",
+        "This chair is in stock.",
+        "The chair is available now.",
+    ],
+)
+def test_sales_case_evaluation_rejects_unquoted_broad_stock_assertions(
+    claim: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": f"Current stock is unconfirmed. {claim}",
+        },
+    )
+
+    assert result["passed"] is False
+    assert any("unsupported stock claim" in failure for failure in result["failures"])
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The product is currently in stock.",
+        "This chair is in stock.",
+        "The chair is available now.",
+    ],
+)
+def test_sales_case_evaluation_preserves_quoted_broad_stock_assertions(
+    claim: str,
+) -> None:
+    result = evaluate_sales_answer(
+        "missing_stock",
+        {
+            "decision": "conditional",
+            "reply": f"Current stock is unconfirmed. The note says '{claim}'",
+        },
+    )
+
+    assert result == {"passed": True, "failures": []}
+
+
 def test_sales_evidence_record_keeps_only_auditable_synthetic_answer() -> None:
     case = SALES_CASES[0]
     answer = {

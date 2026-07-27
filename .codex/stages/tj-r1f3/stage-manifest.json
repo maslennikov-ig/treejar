@@ -1,0 +1,75 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-r1f3",
+  "goal_id": "tj-r1f3",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 1,
+  "acceptance_boundary_id": "grounded-customer-output-enforcement",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "prompt-grounding-policy",
+      "customer-output-enforcement",
+      "model-route-evaluator",
+      "production-runtime"
+    ],
+    "risk_models": [
+      "unsupported-commercial-claims",
+      "provider-nondeterminism",
+      "false-positive-repair",
+      "deployment-rollback"
+    ],
+    "test_environments": [
+      "local-unit-integration",
+      "openrouter-synthetic",
+      "production-health-smoke"
+    ],
+    "rollback_boundary": "restore-prior-release",
+    "acceptance_proofs": [
+      "prompt-tail-invariant",
+      "captured-output-enforcement-regressions",
+      "affected-and-release-gates",
+      "provider-synthetic-smoke",
+      "production-health-and-model-readback"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "consumer_adoption",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-r1f3",
+    "source_digest": "359451386dd19b98c25bedee19ee9f6ba9df923dcd87050f053eccabb31200b6",
+    "criteria": [
+      {
+        "criterion_id": "AC-1",
+        "text": "The live injected prompt still contains exactly one immutable grounding policy copy as its final tail; deterministic customer-output enforcement prevents or safely repairs unsupported specific-product showroom offers after medical claims and delegated future stock-check promises while preserving approved general showroom language, conditional samples, safe negations, and real tool-backed stock confirmation; the model-route evaluator rejects the exact captured attempt-3 failures and equivalent delegated phrasing; focused red/green invariant tests, affected integration checks, Ruff, format, Mypy, release Pytest, process verification, and one independent delta review pass; the canonical release is deployed, exact release/model/service/API readback passes, and one freshly authorized bounded five-call provider smoke plus manual semantic review passes 5/5 with no customer data, Wazzup, Zoho, CRM, quotation, order, or other business mutation.",
+        "text_digest": "0713be329150020ac96d7d4fad58daaadc3a5e5b1d6f78afc83b016802f4d9cc"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-r1f3/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "359451386dd19b98c25bedee19ee9f6ba9df923dcd87050f053eccabb31200b6",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-r1f3-root-cause",
+      "stream_owner": "debugger",
+      "artifact_path": ".codex/stages/tj-r1f3/artifacts/tj-r1f3-root-cause.md"
+    },
+    {
+      "task_id": "tj-r1f3-implementation",
+      "stream_owner": "ai-engineer-output-enforcement",
+      "artifact_path": ".codex/stages/tj-r1f3/artifacts/tj-r1f3-implementation.md"
+    }
+  ]
+}

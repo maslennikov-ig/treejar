@@ -1,0 +1,14 @@
+{
+  "schema_version": "scope-criterion-snapshot/v1",
+  "goal_id": "tj-r1f3",
+  "source_kind": "beads",
+  "source_id": "tj-r1f3",
+  "source_digest": "359451386dd19b98c25bedee19ee9f6ba9df923dcd87050f053eccabb31200b6",
+  "criteria": [
+    {
+      "criterion_id": "AC-1",
+      "text": "The live injected prompt still contains exactly one immutable grounding policy copy as its final tail; deterministic customer-output enforcement prevents or safely repairs unsupported specific-product showroom offers after medical claims and delegated future stock-check promises while preserving approved general showroom language, conditional samples, safe negations, and real tool-backed stock confirmation; the model-route evaluator rejects the exact captured attempt-3 failures and equivalent delegated phrasing; focused red/green invariant tests, affected integration checks, Ruff, format, Mypy, release Pytest, process verification, and one independent delta review pass; the canonical release is deployed, exact release/model/service/API readback passes, and one freshly authorized bounded five-call provider smoke plus manual semantic review passes 5/5 with no customer data, Wazzup, Zoho, CRM, quotation, order, or other business mutation.",
+      "text_digest": "0713be329150020ac96d7d4fad58daaadc3a5e5b1d6f78afc83b016802f4d9cc"
+    }
+  ]
+}
