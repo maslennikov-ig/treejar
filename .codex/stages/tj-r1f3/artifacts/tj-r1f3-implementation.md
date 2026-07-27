@@ -87,8 +87,10 @@ verification:
   - uv run pytest the seventeen focused re-review cases -q --tb=short: passed with 17 tests
   - third re-review structural stock matrices: pure failed 12 cases, runtime failed 6 cases, and smoke failed 12 cases for the intended typed-present, natural-phrasing, and warehouse/delivery boundary reasons before fixes
   - third re-review focused GREEN: pure passed 40 tests, runtime passed 18 selected tests, and smoke passed 18 selected tests
+  - fourth re-review RED: pure, runtime, and smoke each failed 12 cases for the intended status-order, direct-SKU, and plural unrelated-object reasons; coordination follow-up failed 2 pure, 2 runtime, and 3 smoke cases
+  - fourth re-review focused GREEN: pure passed 64 tests, runtime passed 49 selected tests, and smoke passed 37 selected tests
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
-  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 457 tests
+  - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 534 tests
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
@@ -146,6 +148,16 @@ inventory, availability, available, unavailable, and out-of-stock wording
 remain unsafe in future checks. Warehouse is weak context, so an explicit
 delivery-only check is preserved while mixed stock-and-delivery remains unsafe.
 
+The fourth review correction normalizes optional `currently`/`not` ordering,
+extends the same evidence gate to direct SKU-shaped present assertions, and
+pluralizes unrelated dimension/measurement/size/colour objects. Direct
+assertions are recognized at assertion clause boundaries and coordination, but
+not inside quoted or `if`/`whether`/`when` conditional clauses. This keeps the
+parser bounded to SKU-shaped present stock states. An existing name-gate test
+fixture was corrected from an unsupported no-tool `CH-620 is available` claim
+to neutral request-continuation wording; no fabricated inventory evidence was
+introduced.
+
 # Scope / Routing
 
 The changed AI path is `process_message()` → model/tool orchestration →
@@ -174,9 +186,11 @@ present-plus-future repair, mixed stock/delivery classification, and standalone
 unrelated-check controls. Third-review coverage adds typed unverified-present
 classification, natural availability/quantity/positive/negative forms, strong
 future-stock lexemes, and delivery-only warehouse controls at all three
-boundaries.
+boundaries. Fourth-review coverage adds optional modifier order, direct
+SKU-status assertions after sentence/coordination boundaries, conditional and
+non-SKU controls, and singular/plural unrelated warehouse checks.
 
-The complete three affected test files passed 457 tests. Focused Ruff and
+The complete three affected test files passed 534 tests. Focused Ruff and
 format plus full `src/` Mypy passed. The detailed commands and failure evidence
 are in
 `.superpowers/sdd/tj-r1f3-implementation-report.md`.

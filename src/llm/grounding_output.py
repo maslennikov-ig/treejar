@@ -92,27 +92,44 @@ _EN_TEAM_FUTURE_CHECK_RE = re.compile(
     r"(?:get back|contact|reply|respond|update)\b"
 )
 _EN_SKU_PATTERN = r"(?=[a-z0-9-]*\d)(?=[a-z0-9-]*-)[a-z0-9-]+"
-_EN_PRESENT_STOCK_STATUS_PATTERN = (
-    r"(?:not\s+currently\s+in\s+stock"
-    r"|currently\s+(?:in\s+stock|out\s+of\s+stock)"
-    r"|(?:currently\s+)?(?:available|unavailable|in\s+stock|out\s+of\s+stock))"
+_EN_PRESENT_STOCK_MODIFIER_PATTERN = (
+    r"(?:(?:currently\s+not|not\s+currently|currently|not)\s+)?"
 )
-_EN_PRESENT_STOCK_SUBJECT_PATTERN = (
+_EN_PRESENT_STOCK_STATUS_PATTERN = (
+    rf"{_EN_PRESENT_STOCK_MODIFIER_PATTERN}"
+    r"(?:available|unavailable|in\s+stock|out\s+of\s+stock)"
+)
+_EN_SKU_PRESENT_STOCK_SUBJECT_PATTERN = (
     rf"(?:(?:\d+\s+)?{_EN_SKU_PATTERN}(?:\s+units?)?"
     rf"\s+(?:is|are)\s+{_EN_PRESENT_STOCK_STATUS_PATTERN}"
     rf"|{_EN_SKU_PATTERN}\s+has\s+\d+\s+units?"
-    rf"\s+{_EN_PRESENT_STOCK_STATUS_PATTERN}"
+    rf"\s+{_EN_PRESENT_STOCK_STATUS_PATTERN})"
+)
+_EN_CONFIRMED_PRESENT_STOCK_SUBJECT_PATTERN = (
+    rf"(?:{_EN_SKU_PRESENT_STOCK_SUBJECT_PATTERN}"
     rf"|\d+\s+units?\s+(?:is|are)\s+{_EN_PRESENT_STOCK_STATUS_PATTERN})"
 )
-_EN_PRESENT_STOCK_CONFIRMATION_RE = re.compile(
+_EN_PREFIXED_PRESENT_STOCK_ASSERTION_RE = re.compile(
     rf"\b(?:i|we)\s+can\s+confirm(?:"
-    rf"\s+availability\s*:\s*{_EN_PRESENT_STOCK_SUBJECT_PATTERN}"
-    rf"|\s+(?:that\s+)?{_EN_PRESENT_STOCK_SUBJECT_PATTERN}"
+    rf"\s+availability\s*:\s*{_EN_CONFIRMED_PRESENT_STOCK_SUBJECT_PATTERN}"
+    rf"|\s+(?:that\s+)?{_EN_CONFIRMED_PRESENT_STOCK_SUBJECT_PATTERN}"
     rf")\b",
     re.IGNORECASE,
 )
+_EN_DIRECT_SKU_PRESENT_STOCK_ASSERTION_RE = re.compile(
+    rf"\b{_EN_SKU_PRESENT_STOCK_SUBJECT_PATTERN}\b",
+    re.IGNORECASE,
+)
+_EN_ASSERTION_CLAUSE_BOUNDARY_RE = re.compile(
+    r"(?:^|[.;:,]\s*|\b(?:but|however)\s*)$",
+    re.IGNORECASE,
+)
+_EN_CONDITIONAL_CLAUSE_RE = re.compile(
+    r"^\s*(?:if|when)\b|\b(?:if|whether|when)\s*$",
+    re.IGNORECASE,
+)
 _EN_UNRELATED_CHECK_OBJECT_RE = re.compile(
-    r"\b(?:dimension|measurement|size|colour|color|finish|delivery|timeline|"
+    r"\b(?:dimensions?|measurements?|sizes?|colou?rs?|finish|delivery|timeline|"
     r"appointment|project|quotation|quote|order status)\b"
 )
 _AR_DIRECT_FUTURE_CHECK_RE = re.compile(
@@ -240,10 +257,17 @@ def _has_meaningful_check_object(
 
 
 def _present_stock_confirmation_spans(text: str) -> list[tuple[int, int]]:
-    return [
+    spans = [
         (match.start(), match.end())
-        for match in _EN_PRESENT_STOCK_CONFIRMATION_RE.finditer(text)
+        for match in _EN_PREFIXED_PRESENT_STOCK_ASSERTION_RE.finditer(text)
     ]
+    for match in _EN_DIRECT_SKU_PRESENT_STOCK_ASSERTION_RE.finditer(text):
+        prefix = text[: match.start()]
+        if _EN_ASSERTION_CLAUSE_BOUNDARY_RE.search(
+            prefix
+        ) and not _EN_CONDITIONAL_CLAUSE_RE.search(prefix):
+            spans.append((match.start(), match.end()))
+    return sorted(set(spans))
 
 
 def _has_present_stock_confirmation(sentence: str) -> bool:
@@ -324,10 +348,11 @@ def _confirmed_present_clause(
     if not inventory_confirmed:
         return None
     visible = _without_quoted_text(sentence)
-    match = _EN_PRESENT_STOCK_CONFIRMATION_RE.search(visible)
-    if match is None:
+    spans = _present_stock_confirmation_spans(visible)
+    if not spans:
         return None
-    candidate = sentence[: match.end()].rstrip(" ,;،؛")
+    _, end = spans[0]
+    candidate = sentence[:end].rstrip(" ,;،؛")
     return candidate or None
 
 

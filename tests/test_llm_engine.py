@@ -2446,6 +2446,15 @@ async def test_process_message_uses_arabic_grounding_fallback(
         ("I can confirm AX-E1 is available.", 7),
         ("I can confirm AX-E1 is currently out of stock.", 0),
         ("I can confirm AX-E1 is not currently in stock.", 0),
+        ("I can confirm AX-E1 is not in stock.", 0),
+        ("I can confirm AX-E1 is currently not in stock.", 0),
+        ("I can confirm AX-E1 is not available.", 0),
+        ("Current stock is unconfirmed. AX-E1 is available.", 7),
+        ("Current stock is unconfirmed. AX-E1 is unavailable.", 0),
+        ("Current stock is unconfirmed. AX-E1 is out of stock.", 0),
+        ("Current stock is unconfirmed. AX-E1 is currently in stock.", 7),
+        ("Current stock is unconfirmed, but AX-E1 is available.", 7),
+        ("For AX-E1, AX-E1 is out of stock.", 0),
     ],
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
@@ -2585,6 +2594,15 @@ async def test_process_message_removes_future_check_after_tool_backed_confirmati
         "Current stock is unconfirmed. I can confirm AX-E1 is available.",
         "I can confirm AX-E1 is currently out of stock.",
         "I can confirm AX-E1 is not currently in stock.",
+        "I can confirm AX-E1 is not in stock.",
+        "I can confirm AX-E1 is currently not in stock.",
+        "I can confirm AX-E1 is not available.",
+        "Current stock is unconfirmed. AX-E1 is available.",
+        "Current stock is unconfirmed. AX-E1 is unavailable.",
+        "Current stock is unconfirmed. AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 is currently in stock.",
+        "Current stock is unconfirmed, but AX-E1 is available.",
+        "For AX-E1, AX-E1 is out of stock.",
     ],
 )
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
@@ -2625,6 +2643,21 @@ async def test_process_message_rejects_present_stock_confirmation_without_tool_e
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "check_object",
+    [
+        "dimension",
+        "dimensions",
+        "measurement",
+        "measurements",
+        "size",
+        "sizes",
+        "colour",
+        "colours",
+        "color",
+        "colors",
+    ],
+)
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -2634,6 +2667,7 @@ async def test_process_message_preserves_delivery_only_warehouse_check(
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
+    check_object: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -2642,9 +2676,55 @@ async def test_process_message_preserves_delivery_only_warehouse_check(
     conv.customer_name = "Test User"
     text = "I need a few workstations for my new office."
     safe_reply = (
-        "Current stock is unconfirmed. Our team will check delivery timing with "
+        f"Current stock is unconfirmed. Our team will check {check_object} with "
         "the warehouse and get back to you."
     )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(safe_reply)
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.text == safe_reply
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "safe_reply",
+    [
+        "AX-E1 stock is unconfirmed.",
+        "If AX-E1 is available, a current inventory result is still required.",
+        "We need to determine whether AX-E1 is available.",
+        "When AX-E1 is available, contact me.",
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_preserves_conditional_sku_stock_control(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    safe_reply: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = "I need a few workstations for my new office."
     mock_build_history.return_value = _non_first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -3521,7 +3601,9 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
             "Continue the customer's prior request" in directive
             for directive in deps.runtime_directives
         )
-        return _FakeAgentResult("Thank you, E2E Tester. CH-620 is available.")
+        return _FakeAgentResult(
+            "Thank you, E2E Tester. I'm continuing with your CH-620 request."
+        )
 
     mock_run.side_effect = run_side_effect
 
@@ -3538,7 +3620,7 @@ async def test_process_message_name_only_reply_resumes_pending_name_gate_request
     assert conv.customer_name == "E2E Tester"
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
     assert response.model == "mock-model"
-    assert "CH-620 is available" in response.text
+    assert "CH-620 request" in response.text
     assert (
         "How can I help you with your office furniture requirement?"
         not in response.text

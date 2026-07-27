@@ -47,6 +47,9 @@ def test_classify_grounding_output_finds_exact_attempt_3_violations() -> None:
         "I can confirm AX-E1 is available.",
         "I can confirm AX-E1 is currently out of stock.",
         "I can confirm AX-E1 is not currently in stock.",
+        "I can confirm AX-E1 is not in stock.",
+        "I can confirm AX-E1 is currently not in stock.",
+        "I can confirm AX-E1 is not available.",
     ],
 )
 def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
@@ -64,6 +67,40 @@ def test_present_stock_confirmation_requires_current_turn_inventory_evidence(
         inventory_confirmed=True,
     )
     assert rejected.action is GroundingOutputAction.REPLACED
+    assert "unconfirmed" in rejected.text.casefold()
+    assert confirmed.action is GroundingOutputAction.UNCHANGED
+    assert confirmed.text == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Current stock is unconfirmed. AX-E1 is available.",
+        "Current stock is unconfirmed. AX-E1 is unavailable.",
+        "Current stock is unconfirmed. AX-E1 is out of stock.",
+        "Current stock is unconfirmed. AX-E1 is currently in stock.",
+        "Current stock is unconfirmed, but AX-E1 is available.",
+        "For AX-E1, AX-E1 is out of stock.",
+    ],
+)
+def test_direct_sku_stock_assertion_requires_current_turn_inventory_evidence(
+    text: str,
+) -> None:
+    assert classify_grounding_output(text) == (
+        GroundingViolation.UNVERIFIED_STOCK_CONFIRMATION,
+    )
+    assert classify_grounding_output(text, inventory_confirmed=True) == ()
+
+    rejected = enforce_grounding_output(text, language="en")
+    confirmed = enforce_grounding_output(
+        text,
+        language="en",
+        inventory_confirmed=True,
+    )
+    assert rejected.action in {
+        GroundingOutputAction.REPAIRED,
+        GroundingOutputAction.REPLACED,
+    }
     assert "unconfirmed" in rejected.text.casefold()
     assert confirmed.action is GroundingOutputAction.UNCHANGED
     assert confirmed.text == text
@@ -120,18 +157,25 @@ def test_future_check_with_strong_stock_context_is_unsafe(text: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
+    "check_object",
     [
-        "Our team will check delivery timing with the warehouse and get back to you.",
-        (
-            "Current stock is unconfirmed. Our inventory team will check delivery "
-            "and get back to you."
-        ),
+        "dimension",
+        "dimensions",
+        "measurement",
+        "measurements",
+        "size",
+        "sizes",
+        "colour",
+        "colours",
+        "color",
+        "colors",
+        "delivery timing",
     ],
 )
 def test_delivery_only_check_is_safe_even_with_weak_warehouse_context(
-    text: str,
+    check_object: str,
 ) -> None:
+    text = f"Our team will check {check_object} with the warehouse and get back to you."
     assert classify_grounding_output(text) == ()
 
 
@@ -179,6 +223,12 @@ def test_classify_grounding_output_covers_review_regressions(
             "Current stock is unconfirmed. Our inventory team will check the "
             "colour and get back to you."
         ),
+        "The product is available.",
+        "AXE1 is available.",
+        "We discussed whether AX-E1 is available.",
+        "If AX-E1 is available, a current inventory result is still required.",
+        "When AX-E1 is available, contact me.",
+        "AX-E1 stock is unconfirmed.",
         "Our manager will review the quotation and contact you.",
         "يمكنك زيارة معرضنا لتجربة جودة منتجاتنا.",
         "لا أستطيع تأكيد توفر كرسي محدد لتجربته في المعرض.",

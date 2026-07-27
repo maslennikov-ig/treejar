@@ -252,6 +252,71 @@ uv run mypy src/
 
 Results: Ruff and format passed; Mypy passed over 163 source files.
 
+## Fourth re-review bounded present-assertion correction
+
+The fourth review identified three remaining bounded gaps:
+
+1. The present status grammar accepted only one `not`/`currently` order and
+   misclassified `not in stock`, `currently not in stock`, and `not available`
+   as future checks even with tool evidence.
+2. Direct SKU-shaped present statements such as `AX-E1 is available` were
+   outside the evidence gate unless introduced by `I can confirm`.
+3. Warehouse callbacks for plural unrelated objects such as dimensions,
+   measurements, sizes, colours, and colors were falsely classified as stock
+   checks.
+
+Initial RED at each boundary produced 12 intended failures in pure, runtime,
+and smoke tests. A clause-boundary follow-up added comma/coordination and
+conditional controls; it produced 2 pure, 2 runtime, and 3 smoke failures for
+the intended missing coordination coverage and one legacy smoke-control wording
+collision.
+
+The correction remains structural and narrow:
+
+- a shared optional modifier grammar accepts `currently`, `not`,
+  `not currently`, and `currently not` before bounded stock states;
+- the SKU-shaped subject/status grammar is reused for both prefixed
+  confirmations and direct present assertions;
+- direct assertions require an assertion clause boundary or `but`/`however`
+  coordination and exclude quoted text plus `if`/`whether`/`when` conditions;
+- quantity-only status remains valid only under the explicit confirmation
+  prefix, preventing expansion into arbitrary availability prose;
+- singular and plural unrelated object lexemes share one grammar;
+- runtime and shared smoke continue to consume the same production present
+  classifier;
+- the pre-existing name-gate resume test no longer fabricates an unsupported
+  no-tool `CH-620 is available` claim. Its fixture now proves request
+  continuation with neutral wording, preserving the test's actual objective.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py -q --tb=short
+uv run pytest tests/test_llm_engine.py -q --tb=short -k 'preserves_tool_backed_present_stock_confirmation or rejects_present_stock_confirmation_without_tool_evidence or preserves_delivery_only_warehouse_check or preserves_conditional_sku_stock_control or name_only_reply_resumes_pending_name_gate_request'
+uv run pytest tests/test_scripts_verify_model_routes.py -q --tb=short -k 'rejects_unverified_present_stock_forms or preserves_unrelated_warehouse_check or preserves_conditional_sku_stock_control or rejects_strong_future_stock_context'
+```
+
+Results: `64 passed`; `49 passed, 348 deselected`; and
+`37 passed, 36 deselected`.
+
+Fresh affected test files:
+
+```text
+uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short
+```
+
+Result: `534 passed`.
+
+Fresh static checks:
+
+```text
+uv run ruff check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run ruff format --check src/llm/grounding_output.py src/llm/engine.py scripts/verify_model_routes.py tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py
+uv run mypy src/
+```
+
+Results: Ruff and format passed; Mypy passed over 163 source files.
+
 ## Remaining environment-level checks
 
 - Independent delta review.
