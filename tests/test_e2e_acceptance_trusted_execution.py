@@ -36,9 +36,9 @@ def _registry():
     return policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
 
 
-def _authorization(registry, **updates):
+def _authorization(registry, *, trusted: bool = True, **updates):
     _, execution = _modules()
-    now = datetime(2026, 7, 27, 10, 0, tzinfo=UTC)
+    now = datetime.now(UTC)
     values = {
         "schema_version": "noor-e2e-authorization/v2",
         "authorization_id": "synthetic-local-auth-v2",
@@ -46,6 +46,9 @@ def _authorization(registry, **updates):
         "issued_at": now - timedelta(minutes=1),
         "expires_at": now + timedelta(hours=1),
         "task1_authorization_digest": "a" * 64,
+        "task1_input_digests": {"synthetic-task1-input": "7" * 64},
+        "preflight_digest": "8" * 64,
+        "readback_collector_digest": "9" * 64,
         "policy_digest": registry.compiled_policy.policy_digest,
         "compiler_id": registry.compiled_plan.compiler_id,
         "compiled_plan_digest": registry.compiled_plan.plan_digest,
@@ -69,7 +72,10 @@ def _authorization(registry, **updates):
         ),
     }
     values.update(updates)
-    return execution.ExecutionAuthorizationV2(**values)
+    authorization = execution.ExecutionAuthorizationV2(**values)
+    if trusted:
+        registry._load_execution_authorization(authorization)
+    return authorization
 
 
 def test_compiled_plan_has_exact_29_execution_ids_and_all_required_criteria() -> None:
@@ -111,7 +117,8 @@ def test_executor_rejects_v1_and_authorization_v2_cannot_shrink_execution() -> N
 
 def test_authorization_v2_binds_policy_plan_compiler_adapters_and_stores() -> None:
     registry = _registry()
-    valid = _authorization(registry)
+    valid = _authorization(registry, trusted=False)
+    registry._load_execution_authorization(valid)
     registry.validate_execution_authorization(valid)
 
     for field, replacement in (
@@ -125,6 +132,27 @@ def test_authorization_v2_binds_policy_plan_compiler_adapters_and_stores() -> No
             registry.validate_execution_authorization(
                 valid.model_copy(update={field: replacement})
             )
+
+
+def test_authorization_requires_trusted_load_current_time_and_task1_inputs() -> None:
+    registry = _registry()
+    valid = _authorization(registry, trusted=False)
+    with pytest.raises(Exception, match="trusted.*authorization|not loaded"):
+        registry.validate_execution_authorization(valid)
+
+    expired = valid.model_copy(
+        update={
+            "issued_at": datetime.now(UTC) - timedelta(hours=2),
+            "expires_at": datetime.now(UTC) - timedelta(hours=1),
+        }
+    )
+    with pytest.raises(Exception, match="expired|validity"):
+        registry._load_execution_authorization(expired)
+
+    values = valid.model_dump()
+    values.pop("task1_input_digests")
+    with pytest.raises(Exception, match="Task 1|input"):
+        type(valid)(**values)
 
 
 def test_criterion_all_required_lattice_blocks_missing_and_validates_exclusion() -> (
@@ -173,6 +201,10 @@ def test_phase_machine_uses_cursor_and_digest_causality(tmp_path: Path) -> None:
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
     )
@@ -206,6 +238,10 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
     )
@@ -219,7 +255,10 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         model_calls=0,
         cost_usd=0,
     )
-    adapter = execution.FakeLocalAdapter("fake-local-adapter")
+    adapter = execution.FakeLocalAdapter(
+        adapter_id="fake-local-adapter",
+        journal=journal,
+    )
     adapter.execute(reservation)
     journal.complete_action(
         reservation,
@@ -239,7 +278,7 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
 def test_fake_adapter_refuses_unreserved_call() -> None:
     _, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    _authorization(registry)
     adapter = execution.FakeLocalAdapter(
         adapter_id="fake-local-adapter",
         journal=None,
@@ -259,27 +298,28 @@ def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:
         and assertion.oracle.classifier_id == "scenario_policy.v2"
     ]
     first, second = classified[:2]
+    result = policy.ClassifierResult.build(
+        assertion_id=first.assertion_id,
+        policy_digest=registry.compiled_policy.policy_digest,
+        evaluator_digest=registry.classifier_evaluator_digest(first.assertion_id),
+        run_id="synthetic-run",
+        attempt_digest="7" * 64,
+        preflight_digest="8" * 64,
+        classifier_id="scenario_policy.v2",
+        producer="production-policy-classifier",
+        source_id="synthetic-classifier-event",
+        source_digest="a" * 64,
+        observed_at=datetime.now(UTC),
+        passed=True,
+        reason="Structured classifier passed.",
+    )
+    registry._load_local_classifier_fixture(result)
     evidence = policy.OracleEvidence(
         assertion_id=second.assertion_id,
         structured_events=(),
         tool_results=(),
         readbacks=(),
-        classifier_results=(
-            policy.ClassifierResult(
-                assertion_id=first.assertion_id,
-                policy_digest=registry.compiled_policy.policy_digest,
-                evaluator_digest=registry.classifier_evaluator_digest(
-                    first.assertion_id
-                ),
-                classifier_id="scenario_policy.v2",
-                producer="production-policy-classifier",
-                source_id="synthetic-classifier-event",
-                source_digest="a" * 64,
-                observed_at=datetime.now(UTC),
-                passed=True,
-                reason="Structured classifier passed.",
-            ),
-        ),
+        classifier_results=(result,),
         text_supplements=(),
     )
 
@@ -300,6 +340,10 @@ def test_fake_adapter_rejects_publicly_forged_reservation(tmp_path: Path) -> Non
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
     )
@@ -347,6 +391,10 @@ def test_negative_quota_inputs_and_max_scenarios_are_enforced(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
     )
@@ -375,8 +423,57 @@ def test_negative_quota_inputs_and_max_scenarios_are_enforced(
         )
 
 
+def test_scenario_quota_is_authorization_scoped_across_runs(
+    tmp_path: Path,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    authorization = _authorization(
+        registry,
+        quotas=execution.ProtectedQuotas(
+            max_scenarios=1,
+            max_messages=1,
+            max_model_calls=1,
+            max_cost_usd=1,
+            subsystem_quotas={"outbound_text": 1},
+        ),
+    )
+    for run_id in ("synthetic-run-one", "synthetic-run-two"):
+        journal = execution.ProtectedExecutionJournal.create(
+            protected_root=tmp_path / "protected",
+            run_id=run_id,
+            authorization=authorization,
+        )
+        baseline = policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id=f"{run_id}-baseline",
+            run_id=run_id,
+            preflight_digest="8" * 64,
+            collector_artifact_digest="9" * 64,
+            causal_event_digest="4" * 64,
+            observed_at=datetime.now(UTC) - timedelta(minutes=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+        journal.seal_baseline(baseline)
+        journal.begin_execution()
+        if run_id.endswith("one"):
+            journal.begin_attempt(
+                execution_id=registry.compiled_plan.execution_ids[0],
+                attempt_number=1,
+                intent_digest="a" * 64,
+            )
+        else:
+            with pytest.raises(Exception, match="authorization-scoped scenario quota"):
+                journal.begin_attempt(
+                    execution_id=registry.compiled_plan.execution_ids[1],
+                    attempt_number=1,
+                    intent_digest="b" * 64,
+                )
+
+
 def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
-    _, execution = _modules()
+    policy, execution = _modules()
     registry = _registry()
     authorization = _authorization(registry)
     journal = execution.ProtectedExecutionJournal.create(
@@ -384,6 +481,19 @@ def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
         run_id="synthetic-run",
         authorization=authorization,
     )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
+        observed_at=datetime.now(UTC) - timedelta(minutes=1),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
     execution_id = registry.compiled_plan.execution_ids[0]
     transaction = journal.begin_attempt(
         execution_id=execution_id,
@@ -398,14 +508,18 @@ def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
             "semantic_digest": "c" * 64,
         }
     )
-    transaction.write_tracked(
-        {
-            "schema_version": "noor-e2e-attempt-result/v2",
-            "execution_id": execution_id,
-            "outcome": "PASS",
-            "semantic_digest": "c" * 64,
-        }
+    transaction.write_tracked()
+    tracked_path = (
+        tmp_path
+        / "protected"
+        / "synthetic-run"
+        / "attempts"
+        / transaction.transaction_id
+        / "tracked.json"
     )
+    tracked = json.loads(tracked_path.read_text(encoding="utf-8"))
+    tracked["outcome"] = "PASS"
+    tracked_path.write_text(json.dumps(tracked), encoding="utf-8")
 
     with pytest.raises(Exception, match="raw.*tracked|semantic"):
         transaction.commit()
@@ -419,7 +533,7 @@ def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
 
 
 def test_interrupted_two_phase_attempt_recovers_as_aborted(tmp_path: Path) -> None:
-    _, execution = _modules()
+    policy, execution = _modules()
     registry = _registry()
     authorization = _authorization(registry)
     journal = execution.ProtectedExecutionJournal.create(
@@ -427,6 +541,19 @@ def test_interrupted_two_phase_attempt_recovers_as_aborted(tmp_path: Path) -> No
         run_id="synthetic-run",
         authorization=authorization,
     )
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-baseline",
+        run_id="synthetic-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
+        observed_at=datetime.now(UTC) - timedelta(minutes=1),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
     transaction = journal.begin_attempt(
         execution_id="SC-OPEN-EN",
         attempt_number=1,
@@ -490,11 +617,23 @@ def test_generic_runner_validates_every_canonical_scenario(
         token_count=1,
         cost_usd=0,
     )
+    attempt_binding_digest = execution.scenario_input_digest(
+        execution_id=scenario_id,
+        planned_turns=(planned,),
+        tester_config_digest="5" * 64,
+        judge_config_digest="6" * 64,
+    )
     oracle_evidence = []
     for assertion_id in sorted(assertion_ids):
         assertion = registry.compiled_policy.assertions[assertion_id]
         if assertion.oracle.kind == "classifier_result":
-            classifier = policy.ClassifierResult(
+            classifier = policy.ClassifierResult.build(
+                assertion_id=assertion_id,
+                policy_digest=registry.compiled_policy.policy_digest,
+                evaluator_digest=registry.classifier_evaluator_digest(assertion_id),
+                run_id=f"run-{scenario_id.lower()}",
+                attempt_digest=attempt_binding_digest,
+                preflight_digest="8" * 64,
                 classifier_id=assertion.oracle.classifier_id,
                 producer=assertion.oracle.allowed_producers[0],
                 source_id=f"{assertion_id}:classifier",
@@ -537,6 +676,10 @@ def test_generic_runner_validates_every_canonical_scenario(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id=f"{scenario_id}:baseline",
+        run_id=f"run-{scenario_id.lower()}",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
     )
@@ -544,6 +687,10 @@ def test_generic_runner_validates_every_canonical_scenario(
         phase="final",
         collector_id="independent-readback-collector",
         source_id=f"{scenario_id}:final",
+        run_id=f"run-{scenario_id.lower()}",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="5" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, 5, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "closed"}},
     )
@@ -571,6 +718,15 @@ def test_generic_runner_validates_every_canonical_scenario(
         registry,
         execution_input_digests=input_digests,
     )
+    registry._load_trusted_readback(baseline)
+    registry._load_trusted_readback(final)
+    for item in oracle_evidence:
+        for classifier in item.classifier_results:
+            registry._load_classifier_artifact(
+                classifier,
+                run_id=f"run-{scenario_id.lower()}",
+                attempt_digest=plan_digest,
+            )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id=f"run-{scenario_id.lower()}",

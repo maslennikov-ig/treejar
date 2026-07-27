@@ -6,7 +6,7 @@ import hashlib
 import importlib
 import inspect
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -102,6 +102,22 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
         if "manager" in text.lower() and "fact" in text.lower()
     )
 
+    result = policy.ClassifierResult.build(
+        assertion_id=binding.assertion_id,
+        policy_digest=registry.compiled_policy.policy_digest,
+        evaluator_digest=registry.classifier_evaluator_digest(binding.assertion_id),
+        run_id="synthetic-policy-run",
+        attempt_digest="7" * 64,
+        preflight_digest="8" * 64,
+        classifier_id="manager_faithfulness.v1",
+        producer="production-manager-fidelity-classifier",
+        source_id="synthetic-classifier-event",
+        source_digest="a" * 64,
+        observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
+        passed=False,
+        reason="The delivered reply adds a fact absent from the draft.",
+    )
+    registry._load_local_classifier_fixture(result)
     decision = registry.evaluate_oracle(
         binding.assertion_id,
         policy.OracleEvidence(
@@ -109,17 +125,7 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
             structured_events=[],
             tool_results=[],
             readbacks=[],
-            classifier_results=[
-                policy.ClassifierResult(
-                    classifier_id="manager_faithfulness.v1",
-                    producer="production-manager-fidelity-classifier",
-                    source_id="synthetic-classifier-event",
-                    source_digest="a" * 64,
-                    observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
-                    passed=False,
-                    reason="The delivered reply adds a fact absent from the draft.",
-                )
-            ],
+            classifier_results=[result],
             text_supplements=["A literal text check passed."],
         ),
     )
@@ -135,6 +141,10 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline-source",
+        run_id="synthetic-policy-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=UTC),
         inventory={"synthetic:conversation": {"state": "absent"}},
     )
@@ -142,10 +152,16 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
         phase="final",
         collector_id="independent-readback-collector",
         source_id="synthetic-final-source",
+        run_id="synthetic-policy-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="5" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
         inventory={"synthetic:conversation": {"state": "closed"}},
     )
 
+    registry._load_local_readback_fixture(baseline)
+    registry._load_local_readback_fixture(stale_final)
     with pytest.raises(policy.PolicyValidationError, match="final readback.*after"):
         registry.validate_readback_window(
             baseline=baseline,
@@ -153,6 +169,42 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
             final_visible_at=[datetime(2026, 7, 27, 10, 0, 3, tzinfo=UTC)],
             delivered_at=[datetime(2026, 7, 27, 10, 0, 4, tzinfo=UTC)],
             action_at=[datetime(2026, 7, 27, 10, 0, 5, tzinfo=UTC)],
+        )
+
+
+def test_caller_fabricated_final_readback_is_rejected() -> None:
+    policy = _policy_module()
+    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="synthetic-baseline",
+        run_id="synthetic-policy-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
+        observed_at=datetime.now(UTC) - timedelta(minutes=2),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    fabricated = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id="not-preflight-bound",
+        source_id="fabricated-final",
+        run_id="synthetic-policy-run",
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="5" * 64,
+        observed_at=datetime.now(UTC),
+        inventory={"synthetic:item": {"state": "closed"}},
+    )
+
+    with pytest.raises(Exception, match="trusted.*readback|preflight"):
+        registry.validate_readback_window(
+            baseline=baseline,
+            final=fabricated,
+            final_visible_at=[datetime.now(UTC) - timedelta(seconds=3)],
+            delivered_at=[datetime.now(UTC) - timedelta(seconds=2)],
+            action_at=[datetime.now(UTC) - timedelta(seconds=1)],
         )
 
 

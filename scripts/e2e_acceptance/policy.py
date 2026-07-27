@@ -246,6 +246,12 @@ class ReadbackResult(_EvidenceItem):
 
 
 class ClassifierResult(_StrictModel):
+    assertion_id: str = Field(min_length=1)
+    policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     classifier_id: str = Field(min_length=1)
     producer: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
@@ -253,11 +259,24 @@ class ClassifierResult(_StrictModel):
     observed_at: datetime
     passed: bool
     reason: str = Field(min_length=1)
+    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def build(cls, **values: Any) -> ClassifierResult:
+        identity = {
+            key: value.isoformat() if isinstance(value, datetime) else value
+            for key, value in values.items()
+        }
+        return cls(**values, artifact_digest=_canonical_digest(identity))
 
     @model_validator(mode="after")
     def _aware_time(self) -> ClassifierResult:
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
             raise ValueError("classifier timestamp must be timezone-aware")
+        identity = self.model_dump(mode="python", exclude={"artifact_digest"})
+        identity["observed_at"] = self.observed_at.isoformat()
+        if self.artifact_digest != _canonical_digest(identity):
+            raise ValueError("classifier artifact digest mismatch")
         return self
 
 
@@ -296,6 +315,10 @@ class ReadbackObservation(_StrictModel):
     phase: ReadbackPhase
     collector_id: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    collector_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     observed_at: datetime
     content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     inventory: dict[str, dict[str, Any]] = Field(min_length=1)
@@ -307,6 +330,10 @@ class ReadbackObservation(_StrictModel):
         phase: ReadbackPhase,
         collector_id: str,
         source_id: str,
+        run_id: str,
+        preflight_digest: str,
+        collector_artifact_digest: str,
+        causal_event_digest: str,
         observed_at: datetime,
         inventory: dict[str, dict[str, Any]],
     ) -> ReadbackObservation:
@@ -315,6 +342,10 @@ class ReadbackObservation(_StrictModel):
             "phase": phase,
             "collector_id": collector_id,
             "source_id": source_id,
+            "run_id": run_id,
+            "preflight_digest": preflight_digest,
+            "collector_artifact_digest": collector_artifact_digest,
+            "causal_event_digest": causal_event_digest,
             "observed_at": observed_at.isoformat(),
             "inventory": inventory,
         }
@@ -332,6 +363,10 @@ class ReadbackObservation(_StrictModel):
             "phase": self.phase,
             "collector_id": self.collector_id,
             "source_id": self.source_id,
+            "run_id": self.run_id,
+            "preflight_digest": self.preflight_digest,
+            "collector_artifact_digest": self.collector_artifact_digest,
+            "causal_event_digest": self.causal_event_digest,
             "observed_at": self.observed_at.isoformat(),
             "inventory": self.inventory,
         }
@@ -702,6 +737,24 @@ class TrustedAcceptanceRegistry:
         self._assertions = compiled_policy.assertions
         self._verified_rollups: dict[str, bool] | None = None
         self._report_bytes: bytes | None = None
+        self._trusted_authorization_digests: set[str] = set()
+        self._trusted_authorizations: dict[str, object] = {}
+        self._trusted_readback_digests: set[str] = set()
+        self._trusted_classifier_digests: set[str] = set()
+
+    def classifier_evaluator_digest(self, assertion_id: str) -> str:
+        assertion = self._assertions.get(assertion_id)
+        if assertion is None or assertion.oracle.kind != "classifier_result":
+            raise PolicyValidationError("classifier assertion identity is invalid")
+        return _canonical_digest(
+            {
+                "schema_version": "noor-e2e-classifier-evaluator/v2",
+                "assertion_id": assertion_id,
+                "policy_digest": self.compiled_policy.policy_digest,
+                "oracle_id": assertion.oracle_id,
+                "oracle": assertion.oracle.model_dump(mode="json"),
+            }
+        )
 
     @classmethod
     def open_contracts(cls, repo_root: Path) -> TrustedAcceptanceRegistry:
@@ -724,12 +777,17 @@ class TrustedAcceptanceRegistry:
             matches = [
                 item
                 for item in evidence.classifier_results
-                if item.classifier_id == oracle.classifier_id
+                if item.assertion_id == assertion_id
+                and item.policy_digest == self.compiled_policy.policy_digest
+                and item.evaluator_digest
+                == self.classifier_evaluator_digest(assertion_id)
+                and item.artifact_digest in self._trusted_classifier_digests
+                and item.classifier_id == oracle.classifier_id
                 and item.producer in oracle.allowed_producers
             ]
             if not matches:
                 raise PolicyValidationError(
-                    "required production classifier evidence is missing"
+                    "required classifier assertion binding evidence is missing"
                 )
             passed = all(item.passed for item in matches)
             return OracleDecision(
@@ -762,15 +820,97 @@ class TrustedAcceptanceRegistry:
 
     def validate_execution_authorization(self, authorization: object) -> None:
         from scripts.e2e_acceptance.execution import (
+            authorization_digest,
             validate_execution_authorization,
         )
 
-        validate_execution_authorization(
+        validated = validate_execution_authorization(
             authorization,
             policy=self.compiled_policy,
             plan=self.compiled_plan,
             registry_id=self.registry_id,
         )
+        digest = authorization_digest(validated)
+        if digest not in self._trusted_authorization_digests:
+            raise PolicyValidationError(
+                "trusted execution authorization has not been loaded"
+            )
+
+    def _load_execution_authorization(self, authorization: object) -> None:
+        """Trust an authorization after a protected loader (or local test seam)."""
+
+        from scripts.e2e_acceptance.execution import (
+            authorization_digest,
+            validate_execution_authorization,
+        )
+
+        validated = validate_execution_authorization(
+            authorization,
+            policy=self.compiled_policy,
+            plan=self.compiled_plan,
+            registry_id=self.registry_id,
+        )
+        digest = authorization_digest(validated)
+        self._trusted_authorization_digests.add(digest)
+        self._trusted_authorizations[digest] = validated
+
+    def _load_trusted_readback(self, observation: ReadbackObservation) -> None:
+        if not self._trusted_authorizations:
+            raise PolicyValidationError(
+                "trusted authorization required before readback loading"
+            )
+        if not any(
+            observation.preflight_digest == getattr(item, "preflight_digest", None)
+            and observation.collector_artifact_digest
+            == getattr(item, "readback_collector_digest", None)
+            for item in self._trusted_authorizations.values()
+        ):
+            raise PolicyValidationError("preflight-bound readback collector drift")
+        self._trusted_readback_digests.add(observation.content_digest)
+
+    def _load_local_readback_fixture(self, observation: ReadbackObservation) -> None:
+        """Test-only seam for temporal contract tests; never used by run loading."""
+
+        if (
+            observation.collector_id != "independent-readback-collector"
+            or observation.preflight_digest != "8" * 64
+            or observation.collector_artifact_digest != "9" * 64
+        ):
+            raise PolicyValidationError("local readback fixture binding drift")
+        self._trusted_readback_digests.add(observation.content_digest)
+
+    def _load_classifier_artifact(
+        self,
+        result: ClassifierResult,
+        *,
+        run_id: str,
+        attempt_digest: str,
+    ) -> None:
+        if (
+            result.run_id != run_id
+            or result.attempt_digest != attempt_digest
+            or result.policy_digest != self.compiled_policy.policy_digest
+            or result.evaluator_digest
+            != self.classifier_evaluator_digest(result.assertion_id)
+            or not any(
+                result.preflight_digest == getattr(item, "preflight_digest", None)
+                for item in self._trusted_authorizations.values()
+            )
+        ):
+            raise PolicyValidationError(
+                "classifier run/attempt/preflight registry binding drift"
+            )
+        self._trusted_classifier_digests.add(result.artifact_digest)
+
+    def _load_local_classifier_fixture(self, result: ClassifierResult) -> None:
+        if (
+            result.preflight_digest != "8" * 64
+            or result.policy_digest != self.compiled_policy.policy_digest
+            or result.evaluator_digest
+            != self.classifier_evaluator_digest(result.assertion_id)
+        ):
+            raise PolicyValidationError("local classifier fixture binding drift")
+        self._trusted_classifier_digests.add(result.artifact_digest)
 
     def validate_readback_window(
         self,
@@ -781,6 +921,19 @@ class TrustedAcceptanceRegistry:
         delivered_at: Sequence[datetime],
         action_at: Sequence[datetime],
     ) -> None:
+        if (
+            baseline.content_digest not in self._trusted_readback_digests
+            or final.content_digest not in self._trusted_readback_digests
+        ):
+            raise PolicyValidationError(
+                "trusted preflight-bound readback artifacts are required"
+            )
+        if (
+            baseline.run_id != final.run_id
+            or baseline.preflight_digest != final.preflight_digest
+            or baseline.collector_artifact_digest != final.collector_artifact_digest
+        ):
+            raise PolicyValidationError("preflight-bound readback identity drift")
         if baseline.phase != "baseline" or final.phase != "final":
             raise PolicyValidationError("baseline/final readback phase drift")
         if baseline.source_id == final.source_id:

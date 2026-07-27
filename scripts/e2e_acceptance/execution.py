@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -167,6 +168,12 @@ class StoreIdentities(_StrictModel):
     tracked_store_id: str = Field(min_length=1)
     anchor_store_id: str = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _stores_are_distinct(self) -> StoreIdentities:
+        if len({self.raw_store_id, self.tracked_store_id, self.anchor_store_id}) != 3:
+            raise ValueError("authorization store bindings must be distinct")
+        return self
+
 
 class ProtectedQuotas(_StrictModel):
     max_scenarios: int = Field(ge=0)
@@ -189,6 +196,9 @@ class ExecutionAuthorizationV2(_StrictModel):
     issued_at: datetime
     expires_at: datetime
     task1_authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    task1_input_digests: dict[str, str] = Field(min_length=1)
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    readback_collector_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     compiler_id: str = Field(min_length=1)
     compiled_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -215,7 +225,17 @@ class ExecutionAuthorizationV2(_StrictModel):
             for value in self.execution_input_digests.values()
         ):
             raise ValueError("authorization v2 executable input binding drift")
+        if any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in self.task1_input_digests.values()
+        ):
+            raise ValueError("authorization Task 1 input digest binding drift")
         return self
+
+
+def authorization_digest(authorization: ExecutionAuthorizationV2) -> str:
+    return _digest(authorization.model_dump(mode="json"))
 
 
 def validate_execution_authorization(
@@ -224,6 +244,7 @@ def validate_execution_authorization(
     policy: CompiledPolicy,
     plan: CompiledExecutionPlan,
     registry_id: str,
+    current_time: datetime | None = None,
 ) -> ExecutionAuthorizationV2:
     if not isinstance(authorization, ExecutionAuthorizationV2):
         schema = getattr(authorization, "schema_version", "")
@@ -244,6 +265,13 @@ def validate_execution_authorization(
         raise ExecutionValidationError("authorization adapter is not allowed")
     if authorization.registry_id != registry_id:
         raise ExecutionValidationError("authorization registry drift")
+    now = current_time or datetime.now(UTC)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ExecutionValidationError("authorization validity time must be aware")
+    if not authorization.issued_at <= now < authorization.expires_at:
+        raise ExecutionValidationError(
+            "authorization validity is expired or not active"
+        )
     return authorization
 
 
@@ -261,10 +289,16 @@ class ActionReservation(_StrictModel):
     action_id: str
     adapter_id: str
     subsystem: str
-    messages: int
-    model_calls: int
-    cost_usd: float
+    messages: int = Field(ge=0)
+    model_calls: int = Field(ge=0)
+    cost_usd: float = Field(ge=0)
     reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _finite_cost(self) -> ActionReservation:
+        if not math.isfinite(self.cost_usd):
+            raise ValueError("reservation cost must be finite")
+        return self
 
 
 class AttemptRecovery(_StrictModel):
@@ -351,16 +385,29 @@ class ValidatedAttempt(_StrictModel):
     oracle_decisions: tuple[dict[str, Any], ...]
 
 
-def scenario_plan_digest(attempt: ScenarioAttemptV2) -> str:
+def scenario_input_digest(
+    *,
+    execution_id: str,
+    planned_turns: tuple[PlannedTurnV2, ...],
+    tester_config_digest: str,
+    judge_config_digest: str,
+) -> str:
     return _digest(
         {
-            "execution_id": attempt.execution_id,
-            "planned_turns": [
-                item.model_dump(mode="json") for item in attempt.planned_turns
-            ],
-            "tester_config_digest": attempt.tester_config_digest,
-            "judge_config_digest": attempt.judge_config_digest,
+            "execution_id": execution_id,
+            "planned_turns": [item.model_dump(mode="json") for item in planned_turns],
+            "tester_config_digest": tester_config_digest,
+            "judge_config_digest": judge_config_digest,
         }
+    )
+
+
+def scenario_plan_digest(attempt: ScenarioAttemptV2) -> str:
+    return scenario_input_digest(
+        execution_id=attempt.execution_id,
+        planned_turns=attempt.planned_turns,
+        tester_config_digest=attempt.tester_config_digest,
+        judge_config_digest=attempt.judge_config_digest,
     )
 
 
@@ -384,6 +431,11 @@ class GenericAcceptanceRunner:
         self.journal = journal
 
     def validate_attempt(self, attempt: ScenarioAttemptV2) -> ValidatedAttempt:
+        if (
+            attempt.baseline.run_id != self.journal.run_id
+            or attempt.final.run_id != self.journal.run_id
+        ):
+            raise ExecutionValidationError("readback run identity drift")
         scenario = self.registry.compiled_policy.scenarios.get(attempt.execution_id)
         if scenario is None:
             raise ExecutionValidationError(
@@ -630,7 +682,19 @@ class AttemptTransaction:
             payload,
         )
 
-    def write_tracked(self, payload: object) -> str:
+    def write_tracked(self) -> str:
+        """Derive the tracked payload only from the already sealed raw bytes."""
+
+        raw = _read_protected(
+            self._journal.run_root,
+            f"attempts/{self.transaction_id}/raw.json",
+        )
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ExecutionValidationError(
+                "sealed raw attempt JSON is invalid"
+            ) from exc
         redacted = redact_payload(payload)
         validate_redacted_payload(redacted)
         return _write_exclusive(
@@ -646,16 +710,30 @@ class AttemptTransaction:
 class FakeLocalAdapter:
     """No-network adapter used by Task 2 contract tests only."""
 
-    def __init__(self, adapter_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        adapter_id: str,
+        journal: ProtectedExecutionJournal | None,
+    ) -> None:
         if adapter_id not in LOCAL_ADAPTER_IDS:
             raise ExecutionValidationError("only fake local adapter is available")
         self.adapter_id = adapter_id
+        self._journal = journal
 
     def execute(self, reservation: ActionReservation | None) -> dict[str, str]:
-        if reservation is None or reservation.adapter_id != self.adapter_id:
+        if (
+            reservation is None
+            or self._journal is None
+            or reservation.adapter_id != self.adapter_id
+        ):
             raise ExecutionValidationError(
                 "adapter call requires a protected action reservation"
             )
+        self._journal.consume_permit(
+            reservation,
+            adapter_id=self.adapter_id,
+        )
         return {
             "status": "synthetic",
             "reservation_digest": reservation.reservation_digest,
@@ -688,6 +766,10 @@ class ProtectedExecutionJournal:
         self.quota_usage = QuotaUsage()
         self._actions: dict[str, ActionState] = {}
         self._reservations: dict[str, ActionReservation] = {}
+        self._attempted_executions: list[str] = []
+        self._authorization_scenarios = 0
+        self._authorization_ledger_cursor = 0
+        self._authorization_ledger_head: str | None = None
 
     @classmethod
     def create(
@@ -702,6 +784,7 @@ class ProtectedExecutionJournal:
             run_id=run_id,
             authorization=authorization,
         )
+        journal._reload_authorization_ledger()
         fd = _open_absolute_chain(journal.run_root, create=True)
         os.fchmod(fd, 0o700)
         os.close(fd)
@@ -728,6 +811,7 @@ class ProtectedExecutionJournal:
             run_id=run_id,
             authorization=authorization,
         )
+        journal._reload_authorization_ledger()
         journal_fd = _open_absolute_chain(
             journal.run_root / "journal",
             create=False,
@@ -772,9 +856,12 @@ class ProtectedExecutionJournal:
             reservation = ActionReservation.model_validate(data["reservation"])
             self._reservations[reservation.action_id] = reservation
             self._actions[reservation.action_id] = "reserved"
-            self._consume(reservation)
         elif kind == "action_completed":
             self._actions[str(data["action_id"])] = str(data["state"])  # type: ignore[assignment]
+        elif kind == "permit_consumed":
+            self._actions[str(data["action_id"])] = "unknown"
+        elif kind == "attempt_intent":
+            self._attempted_executions.append(str(data["execution_id"]))
 
     def _append_event(
         self,
@@ -852,6 +939,86 @@ class ProtectedExecutionJournal:
             subsystem_usage=subsystems,
         )
 
+    @property
+    def _authorization_ledger_root(self) -> Path:
+        return (
+            self.protected_root / ".authorization-ledgers" / self.authorization_digest
+        )
+
+    def _reload_authorization_ledger(self) -> None:
+        self.quota_usage = QuotaUsage()
+        self._authorization_scenarios = 0
+        self._authorization_ledger_cursor = 0
+        self._authorization_ledger_head = None
+        try:
+            ledger_fd = _open_absolute_chain(
+                self._authorization_ledger_root,
+                create=False,
+            )
+        except ExecutionValidationError:
+            return
+        try:
+            names = sorted(os.listdir(ledger_fd))
+        finally:
+            os.close(ledger_fd)
+        previous: str | None = None
+        for expected, name in enumerate(names, start=1):
+            if name != f"{expected:06d}.json":
+                raise ExecutionValidationError(
+                    "authorization quota ledger cursor sequence drift"
+                )
+            payload = _read_protected(
+                self._authorization_ledger_root,
+                name,
+            )
+            try:
+                event = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise ExecutionValidationError(
+                    "authorization quota ledger JSON invalid"
+                ) from exc
+            if (
+                event.get("cursor") != expected
+                or event.get("previous_event_digest") != previous
+                or event.get("authorization_digest") != self.authorization_digest
+            ):
+                raise ExecutionValidationError(
+                    "authorization quota ledger causality drift"
+                )
+            if event.get("kind") == "action_reserved":
+                self._consume(ActionReservation.model_validate(event["reservation"]))
+            elif event.get("kind") == "scenario_reserved":
+                self._authorization_scenarios += 1
+            else:
+                raise ExecutionValidationError(
+                    "authorization quota ledger event kind drift"
+                )
+            previous = hashlib.sha256(payload).hexdigest()
+        self._authorization_ledger_cursor = len(names)
+        self._authorization_ledger_head = previous
+
+    def _append_authorization_ledger(
+        self,
+        *,
+        kind: Literal["action_reserved", "scenario_reserved"],
+        data: dict[str, Any],
+    ) -> None:
+        event = {
+            "schema_version": "noor-e2e-authorization-quota-event/v2",
+            "cursor": self._authorization_ledger_cursor + 1,
+            "previous_event_digest": self._authorization_ledger_head,
+            "authorization_digest": self.authorization_digest,
+            "kind": kind,
+            **data,
+        }
+        digest = _write_exclusive(
+            self._authorization_ledger_root,
+            f"{self._authorization_ledger_cursor + 1:06d}.json",
+            event,
+        )
+        self._authorization_ledger_cursor += 1
+        self._authorization_ledger_head = digest
+
     def reserve_action(
         self,
         *,
@@ -870,6 +1037,16 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError("action adapter is not authorized")
         if action_id in self._actions:
             raise ExecutionValidationError("action identity is already reserved")
+        if (
+            messages < 0
+            or model_calls < 0
+            or cost_usd < 0
+            or not math.isfinite(cost_usd)
+        ):
+            raise ExecutionValidationError(
+                "reservation quota values must be non-negative and finite"
+            )
+        self._reload_authorization_ledger()
         identity = {
             "action_id": action_id,
             "adapter_id": adapter_id,
@@ -901,6 +1078,10 @@ class ProtectedExecutionJournal:
             or projected_subsystem > quotas.subsystem_quotas.get(subsystem, 0)
         ):
             raise ExecutionValidationError("protected action reservation exceeds quota")
+        self._append_authorization_ledger(
+            kind="action_reserved",
+            data={"reservation": reservation.model_dump(mode="json")},
+        )
         self._append_event(
             phase="executing",
             kind="action_reserved",
@@ -911,6 +1092,34 @@ class ProtectedExecutionJournal:
         self._consume(reservation)
         return reservation
 
+    def consume_permit(
+        self,
+        reservation: ActionReservation,
+        *,
+        adapter_id: str,
+    ) -> None:
+        """Atomically validate and consume the one-use protected permit."""
+
+        if (
+            self.phase != "executing"
+            or adapter_id != reservation.adapter_id
+            or self._actions.get(reservation.action_id) != "reserved"
+            or self._reservations.get(reservation.action_id) != reservation
+        ):
+            raise ExecutionValidationError(
+                "forged, reused, or missing protected reservation"
+            )
+        self._append_event(
+            phase="executing",
+            kind="permit_consumed",
+            data={
+                "action_id": reservation.action_id,
+                "reservation_digest": reservation.reservation_digest,
+                "adapter_id": adapter_id,
+            },
+        )
+        self._actions[reservation.action_id] = "unknown"
+
     def complete_action(
         self,
         reservation: ActionReservation,
@@ -918,7 +1127,7 @@ class ProtectedExecutionJournal:
         state: Literal["succeeded", "failed", "unknown"],
         outcome_digest: str,
     ) -> None:
-        if self._actions.get(reservation.action_id) != "reserved":
+        if self._actions.get(reservation.action_id) != "unknown":
             raise ExecutionValidationError("action completion lacks active reservation")
         if self._reservations.get(reservation.action_id) != reservation:
             raise ExecutionValidationError("action reservation identity drift")
@@ -958,7 +1167,35 @@ class ProtectedExecutionJournal:
         attempt_number: int,
         intent_digest: str,
     ) -> AttemptTransaction:
+        if self.phase != "executing":
+            raise ExecutionValidationError(
+                "attempt intent requires contiguous executing phase"
+            )
+        if execution_id not in self.authorization.execution_ids:
+            raise ExecutionValidationError(
+                "attempt requires a canonical execution identity"
+            )
+        if attempt_number < 1:
+            raise ExecutionValidationError("attempt number must be positive")
+        if len(intent_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in intent_digest
+        ):
+            raise ExecutionValidationError("attempt intent digest must be SHA-256")
+        self._reload_authorization_ledger()
+        if self._authorization_scenarios >= self.authorization.quotas.max_scenarios:
+            raise ExecutionValidationError(
+                "authorization-scoped scenario quota exceeded"
+            )
         transaction_id = f"{execution_id.lower()}-attempt-{attempt_number:03d}"
+        self._append_authorization_ledger(
+            kind="scenario_reserved",
+            data={
+                "run_id": self.run_id,
+                "transaction_id": transaction_id,
+                "execution_id": execution_id,
+            },
+        )
+        self._authorization_scenarios += 1
         _write_exclusive(
             self.run_root,
             f"attempts/{transaction_id}/intent.json",
@@ -971,6 +1208,17 @@ class ProtectedExecutionJournal:
                 "authorization_digest": self.authorization_digest,
             },
         )
+        self._append_event(
+            phase="executing",
+            kind="attempt_intent",
+            data={
+                "transaction_id": transaction_id,
+                "execution_id": execution_id,
+                "attempt_number": attempt_number,
+                "intent_digest": intent_digest,
+            },
+        )
+        self._attempted_executions.append(execution_id)
         return AttemptTransaction(journal=self, transaction_id=transaction_id)
 
     def _optional_digest(self, relative: str) -> str | None:
@@ -993,6 +1241,52 @@ class ProtectedExecutionJournal:
         if abort or raw_digest is None or tracked_digest is None:
             status = "aborted"
         else:
+            intent_payload = _read_protected(
+                self.run_root,
+                f"attempts/{transaction_id}/intent.json",
+            )
+            raw_payload = _read_protected(
+                self.run_root,
+                f"attempts/{transaction_id}/raw.json",
+            )
+            tracked_payload = _read_protected(
+                self.run_root,
+                f"attempts/{transaction_id}/tracked.json",
+            )
+            try:
+                intent = json.loads(intent_payload)
+                raw = json.loads(raw_payload)
+                tracked = json.loads(tracked_payload)
+            except json.JSONDecodeError as exc:
+                raise ExecutionValidationError(
+                    "attempt raw/tracked semantic envelope is invalid"
+                ) from exc
+            expected_execution = intent.get("execution_id")
+            semantic_fields = (
+                "schema_version",
+                "execution_id",
+                "outcome",
+                "semantic_digest",
+            )
+            if (
+                expected_execution not in self.authorization.execution_ids
+                or not isinstance(raw, dict)
+                or not isinstance(tracked, dict)
+                or any(
+                    field not in raw or field not in tracked
+                    for field in semantic_fields
+                )
+                or any(raw[field] != tracked[field] for field in semantic_fields)
+                or raw["execution_id"] != expected_execution
+                or raw["schema_version"] != "noor-e2e-attempt-result/v2"
+                or raw["outcome"]
+                not in {"PASS", "FAIL", "BLOCKED", "EXCLUDED_BY_CLIENT"}
+                or not isinstance(raw["semantic_digest"], str)
+                or len(raw["semantic_digest"]) != 64
+            ):
+                raise ExecutionValidationError(
+                    "attempt raw/tracked semantic binding drift"
+                )
             status = "committed"
         record = {
             "schema_version": "noor-e2e-attempt-commit/v2",

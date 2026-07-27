@@ -401,19 +401,22 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
             ]
         )
     lines.extend(["## Критерии", ""])
-    for row in payload.criteria:
+    for criterion_report in payload.criteria:
         lines.append(
-            f"- {row.criterion_id}: {row.outcome} ({row.evidence_mode.value}); "
-            f"evidence={', '.join(row.evidence_refs)}; {row.reasoning}"
+            f"- {criterion_report.criterion_id}: {criterion_report.outcome} "
+            f"({criterion_report.evidence_mode.value}); "
+            f"evidence={', '.join(criterion_report.evidence_refs)}; "
+            f"{criterion_report.reasoning}"
         )
     lines.extend(["", "## Побочные эффекты", ""])
-    for row in payload.side_effects:
+    for side_effect in payload.side_effects:
         lines.append(
-            f"- {row.artifact_id} / {row.subsystem} / {row.artifact_type}: "
-            f"{row.disposition}; owner={row.owner}; "
-            f"baseline={json.dumps(row.baseline, ensure_ascii=False, sort_keys=True)}; "
-            f"final={json.dumps(row.final, ensure_ascii=False, sort_keys=True)}; "
-            f"checksums={', '.join(row.checksum_refs)}"
+            f"- {side_effect.artifact_id} / {side_effect.subsystem} / "
+            f"{side_effect.artifact_type}: {side_effect.disposition}; "
+            f"owner={side_effect.owner}; "
+            f"baseline={json.dumps(side_effect.baseline, ensure_ascii=False, sort_keys=True)}; "
+            f"final={json.dumps(side_effect.final, ensure_ascii=False, sort_keys=True)}; "
+            f"checksums={', '.join(side_effect.checksum_refs)}"
         )
     lines.extend(
         [
@@ -499,14 +502,6 @@ def load_verified_run(
     if set(report_criteria) != set(expected_criteria):
         raise TrustedRunError("typed report criterion scope drift")
 
-    registry.validate_execution_authorization(run.authorization)
-    registry.validate_readback_window(
-        baseline=run.baseline,
-        final=run.final,
-        final_visible_at=run.final_visible_at,
-        delivered_at=run.delivered_at,
-        action_at=run.action_at,
-    )
     expected_anchor = {
         "policy_digest": registry.compiled_policy.policy_digest,
         "compiled_plan_digest": registry.compiled_plan.plan_digest,
@@ -522,11 +517,25 @@ def load_verified_run(
     for field, expected in expected_anchor.items():
         if getattr(anchor, field) != expected:
             raise TrustedRunError(f"protected anchor {field} drift")
+    if run.final.causal_event_digest != anchor.phase_journal_head_digest:
+        raise TrustedRunError("final readback protected causal event binding drift")
     if (
         run.evidence_index_digest != anchor.evidence_index_sha256
         or run.report_payload_digest != anchor.report_payload_sha256
     ):
         raise TrustedRunError("tracked run digest binding drift")
+
+    registry._load_execution_authorization(run.authorization)
+    registry.validate_execution_authorization(run.authorization)
+    registry._load_trusted_readback(run.baseline)
+    registry._load_trusted_readback(run.final)
+    registry.validate_readback_window(
+        baseline=run.baseline,
+        final=run.final,
+        final_visible_at=run.final_visible_at,
+        delivered_at=run.delivered_at,
+        action_at=run.action_at,
+    )
 
     entries = _unique(index.entries, "evidence_id", "evidence index identity")
     evidence: dict[str, dict[str, Any]] = {}
@@ -540,36 +549,36 @@ def load_verified_run(
         except EvidenceError as exc:
             raise TrustedRunError(f"evidence privacy validation failed: {exc}") from exc
 
-    for identity, row in criteria.items():
+    for identity, criterion_row in criteria.items():
         plan = registry.compiled_plan.criteria[identity]
-        if row.evidence_mode is not plan.evidence_mode:
+        if criterion_row.evidence_mode is not plan.evidence_mode:
             raise TrustedRunError(f"criterion evidence mode drift: {identity}")
-        if not set(row.evidence_refs) <= set(evidence):
+        if not set(criterion_row.evidence_refs) <= set(evidence):
             raise TrustedRunError(f"criterion evidence reference drift: {identity}")
         aggregate = aggregate_criterion_outcome(
             plan,
-            row.obligation_outcomes,
+            criterion_row.obligation_outcomes,
             valid_exclusions=frozenset(
                 key
-                for key, outcome in row.obligation_outcomes.items()
+                for key, outcome in criterion_row.obligation_outcomes.items()
                 if outcome == "EXCLUDED_BY_CLIENT"
                 and plan.evidence_mode is EvidenceMode.EXTERNAL_GATE
             ),
         )
-        if aggregate != row.outcome:
+        if aggregate != criterion_row.outcome:
             raise TrustedRunError(f"criterion all_required outcome drift: {identity}")
-        if not _validate_evidence_mode(row, evidence):
+        if not _validate_evidence_mode(criterion_row, evidence):
             raise TrustedRunError(f"criterion evidence mode proof failed: {identity}")
         report_row = report_criteria[identity]
         if (
-            report_row.outcome != row.outcome
-            or report_row.evidence_mode is not row.evidence_mode
-            or report_row.evidence_refs != row.evidence_refs
+            report_row.outcome != criterion_row.outcome
+            or report_row.evidence_mode is not criterion_row.evidence_mode
+            or report_row.evidence_refs != criterion_row.evidence_refs
         ):
             raise TrustedRunError(f"typed report criterion binding drift: {identity}")
 
-    for identity, row in executions.items():
-        if not set(row.evidence_refs) <= set(evidence):
+    for identity, execution_row in executions.items():
+        if not set(execution_row.evidence_refs) <= set(evidence):
             raise TrustedRunError(f"execution evidence reference drift: {identity}")
     try:
         validate_redacted_payload(report.model_dump(mode="json"))

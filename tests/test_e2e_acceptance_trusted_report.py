@@ -54,7 +54,7 @@ def _build_verified_run(
     run_id = "synthetic-trusted-run"
     tracked_run = tracked / run_id
     protected_run = protected / run_id
-    now = datetime(2026, 7, 27, 10, 0, tzinfo=UTC)
+    now = datetime.now(UTC)
     authorization = execution.ExecutionAuthorizationV2(
         schema_version="noor-e2e-authorization/v2",
         authorization_id="synthetic-report-auth",
@@ -62,6 +62,9 @@ def _build_verified_run(
         issued_at=now - timedelta(minutes=2),
         expires_at=now + timedelta(hours=1),
         task1_authorization_digest="1" * 64,
+        task1_input_digests={"synthetic-task1-input": "7" * 64},
+        preflight_digest="8" * 64,
+        readback_collector_digest="9" * 64,
         policy_digest=registry.compiled_policy.policy_digest,
         compiler_id=registry.compiled_plan.compiler_id,
         compiled_plan_digest=registry.compiled_plan.plan_digest,
@@ -88,6 +91,10 @@ def _build_verified_run(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
+        run_id=run_id,
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="4" * 64,
         observed_at=now - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
     )
@@ -95,6 +102,10 @@ def _build_verified_run(
         phase="final",
         collector_id="independent-readback-collector",
         source_id="synthetic-final",
+        run_id=run_id,
+        preflight_digest="8" * 64,
+        collector_artifact_digest="9" * 64,
+        causal_event_digest="5" * 64,
         observed_at=now + timedelta(seconds=10),
         inventory={"synthetic:item": {"state": "closed"}},
     )
