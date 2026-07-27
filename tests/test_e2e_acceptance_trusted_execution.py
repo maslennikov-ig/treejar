@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 from scripts.e2e_acceptance.manifest import load_authorization_manifest
 
+from tests.e2e_acceptance_backend import build_canonical_test_registry
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AUTHORIZATION_V1_PATH = (
     PROJECT_ROOT / ".codex/stages/tj-ee5f/authorization-manifest.example.json"
@@ -40,13 +42,12 @@ def _modules():
 
 
 def _registry():
-    policy, _ = _modules()
-    return policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    return build_canonical_test_registry()
 
 
 def _trust_decisive_for_unit(registry, *items) -> None:
     policy, _ = _modules()
-    context = registry.verified_evidence_context
+    context = registry._verified_evidence_context()
     classifier_digests = context.classifier_digests
     structured_digests = context.structured_digests
     for item in items:
@@ -54,15 +55,13 @@ def _trust_decisive_for_unit(registry, *items) -> None:
             classifier_digests = classifier_digests | {item.artifact_digest}
         else:
             structured_digests = structured_digests | {item.artifact_digest}
-    object.__setattr__(
-        registry,
-        "_TrustedAcceptanceRegistry__verified_evidence_context",
+    registry._set_test_context(
         context.model_copy(
             update={
                 "classifier_digests": classifier_digests,
                 "structured_digests": structured_digests,
             }
-        ),
+        )
     )
 
 

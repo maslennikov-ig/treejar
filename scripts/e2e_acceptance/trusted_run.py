@@ -23,6 +23,7 @@ from scripts.e2e_acceptance.execution import (
     OutcomeValue,
     aggregate_criterion_outcome,
     store_root_digest,
+    validate_execution_authorization,
 )
 from scripts.e2e_acceptance.policy import (
     ClassifierResult,
@@ -31,6 +32,7 @@ from scripts.e2e_acceptance.policy import (
     ReadbackResult,
     StructuredEvent,
     ToolResult,
+    VerifiedEvidenceContext,
 )
 from scripts.e2e_acceptance.schemas import EvidenceMode
 
@@ -465,6 +467,7 @@ class ClientReportPayload(_StrictModel):
 class VerifiedRun(_StrictModel):
     rollups: dict[str, bool]
     report_bytes: bytes
+    evidence_context: VerifiedEvidenceContext
 
 
 class ProtectedEvidenceRecord(_StrictModel):
@@ -493,6 +496,10 @@ class ProtectedSnapshotCommit(_StrictModel):
     registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_chain_heads_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operator_store_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class PublishedRunCommit(_StrictModel):
@@ -649,12 +656,33 @@ def _validate_protected_attempt_commit(
         )
 
 
+def _validate_readback_contract(
+    run: TrustedRunDocument,
+) -> None:
+    baseline = run.baseline
+    final = run.final
+    timeline = [*run.final_visible_at, *run.delivered_at, *run.action_at]
+    if (
+        baseline.run_id != final.run_id
+        or baseline.preflight_digest != final.preflight_digest
+        or baseline.collector_artifact_digest != final.collector_artifact_digest
+        or baseline.phase != "baseline"
+        or final.phase != "final"
+        or baseline.source_id == final.source_id
+        or baseline.observed_at >= final.observed_at
+        or not timeline
+        or baseline.observed_at >= min(timeline)
+        or final.observed_at < max(timeline)
+    ):
+        raise TrustedRunError("trusted readback window binding drift")
+
+
 def _load_decisive_evidence(
     registry: Any,
     run_id: str,
     *,
     artifact_digest: str,
-) -> None:
+) -> ClassifierResult | StructuredEvent | ToolResult | ReadbackResult:
     tracked_root = (
         registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
     )
@@ -688,6 +716,7 @@ def _load_decisive_evidence(
         raise TrustedRunError(
             f"protected structured producer receipt invalid: {exc}"
         ) from exc
+    verified_context = _load_verified_run(registry, run_id).evidence_context
     if (
         artifact.artifact_digest != artifact_digest
         or artifact.run_id != run_id
@@ -701,11 +730,10 @@ def _load_decisive_evidence(
         or receipt.preflight_digest != artifact.preflight_digest
         or receipt.assertion_id != artifact.assertion_id
         or receipt.producer != artifact.producer
-        or artifact.attempt_digest
-        not in registry.verified_evidence_context.attempt_digests
+        or artifact.attempt_digest not in verified_context.attempt_digests
         or not any(
             artifact.preflight_digest == preflight
-            for preflight, _ in registry.verified_evidence_context.preflight_collectors
+            for preflight, _ in verified_context.preflight_collectors
         )
     ):
         raise TrustedRunError("decisive evidence protected receipt drift")
@@ -721,31 +749,10 @@ def _load_decisive_evidence(
             or artifact.classifier_id != assertion.oracle.classifier_id
         ):
             raise TrustedRunError("classifier protected receipt binding drift")
-        context = registry.verified_evidence_context
-        object.__setattr__(
-            registry,
-            "_TrustedAcceptanceRegistry__verified_evidence_context",
-            context.model_copy(
-                update={
-                    "classifier_digests": context.classifier_digests
-                    | {artifact.artifact_digest}
-                }
-            ),
-        )
     else:
         if assertion.oracle.kind == "classifier_result":
             raise TrustedRunError("structured decisive oracle kind drift")
-        context = registry.verified_evidence_context
-        object.__setattr__(
-            registry,
-            "_TrustedAcceptanceRegistry__verified_evidence_context",
-            context.model_copy(
-                update={
-                    "structured_digests": context.structured_digests
-                    | {artifact.artifact_digest}
-                }
-            ),
-        )
+    return artifact
 
 
 def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> bytes:
@@ -920,6 +927,13 @@ def _load_protected_execution_snapshot(
             f"protected committed execution snapshot is invalid: {exc}"
         ) from exc
     identity = snapshot.model_dump(mode="json", exclude={"snapshot_digest"})
+    attempt_chain_heads = {
+        record.payload["execution_id"]: record.payload["phase_head_digest"]
+        for record in snapshot.evidence
+        if record.producer == "protected-attempt-committer"
+    }
+    authorization_digest = canonical_digest(snapshot.run["authorization"])
+    journal_head_digest = str(snapshot.run["final"]["causal_event_digest"])
     if (
         snapshot.run_id != run_id
         or snapshot.registry_id != registry.registry_id
@@ -929,6 +943,10 @@ def _load_protected_execution_snapshot(
         or commit.registry_id != registry.registry_id
         or commit.snapshot_sha256 != _sha256(snapshot_payload)
         or commit.snapshot_digest != snapshot.snapshot_digest
+        or commit.authorization_digest != authorization_digest
+        or commit.journal_head_digest != journal_head_digest
+        or commit.attempt_chain_heads_digest != canonical_digest(attempt_chain_heads)
+        or commit.operator_store_digest != store_root_digest(_operator_root(registry))
     ):
         raise TrustedRunError("protected committed execution snapshot binding drift")
     return snapshot
@@ -1106,6 +1124,10 @@ def _finalize_verified_run(registry: Any, run_id: str) -> None:
         shutil.rmtree(protected_root, ignore_errors=True)
     tracked_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     protected_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for parent in (tracked_root.parent, protected_parent):
+        for orphan in parent.glob(f".{run_id}.*"):
+            if orphan.is_dir() and not orphan.is_symlink():
+                shutil.rmtree(orphan)
     tracked_staging = Path(
         tempfile.mkdtemp(prefix=f".{run_id}.", dir=tracked_root.parent)
     )
@@ -1268,17 +1290,19 @@ def _load_verified_run(
     ):
         raise TrustedRunError("authorization store root binding drift")
 
-    registry._load_execution_authorization(run.authorization)
-    registry.validate_execution_authorization(run.authorization)
-    registry._load_trusted_readback(run.baseline)
-    registry._load_trusted_readback(run.final)
-    registry.validate_readback_window(
-        baseline=run.baseline,
-        final=run.final,
-        final_visible_at=run.final_visible_at,
-        delivered_at=run.delivered_at,
-        action_at=run.action_at,
+    validated_authorization = validate_execution_authorization(
+        run.authorization,
+        policy=registry.compiled_policy,
+        plan=registry.compiled_plan,
+        registry_id=registry.registry_id,
     )
+    if (
+        validated_authorization.task1_authorization_digest
+        != registry.task1_authorization_digest
+        or validated_authorization.task1_input_digests != registry.task1_input_digests
+    ):
+        raise TrustedRunError("authorization Task 1 immutable bundle digest drift")
+    _validate_readback_contract(run)
 
     entries = _unique(index.entries, "evidence_id", "evidence index identity")
     evidence: dict[str, dict[str, Any]] = {}
@@ -1495,16 +1519,20 @@ def _load_verified_run(
         validate_redacted_payload(report.model_dump(mode="json"))
     except EvidenceError as exc:
         raise TrustedRunError(f"report privacy validation failed: {exc}") from exc
-    context = registry.verified_evidence_context
-    object.__setattr__(
-        registry,
-        "_TrustedAcceptanceRegistry__verified_evidence_context",
-        context.model_copy(
-            update={
-                "attempt_digests": context.attempt_digests
-                | frozenset(verified_attempt_digests)
+    context = VerifiedEvidenceContext(
+        authorization_digests=frozenset({authorization_digest}),
+        preflight_collectors=frozenset(
+            {
+                (
+                    run.authorization.preflight_digest,
+                    run.authorization.readback_collector_digest,
+                )
             }
         ),
+        readback_digests=frozenset(
+            {run.baseline.content_digest, run.final.content_digest}
+        ),
+        attempt_digests=frozenset(verified_attempt_digests),
     )
 
     rollups = {
@@ -1522,4 +1550,8 @@ def _load_verified_run(
         validate_redacted_text(rendered.decode("utf-8"))
     except EvidenceError as exc:
         raise TrustedRunError(f"final report privacy validation failed: {exc}") from exc
-    return VerifiedRun(rollups=rollups, report_bytes=rendered)
+    return VerifiedRun(
+        rollups=rollups,
+        report_bytes=rendered,
+        evidence_context=context,
+    )

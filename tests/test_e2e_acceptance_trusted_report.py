@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e_acceptance_backend import build_test_registry
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -57,7 +59,7 @@ def _build_verified_run(
     protected_attempt_digest_drift: bool = False,
 ):
     policy, execution, trusted = _modules()
-    source_registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    source_registry = policy.TrustedAcceptanceRegistry.from_canonical_repo()
     contract_paths = (
         ".codex/goals/tj-ee5f/scope-criterion-snapshot.json",
         ".codex/goals/tj-ee5f/scope-source-provenance.json",
@@ -70,10 +72,7 @@ def _build_verified_run(
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(PROJECT_ROOT / relative, destination)
     (tmp_path / ".git").mkdir()
-    registry = policy.TrustedAcceptanceRegistry(
-        repo_root=tmp_path,
-        compiled_policy=source_registry.compiled_policy,
-    )
+    registry = build_test_registry(tmp_path, source_registry.compiled_policy)
     tracked = tmp_path / ".codex/stages/tj-ee5f/results"
     protected = trusted._published_protected_root(registry)
     run_id = "synthetic-trusted-run"

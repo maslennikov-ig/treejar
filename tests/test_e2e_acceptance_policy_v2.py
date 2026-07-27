@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e_acceptance_backend import build_canonical_test_registry
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_SET_PATH = PROJECT_ROOT / ".codex/stages/tj-ee5f/scenario-set.json"
 TRACEABILITY_PATH = PROJECT_ROOT / ".codex/stages/tj-ee5f/traceability-manifest.json"
@@ -28,8 +30,7 @@ def _policy_module():
 
 @pytest.mark.parametrize("scenario_id", NON_OPEN_SCENARIOS)
 def test_generic_compiler_accepts_each_non_open_scenario(scenario_id: str) -> None:
-    policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
 
     compiled = registry.compiled_policy.scenarios[scenario_id]
 
@@ -47,8 +48,7 @@ def test_generic_compiler_accepts_each_non_open_scenario(scenario_id: str) -> No
 
 
 def test_trusted_registry_owns_exact_30_plus_20_plus_9_scope() -> None:
-    policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
     scenario_set = json.loads(SCENARIO_SET_PATH.read_text(encoding="utf-8"))
     scope = json.loads(SCOPE_PATH.read_text(encoding="utf-8"))
     traceability = json.loads(TRACEABILITY_PATH.read_text(encoding="utf-8"))
@@ -77,7 +77,7 @@ def test_policy_compiler_has_no_scenario_id_branch_or_free_text_inference() -> N
     assert "hard_safety" not in source
     assert "allowed_oracle" not in source
 
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
     assert registry.compiled_policy.dsl_version == "noor-e2e-oracle-dsl/v2"
     assert all(
         binding.oracle.kind != "text_assertion"
@@ -94,7 +94,7 @@ def test_policy_compiler_has_no_scenario_id_branch_or_free_text_inference() -> N
 
 def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> None:
     policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
     scenario = registry.compiled_policy.scenarios["SC-ESCALATION"]
     binding = next(
         item
@@ -117,16 +117,14 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
         passed=False,
         reason="The delivered reply adds a fact absent from the draft.",
     )
-    context = registry.verified_evidence_context
-    object.__setattr__(
-        registry,
-        "_TrustedAcceptanceRegistry__verified_evidence_context",
+    context = registry._verified_evidence_context()
+    registry._set_test_context(
         context.model_copy(
             update={
                 "classifier_digests": context.classifier_digests
                 | {result.artifact_digest}
             }
-        ),
+        )
     )
     decision = registry.evaluate_oracle(
         binding.assertion_id,
@@ -146,7 +144,7 @@ def test_manager_handoff_semantic_addition_requires_classifier_evidence() -> Non
 
 def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
     policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
@@ -170,16 +168,14 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
         inventory={"synthetic:conversation": {"state": "closed"}},
     )
 
-    context = registry.verified_evidence_context
-    object.__setattr__(
-        registry,
-        "_TrustedAcceptanceRegistry__verified_evidence_context",
+    context = registry._verified_evidence_context()
+    registry._set_test_context(
         context.model_copy(
             update={
                 "readback_digests": context.readback_digests
                 | {baseline.content_digest, stale_final.content_digest}
             }
-        ),
+        )
     )
     with pytest.raises(policy.PolicyValidationError, match="final readback.*after"):
         registry.validate_readback_window(
@@ -193,7 +189,7 @@ def test_final_readback_must_follow_every_visible_delivery_and_action() -> None:
 
 def test_caller_fabricated_final_readback_is_rejected() -> None:
     policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
@@ -249,8 +245,7 @@ def test_rollup_and_report_api_do_not_accept_caller_scope_or_evidence() -> None:
 
 
 def test_partial_scope_and_execution_cannot_be_supplied_to_rollup() -> None:
-    policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
 
     with pytest.raises(TypeError):
         registry.calculate_rollups(
@@ -261,7 +256,7 @@ def test_partial_scope_and_execution_cannot_be_supplied_to_rollup() -> None:
 
 def test_report_output_rejects_intermediate_parent_symlink(tmp_path: Path) -> None:
     policy = _policy_module()
-    registry = policy.TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = build_canonical_test_registry()
     outside = tmp_path / "outside"
     outside.mkdir()
     safe = tmp_path / "safe"

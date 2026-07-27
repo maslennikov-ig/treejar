@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import shutil
@@ -84,6 +85,11 @@ def _stage_protected_execution_snapshot(
     }
     source_root = trusted._execution_snapshot_root(registry) / run_id
     snapshot_sha256 = _write_json(source_root / "snapshot.json", snapshot)
+    attempt_chain_heads = {
+        record["payload"]["execution_id"]: record["payload"]["phase_head_digest"]
+        for record in evidence
+        if record["producer"] == "protected-attempt-committer"
+    }
     _write_json(
         source_root / "commit.json",
         {
@@ -93,8 +99,42 @@ def _stage_protected_execution_snapshot(
             "registry_id": registry.registry_id,
             "snapshot_sha256": snapshot_sha256,
             "snapshot_digest": snapshot["snapshot_digest"],
+            "authorization_digest": trusted.canonical_digest(
+                snapshot["run"]["authorization"]
+            ),
+            "journal_head_digest": snapshot["run"]["final"]["causal_event_digest"],
+            "attempt_chain_heads_digest": trusted.canonical_digest(attempt_chain_heads),
+            "operator_store_digest": trusted.store_root_digest(
+                trusted._operator_root(registry)
+            ),
         },
     )
+
+
+def _refresh_test_publication_marker(
+    registry,
+    tracked: Path,
+    protected: Path,
+) -> None:
+    _, _, trusted = _modules()
+    marker_path = protected / "final-commit.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker_path.unlink()
+    tracked_manifest = {
+        path.relative_to(tracked).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in tracked.rglob("*.json")
+    }
+    protected_manifest = {
+        path.relative_to(protected).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in protected.rglob("*.json")
+    }
+    marker["tracked_tree_digest"] = trusted.canonical_digest(tracked_manifest)
+    marker["protected_tree_digest"] = trusted.canonical_digest(protected_manifest)
+    _write_json(marker_path, marker)
 
 
 @pytest.mark.parametrize("block_id", EVIDENCE_BLOCK_IDS)
@@ -384,14 +424,25 @@ def test_fixed_root_loader_registers_receipted_structured_evidence(
             "tracked_sha256": tracked_sha256,
         },
     )
-    registry.load_decisive_evidence(
+    _refresh_test_publication_marker(registry, tracked, protected)
+    loaded = registry.load_decisive_evidence(
         run_id="synthetic-trusted-run",
         artifact_digest=event.artifact_digest,
     )
-
-    assert (
-        event.artifact_digest in registry.verified_evidence_context.structured_digests
+    decision = registry.evaluate_oracle(
+        assertion.assertion_id,
+        policy.OracleEvidence(
+            assertion_id=assertion.assertion_id,
+            structured_events=[event],
+            tool_results=[],
+            readbacks=[],
+            classifier_results=[],
+            text_supplements=[],
+        ),
     )
+
+    assert loaded == event
+    assert decision.passed is True
     unbound = policy.StructuredEvent.build(
         assertion_id=assertion.assertion_id,
         producer=assertion.oracle.allowed_producers[0],
@@ -429,6 +480,7 @@ def test_fixed_root_loader_registers_receipted_structured_evidence(
             "tracked_sha256": unbound_sha256,
         },
     )
+    _refresh_test_publication_marker(registry, tracked, protected)
 
     with pytest.raises(Exception, match="receipt|attempt"):
         registry.load_decisive_evidence(
@@ -493,15 +545,14 @@ def test_fixed_root_loader_registers_receipted_classifier_evidence(
             "tracked_sha256": tracked_sha256,
         },
     )
+    _refresh_test_publication_marker(registry, tracked, protected)
 
-    registry.load_decisive_evidence(
+    loaded = registry.load_decisive_evidence(
         run_id="synthetic-trusted-run",
         artifact_digest=result.artifact_digest,
     )
 
-    assert (
-        result.artifact_digest in registry.verified_evidence_context.classifier_digests
-    )
+    assert loaded == result
 
 
 def test_finalizer_publishes_only_complete_verified_snapshot(tmp_path: Path) -> None:
@@ -566,11 +617,14 @@ def test_production_registry_has_only_no_arg_canonical_factory() -> None:
     policy, _, _ = _modules()
 
     assert tuple(inspect.signature(policy.TrustedAcceptanceRegistry).parameters) == ()
-    assert tuple(
-        inspect.signature(
-            policy.TrustedAcceptanceRegistry.from_canonical_repo
-        ).parameters
-    ) == ()
+    assert (
+        tuple(
+            inspect.signature(
+                policy.TrustedAcceptanceRegistry.from_canonical_repo
+            ).parameters
+        )
+        == ()
+    )
     assert not hasattr(policy.TrustedAcceptanceRegistry, "open_contracts")
 
 
@@ -605,7 +659,7 @@ def test_registry_trust_context_is_frozen_and_has_no_mutable_digest_stores() -> 
     ):
         assert not hasattr(registry, name)
     assert not hasattr(registry, "_replace_verified_evidence_context")
-    context = registry.verified_evidence_context
+    context = registry._verified_evidence_context()
     assert isinstance(context.classifier_digests, frozenset)
     with pytest.raises((AttributeError, TypeError)):
         context.classifier_digests.add("0" * 64)

@@ -29,7 +29,7 @@ def test_rollup_and_report_facades_accept_registry_only() -> None:
 
 
 def test_unloaded_registry_cannot_claim_rollups() -> None:
-    registry = TrustedAcceptanceRegistry.open_contracts(PROJECT_ROOT)
+    registry = TrustedAcceptanceRegistry.from_canonical_repo()
 
     with pytest.raises(PolicyValidationError):
         calculate_rollups(registry)

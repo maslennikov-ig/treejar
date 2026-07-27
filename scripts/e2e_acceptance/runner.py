@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from scripts.e2e_acceptance.execution import (
     ExecutionAuthorizationV2,
     ExecutionValidationError,
@@ -18,10 +16,10 @@ from scripts.e2e_acceptance.policy import TrustedAcceptanceRegistry
 RunnerError = ExecutionValidationError
 
 
-def open_local_registry(repo_root: Path) -> TrustedAcceptanceRegistry:
+def open_local_registry() -> TrustedAcceptanceRegistry:
     """Compile exact Task 1 contracts without opening any network adapter."""
 
-    return TrustedAcceptanceRegistry.open_contracts(repo_root)
+    return TrustedAcceptanceRegistry.from_canonical_repo()
 
 
 __all__ = [

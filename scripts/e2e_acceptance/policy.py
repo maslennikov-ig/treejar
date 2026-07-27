@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ _TASK1_AUTHORIZATION_PATH = Path(
 )
 _POLICY_PATH = Path(".codex/stages/tj-ee5f/execution-policy-v2.json")
 _POLICY_SHA256 = "4c36af96ea2ad304265fe72d1ca75b57b1105f0a03b25148d0d664501ab67b2c"
+_CANONICAL_REMOTE = "https://github.com/maslennikov-ig/treejar.git"
 
 
 class PolicyValidationError(ValueError):
@@ -762,9 +764,11 @@ def _open_output_parent(output_path: Path) -> tuple[int, str]:
 class TrustedAcceptanceRegistry:
     """Single trust center for canonical policy, evidence, rollups, and reports."""
 
-    def __init__(self, *, repo_root: Path, compiled_policy: CompiledPolicy) -> None:
+    def __init__(self) -> None:
         from scripts.e2e_acceptance.execution import build_compiled_plan
 
+        repo_root = type(self)._canonical_repo_root()
+        compiled_policy = type(self)._load_canonical_policy(repo_root)
         self.__repo_root = repo_root.resolve(strict=True)
         self.compiled_policy = compiled_policy
         self.compiled_plan = build_compiled_plan(compiled_policy)
@@ -779,7 +783,6 @@ class TrustedAcceptanceRegistry:
         self._assertions = compiled_policy.assertions
         self._verified_rollups: dict[str, bool] | None = None
         self._report_bytes: bytes | None = None
-        self.__verified_evidence_context = VerifiedEvidenceContext()
         task1_paths = (
             _SCOPE_PATH,
             _PROVENANCE_PATH,
@@ -798,9 +801,8 @@ class TrustedAcceptanceRegistry:
     def repo_root(self) -> Path:
         return self.__repo_root
 
-    @property
-    def verified_evidence_context(self) -> VerifiedEvidenceContext:
-        return self.__verified_evidence_context
+    def _verified_evidence_context(self) -> VerifiedEvidenceContext:
+        return VerifiedEvidenceContext()
 
     def classifier_evaluator_digest(self, assertion_id: str) -> str:
         assertion = self._assertions.get(assertion_id)
@@ -817,12 +819,86 @@ class TrustedAcceptanceRegistry:
         )
 
     @classmethod
-    def open_contracts(cls, repo_root: Path) -> TrustedAcceptanceRegistry:
+    def _canonical_repo_root(cls) -> Path:
+        repo_root = Path(__file__).resolve().parents[2]
         try:
-            compiled = _compile_policy(repo_root)
+            top_level = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "--show-toplevel"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            remote = subprocess.run(
+                ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            common_dir = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "--git-common-dir"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PolicyValidationError(
+                "canonical repository identity is unavailable"
+            ) from exc
+        common_path = Path(common_dir)
+        if not common_path.is_absolute():
+            common_path = (repo_root / common_path).resolve(strict=True)
+        if (
+            Path(top_level).resolve(strict=True) != repo_root
+            or remote != _CANONICAL_REMOTE
+            or common_path.name != ".git"
+            or common_path.parent.name != "treejar"
+        ):
+            raise PolicyValidationError(
+                "canonical repository remote/worktree identity drift"
+            )
+        return repo_root
+
+    @classmethod
+    def _load_canonical_policy(cls, repo_root: Path) -> CompiledPolicy:
+        try:
+            return _compile_policy(repo_root)
         except ManifestValidationError as exc:
             raise PolicyValidationError(str(exc)) from exc
-        return cls(repo_root=repo_root, compiled_policy=compiled)
+
+    @classmethod
+    def from_canonical_repo(cls) -> TrustedAcceptanceRegistry:
+        return cls()
+
+    def _verified_context_for_evaluation(
+        self,
+        artifacts: Sequence[ClassifierResult | _EvidenceItem],
+    ) -> VerifiedEvidenceContext:
+        context = self._verified_evidence_context()
+        classifier_digests = set(context.classifier_digests)
+        structured_digests = set(context.structured_digests)
+        for artifact in artifacts:
+            target = (
+                classifier_digests
+                if isinstance(artifact, ClassifierResult)
+                else structured_digests
+            )
+            if artifact.artifact_digest in target:
+                continue
+            verified = self.load_decisive_evidence(
+                run_id=artifact.run_id,
+                artifact_digest=artifact.artifact_digest,
+            )
+            if verified != artifact:
+                raise PolicyValidationError(
+                    "decisive evidence differs from its protected artifact"
+                )
+            target.add(artifact.artifact_digest)
+        return context.model_copy(
+            update={
+                "classifier_digests": frozenset(classifier_digests),
+                "structured_digests": frozenset(structured_digests),
+            }
+        )
 
     def evaluate_oracle(
         self,
@@ -834,17 +910,21 @@ class TrustedAcceptanceRegistry:
             raise PolicyValidationError("oracle evidence assertion binding drift")
         oracle = assertion.oracle
         if oracle.kind == "classifier_result":
-            matches = [
+            candidates = [
                 item
                 for item in evidence.classifier_results
                 if item.assertion_id == assertion_id
                 and item.policy_digest == self.compiled_policy.policy_digest
                 and item.evaluator_digest
                 == self.classifier_evaluator_digest(assertion_id)
-                and item.artifact_digest
-                in self.__verified_evidence_context.classifier_digests
                 and item.classifier_id == oracle.classifier_id
                 and item.producer in oracle.allowed_producers
+            ]
+            context = self._verified_context_for_evaluation(candidates)
+            matches = [
+                item
+                for item in candidates
+                if item.artifact_digest in context.classifier_digests
             ]
             if not matches:
                 raise PolicyValidationError(
@@ -857,7 +937,7 @@ class TrustedAcceptanceRegistry:
                 decisive_evidence_kind="classifier_result",
                 reason="; ".join(item.reason for item in matches),
             )
-        structured_matches = [
+        structured_candidates = [
             item
             for item in (
                 *evidence.structured_events,
@@ -866,8 +946,12 @@ class TrustedAcceptanceRegistry:
             )
             if item.assertion_id == assertion_id
             and item.producer in oracle.allowed_producers
-            and item.artifact_digest
-            in self.__verified_evidence_context.structured_digests
+        ]
+        context = self._verified_context_for_evaluation(structured_candidates)
+        structured_matches = [
+            item
+            for item in structured_candidates
+            if item.artifact_digest in context.structured_digests
         ]
         if not structured_matches:
             raise PolicyValidationError(
@@ -901,77 +985,23 @@ class TrustedAcceptanceRegistry:
                 "authorization Task 1 immutable bundle digest drift"
             )
         digest = authorization_digest(validated)
-        if digest not in self.__verified_evidence_context.authorization_digests:
+        if digest not in self._verified_evidence_context().authorization_digests:
             raise PolicyValidationError(
                 "trusted execution authorization has not been loaded"
             )
 
-    def _load_execution_authorization(self, authorization: object) -> None:
-        """Trust an authorization after a protected loader (or local test seam)."""
-
-        from scripts.e2e_acceptance.execution import (
-            authorization_digest,
-            validate_execution_authorization,
-        )
-
-        validated = validate_execution_authorization(
-            authorization,
-            policy=self.compiled_policy,
-            plan=self.compiled_plan,
-            registry_id=self.registry_id,
-        )
-        if (
-            validated.task1_authorization_digest != self.task1_authorization_digest
-            or validated.task1_input_digests != self.task1_input_digests
-        ):
-            raise PolicyValidationError(
-                "authorization Task 1 immutable bundle digest drift"
-            )
-        digest = authorization_digest(validated)
-        context = self.__verified_evidence_context
-        self.__verified_evidence_context = context.model_copy(
-            update={
-                "authorization_digests": context.authorization_digests | {digest},
-                "preflight_collectors": context.preflight_collectors
-                | {
-                    (
-                        validated.preflight_digest,
-                        validated.readback_collector_digest,
-                    )
-                },
-            }
-        )
-
     def _is_trusted_authorization_digest(self, digest: str) -> bool:
-        return digest in self.__verified_evidence_context.authorization_digests
-
-    def _load_trusted_readback(self, observation: ReadbackObservation) -> None:
-        context = self.__verified_evidence_context
-        if not context.authorization_digests:
-            raise PolicyValidationError(
-                "trusted authorization required before readback loading"
-            )
-        if (
-            observation.preflight_digest,
-            observation.collector_artifact_digest,
-        ) not in context.preflight_collectors:
-            raise PolicyValidationError("preflight-bound readback collector drift")
-        self.__verified_evidence_context = context.model_copy(
-            update={
-                "readback_digests": context.readback_digests
-                | {observation.content_digest}
-            }
-        )
+        return digest in self._verified_evidence_context().authorization_digests
 
     def load_decisive_evidence(
         self,
         *,
         run_id: str,
         artifact_digest: str,
-    ) -> None:
+    ) -> object:
         from scripts.e2e_acceptance.trusted_run import _load_decisive_evidence
 
-        _load_decisive_evidence(
+        return _load_decisive_evidence(
             self,
             run_id,
             artifact_digest=artifact_digest,
@@ -988,9 +1018,9 @@ class TrustedAcceptanceRegistry:
     ) -> None:
         if (
             baseline.content_digest
-            not in self.__verified_evidence_context.readback_digests
+            not in self._verified_evidence_context().readback_digests
             or final.content_digest
-            not in self.__verified_evidence_context.readback_digests
+            not in self._verified_evidence_context().readback_digests
         ):
             raise PolicyValidationError(
                 "trusted preflight-bound readback artifacts are required"
@@ -1032,12 +1062,13 @@ class TrustedAcceptanceRegistry:
         self,
         *,
         run_id: str,
-    ) -> None:
+    ) -> object:
         from scripts.e2e_acceptance.trusted_run import _load_verified_run
 
         verified = _load_verified_run(self, run_id)
         self._verified_rollups = dict(verified.rollups)
         self._report_bytes = verified.report_bytes
+        return verified
 
     def finalize_run(self, run_id: str) -> None:
         from scripts.e2e_acceptance.trusted_run import _finalize_verified_run
