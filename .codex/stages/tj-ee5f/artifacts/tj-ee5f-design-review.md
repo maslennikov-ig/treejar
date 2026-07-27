@@ -15,7 +15,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f
 milestone: agent-driven E2E acceptance design and resolution review
-milestone_status: replan-required
+milestone_status: accepted
 agent_type: improvement_reviewer
 subagent_model: inherit_orchestrator
 reasoning_effort: role_default
@@ -30,6 +30,7 @@ write_zone:
 success_criteria:
   - identify decision-affecting traceability, isolation, evidence, workflow, reporting, authorization, and feasibility gaps
   - verify the six original findings against revised design commit 103f163
+  - verify the two remaining P1 blockers against correction commit 1c57b58
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -50,7 +51,7 @@ depends_on_streams:
 parallel_decision: parallel
 status: returned
 delivery_method: n/a
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: read-only review; no runtime or workspace cleanup was authorized
 risk_level: medium
@@ -70,17 +71,18 @@ invariants:
   - rollback
 docs_impact: docs-only
 docs_reviewed: updated
-docs_review_notes: review artifact records the original findings and revised-design resolution review; source design was intentionally not edited
+docs_review_notes: review artifact preserves original/interim findings and records final acceptance of correction commit 1c57b58; source design was intentionally not edited
 verification:
   - source design commit 21bebc2 inspected: passed
   - revised design commit 103f163 delta inspected: passed
+  - correction commit 1c57b58 delta inspected: passed
   - referenced design Beads status audit: passed
   - git diff --check on review artifact: passed
   - scripts/orchestration/validate_artifact.py on review artifact: passed
 changed_files:
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f-design-review.md
 explicit_defers:
-  - source design edits and implementation planning remain with the root orchestrator
+  - implementation planning and execution preparation remain with the root orchestrator
 ---
 
 # Findings
@@ -432,3 +434,71 @@ was not edited by this reviewer.
   and any artifact generation remain with the root orchestrator.
 - Review stops at the bounded delta; no wider requirements or backlog audit was
   performed.
+
+# Final Resolution Review (1c57b58)
+
+## Findings
+
+No new actionable P0-P2 finding was introduced by the exact correction delta.
+
+## Two P1 Blocker Dispositions
+
+1. **Immutable scope anchor versus mutable evidence state — RESOLVED.**
+   Design lines 63-80 now keep `scope-criterion-snapshot/v1` limited to its
+   immutable repository contract, place provenance/oracle/freshness/ownership
+   in a separate versioned traceability manifest, and keep per-run evidence
+   mode independent from outcome. Reused evidence contributes only when
+   exact-identity validation passes and its preserved outcome is `PASS`.
+   Lines 575-611 apply the same separation consistently in planning and
+   rollups.
+2. **Unsafe terminal `blocked` side-effect disposition — RESOLVED.**
+   Design lines 466-489 now permit only verified `voided`, `closed`,
+   `resolved`, or strictly pre-authorized `retained_as_test_evidence` as safe
+   terminal states. `cleanup_pending`, `cleanup_blocked`, and `unknown` are
+   explicitly nonterminal and block both closeout and overall acceptance.
+   Lines 621-624 require a verified safe terminal ledger state with no
+   nonterminal or unlisted artifact.
+
+Both corrections are internally consistent and realistically implementable
+with the existing repository snapshot/manifest/result separation. Details of
+the traceability-manifest and run-result schemas belong in the implementation
+plan and are not remaining design blockers.
+
+## Exact Verification Evidence
+
+- Exact target: `git rev-parse HEAD` =
+  `1c57b58461c4d1e4f4d1e8f5d231f66476f4c673`.
+- Exact delta inspected:
+  `git diff 103f163..1c57b58 --
+  docs/superpowers/specs/2026-07-27-noor-agent-driven-e2e-acceptance-design.md`.
+- Revised lines inspected: 63-80, 466-489, 575-624.
+- Repository contract comparison remained bounded to
+  `.codex/scope-criterion-snapshot-template.json` and
+  `scripts/orchestration/lint_stage_sizing.py:148-192,216-280`.
+- `uv run python scripts/orchestration/validate_artifact.py
+  .codex/stages/tj-ee5f/artifacts/tj-ee5f-design-review.md`: passed.
+- `git diff --check`: passed.
+- No live, remote, protected, product-code, Beads, handoff, or broader design
+  action was performed.
+
+## Final Verdict
+
+**ACCEPT.** Both remaining P1 design blockers are resolved, and the exact delta
+introduces no new P0-P2 design issue. Implementation planning may proceed.
+
+## Docs Reviewed
+
+`docs-reviewed: updated` — the review artifact now records final resolution
+against `1c57b58`; the design itself was not edited by this reviewer.
+
+## Graph Reviewed
+
+`graph-reviewed: no-change-needed` — Graphify remains unconfigured and
+`graphify-out/GRAPH_REPORT.md` is absent.
+
+## Explicit Defers
+
+- Concrete traceability-manifest, run-result, authorization, and evidence-file
+  schemas remain implementation-plan work.
+- Execution, Beads updates, live authorization, and every remote/runtime action
+  remain outside this review.
