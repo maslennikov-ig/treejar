@@ -52,7 +52,9 @@ success_criteria:
   - sealed raw to redacted tracked attempt chain and exact phase causality
   - exact 29 committed execution artifacts with seven-phase hash chains
   - exact 20-turn and 29-execution report reconciliation to protected evidence
+  - no-argument production registry bound to the canonical repository identity
   - run-id-only verifier and derived finalizer under canonical git-common roots
+  - execution snapshot commit bound to authorization journal attempt heads and operator store
   - protected attempt all-decisive-evidence and report producer receipts
   - canonical evidence-mode rollups and typed privacy-checked Russian report
 selected_docs:
@@ -110,16 +112,19 @@ verification:
   - alternate-path RED reproduced 4 public-loader and self-declared producer bypasses
   - same-process RED reproduced 3 arbitrary-root local-loader and attempt-digest bypasses
   - final publication RED reproduced 4 mutable-root mutable-context caller-snapshot and missing-marker bypasses
-  - final focused trust-boundary suite passed 109
-  - combined acceptance suite passed 184 with exactly 2 frozen Beads provenance tests deselected
+  - canonical-registry RED reproduced 4 injectable-constructor replaceable-context snapshot-binding and retry-staging bypasses
+  - CLI integration RED reproduced the removed open-contracts entrypoint still wired at the output boundary
+  - final-marker RED reproduced empty truncated invalid-contract and crash-before-rename retry failures
+  - final focused trust-boundary suite passed 117
+  - combined acceptance suite passed 192 with exactly 2 frozen Beads provenance tests deselected
   - strict module-mode mypy passed the 3 latest changed acceptance runtime modules
-  - full Ruff and format passed 311 src and test files; changed acceptance runtime files also passed
+  - full Ruff and format passed 312 src and test files; changed acceptance runtime files also passed
   - full mypy passed 162 source files
   - process verification passed
   - artifact validator and stage sizing linter passed
   - stage-ready check remains orchestrator-owned because current workspace stage is tj-j13d and tj-ee5f summary is not yet present
   - frontend regression passed 11 after offline lockfile install
-  - full pytest excluding exactly 2 frozen Beads provenance tests passed 1808 with 19 skipped
+  - full pytest excluding exactly 2 frozen Beads provenance tests passed 1816 with 19 skipped
   - branch delta and history secret scans found no blocked credential pattern
   - changed non-test files contain no synthetic full-phone fixtures
   - git diff check passed
@@ -141,6 +146,7 @@ changed_files:
   - tests/test_e2e_acceptance_trusted_execution.py
   - tests/test_e2e_acceptance_trusted_report.py
   - tests/test_e2e_acceptance_final_review.py
+  - tests/e2e_acceptance_backend.py
   - docs/testing/noor-e2e-client-report-template.md
   - .superpowers/sdd/tj-ee5f.3-policy-v2-brief.md
   - .superpowers/sdd/tj-ee5f.3-policy-v2-report.md
@@ -167,15 +173,24 @@ baseline/final readbacks, and timestamped digest/cursor phase causality. All 20
 scenarios and 9 evidence blocks use the same generic runner. A trusted run is
 complete only after all 29 indexed committed-attempt artifacts pass exact
 seven-phase hash-chain, authorization, outcome, semantic, and protected-anchor
-checks. The public verifier and finalizer accept only a run identity and derive
-the operator root from immutable repository/git-common layout; there is no
-mutable root hook. Trust identities live in one frozen
-`VerifiedEvidenceContext`, not caller-mutable registry sets. Finalization
+checks. The production registry has only a no-argument canonical factory: it
+validates repository top-level, origin, and git-common identity before loading
+the policy itself. Fixture injection lives only in `tests/e2e_acceptance_backend.py`.
+The public verifier and finalizer accept only a run identity and derive the
+operator root from immutable repository/git-common layout; there is no mutable
+root hook. Trust identities live in a frozen `VerifiedEvidenceContext` returned
+by each protected load/evaluation and are never persisted on the caller-visible
+production registry. Finalization
 consumes one committed protected execution snapshot and derives the run,
 evidence index, report source, attempt/report receipts, and anchor. It fsyncs
-prepared trees, publishes tracked then protected data, appends a protected
-whole-tree final commit marker last, and recovers marker-less partial
-publication before retry. Every tracked attempt, classifier result,
+prepared trees, publishes tracked then protected data, and commits the protected
+whole-tree marker last through a temporary 0600 file, full write, file fsync,
+atomic rename, and directory fsync. An invalid or partial marker is never
+accepted: retry removes the incomplete final roots and rebuilds from the
+protected execution snapshot. Retry also removes prior per-run protected and tracked
+staging directories before creating new ones. The snapshot commit binds the
+authorization digest, protected journal head, exact attempt-chain-head map, and
+canonical operator-store digest. Every tracked attempt, classifier result,
 structured event, tool/readback result, and report source requires an exact
 protected producer receipt. Attempt receipts and protected commits bind the
 run, execution, attempt, raw, tracked, semantic, authorization, protected
@@ -186,14 +201,25 @@ verified run; its 29 execution rows, 20 scenario turns, runtime identity,
 evaluator configuration, latency, side effects, and defects are reconciled to
 protected evidence.
 
+# Threat model
+
+The trust boundary protects the public API from caller-selected repositories,
+roots, policies, snapshots, mutable trust sets, and stale retry staging. It also
+detects accidental or unprivileged tampering with the protected publication
+chain. Arbitrary Python execution in the same process and an OS/host owner able
+to rewrite the git-common protected store are out of scope: Python-private
+names and file modes are not a security boundary against those actors. That
+stronger threat model requires an external WORM store or independently managed
+signing/key service.
+
 # Verification
 
-The final focused trust-boundary surface passed 109 tests and the complete
-acceptance surface passed 184 tests with the two frozen checks deselected.
-Ruff/format passed over 311 `src` and test files plus the changed acceptance
+The final focused trust-boundary surface passed 117 tests and the complete
+acceptance surface passed 192 tests with the two frozen checks deselected.
+Ruff/format passed over 312 `src` and test files plus the changed acceptance
 runtime files, mypy passed all 162 `src` files, strict module-mode mypy passed
 the three latest changed acceptance runtime modules, and process verification
-passed. The full repository passed 1808 tests with 19
+passed. The full repository passed 1816 tests with 19
 environment skips after deselecting exactly the two known frozen Task 1 Beads
 provenance checks. Those two checks still fail as designed against changed
 shared Beads state.

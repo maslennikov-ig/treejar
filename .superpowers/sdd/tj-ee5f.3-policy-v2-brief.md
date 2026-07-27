@@ -23,9 +23,12 @@ Three approaches were considered:
    safety, commercial, manager, and side-effect decisions would become
    self-authorized and non-reproducible.
 
-`TrustedAcceptanceRegistry` is the only public trust center. It opens the exact
-Task 1 files, versioned execution-policy manifest, authorization/preflight
-binding, evidence index, and protected external anchors itself. It exposes
+`TrustedAcceptanceRegistry` is the only public trust center. Its production
+factory accepts no caller repository or policy: it validates the canonical
+repository top-level, origin, and git-common identity, then opens the exact Task
+1 files, versioned execution-policy manifest, authorization/preflight binding,
+evidence index, and protected external anchors itself. Test-only injection is
+isolated under `tests/`. It exposes
 immutable compiled-policy and verified-run views only after exact-set equality,
 integrity, and reciprocal binding pass for all 20 scenarios, 9 evidence blocks,
 and 30 criteria. Rollup/report APIs never accept caller scope IDs, planned
@@ -67,6 +70,9 @@ serialization, and creates a new file only through a no-follow descriptor chain.
   `reserved`, `failed`, and `unknown`, and `unknown` blocks closeout. Attempts
   use protected intent → raw → tracked → commit, with recovery recording an
   explicit aborted disposition instead of silently deleting partial state.
+- Publication commit: the final marker is written to a temporary 0600 file,
+  fsynced, atomically renamed, then directory-fsynced. Empty, truncated, or
+  invalid markers trigger deterministic root cleanup and rebuild on retry.
 - Execution causality: the protected phase machine is exactly
   `prepared → baseline_sealed → executing → final_turn_anchored →
   final_readback_sealed → evaluated → attempt_committed`. Each transition binds
@@ -116,6 +122,11 @@ crosses authorization, file-format, privacy, and immutable-evidence boundaries.
 Recovery is branch deletion or reverting atomic commits; no external state is
 created. A failed invariant test stops delivery. Environment proof remains a
 later, separately authorized stream.
+
+The boundary does not claim protection from arbitrary same-process Python code
+or an OS/host owner able to rewrite the protected git-common store. That threat
+model requires an external WORM store or independently managed signatures;
+Python-private attributes are not treated as a security boundary.
 
 ## Execution decomposition
 

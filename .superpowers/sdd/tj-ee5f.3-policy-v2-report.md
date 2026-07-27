@@ -2,7 +2,8 @@
 
 ## AI path
 
-Entrypoint: `TrustedAcceptanceRegistry.open_contracts()` and the local CLI.
+Entrypoint: no-argument `TrustedAcceptanceRegistry.from_canonical_repo()` and
+the local CLI.
 Orchestration: immutable Task 1 loaders → typed policy compiler → exact
 29-execution plan → authorization/preflight trust loading → protected
 journal/adapter → structured oracle evaluation → anchored run loader.
@@ -26,13 +27,23 @@ roots, binds authorization to the immutable Task1 bundle, and derives the typed
 report from protected execution/report-source evidence.
 
 The same-process correction removes every runtime root-injection and local
-self-authorization seam. The public verifier and finalizer accept only
-`run_id`; the operator root is derived from canonical git-common layout and
-trust identities are exposed only through a frozen `VerifiedEvidenceContext`.
+self-authorization seam. The production registry validates the canonical
+repository top-level, origin, and git-common identity, then loads its own
+policy; dependency injection exists only in a test backend under `tests/`.
+The public verifier and finalizer accept only `run_id`; the operator root is
+derived from canonical git-common layout. Each protected open/evaluation
+returns a frozen, ephemeral `VerifiedEvidenceContext`; it is never persisted
+or replaceable on the caller-visible production registry.
 Finalization consumes a committed protected execution snapshot and derives the
 run, index, report source, receipts, and anchor. It fsyncs prepared trees,
-publishes tracked then protected data, appends a whole-tree protected final
-commit marker last, and recovers marker-less partial publication. Protected
+publishes tracked then protected data, and writes the whole-tree protected final
+commit marker last through a temporary 0600 file, complete write, file fsync,
+atomic rename, and directory fsync. Empty, truncated, or contract-invalid
+markers are never accepted; retry removes the incomplete final roots and
+deterministically rebuilds them from the protected snapshot. It also removes
+orphan per-run staging before retry. The protected snapshot commit binds the
+authorization digest, journal head, exact attempt-chain-head map, and canonical
+operator-store digest. Protected
 receipts cover classifier, structured event, tool,
 readback, attempt, and report-source artifacts. Decisive evidence must bind an
 attempt whose protected commit and receipt already passed verification, and
@@ -41,11 +52,11 @@ bytes, semantic result, authorization, and unique phase head.
 
 ## Validation
 
-- Final focused trust-boundary surface: 109 passed.
-- Complete acceptance surface: 184 passed with exactly the two frozen Task1
+- Final focused trust-boundary surface: 117 passed.
+- Complete acceptance surface: 192 passed with exactly the two frozen Task1
   checks deselected; those two fail when included.
 - Full repository excluding two frozen Task 1 Beads provenance checks:
-  1808 passed, 19 skipped.
+  1816 passed, 19 skipped.
 - Ruff/format, full `src` mypy, strict acceptance-module mypy, and process
   verification passed.
 - Artifact validation and stage sizing passed. Stage readiness remains with the
@@ -55,6 +66,12 @@ bytes, semantic result, authorization, and unique phase head.
   action was performed.
 
 ## Residual risk
+
+The local boundary does not defend against arbitrary Python execution in the
+same process or an OS/host owner that can rewrite the git-common protected
+store. Python-private names and file modes are not security boundaries for
+those actors; that threat model requires an external WORM store or an
+independently managed signing/key service.
 
 Production traffic, real model/provider behavior, release identity, and
 externally authorized readbacks remain unverified by design. They require the
