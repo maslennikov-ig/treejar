@@ -17,7 +17,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f.5
 milestone: production capability adapters, collector, and runnable CLI
-milestone_status: accepted
+milestone_status: in_progress
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: high
@@ -81,15 +81,16 @@ docs_reviewed: no-change-needed
 docs_review_notes: local-only implementation contract; no user documentation changed
 verification:
   - RED focused production adapter tests: failed as expected before implementation
-  - focused production/runner tests: passed 9
-  - uv run --extra dev pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 270
+  - initial focused production/runner tests: passed 9
+  - initial uv run --extra dev pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 270
   - uv run --extra dev ruff check src/ tests/ scripts/e2e_acceptance/ scripts/run_noor_e2e_acceptance.py: passed
   - uv run --extra dev ruff format --check src/ tests/ scripts/e2e_acceptance/ scripts/run_noor_e2e_acceptance.py: passed, 327 files
   - uv run --extra dev mypy src/: passed, 163 source files
   - scripts/orchestration/run_process_verification.sh: passed
   - artifact validator and git diff --check: passed
   - exact added-file privacy and secret scans: zero matches
-  - uv run --extra dev pytest tests/ -q --tb=short: blocked by seven unrelated frontend assertions because local esbuild is unavailable; remaining result 2143 passed, 19 skipped
+  - Correction A/B focused adapter/runner tests: passed 16
+  - Correction A/B uv run --extra dev pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 277
 changed_files:
   - scripts/e2e_acceptance/production.py
   - scripts/e2e_acceptance/runner.py
@@ -111,7 +112,7 @@ The assigned write zone is limited to adapter/collector/CLI contracts and focuse
 
 # Verification
 
-The first focused adapter tests were RED because `production.py` did not exist. They are GREEN after implementation. Additional final-collector testing caught a readback-digest mismatch, then passed after the final observation was rebuilt rather than mutated in place. Acceptance tests pass 270/270; Ruff, format, Mypy over `src`, artifact validation, privacy checks and process verification pass. The full repository suite is blocked only by missing local `esbuild` in seven pre-existing frontend regression tests; it otherwise reached 2143 passed and 19 skipped.
+The first focused adapter tests were RED because `production.py` did not exist. They are GREEN after implementation. Additional final-collector testing caught a readback-digest mismatch, then passed after the final observation was rebuilt rather than mutated in place. Correction A/B adds opaque authority use for gate validation, producer-owned baseline receipts, causally sealed plan identities, typed capability dispatch, pre-dispatch timeout checks, protected raw/redacted projections, and local unknown-action recovery proof. The artifact remains returned and unaccepted pending the final independent review and full-gate evidence.
 
 # Delivery / Cleanup
 

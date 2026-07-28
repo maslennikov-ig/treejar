@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,10 +13,18 @@ from pydantic import ValidationError
 from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.policy import (
     PolicyValidationError,
-    ReadbackObservation,
     TrustedAcceptanceRegistry,
 )
-from scripts.e2e_acceptance.production import ProductionAdapterError, ProtectedRunPlan
+from scripts.e2e_acceptance.production import (
+    CapabilityDispatcher,
+    FakeHttpTransport,
+    ProductionAdapterError,
+    ProtectedRunPlan,
+    dispatch_local_action,
+    load_protected_baseline,
+    load_sealed_run_plan,
+    seal_run_plan,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,7 +71,7 @@ def _authority_and_journal(
     run_id: str,
     *,
     create: bool,
-) -> execution.ProtectedExecutionJournal:
+) -> tuple[execution.ExecutionAuthorizationHandle, execution.ProtectedExecutionJournal]:
     authority = execution.issue_execution_authorization_handle(
         registry=registry,
         protected_root=protected_root.resolve(strict=True),
@@ -70,16 +79,18 @@ def _authority_and_journal(
         current_time=datetime.now(UTC),
     )
     if create:
-        return execution.ProtectedExecutionJournal.create(
+        journal = execution.ProtectedExecutionJournal.create(
             protected_root=protected_root.resolve(strict=True),
             run_id=run_id,
             authority=authority,
         )
-    return execution.ProtectedExecutionJournal.open(
-        protected_root=protected_root.resolve(strict=True),
-        run_id=run_id,
-        authority=authority,
-    )
+    else:
+        journal = execution.ProtectedExecutionJournal.open(
+            protected_root=protected_root.resolve(strict=True),
+            run_id=run_id,
+            authority=authority,
+        )
+    return authority, journal
 
 
 def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
@@ -88,45 +99,109 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         plan = ProtectedRunPlan.load(
             args.protected_root.resolve(strict=True), args.run_plan
         )
-        journal = _authority_and_journal(
+        _, journal = _authority_and_journal(
             registry, args.protected_root, args.run_id, create=True
         )
+        seal_run_plan(journal, plan)
         return {
             "phase": journal.phase,
             "plan_digest": plan.plan_digest,
             "evaluator_digest": plan.evaluator_digest,
         }
-    journal = _authority_and_journal(
+    authority, journal = _authority_and_journal(
         registry, args.protected_root, args.run_id, create=False
     )
     if args.command == "preflight":
-        payload = execution._read_protected(journal.run_root, args.baseline)
-        observation = ReadbackObservation.model_validate(json.loads(payload))
+        observation = load_protected_baseline(
+            journal,
+            artifact_path=args.baseline,
+            current_time=datetime.now(UTC),
+        )
         journal.seal_baseline(observation)
         return {"phase": journal.phase, "baseline_digest": observation.content_digest}
     if args.command == "execute-resume":
         plan = ProtectedRunPlan.load(
             args.protected_root.resolve(strict=True), args.run_plan
         )
-        known_actions = {spec.action_id for spec in journal.authorization.action_specs}
-        plan_actions = {str(item["action_id"]) for item in plan.actions}
-        if not plan_actions <= known_actions:
-            raise ProductionAdapterError("protected run plan contains unknown actions")
+        plan = load_sealed_run_plan(journal, plan)
         if journal.phase == "baseline_sealed":
             journal.begin_execution()
         if journal.phase != "executing":
             raise ProductionAdapterError("resume requires an executing journal")
         if any(state in {"reserved", "unknown"} for state in journal._actions.values()):
             raise ProductionAdapterError("resume is blocked by nonterminal actions")
+        transports = {
+            str(item["spec"]["capability"]): FakeHttpTransport(
+                responses={str(item["spec"]["capability"]): {"local": "accepted"}}
+            )
+            for item in plan.actions
+        }
+        dispatcher = CapabilityDispatcher(transports)
+        for item in plan.actions:
+            spec = dict(item["spec"])
+            if spec["action_id"] in journal._actions:
+                raise ProductionAdapterError("sealed action already has journal state")
+            charge = dict(spec.pop("quota_charge"))
+            reservation = journal.reserve_action(
+                action_id=str(spec.pop("action_id")),
+                adapter_id=str(spec.pop("adapter_id")),
+                subsystem=str(spec.pop("subsystem")),
+                messages=int(charge["messages"]),
+                model_calls=int(charge["model_calls"]),
+                cost_usd=float(charge["max_cost_usd"]),
+                **spec,
+            )
+            dispatch_local_action(
+                journal=journal,
+                dispatcher=dispatcher,
+                reservation=reservation,
+                message_path=str(item["message_path"]),
+                request=spec,
+            )
+            raise ProductionAdapterError(
+                "local dispatch is unknown until independent reconciliation"
+            )
         return {"phase": journal.phase, "plan_digest": plan.plan_digest}
     if args.command == "record-gate":
         payload = execution._read_protected(journal.run_root, args.gate_attempt)
         gate = execution.GateAttemptV2.model_validate(json.loads(payload))
         validated = execution.GenericAcceptanceRunner(
             registry=registry,
-            authorization=journal.authorization,
+            authority=authority,
             journal=journal,
         ).validate_gate_attempt(gate, current_time=datetime.now(UTC))
+        record_path = f"recorded-gates/{validated.execution_id}.json"
+        try:
+            existing = json.loads(
+                execution._read_protected(journal.run_root, record_path)
+            )
+        except execution.ExecutionValidationError:
+            existing = None
+        if existing is not None:
+            if (
+                existing.get("gate_attempt_sha256")
+                != hashlib.sha256(payload).hexdigest()
+                or existing.get("execution_id") != validated.execution_id
+                or existing.get("outcome") != validated.outcome
+            ):
+                raise ProductionAdapterError("gate record replay drift")
+            return {
+                "execution_id": validated.execution_id,
+                "outcome": validated.outcome,
+            }
+        record = {
+            "schema_version": "noor-e2e-recorded-gate/v2",
+            "execution_id": validated.execution_id,
+            "outcome": validated.outcome,
+            "gate_attempt_sha256": hashlib.sha256(payload).hexdigest(),
+            "journal_head_digest": journal.previous_event_digest,
+        }
+        execution._write_exclusive(journal.run_root, record_path, record)
+        journal._append_event(
+            phase="executing",
+            kind="gate_recorded",
+            data=record,
+        )
         return {"execution_id": validated.execution_id, "outcome": validated.outcome}
     if args.command == "finalize":
         if journal.phase != "attempt_committed":
