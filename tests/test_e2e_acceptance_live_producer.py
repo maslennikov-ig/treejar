@@ -115,7 +115,14 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
     monkeypatch.setattr(
         cli, "materialize_next_conservative_gate", lambda **kwargs: "source.json"
     )
-    monkeypatch.setattr(cli, "_coordinator", lambda *args, **kwargs: coordinator)
+    coordinator_calls = 0
+
+    def coordinator_factory(*args, **kwargs):
+        nonlocal coordinator_calls
+        coordinator_calls += 1
+        return coordinator
+
+    monkeypatch.setattr(cli, "_coordinator", coordinator_factory)
 
     result = cli._lifecycle_result(
         SimpleNamespace(
@@ -129,6 +136,7 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
 
     assert journal.phase == "executing"
     assert coordinator.accepted is True
+    assert coordinator_calls == 2
     assert result["outcome"] == "BLOCKED"
 
 

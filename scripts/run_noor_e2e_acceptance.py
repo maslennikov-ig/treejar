@@ -297,7 +297,7 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         )
         coordinator = _coordinator(registry, authority, journal)
         artifact = coordinator.publish_next_from_decisive_producer(handle, source_ref)
-        accepted = coordinator.accept_next()
+        accepted = _coordinator(registry, authority, journal).accept_next()
         return {
             "phase": journal.phase,
             "plan_digest": plan.plan_digest,
