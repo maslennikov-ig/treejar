@@ -35,7 +35,7 @@ def _fresh_checkout_identity(
     *,
     remote: str,
     top_level: Path | None = None,
-    common_dir: Path | None = None,
+    common_dir: Path | str | None = None,
 ) -> tuple[object, Path]:
     policy = _policy_module()
     repo_root = tmp_path / "treejar"
@@ -43,8 +43,10 @@ def _fresh_checkout_identity(
     policy_path.parent.mkdir(parents=True)
     policy_path.touch()
     expected_top_level = top_level or repo_root
-    expected_common_dir = common_dir or repo_root / ".git"
-    expected_common_dir.mkdir(parents=True, exist_ok=True)
+    (repo_root / ".git").mkdir(exist_ok=True)
+    expected_common_dir = common_dir if common_dir is not None else ".git"
+    if isinstance(expected_common_dir, Path):
+        expected_common_dir.mkdir(parents=True, exist_ok=True)
 
     def canonical_run(
         command: list[str], **_: object
@@ -111,15 +113,24 @@ def test_canonical_https_origin_rejects_noncanonical_variants(
         policy.TrustedAcceptanceRegistry._canonical_repo_root()
 
 
-@pytest.mark.parametrize("drift", ["top-level", "common-dir"])
+@pytest.mark.parametrize(
+    ("drift", "expected_error"),
+    [
+        ("top-level", "identity drift"),
+        ("common-dir", "identity drift"),
+    ],
+)
 def test_canonical_https_origin_rejects_fresh_checkout_path_identity_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     drift: str,
+    expected_error: str,
 ) -> None:
     repo_root = tmp_path / "treejar"
     top_level = tmp_path / "other-checkout" if drift == "top-level" else repo_root
     common_dir = tmp_path / "work/.git" if drift == "common-dir" else repo_root / ".git"
+    if drift == "top-level":
+        top_level.mkdir()
     policy, _ = _fresh_checkout_identity(
         tmp_path,
         monkeypatch,
@@ -128,7 +139,22 @@ def test_canonical_https_origin_rejects_fresh_checkout_path_identity_drift(
         common_dir=common_dir,
     )
 
-    with pytest.raises(policy.PolicyValidationError):
+    with pytest.raises(policy.PolicyValidationError, match=expected_error):
+        policy.TrustedAcceptanceRegistry._canonical_repo_root()
+
+
+def test_canonical_https_origin_rejects_missing_fresh_checkout_top_level(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy, _ = _fresh_checkout_identity(
+        tmp_path,
+        monkeypatch,
+        remote="https://github.com/maslennikov-ig/treejar.git",
+        top_level=tmp_path / "missing-checkout",
+    )
+
+    with pytest.raises(policy.PolicyValidationError, match="identity is unavailable"):
         policy.TrustedAcceptanceRegistry._canonical_repo_root()
 
 
