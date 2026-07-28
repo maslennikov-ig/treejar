@@ -452,12 +452,20 @@ def _build_verified_run(
         "side_effects": [
             {
                 "artifact_id": "synthetic:item",
+                "scenario_id": "SC-OPEN-EN",
                 "subsystem": "conversation",
                 "artifact_type": "conversation",
                 "baseline": {"state": "absent"},
+                "expected_effect": {"state": "created_for_test"},
                 "final": {"state": "closed"},
                 "disposition": "closed",
                 "owner": "acceptance-owner",
+                "cleanup_authority": "application-path-only",
+                "follow_up_suppressed": True,
+                "retention_pre_authorized": None,
+                "retention_owner": None,
+                "retention_expires_at": None,
+                "final_disposition_date": None,
                 "checksum_refs": ["report-source"],
             }
         ],

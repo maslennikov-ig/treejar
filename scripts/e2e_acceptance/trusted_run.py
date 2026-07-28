@@ -17,6 +17,7 @@ from scripts.e2e_acceptance.evidence import (
     EvidenceError,
     validate_redacted_payload,
     validate_redacted_text,
+    validate_side_effect_closeout,
 )
 from scripts.e2e_acceptance.execution import (
     ExecutionAuthorizationV2,
@@ -379,12 +380,20 @@ class ReportCriterion(_StrictModel):
 
 class SideEffectReport(_StrictModel):
     artifact_id: str
+    scenario_id: str
     subsystem: str
     artifact_type: str
     baseline: dict[str, Any]
+    expected_effect: dict[str, Any]
     final: dict[str, Any]
     disposition: str
     owner: str
+    cleanup_authority: str
+    follow_up_suppressed: bool
+    retention_pre_authorized: bool | None = None
+    retention_owner: str | None = None
+    retention_expires_at: str | None = None
+    final_disposition_date: str | None = None
     checksum_refs: tuple[str, ...]
 
 
@@ -1520,6 +1529,33 @@ def _load_verified_run(
         [item.model_dump(mode="json") for item in report.side_effects]
     ) or run.final_inventory_digest != canonical_digest(run.final.inventory):
         raise TrustedRunError("computed side-effect ledger/inventory digest drift")
+    try:
+        validate_side_effect_closeout(
+            [
+                {
+                    "artifact_id": item.artifact_id,
+                    "scenario_id": item.scenario_id,
+                    "subsystem": item.subsystem,
+                    "artifact_type": item.artifact_type,
+                    "creation_path": "application-authorized",
+                    "cleanup_owner": item.owner,
+                    "cleanup_authority": item.cleanup_authority,
+                    "baseline_readback": item.baseline,
+                    "expected_effect": item.expected_effect,
+                    "follow_up_suppressed": item.follow_up_suppressed,
+                    "final_readback": item.final,
+                    "disposition": item.disposition,
+                    "retention_pre_authorized": item.retention_pre_authorized,
+                    "retention_owner": item.retention_owner,
+                    "retention_expires_at": item.retention_expires_at,
+                    "final_disposition_date": item.final_disposition_date,
+                }
+                for item in report.side_effects
+            ],
+            observed_inventory=run.final.inventory,
+        )
+    except EvidenceError as exc:
+        raise TrustedRunError(f"computed side-effect closeout failed: {exc}") from exc
     report_refs = (
         *report.identity.evidence_refs,
         *report.tester.evidence_refs,
