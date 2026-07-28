@@ -92,6 +92,7 @@ verification:
   - worker authority stream: passed 8 tests
   - worker transport stream and P1 correction: passed 13 tests
   - gate-only zero-action correction: passed 14 focused tests
+  - gate publication acceptance correction: passed 14 focused tests
   - independent full-range review: one P1 found and corrected; all other requested boundaries approved
   - full release Pytest: passed 2260, skipped 19
   - full release Ruff, format, and Mypy over 163 source files: passed
@@ -122,6 +123,8 @@ one-shot HTTPS, fixed read-only SSH, and a code-owned conservative gate that
 can only publish `BLOCKED` for the next canonical unit. Scenario gates now
 retain zero turns; executed `PASS` or `FAIL` scenarios still require transcript
 facts. Gate-only runs no longer need a dummy action or reconciliation step.
+Each protected gate publication is accepted atomically before the next
+canonical execution can be issued.
 
 # Verification
 

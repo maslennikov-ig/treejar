@@ -295,13 +295,13 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             producer_handle=handle,
             current_time=datetime.now(UTC),
         )
-        artifact = _coordinator(
-            registry, authority, journal
-        ).publish_next_from_decisive_producer(handle, source_ref)
+        coordinator = _coordinator(registry, authority, journal)
+        artifact = coordinator.publish_next_from_decisive_producer(handle, source_ref)
+        accepted = coordinator.accept_next()
         return {
             "phase": journal.phase,
             "plan_digest": plan.plan_digest,
-            "ordinal": artifact.ordinal,
+            "ordinal": accepted.ordinal,
             "execution_id": artifact.execution_id,
             "outcome": artifact.outcome,
         }

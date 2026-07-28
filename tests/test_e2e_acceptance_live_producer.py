@@ -91,9 +91,18 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
         execution_id="SC-OPEN-EN",
         outcome="BLOCKED",
     )
-    coordinator = SimpleNamespace(
-        publish_next_from_decisive_producer=lambda handle, source_ref: artifact
-    )
+
+    class Coordinator:
+        accepted = False
+
+        def publish_next_from_decisive_producer(self, handle, source_ref):
+            return artifact
+
+        def accept_next(self):
+            self.accepted = True
+            return SimpleNamespace(ordinal=artifact.ordinal)
+
+    coordinator = Coordinator()
     monkeypatch.setattr(cli, "_canonical_registry", lambda _: object())
     monkeypatch.setattr(
         cli, "_authority_and_journal", lambda *args, **kwargs: (object(), journal)
@@ -119,6 +128,7 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
     )
 
     assert journal.phase == "executing"
+    assert coordinator.accepted is True
     assert result["outcome"] == "BLOCKED"
 
 
