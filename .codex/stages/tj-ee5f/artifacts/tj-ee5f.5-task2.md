@@ -17,7 +17,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f.5
 milestone: production capability adapters, collector, and runnable CLI
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: high
@@ -58,9 +58,9 @@ parallel_group: tj-ee5f-production-trust
 depends_on_streams:
   - tj-ee5f.5
 parallel_decision: sequential
-status: returned
-delivery_method: cherry-pick
-accepted_by_orchestrator: no
+status: accepted
+delivery_method: merge
+accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: no external state was created
 risk_level: high
@@ -100,12 +100,23 @@ verification:
   - final uv run --extra dev ruff format --check src/ tests/ scripts/e2e_acceptance/ scripts/run_noor_e2e_acceptance.py: passed, 327 files
   - final uv run --extra dev mypy src/: passed, 163 source files
   - final git diff --check: passed
+  - final independent full-range review: 0 P0, 3 P1, 1 P2; all three P1 corrected, P2 explicitly deferred
+  - correction RED/GREEN: caller-authored PASS/FAIL recovery, exact criterion/execution evidence refs, and fictional defect lineage
+  - final uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 360
+  - final uv run ruff check src/ tests/: passed
+  - final uv run ruff format --check src/ tests/: passed, 317 files
+  - final uv run mypy src/: passed, 163 source files
+  - final uv run pytest tests/ -q --tb=short: passed 2240, skipped 19
+  - final scripts/orchestration/run_process_verification.sh: passed
+  - current correction and full branch history phone-pattern scans: zero matches
 changed_files:
   - scripts/e2e_acceptance/execution.py
   - scripts/e2e_acceptance/production.py
   - scripts/e2e_acceptance/runner.py
   - scripts/e2e_acceptance/trusted_run.py
   - scripts/run_noor_e2e_acceptance.py
+  - scripts/e2e_acceptance/coordinator.py
+  - tests/test_e2e_acceptance_coordinator.py
   - tests/test_e2e_acceptance_final_review.py
   - tests/test_e2e_acceptance_production.py
   - tests/test_e2e_acceptance_trusted_execution.py
@@ -117,7 +128,7 @@ explicit_defers:
 
 # Summary
 
-Added local-only, capability-dispatched fake transports and a permit-bound webhook adapter. Raw request and response material remains under the protected journal; tracked projections contain redacted payloads plus checksums. The read-only collector has no mutation API and produces the Task 1 baseline/final readback artifacts and receipts. The CLI can prepare, preflight, resume, reconcile an uncertain action, validate an independently produced gate, and finalize only a terminal committed run through a strict production snapshot.
+Added and accepted the local-only production trust facade: capability-dispatched fake transports, a permit-bound webhook adapter, protected producer/collector contracts, the exact 29-unit coordinator lifecycle, derived candidate materialization, defect ledger, and crash recovery. Raw request and response material remains under the protected journal; tracked projections contain redacted payloads plus checksums.
 
 # Scope / Routing
 
@@ -125,12 +136,12 @@ The assigned write zone is limited to adapter/collector/CLI contracts and focuse
 
 # Verification
 
-The first focused adapter tests were RED because `production.py` did not exist. Additional RED/GREEN passes closed producer-owned baseline/final collection, sealed plan/evaluator drift, typed capability routing, permit ordering, raw/tracked separation, partial producer recovery, unknown-action reconciliation and settlement recovery, exact gate replay, unsafe run IDs, and intermediate-symlink snapshot writes. The strict production snapshot validates candidate checksums and the complete publication projection before its first write, binds independent final-causal and terminal-journal heads, and recovers only byte-identical partial commits. The artifact remains returned and unaccepted pending a fresh independent review and full repository gates.
+The first focused adapter tests were RED because `production.py` did not exist. Additional RED/GREEN passes closed producer-owned baseline/final collection, exact lifecycle and materialization, sealed plan/evaluator drift, typed capability routing, permit ordering, raw/tracked separation, crash recovery, unknown-action reconciliation, and exact gate replay. The final independent review found three P1 trust gaps; the correction wave now revalidates recovered attempts through the protected producer, scopes evidence refs to the exact criterion and owning execution, and rejects unproved defect/fix/retest lineage. Acceptance passed 360 tests and the full repository gate passed 2240 tests with 19 skips.
 
 # Delivery / Cleanup
 
-Returned for orchestrator review; no external state or local worktree cleanup was performed.
+Accepted for local integration; no external state or production action was performed.
 
 # Risks / Follow-ups / Explicit Defers
 
-Actual transports intentionally remain unavailable. Task 3 must supply current explicit authorization, production transports, and a fresh exact preflight before an external action can be attempted. A gate command validates producer-owned protected evidence; it never manufactures a gate result. Full repository Pytest, process verification, privacy/secret scans, artifact validation, and independent review remain pending at this returned checkpoint.
+Actual network/SSH transports and production attempt, gate, reconciliation, and inventory producers remain unavailable and are the exact Task 3 implementation boundary. The deferred P2 is strict rejection of extra commit fields; all decisive fields are already revalidated. A gate command validates producer-owned protected evidence and never manufactures a result.

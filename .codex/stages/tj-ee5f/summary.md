@@ -1,8 +1,8 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-28
-Status: in progress; reviewed foundation and accepted grounding proof integrated
-Branch: `codex/tj-ee5f-delivery`
+Status: in progress; local production trust facade accepted, live Task 3 pending
+Branch: `codex/tj-ee5f-production-adapters`
 Beads: `tj-ee5f`
 
 ## Boundary
@@ -31,6 +31,12 @@ The privacy artifact is registered in the stage manifest.
 
 - Local implementation and independent review evidence for Task 1, policy-v2,
   privacy cleanup, and `tj-r1f3` are preserved in their tracked artifacts.
+- The local Task 2 production trust facade is accepted at `25c643e`: exact
+  29-unit coordinator lifecycle, protected producer recovery, derived
+  materialization, criterion-scoped evidence, and fail-closed defect lineage.
+- Real network/SSH transports and production attempt, gate, reconciliation,
+  and inventory producers do not yet exist. Fake output is not production E2E
+  evidence.
 - Beads `tj-ee5f.2` and `tj-ee5f.3` are closed with the combined-tree
   verification evidence; the epic and execution task remain open.
 - The stage manifest remains `in_progress`; no live, paid, provider, customer,
@@ -61,6 +67,11 @@ The privacy artifact is registered in the stage manifest.
 - Privacy affected suite: `92 passed`.
 - Admin frontend regression after offline lockfile bootstrap: `11 passed`.
 - Full Pytest: `2072 passed, 19 skipped`.
+- Final Task 2 acceptance: `360 passed`.
+- Final Task 2 full Pytest: `2240 passed, 19 skipped`; Ruff, format over 317
+  files, Mypy over 163 source files, and process verification passed.
+- Final independent Task 2 review: `0 P0`, three corrected `P1`, one deferred
+  non-blocking `P2`.
 - Ruff passed; format reported `315 files already formatted`; Mypy passed over
   `163` source files; process verification passed.
 - Artifact validation, stage sizing, `git diff --check`, and
@@ -81,8 +92,8 @@ The privacy artifact is registered in the stage manifest.
 
 ## Explicit defers
 
-- `tj-ee5f.1`: live acceptance execution, side-effect reconciliation, client
-  report acceptance, and any PDF remain separately authorized future work.
+- `tj-ee5f.1`: implement the minimal real Task 3 transports/producers, execute
+  live acceptance, reconcile side effects, and deliver the client report.
 - Repository-history privacy cleanup requires explicit destructive-action
   authority and coordinated history rewrite; the current tracked tree is the
   local privacy boundary for this stage.
