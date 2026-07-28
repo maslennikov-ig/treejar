@@ -12,6 +12,14 @@ from scripts.e2e_acceptance.execution import (
     ValidatedAttempt,
 )
 from scripts.e2e_acceptance.policy import TrustedAcceptanceRegistry
+from scripts.e2e_acceptance.production import (
+    CapabilityDispatcher,
+    FakeHttpTransport,
+    FakeReadOnlySshTransport,
+    IndependentReadOnlyCollector,
+    ProtectedRunPlan,
+    WazzupWebhookAdapter,
+)
 
 RunnerError = ExecutionValidationError
 
@@ -24,11 +32,17 @@ def open_local_registry() -> TrustedAcceptanceRegistry:
 
 __all__ = [
     "ExecutionAuthorizationV2",
+    "CapabilityDispatcher",
     "FakeLocalAdapter",
+    "FakeHttpTransport",
+    "FakeReadOnlySshTransport",
     "GenericAcceptanceRunner",
+    "IndependentReadOnlyCollector",
     "ProtectedExecutionJournal",
+    "ProtectedRunPlan",
     "RunnerError",
     "ScenarioAttemptV2",
     "ValidatedAttempt",
+    "WazzupWebhookAdapter",
     "open_local_registry",
 ]
