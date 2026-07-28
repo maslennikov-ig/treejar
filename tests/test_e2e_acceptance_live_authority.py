@@ -107,6 +107,34 @@ def test_build_live_authority_bundle_commits_only_fixed_redacted_receipt(
         assert raw_value not in rendered
 
 
+def test_build_live_authority_bundle_accepts_gate_only_zero_action_authority(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_authority import build_live_authority_bundle
+
+    now = datetime(2026, 7, 28, 10, 0, tzinfo=UTC)
+    registry = _registry()
+    root = tmp_path / "protected"
+    root.mkdir(mode=0o700)
+    run_id = "live-gate-only"
+    inputs = _authority_inputs(registry, root=root, run_id=run_id, now=now)
+    inputs["action_specs"] = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(),
+    )
+    _bind_expected_stores(registry, run_id, inputs)
+    _write_live_inputs(root, run_id, inputs)
+
+    result = build_live_authority_bundle(
+        registry=registry,
+        protected_root=root,
+        run_id=run_id,
+        current_time=now,
+    )
+
+    assert result.receipt.run_id == run_id
+
+
 @pytest.mark.parametrize("field", ["identity", "targets"])
 def test_build_live_authority_bundle_rejects_preflight_drift(
     tmp_path: Path,

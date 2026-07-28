@@ -5,6 +5,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CLI = PROJECT_ROOT / "scripts/run_noor_e2e_acceptance.py"
@@ -59,6 +60,66 @@ def test_cli_exposes_live_authority_and_code_owned_blocking_without_outcome_flag
     assert "record-blocked" in help_result.stdout
     assert "--outcome" not in blocked_help.stdout
     assert "--execution-id" not in blocked_help.stdout
+
+
+def test_gate_only_authority_accepts_no_action_specs() -> None:
+    from scripts.e2e_acceptance import execution
+
+    specs = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(),
+    )
+
+    assert specs.specs == ()
+
+
+def test_record_blocked_starts_gate_only_execution_after_baseline(
+    monkeypatch,
+) -> None:
+    import scripts.run_noor_e2e_acceptance as cli
+
+    class Journal:
+        phase = "baseline_sealed"
+
+        def begin_execution(self) -> None:
+            self.phase = "executing"
+
+    journal = Journal()
+    plan = SimpleNamespace(plan_digest="a" * 64)
+    artifact = SimpleNamespace(
+        ordinal=1,
+        execution_id="SC-OPEN-EN",
+        outcome="BLOCKED",
+    )
+    coordinator = SimpleNamespace(
+        publish_next_from_decisive_producer=lambda handle, source_ref: artifact
+    )
+    monkeypatch.setattr(cli, "_canonical_registry", lambda _: object())
+    monkeypatch.setattr(
+        cli, "_authority_and_journal", lambda *args, **kwargs: (object(), journal)
+    )
+    monkeypatch.setattr(cli.ProtectedRunPlan, "load", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(cli, "load_sealed_run_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(
+        cli, "issue_decisive_producer_handle", lambda **kwargs: object()
+    )
+    monkeypatch.setattr(
+        cli, "materialize_next_conservative_gate", lambda **kwargs: "source.json"
+    )
+    monkeypatch.setattr(cli, "_coordinator", lambda *args, **kwargs: coordinator)
+
+    result = cli._lifecycle_result(
+        SimpleNamespace(
+            command="record-blocked",
+            repo_root=Path.cwd(),
+            protected_root=Path.cwd(),
+            run_id="gate-only",
+            run_plan="input-plan.json",
+        )
+    )
+
+    assert journal.phase == "executing"
+    assert result["outcome"] == "BLOCKED"
 
 
 def test_live_gate_producer_publishes_zero_turn_scenario_block(

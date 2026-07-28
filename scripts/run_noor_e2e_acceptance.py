@@ -279,6 +279,12 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
                 args.protected_root.resolve(strict=True), args.run_plan
             ),
         )
+        if journal.phase == "baseline_sealed":
+            journal.begin_execution()
+        if journal.phase != "executing":
+            raise ProductionAdapterError(
+                "record-blocked requires a baseline-sealed or executing journal"
+            )
         handle = issue_decisive_producer_handle(
             registry=registry,
             journal=journal,

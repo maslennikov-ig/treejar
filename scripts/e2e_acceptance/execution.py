@@ -366,7 +366,7 @@ class ExecutionAuthorizationV2(_StrictModel):
     adapter_ids: tuple[str, ...] = Field(min_length=1)
     collector_ids: tuple[str, ...] = Field(min_length=1)
     permissions: tuple[str, ...]
-    action_specs: tuple[AuthorizedActionSpec, ...] = Field(min_length=1)
+    action_specs: tuple[AuthorizedActionSpec, ...]
     client_exclusion_authorities: dict[str, str] = Field(default_factory=dict)
     client_exclusion_grants: tuple[ClientExclusionAuthority, ...] = ()
     side_effect_authority: SideEffectAuthority
@@ -415,7 +415,7 @@ class ExecutionAuthorizationV2(_StrictModel):
 
 class AuthorizedActionSpecs(_StrictModel):
     schema_version: Literal["noor-e2e-authorized-action-specs/v2"]
-    specs: tuple[AuthorizedActionSpec, ...] = Field(min_length=1)
+    specs: tuple[AuthorizedActionSpec, ...]
 
     @model_validator(mode="after")
     def _unique_action_ids(self) -> AuthorizedActionSpecs:
