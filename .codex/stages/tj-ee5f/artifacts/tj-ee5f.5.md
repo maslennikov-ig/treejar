@@ -46,6 +46,7 @@ selected_docs:
   - .codex/handoff.md
   - docs/superpowers/plans/2026-07-28-noor-task3-production-trust-repair.md
 selected_skills:
+  - superpowers:receiving-code-review
   - superpowers:systematic-debugging
   - superpowers:test-driven-development
 selected_agents:
@@ -84,14 +85,16 @@ verification:
   - RED focused authorization/permit/transcript/closeout tests: failed as expected before implementation
   - initial independent full-range review decision: FIX
   - correction RED proved caller final readback, incomplete gate provenance, incomplete transcript receipt provenance, and unbound retention authority
-  - correction focused trust suite: passed 151
-  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 241
+  - second correction RED proved dataclass authority-handle substitution, quota undercharge/settlement gaps, and caller-shaped exclusion/retention authority gaps
+  - correction focused trust suite: passed 161
+  - protected execution authority semantic-drift slice: passed 4
+  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 251
   - uv run ruff check src/ tests/ scripts/e2e_acceptance: passed
   - uv run ruff format --check src/ tests/ scripts/e2e_acceptance: passed, 324 files
   - uv run mypy src/: passed (163 source files)
   - strict module-mode Mypy for policy execution trusted_run and evidence: passed
   - scripts/orchestration/run_process_verification.sh: passed
-  - uv run pytest tests/ -q --tb=short: passed 2121, skipped 19
+  - uv run pytest tests/ -q --tb=short: passed 2131, skipped 19
   - current-tree exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta blocked-secret scan: zero matches
@@ -115,14 +118,21 @@ explicit_defers:
 
 Added the local trusted-execution core for Task 1. An executable v2 authorization
 can be built only from typed v1/preflight inputs, action permits are request-bound
-and one-use, and committed attempts are typed as executed or gate variants.
+and one-use, and committed attempts are typed as executed or gate variants. The
+issued authority handle is identity-registered so dataclass replacement cannot
+substitute a broader authorization. Each protected action binds its exact
+messages, model calls, maximum cost, and cost-settlement mode; an independently
+terminal action may record bounded actual cost without refunding the charged
+maximum or weakening retry safety.
 Final inventory is accepted only from a fresh protected independent collector
 artifact and producer receipt bound to the exact authorization, preflight,
 collector, journal head, final-turn anchor, and inventory digest. Report turns
 carry protected transcript/receipt identities bound to the authorization,
 attempt digest, phase head, and exact ordered manifest path set. The run document
 derives closeout from an authority-bound ledger and independently committed
-inventory rather than a caller-supplied status.
+inventory rather than a caller-supplied status. Client exclusions and retained
+artifacts require receipt-covered typed issuer grants bound to exact execution,
+criteria, owner, cleanup authority, and validity windows.
 
 # Scope / Routing
 
@@ -134,14 +144,16 @@ producer implementations, and all external transport remain outside this stream.
 
 # Verification
 
-The original independent full-range review returned `FIX`; it did not accept the
-stream. The correction closes its final-collector/inventory, retention-authority,
-typed-gate, and transcript-provenance findings. Fresh correction evidence passed
-151 focused trust tests, 241 acceptance-contract tests, and the full local suite
-with 2121 passed and 19 skipped. Ruff, format, both Mypy scopes, process
-verification, exact/normalized privacy scans, the blocked-secret scan, and
-`git diff --check` also passed. These results return the stream for a new
-orchestrator review; they do not record acceptance.
+The original and second independent full-range reviews returned `FIX`; neither
+accepted the stream. The corrections close the final-collector/inventory,
+retention-authority, typed-gate, transcript-provenance, authority-handle
+substitution, quota-charge settlement, and protected client-authority findings.
+Fresh correction evidence passed 161 focused trust tests, 251
+acceptance-contract tests, and the full local suite with 2131 passed and 19
+skipped. Ruff, format, both Mypy scopes, process verification,
+exact/normalized privacy scans, the blocked-secret scan, and `git diff --check`
+also passed. These results return the stream for a new orchestrator review; they
+do not record acceptance.
 
 # Delivery / Cleanup
 

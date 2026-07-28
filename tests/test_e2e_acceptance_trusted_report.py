@@ -114,9 +114,16 @@ def _build_verified_run(
                 payload_digest="b" * 64,
                 idempotency_key="fixture-report-idempotency",
                 capability_units={"outbound_text": 1},
+                quota_charge=execution.AuthorizedQuotaCharge(
+                    messages=1,
+                    model_calls=1,
+                    max_cost_usd=0.25,
+                    cost_settlement="bounded_actual",
+                ),
             ),
         ),
         side_effect_authority=execution.SideEffectAuthority(
+            issuer="protected-side-effect-authority",
             cleanup_owner="acceptance-owner",
             cleanup_authority="application-path-only",
         ),
@@ -130,11 +137,13 @@ def _build_verified_run(
             cleanup_retention_digest=execution._digest(
                 {
                     "side_effect_authority": {
+                        "issuer": "protected-side-effect-authority",
                         "cleanup_owner": "acceptance-owner",
                         "cleanup_authority": "application-path-only",
                         "retention_authorities": [],
                     },
                     "client_exclusion_authorities": {},
+                    "client_exclusion_grants": [],
                 }
             ),
             execution_set_digest=execution._digest(

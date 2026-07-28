@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import weakref
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -229,6 +230,19 @@ class ExactLiveAuthorizationBinding(_StrictModel):
         return self
 
 
+class AuthorizedQuotaCharge(_StrictModel):
+    messages: int = Field(ge=0)
+    model_calls: int = Field(ge=0)
+    max_cost_usd: float = Field(ge=0)
+    cost_settlement: Literal["exact", "bounded_actual"]
+
+    @model_validator(mode="after")
+    def _finite_cost(self) -> AuthorizedQuotaCharge:
+        if not math.isfinite(self.max_cost_usd):
+            raise ValueError("authorized quota cost must be finite")
+        return self
+
+
 class AuthorizedActionSpec(_StrictModel):
     action_id: str
     execution_id: str
@@ -241,10 +255,15 @@ class AuthorizedActionSpec(_StrictModel):
     payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     idempotency_key: str = Field(min_length=1)
     capability_units: dict[str, int] = Field(min_length=1)
+    quota_charge: AuthorizedQuotaCharge
 
 
 class AuthorizedRetentionSpec(_StrictModel):
+    authority_id: str = Field(min_length=1)
+    issuer: Literal["client-retention-authority"]
     artifact_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    criterion_ids: tuple[str, ...] = Field(min_length=1)
     cleanup_owner: str = Field(min_length=1)
     cleanup_authority: str = Field(min_length=1)
     retention_owner: str = Field(min_length=1)
@@ -265,6 +284,7 @@ class AuthorizedRetentionSpec(_StrictModel):
 
 
 class SideEffectAuthority(_StrictModel):
+    issuer: Literal["protected-side-effect-authority"]
     cleanup_owner: str = Field(min_length=1)
     cleanup_authority: str = Field(min_length=1)
     retention_authorities: tuple[AuthorizedRetentionSpec, ...] = ()
@@ -274,6 +294,49 @@ class SideEffectAuthority(_StrictModel):
         identities = [item.artifact_id for item in self.retention_authorities]
         if len(identities) != len(set(identities)):
             raise ValueError("retention authority artifact IDs must be unique")
+        return self
+
+
+class ClientExclusionAuthority(_StrictModel):
+    authority_id: str = Field(min_length=1)
+    issuer: Literal["client-exclusion-authority"]
+    execution_id: str = Field(min_length=1)
+    criterion_ids: tuple[str, ...] = Field(min_length=1)
+    issued_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> ClientExclusionAuthority:
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError("client exclusion authority window is invalid")
+        return self
+
+
+class ProtectedExecutionAuthorities(_StrictModel):
+    schema_version: Literal["noor-e2e-protected-execution-authorities/v2"]
+    client_exclusions: tuple[ClientExclusionAuthority, ...]
+    side_effect_authority: SideEffectAuthority
+
+    @model_validator(mode="after")
+    def _unique_authorities(self) -> ProtectedExecutionAuthorities:
+        exclusion_ids = [item.authority_id for item in self.client_exclusions]
+        exclusion_executions = [item.execution_id for item in self.client_exclusions]
+        if len(exclusion_ids) != len(set(exclusion_ids)) or len(
+            exclusion_executions
+        ) != len(set(exclusion_executions)):
+            raise ValueError("client exclusion authorities must be unique")
+        retention_ids = [
+            item.authority_id
+            for item in self.side_effect_authority.retention_authorities
+        ]
+        if len(retention_ids) != len(set(retention_ids)):
+            raise ValueError("retention authority IDs must be unique")
         return self
 
 
@@ -297,6 +360,7 @@ class ExecutionAuthorizationV2(_StrictModel):
     permissions: tuple[str, ...]
     action_specs: tuple[AuthorizedActionSpec, ...] = Field(min_length=1)
     client_exclusion_authorities: dict[str, str] = Field(default_factory=dict)
+    client_exclusion_grants: tuple[ClientExclusionAuthority, ...] = ()
     side_effect_authority: SideEffectAuthority
     live_binding: ExactLiveAuthorizationBinding
     store_ids: StoreIdentities
@@ -332,6 +396,12 @@ class ExecutionAuthorizationV2(_StrictModel):
             for execution_id, value in self.client_exclusion_authorities.items()
         ):
             raise ValueError("authorization client exclusion binding drift")
+        expected_exclusions = {
+            grant.execution_id: _digest(grant.model_dump(mode="json"))
+            for grant in self.client_exclusion_grants
+        }
+        if self.client_exclusion_authorities != expected_exclusions:
+            raise ValueError("authorization client exclusion grant drift")
         return self
 
 
@@ -393,6 +463,7 @@ _AUTHORITY_PAYLOAD_PATHS = {
     "adapter_ids": "adapter-ids.json",
     "collector_ids": "collector-ids.json",
     "task1_bindings": "task1-bindings.json",
+    "execution_authorities": "execution-authorities.json",
 }
 _AUTHORITY_STORE_ROOT_KEYS = frozenset({"raw", "tracked", "anchor"})
 
@@ -460,6 +531,42 @@ class ExecutionAuthorizationHandle:
         raise TypeError("execution authority handles are not serializable")
 
 
+@dataclass(frozen=True)
+class _AuthorityHandleRecord:
+    handle_ref: weakref.ReferenceType[ExecutionAuthorizationHandle]
+    registry: TrustedAcceptanceRegistry
+    registry_id: str
+    protected_root: Path
+    run_id: str
+    authorization_digest: str
+    receipt_digest: str
+
+
+_AUTHORITY_HANDLE_RECORDS: dict[int, _AuthorityHandleRecord] = {}
+
+
+def _register_authority_handle(
+    handle: ExecutionAuthorizationHandle,
+    *,
+    registry: TrustedAcceptanceRegistry,
+) -> ExecutionAuthorizationHandle:
+    identity = id(handle)
+
+    def _discard(_: object) -> None:
+        _AUTHORITY_HANDLE_RECORDS.pop(identity, None)
+
+    _AUTHORITY_HANDLE_RECORDS[identity] = _AuthorityHandleRecord(
+        handle_ref=weakref.ref(handle, _discard),
+        registry=registry,
+        registry_id=handle._registry_id,
+        protected_root=handle._protected_root,
+        run_id=handle._run_id,
+        authorization_digest=authorization_digest(handle._authorization),
+        receipt_digest=handle._receipt_digest,
+    )
+    return handle
+
+
 def _validate_run_id(run_id: str) -> None:
     if not run_id or any(
         character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
@@ -505,6 +612,65 @@ def _parse_authority_payload(
         raise ExecutionValidationError(
             f"protected authority {label} payload is invalid"
         ) from exc
+
+
+def _execution_criterion_ids(
+    plan: CompiledExecutionPlan,
+    execution_id: str,
+) -> tuple[str, ...]:
+    return tuple(
+        item.criterion_id
+        for item in plan.criteria.values()
+        if execution_id in item.obligation_ids
+    )
+
+
+def _validate_protected_execution_authorities(
+    authorities: ProtectedExecutionAuthorities,
+    *,
+    authorization: AuthorizationManifest,
+    plan: CompiledExecutionPlan,
+    bundle_issued_at: datetime,
+) -> None:
+    side_effects = authorities.side_effect_authority
+    if (
+        side_effects.cleanup_owner != authorization.allowed_executor
+        or side_effects.cleanup_authority != authorization.cleanup_method
+    ):
+        raise ExecutionValidationError("protected side-effect owner/authority drift")
+    for exclusion in authorities.client_exclusions:
+        criteria = _execution_criterion_ids(plan, exclusion.execution_id)
+        if (
+            exclusion.execution_id not in plan.execution_ids
+            or exclusion.criterion_ids != criteria
+            or not criteria
+            or not all(plan.criteria[item].allows_client_exclusion for item in criteria)
+            or not authorization.issued_at
+            <= exclusion.issued_at
+            < bundle_issued_at
+            < exclusion.expires_at
+            <= authorization.expires_at
+        ):
+            raise ExecutionValidationError(
+                "protected client exclusion execution/criterion/window drift"
+            )
+    for retention in side_effects.retention_authorities:
+        criteria = _execution_criterion_ids(plan, retention.execution_id)
+        if (
+            retention.execution_id not in plan.execution_ids
+            or retention.criterion_ids != criteria
+            or not criteria
+            or retention.cleanup_owner != side_effects.cleanup_owner
+            or retention.cleanup_authority != side_effects.cleanup_authority
+            or not authorization.issued_at
+            <= retention.issued_at
+            < bundle_issued_at
+            < retention.expires_at
+            <= authorization.expires_at
+        ):
+            raise ExecutionValidationError(
+                "protected retention execution/criterion/owner/window drift"
+            )
 
 
 def issue_execution_authorization_handle(
@@ -615,6 +781,14 @@ def issue_execution_authorization_handle(
             label="Task 1 bindings",
         ),
     )
+    execution_authorities = cast(
+        "ProtectedExecutionAuthorities",
+        _parse_authority_payload(
+            payloads["execution_authorities"],
+            ProtectedExecutionAuthorities,
+            label="execution authorities",
+        ),
+    )
     if (
         stores.raw_root_digest != receipt.store_root_digests["raw"]
         or stores.tracked_root_digest != receipt.store_root_digests["tracked"]
@@ -632,6 +806,12 @@ def issue_execution_authorization_handle(
         raise ExecutionValidationError(
             "protected authority receipt exceeds authorization window"
         )
+    _validate_protected_execution_authorities(
+        execution_authorities,
+        authorization=authorization_v1,
+        plan=registry.compiled_plan,
+        bundle_issued_at=receipt.issued_at,
+    )
 
     authorization = build_execution_authorization_from_v1(
         authorization_v1,
@@ -645,6 +825,7 @@ def issue_execution_authorization_handle(
         adapter_ids=adapters.values,
         collector_ids=collectors.values,
         action_specs=action_specs.specs,
+        execution_authorities=execution_authorities,
         store_ids=stores,
         current_time=now,
     )
@@ -655,13 +836,16 @@ def issue_execution_authorization_handle(
         registry_id=registry.registry_id,
         current_time=now,
     )
-    return ExecutionAuthorizationHandle(
-        authorization,
-        root,
-        run_id,
-        registry.registry_id,
-        hashlib.sha256(receipt_payload).hexdigest(),
-        _HANDLE_TOKEN,
+    return _register_authority_handle(
+        ExecutionAuthorizationHandle(
+            authorization,
+            root,
+            run_id,
+            registry.registry_id,
+            hashlib.sha256(receipt_payload).hexdigest(),
+            _HANDLE_TOKEN,
+        ),
+        registry=registry,
     )
 
 
@@ -678,6 +862,7 @@ def _write_test_authority_bundle(
     adapter_ids: AuthorityAdapterIds,
     collector_ids: AuthorityCollectorIds,
     task1_bindings: Task1AuthorityBindings,
+    execution_authorities: ProtectedExecutionAuthorities,
     receipt_issued_at: datetime,
     receipt_expires_at: datetime,
 ) -> AuthorityBundleReceipt:
@@ -703,6 +888,7 @@ def _write_test_authority_bundle(
         "adapter_ids": adapter_ids,
         "collector_ids": collector_ids,
         "task1_bindings": task1_bindings,
+        "execution_authorities": execution_authorities,
     }
     payload_digests = {
         identity: _write_exclusive(
@@ -736,15 +922,23 @@ def _authorization_from_handle(
     *,
     protected_root: Path,
     run_id: str,
-    registry_id: str | None = None,
+    registry: TrustedAcceptanceRegistry | None = None,
 ) -> ExecutionAuthorizationV2:
+    record = _AUTHORITY_HANDLE_RECORDS.get(id(authority))
     if (
         not isinstance(authority, ExecutionAuthorizationHandle)
         or authority._token is not _HANDLE_TOKEN
+        or record is None
+        or record.handle_ref() is not authority
         or authority._protected_root != protected_root
         or authority._run_id != run_id
         or authority._authorization.registry_id != authority._registry_id
-        or (registry_id is not None and authority._registry_id != registry_id)
+        or record.registry_id != authority._registry_id
+        or record.protected_root != authority._protected_root
+        or record.run_id != authority._run_id
+        or record.authorization_digest != authorization_digest(authority._authorization)
+        or record.receipt_digest != authority._receipt_digest
+        or (registry is not None and record.registry is not registry)
     ):
         raise ExecutionValidationError("registry-issued authority handle binding drift")
     root = _validated_protected_root(protected_root, create=False)
@@ -760,6 +954,7 @@ def _authorization_from_handle(
     now = datetime.now(UTC)
     if (
         hashlib.sha256(receipt_payload).hexdigest() != authority._receipt_digest
+        or receipt.registry_id != record.registry.registry_id
         or receipt.registry_id != authority._registry_id
         or receipt.run_id != run_id
         or receipt.protected_root_digest != store_root_digest(root)
@@ -786,6 +981,7 @@ def build_execution_authorization_from_v1(
     adapter_ids: tuple[str, ...],
     collector_ids: tuple[str, ...],
     action_specs: tuple[AuthorizedActionSpec, ...],
+    execution_authorities: ProtectedExecutionAuthorities,
     store_ids: StoreIdentities,
     current_time: datetime,
 ) -> ExecutionAuthorizationV2:
@@ -823,10 +1019,12 @@ def build_execution_authorization_from_v1(
             "approved adapter and collector IDs are required"
         )
     quotas = ProtectedQuotas(**authorization.quotas.model_dump(mode="json"))
-    side_effect_authority = SideEffectAuthority(
-        cleanup_owner=authorization.allowed_executor,
-        cleanup_authority=authorization.cleanup_method,
-    )
+    side_effect_authority = execution_authorities.side_effect_authority
+    client_exclusion_grants = execution_authorities.client_exclusions
+    client_exclusion_authorities = {
+        item.execution_id: _digest(item.model_dump(mode="json"))
+        for item in client_exclusion_grants
+    }
     binding = ExactLiveAuthorizationBinding(
         v1_manifest_digest=_digest(authorization.model_dump(mode="json")),
         preflight_request_digest=_digest(request.model_dump(mode="json")),
@@ -839,7 +1037,10 @@ def build_execution_authorization_from_v1(
         cleanup_retention_digest=_digest(
             {
                 "side_effect_authority": side_effect_authority.model_dump(mode="json"),
-                "client_exclusion_authorities": {},
+                "client_exclusion_authorities": client_exclusion_authorities,
+                "client_exclusion_grants": [
+                    item.model_dump(mode="json") for item in client_exclusion_grants
+                ],
             }
         ),
         execution_set_digest=_digest(
@@ -878,6 +1079,8 @@ def build_execution_authorization_from_v1(
         collector_ids=collector_ids,
         permissions=tuple(authorization.permissions),
         action_specs=action_specs,
+        client_exclusion_authorities=client_exclusion_authorities,
+        client_exclusion_grants=client_exclusion_grants,
         side_effect_authority=side_effect_authority,
         live_binding=binding,
         store_ids=store_ids,
@@ -946,11 +1149,42 @@ def validate_execution_authorization(
             "client_exclusion_authorities": (
                 authorization.client_exclusion_authorities
             ),
+            "client_exclusion_grants": [
+                item.model_dump(mode="json")
+                for item in authorization.client_exclusion_grants
+            ],
         }
     ):
         raise ExecutionValidationError(
             "authorization cleanup/retention authority binding drift"
         )
+    for exclusion in authorization.client_exclusion_grants:
+        criteria = _execution_criterion_ids(plan, exclusion.execution_id)
+        if (
+            exclusion.criterion_ids != criteria
+            or not criteria
+            or not all(plan.criteria[item].allows_client_exclusion for item in criteria)
+            or not authorization.issued_at
+            <= exclusion.issued_at
+            < exclusion.expires_at
+            <= authorization.expires_at
+        ):
+            raise ExecutionValidationError(
+                "authorization client exclusion authority drift"
+            )
+    side_effects = authorization.side_effect_authority
+    for retention in side_effects.retention_authorities:
+        if (
+            retention.criterion_ids
+            != _execution_criterion_ids(plan, retention.execution_id)
+            or retention.cleanup_owner != side_effects.cleanup_owner
+            or retention.cleanup_authority != side_effects.cleanup_authority
+            or not authorization.issued_at
+            <= retention.issued_at
+            < retention.expires_at
+            <= authorization.expires_at
+        ):
+            raise ExecutionValidationError("authorization retention authority drift")
     if authorization.live_binding.execution_set_digest != _digest(
         {
             "execution_ids": authorization.execution_ids,
@@ -1029,6 +1263,35 @@ class ActionReservation(_StrictModel):
             raise ValueError("reservation permit window is invalid")
         if any(value <= 0 for value in self.capability_units.values()):
             raise ValueError("reservation capability units must be positive")
+        return self
+
+
+class ActionCostSettlement(_StrictModel):
+    schema_version: Literal["noor-e2e-action-cost-settlement/v2"]
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    action_id: str = Field(min_length=1)
+    reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reserved_cost_usd: float = Field(ge=0)
+    actual_cost_usd: float = Field(ge=0)
+    cost_settlement: Literal["exact", "bounded_actual"]
+    settled_at: datetime
+    settlement_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _bounded_actual_cost(self) -> ActionCostSettlement:
+        if (
+            not math.isfinite(self.reserved_cost_usd)
+            or not math.isfinite(self.actual_cost_usd)
+            or self.actual_cost_usd > self.reserved_cost_usd
+            or (
+                self.cost_settlement == "exact"
+                and self.actual_cost_usd != self.reserved_cost_usd
+            )
+            or self.settled_at.tzinfo is None
+            or self.settled_at.utcoffset() is None
+        ):
+            raise ValueError("action cost settlement exceeds authorized maximum")
         return self
 
 
@@ -1343,7 +1606,7 @@ class GenericAcceptanceRunner:
             authority,
             protected_root=journal.protected_root,
             run_id=journal.run_id,
-            registry_id=registry.registry_id,
+            registry=registry,
         )
         validate_execution_authorization(
             authorization,
@@ -1575,6 +1838,11 @@ class GenericAcceptanceRunner:
                     "blocked gate lacks independent evidence"
                 )
         else:
+            matching_grants = [
+                item
+                for item in self.authorization.client_exclusion_grants
+                if item.execution_id == attempt.execution_id
+            ]
             expected_client_authority = (
                 self.authorization.client_exclusion_authorities.get(
                     attempt.execution_id
@@ -1583,8 +1851,16 @@ class GenericAcceptanceRunner:
             if (
                 receipt.producer != "client-exclusion-authority"
                 or not all(item.allows_client_exclusion for item in criterion_models)
+                or len(matching_grants) != 1
                 or expected_client_authority is None
                 or receipt.client_authority_digest != expected_client_authority
+                or receipt.client_authority_digest
+                != _digest(matching_grants[0].model_dump(mode="json"))
+                or receipt.criterion_ids != matching_grants[0].criterion_ids
+                or not matching_grants[0].issued_at
+                <= receipt.issued_at
+                < receipt.expires_at
+                <= matching_grants[0].expires_at
                 or receipt.issued_at >= attempt.run_started_at
                 or receipt.issued_at < self.authorization.issued_at
             ):
@@ -2016,6 +2292,9 @@ class ProtectedExecutionJournal:
         self._authorization_scenarios = 0
         self._authorization_action_ids: set[str] = set()
         self._authorization_idempotency_keys: set[str] = set()
+        self._authorization_reservation_digests: dict[str, str] = {}
+        self._authorization_reservation_runs: dict[str, str] = {}
+        self._authorization_cost_settlements: dict[str, ActionCostSettlement] = {}
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head: str | None = None
         self._final_turn_occurred_at: datetime | None = None
@@ -2131,6 +2410,15 @@ class ProtectedExecutionJournal:
             self._actions[receipt.action_id] = receipt.resolved_state
         elif kind == "permit_consumed":
             self._actions[str(data["action_id"])] = "unknown"
+        elif kind == "action_cost_settled":
+            settlement = ActionCostSettlement.model_validate(data["settlement"])
+            if (
+                self._authorization_cost_settlements.get(settlement.action_id)
+                != settlement
+            ):
+                raise ExecutionValidationError(
+                    "journal cost settlement differs from authorization ledger"
+                )
         elif kind == "attempt_intent":
             self._attempted_executions.append(str(data["execution_id"]))
         elif kind == "execution_started":
@@ -2243,6 +2531,9 @@ class ProtectedExecutionJournal:
         self._authorization_scenarios = 0
         self._authorization_action_ids = set()
         self._authorization_idempotency_keys = set()
+        self._authorization_reservation_digests = {}
+        self._authorization_reservation_runs = {}
+        self._authorization_cost_settlements = {}
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head = None
         try:
@@ -2292,7 +2583,27 @@ class ProtectedExecutionJournal:
                     )
                 self._authorization_action_ids.add(reservation.action_id)
                 self._authorization_idempotency_keys.add(reservation.idempotency_key)
+                self._authorization_reservation_digests[reservation.action_id] = (
+                    reservation.reservation_digest
+                )
+                self._authorization_reservation_runs[reservation.action_id] = (
+                    reservation.run_id
+                )
                 self._consume(reservation)
+            elif event.get("kind") == "action_cost_settled":
+                settlement = ActionCostSettlement.model_validate(event["settlement"])
+                if (
+                    settlement.authorization_digest != self.authorization_digest
+                    or self._authorization_reservation_runs.get(settlement.action_id)
+                    != settlement.run_id
+                    or self._authorization_reservation_digests.get(settlement.action_id)
+                    != settlement.reservation_digest
+                    or settlement.action_id in self._authorization_cost_settlements
+                ):
+                    raise ExecutionValidationError(
+                        "authorization action cost settlement drift"
+                    )
+                self._authorization_cost_settlements[settlement.action_id] = settlement
             elif event.get("kind") == "scenario_reserved":
                 self._authorization_scenarios += 1
             else:
@@ -2306,7 +2617,11 @@ class ProtectedExecutionJournal:
     def _append_authorization_ledger(
         self,
         *,
-        kind: Literal["action_reserved", "scenario_reserved"],
+        kind: Literal[
+            "action_reserved",
+            "action_cost_settled",
+            "scenario_reserved",
+        ],
         data: dict[str, Any],
     ) -> None:
         event = {
@@ -2378,23 +2693,27 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError(
                 "action reservation authorization is expired"
             )
-        requested_spec = AuthorizedActionSpec(
-            action_id=action_id,
-            execution_id=execution_id,
-            step_id=step_id,
-            capability=capability,
-            operation_permission=operation_permission,
-            adapter_id=adapter_id,
-            subsystem=subsystem,
-            destination_digest=destination_digest,
-            payload_digest=payload_digest,
-            idempotency_key=idempotency_key,
-            capability_units=capability_units,
-        )
-        if requested_spec not in self.authorization.action_specs:
+        requested_identity = {
+            "action_id": action_id,
+            "execution_id": execution_id,
+            "step_id": step_id,
+            "capability": capability,
+            "operation_permission": operation_permission,
+            "adapter_id": adapter_id,
+            "subsystem": subsystem,
+            "destination_digest": destination_digest,
+            "payload_digest": payload_digest,
+            "idempotency_key": idempotency_key,
+            "capability_units": capability_units,
+        }
+        matching_specs = [
+            spec
+            for spec in self.authorization.action_specs
+            if spec.model_dump(mode="json", exclude={"quota_charge"})
+            == requested_identity
+        ]
+        if len(matching_specs) != 1:
             raise ExecutionValidationError("protected authorized action spec mismatch")
-        if action_id in self._actions:
-            raise ExecutionValidationError("action identity is already reserved")
         if (
             messages < 0
             or model_calls < 0
@@ -2404,6 +2723,17 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError(
                 "reservation quota values must be non-negative and finite"
             )
+        charge = matching_specs[0].quota_charge
+        if (
+            messages != charge.messages
+            or model_calls != charge.model_calls
+            or cost_usd != charge.max_cost_usd
+        ):
+            raise ExecutionValidationError(
+                "protected action quota charge undercharge or drift"
+            )
+        if action_id in self._actions:
+            raise ExecutionValidationError("action identity is already reserved")
         self._reload_authorization_ledger()
         if (
             action_id in self._authorization_action_ids
@@ -2483,6 +2813,10 @@ class ProtectedExecutionJournal:
         self._consume(reservation)
         self._authorization_action_ids.add(action_id)
         self._authorization_idempotency_keys.add(idempotency_key)
+        self._authorization_reservation_digests[action_id] = (
+            reservation.reservation_digest
+        )
+        self._authorization_reservation_runs[action_id] = reservation.run_id
         return reservation
 
     def consume_permit(
@@ -2569,6 +2903,73 @@ class ProtectedExecutionJournal:
             },
         )
         self._actions[reservation.action_id] = state
+
+    def settle_action_cost(
+        self,
+        reservation: ActionReservation,
+        *,
+        actual_cost_usd: float,
+    ) -> ActionCostSettlement:
+        """Record bounded actual cost without releasing consumed quota."""
+
+        if self._actions.get(reservation.action_id) not in {
+            "succeeded",
+            "failed",
+        }:
+            raise ExecutionValidationError(
+                "action cost settlement requires independent terminal reconciliation"
+            )
+        if self._reservations.get(reservation.action_id) != reservation:
+            raise ExecutionValidationError("action cost settlement reservation drift")
+        if reservation.action_id in self._authorization_cost_settlements:
+            raise ExecutionValidationError("action cost is already settled")
+        spec = next(
+            (
+                item
+                for item in self.authorization.action_specs
+                if item.action_id == reservation.action_id
+            ),
+            None,
+        )
+        if (
+            spec is None
+            or reservation.messages != spec.quota_charge.messages
+            or reservation.model_calls != spec.quota_charge.model_calls
+            or reservation.cost_usd != spec.quota_charge.max_cost_usd
+        ):
+            raise ExecutionValidationError("action cost settlement authority drift")
+        settled_at = datetime.now(UTC)
+        identity = {
+            "schema_version": "noor-e2e-action-cost-settlement/v2",
+            "authorization_digest": self.authorization_digest,
+            "run_id": self.run_id,
+            "action_id": reservation.action_id,
+            "reservation_digest": reservation.reservation_digest,
+            "reserved_cost_usd": reservation.cost_usd,
+            "actual_cost_usd": actual_cost_usd,
+            "cost_settlement": spec.quota_charge.cost_settlement,
+            "settled_at": settled_at.isoformat(),
+        }
+        try:
+            settlement = ActionCostSettlement(
+                **identity,
+                settlement_digest=_digest(identity),
+            )
+        except ValueError as exc:
+            raise ExecutionValidationError(
+                "action cost settlement exceeds authorized maximum"
+            ) from exc
+        self._append_authorization_ledger(
+            kind="action_cost_settled",
+            data={"settlement": settlement.model_dump(mode="json")},
+        )
+        self._authorization_cost_settlements[reservation.action_id] = settlement
+        self._append_event(
+            phase="executing",
+            kind="action_cost_settled",
+            data={"settlement": settlement.model_dump(mode="json")},
+        )
+        return settlement
 
     def reconcile_unknown_action(
         self,

@@ -6,10 +6,12 @@ import hashlib
 import importlib
 import json
 import pickle
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from scripts.e2e_acceptance.evidence import validate_side_effect_closeout
 from scripts.e2e_acceptance.manifest import load_authorization_manifest
 from scripts.e2e_acceptance.schemas import PreflightReadbackIdentity
 
@@ -95,16 +97,19 @@ def _authorization(registry, *, trusted: bool = True, **updates):
                 action_id="synthetic-action",
                 adapter_id="fake-local-adapter",
                 subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
                 **_action_request(),
             ),
             execution.AuthorizedActionSpec(
                 action_id="negative",
                 adapter_id="fake-local-adapter",
                 subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
                 **_action_request(),
             ),
         ),
         "side_effect_authority": execution.SideEffectAuthority(
+            issuer="protected-side-effect-authority",
             cleanup_owner="acceptance-owner",
             cleanup_authority="application-path-only",
         ),
@@ -138,6 +143,7 @@ def _authorization(registry, *, trusted: bool = True, **updates):
                     mode="json"
                 ),
                 "client_exclusion_authorities": {},
+                "client_exclusion_grants": [],
             }
         ),
         execution_set_digest=execution._digest(
@@ -204,6 +210,15 @@ def _action_request(*, execution_id: str = "SC-OPEN-EN") -> dict[str, object]:
     }
 
 
+def _action_quota_charge(execution):
+    return execution.AuthorizedQuotaCharge(
+        messages=1,
+        model_calls=1,
+        max_cost_usd=0.25,
+        cost_settlement="bounded_actual",
+    )
+
+
 def _authority_bundle_inputs(
     registry,
     *,
@@ -212,6 +227,7 @@ def _authority_bundle_inputs(
     now: datetime | None = None,
     quotas=None,
     execution_input_digests: dict[str, str] | None = None,
+    protected_authorities=None,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -306,12 +322,14 @@ def _authority_bundle_inputs(
                 action_id="synthetic-action",
                 adapter_id="fake-local-adapter",
                 subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
                 **_action_request(),
             ),
             execution.AuthorizedActionSpec(
                 action_id="negative",
                 adapter_id="fake-local-adapter",
                 subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
                 **_action_request(),
             ),
         ),
@@ -327,6 +345,19 @@ def _authority_bundle_inputs(
         anchor_root_digest=execution.store_root_digest(
             (protected_root / "anchors").resolve()
         ),
+    )
+    execution_authorities = (
+        protected_authorities
+        if protected_authorities is not None
+        else execution.ProtectedExecutionAuthorities(
+            schema_version="noor-e2e-protected-execution-authorities/v2",
+            client_exclusions=(),
+            side_effect_authority=execution.SideEffectAuthority(
+                issuer="protected-side-effect-authority",
+                cleanup_owner=authorization.allowed_executor,
+                cleanup_authority=authorization.cleanup_method,
+            ),
+        )
     )
     return {
         "registry": registry,
@@ -350,6 +381,7 @@ def _authority_bundle_inputs(
             authorization_digest=registry.task1_authorization_digest,
             input_digests=registry.task1_input_digests,
         ),
+        "execution_authorities": execution_authorities,
         "receipt_issued_at": current_time - timedelta(seconds=1),
         "receipt_expires_at": current_time + timedelta(minutes=5),
     }
@@ -363,6 +395,7 @@ def _issued_authority(
     now: datetime | None = None,
     quotas=None,
     execution_input_digests: dict[str, str] | None = None,
+    protected_authorities=None,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -373,6 +406,7 @@ def _issued_authority(
         now=current_time,
         quotas=quotas,
         execution_input_digests=execution_input_digests,
+        protected_authorities=protected_authorities,
     )
     execution._write_test_authority_bundle(**inputs)
     return execution.issue_execution_authorization_handle(
@@ -622,8 +656,8 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         subsystem="outbound_text",
         **_action_request(),
         messages=1,
-        model_calls=0,
-        cost_usd=0,
+        model_calls=1,
+        cost_usd=0.25,
     )
     adapter = execution.FakeLocalAdapter(
         adapter_id="fake-local-adapter",
@@ -684,8 +718,8 @@ def test_unknown_dispatch_requires_protected_independent_reconciliation(
         subsystem="outbound_text",
         **_action_request(),
         messages=1,
-        model_calls=0,
-        cost_usd=0,
+        model_calls=1,
+        cost_usd=0.25,
     )
     execution.FakeLocalAdapter(
         adapter_id="fake-local-adapter", journal=journal
@@ -720,6 +754,22 @@ def test_unknown_dispatch_requires_protected_independent_reconciliation(
         action_id=reservation.action_id,
         receipt_digest=receipt_digest,
     )
+    with pytest.raises(Exception, match="cost settlement|authorized maximum"):
+        journal.settle_action_cost(reservation, actual_cost_usd=0.26)
+    settlement = journal.settle_action_cost(
+        reservation,
+        actual_cost_usd=0.10,
+    )
+    assert settlement.actual_cost_usd == 0.10
+    assert journal.quota_usage.cost_usd == 0.25
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=tmp_path / "protected",
+        run_id="reconciliation-run",
+        authority=authority,
+    )
+    assert reopened.quota_usage.cost_usd == 0.25
+    with pytest.raises(Exception, match="already settled"):
+        reopened.settle_action_cost(reservation, actual_cost_usd=0.10)
     journal.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
 
 
@@ -943,6 +993,61 @@ def test_negative_quota_inputs_and_max_scenarios_are_enforced(
             execution_id=registry.compiled_plan.execution_ids[1],
             attempt_number=1,
             intent_digest="b" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    ("messages", "model_calls", "cost_usd"),
+    (
+        (0, 1, 0.25),
+        (1, 0, 0.25),
+        (1, 1, 0),
+    ),
+    ids=("zero-message", "zero-model-call", "zero-cost-reservation"),
+)
+def test_protected_action_spec_rejects_quota_undercharge(
+    tmp_path: Path,
+    messages: int,
+    model_calls: int,
+    cost_usd: float,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    run_id = f"undercharge-{messages}-{model_calls}-{cost_usd}"
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+        authority=authority,
+    )
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id=f"{run_id}-baseline",
+            run_id=run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=(journal.authorization.readback_collector_digest),
+            causal_event_digest="4" * 64,
+            observed_at=datetime.now(UTC) - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+
+    with pytest.raises(Exception, match="quota charge|undercharge"):
+        journal.reserve_action(
+            action_id="synthetic-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **_action_request(),
+            messages=messages,
+            model_calls=model_calls,
+            cost_usd=cost_usd,
         )
 
 
@@ -1710,6 +1815,40 @@ def test_authority_handle_rejects_other_run_root_and_registry(
         )
 
 
+def test_dataclass_replace_cannot_substitute_extra_authorized_action(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    handle = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id="replace-handle-run",
+    )
+    extra_action = handle._authorization.action_specs[0].model_copy(
+        update={"action_id": "forged-extra-action"}
+    )
+    substituted = replace(
+        handle,
+        _authorization=handle._authorization.model_copy(
+            update={
+                "action_specs": (
+                    *handle._authorization.action_specs,
+                    extra_action,
+                )
+            }
+        ),
+    )
+
+    with pytest.raises(Exception, match="authority handle|authorization.*drift"):
+        execution.ProtectedExecutionJournal.create(
+            protected_root=root,
+            run_id="replace-handle-run",
+            authority=substituted,
+        )
+
+
 def test_reparsed_v2_cannot_substitute_for_authority_handle(tmp_path: Path) -> None:
     _, execution = _modules()
     registry = _registry()
@@ -2030,6 +2169,279 @@ def test_future_blocked_gate_and_unbound_client_exclusion_fail_closed(
 
         with pytest.raises(Exception, match="receipt drift|client exclusion"):
             runner.validate_gate_attempt(attempt, current_time=now)
+
+
+def test_protected_client_exclusion_authority_issues_valid_gate(
+    tmp_path: Path,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = "protected-client-exclusion"
+    execution_id = "EB-REFERRAL"
+    now = datetime.now(UTC)
+    criterion_ids = tuple(
+        item.criterion_id
+        for item in registry.compiled_plan.criteria.values()
+        if execution_id in item.obligation_ids
+    )
+    exclusion = execution.ClientExclusionAuthority(
+        authority_id="client-exclusion-001",
+        issuer="client-exclusion-authority",
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        issued_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=30),
+    )
+    protected_authorities = execution.ProtectedExecutionAuthorities(
+        schema_version="noor-e2e-protected-execution-authorities/v2",
+        client_exclusions=(exclusion,),
+        side_effect_authority=execution.SideEffectAuthority(
+            issuer="protected-side-effect-authority",
+            cleanup_owner="synthetic-local-executor",
+            cleanup_authority="synthetic-cleanup",
+        ),
+    )
+    authority = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+        now=now,
+        protected_authorities=protected_authorities,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id=run_id,
+        authority=authority,
+    )
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="protected-exclusion-baseline",
+            run_id=run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=(journal.authorization.readback_collector_digest),
+            causal_event_digest="1" * 64,
+            observed_at=now - timedelta(seconds=2),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    client_authority_digest = execution._digest(exclusion.model_dump(mode="json"))
+    receipt_digest = execution._write_test_gate_evidence_bundle(
+        registry=registry,
+        journal=journal,
+        execution_id=execution_id,
+        outcome="EXCLUDED_BY_CLIENT",
+        producer="client-exclusion-authority",
+        observed_at=now - timedelta(seconds=1),
+        expires_at=now + timedelta(minutes=1),
+        client_authority_digest=client_authority_digest,
+    )
+    attempt = execution.GateAttemptV2(
+        schema_version="noor-e2e-gate-attempt/v2",
+        execution_id=execution_id,
+        outcome="EXCLUDED_BY_CLIENT",
+        run_started_at=journal._execution_started_at,
+        execution_started_event_digest=journal._execution_started_event_digest,
+        receipt_digest=receipt_digest,
+    )
+    runner = execution.GenericAcceptanceRunner(
+        registry=registry,
+        authority=authority,
+        journal=journal,
+    )
+
+    assert runner.validate_gate_attempt(attempt, current_time=now) == attempt
+
+
+def test_protected_retention_authority_issues_valid_retained_evidence(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = "protected-retention"
+    execution_id = "SC-OPEN-EN"
+    now = datetime.now(UTC)
+    criterion_ids = tuple(
+        item.criterion_id
+        for item in registry.compiled_plan.criteria.values()
+        if execution_id in item.obligation_ids
+    )
+    retention = execution.AuthorizedRetentionSpec(
+        authority_id="retention-001",
+        issuer="client-retention-authority",
+        artifact_id="synthetic:item",
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        cleanup_owner="synthetic-local-executor",
+        cleanup_authority="synthetic-cleanup",
+        retention_owner="client-owner",
+        issued_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=30),
+    )
+    protected_authorities = execution.ProtectedExecutionAuthorities(
+        schema_version="noor-e2e-protected-execution-authorities/v2",
+        client_exclusions=(),
+        side_effect_authority=execution.SideEffectAuthority(
+            issuer="protected-side-effect-authority",
+            cleanup_owner="synthetic-local-executor",
+            cleanup_authority="synthetic-cleanup",
+            retention_authorities=(retention,),
+        ),
+    )
+    authority = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+        now=now,
+        protected_authorities=protected_authorities,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id=run_id,
+        authority=authority,
+    )
+    issued = journal.authorization.side_effect_authority.retention_authorities[0]
+    issued_payload = issued.model_dump(mode="json")
+    authority_digest = execution._digest(issued_payload)
+    entry = {
+        "artifact_id": issued.artifact_id,
+        "scenario_id": issued.execution_id,
+        "subsystem": "conversation",
+        "artifact_type": "conversation",
+        "creation_path": "application-authorized",
+        "cleanup_owner": issued.cleanup_owner,
+        "cleanup_authority": issued.cleanup_authority,
+        "baseline_readback": {"state": "absent"},
+        "expected_effect": {"state": "created_for_test"},
+        "follow_up_suppressed": True,
+        "final_readback": {"state": "retained"},
+        "disposition": "retained_as_test_evidence",
+        "retention_pre_authorized": True,
+        "retention_owner": issued.retention_owner,
+        "retention_authority_digest": authority_digest,
+        "retention_expires_at": issued.expires_at.isoformat(),
+        "final_disposition_date": now.isoformat(),
+    }
+
+    validate_side_effect_closeout(
+        [entry],
+        observed_inventory={issued.artifact_id: {"state": "retained"}},
+        authorized_cleanup_owner=issued.cleanup_owner,
+        authorized_cleanup_authority=issued.cleanup_authority,
+        authorized_retentions={
+            issued.artifact_id: {
+                **issued_payload,
+                "authority_digest": authority_digest,
+            }
+        },
+        current_time=now,
+    )
+
+
+@pytest.mark.parametrize(
+    "variant",
+    (
+        "exclusion-criterion",
+        "exclusion-window",
+        "retention-owner",
+        "retention-expiry",
+    ),
+)
+def test_protected_execution_authority_semantic_drift_fails_closed(
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = f"authority-drift-{variant}"
+    now = datetime.now(UTC)
+    exclusion_execution = "EB-REFERRAL"
+    retention_execution = "SC-OPEN-EN"
+    exclusion_criteria = tuple(
+        item.criterion_id
+        for item in registry.compiled_plan.criteria.values()
+        if exclusion_execution in item.obligation_ids
+    )
+    retention_criteria = tuple(
+        item.criterion_id
+        for item in registry.compiled_plan.criteria.values()
+        if retention_execution in item.obligation_ids
+    )
+    protected_authorities = execution.ProtectedExecutionAuthorities(
+        schema_version="noor-e2e-protected-execution-authorities/v2",
+        client_exclusions=(
+            execution.ClientExclusionAuthority(
+                authority_id="client-exclusion-drift",
+                issuer="client-exclusion-authority",
+                execution_id=exclusion_execution,
+                criterion_ids=exclusion_criteria,
+                issued_at=now - timedelta(minutes=1),
+                expires_at=now + timedelta(minutes=30),
+            ),
+        ),
+        side_effect_authority=execution.SideEffectAuthority(
+            issuer="protected-side-effect-authority",
+            cleanup_owner="synthetic-local-executor",
+            cleanup_authority="synthetic-cleanup",
+            retention_authorities=(
+                execution.AuthorizedRetentionSpec(
+                    authority_id="retention-drift",
+                    issuer="client-retention-authority",
+                    artifact_id="synthetic:item",
+                    execution_id=retention_execution,
+                    criterion_ids=retention_criteria,
+                    cleanup_owner="synthetic-local-executor",
+                    cleanup_authority="synthetic-cleanup",
+                    retention_owner="client-owner",
+                    issued_at=now - timedelta(minutes=1),
+                    expires_at=now + timedelta(minutes=30),
+                ),
+            ),
+        ),
+    )
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+        now=now,
+        protected_authorities=protected_authorities,
+    )
+    execution._write_test_authority_bundle(**inputs)
+    bundle_root = root / "authority-bundles" / run_id
+    authorities_path = bundle_root / "execution-authorities.json"
+    payload = json.loads(authorities_path.read_text(encoding="utf-8"))
+    if variant == "exclusion-criterion":
+        payload["client_exclusions"][0]["criterion_ids"] = ["AC-01"]
+    elif variant == "exclusion-window":
+        payload["client_exclusions"][0]["issued_at"] = now.isoformat()
+    elif variant == "retention-owner":
+        payload["side_effect_authority"]["retention_authorities"][0][
+            "cleanup_owner"
+        ] = "forged-owner"
+    else:
+        payload["side_effect_authority"]["retention_authorities"][0]["expires_at"] = (
+            now + timedelta(hours=2)
+        ).isoformat()
+    authorities_path.write_bytes(execution._canonical_bytes(payload))
+    receipt_path = bundle_root / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["payload_digests"]["execution_authorities"] = hashlib.sha256(
+        authorities_path.read_bytes()
+    ).hexdigest()
+    receipt_path.write_bytes(execution._canonical_bytes(receipt))
+
+    with pytest.raises(Exception, match="protected.*drift|authority.*drift"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id=run_id,
+            current_time=now,
+        )
 
 
 def test_reservation_rejects_request_not_present_in_protected_action_spec(
