@@ -473,6 +473,10 @@ def seal_run_plan(
             "evaluator": plan.evaluator,
         },
     )
+    if journal._sealed_run_plan_digest is not None:
+        if journal._sealed_run_plan_digest != digest:
+            raise ProductionAdapterError("run plan seal replay differs from committed")
+        return digest
     journal._append_event(
         phase="prepared",
         kind="run_plan_sealed",
@@ -482,6 +486,7 @@ def seal_run_plan(
             "sealed_plan_digest": digest,
         },
     )
+    journal._sealed_run_plan_digest = digest
     return digest
 
 

@@ -83,7 +83,7 @@ def _authority_and_journal(
         current_time=datetime.now(UTC),
     )
     if create:
-        journal = execution.ProtectedExecutionJournal.create(
+        journal = execution.ProtectedExecutionJournal.create_or_open(
             protected_root=protected_root.resolve(strict=True),
             run_id=run_id,
             authority=authority,
@@ -116,6 +116,15 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         registry, args.protected_root, args.run_id, create=False
     )
     if args.command == "preflight":
+        if args.baseline != "collector-artifacts/baseline-readback.json":
+            raise ProductionAdapterError("baseline must select the producer artifact")
+        if journal.phase == "baseline_sealed":
+            if journal._baseline_content_digest is None:
+                raise ProductionAdapterError("baseline seal is missing its digest")
+            return {
+                "phase": journal.phase,
+                "baseline_digest": journal._baseline_content_digest,
+            }
         observation = load_protected_baseline(
             journal,
             artifact_path=args.baseline,
@@ -132,7 +141,7 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             journal.begin_execution()
         if journal.phase != "executing":
             raise ProductionAdapterError("resume requires an executing journal")
-        if any(state in {"reserved", "unknown"} for state in journal._actions.values()):
+        if any(state == "unknown" for state in journal._actions.values()):
             raise ProductionAdapterError("resume is blocked by nonterminal actions")
         transports = {
             str(item["spec"]["capability"]): FakeHttpTransport(
@@ -143,26 +152,35 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         dispatcher = CapabilityDispatcher(transports)
         for item in plan.actions:
             spec = dict(item["spec"])
-            action_id = str(spec["action_id"])
+            charge = dict(spec.pop("quota_charge"))
+            action_id = str(spec.pop("action_id"))
+            adapter_id = str(spec.pop("adapter_id"))
+            subsystem = str(spec.pop("subsystem"))
             if action_id in journal._actions:
                 if (
-                    journal._actions[action_id] not in {"succeeded", "failed"}
-                    or action_id not in journal._journal_cost_settlements
+                    journal._actions[action_id] == "reserved"
+                    and action_id in journal._reservations
                 ):
-                    raise ProductionAdapterError(
-                        "sealed action is not terminally settled"
-                    )
-                continue
-            charge = dict(spec.pop("quota_charge"))
-            reservation = journal.reserve_action(
-                action_id=str(spec.pop("action_id")),
-                adapter_id=str(spec.pop("adapter_id")),
-                subsystem=str(spec.pop("subsystem")),
-                messages=int(charge["messages"]),
-                model_calls=int(charge["model_calls"]),
-                cost_usd=float(charge["max_cost_usd"]),
-                **spec,
-            )
+                    reservation = journal._reservations[action_id]
+                else:
+                    if (
+                        journal._actions[action_id] not in {"succeeded", "failed"}
+                        or action_id not in journal._journal_cost_settlements
+                    ):
+                        raise ProductionAdapterError(
+                            "sealed action is not terminally settled"
+                        )
+                    continue
+            else:
+                reservation = journal.reserve_action(
+                    action_id=action_id,
+                    adapter_id=adapter_id,
+                    subsystem=subsystem,
+                    messages=int(charge["messages"]),
+                    model_calls=int(charge["model_calls"]),
+                    cost_usd=float(charge["max_cost_usd"]),
+                    **spec,
+                )
             dispatch_local_action(
                 journal=journal,
                 dispatcher=dispatcher,

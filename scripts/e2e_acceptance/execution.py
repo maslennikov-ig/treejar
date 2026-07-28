@@ -2310,6 +2310,7 @@ class ProtectedExecutionJournal:
         self._authorization_scenarios = 0
         self._authorization_action_ids: set[str] = set()
         self._authorization_idempotency_keys: set[str] = set()
+        self._authorization_reservations: dict[str, ActionReservation] = {}
         self._authorization_reservation_digests: dict[str, str] = {}
         self._authorization_reservation_runs: dict[str, str] = {}
         self._authorization_cost_settlements: dict[str, ActionCostSettlement] = {}
@@ -2327,6 +2328,8 @@ class ProtectedExecutionJournal:
         self._final_turn_occurred_at: datetime | None = None
         self._execution_started_at: datetime | None = None
         self._execution_started_event_digest: str | None = None
+        self._baseline_content_digest: str | None = None
+        self._sealed_run_plan_digest: str | None = None
 
     @classmethod
     def create(
@@ -2361,6 +2364,40 @@ class ProtectedExecutionJournal:
             },
         )
         return journal
+
+    @classmethod
+    def create_or_open(
+        cls,
+        *,
+        protected_root: Path,
+        run_id: str,
+        authority: ExecutionAuthorizationHandle,
+    ) -> ProtectedExecutionJournal:
+        """Open a bound run when present; create it only when its journal is absent."""
+
+        try:
+            return cls.open(
+                protected_root=protected_root,
+                run_id=run_id,
+                authority=authority,
+            )
+        except ExecutionValidationError as exc:
+            if not isinstance(exc.__cause__, FileNotFoundError):
+                raise
+        try:
+            return cls.create(
+                protected_root=protected_root,
+                run_id=run_id,
+                authority=authority,
+            )
+        except ExecutionValidationError as exc:
+            if not isinstance(exc.__cause__, FileExistsError):
+                raise
+        return cls.open(
+            protected_root=protected_root,
+            run_id=run_id,
+            authority=authority,
+        )
 
     @classmethod
     def open(
@@ -2420,6 +2457,7 @@ class ProtectedExecutionJournal:
         if not names:
             raise ExecutionValidationError("protected journal is empty")
         journal.previous_event_digest = previous_digest
+        journal._recover_action_reservations()
         journal._recover_cost_settlement_commits()
         return journal
 
@@ -2445,6 +2483,29 @@ class ProtectedExecutionJournal:
             reservation = ActionReservation.model_validate(data["reservation"])
             self._reservations[reservation.action_id] = reservation
             self._actions[reservation.action_id] = "reserved"
+        elif kind == "baseline_sealed":
+            content_digest = str(data.get("content_digest", ""))
+            if (
+                self._baseline_content_digest is not None
+                or len(content_digest) != 64
+                or any(
+                    character not in "0123456789abcdef" for character in content_digest
+                )
+            ):
+                raise ExecutionValidationError("baseline seal replay drift")
+            self._baseline_content_digest = content_digest
+        elif kind == "run_plan_sealed":
+            sealed_plan_digest = str(data.get("sealed_plan_digest", ""))
+            if (
+                self._sealed_run_plan_digest is not None
+                or len(sealed_plan_digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in sealed_plan_digest
+                )
+            ):
+                raise ExecutionValidationError("run plan seal replay drift")
+            self._sealed_run_plan_digest = sealed_plan_digest
         elif kind == "action_completed":
             self._actions[str(data["action_id"])] = str(data["state"])  # type: ignore[assignment]
         elif kind == "unknown_action_reconciled":
@@ -2635,6 +2696,12 @@ class ProtectedExecutionJournal:
         self._assert_cost_settlement_consistency()
 
     def seal_baseline(self, observation: ReadbackObservation) -> None:
+        if self.phase == "baseline_sealed":
+            if self._baseline_content_digest == observation.content_digest:
+                return
+            raise ExecutionValidationError(
+                "baseline seal replay differs from committed"
+            )
         if observation.phase != "baseline":
             raise ExecutionValidationError("baseline observation phase drift")
         if (
@@ -2655,6 +2722,7 @@ class ProtectedExecutionJournal:
                 "content_digest": observation.content_digest,
             },
         )
+        self._baseline_content_digest = observation.content_digest
 
     def begin_execution(self) -> None:
         started_at = datetime.now(UTC)
@@ -2690,6 +2758,7 @@ class ProtectedExecutionJournal:
         self._authorization_scenarios = 0
         self._authorization_action_ids = set()
         self._authorization_idempotency_keys = set()
+        self._authorization_reservations = {}
         self._authorization_reservation_digests = {}
         self._authorization_reservation_runs = {}
         self._authorization_cost_settlements = {}
@@ -2743,6 +2812,7 @@ class ProtectedExecutionJournal:
                     )
                 self._authorization_action_ids.add(reservation.action_id)
                 self._authorization_idempotency_keys.add(reservation.idempotency_key)
+                self._authorization_reservations[reservation.action_id] = reservation
                 self._authorization_reservation_digests[reservation.action_id] = (
                     reservation.reservation_digest
                 )
@@ -2803,6 +2873,33 @@ class ProtectedExecutionJournal:
         )
         self._authorization_ledger_cursor += 1
         self._authorization_ledger_head = digest
+
+    def _recover_action_reservations(self) -> None:
+        """Repair a journal tail lost after the durable quota ledger reservation."""
+
+        for action_id, reservation in self._authorization_reservations.items():
+            if reservation.run_id != self.run_id:
+                continue
+            existing = self._reservations.get(action_id)
+            if existing is not None:
+                if existing != reservation:
+                    raise ExecutionValidationError("journal/ledger reservation drift")
+                continue
+            if action_id in self._actions:
+                raise ExecutionValidationError(
+                    "journal action state lacks its durable reservation"
+                )
+            if self.phase != "executing":
+                raise ExecutionValidationError(
+                    "orphaned action reservation is outside executing phase"
+                )
+            self._append_event(
+                phase="executing",
+                kind="action_reserved",
+                data={"reservation": reservation.model_dump(mode="json")},
+            )
+            self._reservations[action_id] = reservation
+            self._actions[action_id] = "reserved"
 
     def reserve_action(
         self,
@@ -2896,8 +2993,32 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError(
                 "protected action quota charge undercharge or drift"
             )
+        existing = self._reservations.get(action_id)
         if action_id in self._actions:
-            raise ExecutionValidationError("action identity is already reserved")
+            if existing is None:
+                raise ExecutionValidationError("action reservation state drift")
+            matches_existing = (
+                existing.adapter_id == adapter_id
+                and existing.subsystem == subsystem
+                and existing.execution_id == execution_id
+                and existing.step_id == step_id
+                and existing.capability == capability
+                and existing.operation_permission == operation_permission
+                and existing.destination_digest == destination_digest
+                and existing.payload_digest == payload_digest
+                and existing.idempotency_key == idempotency_key
+                and existing.capability_units == capability_units
+                and existing.messages == messages
+                and existing.model_calls == model_calls
+                and existing.cost_usd == cost_usd
+            )
+            if not matches_existing:
+                raise ExecutionValidationError("action reservation replay drift")
+            if self._actions[action_id] == "reserved":
+                return existing
+            raise ExecutionValidationError(
+                "action permit was already consumed or action is terminal"
+            )
         self._reload_authorization_ledger()
         if (
             action_id in self._authorization_action_ids

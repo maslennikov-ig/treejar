@@ -810,9 +810,11 @@ def test_cli_execute_resume_drives_once_then_reopen_blocks_unknown(
         run_plan="input-plan.json",
     )
 
+    prepared = cli._lifecycle_result(SimpleNamespace(command="prepare", **vars(args)))
+    assert prepared["phase"] == "prepared"
     assert (
-        cli._lifecycle_result(SimpleNamespace(command="prepare", **vars(args)))["phase"]
-        == "prepared"
+        cli._lifecycle_result(SimpleNamespace(command="prepare", **vars(args)))
+        == prepared
     )
     _, journal = cli._authority_and_journal(registry, root, "local-run", create=False)
     production.write_protected_message(
@@ -826,22 +828,46 @@ def test_cli_execute_resume_drives_once_then_reopen_blocks_unknown(
             }
         ),
     ).seal_baseline(journal, source_id="baseline")
-    assert (
-        cli._lifecycle_result(
-            SimpleNamespace(
-                command="preflight",
-                baseline="collector-artifacts/baseline-readback.json",
-                **vars(args),
-            )
-        )["phase"]
-        == "baseline_sealed"
+    preflight_args = SimpleNamespace(
+        command="preflight",
+        baseline="collector-artifacts/baseline-readback.json",
+        **vars(args),
     )
+    preflight = cli._lifecycle_result(preflight_args)
+    assert preflight["phase"] == "baseline_sealed"
+    assert cli._lifecycle_result(preflight_args) == preflight
 
+    original_dispatch = cli.dispatch_local_action
+
+    def crash_after_reservation_before_permit(**kwargs):
+        raise RuntimeError("crash after reservation before adapter I/O")
+
+    monkeypatch.setattr(
+        cli, "dispatch_local_action", crash_after_reservation_before_permit
+    )
+    with pytest.raises(RuntimeError, match="reservation before adapter I/O"):
+        cli._lifecycle_result(SimpleNamespace(command="execute-resume", **vars(args)))
+    _, recovered = cli._authority_and_journal(registry, root, "local-run", create=False)
+    reservation = recovered._reservations["synthetic-action"]
+    assert recovered._actions == {"synthetic-action": "reserved"}
+    assert recovered.quota_usage.cost_usd == 0.25
+
+    monkeypatch.setattr(cli, "dispatch_local_action", original_dispatch)
     dispatched = cli._lifecycle_result(
         SimpleNamespace(command="execute-resume", **vars(args))
     )
     assert dispatched["action_id"] == "synthetic-action"
     assert dispatched["state"] == "unknown"
+    _, permit_consumed = cli._authority_and_journal(
+        registry, root, "local-run", create=False
+    )
+    assert (
+        permit_consumed._reservations["synthetic-action"].reservation_digest
+        == reservation.reservation_digest
+    )
+    assert permit_consumed.quota_usage.cost_usd == 0.25
+    with pytest.raises(production.ProductionAdapterError, match="nonterminal"):
+        cli._lifecycle_result(SimpleNamespace(command="execute-resume", **vars(args)))
     authority, reopened = cli._authority_and_journal(
         registry, root, "local-run", create=False
     )

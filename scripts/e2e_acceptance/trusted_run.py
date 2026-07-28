@@ -40,6 +40,10 @@ from scripts.e2e_acceptance.policy import (
     ToolResult,
     VerifiedEvidenceContext,
 )
+from scripts.e2e_acceptance.production import (
+    BaselineReadbackArtifact,
+    BaselineReadbackProducerReceipt,
+)
 from scripts.e2e_acceptance.schemas import EvidenceMode
 
 
@@ -557,7 +561,7 @@ class ProtectedCommittedExecutionSnapshot(_StrictModel):
     evidence: tuple[ProtectedEvidenceRecord, ...] = Field(min_length=30)
     attempt_commits: dict[str, dict[str, Any]] = Field(min_length=29, max_length=29)
     transcript_artifacts: dict[str, dict[str, Any]] = Field(min_length=1)
-    collector_artifacts: dict[str, dict[str, Any]] = Field(min_length=2, max_length=2)
+    collector_artifacts: dict[str, dict[str, Any]] = Field(min_length=4, max_length=4)
     gate_artifacts: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sealed_plan: dict[str, Any]
     evaluator: dict[str, Any]
@@ -565,6 +569,7 @@ class ProtectedCommittedExecutionSnapshot(_StrictModel):
     evaluator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     terminal_journal_phase: Literal["attempt_committed"]
     terminal_journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    baseline_sealed_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     final_causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -580,12 +585,14 @@ class ProtectedSnapshotCommit(_StrictModel):
     journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     attempt_chain_heads_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     operator_store_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    baseline_readback_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     final_readback_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     final_inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     sealed_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evaluator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     terminal_journal_phase: Literal["attempt_committed"]
     terminal_journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    baseline_sealed_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     final_causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -864,6 +871,154 @@ def _validate_final_readback_artifacts(
     ):
         raise TrustedRunError("final readback protected producer binding drift")
     return _sha256(receipt_payload), artifact.inventory_digest
+
+
+def _validate_baseline_readback_artifacts(
+    registry: Any,
+    run: TrustedRunDocument,
+    artifacts: dict[str, dict[str, Any]],
+) -> str:
+    artifact_relative = "collector-artifacts/baseline-readback.json"
+    receipt_relative = "producer-receipts/baseline-readback.json"
+    try:
+        artifact = BaselineReadbackArtifact.model_validate(artifacts[artifact_relative])
+        receipt = BaselineReadbackProducerReceipt.model_validate(
+            artifacts[receipt_relative]
+        )
+    except (KeyError, ValueError) as exc:
+        raise TrustedRunError(
+            "baseline readback protected producer artifact is invalid"
+        ) from exc
+    authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
+    artifact_payload = _canonical_bytes(artifacts[artifact_relative])
+    receipt_payload = _canonical_bytes(artifacts[receipt_relative])
+    baseline = run.baseline
+    if (
+        artifact.registry_id != registry.registry_id
+        or artifact.run_id != run.run_id
+        or artifact.authorization_digest != authorization_digest
+        or artifact.preflight_digest != run.authorization.preflight_digest
+        or tuple(run.authorization.collector_ids) != (artifact.collector_id,)
+        or artifact.collector_artifact_digest
+        != run.authorization.readback_collector_digest
+        or artifact.observation != baseline
+        or artifact.inventory_digest != canonical_digest(baseline.inventory)
+        or receipt.producer != "independent-readback-collector"
+        or receipt.registry_id != artifact.registry_id
+        or receipt.run_id != artifact.run_id
+        or receipt.authorization_digest != artifact.authorization_digest
+        or receipt.preflight_digest != artifact.preflight_digest
+        or receipt.collector_id != artifact.collector_id
+        or receipt.collector_artifact_digest != artifact.collector_artifact_digest
+        or receipt.journal_head_digest != artifact.journal_head_digest
+        or receipt.inventory_digest != artifact.inventory_digest
+        or receipt.observed_at != artifact.observed_at
+        or receipt.artifact_sha256 != _sha256(artifact_payload)
+    ):
+        raise TrustedRunError("baseline readback protected receipt binding drift")
+    return _sha256(receipt_payload)
+
+
+def _validate_snapshot_readback_artifacts(
+    registry: Any,
+    run: TrustedRunDocument,
+    artifacts: dict[str, dict[str, Any]],
+    *,
+    current_time: datetime,
+) -> tuple[str, str, str]:
+    expected = {
+        "collector-artifacts/baseline-readback.json",
+        "producer-receipts/baseline-readback.json",
+        "collector-artifacts/final-readback.json",
+        "producer-receipts/final-readback.json",
+    }
+    if set(artifacts) != expected:
+        raise TrustedRunError("readback protected artifact path-set drift")
+    baseline_receipt_digest = _validate_baseline_readback_artifacts(
+        registry, run, artifacts
+    )
+    final_receipt_digest, final_inventory_digest = _validate_final_readback_artifacts(
+        registry,
+        run,
+        {
+            relative: artifacts[relative]
+            for relative in (
+                "collector-artifacts/final-readback.json",
+                "producer-receipts/final-readback.json",
+            )
+        },
+        current_time=current_time,
+    )
+    return baseline_receipt_digest, final_receipt_digest, final_inventory_digest
+
+
+def _validate_baseline_sealed_journal_chain(
+    run_root: Path,
+    baseline: ReadbackObservation,
+    *,
+    terminal_head_digest: str,
+) -> str:
+    journal_root = run_root / "journal"
+    if not journal_root.is_dir() or journal_root.is_symlink():
+        raise TrustedRunError("baseline sealed journal is unavailable")
+    previous_digest: str | None = None
+    baseline_sealed = False
+    baseline_sealed_digest: str | None = None
+    paths = sorted(journal_root.glob("*.json"))
+    for cursor, path in enumerate(paths, start=1):
+        if path.name != f"{cursor:06d}.json" or path.is_symlink():
+            raise TrustedRunError("baseline sealed journal path/cursor drift")
+        payload = _read_file(run_root, f"journal/{path.name}", protected=True)
+        event = _parse_json(payload, "protected journal event")
+        digest = _sha256(payload)
+        if (
+            event.get("cursor") != cursor
+            or event.get("previous_event_digest") != previous_digest
+        ):
+            raise TrustedRunError("baseline sealed journal causality drift")
+        if event.get("kind") == "baseline_sealed":
+            data = event.get("data")
+            if (
+                baseline_sealed
+                or event.get("phase") != "baseline_sealed"
+                or not isinstance(data, dict)
+                or data.get("source_id") != baseline.source_id
+                or data.get("collector_id") != baseline.collector_id
+                or data.get("observed_at") != baseline.observed_at.isoformat()
+                or data.get("content_digest") != baseline.content_digest
+            ):
+                raise TrustedRunError("baseline sealed journal binding drift")
+            baseline_sealed = True
+            baseline_sealed_digest = digest
+        previous_digest = digest
+    if (
+        not baseline_sealed
+        or previous_digest != terminal_head_digest
+        or not paths
+        or _parse_json(
+            _read_file(run_root, f"journal/{paths[-1].name}", protected=True),
+            "protected terminal journal event",
+        ).get("phase")
+        != "attempt_committed"
+    ):
+        raise TrustedRunError("baseline sealed journal terminal-chain drift")
+    if baseline_sealed_digest is None:
+        raise TrustedRunError("baseline sealed journal digest is unavailable")
+    return baseline_sealed_digest
+
+
+def _validate_derived_publication_payload(payload: dict[str, Any]) -> None:
+    """Validate public payloads while preserving the typed authorization manifest."""
+
+    if "authorization" not in payload:
+        validate_redacted_payload(payload)
+        return
+    validate_redacted_payload(
+        {
+            **{key: value for key, value in payload.items() if key != "authorization"},
+            "authorization_manifest": payload["authorization"],
+        }
+    )
 
 
 def _validate_gate_artifacts(
@@ -1515,10 +1670,23 @@ def materialize_execution_snapshot(
             "final collector artifact",
         )
         for relative in (
+            "collector-artifacts/baseline-readback.json",
+            "producer-receipts/baseline-readback.json",
             "collector-artifacts/final-readback.json",
             "producer-receipts/final-readback.json",
         )
     }
+    _validate_snapshot_readback_artifacts(
+        registry,
+        run_document,
+        collector_artifacts,
+        current_time=datetime.now(UTC),
+    )
+    baseline_sealed_event_digest = _validate_baseline_sealed_journal_chain(
+        journal.run_root,
+        run_document.baseline,
+        terminal_head_digest=journal.previous_event_digest,
+    )
     gate_artifacts: dict[str, dict[str, Any]] = {}
     for execution_id, gate in journal._recorded_gates.items():
         expected = gate.model_dump(mode="json")
@@ -1603,6 +1771,7 @@ def materialize_execution_snapshot(
         "evaluator_digest": sealed_plan.evaluator_digest,
         "terminal_journal_phase": journal.phase,
         "terminal_journal_head_digest": journal.previous_event_digest,
+        "baseline_sealed_event_digest": baseline_sealed_event_digest,
         "final_causal_event_digest": run_document.final.causal_event_digest,
     }
     snapshot = ProtectedCommittedExecutionSnapshot(
@@ -1637,6 +1806,13 @@ def materialize_execution_snapshot(
         journal_head_digest=journal.previous_event_digest,
         attempt_chain_heads_digest=canonical_digest(attempt_heads),
         operator_store_digest=store_root_digest(_operator_root(registry)),
+        baseline_readback_receipt_digest=_sha256(
+            _read_file(
+                journal.run_root,
+                "producer-receipts/baseline-readback.json",
+                protected=True,
+            )
+        ),
         final_readback_receipt_digest=_sha256(
             _read_file(
                 journal.run_root,
@@ -1649,6 +1825,7 @@ def materialize_execution_snapshot(
         evaluator_digest=sealed_plan.evaluator_digest,
         terminal_journal_phase=journal.phase,
         terminal_journal_head_digest=journal.previous_event_digest,
+        baseline_sealed_event_digest=baseline_sealed_event_digest,
         final_causal_event_digest=run_document.final.causal_event_digest,
     )
     existing_commit = _read_snapshot_file_if_present(root, "commit.json")
@@ -1703,12 +1880,27 @@ def _load_protected_execution_snapshot(
         raise TrustedRunError(
             f"protected committed execution run is invalid: {exc}"
         ) from exc
-    final_receipt_digest, final_inventory_digest = _validate_final_readback_artifacts(
-        registry,
-        run,
-        snapshot.collector_artifacts,
-        current_time=datetime.now(UTC),
-    )
+    if legacy:
+        final_receipt_digest, final_inventory_digest = (
+            _validate_final_readback_artifacts(
+                registry,
+                run,
+                snapshot.collector_artifacts,
+                current_time=datetime.now(UTC),
+            )
+        )
+        baseline_receipt_digest = None
+    else:
+        (
+            baseline_receipt_digest,
+            final_receipt_digest,
+            final_inventory_digest,
+        ) = _validate_snapshot_readback_artifacts(
+            registry,
+            run,
+            snapshot.collector_artifacts,
+            current_time=datetime.now(UTC),
+        )
     authorization_digest = canonical_digest(snapshot.run["authorization"])
     common_binding_drift = (
         snapshot.run_id != run_id
@@ -1722,6 +1914,10 @@ def _load_protected_execution_snapshot(
         or commit.authorization_digest != authorization_digest
         or commit.attempt_chain_heads_digest != canonical_digest(attempt_chain_heads)
         or commit.operator_store_digest != store_root_digest(_operator_root(registry))
+        or (
+            not legacy
+            and commit.baseline_readback_receipt_digest != baseline_receipt_digest
+        )
         or commit.final_readback_receipt_digest != final_receipt_digest
         or commit.final_inventory_digest != final_inventory_digest
     )
@@ -1751,6 +1947,8 @@ def _load_protected_execution_snapshot(
             or commit.terminal_journal_phase != snapshot.terminal_journal_phase
             or commit.terminal_journal_head_digest
             != snapshot.terminal_journal_head_digest
+            or commit.baseline_sealed_event_digest
+            != snapshot.baseline_sealed_event_digest
             or commit.final_causal_event_digest != snapshot.final_causal_event_digest
             or commit.sealed_plan_digest != snapshot.sealed_plan_digest
             or commit.evaluator_digest != snapshot.evaluator_digest
@@ -1786,6 +1984,24 @@ def _derive_publication(
     if len(tracked_files) != len(records):
         raise TrustedRunError("protected execution evidence path drift")
     report_payload = report.model_dump(mode="json")
+    try:
+        for payload in tracked_files.values():
+            _validate_derived_publication_payload(payload)
+        _validate_derived_publication_payload(report_payload)
+        prewrite_rollups = {
+            "coverage_complete": True,
+            "execution_complete": True,
+            "requirements_met": (
+                all(row.outcome == "PASS" for row in run.criteria)
+                and all(row.outcome == "PASS" for row in run.executions)
+                and not run.open_p0_p1
+            ),
+        }
+        validate_redacted_text(_render_report(report, prewrite_rollups).decode("utf-8"))
+    except EvidenceError as exc:
+        raise TrustedRunError(
+            f"derived publication privacy validation failed: {exc}"
+        ) from exc
     report_payload_sha256 = _sha256(_canonical_bytes(report_payload))
     report_snapshot_digest = _verified_report_snapshot_digest(report)
     report_source = ReportSourceArtifact(
@@ -1836,6 +2052,13 @@ def _derive_publication(
             "registry/report-payload.json": report_payload,
         }
     )
+    try:
+        for payload in tracked_files.values():
+            _validate_derived_publication_payload(payload)
+    except EvidenceError as exc:
+        raise TrustedRunError(
+            f"derived publication privacy validation failed: {exc}"
+        ) from exc
     authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
     attempts_by_execution: dict[str, tuple[CommittedExecutionArtifact, str]] = {}
     for entry in entries:
@@ -1888,12 +2111,13 @@ def _derive_publication(
         report_payload_sha256=report_payload_sha256,
         verified_snapshot_digest=report_snapshot_digest,
     ).model_dump(mode="json")
-    _validate_final_readback_artifacts(
-        registry,
-        run,
-        snapshot.collector_artifacts,
-        current_time=datetime.now(UTC),
-    )
+    if isinstance(snapshot, ProtectedCommittedExecutionSnapshot):
+        _validate_snapshot_readback_artifacts(
+            registry,
+            run,
+            snapshot.collector_artifacts,
+            current_time=datetime.now(UTC),
+        )
     protected_files.update(snapshot.collector_artifacts)
     typed_attempts = {
         execution_id: value[0] for execution_id, value in attempts_by_execution.items()

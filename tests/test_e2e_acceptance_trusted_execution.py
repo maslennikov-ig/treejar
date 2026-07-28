@@ -3220,3 +3220,128 @@ def test_reservation_rejects_request_not_present_in_protected_action_spec(
             model_calls=0,
             cost_usd=0,
         )
+
+
+def test_reservation_recovery_reuses_ledger_reservation_without_recharging_quota(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A crash after the durable quota reservation cannot spend it a second time."""
+
+    policy, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    authority = _issued_authority(
+        registry, protected_root=root, run_id="reservation-recovery-run"
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root, run_id="reservation-recovery-run", authority=authority
+    )
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="reservation-recovery-baseline",
+            run_id=journal.run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="a" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    original_append = journal._append_event
+
+    def crash_before_reservation_journal(**event):
+        if event["kind"] == "action_reserved":
+            raise RuntimeError("crash after reservation ledger")
+        return original_append(**event)
+
+    monkeypatch.setattr(journal, "_append_event", crash_before_reservation_journal)
+    request = _action_request()
+    with pytest.raises(RuntimeError, match="reservation ledger"):
+        journal.reserve_action(
+            action_id="synthetic-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **request,
+            messages=1,
+            model_calls=1,
+            cost_usd=0.25,
+        )
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=root, run_id="reservation-recovery-run", authority=authority
+    )
+    recovered = reopened._reservations["synthetic-action"]
+    assert reopened._actions == {"synthetic-action": "reserved"}
+    assert reopened.quota_usage.messages == 1
+    assert reopened.quota_usage.model_calls == 1
+    assert reopened.quota_usage.cost_usd == 0.25
+    assert (
+        reopened.reserve_action(
+            action_id="synthetic-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **request,
+            messages=1,
+            model_calls=1,
+            cost_usd=0.25,
+        )
+        == recovered
+    )
+    assert reopened.quota_usage.cost_usd == 0.25
+
+
+def test_consumed_permit_cannot_be_automatically_retried(
+    tmp_path: Path,
+) -> None:
+    """Once I/O may have happened, only independent reconciliation may proceed."""
+
+    policy, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    authority = _issued_authority(
+        registry, protected_root=root, run_id="permit-retry-run"
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root, run_id="permit-retry-run", authority=authority
+    )
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="permit-retry-baseline",
+            run_id=journal.run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="a" * 64,
+            observed_at=datetime.now(UTC) - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    request = _action_request()
+    reservation = journal.reserve_action(
+        action_id="synthetic-action",
+        adapter_id="fake-local-adapter",
+        subsystem="outbound_text",
+        **request,
+        messages=1,
+        model_calls=1,
+        cost_usd=0.25,
+    )
+    journal.consume_permit(reservation, adapter_id="fake-local-adapter", **request)
+
+    with pytest.raises(Exception, match="consumed|reservation"):
+        journal.reserve_action(
+            action_id="synthetic-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **request,
+            messages=1,
+            model_calls=1,
+            cost_usd=0.25,
+        )

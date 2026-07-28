@@ -726,7 +726,9 @@ def test_production_v2_snapshot_rejects_terminal_journal_head_drift(
     shutil.rmtree(tracked)
     shutil.rmtree(protected)
 
-    with pytest.raises(Exception, match="snapshot binding drift"):
+    with pytest.raises(
+        Exception, match="collector_artifacts|baseline_sealed|snapshot binding drift"
+    ):
         registry.finalize_run(run_id)
 
 
@@ -754,13 +756,20 @@ def test_production_v2_snapshot_rejects_final_causal_head_drift(
     shutil.rmtree(tracked)
     shutil.rmtree(protected)
 
-    with pytest.raises(Exception, match="snapshot binding drift"):
+    with pytest.raises(
+        Exception, match="collector_artifacts|baseline_sealed|snapshot binding drift"
+    ):
         registry.finalize_run(run_id)
 
 
 def _production_materializer_inputs(tmp_path: Path):
     registry, tracked, protected = _build_verified_run(tmp_path)
-    _, _, trusted = _modules()
+    policy, _, trusted = _modules()
+    from scripts.e2e_acceptance.production import (
+        BaselineReadbackArtifact,
+        BaselineReadbackProducerReceipt,
+    )
+
     run = json.loads((tracked / "registry/run.json").read_text(encoding="utf-8"))
     run_id = run["run_id"]
     plan = SimpleNamespace(actions=(), evaluator={"fixture": "sealed"})
@@ -782,9 +791,94 @@ def _production_materializer_inputs(tmp_path: Path):
         protected_root=protected.parent,
         run_root=protected,
         authorization_digest=trusted.canonical_digest(run["authorization"]),
-        previous_event_digest="d" * 64,
+        previous_event_digest=None,
         _actions={},
         _recorded_gates={},
+    )
+    prepared_event = {
+        "schema_version": "noor-e2e-protected-event/v2",
+        "cursor": 1,
+        "phase": "prepared",
+        "kind": "prepared",
+        "previous_event_digest": None,
+        "data": {"authorization_digest": journal.authorization_digest},
+    }
+    prepared_digest = _write_json(protected / "journal/000001.json", prepared_event)
+    original_baseline = policy.ReadbackObservation.model_validate(run["baseline"])
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id=original_baseline.collector_id,
+        source_id=original_baseline.source_id,
+        run_id=run_id,
+        preflight_digest=original_baseline.preflight_digest,
+        collector_artifact_digest=original_baseline.collector_artifact_digest,
+        causal_event_digest=prepared_digest,
+        observed_at=original_baseline.observed_at,
+        inventory=original_baseline.inventory,
+    )
+    run["baseline"] = baseline.model_dump(mode="json")
+    _write_json(tracked / "registry/run.json", run)
+    baseline_event = {
+        "schema_version": "noor-e2e-protected-event/v2",
+        "cursor": 2,
+        "phase": "baseline_sealed",
+        "kind": "baseline_sealed",
+        "previous_event_digest": prepared_digest,
+        "data": {
+            "source_id": baseline.source_id,
+            "collector_id": baseline.collector_id,
+            "observed_at": baseline.observed_at.isoformat(),
+            "content_digest": baseline.content_digest,
+        },
+    }
+    baseline_event_digest = _write_json(
+        protected / "journal/000002.json", baseline_event
+    )
+    terminal_event = {
+        "schema_version": "noor-e2e-protected-event/v2",
+        "cursor": 3,
+        "phase": "attempt_committed",
+        "kind": "attempt_committed",
+        "previous_event_digest": baseline_event_digest,
+        "data": {},
+    }
+    journal.previous_event_digest = _write_json(
+        protected / "journal/000003.json", terminal_event
+    )
+    baseline_artifact = BaselineReadbackArtifact(
+        registry_id=registry.registry_id,
+        run_id=run_id,
+        authorization_digest=journal.authorization_digest,
+        preflight_digest=baseline.preflight_digest,
+        collector_id=baseline.collector_id,
+        collector_artifact_digest=baseline.collector_artifact_digest,
+        journal_head_digest=baseline.causal_event_digest,
+        observed_at=baseline.observed_at,
+        inventory_digest=trusted.canonical_digest(baseline.inventory),
+        observation=baseline,
+    ).model_dump(mode="json")
+    artifact_sha256 = hashlib.sha256(
+        trusted._canonical_bytes(baseline_artifact)
+    ).hexdigest()
+    _write_json(
+        protected / "collector-artifacts/baseline-readback.json", baseline_artifact
+    )
+    baseline_receipt = BaselineReadbackProducerReceipt(
+        registry_id=registry.registry_id,
+        run_id=run_id,
+        authorization_digest=journal.authorization_digest,
+        preflight_digest=baseline.preflight_digest,
+        collector_id=baseline.collector_id,
+        collector_artifact_digest=baseline.collector_artifact_digest,
+        artifact_sha256=artifact_sha256,
+        journal_head_digest=baseline.causal_event_digest,
+        inventory_digest=trusted.canonical_digest(baseline.inventory),
+        observed_at=baseline.observed_at,
+        issued_at=baseline.observed_at,
+        expires_at=baseline.observed_at + timedelta(minutes=5),
+    ).model_dump(mode="json")
+    _write_json(
+        protected / "producer-receipts/baseline-readback.json", baseline_receipt
     )
     return registry, tracked, protected, journal, plan
 
@@ -813,6 +907,47 @@ def test_materialize_execution_snapshot_builds_and_loads_strict_production_v2(
     assert (
         trusted._load_protected_execution_snapshot(registry, journal.run_id) == snapshot
     )
+
+
+def test_materializer_requires_baseline_producer_pair_and_sealed_journal_chain(
+    tmp_path: Path,
+) -> None:
+    """A production snapshot cannot be derived from caller-authored baseline data."""
+
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    (protected / "collector-artifacts/baseline-readback.json").unlink()
+
+    with pytest.raises(Exception, match="baseline"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
+
+
+def test_materializer_rejects_self_consistent_tracked_baseline_substitution(
+    tmp_path: Path,
+) -> None:
+    """The protected baseline producer pair, not tracked input, is authoritative."""
+
+    registry, tracked, _, journal, plan = _production_materializer_inputs(tmp_path)
+    policy, _, trusted = _modules()
+    run_path = tracked / "registry/run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    baseline = policy.ReadbackObservation.model_validate(run["baseline"])
+    replacement = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id=baseline.collector_id,
+        source_id=baseline.source_id,
+        run_id=baseline.run_id,
+        preflight_digest=baseline.preflight_digest,
+        collector_artifact_digest=baseline.collector_artifact_digest,
+        causal_event_digest=baseline.causal_event_digest,
+        observed_at=baseline.observed_at,
+        inventory={"synthetic:item": {"state": "forged"}},
+    )
+    run["baseline"] = replacement.model_dump(mode="json")
+    _write_json(run_path, run)
+
+    with pytest.raises(Exception, match="baseline.*binding"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
 def test_materializer_recovers_only_identical_snapshot_after_commit_crash(
@@ -1120,6 +1255,76 @@ def test_finalizer_removes_partial_publish_when_inner_receipt_is_invalid(
     ):
         registry.finalize_run(run_id)
 
+    assert not tracked.exists()
+    assert not protected.exists()
+
+
+def test_finalizer_rejects_private_derived_payload_before_any_publication_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed privacy check must leave neither staging nor tracked results."""
+
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    evidence_path = tracked / "evidence/fresh.json"
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["token"] = "secret-derived-payload"
+    _write_json(evidence_path, evidence)
+    index_path = tracked / "registry/evidence-index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    fresh = next(item for item in index["entries"] if item["evidence_id"] == "fresh")
+    fresh["sha256"] = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    _write_json(index_path, index)
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    _, _, trusted = _modules()
+    writes: list[set[str]] = []
+    original_write = trusted._write_snapshot_tree
+
+    def record_write(root, files):
+        writes.append(set(files))
+        return original_write(root, files)
+
+    monkeypatch.setattr(trusted, "_write_snapshot_tree", record_write)
+
+    with pytest.raises(Exception, match="privacy"):
+        registry.finalize_run(run_id)
+
+    assert writes == []
+    assert not tracked.exists()
+    assert not protected.exists()
+
+
+def test_finalizer_rejects_private_rendered_markdown_before_any_publication_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Markdown receives its own pre-write privacy check, not a loader-only one."""
+
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    report_path = tracked / "registry/report-payload.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["title"] = "Synthetic report +1 202 555 0198"
+    _write_json(report_path, report)
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+    _, _, trusted = _modules()
+    monkeypatch.setattr(trusted, "validate_redacted_payload", lambda payload: None)
+    writes: list[set[str]] = []
+    original_write = trusted._write_snapshot_tree
+
+    def record_write(root, files):
+        writes.append(set(files))
+        return original_write(root, files)
+
+    monkeypatch.setattr(trusted, "_write_snapshot_tree", record_write)
+
+    with pytest.raises(Exception, match="privacy"):
+        registry.finalize_run(run_id)
+
+    assert writes == []
     assert not tracked.exists()
     assert not protected.exists()
 
