@@ -28,8 +28,10 @@ base_branch: main
 base_commit: 48493b679423aa679aefe513f1eaf47f37ed17e7
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-production-adapters
 write_zone:
+  - scripts/e2e_acceptance/execution.py
   - scripts/e2e_acceptance/production.py
   - scripts/e2e_acceptance/runner.py
+  - scripts/e2e_acceptance/trusted_run.py
   - scripts/run_noor_e2e_acceptance.py
   - tests/test_e2e_acceptance_*.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-task2.md
@@ -48,7 +50,8 @@ selected_docs:
 selected_skills:
   - superpowers:test-driven-development
 selected_agents:
-  - none
+  - backend_developer
+  - correctness_reviewer
 catalog_candidates:
   - none
 parallel_group: tj-ee5f-production-trust
@@ -91,11 +94,21 @@ verification:
   - exact added-file privacy and secret scans: zero matches
   - Correction A/B focused adapter/runner tests: passed 16
   - Correction A/B uv run --extra dev pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 277
+  - final protected lifecycle and snapshot focused matrix: passed 179
+  - final uv run --extra dev pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 298
+  - final uv run --extra dev ruff check src/ tests/ scripts/e2e_acceptance/ scripts/run_noor_e2e_acceptance.py: passed
+  - final uv run --extra dev ruff format --check src/ tests/ scripts/e2e_acceptance/ scripts/run_noor_e2e_acceptance.py: passed, 327 files
+  - final uv run --extra dev mypy src/: passed, 163 source files
+  - final git diff --check: passed
 changed_files:
+  - scripts/e2e_acceptance/execution.py
   - scripts/e2e_acceptance/production.py
   - scripts/e2e_acceptance/runner.py
+  - scripts/e2e_acceptance/trusted_run.py
   - scripts/run_noor_e2e_acceptance.py
+  - tests/test_e2e_acceptance_final_review.py
   - tests/test_e2e_acceptance_production.py
+  - tests/test_e2e_acceptance_trusted_execution.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-task2.md
   - .codex/stages/tj-ee5f/stage-manifest.json
 explicit_defers:
@@ -104,7 +117,7 @@ explicit_defers:
 
 # Summary
 
-Added local-only, capability-dispatched fake transports and a permit-bound webhook adapter. Raw request and response material remains under the protected journal; tracked projections contain redacted payloads plus checksums. The read-only collector has no mutation API and produces the Task 1 final readback artifact and receipt layout. The CLI can prepare, preflight, resume, validate an independently produced gate, and finalize only a terminal committed run.
+Added local-only, capability-dispatched fake transports and a permit-bound webhook adapter. Raw request and response material remains under the protected journal; tracked projections contain redacted payloads plus checksums. The read-only collector has no mutation API and produces the Task 1 baseline/final readback artifacts and receipts. The CLI can prepare, preflight, resume, reconcile an uncertain action, validate an independently produced gate, and finalize only a terminal committed run through a strict production snapshot.
 
 # Scope / Routing
 
@@ -112,7 +125,7 @@ The assigned write zone is limited to adapter/collector/CLI contracts and focuse
 
 # Verification
 
-The first focused adapter tests were RED because `production.py` did not exist. They are GREEN after implementation. Additional final-collector testing caught a readback-digest mismatch, then passed after the final observation was rebuilt rather than mutated in place. Correction A/B adds opaque authority use for gate validation, producer-owned baseline receipts, causally sealed plan identities, typed capability dispatch, pre-dispatch timeout checks, protected raw/redacted projections, and local unknown-action recovery proof. The artifact remains returned and unaccepted pending the final independent review and full-gate evidence.
+The first focused adapter tests were RED because `production.py` did not exist. Additional RED/GREEN passes closed producer-owned baseline/final collection, sealed plan/evaluator drift, typed capability routing, permit ordering, raw/tracked separation, partial producer recovery, unknown-action reconciliation and settlement recovery, exact gate replay, unsafe run IDs, and intermediate-symlink snapshot writes. The strict production snapshot validates candidate checksums and the complete publication projection before its first write, binds independent final-causal and terminal-journal heads, and recovers only byte-identical partial commits. The artifact remains returned and unaccepted pending a fresh independent review and full repository gates.
 
 # Delivery / Cleanup
 
@@ -120,4 +133,4 @@ Returned for orchestrator review; no external state or local worktree cleanup wa
 
 # Risks / Follow-ups / Explicit Defers
 
-Actual transports intentionally remain unavailable. Task 3 must supply current explicit authorization and a fresh exact preflight before an external action can be attempted. A gate command validates producer-owned protected evidence; it never manufactures a gate result.
+Actual transports intentionally remain unavailable. Task 3 must supply current explicit authorization, production transports, and a fresh exact preflight before an external action can be attempted. A gate command validates producer-owned protected evidence; it never manufactures a gate result. Full repository Pytest, process verification, privacy/secret scans, artifact validation, and independent review remain pending at this returned checkpoint.
