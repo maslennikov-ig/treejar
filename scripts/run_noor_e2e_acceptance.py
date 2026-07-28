@@ -26,6 +26,7 @@ from scripts.e2e_acceptance.production import (
     FakeHttpTransport,
     ProductionAdapterError,
     ProtectedRunPlan,
+    _write_or_validate_exact,
     dispatch_local_action,
     issue_decisive_producer_handle,
     load_protected_baseline,
@@ -145,6 +146,26 @@ def _record_committed_gate(
     journal.record_gate_attempt(
         attempt,
         protected_attempt_digest=execution._digest(attempt.model_dump(mode="json")),
+    )
+
+
+def _seal_zero_turn_manifest_if_complete(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    journal: execution.ProtectedExecutionJournal,
+    accepted_ordinal: int,
+) -> None:
+    if accepted_ordinal != len(registry.compiled_plan.execution_ids):
+        return
+    _write_or_validate_exact(
+        journal.run_root,
+        "transcripts/manifest.json",
+        {
+            "schema_version": "noor-e2e-protected-transcript-manifest/v2",
+            "registry_id": registry.registry_id,
+            "run_id": journal.run_id,
+            "ordered_turns": [],
+        },
     )
 
 
@@ -319,6 +340,11 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         artifact = coordinator.publish_next_from_decisive_producer(handle, source_ref)
         _record_committed_gate(journal, artifact.execution_id, artifact.ordinal)
         accepted = _coordinator(registry, authority, journal).accept_next()
+        _seal_zero_turn_manifest_if_complete(
+            registry=registry,
+            journal=journal,
+            accepted_ordinal=accepted.ordinal,
+        )
         return {
             "phase": journal.phase,
             "plan_digest": plan.plan_digest,

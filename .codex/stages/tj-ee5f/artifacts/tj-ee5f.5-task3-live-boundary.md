@@ -94,6 +94,7 @@ verification:
   - gate-only zero-action correction: passed 14 focused tests
   - gate publication acceptance correction: passed 14 focused tests
   - post-commit gate journal registration: passed 14 focused tests and 1 gate replay test
+  - zero-turn transcript manifest: passed 15 focused tests
   - independent full-range review: one P1 found and corrected; all other requested boundaries approved
   - full release Pytest: passed 2260, skipped 19
   - full release Ruff, format, and Mypy over 163 source files: passed

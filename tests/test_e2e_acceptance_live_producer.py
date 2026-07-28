@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -73,6 +74,29 @@ def test_gate_only_authority_accepts_no_action_specs() -> None:
     assert specs.specs == ()
 
 
+def test_completed_gate_only_run_seals_empty_transcript_manifest(
+    tmp_path: Path,
+) -> None:
+    from scripts.run_noor_e2e_acceptance import (
+        _seal_zero_turn_manifest_if_complete,
+    )
+
+    registry = SimpleNamespace(
+        registry_id="a" * 64,
+        compiled_plan=SimpleNamespace(execution_ids=("SC-OPEN-EN",)),
+    )
+    journal = SimpleNamespace(run_id="gate-only", run_root=tmp_path)
+
+    _seal_zero_turn_manifest_if_complete(
+        registry=registry,
+        journal=journal,
+        accepted_ordinal=1,
+    )
+
+    manifest = json.loads((tmp_path / "transcripts/manifest.json").read_text())
+    assert manifest["ordered_turns"] == []
+
+
 def test_record_blocked_starts_gate_only_execution_after_baseline(
     monkeypatch,
 ) -> None:
@@ -122,6 +146,9 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
         lambda journal, execution_id, ordinal: recorded_gates.append(
             (execution_id, ordinal)
         ),
+    )
+    monkeypatch.setattr(
+        cli, "_seal_zero_turn_manifest_if_complete", lambda **kwargs: None
     )
     coordinator_calls = 0
 
