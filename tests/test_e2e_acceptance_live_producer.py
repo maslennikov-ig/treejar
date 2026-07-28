@@ -115,6 +115,14 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
     monkeypatch.setattr(
         cli, "materialize_next_conservative_gate", lambda **kwargs: "source.json"
     )
+    recorded_gates = []
+    monkeypatch.setattr(
+        cli,
+        "_record_committed_gate",
+        lambda journal, execution_id, ordinal: recorded_gates.append(
+            (execution_id, ordinal)
+        ),
+    )
     coordinator_calls = 0
 
     def coordinator_factory(*args, **kwargs):
@@ -137,6 +145,7 @@ def test_record_blocked_starts_gate_only_execution_after_baseline(
     assert journal.phase == "executing"
     assert coordinator.accepted is True
     assert coordinator_calls == 2
+    assert recorded_gates == [("SC-OPEN-EN", 1)]
     assert result["outcome"] == "BLOCKED"
 
 
@@ -151,6 +160,7 @@ def test_live_gate_producer_publishes_zero_turn_scenario_block(
         materialize_next_conservative_gate,
     )
     from scripts.e2e_acceptance.production import issue_decisive_producer_handle
+    from scripts.run_noor_e2e_acceptance import _record_committed_gate
 
     registry, authority, journal, plan = _prepared_without_test_gate(tmp_path)
     coordinator = ProductionRunCoordinator(
@@ -173,6 +183,7 @@ def test_live_gate_producer_publishes_zero_turn_scenario_block(
         current_time=datetime.now(UTC),
     )
     artifact = coordinator.publish_next_from_decisive_producer(handle, source_ref)
+    _record_committed_gate(journal, artifact.execution_id, artifact.ordinal)
 
     assert artifact.outcome == "BLOCKED"
     assert artifact.kind == "scenario"
@@ -180,3 +191,4 @@ def test_live_gate_producer_publishes_zero_turn_scenario_block(
     assert (
         journal.run_root / f"gate-evidence-context/{artifact.execution_id}.json"
     ).is_file()
+    assert journal._recorded_gates[artifact.execution_id].outcome == "BLOCKED"

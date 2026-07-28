@@ -2941,16 +2941,45 @@ class ProtectedExecutionJournal:
             self._attempted_executions.append(str(data["execution_id"]))
         elif kind == "gate_recorded":
             attempt = GateAttemptV2.model_validate(data["gate_attempt"])
+            already_committed = attempt.execution_id in self._attempted_executions
             if (
                 attempt.execution_id not in self.authorization.execution_ids
                 or attempt.execution_id in self._recorded_gates
-                or attempt.execution_id in self._attempted_executions
                 or data.get("journal_head_digest") != event["previous_event_digest"]
             ):
                 raise ExecutionValidationError("recorded gate execution drift")
+            if already_committed:
+                try:
+                    committed_gate = json.loads(
+                        _read_protected(
+                            self.run_root,
+                            f"gate-attempts/{attempt.execution_id}.json",
+                        )
+                    )
+                    transaction = json.loads(
+                        _read_protected(
+                            self.run_root,
+                            f"attempts/{attempt.execution_id.lower()}-attempt-001/commit.json",
+                        )
+                    )
+                except (ExecutionValidationError, json.JSONDecodeError) as exc:
+                    raise ExecutionValidationError(
+                        "recorded committed gate execution drift"
+                    ) from exc
+                if (
+                    committed_gate != attempt.model_dump(mode="json")
+                    or transaction.get("status") != "committed"
+                    or transaction.get("attempt_kind") != "gate"
+                    or transaction.get("gate_attempt_digest")
+                    != _digest(attempt.model_dump(mode="json"))
+                ):
+                    raise ExecutionValidationError(
+                        "recorded committed gate execution drift"
+                    )
             self._recorded_gates[attempt.execution_id] = attempt
             self._recorded_gate_records[attempt.execution_id] = data
-            self._attempted_executions.append(attempt.execution_id)
+            if not already_committed:
+                self._attempted_executions.append(attempt.execution_id)
         elif kind == "execution_started":
             started_at = datetime.fromisoformat(str(data["started_at"]))
             if started_at.tzinfo is None or started_at.utcoffset() is None:
@@ -3834,10 +3863,40 @@ class ProtectedExecutionJournal:
             ):
                 raise ExecutionValidationError("recorded gate replay drift")
             return
-        if attempt.execution_id in self._attempted_executions:
-            raise ExecutionValidationError(
-                "gate attempt is duplicate or not commit-ready"
-            )
+        already_committed = attempt.execution_id in self._attempted_executions
+        if already_committed:
+            try:
+                transaction = json.loads(
+                    _read_protected(
+                        self.run_root,
+                        f"attempts/{attempt.execution_id.lower()}-attempt-001/commit.json",
+                    )
+                )
+            except (ExecutionValidationError, json.JSONDecodeError) as exc:
+                raise ExecutionValidationError(
+                    "committed gate attempt is not record-ready"
+                ) from exc
+            if (
+                transaction.get("status") != "committed"
+                or transaction.get("attempt_kind") != "gate"
+                or transaction.get("gate_attempt_digest") != protected_attempt_digest
+            ):
+                raise ExecutionValidationError(
+                    "committed gate attempt is not record-ready"
+                )
+        gate_relative = f"gate-attempts/{attempt.execution_id}.json"
+        gate_payload = attempt.model_dump(mode="json")
+        try:
+            existing_gate = json.loads(_read_protected(self.run_root, gate_relative))
+        except ExecutionValidationError:
+            existing_gate = None
+        except json.JSONDecodeError as exc:
+            raise ExecutionValidationError("gate attempt payload is invalid") from exc
+        if existing_gate is not None:
+            if existing_gate != gate_payload:
+                raise ExecutionValidationError("gate attempt replay drift")
+        else:
+            _write_exclusive(self.run_root, gate_relative, gate_payload)
         if existing is not None:
             if existing != record:
                 raise ExecutionValidationError("recorded gate replay drift")
@@ -3846,7 +3905,8 @@ class ProtectedExecutionJournal:
         self._append_event(phase="executing", kind="gate_recorded", data=record)
         self._recorded_gates[attempt.execution_id] = attempt
         self._recorded_gate_records[attempt.execution_id] = record
-        self._attempted_executions.append(attempt.execution_id)
+        if not already_committed:
+            self._attempted_executions.append(attempt.execution_id)
 
     def anchor_final_turn(self, *, event_digest: str, occurred_at: datetime) -> None:
         self._assert_cost_settlement_consistency()

@@ -128,6 +128,26 @@ def _coordinator(
     )
 
 
+def _record_committed_gate(
+    journal: execution.ProtectedExecutionJournal, execution_id: str, ordinal: int
+) -> None:
+    payload = execution._read_protected(
+        journal.run_root, f"produced-attempts/{ordinal:02d}.json"
+    )
+    produced = json.loads(payload)
+    if (
+        produced.get("execution_id") != execution_id
+        or produced.get("attempt_kind") != "gate"
+        or not isinstance(produced.get("gate_attempt"), dict)
+    ):
+        raise ProductionAdapterError("committed gate publication is invalid")
+    attempt = execution.GateAttemptV2.model_validate(produced["gate_attempt"])
+    journal.record_gate_attempt(
+        attempt,
+        protected_attempt_digest=execution._digest(attempt.model_dump(mode="json")),
+    )
+
+
 def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
     registry = _canonical_registry(args.repo_root)
     if args.command == "authorize-live":
@@ -297,6 +317,7 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         )
         coordinator = _coordinator(registry, authority, journal)
         artifact = coordinator.publish_next_from_decisive_producer(handle, source_ref)
+        _record_committed_gate(journal, artifact.execution_id, artifact.ordinal)
         accepted = _coordinator(registry, authority, journal).accept_next()
         return {
             "phase": journal.phase,
