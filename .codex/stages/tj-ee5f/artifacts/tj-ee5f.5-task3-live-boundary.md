@@ -96,6 +96,7 @@ verification:
   - post-commit gate journal registration: passed 14 focused tests and 1 gate replay test
   - zero-turn transcript manifest: passed 15 focused tests
   - typed published gate quartet: passed 16 focused tests
+  - final protected run `tj-ee5f-live-20260728t165236z`: verified and finalized
   - independent full-range review: one P1 found and corrected; all other requested boundaries approved
   - full release Pytest: passed 2260, skipped 19
   - full release Ruff, format, and Mypy over 163 source files: passed
@@ -143,3 +144,20 @@ The boundary does not by itself prove a unit executable. Fresh production
 preflight must still bind the exact protected runtime and synthetic targets.
 Units without proven isolation, provider origin, cleanup, or independent
 evidence remain non-passing.
+
+# Final protected run
+
+Run `tj-ee5f-live-20260728t165236z` finalized against repository commit
+`deab79b1134210a9d1fbb7691137363263e1cd98`, CI
+`github-actions-30379943318`, and deployed release
+`0dd9615a16fdf4eb17abe156551c53fb77f39c21`.
+
+- `coverage_complete=true`
+- `execution_complete=true`
+- `requirements_met=false`
+- 29/29 execution units: `BLOCKED`
+- external actions, model calls, messages, and cost: zero
+- tracked redacted result:
+  `.codex/stages/tj-ee5f/results/tj-ee5f-live-20260728t165236z/`
+- client Markdown:
+  `docs/client/noor-e2e-acceptance-2026-07-28.md`
