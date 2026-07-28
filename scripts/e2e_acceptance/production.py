@@ -1090,12 +1090,13 @@ def _attempt_source_identity_digest(
     return execution._digest(identity)
 
 
-def _write_local_fake_producer_observation(
+def _write_producer_observation(
     *,
     producer_handle: DecisiveProducerHandle,
     attempted: execution.ExecutedAttemptV2 | execution.GateAttemptV2,
+    transcript_facts: list[dict[str, Any]],
 ) -> str:
-    """Private fake adapter: derive protected source and decisive receipts once."""
+    """Private bridge from a typed producer result to protected publication state."""
 
     record = _producer_handle_record(producer_handle)
     if attempted.execution_id != record.execution_id:
@@ -1187,44 +1188,16 @@ def _write_local_fake_producer_observation(
                 "receipt_digest": receipt_digest,
             }
         )
-    transcript_facts: list[dict[str, Any]] = []
+    if not isinstance(attempted, execution.ScenarioAttemptV2) and transcript_facts:
+        raise ProductionAdapterError("non-scenario producer cannot publish transcripts")
     if isinstance(attempted, execution.ScenarioAttemptV2):
-        for actual in attempted.actual_turns:
-            timeline = actual.timeline
-            transcript_facts.append(
-                {
-                    "turn_id": actual.actual_turn_id,
-                    "question": f"Deterministic question for {record.execution_id}.",
-                    "answer": f"Deterministic answer for {record.execution_id}.",
-                    "sent_at": timeline.sent_at.isoformat().replace("+00:00", "Z"),
-                    "received_at": timeline.first_visible_at.isoformat().replace(
-                        "+00:00", "Z"
-                    ),
-                    "first_visible_at": timeline.first_visible_at.isoformat().replace(
-                        "+00:00", "Z"
-                    ),
-                    "final_visible_at": timeline.final_visible_at.isoformat().replace(
-                        "+00:00", "Z"
-                    ),
-                    "delivered_at": (
-                        timeline.delivered_at.isoformat().replace("+00:00", "Z")
-                        if timeline.delivered_at is not None
-                        else None
-                    ),
-                    "conversation_id": f"local-{record.execution_id}",
-                    "message_id": actual.actual_turn_id,
-                    "provider_message_id": f"local-{actual.actual_turn_id}",
-                    "model": actual.model_id,
-                    "tools": list(actual.tool_refs),
-                    "tool_outcomes": ["passed"] * len(actual.tool_refs),
-                    "audit_ids": list(actual.audit_refs),
-                    "media_refs": [],
-                    "token_count": actual.token_count,
-                    "cost_usd": actual.cost_usd,
-                    "deviation": None,
-                    "evaluator_reasoning": "Protected deterministic checks passed.",
-                }
-            )
+        if len(transcript_facts) != len(attempted.actual_turns):
+            raise ProductionAdapterError("producer transcript cardinality drift")
+        expected_turn_ids = tuple(
+            item.actual_turn_id for item in attempted.actual_turns
+        )
+        if tuple(item.get("turn_id") for item in transcript_facts) != expected_turn_ids:
+            raise ProductionAdapterError("producer transcript identity drift")
     source_ref = _observation_relative(record)
     source = {
         "schema_version": "noor-e2e-protected-source-observation/v1",
@@ -1268,6 +1241,59 @@ def _write_local_fake_producer_observation(
         },
     )
     return source_ref
+
+
+def _write_local_fake_producer_observation(
+    *,
+    producer_handle: DecisiveProducerHandle,
+    attempted: execution.ExecutedAttemptV2 | execution.GateAttemptV2,
+) -> str:
+    """Private fake adapter: derive deterministic transcript facts once."""
+
+    record = _producer_handle_record(producer_handle)
+    transcript_facts: list[dict[str, Any]] = []
+    if isinstance(attempted, execution.ScenarioAttemptV2):
+        for actual in attempted.actual_turns:
+            timeline = actual.timeline
+            transcript_facts.append(
+                {
+                    "turn_id": actual.actual_turn_id,
+                    "question": f"Deterministic question for {record.execution_id}.",
+                    "answer": f"Deterministic answer for {record.execution_id}.",
+                    "sent_at": timeline.sent_at.isoformat().replace("+00:00", "Z"),
+                    "received_at": timeline.first_visible_at.isoformat().replace(
+                        "+00:00", "Z"
+                    ),
+                    "first_visible_at": timeline.first_visible_at.isoformat().replace(
+                        "+00:00", "Z"
+                    ),
+                    "final_visible_at": timeline.final_visible_at.isoformat().replace(
+                        "+00:00", "Z"
+                    ),
+                    "delivered_at": (
+                        timeline.delivered_at.isoformat().replace("+00:00", "Z")
+                        if timeline.delivered_at is not None
+                        else None
+                    ),
+                    "conversation_id": f"local-{record.execution_id}",
+                    "message_id": actual.actual_turn_id,
+                    "provider_message_id": f"local-{actual.actual_turn_id}",
+                    "model": actual.model_id,
+                    "tools": list(actual.tool_refs),
+                    "tool_outcomes": ["passed"] * len(actual.tool_refs),
+                    "audit_ids": list(actual.audit_refs),
+                    "media_refs": [],
+                    "token_count": actual.token_count,
+                    "cost_usd": actual.cost_usd,
+                    "deviation": None,
+                    "evaluator_reasoning": "Protected deterministic checks passed.",
+                }
+            )
+    return _write_producer_observation(
+        producer_handle=producer_handle,
+        attempted=attempted,
+        transcript_facts=transcript_facts,
+    )
 
 
 @dataclass(frozen=True)
@@ -1835,6 +1861,8 @@ def _derive_protected_publication_source(
         )
     ):
         raise ProductionAdapterError("protected publication source binding drift")
+    source_attempt = source.get("attempt", {})
+    is_gate = source_attempt.get("schema_version") == "noor-e2e-gate-attempt/v2"
     kind = (
         "scenario"
         if record.execution_id in record.registry.compiled_policy.scenarios
@@ -1921,7 +1949,7 @@ def _derive_protected_publication_source(
     }
     if kind == "scenario":
         facts = source.get("transcript_facts")
-        if not isinstance(facts, list) or not facts:
+        if not isinstance(facts, list) or (not facts and not is_gate):
             raise ProductionAdapterError(
                 "protected scenario transcript facts are unavailable"
             )

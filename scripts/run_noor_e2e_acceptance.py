@@ -15,6 +15,8 @@ from scripts.e2e_acceptance.coordinator import (
     ProductionRunCoordinator,
     ProtectedJournalAcceptancePort,
 )
+from scripts.e2e_acceptance.live_authority import build_live_authority_bundle
+from scripts.e2e_acceptance.live_producer import materialize_next_conservative_gate
 from scripts.e2e_acceptance.policy import (
     PolicyValidationError,
     TrustedAcceptanceRegistry,
@@ -25,6 +27,7 @@ from scripts.e2e_acceptance.production import (
     ProductionAdapterError,
     ProtectedRunPlan,
     dispatch_local_action,
+    issue_decisive_producer_handle,
     load_protected_baseline,
     load_sealed_run_plan,
     seal_fixed_final_readback,
@@ -45,11 +48,13 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--run-id", required=True)
     verify.add_argument("--report-output", type=Path, required=True)
     for command in (
+        "authorize-live",
         "prepare",
         "preflight",
         "execute-resume",
         "reconcile-action",
         "record-attempt",
+        "record-blocked",
         "close-execution",
         "finalize",
     ):
@@ -61,6 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
             "prepare",
             "execute-resume",
             "record-attempt",
+            "record-blocked",
             "close-execution",
             "finalize",
         }:
@@ -124,6 +130,19 @@ def _coordinator(
 
 def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
     registry = _canonical_registry(args.repo_root)
+    if args.command == "authorize-live":
+        bundle = build_live_authority_bundle(
+            registry=registry,
+            protected_root=args.protected_root.resolve(strict=True),
+            run_id=args.run_id,
+            current_time=datetime.now(UTC),
+        )
+        return {
+            "run_id": args.run_id,
+            "authority_receipt_digest": bundle.receipt_digest,
+            "authority_receipt_ref": bundle.receipt_ref,
+            "input_refs": bundle.input_refs,
+        }
     if args.command == "prepare":
         plan = ProtectedRunPlan.load(
             args.protected_root.resolve(strict=True), args.run_plan
@@ -252,6 +271,33 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             "ordinal": record.ordinal,
             "execution_id": record.artifact.execution_id,
             "outcome": record.artifact.outcome,
+        }
+    if args.command == "record-blocked":
+        plan = load_sealed_run_plan(
+            journal,
+            ProtectedRunPlan.load(
+                args.protected_root.resolve(strict=True), args.run_plan
+            ),
+        )
+        handle = issue_decisive_producer_handle(
+            registry=registry,
+            journal=journal,
+            authority=authority,
+            sealed_plan=plan,
+        )
+        source_ref = materialize_next_conservative_gate(
+            producer_handle=handle,
+            current_time=datetime.now(UTC),
+        )
+        artifact = _coordinator(
+            registry, authority, journal
+        ).publish_next_from_decisive_producer(handle, source_ref)
+        return {
+            "phase": journal.phase,
+            "plan_digest": plan.plan_digest,
+            "ordinal": artifact.ordinal,
+            "execution_id": artifact.execution_id,
+            "outcome": artifact.outcome,
         }
     if args.command == "close-execution":
         load_sealed_run_plan(

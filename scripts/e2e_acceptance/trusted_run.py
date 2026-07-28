@@ -1892,6 +1892,18 @@ def _derive_producer_publication_candidate(
                 )
             )
         raw_turns = getattr(source, "turns", ())
+        if source.kind == "scenario":
+            if record.artifact.outcome in {"PASS", "FAIL"} and not raw_turns:
+                raise TrustedRunError(
+                    "executed scenario publication has no transcript turns"
+                )
+            if (
+                record.artifact.outcome in {"BLOCKED", "EXCLUDED_BY_CLIENT"}
+                and raw_turns
+            ):
+                raise TrustedRunError(
+                    "zero-turn gate publication contains transcript turns"
+                )
         disposition_sources.extend(getattr(source, "side_effect_dispositions", ()))
         try:
             turns.extend(TurnReport.model_validate(item) for item in raw_turns)
@@ -2049,22 +2061,24 @@ def _derive_producer_publication_candidate(
                 }
             )
         )
-    if not turns:
-        raise TrustedRunError("accepted scenario publication has no transcript turns")
     ordered_turns = tuple(turns)
     latencies = tuple(
         max(0, int((turn.final_visible_at - turn.sent_at).total_seconds() * 1000))
         for turn in ordered_turns
     )
     ordered_latencies = sorted(latencies)
-    p50 = ordered_latencies[(len(ordered_latencies) - 1) // 2]
-    p95 = ordered_latencies[
-        min(len(ordered_latencies) - 1, (95 * len(ordered_latencies) - 1) // 100)
-    ]
+    p50 = ordered_latencies[(len(ordered_latencies) - 1) // 2] if turns else 0
+    p95 = (
+        ordered_latencies[
+            min(len(ordered_latencies) - 1, (95 * len(ordered_latencies) - 1) // 100)
+        ]
+        if turns
+        else 0
+    )
     latency = LatencyReport(
         p50_ms=p50,
         p95_ms=p95,
-        max_ms=max(ordered_latencies),
+        max_ms=max(ordered_latencies) if turns else 0,
         evidence_refs=tuple(row.attempt_ref for row in executions),
     )
     defect_reports = tuple(

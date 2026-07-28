@@ -199,7 +199,7 @@ class ScenarioPublicationSource(_StrictModel):
     kind: Literal["scenario"]
     execution: PublicationExecutionSource
     evidence: tuple[PublicationEvidenceSource, ...] = Field(min_length=1)
-    turns: tuple[dict[str, Any], ...] = Field(min_length=1)
+    turns: tuple[dict[str, Any], ...] = ()
     side_effect_dispositions: tuple[SideEffectDispositionSource, ...] = ()
 
 

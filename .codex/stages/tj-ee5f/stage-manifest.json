@@ -250,6 +250,11 @@
       "task_id": "tj-ee5f.5-task2",
       "stream_owner": "tj-ee5f.5-task2-production-adapters",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.5-task2.md"
+    },
+    {
+      "task_id": "tj-ee5f.5-task3-live-boundary",
+      "stream_owner": "tj-ee5f.5-task3-live-boundary",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.5-task3-live-boundary.md"
     }
   ],
   "scope_provenance": {
