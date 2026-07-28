@@ -42,7 +42,7 @@ success_criteria:
   - a simulated fresh checkout accepts the official HTTPS origin with or without .git, and rejects URL variants plus top-level or common-dir identity drift
   - the standard-checkout fixture returns literal .git while repo_root/.git exists, so the relative common-directory branch is exercised
   - a missing top-level path remains distinguishable from existing top-level identity drift
-  - the CI test job that executes full Pytest fetches full Git history for scope-provenance validation
+  - the CI test job has exactly one Run tests step with the full configured Pytest token sequence and fetches full Git history for scope-provenance validation
   - tracked frozen Beads source contains exactly 105 referenced IDs and canonical record digests
   - source validation fails closed on missing extra malformed reordered noncanonical escaped symlinked or digest-drifted data
 selected_docs:
@@ -113,6 +113,13 @@ verification:
   - GREEN: uv run ruff format --check src/ tests/ -> 315 files already formatted
   - GREEN: uv run mypy src/ -> 163 source files, no issues
   - GREEN: uv run pytest tests/ -v --tb=short -> 2086 passed, 19 skipped
+  - RED: mutation of Run tests to uv run pytest tests/test_ci_workflow_contract.py -q -> 1 failed, DID NOT RAISE; prior substring contract accepted narrowed Pytest
+  - GREEN: uv run pytest tests/test_ci_workflow_contract.py -q -> 3 passed
+  - GREEN: uv run pytest tests/test_e2e_acceptance_*.py -q -> 207 passed
+  - GREEN: uv run ruff check src/ tests/ -> passed
+  - GREEN: uv run ruff format --check src/ tests/ -> 315 files already formatted
+  - GREEN: uv run mypy src/ -> 163 source files, no issues
+  - GREEN: uv run pytest tests/ -v --tb=short -> 2087 passed, 19 skipped
   - EXCEPTION: uv run mypy scripts/e2e_acceptance exits 2 because repository mypy config excludes scripts/; no config change was permitted in this task
 changed_files:
   - .github/workflows/ci.yml
@@ -129,6 +136,7 @@ implementation_commit: 58cdae1
 correction_commit: a6f2034
 tdd_correction_commit: 482b017
 ci_history_correction_commit: 0e390a8
+ci_command_contract_correction_commit: f683b55
 explicit_defers:
   - none
 ---
@@ -175,6 +183,14 @@ limited to the checkout in `jobs.test`, and its semantic contract proves that
 this exact job runs full Pytest with `fetch-depth: 0`; provenance validation and
 runtime network behavior are unchanged.
 
+Final review found the first semantic workflow test used a substring for the
+Pytest command, so a narrowed `tests/test_ci_workflow_contract.py -q` command
+would still pass the contract. A mutation RED proved that gap. The contract now
+locates exactly one `Run tests` step in `jobs.test` and compares
+`shlex.split()` output with the six required full-suite tokens; it continues to
+bind `fetch-depth: 0` to the single checkout in that same job. This correction
+changes tests only and leaves the workflow YAML untouched.
+
 RED was recorded before implementation:
 
 - the no-suffix canonical HTTPS origin raised `PolicyValidationError`;
@@ -198,6 +214,9 @@ data before it can be trusted.
 - The CI-history correction's focused contract passed, as did its acceptance
   surface (207), full configured gates, and full Pytest (2086 passed, 19
   skipped).
+- The final command-contract mutation was RED before tightening and green
+  afterward; its contract suite passed 3 tests, acceptance passed 207, and the
+  full suite passed 2087 tests with 19 skips.
 - Artifact and process verification passed. Ruff, formatting, `mypy src/`, and
   the full Pytest suite passed as recorded in the frontmatter verification
   ledger.
@@ -211,6 +230,8 @@ TDD-evidence correction: `482b017`
 (`test(acceptance): prove checkout identity branches`).
 CI-history correction: `0e390a8`
 (`fix(ci): fetch provenance history for test job`).
+CI-command contract correction: `f683b55`
+(`test(ci): require exact full test command`).
 No external, paid, production, customer, or business action occurred.
 
 # Risks / Follow-ups / Explicit Defers
