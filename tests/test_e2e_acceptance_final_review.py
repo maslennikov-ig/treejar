@@ -762,6 +762,156 @@ def test_production_v2_snapshot_rejects_final_causal_head_drift(
         registry.finalize_run(run_id)
 
 
+def _rewrite_protected_journal(
+    protected: Path,
+    journal,
+    transform,
+) -> None:
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((protected / "journal").glob("*.json"))
+    ]
+    transform(events)
+    for path in (protected / "journal").glob("*.json"):
+        path.unlink()
+    previous = None
+    for cursor, event in enumerate(events, start=1):
+        event["cursor"] = cursor
+        event["previous_event_digest"] = previous
+        previous = _write_json(
+            protected / f"journal/{cursor:06d}.json",
+            event,
+        )
+    journal.previous_event_digest = previous
+
+
+def _seal_materializer_acceptance_journal(
+    registry,
+    tracked: Path,
+    protected: Path,
+    journal,
+    *,
+    gate_records: tuple[dict[str, object], ...] = (),
+) -> None:
+    policy, _, trusted = _modules()
+    run_path = tracked / "registry/run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    for path in (protected / "journal").glob("*.json"):
+        path.unlink()
+
+    previous = None
+
+    def append(phase: str, kind: str, data: dict[str, object]) -> str:
+        nonlocal previous
+        cursor = len(tuple((protected / "journal").glob("*.json"))) + 1
+        event = {
+            "schema_version": "noor-e2e-protected-event/v2",
+            "cursor": cursor,
+            "phase": phase,
+            "kind": kind,
+            "previous_event_digest": previous,
+            "data": data,
+        }
+        previous = _write_json(protected / f"journal/{cursor:06d}.json", event)
+        return previous
+
+    append(
+        "prepared",
+        "prepared",
+        {"authorization_digest": journal.authorization_digest},
+    )
+    baseline = policy.ReadbackObservation.model_validate(run["baseline"])
+    append(
+        "baseline_sealed",
+        "baseline_sealed",
+        {
+            "source_id": baseline.source_id,
+            "collector_id": baseline.collector_id,
+            "observed_at": baseline.observed_at.isoformat(),
+            "content_digest": baseline.content_digest,
+        },
+    )
+    append(
+        "executing",
+        "execution_started",
+        {"started_at": baseline.observed_at.isoformat()},
+    )
+    for original_record in gate_records:
+        record = dict(original_record)
+        record["journal_head_digest"] = previous
+        execution_id = str(record["execution_id"])
+        _write_json(protected / f"recorded-gates/{execution_id}.json", record)
+        append("executing", "gate_recorded", record)
+
+    final_anchor = max(
+        datetime.fromisoformat(value)
+        for field in ("final_visible_at", "delivered_at", "action_at")
+        for value in run[field]
+    )
+    final_turn_digest = append(
+        "final_turn_anchored",
+        "final_turn_anchored",
+        {
+            "event_digest": "d" * 64,
+            "occurred_at": final_anchor.isoformat(),
+        },
+    )
+    original_final = policy.ReadbackObservation.model_validate(run["final"])
+    final = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id=original_final.collector_id,
+        source_id=original_final.source_id,
+        run_id=original_final.run_id,
+        preflight_digest=original_final.preflight_digest,
+        collector_artifact_digest=original_final.collector_artifact_digest,
+        causal_event_digest=final_turn_digest,
+        observed_at=original_final.observed_at,
+        inventory=original_final.inventory,
+    )
+    run["final"] = final.model_dump(mode="json")
+    _write_json(run_path, run)
+
+    artifact_path = protected / "collector-artifacts/final-readback.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact.update(
+        journal_head_digest=final_turn_digest,
+        final_turn_anchor_at=final_anchor.isoformat(),
+        observed_at=final.observed_at.isoformat(),
+        inventory_digest=trusted.canonical_digest(final.inventory),
+        observation=final.model_dump(mode="json"),
+    )
+    artifact_sha256 = _write_json(artifact_path, artifact)
+    receipt_path = protected / "producer-receipts/final-readback.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt.update(
+        journal_head_digest=final_turn_digest,
+        artifact_sha256=artifact_sha256,
+        inventory_digest=trusted.canonical_digest(final.inventory),
+        observed_at=final.observed_at.isoformat(),
+    )
+    receipt_digest = _write_json(receipt_path, receipt)
+    append(
+        "final_readback_sealed",
+        "final_readback_sealed",
+        {
+            "source_id": final.source_id,
+            "collector_id": final.collector_id,
+            "observed_at": final.observed_at.isoformat(),
+            "content_digest": final.content_digest,
+            "causal_event_digest": final.causal_event_digest,
+            "collector_receipt_digest": receipt_digest,
+            "inventory_digest": trusted.canonical_digest(final.inventory),
+        },
+    )
+    append("evaluated", "evaluated", {"evaluation_digest": "e" * 64})
+    append(
+        "attempt_committed",
+        "attempt_committed",
+        {"attempt_chain_digest": "f" * 64},
+    )
+    journal.previous_event_digest = previous
+
+
 def _production_materializer_inputs(tmp_path: Path):
     registry, tracked, protected = _build_verified_run(tmp_path)
     policy, _, trusted = _modules()
@@ -880,6 +1030,12 @@ def _production_materializer_inputs(tmp_path: Path):
     _write_json(
         protected / "producer-receipts/baseline-readback.json", baseline_receipt
     )
+    _seal_materializer_acceptance_journal(
+        registry,
+        tracked,
+        protected,
+        journal,
+    )
     return registry, tracked, protected, journal, plan
 
 
@@ -904,9 +1060,63 @@ def test_materialize_execution_snapshot_builds_and_loads_strict_production_v2(
         )["final"]["causal_event_digest"]
     )
     assert snapshot.terminal_journal_head_digest != snapshot.final_causal_event_digest
+    assert tuple(snapshot.journal_events) == tuple(
+        f"journal/{cursor:06d}.json"
+        for cursor in range(1, len(snapshot.journal_events) + 1)
+    )
+    commit = json.loads(
+        (
+            trusted._execution_snapshot_root(registry) / journal.run_id / "commit.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert commit["journal_events_digest"] == trusted.canonical_digest(
+        snapshot.journal_events
+    )
     assert (
         trusted._load_protected_execution_snapshot(registry, journal.run_id) == snapshot
     )
+
+
+def test_strict_snapshot_materializes_after_receipt_expiry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Recovery uses the protected acceptance proof, not a new five-minute window."""
+
+    registry, _, _, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    future = datetime.now(UTC) + timedelta(hours=1)
+    monkeypatch.setattr(
+        trusted,
+        "datetime",
+        SimpleNamespace(now=lambda timezone: future),
+    )
+
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+
+    assert snapshot.run_id == journal.run_id
+
+
+@pytest.mark.parametrize("event_mode", ("missing", "tampered"))
+def test_materializer_rejects_invalid_final_readback_acceptance_event(
+    tmp_path: Path,
+    event_mode: str,
+) -> None:
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+
+    def mutate(events):
+        final_event = next(
+            event for event in events if event["kind"] == "final_readback_sealed"
+        )
+        if event_mode == "missing":
+            events.remove(final_event)
+        else:
+            final_event["data"]["content_digest"] = "0" * 64
+
+    _rewrite_protected_journal(protected, journal, mutate)
+
+    with pytest.raises(Exception, match="final readback.*journal|acceptance"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
 def test_materializer_requires_baseline_producer_pair_and_sealed_journal_chain(
@@ -981,8 +1191,10 @@ def test_materializer_recovers_only_identical_snapshot_after_commit_crash(
         trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
+@pytest.mark.parametrize("event_mode", ("valid", "missing", "tampered"))
 def test_materializer_includes_and_validates_all_four_gate_artifacts(
     tmp_path: Path,
+    event_mode: str,
 ) -> None:
     registry, tracked, protected, journal, plan = _production_materializer_inputs(
         tmp_path
@@ -1126,23 +1338,48 @@ def test_materializer_includes_and_validates_all_four_gate_artifacts(
         row for row in manifest["ordered_turns"] if row[0] != execution_id
     ]
     _write_json(manifest_path, manifest)
+    recorded_gate = {
+        "schema_version": "noor-e2e-recorded-gate/v2",
+        "execution_id": execution_id,
+        "outcome": "BLOCKED",
+        "gate_attempt_sha256": gate_sha256,
+        "journal_head_digest": "c" * 64,
+        "gate_attempt": gate_payload,
+    }
     for relative, payload in {
         f"gate-attempts/{execution_id}.json": gate_payload,
         f"gate-evidence/{execution_id}.json": artifact,
         f"producer-receipts/gates/{execution_id}.json": receipt,
-        f"recorded-gates/{execution_id}.json": {
-            "schema_version": "noor-e2e-recorded-gate/v2",
-            "execution_id": execution_id,
-            "outcome": "BLOCKED",
-            "gate_attempt_sha256": gate_sha256,
-            "journal_head_digest": "c" * 64,
-            "gate_attempt": gate_payload,
-        },
+        f"recorded-gates/{execution_id}.json": recorded_gate,
     }.items():
         _write_json(protected / relative, payload)
     journal._recorded_gates = {execution_id: gate}
+    _seal_materializer_acceptance_journal(
+        registry,
+        tracked,
+        protected,
+        journal,
+        gate_records=(recorded_gate,),
+    )
+    if event_mode != "valid":
 
-    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+        def mutate(events):
+            gate_event = next(
+                event for event in events if event["kind"] == "gate_recorded"
+            )
+            if event_mode == "missing":
+                events.remove(gate_event)
+            else:
+                gate_event["data"]["outcome"] = "EXCLUDED_BY_CLIENT"
+
+        _rewrite_protected_journal(protected, journal, mutate)
+
+    if event_mode == "valid":
+        snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+    else:
+        with pytest.raises(Exception, match="gate.*journal|acceptance"):
+            trusted.materialize_execution_snapshot(registry, journal, plan)
+        return
 
     assert set(snapshot.gate_artifacts) == {
         f"gate-attempts/{execution_id}.json",

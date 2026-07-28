@@ -31,7 +31,8 @@ def test_cli_exposes_resumable_local_only_lifecycle() -> None:
         "preflight",
         "execute-resume",
         "reconcile-action",
-        "record-gate",
+        "record-attempt",
+        "close-execution",
         "finalize",
     ):
         assert command in completed.stdout
@@ -268,63 +269,11 @@ def test_sealed_run_plan_rejects_replacement_after_restart(tmp_path: Path) -> No
         load_sealed_run_plan(journal, replacement)
 
 
-def test_record_gate_uses_opaque_authority_not_public_authorization(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cli_does_not_expose_caller_selected_gate_recording() -> None:
     from scripts import run_noor_e2e_acceptance as cli
-    from scripts.e2e_acceptance import execution
 
-    root = (tmp_path / "protected").resolve()
-    root.mkdir()
-    recorded: list[tuple[object, str]] = []
-
-    class Journal:
-        run_root = root
-
-        def record_gate_attempt(self, attempt, *, protected_attempt_digest) -> None:
-            recorded.append((attempt, protected_attempt_digest))
-
-    journal = Journal()
-    gate = execution.GateAttemptV2(
-        schema_version="noor-e2e-gate-attempt/v2",
-        execution_id="EB-RUNTIME",
-        outcome="BLOCKED",
-        run_started_at=datetime.now(UTC),
-        execution_started_event_digest="a" * 64,
-        receipt_digest="b" * 64,
-    )
-    execution._write_exclusive(root, "gate.json", gate.model_dump(mode="json"))
-    opaque_authority = object()
-    captured: dict[str, object] = {}
-
-    class Runner:
-        def __init__(self, *, registry, authority, journal) -> None:
-            captured.update(registry=registry, authority=authority, journal=journal)
-
-        def validate_gate_attempt(self, attempt, *, current_time):
-            return attempt
-
-    monkeypatch.setattr(cli, "_canonical_registry", lambda _: "registry")
-    monkeypatch.setattr(
-        cli,
-        "_authority_and_journal",
-        lambda *args, **kwargs: (opaque_authority, journal),
-    )
-    monkeypatch.setattr(execution, "GenericAcceptanceRunner", Runner)
-    args = SimpleNamespace(
-        command="record-gate",
-        repo_root=PROJECT_ROOT,
-        protected_root=root,
-        run_id="local-run",
-        gate_attempt="gate.json",
-    )
-
-    assert cli._lifecycle_result(args) == {
-        "execution_id": "EB-RUNTIME",
-        "outcome": "BLOCKED",
-    }
-    assert captured["authority"] is opaque_authority
-    assert recorded[0][0].execution_id == "EB-RUNTIME"
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["record-gate"])
 
 
 def test_adapter_consumes_exact_permit_before_transport_and_projects_checksum(

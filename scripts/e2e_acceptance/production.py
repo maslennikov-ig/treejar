@@ -879,6 +879,39 @@ def _load_sealed_final_observation(
     return artifact.observation
 
 
+def seal_fixed_final_readback(
+    journal: execution.ProtectedExecutionJournal,
+    *,
+    current_time: datetime | None = None,
+) -> ReadbackObservation:
+    """Seal only the fixed collector-owned final pair; never read caller paths."""
+
+    if journal.phase == "final_readback_sealed":
+        return _load_sealed_final_observation(journal)
+    try:
+        artifact_payload = execution._read_protected(
+            journal.run_root, "collector-artifacts/final-readback.json"
+        )
+        artifact = execution.ProtectedFinalReadbackArtifact.model_validate(
+            json.loads(artifact_payload)
+        )
+        receipt_payload = execution._read_protected(
+            journal.run_root, "producer-receipts/final-readback.json"
+        )
+    except (
+        ValueError,
+        json.JSONDecodeError,
+        execution.ExecutionValidationError,
+    ) as exc:
+        raise ProductionAdapterError("fixed final collector pair is invalid") from exc
+    journal.seal_final_readback(
+        artifact.observation,
+        receipt_digest=hashlib.sha256(receipt_payload).hexdigest(),
+        current_time=current_time,
+    )
+    return artifact.observation
+
+
 def load_protected_baseline(
     journal: execution.ProtectedExecutionJournal,
     *,
@@ -949,6 +982,7 @@ __all__ = [
     "ProtectedRunPlan",
     "WazzupWebhookAdapter",
     "load_protected_baseline",
+    "seal_fixed_final_readback",
     "load_sealed_run_plan",
     "seal_run_plan",
     "write_protected_message",

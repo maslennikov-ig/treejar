@@ -71,6 +71,12 @@ def _digest(value: object) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
 
 
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
 class CriterionPlan(_StrictModel):
     criterion_id: str
     evidence_mode: EvidenceMode
@@ -2330,6 +2336,10 @@ class ProtectedExecutionJournal:
         self._execution_started_event_digest: str | None = None
         self._baseline_content_digest: str | None = None
         self._sealed_run_plan_digest: str | None = None
+        self._coordinator_acceptance_events: dict[int, dict[str, Any]] = {}
+        self._final_turn_event_digest: str | None = None
+        self._evaluation_digest: str | None = None
+        self._attempt_chain_digest: str | None = None
 
     @classmethod
     def create(
@@ -2506,6 +2516,52 @@ class ProtectedExecutionJournal:
             ):
                 raise ExecutionValidationError("run plan seal replay drift")
             self._sealed_run_plan_digest = sealed_plan_digest
+        elif kind == "coordinator_unit_accepted":
+            if replayed_phase != "executing":
+                raise ExecutionValidationError(
+                    "coordinator acceptance journal phase drift"
+                )
+            required = {
+                "schema_version",
+                "run_id",
+                "authorization_digest",
+                "ordinal",
+                "execution_id",
+                "accepted_payload_digest",
+                "prior_fold_digest",
+                "event_digest",
+            }
+            if set(data) != required:
+                raise ExecutionValidationError(
+                    "coordinator acceptance event layout drift"
+                )
+            identity = {key: data[key] for key in required - {"event_digest"}}
+            ordinal = data["ordinal"]
+            expected_ordinal = len(self._coordinator_acceptance_events) + 1
+            if (
+                data["schema_version"] != "noor-e2e-coordinator-journal-acceptance/v1"
+                or data["run_id"] != self.run_id
+                or data["authorization_digest"] != self.authorization_digest
+                or not isinstance(ordinal, int)
+                or ordinal != expected_ordinal
+                or ordinal > len(self.authorization.execution_ids)
+                or data["execution_id"] != self.authorization.execution_ids[ordinal - 1]
+                or any(
+                    not isinstance(data[key], str)
+                    or len(data[key]) != 64
+                    or any(
+                        character not in "0123456789abcdef" for character in data[key]
+                    )
+                    for key in (
+                        "accepted_payload_digest",
+                        "prior_fold_digest",
+                        "event_digest",
+                    )
+                )
+                or data["event_digest"] != _digest(identity)
+            ):
+                raise ExecutionValidationError("coordinator acceptance binding drift")
+            self._coordinator_acceptance_events[ordinal] = dict(data)
         elif kind == "action_completed":
             self._actions[str(data["action_id"])] = str(data["state"])  # type: ignore[assignment]
         elif kind == "unknown_action_reconciled":
@@ -2587,6 +2643,20 @@ class ProtectedExecutionJournal:
             if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
                 raise ExecutionValidationError("final-turn anchor timestamp is invalid")
             self._final_turn_occurred_at = occurred_at
+            event_digest = str(data.get("event_digest", ""))
+            if not _is_sha256(event_digest):
+                raise ExecutionValidationError("final-turn event digest is invalid")
+            self._final_turn_event_digest = event_digest
+        elif kind == "evaluated":
+            evaluation_digest = str(data.get("evaluation_digest", ""))
+            if not _is_sha256(evaluation_digest):
+                raise ExecutionValidationError("evaluation digest is invalid")
+            self._evaluation_digest = evaluation_digest
+        elif kind == "attempt_committed":
+            attempt_chain_digest = str(data.get("attempt_chain_digest", ""))
+            if not _is_sha256(attempt_chain_digest):
+                raise ExecutionValidationError("attempt chain digest is invalid")
+            self._attempt_chain_digest = attempt_chain_digest
 
     def _append_event(
         self,
@@ -3483,6 +3553,7 @@ class ProtectedExecutionJournal:
             },
         )
         self._final_turn_occurred_at = occurred_at
+        self._final_turn_event_digest = event_digest
 
     def seal_final_readback(
         self,
@@ -3587,6 +3658,7 @@ class ProtectedExecutionJournal:
             kind="evaluated",
             data={"evaluation_digest": evaluation_digest},
         )
+        self._evaluation_digest = evaluation_digest
 
     def commit_phase(self, *, attempt_chain_digest: str) -> None:
         if len(attempt_chain_digest) != 64 or any(
@@ -3599,6 +3671,7 @@ class ProtectedExecutionJournal:
             kind="attempt_committed",
             data={"attempt_chain_digest": attempt_chain_digest},
         )
+        self._attempt_chain_digest = attempt_chain_digest
 
     def begin_attempt(
         self,

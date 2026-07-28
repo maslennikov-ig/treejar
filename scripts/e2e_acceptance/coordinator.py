@@ -265,6 +265,53 @@ class JournalAcceptancePort(Protocol):
 
 
 @dataclass(frozen=True)
+class ProtectedJournalAcceptancePort:
+    """Append-only coordinator port backed by the protected execution journal."""
+
+    journal: execution.ProtectedExecutionJournal
+
+    def record_acceptance(self, event: JournalAcceptanceEvent) -> str:
+        if (
+            self.journal.phase != "executing"
+            or event.run_id != self.journal.run_id
+            or event.authorization_digest != self.journal.authorization_digest
+            or event.ordinal > len(self.journal.authorization.execution_ids)
+            or event.execution_id
+            != self.journal.authorization.execution_ids[event.ordinal - 1]
+        ):
+            raise CoordinatorError("journal acceptance authority/order binding drift")
+        existing = self.journal._coordinator_acceptance_events.get(event.ordinal)
+        if existing is not None:
+            if existing != event.model_dump(mode="json"):
+                raise CoordinatorError(
+                    "journal acceptance replay differs from committed"
+                )
+            return event.event_digest
+        if event.ordinal != len(self.journal._coordinator_acceptance_events) + 1:
+            raise CoordinatorError("journal acceptance is out of canonical order")
+        self.journal._append_event(
+            phase="executing",
+            kind="coordinator_unit_accepted",
+            data=event.model_dump(mode="json"),
+        )
+        self.journal._coordinator_acceptance_events[event.ordinal] = event.model_dump(
+            mode="json"
+        )
+        return event.event_digest
+
+    def read_acceptance(self, ordinal: int) -> JournalAcceptanceEvent | None:
+        payload = self.journal._coordinator_acceptance_events.get(ordinal)
+        if payload is None:
+            return None
+        try:
+            return JournalAcceptanceEvent.model_validate(payload)
+        except ValueError as exc:
+            raise CoordinatorError(
+                "journal acceptance replay payload is invalid"
+            ) from exc
+
+
+@dataclass(frozen=True)
 class CoordinatorResult:
     final_activity: FinalActivityProducerReceipt
     evaluation: EvaluationBundle
@@ -722,6 +769,7 @@ __all__ = [
     "FinalActivityProducerReceipt",
     "JournalAcceptanceEvent",
     "JournalAcceptancePort",
+    "ProtectedJournalAcceptancePort",
     "ProducerArtifact",
     "ProducerReceipt",
     "ProductionRunCoordinator",

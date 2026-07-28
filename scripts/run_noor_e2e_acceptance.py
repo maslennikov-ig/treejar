@@ -11,6 +11,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 from scripts.e2e_acceptance import execution
+from scripts.e2e_acceptance.coordinator import (
+    ProductionRunCoordinator,
+    ProtectedJournalAcceptancePort,
+)
 from scripts.e2e_acceptance.policy import (
     PolicyValidationError,
     TrustedAcceptanceRegistry,
@@ -23,6 +27,7 @@ from scripts.e2e_acceptance.production import (
     dispatch_local_action,
     load_protected_baseline,
     load_sealed_run_plan,
+    seal_fixed_final_readback,
     seal_run_plan,
 )
 from scripts.e2e_acceptance.trusted_run import materialize_execution_snapshot
@@ -44,19 +49,24 @@ def build_parser() -> argparse.ArgumentParser:
         "preflight",
         "execute-resume",
         "reconcile-action",
-        "record-gate",
+        "record-attempt",
+        "close-execution",
         "finalize",
     ):
         lifecycle = subcommands.add_parser(command)
         lifecycle.add_argument("--repo-root", type=Path, required=True)
         lifecycle.add_argument("--protected-root", type=Path, required=True)
         lifecycle.add_argument("--run-id", required=True)
-        if command in {"prepare", "execute-resume", "finalize"}:
+        if command in {
+            "prepare",
+            "execute-resume",
+            "record-attempt",
+            "close-execution",
+            "finalize",
+        }:
             lifecycle.add_argument("--run-plan", required=True)
         if command == "preflight":
             lifecycle.add_argument("--baseline", required=True)
-        if command == "record-gate":
-            lifecycle.add_argument("--gate-attempt", required=True)
         if command == "reconcile-action":
             lifecycle.add_argument("--action-id", required=True)
     return parser
@@ -95,6 +105,21 @@ def _authority_and_journal(
             authority=authority,
         )
     return authority, journal
+
+
+def _coordinator(
+    registry: TrustedAcceptanceRegistry,
+    authority: execution.ExecutionAuthorizationHandle,
+    journal: execution.ProtectedExecutionJournal,
+) -> ProductionRunCoordinator:
+    return ProductionRunCoordinator(
+        registry=registry,
+        authorization=authority._authorization,
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=datetime.now(UTC),
+    )
 
 
 def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
@@ -213,30 +238,56 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             "state": journal._actions[action_id],
             "settled_reserved_max_cost_usd": settlement.actual_cost_usd,
         }
-    if args.command == "record-gate":
-        payload = execution._read_protected(journal.run_root, args.gate_attempt)
-        gate = execution.GateAttemptV2.model_validate(json.loads(payload))
-        validated = execution.GenericAcceptanceRunner(
-            registry=registry,
-            authority=authority,
-            journal=journal,
-        ).validate_gate_attempt(gate, current_time=datetime.now(UTC))
-        canonical_gate = validated.model_dump(mode="json")
-        gate_path = f"gate-attempts/{validated.execution_id}.json"
-        try:
-            existing = execution._read_protected(journal.run_root, gate_path)
-        except execution.ExecutionValidationError:
-            execution._write_exclusive(journal.run_root, gate_path, canonical_gate)
-        else:
-            if existing != execution._canonical_bytes(canonical_gate):
-                raise ProductionAdapterError("gate attempt replay drift")
-        journal.record_gate_attempt(
-            validated,
-            protected_attempt_digest=hashlib.sha256(
-                execution._canonical_bytes(canonical_gate)
-            ).hexdigest(),
+    if args.command == "record-attempt":
+        plan = load_sealed_run_plan(
+            journal,
+            ProtectedRunPlan.load(
+                args.protected_root.resolve(strict=True), args.run_plan
+            ),
         )
-        return {"execution_id": validated.execution_id, "outcome": validated.outcome}
+        record = _coordinator(registry, authority, journal).accept_next()
+        return {
+            "phase": journal.phase,
+            "plan_digest": plan.plan_digest,
+            "ordinal": record.ordinal,
+            "execution_id": record.artifact.execution_id,
+            "outcome": record.artifact.outcome,
+        }
+    if args.command == "close-execution":
+        load_sealed_run_plan(
+            journal,
+            ProtectedRunPlan.load(
+                args.protected_root.resolve(strict=True), args.run_plan
+            ),
+        )
+        result = _coordinator(registry, authority, journal).finalize()
+        if journal.phase == "executing":
+            journal.anchor_final_turn(
+                event_digest=result.final_activity.receipt_digest,
+                occurred_at=result.final_activity.issued_at,
+            )
+        elif journal.phase == "final_turn_anchored" and (
+            journal._final_turn_event_digest != result.final_activity.receipt_digest
+            or journal._final_turn_occurred_at != result.final_activity.issued_at
+        ):
+            raise ProductionAdapterError("final activity anchor replay drift")
+        if journal.phase == "final_turn_anchored":
+            seal_fixed_final_readback(journal, current_time=datetime.now(UTC))
+        if journal.phase == "final_readback_sealed":
+            journal.mark_evaluated(evaluation_digest=result.evaluation.bundle_digest)
+        elif journal.phase == "evaluated" and (
+            journal._evaluation_digest != result.evaluation.bundle_digest
+        ):
+            raise ProductionAdapterError("coordinator evaluation replay drift")
+        if journal.phase == "evaluated":
+            journal.commit_phase(
+                attempt_chain_digest=result.final_activity.accepted_fold_digest
+            )
+        elif journal.phase == "attempt_committed" and (
+            journal._attempt_chain_digest != result.final_activity.accepted_fold_digest
+        ):
+            raise ProductionAdapterError("coordinator attempt-chain replay drift")
+        return {"run_id": journal.run_id, "phase": journal.phase}
     if args.command == "finalize":
         if journal.phase != "attempt_committed":
             raise ProductionAdapterError(
