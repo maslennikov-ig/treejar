@@ -849,11 +849,18 @@ class TrustedAcceptanceRegistry:
             raise PolicyValidationError(
                 "canonical repository identity is unavailable"
             ) from exc
-        common_path = Path(common_dir)
-        if not common_path.is_absolute():
-            common_path = (repo_root / common_path).resolve(strict=True)
+        try:
+            top_level_path = Path(top_level).resolve(strict=True)
+            common_path = Path(common_dir)
+            if not common_path.is_absolute():
+                common_path = repo_root / common_path
+            common_path = common_path.resolve(strict=True)
+        except OSError as exc:
+            raise PolicyValidationError(
+                "canonical repository identity is unavailable"
+            ) from exc
         if (
-            Path(top_level).resolve(strict=True) != repo_root
+            top_level_path != repo_root
             or remote not in _CANONICAL_HTTPS_REMOTES
             or common_path.name != ".git"
             or common_path.parent.name != "treejar"

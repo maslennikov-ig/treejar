@@ -29,30 +29,61 @@ def _policy_module():
     return importlib.import_module("scripts.e2e_acceptance.policy")
 
 
-def test_canonical_https_origin_allows_only_optional_git_suffix(
+def _fresh_checkout_identity(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    *,
+    remote: str,
+    top_level: Path | None = None,
+    common_dir: Path | None = None,
+) -> tuple[object, Path]:
     policy = _policy_module()
-    repo_root = PROJECT_ROOT.resolve()
-    common_dir = repo_root.parents[1] / ".git"
+    repo_root = tmp_path / "treejar"
+    policy_path = repo_root / "scripts/e2e_acceptance/policy.py"
+    policy_path.parent.mkdir(parents=True)
+    policy_path.touch()
+    expected_top_level = top_level or repo_root
+    expected_common_dir = common_dir or repo_root / ".git"
+    expected_common_dir.mkdir(parents=True, exist_ok=True)
 
     def canonical_run(
         command: list[str], **_: object
     ) -> subprocess.CompletedProcess[str]:
         if command[-1] == "--show-toplevel":
-            return subprocess.CompletedProcess(command, 0, f"{repo_root}\n", "")
-        if command[-1] == "origin":
             return subprocess.CompletedProcess(
-                command,
-                0,
-                "https://github.com/maslennikov-ig/treejar\n",
-                "",
+                command, 0, f"{expected_top_level}\n", ""
             )
+        if command[-1] == "origin":
+            return subprocess.CompletedProcess(command, 0, f"{remote}\n", "")
         if command[-1] == "--git-common-dir":
-            return subprocess.CompletedProcess(command, 0, f"{common_dir}\n", "")
+            return subprocess.CompletedProcess(
+                command, 0, f"{expected_common_dir}\n", ""
+            )
         raise AssertionError(f"unexpected git command: {command}")
 
+    monkeypatch.setattr(policy, "__file__", str(policy_path))
     monkeypatch.setattr(policy.subprocess, "run", canonical_run)
+
+    return policy, repo_root
+
+
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "https://github.com/maslennikov-ig/treejar",
+        "https://github.com/maslennikov-ig/treejar.git",
+    ],
+)
+def test_canonical_https_origin_accepts_both_fresh_checkout_spellings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remote: str,
+) -> None:
+    policy, repo_root = _fresh_checkout_identity(
+        tmp_path,
+        monkeypatch,
+        remote=remote,
+    )
 
     assert policy.TrustedAcceptanceRegistry._canonical_repo_root() == repo_root
 
@@ -70,27 +101,34 @@ def test_canonical_https_origin_allows_only_optional_git_suffix(
     ],
 )
 def test_canonical_https_origin_rejects_noncanonical_variants(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     remote: str,
 ) -> None:
-    policy = _policy_module()
-    repo_root = PROJECT_ROOT.resolve()
-    common_dir = repo_root.parents[1] / ".git"
+    policy, _ = _fresh_checkout_identity(tmp_path, monkeypatch, remote=remote)
 
-    def variant_run(
-        command: list[str], **_: object
-    ) -> subprocess.CompletedProcess[str]:
-        if command[-1] == "--show-toplevel":
-            return subprocess.CompletedProcess(command, 0, f"{repo_root}\n", "")
-        if command[-1] == "origin":
-            return subprocess.CompletedProcess(command, 0, f"{remote}\n", "")
-        if command[-1] == "--git-common-dir":
-            return subprocess.CompletedProcess(command, 0, f"{common_dir}\n", "")
-        raise AssertionError(f"unexpected git command: {command}")
+    with pytest.raises(policy.PolicyValidationError):
+        policy.TrustedAcceptanceRegistry._canonical_repo_root()
 
-    monkeypatch.setattr(policy.subprocess, "run", variant_run)
 
-    with pytest.raises(policy.PolicyValidationError, match="identity drift"):
+@pytest.mark.parametrize("drift", ["top-level", "common-dir"])
+def test_canonical_https_origin_rejects_fresh_checkout_path_identity_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drift: str,
+) -> None:
+    repo_root = tmp_path / "treejar"
+    top_level = tmp_path / "other-checkout" if drift == "top-level" else repo_root
+    common_dir = tmp_path / "work/.git" if drift == "common-dir" else repo_root / ".git"
+    policy, _ = _fresh_checkout_identity(
+        tmp_path,
+        monkeypatch,
+        remote="https://github.com/maslennikov-ig/treejar.git",
+        top_level=top_level,
+        common_dir=common_dir,
+    )
+
+    with pytest.raises(policy.PolicyValidationError):
         policy.TrustedAcceptanceRegistry._canonical_repo_root()
 
 
