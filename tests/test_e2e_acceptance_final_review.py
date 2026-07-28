@@ -6,6 +6,7 @@ import hashlib
 import inspect
 import json
 import shutil
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -1227,15 +1228,53 @@ def _production_materializer_inputs(tmp_path: Path):
         journal=port,
         current_time=datetime.now(UTC),
     )
-    generic_ids = ("fresh", "reuse", "gate")
     for ordinal, execution_id in enumerate(
         registry.compiled_plan.execution_ids, start=1
     ):
         row = execution_by_id[execution_id]
         attempt = evidence_by_id[row["attempt_ref"]]
         unit_evidence = [attempt]
-        if ordinal == 1:
-            unit_evidence.extend(evidence_by_id[item] for item in generic_ids)
+        evidence_refs = [row["attempt_ref"]]
+        status = {
+            "PASS": "passed",
+            "FAIL": "failed",
+            "BLOCKED": "blocked",
+            "EXCLUDED_BY_CLIENT": "excluded",
+        }[row["outcome"]]
+        for criterion_id, criterion in registry.compiled_plan.criteria.items():
+            if execution_id not in criterion.obligation_ids:
+                continue
+            evidence_id = f"mode-{ordinal:02d}-{criterion_id}"
+            payload = {
+                "status": status,
+                "criterion_id": criterion_id,
+                "source_attempt_digest": attempt["payload"]["attempt_digest"],
+            }
+            if criterion.evidence_mode.value == "fresh":
+                payload["freshness_identity"] = {
+                    "run_id": run_id,
+                    "execution_id": execution_id,
+                }
+            elif criterion.evidence_mode.value == "reused_exact":
+                payload["reused_exact_identity"] = {
+                    "registry_id": registry.registry_id,
+                    "execution_id": execution_id,
+                }
+            else:
+                payload["external_gate_resolution"] = {
+                    "PASS": "implemented",
+                    "FAIL": "failed",
+                    "BLOCKED": "blocked",
+                    "EXCLUDED_BY_CLIENT": "excluded_by_client",
+                }[row["outcome"]]
+            unit_evidence.append(
+                {
+                    "evidence_id": evidence_id,
+                    "producer": "protected-publication-projector",
+                    "payload": payload,
+                }
+            )
+            evidence_refs.append(evidence_id)
         kind = coordinator._expected_kind(execution_id)
         source = {
             "schema_version": (
@@ -1246,7 +1285,7 @@ def _production_materializer_inputs(tmp_path: Path):
             "kind": kind,
             "execution": {
                 "attempt_ref": row["attempt_ref"],
-                "evidence_refs": row["evidence_refs"],
+                "evidence_refs": evidence_refs,
             },
             "evidence": unit_evidence,
         }
@@ -1413,6 +1452,102 @@ def test_materializer_uses_exact_authorized_client_exclusion(
     assert all(execution_id in observed[criterion_id] for criterion_id in criterion_ids)
 
 
+def test_materializer_scopes_mode_refs_to_exact_criterion_and_owning_executions(
+    tmp_path: Path,
+) -> None:
+    registry, _, protected, journal, _ = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    from scripts.e2e_acceptance.coordinator import (
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+    )
+
+    candidate = ProductionRunCoordinator(
+        registry=registry,
+        authorization=journal.authorization,
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=journal.authorization.issued_at,
+    ).publication_candidate()
+    sealed = json.loads(
+        (protected / "run-plan/sealed.json").read_text(encoding="utf-8")
+    )
+
+    run, _, _ = trusted._derive_producer_publication_candidate(
+        registry,
+        journal,
+        sealed,
+        candidate,
+    )
+    criteria = {row["criterion_id"]: row for row in run["criteria"]}
+
+    assert criteria["AC-01"]["evidence_refs"] == [
+        "mode-01-AC-01",
+        "mode-02-AC-01",
+        "mode-19-AC-01",
+        "mode-20-AC-01",
+        "mode-21-AC-01",
+    ]
+    assert criteria["AC-02"]["evidence_refs"] == [
+        "mode-01-AC-02",
+        "mode-02-AC-02",
+        "mode-09-AC-02",
+        "mode-18-AC-02",
+    ]
+
+
+def test_materializer_rejects_mode_ref_with_foreign_execution_identity(
+    tmp_path: Path,
+) -> None:
+    registry, _, protected, journal, _ = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    from scripts.e2e_acceptance.coordinator import (
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+    )
+
+    candidate = ProductionRunCoordinator(
+        registry=registry,
+        authorization=journal.authorization,
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=journal.authorization.issued_at,
+    ).publication_candidate()
+    sealed = json.loads(
+        (protected / "run-plan/sealed.json").read_text(encoding="utf-8")
+    )
+    target_source = candidate.sources[22]
+    target_evidence = tuple(
+        item.model_copy(
+            update={
+                "payload": {
+                    **item.payload,
+                    "freshness_identity": {
+                        "run_id": journal.run_id,
+                        "execution_id": "SC-OPEN-EN",
+                    },
+                }
+            }
+        )
+        if item.evidence_id == "mode-23-AC-17"
+        else item
+        for item in target_source.evidence
+    )
+    sources = list(candidate.sources)
+    sources[22] = target_source.model_copy(update={"evidence": target_evidence})
+    forged = replace(candidate, sources=tuple(sources))
+
+    with pytest.raises(Exception, match="lacks fresh proof"):
+        trusted._derive_producer_publication_candidate(
+            registry,
+            journal,
+            sealed,
+            forged,
+        )
+
+
 def test_materializer_binds_clean_empty_defect_ledger_and_receipt(
     tmp_path: Path,
 ) -> None:
@@ -1521,7 +1656,7 @@ def _replace_clean_defect_ledger(
     )
 
 
-def test_materializer_projects_retested_defect_lineage_into_report(
+def test_materializer_rejects_retested_defect_without_cross_run_evidence(
     tmp_path: Path,
 ) -> None:
     registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
@@ -1530,30 +1665,24 @@ def test_materializer_projects_retested_defect_lineage_into_report(
         registry, protected, journal, plan, status="retested", severity="P2"
     )
 
-    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
-    defect = snapshot.report["defects"][0]
-
-    assert defect["status"] == "retested"
-    assert defect["fix_ref"] == "fix:synthetic"
-    assert defect["deployment_ref"] == "deploy:synthetic"
-    assert defect["retest_attempt_ref"] == "retest:synthetic"
+    with pytest.raises(
+        Exception,
+        match="defect ledger lineage is incomplete",
+    ):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
-def test_open_p1_defect_is_derived_into_run_requirements_rollup(tmp_path: Path) -> None:
+def test_materializer_rejects_open_defect_without_failed_execution(
+    tmp_path: Path,
+) -> None:
     registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
     _, _, trusted = _modules()
     _replace_clean_defect_ledger(
         registry, protected, journal, plan, status="open", severity="P1"
     )
-    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
 
-    assert "tj-ee5f-ledger-defect" in snapshot.run["open_p0_p1"]
-    assert (
-        trusted._requirements_met(
-            trusted.TrustedRunDocument.model_validate(snapshot.run)
-        )
-        is False
-    )
+    with pytest.raises(Exception, match="defect ledger lineage is incomplete"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
 def test_materializer_never_reads_prewritten_tracked_candidate(

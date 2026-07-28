@@ -1852,14 +1852,20 @@ def _derive_producer_publication_candidate(
     executions: list[ExecutionRow] = []
     turns: list[TurnReport] = []
     disposition_sources: list[Any] = []
+    evidence_owner_ids: dict[str, str] = {}
+    execution_evidence_refs: dict[str, frozenset[str]] = {}
     for record, source in zip(candidate.records, candidate.sources, strict=True):
+        execution_id = record.artifact.execution_id
         execution_row = ExecutionRow(
-            execution_id=record.artifact.execution_id,
+            execution_id=execution_id,
             outcome=record.artifact.outcome,
             attempt_ref=source.execution.attempt_ref,
             evidence_refs=source.execution.evidence_refs,
         )
         executions.append(execution_row)
+        execution_evidence_refs[execution_id] = frozenset(
+            source.execution.evidence_refs
+        )
         attempt_sources = [
             item
             for item in source.evidence
@@ -1874,6 +1880,7 @@ def _derive_producer_publication_candidate(
         ):
             raise TrustedRunError("accepted attempt publication outcome binding drift")
         for item in source.evidence:
+            evidence_owner_ids[item.evidence_id] = execution_id
             evidence.append(
                 ProtectedEvidenceRecord(
                     evidence_id=item.evidence_id,
@@ -1927,21 +1934,53 @@ def _derive_producer_publication_candidate(
         )
         if evaluation.get(criterion_id) != expected_outcome:
             raise TrustedRunError("coordinator criterion evaluation drift")
+        expected_status_by_execution = {
+            identity: {
+                "PASS": "passed",
+                "FAIL": "failed",
+                "BLOCKED": "blocked",
+                "EXCLUDED_BY_CLIENT": "excluded",
+            }[outcome]
+            for identity, outcome in obligation_outcomes.items()
+        }
+        expected_resolution_by_execution = {
+            identity: {
+                "PASS": "implemented",
+                "FAIL": "failed",
+                "BLOCKED": "blocked",
+                "EXCLUDED_BY_CLIENT": "excluded_by_client",
+            }[outcome]
+            for identity, outcome in obligation_outcomes.items()
+        }
         mode_refs = tuple(
             item.evidence_id
             for item in evidence
-            if (
+            if (owner := evidence_owner_ids[item.evidence_id])
+            in criterion.obligation_ids
+            and item.evidence_id in execution_evidence_refs[owner]
+            and item.payload.get("criterion_id") == criterion_id
+            and item.payload.get("status") == expected_status_by_execution[owner]
+            and (
                 (
                     criterion.evidence_mode is EvidenceMode.FRESH
-                    and isinstance(item.payload.get("freshness_identity"), dict)
+                    and item.payload.get("freshness_identity")
+                    == {
+                        "run_id": journal.run_id,
+                        "execution_id": owner,
+                    }
                 )
                 or (
                     criterion.evidence_mode is EvidenceMode.REUSED_EXACT
-                    and isinstance(item.payload.get("reused_exact_identity"), dict)
+                    and item.payload.get("reused_exact_identity")
+                    == {
+                        "registry_id": registry.registry_id,
+                        "execution_id": owner,
+                    }
                 )
                 or (
                     criterion.evidence_mode is EvidenceMode.EXTERNAL_GATE
-                    and isinstance(item.payload.get("external_gate_resolution"), str)
+                    and item.payload.get("external_gate_resolution")
+                    == expected_resolution_by_execution[owner]
                 )
             )
         )

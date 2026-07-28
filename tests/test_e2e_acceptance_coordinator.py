@@ -14,7 +14,9 @@ import pytest
 from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.coordinator import (
     CoordinatorError,
+    DefectLedgerArtifact,
     DefectLedgerEntry,
+    DefectLedgerReceipt,
     JournalAcceptanceEvent,
     ProducerArtifact,
     ProducerReceipt,
@@ -452,6 +454,66 @@ def test_defect_ledger_rejects_malformed_retest_lineage() -> None:
             final_outcome="PASS",
             checksum_refs=("report-source",),
         )
+
+
+def test_defect_ledger_rejects_fictional_retest_on_clean_run(
+    tmp_path: Path,
+) -> None:
+    coordinator, root, now, _ = _coordinator(tmp_path)
+    for ordinal in range(1, 30):
+        _write_producer(coordinator, ordinal=ordinal, now=now)
+    coordinator.accept_available()
+    result = coordinator.finalize()
+    entry = DefectLedgerEntry(
+        defect_id="tj-ee5f-fictional-retest",
+        severity="P1",
+        status="retested",
+        execution_id=coordinator.registry.compiled_plan.execution_ids[0],
+        initial_failed_attempt_ref="attempt:fictional",
+        root_cause="Fictional root cause.",
+        violated_invariant="Fictional invariant.",
+        fix_ref="fix:fictional",
+        deployment_ref="deploy:fictional",
+        retest_attempt_ref="attempt:fictional-retest",
+        final_outcome="PASS",
+        checksum_refs=("evidence:fictional",),
+    )
+    artifact = DefectLedgerArtifact(
+        schema_version="noor-e2e-defect-ledger/v1",
+        status="committed",
+        registry_id=coordinator.registry.registry_id,
+        run_id=coordinator.run_id,
+        authorization_digest=coordinator.authorization_digest,
+        sealed_plan_sha256=coordinator.sealed_plan_sha256,
+        accepted_fold_digest=result.final_activity.accepted_fold_digest,
+        evaluation_bundle_digest=result.evaluation.bundle_digest,
+        entries=(entry,),
+    )
+    artifact_value = artifact.model_dump(mode="json")
+    artifact_bytes = execution._canonical_bytes(artifact_value)
+    receipt_identity = {
+        "schema_version": "noor-e2e-defect-ledger-receipt/v1",
+        "status": "committed",
+        "registry_id": coordinator.registry.registry_id,
+        "run_id": coordinator.run_id,
+        "authorization_digest": coordinator.authorization_digest,
+        "sealed_plan_sha256": coordinator.sealed_plan_sha256,
+        "accepted_fold_digest": result.final_activity.accepted_fold_digest,
+        "evaluation_bundle_digest": result.evaluation.bundle_digest,
+        "tracked_sha256": hashlib.sha256(artifact_bytes).hexdigest(),
+    }
+    receipt = DefectLedgerReceipt(
+        **receipt_identity,
+        receipt_digest=execution._digest(receipt_identity),
+    )
+    ledger_root = root / coordinator.run_id / "coordinator"
+    (ledger_root / "defect-ledger.json").write_bytes(artifact_bytes)
+    (ledger_root / "defect-ledger-receipt.json").write_bytes(
+        execution._canonical_bytes(receipt.model_dump(mode="json"))
+    )
+
+    with pytest.raises(CoordinatorError, match="lineage"):
+        coordinator.finalize()
 
 
 @pytest.mark.parametrize(

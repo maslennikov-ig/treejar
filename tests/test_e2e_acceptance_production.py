@@ -607,6 +607,51 @@ def test_producer_recovers_committed_transaction_after_partial_public_pair(
     ).is_file()
 
 
+@pytest.mark.parametrize("caller_outcome", ("PASS", "FAIL"))
+def test_producer_recovery_rejects_caller_authored_committed_outcome(
+    tmp_path: Path, caller_outcome: str
+) -> None:
+    from scripts.e2e_acceptance import production
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    handle = production.issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = production._write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+    transaction = journal.begin_attempt(
+        execution_id=attempt.execution_id,
+        attempt_number=1,
+        intent_digest="a" * 64,
+    )
+    transaction.write_raw(
+        {
+            "schema_version": "noor-e2e-attempt-result/v2",
+            "execution_id": attempt.execution_id,
+            "outcome": caller_outcome,
+            "attempt_kind": "executed",
+            "gate_attempt_digest": None,
+            "attempt_digest": "a" * 64,
+            "semantic_digest": "b" * 64,
+            "evaluator_digest": "c" * 64,
+            "evidence_digest": "d" * 64,
+        }
+    )
+    transaction.write_tracked()
+    assert transaction.commit().status == "committed"
+
+    with pytest.raises(production.ProductionAdapterError, match="producer validation"):
+        production.produce_validated_execution_attempt(
+            producer_handle=handle, source_output_ref=source_ref
+        )
+
+    assert not (journal.run_root / "produced-attempts/01.json").exists()
+    assert not (
+        journal.run_root / f"producer-receipts/attempts/{attempt.execution_id}.json"
+    ).exists()
+
+
 def test_producer_recovery_rejects_tampered_committed_raw(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

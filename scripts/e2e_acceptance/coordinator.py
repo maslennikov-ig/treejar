@@ -1085,16 +1085,48 @@ class ProductionRunCoordinator:
         ):
             raise CoordinatorError("defect ledger binding drift")
         defect_ids = {entry.defect_id for entry in artifact.entries}
+        records_by_execution = {
+            record.artifact.execution_id: record for record, _ in records
+        }
+        entry_execution_ids = {entry.execution_id for entry in artifact.entries}
         if (
             len(defect_ids) != len(artifact.entries)
             or any(
                 entry.execution_id not in self.registry.compiled_plan.execution_ids
                 for entry in artifact.entries
             )
-            or not failed_execution_ids
-            <= {entry.execution_id for entry in artifact.entries}
+            or entry_execution_ids != failed_execution_ids
         ):
             raise CoordinatorError("defect ledger lineage is incomplete")
+        for entry in artifact.entries:
+            # The current coordinator can prove only failures accepted in this
+            # immutable run.  A fixed/retested claim needs a future typed
+            # cross-run inventory; accepting free-form refs here would let an
+            # all-PASS run hide an unresolved P0/P1 behind fictional lineage.
+            if entry.status != "open":
+                raise CoordinatorError(
+                    "fixed/retested defect lineage lacks protected cross-run evidence"
+                )
+            record = records_by_execution[entry.execution_id]
+            source_model = (
+                ScenarioPublicationSource
+                if record.artifact.kind == "scenario"
+                else EvidenceBlockPublicationSource
+            )
+            try:
+                source = source_model.model_validate(record.artifact.source)
+            except ValueError as exc:
+                raise CoordinatorError(
+                    "defect ledger accepted source schema is invalid"
+                ) from exc
+            evidence_ids = {item.evidence_id for item in source.evidence}
+            if (
+                record.artifact.outcome != "FAIL"
+                or entry.initial_failed_attempt_ref != source.execution.attempt_ref
+                or entry.initial_failed_attempt_ref not in evidence_ids
+                or not set(entry.checksum_refs) <= evidence_ids
+            ):
+                raise CoordinatorError("defect ledger evidence lineage drift")
         return artifact, receipt
 
     def finalize(self) -> CoordinatorResult:

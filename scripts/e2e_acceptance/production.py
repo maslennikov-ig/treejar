@@ -1523,8 +1523,9 @@ def _derive_produced_attempt(
     *,
     record: _ProducerHandleRecord,
     attempted: execution.ExecutedAttemptV2 | execution.GateAttemptV2,
+    validated: execution.ValidatedAttempt,
 ) -> ProducedAttempt:
-    """Rebuild the public pair only from committed protected transaction bytes."""
+    """Rebuild the public pair only from producer-validated transaction bytes."""
 
     transaction_id = f"{record.execution_id.lower()}-attempt-001"
     root = record.journal.run_root
@@ -1539,33 +1540,58 @@ def _derive_produced_attempt(
             root, f"attempts/{transaction_id}/commit.json"
         )
         raw = json.loads(raw_payload)
+        tracked = json.loads(tracked_payload)
         commit = json.loads(commit_payload)
     except (execution.ExecutionValidationError, json.JSONDecodeError) as exc:
         raise ProductionAdapterError(
             "committed producer recovery is incomplete"
         ) from exc
-    if not isinstance(raw, dict) or not isinstance(commit, dict):
+    if (
+        not isinstance(raw, dict)
+        or not isinstance(tracked, dict)
+        or not isinstance(commit, dict)
+    ):
         raise ProductionAdapterError("committed producer recovery is invalid")
+    gate_attempt = attempted if isinstance(attempted, execution.GateAttemptV2) else None
+    try:
+        expected_raw = execution._validated_attempt_result_payload(
+            validated,
+            gate_attempt=gate_attempt,
+        )
+        expected_tracked = redact_payload(expected_raw)
+        validate_redacted_payload(expected_tracked)
+    except execution.ExecutionValidationError as exc:
+        raise ProductionAdapterError(
+            "committed producer recovery binding drift: producer validation"
+        ) from exc
     raw_digest = hashlib.sha256(raw_payload).hexdigest()
     tracked_digest = hashlib.sha256(tracked_payload).hexdigest()
     commit_digest = hashlib.sha256(commit_payload).hexdigest()
     required = {
         "schema_version": "noor-e2e-attempt-commit/v2",
+        "transaction_id": transaction_id,
         "status": "committed",
         "run_id": record.journal.run_id,
         "execution_id": record.execution_id,
+        "attempt_kind": expected_raw["attempt_kind"],
+        "attempt_digest": expected_raw["attempt_digest"],
         "authorization_digest": record.journal.authorization_digest,
+        "semantic_digest": expected_raw["semantic_digest"],
+        "gate_attempt_digest": expected_raw["gate_attempt_digest"],
+        "evaluator_digest": expected_raw["evaluator_digest"],
+        "evidence_digest": expected_raw["evidence_digest"],
+        "raw_digest": raw_digest,
+        "tracked_digest": tracked_digest,
     }
-    if any(commit.get(key) != value for key, value in required.items()) or (
-        raw.get("schema_version") != "noor-e2e-attempt-result/v2"
-        or raw.get("execution_id") != record.execution_id
-        or raw.get("attempt_digest") != commit.get("attempt_digest")
-        or raw.get("semantic_digest") != commit.get("semantic_digest")
-        or raw.get("attempt_kind") != commit.get("attempt_kind")
-        or commit.get("raw_digest") != raw_digest
-        or commit.get("tracked_digest") != tracked_digest
+    if (
+        raw != expected_raw
+        or tracked != expected_tracked
+        or tracked_payload != _canonical_bytes(expected_tracked)
+        or any(commit.get(key) != value for key, value in required.items())
     ):
-        raise ProductionAdapterError("committed producer recovery binding drift")
+        raise ProductionAdapterError(
+            "committed producer recovery binding drift: producer validation"
+        )
     try:
         attempt_digest = str(raw["attempt_digest"])
         semantic_digest = str(raw["semantic_digest"])
@@ -1731,12 +1757,6 @@ def produce_validated_execution_attempt(
         or attempted.execution_id != record.execution_id
     ):
         raise ProductionAdapterError("protected producer source attempt binding drift")
-    existing_commit = _optional_protected_payload(
-        journal.run_root,
-        f"attempts/{record.execution_id.lower()}-attempt-001/commit.json",
-    )
-    if existing_commit is not None:
-        return _derive_produced_attempt(record=record, attempted=attempted)
     resolver = ProtectedEvidenceResolver(
         registry=registry,
         journal=journal,
@@ -1760,6 +1780,16 @@ def produce_validated_execution_attempt(
         validated = runner.validate_attempt(attempted)
     else:
         validated = runner.validate_evidence_block(attempted)
+    existing_commit = _optional_protected_payload(
+        journal.run_root,
+        f"attempts/{record.execution_id.lower()}-attempt-001/commit.json",
+    )
+    if existing_commit is not None:
+        return _derive_produced_attempt(
+            record=record,
+            attempted=attempted,
+            validated=validated,
+        )
     transaction = journal.begin_attempt(
         execution_id=validated.execution_id,
         attempt_number=1,
@@ -1771,7 +1801,11 @@ def produce_validated_execution_attempt(
     recovery = transaction.commit()
     if recovery.status != "committed":
         raise ProductionAdapterError("validated producer did not commit attempt")
-    return _derive_produced_attempt(record=record, attempted=attempted)
+    return _derive_produced_attempt(
+        record=record,
+        attempted=attempted,
+        validated=validated,
+    )
 
 
 def _derive_protected_publication_source(

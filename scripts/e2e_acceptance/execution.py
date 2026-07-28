@@ -2359,50 +2359,63 @@ class AttemptTransaction:
             raise ExecutionValidationError(
                 "validated attempt transaction binding drift"
             )
-        if (validated.attempt_kind == "gate") != (gate_attempt is not None):
-            raise ExecutionValidationError("validated gate payload binding drift")
-        if gate_attempt is not None and (
-            gate_attempt.execution_id != validated.execution_id
-            or _digest(gate_attempt.model_dump(mode="json"))
-            != validated.gate_attempt_digest
-        ):
-            raise ExecutionValidationError("validated gate digest binding drift")
-        semantic_digest = _digest(
-            {
-                "execution_id": validated.execution_id,
-                "plan_digest": validated.plan_digest,
-                "attempt_digest": validated.attempt_digest,
-                "outcome": validated.outcome,
-                "attempt_kind": validated.attempt_kind,
-                "gate_attempt_digest": validated.gate_attempt_digest,
-                "oracle_decisions": validated.oracle_decisions,
-            }
+        raw = _validated_attempt_result_payload(
+            validated,
+            gate_attempt=gate_attempt,
         )
-        evaluator_digest = _digest(validated.oracle_decisions)
-        evidence_digest = _digest(
-            {
-                "attempt_digest": validated.attempt_digest,
-                "oracle_decisions": validated.oracle_decisions,
-                "gate_attempt_digest": validated.gate_attempt_digest,
-            }
-        )
-        raw = {
-            "schema_version": "noor-e2e-attempt-result/v2",
-            "execution_id": validated.execution_id,
-            "outcome": validated.outcome,
-            "attempt_kind": validated.attempt_kind,
-            "gate_attempt_digest": validated.gate_attempt_digest,
-            "attempt_digest": validated.attempt_digest,
-            "semantic_digest": semantic_digest,
-            "evaluator_digest": evaluator_digest,
-            "evidence_digest": evidence_digest,
-        }
         raw_digest = self.write_raw(raw)
         tracked_digest = self.write_tracked()
         return raw_digest, tracked_digest
 
     def commit(self) -> AttemptRecovery:
         return self._journal._finish_attempt(self.transaction_id, abort=False)
+
+
+def _validated_attempt_result_payload(
+    validated: ValidatedAttempt,
+    *,
+    gate_attempt: GateAttemptV2 | None = None,
+) -> dict[str, object]:
+    """Derive the exact persisted result from runner-owned validation facts."""
+
+    if (validated.attempt_kind == "gate") != (gate_attempt is not None):
+        raise ExecutionValidationError("validated gate payload binding drift")
+    if gate_attempt is not None and (
+        gate_attempt.execution_id != validated.execution_id
+        or _digest(gate_attempt.model_dump(mode="json"))
+        != validated.gate_attempt_digest
+    ):
+        raise ExecutionValidationError("validated gate digest binding drift")
+    semantic_digest = _digest(
+        {
+            "execution_id": validated.execution_id,
+            "plan_digest": validated.plan_digest,
+            "attempt_digest": validated.attempt_digest,
+            "outcome": validated.outcome,
+            "attempt_kind": validated.attempt_kind,
+            "gate_attempt_digest": validated.gate_attempt_digest,
+            "oracle_decisions": validated.oracle_decisions,
+        }
+    )
+    evaluator_digest = _digest(validated.oracle_decisions)
+    evidence_digest = _digest(
+        {
+            "attempt_digest": validated.attempt_digest,
+            "oracle_decisions": validated.oracle_decisions,
+            "gate_attempt_digest": validated.gate_attempt_digest,
+        }
+    )
+    return {
+        "schema_version": "noor-e2e-attempt-result/v2",
+        "execution_id": validated.execution_id,
+        "outcome": validated.outcome,
+        "attempt_kind": validated.attempt_kind,
+        "gate_attempt_digest": validated.gate_attempt_digest,
+        "attempt_digest": validated.attempt_digest,
+        "semantic_digest": semantic_digest,
+        "evaluator_digest": evaluator_digest,
+        "evidence_digest": evidence_digest,
+    }
 
 
 class FakeLocalAdapter:
