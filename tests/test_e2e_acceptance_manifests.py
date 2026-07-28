@@ -48,6 +48,7 @@ AUTHORIZATION_PATH = STAGE_ROOT / "authorization-manifest.example.json"
 PROVENANCE_PATH = (
     REPO_ROOT / ".codex" / "goals" / "tj-ee5f" / "scope-source-provenance.json"
 )
+FROZEN_BEADS_PATH = STAGE_ROOT / "frozen-beads-records.jsonl"
 
 
 def _scope_and_provenance() -> tuple[ScopeSnapshot, ScopeSourceProvenance]:
@@ -770,6 +771,67 @@ def test_source_section_locators_and_digests_are_real() -> None:
     missing = traceability.model_copy(update={"source_registry": registry})
     with pytest.raises(ManifestValidationError, match="section locator"):
         validate_source_digests(missing, REPO_ROOT)
+
+
+def test_traceability_uses_exact_tracked_frozen_beads_records(tmp_path: Path) -> None:
+    traceability = load_traceability_manifest(TRACEABILITY_PATH)
+    source = traceability.source_registry["beads-regressions"]
+    expected_ids = {
+        issue_id
+        for criterion in traceability.criteria
+        for issue_id in (
+            *criterion.accepted_regressions,
+            *criterion.open_known_risks,
+            *(
+                (criterion.dependency.issue_id,)
+                if criterion.dependency is not None
+                else ()
+            ),
+        )
+        if issue_id.startswith("tj-")
+    }
+
+    assert source.path == ".codex/stages/tj-ee5f/frozen-beads-records.jsonl"
+    assert FROZEN_BEADS_PATH.is_file()
+    validate_source_digests(traceability, REPO_ROOT)
+
+    records = [
+        json.loads(line)
+        for line in FROZEN_BEADS_PATH.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["id"] for record in records] == sorted(expected_ids)
+
+    extra = {"canonical_record_digest": "0" * 64, "id": "tj-unexpected"}
+    unsafe_content = "\n".join(
+        [
+            *(
+                json.dumps(record, ensure_ascii=False, sort_keys=True)
+                for record in records
+            ),
+            json.dumps(extra, sort_keys=True),
+        ]
+    ).encode("utf-8")
+    unsafe_path = tmp_path / ".codex/stages/tj-ee5f/frozen-beads-records.jsonl"
+    unsafe_path.parent.mkdir(parents=True)
+    unsafe_path.write_bytes(unsafe_content)
+    unsafe_source = source.model_copy(
+        update={
+            "content_digest": hashlib.sha256(unsafe_content).hexdigest(),
+            "sections": [
+                source.sections[0].model_copy(
+                    update={
+                        "content_digest": hashlib.sha256(unsafe_content).hexdigest()
+                    }
+                )
+            ],
+        }
+    )
+    unsafe = traceability.model_copy(
+        update={"source_registry": {"beads-regressions": unsafe_source}}
+    )
+
+    with pytest.raises(ManifestValidationError, match="extra frozen Beads"):
+        validate_source_digests(unsafe, tmp_path)
 
 
 def test_source_path_rejects_escape_and_symlink_component(tmp_path: Path) -> None:

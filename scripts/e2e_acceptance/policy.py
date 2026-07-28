@@ -31,7 +31,12 @@ _TASK1_AUTHORIZATION_PATH = Path(
 )
 _POLICY_PATH = Path(".codex/stages/tj-ee5f/execution-policy-v2.json")
 _POLICY_SHA256 = "607360c7feb5bba71e2b3f409d3108f55e8392b31e5f423e765d9e2896a05d0e"
-_CANONICAL_REMOTE = "https://github.com/maslennikov-ig/treejar.git"
+_CANONICAL_HTTPS_REMOTES = frozenset(
+    {
+        "https://github.com/maslennikov-ig/treejar",
+        "https://github.com/maslennikov-ig/treejar.git",
+    }
+)
 
 
 class PolicyValidationError(ValueError):
@@ -844,12 +849,19 @@ class TrustedAcceptanceRegistry:
             raise PolicyValidationError(
                 "canonical repository identity is unavailable"
             ) from exc
-        common_path = Path(common_dir)
-        if not common_path.is_absolute():
-            common_path = (repo_root / common_path).resolve(strict=True)
+        try:
+            top_level_path = Path(top_level).resolve(strict=True)
+            common_path = Path(common_dir)
+            if not common_path.is_absolute():
+                common_path = repo_root / common_path
+            common_path = common_path.resolve(strict=True)
+        except OSError as exc:
+            raise PolicyValidationError(
+                "canonical repository identity is unavailable"
+            ) from exc
         if (
-            Path(top_level).resolve(strict=True) != repo_root
-            or remote != _CANONICAL_REMOTE
+            top_level_path != repo_root
+            or remote not in _CANONICAL_HTTPS_REMOTES
             or common_path.name != ".git"
             or common_path.parent.name != "treejar"
         ):

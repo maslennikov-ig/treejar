@@ -235,6 +235,11 @@
       "task_id": "tj-ee5f.3-policy-v2",
       "stream_owner": "ai-product-engineer-policy-v2",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.3-policy-v2.md"
+    },
+    {
+      "task_id": "tj-ee5f.4",
+      "stream_owner": "tj-ee5f.4-ci-identity-fix",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md"
     }
   ],
   "scope_provenance": {

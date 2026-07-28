@@ -83,6 +83,7 @@ EVIDENCE_BLOCK_MODE_POLICY: dict[EvidenceMode, frozenset[str]] = {
         }
     ),
 }
+_FROZEN_BEADS_SOURCE_PATH = ".codex/stages/tj-ee5f/frozen-beads-records.jsonl"
 
 
 class ManifestValidationError(ValueError):
@@ -590,7 +591,7 @@ def validate_contract_bundle(
         raise ManifestValidationError("AC-21 typed client gate policy drift")
 
 
-def _beads_digest(
+def _frozen_beads_digest(
     traceability: TraceabilityManifest,
     content: bytes,
     *,
@@ -610,30 +611,57 @@ def _beads_digest(
         for criterion in traceability.criteria
         if criterion.dependency is not None
     )
-    records: dict[str, dict[str, Any]] = {}
     try:
+        records = []
         for line in content.decode("utf-8").splitlines():
             record = json.loads(line)
-            if isinstance(record, dict) and record.get("id") in referenced:
-                records[str(record["id"])] = record
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            if (
+                not isinstance(record, dict)
+                or set(record) != {"canonical_record_digest", "id"}
+                or not isinstance(record.get("id"), str)
+                or not isinstance(record.get("canonical_record_digest"), str)
+                or len(record["canonical_record_digest"]) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in record["canonical_record_digest"]
+                )
+            ):
+                raise ManifestValidationError(
+                    f"invalid frozen Beads record: {source_id}"
+                )
+            records.append(record)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ManifestValidationError(
-            f"cannot read relevant Beads provenance: {source_id}: {exc}"
+            f"cannot read frozen Beads provenance: {source_id}: {exc}"
         ) from exc
-    missing = sorted(referenced - set(records))
+    record_ids = [record["id"] for record in records]
+    missing = sorted(referenced - set(record_ids))
     if missing:
         raise ManifestValidationError(
-            f"relevant Beads provenance is missing records: {missing}"
+            f"frozen Beads provenance is missing records: {missing}"
         )
-    payload = [records[issue_id] for issue_id in sorted(records)]
-    return hashlib.sha256(
+    extra = sorted(set(record_ids) - referenced)
+    if extra:
+        raise ManifestValidationError(f"extra frozen Beads records: {extra}")
+    if len(record_ids) != len(set(record_ids)):
+        raise ManifestValidationError("duplicate frozen Beads record identity")
+    if record_ids != sorted(record_ids):
+        raise ManifestValidationError(
+            "frozen Beads records must use canonical ordering"
+        )
+    canonical = b"".join(
         json.dumps(
-            payload,
+            record,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-    ).hexdigest()
+        + b"\n"
+        for record in records
+    )
+    if content != canonical:
+        raise ManifestValidationError("frozen Beads source bytes are not canonical")
+    return hashlib.sha256(content).hexdigest()
 
 
 def _read_regular_file_at(
@@ -765,30 +793,25 @@ def validate_source_digests(
         relative = pathlib.PurePosixPath(source.path)
         if relative.is_absolute() or ".." in relative.parts:
             raise ManifestValidationError(f"{source_id} has an unsafe source path")
-        source_root = (
-            _git_common_repo_root(root)
-            if relative.as_posix() == ".beads/issues.jsonl"
-            else root
-        )
         content = _read_regular_file_at(
-            source_root,
+            root,
             relative,
             label=source_id,
         )
-        if relative.as_posix() == ".beads/issues.jsonl":
-            actual = _beads_digest(
+        if relative.as_posix() == _FROZEN_BEADS_SOURCE_PATH:
+            actual = _frozen_beads_digest(
                 traceability,
                 content,
                 source_id=source_id,
             )
             if (
                 len(source.sections) != 1
-                or source.sections[0].start_locator != "named_issue_records"
+                or source.sections[0].start_locator != "named_frozen_issue_records"
                 or source.sections[0].end_locator is not None
                 or source.sections[0].content_digest != actual
             ):
                 raise ManifestValidationError(
-                    "beads-regressions section locator/digest drift"
+                    "frozen Beads section locator/digest drift"
                 )
         else:
             actual = hashlib.sha256(content).hexdigest()
