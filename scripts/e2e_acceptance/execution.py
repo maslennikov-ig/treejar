@@ -1290,8 +1290,17 @@ class ActionCostSettlement(_StrictModel):
             )
             or self.settled_at.tzinfo is None
             or self.settled_at.utcoffset() is None
+            or self.settlement_digest
+            != _digest(
+                self.model_dump(
+                    mode="json",
+                    exclude={"settlement_digest"},
+                )
+            )
         ):
-            raise ValueError("action cost settlement exceeds authorized maximum")
+            raise ValueError(
+                "action cost settlement exceeds authorized maximum or digest drift"
+            )
         return self
 
 
@@ -2295,7 +2304,11 @@ class ProtectedExecutionJournal:
         self._authorization_reservation_digests: dict[str, str] = {}
         self._authorization_reservation_runs: dict[str, str] = {}
         self._authorization_cost_settlements: dict[str, ActionCostSettlement] = {}
-        self._journal_cost_settlement_ids: set[str] = set()
+        self._journal_cost_settlement_intents: dict[
+            str,
+            tuple[ActionCostSettlement, str],
+        ] = {}
+        self._journal_cost_settlements: dict[str, ActionCostSettlement] = {}
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head: str | None = None
         self._final_turn_occurred_at: datetime | None = None
@@ -2386,21 +2399,29 @@ class ProtectedExecutionJournal:
                 != journal.authority_receipt_digest
             ):
                 raise ExecutionValidationError("journal authorization binding drift")
-            journal._apply_loaded_event(event)
-            previous_digest = hashlib.sha256(payload).hexdigest()
+            event_digest = hashlib.sha256(payload).hexdigest()
+            journal._apply_loaded_event(event, event_digest=event_digest)
+            previous_digest = event_digest
             if event.get("kind") == "execution_started":
                 journal._execution_started_event_digest = previous_digest
         if not names:
             raise ExecutionValidationError("protected journal is empty")
         journal.previous_event_digest = previous_digest
+        journal._recover_cost_settlement_commits()
         return journal
 
-    def _apply_loaded_event(self, event: dict[str, Any]) -> None:
+    def _apply_loaded_event(
+        self,
+        event: dict[str, Any],
+        *,
+        event_digest: str,
+    ) -> None:
         replayed_phase = str(event["phase"])
         kind = str(event["kind"])
-        if kind == "action_cost_settled" and (
-            self.phase != "executing" or replayed_phase != self.phase
-        ):
+        if kind in {
+            "action_cost_settlement_intent",
+            "action_cost_settled",
+        } and (self.phase != "executing" or replayed_phase != self.phase):
             raise ExecutionValidationError(
                 "action cost settlement journal phase regression"
             )
@@ -2418,20 +2439,48 @@ class ProtectedExecutionJournal:
             self._actions[receipt.action_id] = receipt.resolved_state
         elif kind == "permit_consumed":
             self._actions[str(data["action_id"])] = "unknown"
+        elif kind == "action_cost_settlement_intent":
+            settlement = ActionCostSettlement.model_validate(data["settlement"])
+            if (
+                self._actions.get(settlement.action_id) not in {"succeeded", "failed"}
+                or self._reservations.get(settlement.action_id) is None
+                or self._reservations[settlement.action_id].reservation_digest
+                != settlement.reservation_digest
+                or settlement.action_id in self._journal_cost_settlement_intents
+                or settlement.action_id in self._journal_cost_settlements
+            ):
+                raise ExecutionValidationError(
+                    "journal cost settlement intent is duplicate or nonterminal"
+                )
+            self._journal_cost_settlement_intents[settlement.action_id] = (
+                settlement,
+                event_digest,
+            )
         elif kind == "action_cost_settled":
             settlement = ActionCostSettlement.model_validate(data["settlement"])
+            intent = self._journal_cost_settlement_intents.get(settlement.action_id)
+            intent_event_digest = data.get("intent_event_digest")
             if (
                 self._authorization_cost_settlements.get(settlement.action_id)
                 != settlement
                 or self._actions.get(settlement.action_id)
                 not in {"succeeded", "failed"}
-                or settlement.action_id in self._journal_cost_settlement_ids
+                or settlement.action_id in self._journal_cost_settlements
+                or (
+                    intent_event_digest is not None
+                    and (
+                        intent is None
+                        or intent[0] != settlement
+                        or intent[1] != intent_event_digest
+                    )
+                )
+                or (intent_event_digest is None and intent is not None)
             ):
                 raise ExecutionValidationError(
                     "journal cost settlement is duplicate or differs from "
                     "terminal authorization state"
                 )
-            self._journal_cost_settlement_ids.add(settlement.action_id)
+            self._journal_cost_settlements[settlement.action_id] = settlement
         elif kind == "attempt_intent":
             self._attempted_executions.append(str(data["execution_id"]))
         elif kind == "execution_started":
@@ -2487,6 +2536,63 @@ class ProtectedExecutionJournal:
         if _PHASES[expected_index + 1] != target:
             raise ExecutionValidationError("phase transition is not canonical")
         return self._append_event(phase=target, kind=kind, data=data)
+
+    def _assert_cost_settlement_consistency(self) -> None:
+        if (
+            self._authorization_cost_settlements != self._journal_cost_settlements
+            or any(
+                action_id not in self._journal_cost_settlements
+                for action_id in self._journal_cost_settlement_intents
+            )
+        ):
+            raise ExecutionValidationError(
+                "incomplete or divergent action cost settlement"
+            )
+
+    def _recover_cost_settlement_commits(self) -> None:
+        for action_id, (
+            settlement,
+            intent_event_digest,
+        ) in self._journal_cost_settlement_intents.items():
+            committed = self._journal_cost_settlements.get(action_id)
+            if committed is not None:
+                if (
+                    committed != settlement
+                    or self._authorization_cost_settlements.get(action_id) != settlement
+                ):
+                    raise ExecutionValidationError(
+                        "action cost settlement recovery digest drift"
+                    )
+                continue
+            if self.phase != "executing" or self._actions.get(action_id) not in {
+                "succeeded",
+                "failed",
+            }:
+                raise ExecutionValidationError(
+                    "action cost settlement recovery is outside executing "
+                    "terminal state"
+                )
+            authorized = self._authorization_cost_settlements.get(action_id)
+            if authorized is None:
+                self._append_authorization_ledger(
+                    kind="action_cost_settled",
+                    data={"settlement": settlement.model_dump(mode="json")},
+                )
+                self._authorization_cost_settlements[action_id] = settlement
+            elif authorized != settlement:
+                raise ExecutionValidationError(
+                    "action cost settlement recovery authorization drift"
+                )
+            self._append_event(
+                phase=self.phase,
+                kind="action_cost_settled",
+                data={
+                    "settlement": settlement.model_dump(mode="json"),
+                    "intent_event_digest": intent_event_digest,
+                },
+            )
+            self._journal_cost_settlements[action_id] = settlement
+        self._assert_cost_settlement_consistency()
 
     def seal_baseline(self, observation: ReadbackObservation) -> None:
         if observation.phase != "baseline":
@@ -2938,8 +3044,6 @@ class ProtectedExecutionJournal:
             )
         if self._reservations.get(reservation.action_id) != reservation:
             raise ExecutionValidationError("action cost settlement reservation drift")
-        if reservation.action_id in self._authorization_cost_settlements:
-            raise ExecutionValidationError("action cost is already settled")
         spec = next(
             (
                 item
@@ -2955,38 +3059,80 @@ class ProtectedExecutionJournal:
             or reservation.cost_usd != spec.quota_charge.max_cost_usd
         ):
             raise ExecutionValidationError("action cost settlement authority drift")
-        settled_at = datetime.now(UTC)
-        identity = {
-            "schema_version": "noor-e2e-action-cost-settlement/v2",
-            "authorization_digest": self.authorization_digest,
-            "run_id": self.run_id,
-            "action_id": reservation.action_id,
-            "reservation_digest": reservation.reservation_digest,
-            "reserved_cost_usd": reservation.cost_usd,
-            "actual_cost_usd": actual_cost_usd,
-            "cost_settlement": spec.quota_charge.cost_settlement,
-            "settled_at": settled_at.isoformat(),
-        }
-        try:
-            settlement = ActionCostSettlement(
-                **identity,
-                settlement_digest=_digest(identity),
-            )
-        except ValueError as exc:
+        action_id = reservation.action_id
+        pending = self._journal_cost_settlement_intents.get(action_id)
+        committed = self._journal_cost_settlements.get(action_id)
+        authorized = self._authorization_cost_settlements.get(action_id)
+        if committed is not None:
+            if authorized != committed:
+                raise ExecutionValidationError(
+                    "action cost settlement commit/authorization drift"
+                )
+            raise ExecutionValidationError("action cost is already settled")
+        if pending is None and authorized is not None:
             raise ExecutionValidationError(
-                "action cost settlement exceeds authorized maximum"
-            ) from exc
-        self._append_authorization_ledger(
-            kind="action_cost_settled",
-            data={"settlement": settlement.model_dump(mode="json")},
-        )
-        self._authorization_cost_settlements[reservation.action_id] = settlement
+                "action cost settlement lacks a journal intent"
+            )
+        if pending is None:
+            settled_at = datetime.now(UTC)
+            identity = {
+                "schema_version": "noor-e2e-action-cost-settlement/v2",
+                "authorization_digest": self.authorization_digest,
+                "run_id": self.run_id,
+                "action_id": action_id,
+                "reservation_digest": reservation.reservation_digest,
+                "reserved_cost_usd": reservation.cost_usd,
+                "actual_cost_usd": actual_cost_usd,
+                "cost_settlement": spec.quota_charge.cost_settlement,
+                "settled_at": settled_at.isoformat().replace("+00:00", "Z"),
+            }
+            try:
+                settlement = ActionCostSettlement(
+                    **identity,
+                    settlement_digest=_digest(identity),
+                )
+            except ValueError as exc:
+                raise ExecutionValidationError(
+                    "action cost settlement exceeds authorized maximum"
+                ) from exc
+            intent_event_digest = self._append_event(
+                phase=self.phase,
+                kind="action_cost_settlement_intent",
+                data={"settlement": settlement.model_dump(mode="json")},
+            )
+            self._journal_cost_settlement_intents[action_id] = (
+                settlement,
+                intent_event_digest,
+            )
+        else:
+            settlement, intent_event_digest = pending
+            if (
+                settlement.reservation_digest != reservation.reservation_digest
+                or settlement.actual_cost_usd != actual_cost_usd
+            ):
+                raise ExecutionValidationError(
+                    "action cost settlement retry differs from intent"
+                )
+        authorized = self._authorization_cost_settlements.get(action_id)
+        if authorized is None:
+            self._append_authorization_ledger(
+                kind="action_cost_settled",
+                data={"settlement": settlement.model_dump(mode="json")},
+            )
+            self._authorization_cost_settlements[action_id] = settlement
+        elif authorized != settlement:
+            raise ExecutionValidationError(
+                "action cost settlement authorization differs from intent"
+            )
         self._append_event(
             phase=self.phase,
             kind="action_cost_settled",
-            data={"settlement": settlement.model_dump(mode="json")},
+            data={
+                "settlement": settlement.model_dump(mode="json"),
+                "intent_event_digest": intent_event_digest,
+            },
         )
-        self._journal_cost_settlement_ids.add(reservation.action_id)
+        self._journal_cost_settlements[action_id] = settlement
         return settlement
 
     def reconcile_unknown_action(
@@ -3039,6 +3185,7 @@ class ProtectedExecutionJournal:
         self._actions[action_id] = receipt.resolved_state
 
     def anchor_final_turn(self, *, event_digest: str, occurred_at: datetime) -> None:
+        self._assert_cost_settlement_consistency()
         if any(state in {"reserved", "unknown"} for state in self._actions.values()):
             raise ExecutionValidationError(
                 "unknown or uncompleted action blocks final-turn closeout"

@@ -491,6 +491,26 @@ def _reconciled_action_journal(tmp_path: Path, *, run_id: str):
     return execution, authority, journal, reservation, now
 
 
+def _persisted_cost_settlements(journal):
+    authorization = {}
+    intents = {}
+    commits = {}
+    for path in sorted(journal._authorization_ledger_root.glob("*.json")):
+        event = json.loads(path.read_text(encoding="utf-8"))
+        if event["kind"] == "action_cost_settled":
+            settlement = event["settlement"]
+            authorization[settlement["action_id"]] = settlement["settlement_digest"]
+    for path in sorted((journal.run_root / "journal").glob("*.json")):
+        event = json.loads(path.read_text(encoding="utf-8"))
+        if event["kind"] == "action_cost_settlement_intent":
+            settlement = event["data"]["settlement"]
+            intents[settlement["action_id"]] = settlement["settlement_digest"]
+        elif event["kind"] == "action_cost_settled":
+            settlement = event["data"]["settlement"]
+            commits[settlement["action_id"]] = settlement["settlement_digest"]
+    return authorization, intents, commits
+
+
 def test_compiled_plan_has_exact_29_execution_ids_and_all_required_criteria() -> None:
     registry = _registry()
     scenario_set = json.loads(
@@ -891,6 +911,150 @@ def test_reopen_rejects_duplicate_cost_settlement_phase_regression(
         execution.ProtectedExecutionJournal.open(
             protected_root=tmp_path / "protected",
             run_id="settlement-replay-run",
+            authority=authority,
+        )
+
+
+@pytest.mark.parametrize(
+    "crash_boundary",
+    ("before_intent", "after_intent", "after_authorization", "after_commit"),
+)
+def test_cost_settlement_crash_recovers_exactly_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    crash_boundary: str,
+) -> None:
+    execution, authority, journal, reservation, now = _reconciled_action_journal(
+        tmp_path,
+        run_id=f"settlement-crash-{crash_boundary}",
+    )
+
+    class InjectedCrash(RuntimeError):
+        pass
+
+    original_authorization_append = journal._append_authorization_ledger
+    original_journal_append = journal._append_event
+    with monkeypatch.context() as crash:
+        if crash_boundary == "before_intent":
+
+            def fail_intent_append(*, phase, kind, data):
+                if kind == "action_cost_settlement_intent":
+                    raise InjectedCrash("before settlement intent")
+                return original_journal_append(phase=phase, kind=kind, data=data)
+
+            crash.setattr(journal, "_append_event", fail_intent_append)
+        elif crash_boundary == "after_intent":
+
+            def fail_authorization_append(*, kind, data):
+                if kind == "action_cost_settled":
+                    raise InjectedCrash("after settlement intent")
+                return original_authorization_append(kind=kind, data=data)
+
+            crash.setattr(
+                journal,
+                "_append_authorization_ledger",
+                fail_authorization_append,
+            )
+        elif crash_boundary == "after_authorization":
+
+            def fail_journal_commit(*, phase, kind, data):
+                if kind == "action_cost_settled":
+                    raise InjectedCrash("after authorization settlement")
+                return original_journal_append(phase=phase, kind=kind, data=data)
+
+            crash.setattr(journal, "_append_event", fail_journal_commit)
+        else:
+
+            def fail_after_journal_commit(*, phase, kind, data):
+                digest = original_journal_append(phase=phase, kind=kind, data=data)
+                if kind == "action_cost_settled":
+                    raise InjectedCrash("after journal settlement commit")
+                return digest
+
+            crash.setattr(journal, "_append_event", fail_after_journal_commit)
+
+        with pytest.raises(InjectedCrash):
+            journal.settle_action_cost(
+                reservation,
+                actual_cost_usd=0.10,
+            )
+
+    if crash_boundary == "after_intent":
+        with pytest.raises(Exception, match="differs from intent"):
+            journal.settle_action_cost(
+                reservation,
+                actual_cost_usd=0.11,
+            )
+    if crash_boundary in {"before_intent", "after_intent"}:
+        retried = journal.settle_action_cost(
+            reservation,
+            actual_cost_usd=0.10,
+        )
+        assert retried.actual_cost_usd == 0.10
+    if crash_boundary == "after_authorization":
+        with pytest.raises(Exception, match="incomplete.*settlement|settlement.*drift"):
+            journal.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=tmp_path / "protected",
+        run_id=f"settlement-crash-{crash_boundary}",
+        authority=authority,
+    )
+    authorization, intents, commits = _persisted_cost_settlements(reopened)
+    assert authorization == intents == commits
+    assert set(commits) == {reservation.action_id}
+    assert reopened.quota_usage.cost_usd == 0.25
+    with pytest.raises(Exception, match="already settled"):
+        reopened.settle_action_cost(reservation, actual_cost_usd=0.10)
+    reopened.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
+
+
+@pytest.mark.parametrize("tamper", ("missing", "extra", "different"))
+def test_cost_settlement_reopen_rejects_tampered_store_mismatch(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    execution, authority, journal, reservation, _ = _reconciled_action_journal(
+        tmp_path,
+        run_id=f"settlement-tamper-{tamper}",
+    )
+    settlement = journal.settle_action_cost(
+        reservation,
+        actual_cost_usd=0.10,
+    )
+    journal_paths = sorted((journal.run_root / "journal").glob("*.json"))
+    settlement_paths = [
+        path
+        for path in journal_paths
+        if json.loads(path.read_text(encoding="utf-8"))["kind"]
+        in {"action_cost_settlement_intent", "action_cost_settled"}
+    ]
+
+    if tamper == "missing":
+        for path in reversed(settlement_paths):
+            path.unlink()
+    elif tamper == "extra":
+        journal._append_event(
+            phase=journal.phase,
+            kind="action_cost_settled",
+            data={"settlement": settlement.model_dump(mode="json")},
+        )
+    else:
+        commit_path = settlement_paths[-1]
+        event = json.loads(commit_path.read_text(encoding="utf-8"))
+        event["data"]["settlement"]["actual_cost_usd"] = 0.11
+        identity = {
+            key: value
+            for key, value in event["data"]["settlement"].items()
+            if key != "settlement_digest"
+        }
+        event["data"]["settlement"]["settlement_digest"] = execution._digest(identity)
+        commit_path.write_bytes(execution._canonical_bytes(event))
+
+    with pytest.raises(Exception, match="settlement|digest|duplicate|drift"):
+        execution.ProtectedExecutionJournal.open(
+            protected_root=tmp_path / "protected",
+            run_id=f"settlement-tamper-{tamper}",
             authority=authority,
         )
 
