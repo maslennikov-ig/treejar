@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "147e18b66346b7da1b83845b366eda6e1afa00b27f456a239d6b3b9f09b175a0",
+  "source_set_digest": "fe28081e6dc8a1a477e73eb5da13a7e9444d52106c1c5582966fafb59420243d",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -200,13 +200,13 @@
       ]
     },
     "beads-regressions": {
-      "path": ".beads/issues.jsonl",
-      "content_digest": "e3a12d589a5d4d3de84e3c019868af98dc6f67590c45c0dd6322276c3edb8bd9",
+      "path": ".codex/stages/tj-ee5f/frozen-beads-records.jsonl",
+      "content_digest": "3689c833b2ca31a7d90feb02fb5049b53e1a259c1ded587faf6312f90358878d",
       "sections": [
         {
-          "start_locator": "named_issue_records",
+          "start_locator": "named_frozen_issue_records",
           "end_locator": null,
-          "content_digest": "e3a12d589a5d4d3de84e3c019868af98dc6f67590c45c0dd6322276c3edb8bd9"
+          "content_digest": "3689c833b2ca31a7d90feb02fb5049b53e1a259c1ded587faf6312f90358878d"
         }
       ]
     }

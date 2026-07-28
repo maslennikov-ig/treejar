@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import inspect
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -26,6 +27,71 @@ NON_OPEN_SCENARIOS = [
 
 def _policy_module():
     return importlib.import_module("scripts.e2e_acceptance.policy")
+
+
+def test_canonical_https_origin_allows_only_optional_git_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = _policy_module()
+    repo_root = PROJECT_ROOT.resolve()
+    common_dir = repo_root.parents[1] / ".git"
+
+    def canonical_run(
+        command: list[str], **_: object
+    ) -> subprocess.CompletedProcess[str]:
+        if command[-1] == "--show-toplevel":
+            return subprocess.CompletedProcess(command, 0, f"{repo_root}\n", "")
+        if command[-1] == "origin":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                "https://github.com/maslennikov-ig/treejar\n",
+                "",
+            )
+        if command[-1] == "--git-common-dir":
+            return subprocess.CompletedProcess(command, 0, f"{common_dir}\n", "")
+        raise AssertionError(f"unexpected git command: {command}")
+
+    monkeypatch.setattr(policy.subprocess, "run", canonical_run)
+
+    assert policy.TrustedAcceptanceRegistry._canonical_repo_root() == repo_root
+
+
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "http://github.com/maslennikov-ig/treejar",
+        "git@github.com:maslennikov-ig/treejar.git",
+        "https://github.com/other-owner/treejar.git",
+        "https://github.com/maslennikov-ig/other-repository.git",
+        "https://github.com/maslennikov-ig/treejar.git?query=1",
+        "https://github.com/maslennikov-ig/treejar.git#fragment",
+        "https://user@github.com/maslennikov-ig/treejar.git",
+    ],
+)
+def test_canonical_https_origin_rejects_noncanonical_variants(
+    monkeypatch: pytest.MonkeyPatch,
+    remote: str,
+) -> None:
+    policy = _policy_module()
+    repo_root = PROJECT_ROOT.resolve()
+    common_dir = repo_root.parents[1] / ".git"
+
+    def variant_run(
+        command: list[str], **_: object
+    ) -> subprocess.CompletedProcess[str]:
+        if command[-1] == "--show-toplevel":
+            return subprocess.CompletedProcess(command, 0, f"{repo_root}\n", "")
+        if command[-1] == "origin":
+            return subprocess.CompletedProcess(command, 0, f"{remote}\n", "")
+        if command[-1] == "--git-common-dir":
+            return subprocess.CompletedProcess(command, 0, f"{common_dir}\n", "")
+        raise AssertionError(f"unexpected git command: {command}")
+
+    monkeypatch.setattr(policy.subprocess, "run", variant_run)
+
+    with pytest.raises(policy.PolicyValidationError, match="identity drift"):
+        policy.TrustedAcceptanceRegistry._canonical_repo_root()
 
 
 @pytest.mark.parametrize("scenario_id", NON_OPEN_SCENARIOS)
