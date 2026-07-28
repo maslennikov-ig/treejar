@@ -3,7 +3,7 @@
   "stage_id": "tj-r1f3",
   "goal_id": "tj-r1f3",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 1,
   "acceptance_boundary_id": "grounded-customer-output-enforcement",
   "acceptance_owner": "root-orchestrator",

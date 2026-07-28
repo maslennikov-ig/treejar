@@ -90,6 +90,7 @@ docs/**/*.pdf
 !.codex/goals/**
 !.codex/stages/
 !.codex/stages/**
+.codex/stages/**/.closeout.lock
 
 .env*
 .worktrees/

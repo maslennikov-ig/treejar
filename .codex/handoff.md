@@ -1,26 +1,27 @@
 # Orchestrator Handoff
 
-Updated: 2026-07-27
-Current branch: `main`
-Current stage id: `tj-ee5f`
-Current stage status: design, independent review, implementation plan, Beads
-execution task, and launcher prompt prepared; live execution blocked by
-`tj-r1f3`
+Updated: 2026-07-28
+Current branch: `codex/tj-r1f3-release-candidate`
+Current stage id: `tj-r1f3`
+Current stage status: accepted and closed after exact deployment/readback,
+failed attempt preservation, isolated fix, and passing 5/5 provider retest
 
 ## Current Truth
 
 - Canonical runtime: `https://noor.starec.ai`.
 - The deployed code release is
-  `b8de75c215d2678eb8d2cff06f91a49e48e0e4a9`.
-- `origin/main` contains that release plus later documentation/evidence-only
-  handoff commits. Those path-ignored commits intentionally did not redeploy
-  production.
-- GitHub Actions run `30283789902` passed lint, type-check, tests, and deploy.
-- Final local release gate passed Ruff, format, Mypy over 162 source files,
-  process verification, and Pytest: `1624 passed, 19 skipped`.
+  `0dd9615a16fdf4eb17abe156551c53fb77f39c21`.
+- `origin/main` is `ac552023a647656777734f2109e0a93b8fa453d8`.
+  Its one later commit changes only the smoke harness, tests, and evidence, so
+  CI correctly skipped a second product deploy.
+- GitHub Actions run `30330683062` passed lint, type-check, tests, and deploy
+  for the runtime release. Run `30331481790` passed lint, type-check, and tests
+  for the harness-only commit.
+- Final local release gate passed Ruff, format, Mypy over 163 source files,
+  process verification, and Pytest: `1878 passed, 19 skipped`.
 - Production health is `ok`, version `0.4.0`; app, worker, nginx, Redis, and
   PostgreSQL are running. Redis returned `PONG`, PostgreSQL accepts
-  connections, and public API verification passed `8/8`.
+  connections, and read-only public health/API guard verification passed.
 - Production models remain:
   - main: `z-ai/glm-5.2`;
   - fast: `deepseek/deepseek-v4-flash`.
@@ -30,31 +31,29 @@ execution task, and launcher prompt prepared; live execution blocked by
 - Graphify is optional but not configured;
   `graphify-out/GRAPH_REPORT.md` is absent.
 
-## Grounding blocker
+## Grounding acceptance
 
-- Beads `tj-r1f3` remains `in_progress` and P1.
-- Prompt-tail assembly, grounding language, and deterministic smoke semantics
-  were corrected through TDD and an accepted independent delta review.
-- Three post-deploy smoke attempts are preserved under
+- Beads `tj-r1f3` is closed.
+- Deterministic customer-output enforcement and shared evaluator semantics were
+  corrected through TDD and accepted independent review.
+- Attempts 1–4 remain immutable failed evidence under
   `.codex/stages/tj-r1f3/results/`.
-- Final attempt on `b8de75c` made exactly five paid synthetic calls and no
-  customer, Wazzup, Zoho, CRM, quotation, order, or other business mutation.
-- Script result was `4/5`: GLM-5.2 again offered experiencing the specific Nova
-  chair in the showroom after correctly declining an unsupported medical
-  claim.
-- Manual evidence review also found a delegated future stock-check promise
-  that the deterministic evaluator did not flag; effective semantic result is
-  `3/5`.
-- Two bounded correction cycles are exhausted. Replan around reliable
-  customer-output enforcement and expand delegated-future-check detection;
-  do not continue wording-only prompt patches inside the old loop.
+- Attempt 4 on runtime `0dd9615` consumed exactly five paid synthetic calls,
+  made zero retries, performed no business mutation, and returned 4/5.
+- Diagnosis proved the deployed guard safely repaired the exact failure and
+  isolated a smoke-harness prompt-tail mismatch.
+- Harness commit `ac55202` aligned the synthetic prompt with the production
+  final-tail helper and passed CI.
+- A new separately quota-bound attempt 5 consumed exactly five paid synthetic
+  calls, made zero retries, performed no business mutation, and passed
+  deterministic plus manual semantic review 5/5.
 - Exact evidence and disposition:
   `.codex/stages/tj-r1f3/results/postdeploy-verification.md`.
 
 ## E2E acceptance preparation
 
 - Epic: `tj-ee5f`.
-- Execution task: `tj-ee5f.1`, blocked by `tj-r1f3`.
+- Execution task: `tj-ee5f.1`, unblocked by the accepted `tj-r1f3` proof.
 - Accepted design:
   `docs/superpowers/specs/2026-07-27-noor-agent-driven-e2e-acceptance-design.md`.
 - Accepted independent design review:
@@ -77,14 +76,13 @@ execution task, and launcher prompt prepared; live execution blocked by
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: recover `tj-r1f3`, replan it around reliable
-customer-output enforcement and delegated-future-check detection, then close
-its deploy/smoke gate before implementing and executing the approved E2E plan.
+Recommended action: integrate the accepted policy-v2/provenance delivery
+candidate, refresh its frozen Beads provenance after the `tj-r1f3` closure,
+then execute the approved E2E plan from its exact authorization manifest.
 
 - Local preparation for `tj-ee5f.1` may proceed from `main`.
-- Mutation-capable E2E cannot begin until `tj-r1f3` closes with a freshly
-  deployed passing release and the exact live authorization manifest is
-  approved.
+- Mutation-capable E2E remains gated by its own exact live authorization
+  manifest, preflight, quota reservations, and side-effect policy.
 - Acceptance execution never edits product code in place. A failure creates a
   Beads defect and isolated fix/delivery stream; the acceptance owner records
   a new immutable retest attempt against the new release.
@@ -108,8 +106,6 @@ Use $orchestrator-stage with the complete English prompt in
 
 ## Explicit defers
 
-- `tj-r1f3`: production grounding/output-enforcement blocker for
-  mutation-capable E2E.
 - `tj-qy7y`: compatible PostCSS/NanoID security update in the trusted frontend
   build chain.
 - `tj-n8p6`: pre-existing Ruff drift in orchestration scripts.

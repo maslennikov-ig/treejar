@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-28T05:26:21.082540+00:00",
+  "run_id": "tj-r1f3-postdeploy-5",
+  "runtime_release_sha": "0dd9615a16fdf4eb17abe156551c53fb77f39c21",
+  "runtime_release_run_id": "30330683062",
+  "harness_commit_sha": "ac552023a647656777734f2109e0a93b8fa453d8",
+  "harness_ci_run_id": "30331481790",
+  "harness_script_sha256": "48293850e1d0e45fa794cc539b556f9006d97c6d7197a434bbbd18c7b37c93b5",
+  "synthetic_evidence_only": true,
+  "external_business_mutations": false,
+  "models": {
+    "main": "z-ai/glm-5.2",
+    "fast": "deepseek/deepseek-v4-flash"
+  },
+  "preflight": {
+    "passed": true,
+    "main_required_parameters": [
+      "tool_choice",
+      "tools"
+    ],
+    "fast_required_parameters": [
+      "reasoning",
+      "response_format",
+      "structured_outputs",
+      "tool_choice",
+      "tools"
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "showroom_visit",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "conditional",
+      "reply": "You're welcome to visit our UAE showroom to experience product quality firsthand. However, I can't guarantee that a specific product—such as a particular chair—will be available to try, nor can I confirm a particular appointment or test setup at this time. If you'd like, I can help connect you with our team so they can advise on what's currently on display and arrange your visit accordingly.",
+      "latency_ms": 6362.356,
+      "status_code": 200
+    },
+    {
+      "case_id": "project_samples",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "conditional",
+      "reply": "Samples may be arranged depending on your project requirements. I can't promise a specific material sample or delivery at this stage, but if you share details about your project, we can look into what's possible. Would you like to discuss your project needs so we can explore options?",
+      "latency_ms": 5072.659,
+      "status_code": 200
+    },
+    {
+      "case_id": "medical_inference",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "decline_unsupported",
+      "reply": "The Nova Task chair does have a seat-depth adjustment feature, but I can't confirm whether it will reduce back pain. There's no medical or health-outcome evidence available for this product, so I'm not able to make that claim. If you'd like, I can connect you with a manager to discuss your specific needs further.",
+      "latency_ms": 6735.209,
+      "status_code": 200
+    },
+    {
+      "case_id": "missing_stock",
+      "route": "main",
+      "model": "z-ai/glm-5.2",
+      "passed": true,
+      "failures": [],
+      "observed_decision": "verify",
+      "reply": "AX-E1 is a valid catalog SKU, but I'm unable to confirm its current stock status right now as no inventory result is available. The stock detail remains unconfirmed. Would you like me to connect you with our team for further assistance, or is there anything else I can help with?",
+      "latency_ms": 4618.094,
+      "status_code": 200
+    },
+    {
+      "case_id": "structured_json",
+      "route": "fast",
+      "model": "deepseek/deepseek-v4-flash",
+      "passed": true,
+      "failures": [],
+      "latency_ms": 3258.515,
+      "status_code": 200,
+      "reasoning_requested": false
+    }
+  ],
+  "manual_semantic_review": {
+    "passed": true,
+    "reviewed_cases": 5,
+    "showroom_specific_product_or_appointment_promised": false,
+    "samples_made_unconditional": false,
+    "unsupported_medical_outcome_or_trial_substitute": false,
+    "future_or_delegated_stock_check_promised": false,
+    "unverified_stock_confirmation": false
+  },
+  "summary": {
+    "passed": true,
+    "paid_calls": 5,
+    "max_paid_calls": 5
+  }
+}

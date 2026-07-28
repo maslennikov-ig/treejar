@@ -62,10 +62,10 @@ depends_on_streams:
   - tj-r1f3-root-cause
 parallel_decision: sequential
 status: accepted
-delivery_method: n/a
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: Implementation and review fixes are returned for orchestrator review; orchestrator owns acceptance and worktree cleanup.
+cleanup_status: blocked
+cleanup_notes: The accepted implementation and harness correction were merged into main; stage worktrees and branches remain intentionally retained until the parent tj-ee5f integration consumes the final evidence.
 risk_level: high
 verification_tier: delta
 risk_tags:
@@ -104,6 +104,8 @@ verification:
   - smoke prompt-tail GREEN: the shared runtime finalizer preserves exactly one immutable policy copy at the final tail
   - uv run pytest tests/test_scripts_verify_model_routes.py tests/test_llm_grounding_output.py -q --tb=short: passed with 185 tests
   - independent attempt-4 delta review: APPROVED after correcting the delivery-lane audit trail; no remaining P0-P3 findings
+  - harness commit ac55202 GitHub Actions run 30331481790: lint, type-check, and tests passed; runtime deploy correctly skipped for the harness-only delta
+  - postdeploy smoke attempt 5 on runtime release 0dd9615 with exact harness ac55202: deterministic and manual semantic result 5/5, exactly five newly authorized paid synthetic calls, zero retries, and no business mutation
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
@@ -113,6 +115,7 @@ verification:
   - scripts/orchestration/run_process_verification.sh: passed
   - uv run python scripts/orchestration/validate_artifact.py on this artifact: passed
   - uv run python scripts/orchestration/lint_stage_sizing.py --stage tj-r1f3: passed
+  - uv run python scripts/orchestration/run_stage_closeout.py --stage tj-r1f3: passed with 102 targeted, 133 integration, and 38 E2E tests plus process and documentation verification
   - git diff --check: passed
 changed_files:
   - src/llm/grounding_output.py
@@ -122,12 +125,13 @@ changed_files:
   - tests/test_llm_engine.py
   - tests/test_scripts_verify_model_routes.py
   - .codex/stages/tj-r1f3/results/postdeploy-smoke-attempt-4.json
+  - .codex/stages/tj-r1f3/results/postdeploy-smoke-attempt-5.json
   - .codex/stages/tj-r1f3/results/postdeploy-verification.md
+  - .codex/stages/tj-r1f3/summary.md
   - .codex/stages/tj-r1f3/stage-manifest.json
   - .codex/stages/tj-r1f3/artifacts/tj-r1f3-implementation.md
   - .superpowers/sdd/tj-r1f3-implementation-report.md
 explicit_defers:
-  - the attempt-4 smoke-harness correction still requires independent review, deployment, exact readback, and a new separately quota-bound provider retest; attempt 4 remains immutable failed evidence
   - mixed-language and unseen paraphrase coverage remains a bounded residual risk; expansion to broad factual validation requires a separately reviewed scope
 ---
 
@@ -259,16 +263,18 @@ action. In the later explicitly authorized delivery lane, exact release
 smoke consumed exactly five paid calls with no retry or business mutation.
 That immutable attempt returned 4/5 and remains failed evidence.
 
-The local smoke-harness prompt-tail correction is accepted for review but is
-not yet delivered. Stage completion remains pending on its integration,
-deployment/readback, and a new separately quota-bound passing smoke. Cleanup
-remains owned by the orchestrator.
+The smoke-harness correction was integrated as `ac55202` and passed its
+harness-only CI. The runtime product release remained exact `0dd9615` because
+CI correctly skipped a deploy for the script/test/evidence-only delta. A new
+separately quota-bound attempt 5 then passed deterministic and manual semantic
+review 5/5 with exactly five paid calls, zero retries, and no business
+mutation. Beads `tj-r1f3` is closed; cleanup remains owned by the orchestrator.
 
 # Risks / Follow-ups / Explicit Defers
 
 Residual risk is bounded to unseen paraphrases, especially mixed-language
 outputs. The fail-closed path limits user-visible harm for recognized forms,
-but broader factual-claim enforcement is intentionally outside this task. The
-attempt-4 quota is exhausted. The harness correction still requires
-deployment/readback and a new separately quota-bound provider smoke before
-stage acceptance.
+but broader factual-claim enforcement is intentionally outside this task.
+Attempt 4 remains immutable failed evidence and its quota is exhausted;
+attempt 5 used a separate exact quota and passed. No outstanding P0/P1 remains
+inside the bounded `tj-r1f3` acceptance contract.

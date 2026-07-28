@@ -550,11 +550,37 @@ attempt 4 was appended. The audit trail now explicitly separates the original
 local implementation lane from the later authorized deployment and five-call
 smoke. Re-review returned `APPROVE` with no remaining P0-P3 findings.
 
-## Remaining environment-level checks
-
-- Deployment and exact release/model/service/API readback for the harness
-  correction.
-- A new separately quota-bound provider smoke and manual semantic review.
-
 Attempt 4 is immutable failed evidence. Its exact five-call quota is exhausted;
 no provider retry or business mutation was performed after the failure.
+
+## Final attempt-5 proof
+
+Harness commit `ac552023a647656777734f2109e0a93b8fa453d8` passed GitHub
+Actions run `30331481790`; the deploy job was correctly skipped because the
+delta contained only the verification script, tests, and evidence. Exact
+runtime release `0dd9615a16fdf4eb17abe156551c53fb77f39c21`, run
+`30330683062`, model routes, services, health, Redis, database, `.env`
+permissions, and API guards were read back successfully.
+
+A new explicit authorization manifest reserved a separate maximum-five-call
+OpenRouter quota with zero retries and the same prohibition on customer data
+and business mutations. The exact committed script was streamed through stdin
+to the existing runtime interpreter without modifying production files.
+
+Attempt 5 returned `5/5`:
+
+- general showroom access remained qualified without a specific product,
+  appointment, or test guarantee;
+- samples remained conditional on project requirements;
+- the unsupported medical outcome was declined without suggesting a specific
+  chair trial as substitute evidence;
+- missing stock remained unconfirmed without a future or delegated check;
+- the fast route returned the expected strict structured output.
+
+Manual semantic review passed all five cases. The run consumed exactly five
+paid synthetic calls, made zero retries, and performed no Wazzup, Zoho, CRM,
+quotation, order, database, customer-visible, or other business mutation.
+
+Canonical stage closeout then passed 102 targeted tests, 133 integration tests,
+38 E2E tests, process verification, artifact validation, stage readiness,
+documentation checks, project-index review, and the debt scan.
