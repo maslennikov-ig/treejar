@@ -239,7 +239,7 @@
   ],
   "scope_provenance": {
     "path": ".codex/goals/tj-ee5f/scope-source-provenance.json",
-    "digest": "d62c90f6262aa5f08e1a82f2c08b3f39883caca6c798dab2f1e280bae8fbc349",
+    "digest": "aed530e3360091d9640fb0e14c6a1a9bd527092c6cf27bd10e79b7295163c896",
     "anchor_creation_commit": "b77cc34ac7bed163c293761fe9998b4c78b45359",
     "anchor_blob_digest": "e997f5139dff929e777707817392a59bc72088d354a5e0ca1827bf6b1fe04871"
   }

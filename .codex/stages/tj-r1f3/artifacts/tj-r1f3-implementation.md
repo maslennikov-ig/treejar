@@ -62,10 +62,10 @@ depends_on_streams:
   - tj-r1f3-root-cause
 parallel_decision: sequential
 status: accepted
-delivery_method: n/a
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: Implementation and review fixes are returned for orchestrator review; orchestrator owns acceptance and worktree cleanup.
+cleanup_status: blocked
+cleanup_notes: The accepted implementation and harness correction were merged into main; stage worktrees and branches remain intentionally retained until the parent tj-ee5f integration consumes the final evidence.
 risk_level: high
 verification_tier: delta
 risk_tags:
@@ -98,15 +98,24 @@ verification:
   - uv run pytest focused grounding-output, engine, stock-tool, and smoke cases -q --tb=short: passed with 57 tests
   - uv run pytest tests/test_llm_grounding_output.py tests/test_llm_engine.py tests/test_scripts_verify_model_routes.py -q --tb=short: passed with 612 tests
   - independent delta review of 8b9ece6..d616463: APPROVED with no critical findings
+  - postdeploy smoke attempt 4 on exact release 0dd9615 and CI/deploy run 30330683062: immutable script result 4/5 with exactly five paid synthetic calls and no business mutation
+  - exact attempt-4 medical reply local production-path characterization: classified specific_product_showroom_trial, repaired to the safe medical refusal, and reclassified with no violations
+  - smoke prompt-tail RED: the synthetic system prompt did not end with the immutable grounding policy
+  - smoke prompt-tail GREEN: the shared runtime finalizer preserves exactly one immutable policy copy at the final tail
+  - uv run pytest tests/test_scripts_verify_model_routes.py tests/test_llm_grounding_output.py -q --tb=short: passed with 185 tests
+  - independent attempt-4 delta review: APPROVED after correcting the delivery-lane audit trail; no remaining P0-P3 findings
+  - harness commit ac55202 GitHub Actions run 30331481790: lint, type-check, and tests passed; runtime deploy correctly skipped for the harness-only delta
+  - postdeploy smoke attempt 5 on runtime release 0dd9615 with exact harness ac55202: deterministic and manual semantic result 5/5, exactly five newly authorized paid synthetic calls, zero retries, and no business mutation
   - uv run ruff check focused changed Python files: passed
   - uv run ruff format --check focused changed Python files: passed
   - uv run mypy src/: passed with 163 source files
   - uv run ruff check src/ tests/: passed
-  - uv run ruff format --check src/ tests/: passed with 305 files already formatted
-  - uv run pytest tests/ -q --tb=short: passed with 1865 tests and 19 skipped
+  - uv run ruff format --check src/ tests/: passed with 306 files already formatted
+  - uv run pytest tests/ -q --tb=short: passed with 1878 tests and 19 skipped
   - scripts/orchestration/run_process_verification.sh: passed
   - uv run python scripts/orchestration/validate_artifact.py on this artifact: passed
   - uv run python scripts/orchestration/lint_stage_sizing.py --stage tj-r1f3: passed
+  - uv run python scripts/orchestration/run_stage_closeout.py --stage tj-r1f3: passed with 102 targeted, 133 integration, and 38 E2E tests plus process and documentation verification
   - git diff --check: passed
 changed_files:
   - src/llm/grounding_output.py
@@ -115,11 +124,14 @@ changed_files:
   - tests/test_llm_grounding_output.py
   - tests/test_llm_engine.py
   - tests/test_scripts_verify_model_routes.py
+  - .codex/stages/tj-r1f3/results/postdeploy-smoke-attempt-4.json
+  - .codex/stages/tj-r1f3/results/postdeploy-smoke-attempt-5.json
+  - .codex/stages/tj-r1f3/results/postdeploy-verification.md
+  - .codex/stages/tj-r1f3/summary.md
   - .codex/stages/tj-r1f3/stage-manifest.json
   - .codex/stages/tj-r1f3/artifacts/tj-r1f3-implementation.md
   - .superpowers/sdd/tj-r1f3-implementation-report.md
 explicit_defers:
-  - deployment, production readback, and any freshly authorized provider smoke remain with later stage streams
   - mixed-language and unseen paraphrase coverage remains a bounded residual risk; expansion to broad factual validation requires a separately reviewed scope
 ---
 
@@ -135,6 +147,13 @@ fails closed. Static, quotation, and handoff response builders are unchanged.
 The model-route smoke evaluator imports the production classifier, so the exact
 attempt-3 delegated-stock false negative and equivalent team/staff forms cannot
 drift from runtime enforcement.
+
+Postdeploy attempt 4 proved the deployed runtime guard recognizes and repairs
+the new specific-chair sentence, but also exposed a separate harness mismatch:
+the synthetic system prompt placed case material after the immutable grounding
+policy. The local correction now uses the same prompt finalizer as production,
+preserving exactly one policy copy at the final prompt tail. The failed attempt
+and its five-call quota remain immutable evidence; no provider retry was made.
 
 The review correction makes present stock confirmation evidence-aware: the
 customer text is preserved only after successful current-turn inventory tool
@@ -227,25 +246,35 @@ scope while retaining unquoted/list negative controls. Final broad-smoke
 coverage locks quoted and unquoted non-SKU stock wording plus the public
 masker's offset and word-apostrophe contract.
 
-The complete three affected test files passed 612 tests. The independent
+The original three affected test files passed 612 tests, and the independent
 delta review approved the final quote-aware smoke correction with no critical
-findings. The full local release gate then passed with 1865 tests and 19 skips,
-plus repository-wide Ruff, format, `src/` Mypy, and process verification. The
-detailed commands and failure evidence are in
-`.superpowers/sdd/tj-r1f3-implementation-report.md`.
+findings. After attempt 4, the prompt-tail correction passed 185 focused tests
+and a fresh full local gate with 1878 tests and 19 skips, plus repository-wide
+Ruff, format, `src/` Mypy, and process verification. The detailed commands and
+failure evidence are in `.superpowers/sdd/tj-r1f3-implementation-report.md`.
 
 # Delivery / Cleanup
 
-The stream is accepted by the orchestrator for local integration. Stage
-completion remains pending on exact authorization for delivery and live proof;
-cleanup remains owned by the orchestrator. No provider smoke,
-deployment, live call, customer send, production mutation, Zoho/CRM action,
-quotation, or order action was performed.
+The original implementation lane performed no provider smoke, deployment, live
+call, customer send, production mutation, Zoho/CRM action, quotation, or order
+action. In the later explicitly authorized delivery lane, exact release
+`0dd9615a16fdf4eb17abe156551c53fb77f39c21` was deployed through CI run
+`30330683062`, read back successfully, and one bounded synthetic OpenRouter
+smoke consumed exactly five paid calls with no retry or business mutation.
+That immutable attempt returned 4/5 and remains failed evidence.
+
+The smoke-harness correction was integrated as `ac55202` and passed its
+harness-only CI. The runtime product release remained exact `0dd9615` because
+CI correctly skipped a deploy for the script/test/evidence-only delta. A new
+separately quota-bound attempt 5 then passed deterministic and manual semantic
+review 5/5 with exactly five paid calls, zero retries, and no business
+mutation. Beads `tj-r1f3` is closed; cleanup remains owned by the orchestrator.
 
 # Risks / Follow-ups / Explicit Defers
 
 Residual risk is bounded to unseen paraphrases, especially mixed-language
 outputs. The fail-closed path limits user-visible harm for recognized forms,
 but broader factual-claim enforcement is intentionally outside this task.
-Deploy/readback and any newly authorized provider smoke remain required before
-stage acceptance.
+Attempt 4 remains immutable failed evidence and its quota is exhausted;
+attempt 5 used a separate exact quota and passed. No outstanding P0/P1 remains
+inside the bounded `tj-r1f3` acceptance contract.

@@ -52,10 +52,10 @@ depends_on_streams:
   - none
 parallel_decision: parallel
 status: accepted
-delivery_method: n/a
+delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: Root reviewed and accepted the read-only diagnosis; the stage worktree remains active for implementation.
+cleanup_status: blocked
+cleanup_notes: The accepted diagnosis was merged into main; stage worktrees and branches remain intentionally retained until the parent tj-ee5f integration consumes the final evidence.
 risk_level: high
 verification_tier: delta
 risk_tags:

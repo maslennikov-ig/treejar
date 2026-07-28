@@ -45,15 +45,17 @@
         "title": "Execute agent-driven Noor E2E acceptance and client evidence",
         "description": "Implement and execute the approved agent-driven end-to-end acceptance of Noor from the exact deployed main release. Freeze criterion scope and traceability, build isolated scenario capsules plus one longitudinal journey, preserve exact questions and answers, reconcile all side effects, create Beads defects for failures, and produce protected raw evidence plus a redacted Russian client report for Viktor.",
         "acceptance_criteria": "tj-r1f3 is closed with fresh production proof before mutation-capable scenarios; immutable scope snapshot and separate traceability/run-result schemas cover original requirements and closed regressions; exact authorization manifest binds release, models, targets, quotas, mutations, readbacks, cleanup, and retention; application-native capsules, one long-memory journey, and separately authorized provider canaries execute or receive explicit non-passing outcomes; every turn, timing, tool/audit identity, side effect, defect, fix deployment, and retest is preserved; no unresolved P0/P1 or nonterminal/unlisted side effect remains; client Markdown report includes exact Q/A, failures, fixes, retests, limitations, and accepted rollups, with PDF generated only after content acceptance.",
-        "notes": "2026-07-27 preparation complete: accepted design, implementation plan, and English fallback prompt are tracked. Prompt passed orch-prompts prompt-check for codex/gpt-5.6/fallback. Execution remains blocked by tj-r1f3 and requires a fresh exact live authorization manifest.",
+        "notes": "2026-07-27 preparation complete: accepted design, implementation plan, and English fallback prompt are tracked. Prompt passed orch-prompts prompt-check for codex/gpt-5.6/fallback. Execution remains blocked by tj-r1f3 and requires a fresh exact live authorization manifest.\n2026-07-27 local execution preparation is active: Task 1 contracts are accepted; Task 2 dry-run/evidence/report foundation entered correction after independent review found authorization-binding, immutable-attempt, redaction, side-effect, rollup, and report-completeness bypasses. No live, paid, deploy, provider, customer, Wazzup, Zoho, CRM, quotation, order, or other external action has occurred. Post-freeze Beads updates intentionally keep the source-digest transition gate non-passing until provenance is refreshed after tj-r1f3 closure.\n2026-07-27 Task 2 needs replan: two allowed correction loops closed several authorization, quota, redaction, attempt-integrity, and readback-provenance bypasses, but final review still found incomplete semantic oracle coverage, support for only one of twenty accepted scenarios, stale final-readback acceptance, caller-selected partial rollups, and intermediate-parent symlink traversal in report output. Beads tj-ee5f.3 now owns a generic code-owned policy compiler and trusted evidence registry. A scope-preservation ledger maps all 30 immutable criteria to that gate. The returned implementation history is not deliverable because intermediate local commits contain a protected identity variant; any accepted net snapshot must be reconstructed from a clean base. No live/external action occurred.\n2026-07-28 clean local delivery integration accepted at codex/tj-ee5f-delivery@75c8dee. It contains only reviewed tj-r1f3, current-tree privacy cleanup, and policy-v2 histories; six unique contaminated returned-Task2 commits are absent. Independent integration review APPROVE found no P0-P3. Combined proof: 2069 passed, 19 skipped, exactly two frozen Task1 provenance tests deselected after separate fail-closed confirmation; Ruff, format, Mypy, process, artifact, sizing, stage-ready, privacy 0/0, and range diff checks passed. No push/deploy/live/paid action. Current exact authorization requested for safe main integration, non-force push, canonical deploy/readback, and maximum five paid synthetic tj-r1f3 provider calls.\n2026-07-28 prerequisite transition: tj-r1f3 closed after exact runtime 0dd9615 / CI 30330683062 readback and separately quota-bound provider attempt 5 passed 5/5 with manual semantic review; failed attempts 1-4 remain immutable. The clean tj-ee5f delivery candidate is refreshing frozen Beads/source provenance and the closed-dependency freshness disposition before exact authorization and E2E execution.",
         "spec_id": "docs/superpowers/plans/2026-07-27-noor-agent-driven-e2e-acceptance.md",
-        "status": "open",
+        "status": "in_progress",
         "priority": 1,
         "issue_type": "task",
+        "assignee": "maslennikov-ig",
         "owner": "maslennikov-ig@users.noreply.github.com",
         "created_at": "2026-07-27T16:19:01Z",
         "created_by": "maslennikov-ig",
-        "updated_at": "2026-07-27T16:22:10Z",
+        "updated_at": "2026-07-28T05:44:51Z",
+        "started_at": "2026-07-27T19:26:23Z",
         "labels": [
           "acceptance",
           "client-evidence",
@@ -84,9 +86,9 @@
         "dependent_count": 0,
         "comment_count": 0
       },
-      "canonical_record_digest": "b076d8eb2fead5f714abf90c83734bf29778583a9e3387b86265b1af242cb0e3"
+      "canonical_record_digest": "731e4d6fa4ec10ce7a5753eeba345d9efdb6f0191ed55690ef1e1fb5e1e03b11"
     }
   ],
-  "beads_records_digest": "3195794bb1189e9652e572dead43e3d73e42c8c868ed1dd9ec360e331caa19db",
-  "provenance_digest": "d62c90f6262aa5f08e1a82f2c08b3f39883caca6c798dab2f1e280bae8fbc349"
+  "beads_records_digest": "8c3026b78fbd010cee8868073116820020200478491a4cf73c13d7f8c4ae2b11",
+  "provenance_digest": "aed530e3360091d9640fb0e14c6a1a9bd527092c6cf27bd10e79b7295163c896"
 }

@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-28
-Status: in progress; local reviewed components integrated, external proof pending
+Status: in progress; reviewed foundation and accepted grounding proof integrated
 Branch: `codex/tj-ee5f-delivery`
 Beads: `tj-ee5f`
 
@@ -10,8 +10,8 @@ Beads: `tj-ee5f`
 One acceptance boundary owns the immutable 30-criterion scope, 20 scenarios,
 9 evidence blocks, trusted local execution and report contracts, current-tree
 privacy cleanup, and the later separately authorized live acceptance proof.
-The stage remains open because `tj-r1f3` still requires canonical delivery,
-runtime readback, and a freshly authorized passing provider smoke.
+The stage remains open for exact authorization, full E2E execution,
+side-effect reconciliation, client report acceptance, and PDF delivery.
 
 ## Integrated reviewed streams
 
@@ -20,8 +20,8 @@ runtime readback, and a freshly authorized passing provider smoke.
   publication, and redacted Russian report projection.
 - Historical test-identity current-tree redaction and fail-closed explicit live
   destination validation.
-- `tj-r1f3` deterministic customer-output enforcement and evaluator coverage,
-  accepted locally but not yet externally proven.
+- `tj-r1f3` deterministic customer-output enforcement, exact deployment and
+  runtime readback, preserved failed attempts, and passing 5/5 provider retest.
 
 The three delivery histories were integrated from the shared `main` base with
 non-fast-forward merges. The contaminated returned Task 2 history was excluded.
@@ -36,9 +36,10 @@ The privacy artifact is registered in the stage manifest.
 - The stage manifest remains `in_progress`; no live, paid, provider, customer,
   deploy, production, Wazzup, Zoho, CRM, quotation, order, or other external
   action occurred during integration.
-- Two frozen Task 1 Beads-provenance checks intentionally remain fail-closed
-  against later shared Beads drift. They must not be weakened or silently
-  converted to passing assertions.
+- The two frozen Task 1 Beads-provenance checks failed closed after shared
+  Beads and runtime-truth drift. Their versioned records, source digests, and
+  closed-dependency freshness transition were refreshed without weakening
+  either validator; both now pass normally.
 - Git history still retains the protected historical identity. Rewriting it is
   destructive and remains outside this integration scope.
 
@@ -50,21 +51,23 @@ The privacy artifact is registered in the stage manifest.
 - All three reviewed branch heads are ancestors of the delivery branch. None
   of the six commits unique to the contaminated returned Task 2 branch is an
   ancestor.
-- Acceptance surface: `192 passed, 2 deselected`. The two exact deselections
-  were first run without exclusions and failed closed:
+- The two frozen provenance tests were first run without exclusions and failed
+  closed on the expected orchestration-contract digest drift:
   - `test_traceability_source_digests_match_repository_content`;
   - `test_source_section_locators_and_digests_are_real`.
+- After exact provenance refresh, the full acceptance surface passes
+  `194 passed` with no deselections; the manifest contract file passes `43`.
 - `tj-r1f3` focused suite: `612 passed`.
 - Privacy affected suite: `92 passed`.
 - Admin frontend regression after offline lockfile bootstrap: `11 passed`.
-- Full Pytest: `2069 passed, 19 skipped, 2 deselected`.
+- Full Pytest: `2072 passed, 19 skipped`.
 - Ruff passed; format reported `315 files already formatted`; Mypy passed over
   `163` source files; process verification passed.
 - Artifact validation, stage sizing, `git diff --check`, and
   `check_stage_ready.py tj-ee5f` passed against the corrected current-stage
   routing.
-- Structural stage-ready checks are green, but stage closeout remains blocked
-  until external `tj-r1f3` proof exists.
+- Structural stage-ready checks are green; final stage closeout remains pending
+  the actual E2E run, client report acceptance, and PDF delivery.
 
 ## Closeout review
 
@@ -78,8 +81,6 @@ The privacy artifact is registered in the stage manifest.
 
 ## Explicit defers
 
-- `tj-r1f3`: canonical delivery, exact release/model/service/API readback, and
-  one freshly authorized bounded provider smoke with manual semantic review.
 - `tj-ee5f.1`: live acceptance execution, side-effect reconciliation, client
   report acceptance, and any PDF remain separately authorized future work.
 - Repository-history privacy cleanup requires explicit destructive-action

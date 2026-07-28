@@ -173,7 +173,7 @@ def test_traceability_source_digests_match_repository_content() -> None:
         validate_source_digests(drifted, REPO_ROOT)
 
 
-def test_open_grounding_dependency_is_a_non_passing_external_gate() -> None:
+def test_closed_grounding_dependency_still_requires_fresh_external_evidence() -> None:
     traceability = load_traceability_manifest(TRACEABILITY_PATH)
     grounding_gate = next(
         item for item in traceability.criteria if item.criterion_id == "AC-30"
@@ -182,39 +182,33 @@ def test_open_grounding_dependency_is_a_non_passing_external_gate() -> None:
     assert grounding_gate.evidence_mode is EvidenceMode.EXTERNAL_GATE
     assert grounding_gate.dependency is not None
     assert grounding_gate.dependency.issue_id == "tj-r1f3"
-    assert grounding_gate.dependency.status == "in_progress"
+    assert grounding_gate.dependency.status == "closed"
     assert grounding_gate.dependency.required_outcome is Outcome.PASS
-    assert grounding_gate.precedence.disposition == "hard_dependency_non_pass"
+    assert (
+        grounding_gate.precedence.disposition == "dependency_closed_freshness_required"
+    )
+    assert "tj-r1f3" not in grounding_gate.open_known_risks
 
 
-def test_grounding_dependency_has_a_versioned_closed_freshness_transition() -> None:
+def test_grounding_dependency_closed_transition_validates_contract_bundle() -> None:
     snapshot, provenance = _scope_and_provenance()
     traceability = load_traceability_manifest(TRACEABILITY_PATH)
     scenario_set = load_scenario_set(SCENARIO_SET_PATH)
-    criteria = []
-    for criterion in traceability.criteria:
-        if criterion.criterion_id not in {"AC-07", "AC-30"}:
-            criteria.append(criterion)
-            continue
-        assert criterion.dependency is not None
-        criteria.append(
-            criterion.model_copy(
-                update={
-                    "dependency": criterion.dependency.model_copy(
-                        update={"status": "closed"}
-                    ),
-                    "open_known_risks": [
-                        risk for risk in criterion.open_known_risks if risk != "tj-r1f3"
-                    ],
-                    "precedence": criterion.precedence.model_copy(
-                        update={"disposition": "dependency_closed_freshness_required"}
-                    ),
-                }
-            )
-        )
-    transitioned = traceability.model_copy(update={"criteria": criteria})
+    grounding = [
+        criterion
+        for criterion in traceability.criteria
+        if criterion.criterion_id in {"AC-07", "AC-30"}
+    ]
+    assert {criterion.criterion_id for criterion in grounding} == {"AC-07", "AC-30"}
+    assert all(
+        criterion.dependency is not None
+        and criterion.dependency.status == "closed"
+        and criterion.precedence.disposition == "dependency_closed_freshness_required"
+        and "tj-r1f3" not in criterion.open_known_risks
+        for criterion in grounding
+    )
 
-    validate_contract_bundle(snapshot, provenance, transitioned, scenario_set)
+    validate_contract_bundle(snapshot, provenance, traceability, scenario_set)
 
 
 def test_scenario_set_has_isolated_languages_variants_journey_and_blocks() -> None:

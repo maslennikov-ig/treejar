@@ -100,6 +100,11 @@ verification:
   - after npm ci in frontend/admin, the exact admin frontend regression file passed 11 tests
   - stage sizing and artifact validators: passed
   - git diff --check: passed
+  - frozen provenance transition RED: the two exact source-digest tests failed closed on expected orchestration-contract drift before refresh
+  - closed-dependency provenance GREEN: the two frozen tests and two transition checks passed
+  - uv run pytest tests/test_e2e_acceptance_manifests.py -q --tb=short: passed 43
+  - complete acceptance surface after provenance refresh: passed 194 with no deselections
+  - combined full repository gate: passed 2072 with 19 skipped; Ruff, format over 315 files, Mypy over 163 source files, and process verification passed
 changed_files:
   - .codex/goals/tj-ee5f/scope-criterion-snapshot.json
   - .codex/goals/tj-ee5f/scope-source-provenance.json
@@ -110,10 +115,11 @@ changed_files:
   - scripts/e2e_acceptance/schemas.py
   - scripts/e2e_acceptance/manifest.py
   - tests/test_e2e_acceptance_manifests.py
+  - .codex/stages/tj-ee5f/orchestrator-prompt.md
+  - .codex/stages/tj-ee5f/summary.md
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f-task-1.md
   - .superpowers/sdd/task-1-report.md
 explicit_defers:
-  - tj-r1f3 remains a hard non-passing external gate until fresh closure and deployed provider proof
   - client-owned referral payment-pricing CRM-stage availability load backup and operator inputs remain explicit external gates
 ---
 
@@ -167,11 +173,11 @@ cleanup action occurred; there is no external test state to reconcile.
 
 # Risks / Follow-ups / Explicit Defers
 
-`tj-r1f3` is deliberately recorded as `in_progress` and non-passing. The draft
-authorization example has zero quotas, no permissions, placeholder identities,
-and an expired one-minute window; it cannot authorize execution. Client-owned
-inputs remain visible external gates and cannot be counted as PASS. When
-`tj-r1f3` closes, the versioned trace manifest must bind the updated named-Beads
-digest, remove the open risk, and select
-`dependency_closed_freshness_required`; fresh release/provider evidence is
-still required and closure alone is not PASS.
+`tj-r1f3` is now recorded as closed with
+`dependency_closed_freshness_required`. The versioned trace manifest binds the
+updated named-Beads digest, removes the open risk, and preserves the external
+evidence gate: closure alone never becomes criterion PASS. The draft
+authorization example still has zero quotas, no permissions, placeholder
+identities, and an expired one-minute window, so it cannot authorize execution.
+Client-owned inputs remain visible external gates and cannot be counted as
+PASS.

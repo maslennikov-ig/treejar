@@ -3,24 +3,28 @@
 Updated: 2026-07-28
 Current branch: `codex/tj-ee5f-delivery`
 Current stage id: `tj-ee5f`
-Current stage status: reviewed local Task 1, policy-v2, privacy cleanup, and
-`tj-r1f3` implementation integrated; stage remains open pending canonical
-delivery and fresh external `tj-r1f3` proof
+Current stage status: Task 1, policy-v2, privacy cleanup, and the accepted
+`tj-r1f3` release evidence are integrated; frozen provenance is refreshed and
+full local gates are green; stage remains open for delivery and E2E execution
 
 ## Current Truth
 
 - Canonical runtime: `https://noor.starec.ai`.
 - The deployed code release is
-  `b8de75c215d2678eb8d2cff06f91a49e48e0e4a9`.
-- `origin/main` contains that release plus later documentation/evidence-only
-  handoff commits. Those path-ignored commits intentionally did not redeploy
-  production.
-- GitHub Actions run `30283789902` passed lint, type-check, tests, and deploy.
-- Final local release gate passed Ruff, format, Mypy over 162 source files,
-  process verification, and Pytest: `1624 passed, 19 skipped`.
+  `0dd9615a16fdf4eb17abe156551c53fb77f39c21`.
+- `origin/main` is `eab36e32e9bba16270d388cb2683eebca6f402d8`.
+  Commits after the runtime release change only the smoke harness, tests, and
+  evidence, so CI correctly skipped a second product deploy.
+- GitHub Actions run `30330683062` passed lint, type-check, tests, and deploy
+  for the runtime release. Run `30331481790` passed lint, type-check, and tests
+  for the harness-only commit.
+- Run `30332045845` passed lint, type-check, and tests for final `tj-r1f3`
+  evidence commit `eab36e3`; deploy was correctly skipped.
+- Final local release gate passed Ruff, format, Mypy over 163 source files,
+  process verification, and Pytest: `1878 passed, 19 skipped`.
 - Production health is `ok`, version `0.4.0`; app, worker, nginx, Redis, and
   PostgreSQL are running. Redis returned `PONG`, PostgreSQL accepts
-  connections, and public API verification passed `8/8`.
+  connections, and read-only public health/API guard verification passed.
 - Production models remain:
   - main: `z-ai/glm-5.2`;
   - fast: `deepseek/deepseek-v4-flash`.
@@ -30,36 +34,29 @@ delivery and fresh external `tj-r1f3` proof
 - Graphify is optional but not configured;
   `graphify-out/GRAPH_REPORT.md` is absent.
 
-## Grounding blocker
+## Grounding acceptance
 
-- Beads `tj-r1f3` remains `in_progress` and P1.
-- Deterministic customer-output enforcement and expanded evaluator semantics
-  were corrected through TDD and accepted independent review, then integrated
-  locally into `codex/tj-ee5f-delivery`.
-- Full local release proof on the reviewed source branch passed Ruff, format,
-  Mypy, process verification, and Pytest.
-- Canonical integration/delivery, deploy/readback, and one freshly authorized
-  bounded provider smoke with manual semantic review remain outstanding.
-- Three post-deploy smoke attempts are preserved under
+- Beads `tj-r1f3` is closed.
+- Deterministic customer-output enforcement and shared evaluator semantics were
+  corrected through TDD and accepted independent review.
+- Attempts 1–4 remain immutable failed evidence under
   `.codex/stages/tj-r1f3/results/`.
-- Final attempt on `b8de75c` made exactly five paid synthetic calls and no
-  customer, Wazzup, Zoho, CRM, quotation, order, or other business mutation.
-- Script result was `4/5`: GLM-5.2 again offered experiencing the specific Nova
-  chair in the showroom after correctly declining an unsupported medical
-  claim.
-- Manual evidence review also found a delegated future stock-check promise
-  that the deterministic evaluator did not flag; effective semantic result is
-  `3/5`.
-- Two bounded correction cycles are exhausted. Replan around reliable
-  customer-output enforcement and expand delegated-future-check detection;
-  do not continue wording-only prompt patches inside the old loop.
+- Attempt 4 on runtime `0dd9615` consumed exactly five paid synthetic calls,
+  made zero retries, performed no business mutation, and returned 4/5.
+- Diagnosis proved the deployed guard safely repaired the exact failure and
+  isolated a smoke-harness prompt-tail mismatch.
+- Harness commit `ac55202` aligned the synthetic prompt with the production
+  final-tail helper and passed CI.
+- A new separately quota-bound attempt 5 consumed exactly five paid synthetic
+  calls, made zero retries, performed no business mutation, and passed
+  deterministic plus manual semantic review 5/5.
 - Exact evidence and disposition:
   `.codex/stages/tj-r1f3/results/postdeploy-verification.md`.
 
 ## E2E acceptance preparation
 
 - Epic: `tj-ee5f`.
-- Execution task: `tj-ee5f.1`, blocked by `tj-r1f3`.
+- Execution task: `tj-ee5f.1`, unblocked by the accepted `tj-r1f3` proof.
 - Task 1 immutable contracts and the reviewed generic policy-v2 trust boundary
   are integrated locally.
 - The current tracked tree redacts the protected historical test identity and
@@ -69,12 +66,13 @@ delivery and fresh external `tj-r1f3` proof
   the privacy artifact. The stage remains `in_progress`.
 - Beads `tj-ee5f.2` and `tj-ee5f.3` are closed after combined-tree acceptance;
   `tj-ee5f` and `tj-ee5f.1` remain open.
-- Combined-tree integration gates passed: acceptance `192 passed` with exactly
-  two frozen Task 1 source-provenance checks deselected after they were first
-  observed failing closed; `tj-r1f3` `612 passed`; privacy slice `92 passed`;
-  full Pytest `2069 passed, 19 skipped, 2 deselected`; Ruff, format, Mypy,
-  process verification, artifact validation, stage sizing, and stage-ready
-  checks passed.
+- The two frozen Task 1 provenance checks first failed closed on the expected
+  source drift, then passed after exact Beads/source-digest refresh and the
+  versioned closed-dependency transition.
+- Current combined-tree gates pass acceptance `194` with no deselections,
+  manifest contracts `43`, and full Pytest `2072 passed, 19 skipped`; Ruff,
+  format over 315 files, Mypy over 163 source files, and process verification
+  also pass.
 - Current-tree exact and separator-normalized privacy scans found zero matches,
   and none of the six commits unique to the contaminated returned Task 2 branch
   is present in delivery ancestry.
@@ -100,15 +98,13 @@ delivery and fresh external `tj-r1f3` proof
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: finish review and delivery of the integrated local
-`tj-r1f3` output-enforcement release, then obtain fresh exact authorization for
-deploy/readback and the bounded provider smoke before executing the approved
-E2E plan.
+Recommended action: deliver the verified policy-v2/provenance candidate, bind
+the exact deployed/runtime/test identities into an approved authorization
+manifest, then execute the approved E2E plan.
 
 - Local preparation for `tj-ee5f.1` may proceed from `main`.
-- Mutation-capable E2E cannot begin until `tj-r1f3` closes with a freshly
-  deployed passing release and the exact live authorization manifest is
-  approved.
+- Mutation-capable E2E remains gated by its own exact live authorization
+  manifest, preflight, quota reservations, and side-effect policy.
 - Acceptance execution never edits product code in place. A failure creates a
   Beads defect and isolated fix/delivery stream; the acceptance owner records
   a new immutable retest attempt against the new release.
@@ -132,8 +128,6 @@ Use $orchestrator-stage with the complete English prompt in
 
 ## Explicit defers
 
-- `tj-r1f3`: production grounding/output-enforcement blocker for
-  mutation-capable E2E.
 - `tj-qy7y`: compatible PostCSS/NanoID security update in the trusted frontend
   build chain.
 - `tj-n8p6`: pre-existing Ruff drift in orchestration scripts.

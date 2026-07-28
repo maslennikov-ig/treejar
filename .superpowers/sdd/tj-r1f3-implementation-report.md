@@ -13,11 +13,11 @@ The exact AI path is:
    construction consume only the enforced text.
 5. The chat layer later persists and delivers that `LLMResponse.text`.
 
-The failure was not a parsing or prompt-tail assembly defect. Attempt 3 proved
-that an advisory prompt can still yield two prohibited customer semantics, and
-the application trusted that model output. The smoke evaluator separately had
-a narrower actor grammar that missed `arrange for our team to check and get
-back`.
+The attempt-3 production failure was not a parsing or production prompt-tail
+assembly defect. It proved that an advisory prompt can still yield two
+prohibited customer semantics, and the application trusted that model output.
+The smoke evaluator separately had a narrower actor grammar that missed
+`arrange for our team to check and get back`.
 
 ## TDD lane and RED evidence
 
@@ -487,12 +487,100 @@ uv run mypy src/
 Results: Ruff and format passed after organizing the new test import; Mypy
 passed over 163 source files.
 
-## Remaining environment-level checks
+## Postdeploy attempt-4 smoke-harness correction
 
-- Independent delta review.
-- Full release tests and process verification owned by stage closeout.
-- Deployment and exact release/model/service/API readback.
-- Only with fresh explicit authorization: bounded provider smoke and manual
-  semantic review.
+Exact release `0dd9615a16fdf4eb17abe156551c53fb77f39c21` deployed through
+CI run `30330683062` and passed exact release/model/service/API readback.
+The authorized provider run consumed exactly five synthetic paid calls and
+returned `4/5`. The medical case correctly refused the unsupported health
+claim but again offered a visit to experience the specific Nova chair. The
+other four cases passed deterministic and manual semantic review. No retry was
+performed.
 
-No external or live action was performed in this stream.
+The exact attempt-4 reply was then passed through the deployed production
+classifier locally. It produced
+`specific_product_showroom_trial`, the production enforcer removed the unsafe
+showroom sentence while retaining the medical refusal, and the repaired result
+classified with no violation. This isolated the new defect to the release
+smoke boundary rather than the customer-output guard.
+
+The smoke payload differed from production prompt assembly: it inserted the
+immutable grounding policy before `[CASE EVIDENCE]` and its tool instruction.
+The runtime uses `finalize_evidence_grounding_prompt()` and guarantees exactly
+one policy copy at the final tail.
+
+TDD RED:
+
+```text
+uv run pytest tests/test_scripts_verify_model_routes.py::test_sales_payload_uses_the_runtime_prompt_tail_invariant -q --tb=short
+```
+
+Result: failed because the system prompt did not end with
+`EVIDENCE_GROUNDING_POLICY`.
+
+The minimal correction builds the synthetic prompt through the same production
+finalizer. No policy wording, model, temperature, case evidence, schema,
+provider parameter, quota, or production response behavior changed.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_scripts_verify_model_routes.py::test_sales_payload_uses_the_runtime_prompt_tail_invariant -q --tb=short
+uv run pytest tests/test_scripts_verify_model_routes.py tests/test_llm_grounding_output.py -q --tb=short
+```
+
+Results: `1 passed`; `185 passed`.
+
+Fresh release gates:
+
+```text
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
+uv run mypy src/
+uv run pytest tests/ -q --tb=short
+scripts/orchestration/run_process_verification.sh
+```
+
+Results: Ruff passed; 306 files formatted; Mypy passed over 163 source files;
+`1878 passed, 19 skipped`; process verification passed.
+
+Independent delta review found one documentation-only P2: the historical
+implementation-lane statement still said no external action had occurred after
+attempt 4 was appended. The audit trail now explicitly separates the original
+local implementation lane from the later authorized deployment and five-call
+smoke. Re-review returned `APPROVE` with no remaining P0-P3 findings.
+
+Attempt 4 is immutable failed evidence. Its exact five-call quota is exhausted;
+no provider retry or business mutation was performed after the failure.
+
+## Final attempt-5 proof
+
+Harness commit `ac552023a647656777734f2109e0a93b8fa453d8` passed GitHub
+Actions run `30331481790`; the deploy job was correctly skipped because the
+delta contained only the verification script, tests, and evidence. Exact
+runtime release `0dd9615a16fdf4eb17abe156551c53fb77f39c21`, run
+`30330683062`, model routes, services, health, Redis, database, `.env`
+permissions, and API guards were read back successfully.
+
+A new explicit authorization manifest reserved a separate maximum-five-call
+OpenRouter quota with zero retries and the same prohibition on customer data
+and business mutations. The exact committed script was streamed through stdin
+to the existing runtime interpreter without modifying production files.
+
+Attempt 5 returned `5/5`:
+
+- general showroom access remained qualified without a specific product,
+  appointment, or test guarantee;
+- samples remained conditional on project requirements;
+- the unsupported medical outcome was declined without suggesting a specific
+  chair trial as substitute evidence;
+- missing stock remained unconfirmed without a future or delegated check;
+- the fast route returned the expected strict structured output.
+
+Manual semantic review passed all five cases. The run consumed exactly five
+paid synthetic calls, made zero retries, and performed no Wazzup, Zoho, CRM,
+quotation, order, database, customer-visible, or other business mutation.
+
+Canonical stage closeout then passed 102 targeted tests, 133 integration tests,
+38 E2E tests, process verification, artifact validation, stage readiness,
+documentation checks, project-index review, and the debt scan.

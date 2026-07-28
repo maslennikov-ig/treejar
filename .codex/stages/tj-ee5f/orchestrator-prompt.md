@@ -17,14 +17,14 @@ and the implementation plan at
 `docs/superpowers/plans/2026-07-27-noor-agent-driven-e2e-acceptance.md`.
 
 Treat the recorded release identities as evidence to verify, not assumptions.
-At handoff time, `tj-r1f3` is still an open prerequisite. Its latest evidence
-is `.codex/stages/tj-r1f3/results/postdeploy-verification.md`: the deployed code
-release `b8de75c` is healthy, and `main` also contains later
-documentation/evidence-only commits, but the final bounded model smoke found a
-repeated specific-chair showroom offer after an unsupported medical claim and
-an unflagged delegated future stock-check promise. Preparation may continue,
-but mutation-capable E2E must wait until that prerequisite is resolved,
-deployed, and freshly proven.
+At execution start, `tj-r1f3` is closed. Its immutable attempt chain and final
+proof are in `.codex/stages/tj-r1f3/results/postdeploy-verification.md`:
+runtime release `0dd9615` passed deployment/readback, failed attempts 1–4 are
+preserved, harness commit `ac55202` aligned the synthetic prompt with the
+production final-tail invariant, and separately quota-bound attempt 5 passed
+deterministic plus manual semantic review 5/5 with no business mutation.
+Mutation-capable E2E may proceed only after this evidence and the exact current
+authorization manifest both pass preflight.
 
 Success criteria:
 - Freeze the immutable criterion snapshot and keep traceability, evidence mode,

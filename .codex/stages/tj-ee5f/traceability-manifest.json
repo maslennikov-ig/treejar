@@ -2,7 +2,7 @@
   "schema_version": "noor-e2e-traceability/v1",
   "goal_id": "tj-ee5f",
   "scope_source_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
-  "source_set_digest": "d92ef36eb68ed43acaead1fe2961d8abfbe7714c3c85a90bde6b89f04f3f1971",
+  "source_set_digest": "147e18b66346b7da1b83845b366eda6e1afa00b27f456a239d6b3b9f09b175a0",
   "precedence_order": [
     "current repository and runtime contracts",
     "original and updated requirements",
@@ -36,34 +36,34 @@
     },
     "orchestration-contract": {
       "path": ".codex/orchestrator.toml",
-      "content_digest": "22c5c583933ac85f5bdab1f78ef14b10949a751824f87cc1b8b5e71317793b52",
+      "content_digest": "352fda6b8eadc280d9e432d99d563ab766959a0772539d33c38e2f3f1485a00c",
       "sections": [
         {
           "start_locator": "schema_version = 2",
           "end_locator": null,
-          "content_digest": "22c5c583933ac85f5bdab1f78ef14b10949a751824f87cc1b8b5e71317793b52"
+          "content_digest": "352fda6b8eadc280d9e432d99d563ab766959a0772539d33c38e2f3f1485a00c"
         }
       ]
     },
     "runtime-truth": {
       "path": ".codex/handoff.md",
-      "content_digest": "af83e61fa126129548cd4ac3c4431e9c0571e6867b6f0a7982e81e3606a3109e",
+      "content_digest": "eaa29a21742dd61a84eafa9a722929bea23504d52bec75f1acff488c0d912b0c",
       "sections": [
         {
           "start_locator": "# Orchestrator Handoff",
           "end_locator": null,
-          "content_digest": "af83e61fa126129548cd4ac3c4431e9c0571e6867b6f0a7982e81e3606a3109e"
+          "content_digest": "eaa29a21742dd61a84eafa9a722929bea23504d52bec75f1acff488c0d912b0c"
         }
       ]
     },
     "project-index": {
       "path": ".codex/project-index.md",
-      "content_digest": "0851f013691be015d95b23054adaa94e31fa6dad964c0b4ba44801e54068aa80",
+      "content_digest": "f6a02124afd3b30e1e4c68a7a0f9559db374b81c7aecf08f8c37a4adfe5e08c6",
       "sections": [
         {
           "start_locator": "# Project Index - Treejar AI Sales Bot",
           "end_locator": null,
-          "content_digest": "0851f013691be015d95b23054adaa94e31fa6dad964c0b4ba44801e54068aa80"
+          "content_digest": "f6a02124afd3b30e1e4c68a7a0f9559db374b81c7aecf08f8c37a4adfe5e08c6"
         }
       ]
     },
@@ -190,23 +190,23 @@
     },
     "grounding-blocker": {
       "path": ".codex/stages/tj-r1f3/results/postdeploy-verification.md",
-      "content_digest": "94a43f183e7aa150e322a99bb6fbe7bd338bfd5facbb70b84069d9821aec5466",
+      "content_digest": "c9cca543629b9a51e26eb96af1dec982afcc8e696a54ad2a20e8db241874fda8",
       "sections": [
         {
           "start_locator": "# tj-r1f3 Post-deploy Verification",
           "end_locator": null,
-          "content_digest": "94a43f183e7aa150e322a99bb6fbe7bd338bfd5facbb70b84069d9821aec5466"
+          "content_digest": "c9cca543629b9a51e26eb96af1dec982afcc8e696a54ad2a20e8db241874fda8"
         }
       ]
     },
     "beads-regressions": {
       "path": ".beads/issues.jsonl",
-      "content_digest": "83b255b6e035d913c820dcf5527fc59dc2e5da3758ee0918a28b5ccad28b52da",
+      "content_digest": "e3a12d589a5d4d3de84e3c019868af98dc6f67590c45c0dd6322276c3edb8bd9",
       "sections": [
         {
           "start_locator": "named_issue_records",
           "end_locator": null,
-          "content_digest": "83b255b6e035d913c820dcf5527fc59dc2e5da3758ee0918a28b5ccad28b52da"
+          "content_digest": "e3a12d589a5d4d3de84e3c019868af98dc6f67590c45c0dd6322276c3edb8bd9"
         }
       ]
     }
@@ -550,8 +550,8 @@
         "beads-regressions"
       ],
       "precedence": {
-        "disposition": "hard_dependency_non_pass",
-        "rationale": "Exact commercial claims use catalog, operational tool, approved conditional capability, or manager gate; missing evidence stays unconfirmed.",
+        "disposition": "dependency_closed_freshness_required",
+        "rationale": "tj-r1f3 is closed with exact deployed runtime identity, healthy readback, and a separately quota-bound 5/5 provider retest; PASS still requires binding that fresh evidence into the current acceptance run.",
         "supersedes": [
           "Plausible industry practice as evidence",
           "Promise to check later when an in-turn tool is required"
@@ -589,12 +589,10 @@
         "tj-hwls.1",
         "tj-j13d"
       ],
-      "open_known_risks": [
-        "tj-r1f3"
-      ],
+      "open_known_risks": [],
       "dependency": {
         "issue_id": "tj-r1f3",
-        "status": "in_progress",
+        "status": "closed",
         "required_outcome": "PASS",
         "evidence_required": [
           "beads_issue_closed",
@@ -1718,8 +1716,8 @@
         "beads-regressions"
       ],
       "precedence": {
-        "disposition": "hard_dependency_non_pass",
-        "rationale": "tj-r1f3 remains in progress after failed deployed provider evidence; no target release may be assumed and affected acceptance cannot pass until fresh closure proof exists.",
+        "disposition": "dependency_closed_freshness_required",
+        "rationale": "tj-r1f3 is closed with exact deployed runtime identity, healthy readback, and a separately quota-bound 5/5 provider retest; PASS still requires binding that fresh evidence into the current acceptance run.",
         "supersedes": [
           "Treating tj-j13d closure or b8de75c deployment as sufficient grounding acceptance"
         ]
@@ -1754,12 +1752,10 @@
       "accepted_regressions": [
         "tj-j13d"
       ],
-      "open_known_risks": [
-        "tj-r1f3"
-      ],
+      "open_known_risks": [],
       "dependency": {
         "issue_id": "tj-r1f3",
-        "status": "in_progress",
+        "status": "closed",
         "required_outcome": "PASS",
         "evidence_required": [
           "beads_issue_closed",
@@ -1773,5 +1769,5 @@
     }
   ],
   "scope_provenance_path": ".codex/goals/tj-ee5f/scope-source-provenance.json",
-  "scope_provenance_digest": "d62c90f6262aa5f08e1a82f2c08b3f39883caca6c798dab2f1e280bae8fbc349"
+  "scope_provenance_digest": "aed530e3360091d9640fb0e14c6a1a9bd527092c6cf27bd10e79b7295163c896"
 }
