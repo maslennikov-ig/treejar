@@ -8,6 +8,7 @@ import math
 import os
 import stat
 import weakref
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -1757,11 +1758,30 @@ ExecutedAttemptV2 = ScenarioAttemptV2 | EvidenceBlockAttemptV2
 
 
 class ValidatedAttempt(_StrictModel):
+    """Outcome facts emitted by the runner, never supplied by a publisher."""
+
     execution_id: str
     plan_digest: str
     attempt_digest: str
-    outcome: Literal["PASS", "FAIL"]
+    outcome: OutcomeValue
+    attempt_kind: Literal["executed", "gate"] = "executed"
+    gate_attempt_digest: str | None = None
     oracle_decisions: tuple[dict[str, Any], ...]
+
+    @model_validator(mode="after")
+    def _variant_is_derived(self) -> ValidatedAttempt:
+        if self.attempt_kind == "executed":
+            if (
+                self.outcome not in {"PASS", "FAIL"}
+                or self.gate_attempt_digest is not None
+            ):
+                raise ValueError("executed validated attempt variant drift")
+        elif (
+            self.outcome not in {"BLOCKED", "EXCLUDED_BY_CLIENT"}
+            or self.gate_attempt_digest is None
+        ):
+            raise ValueError("gate validated attempt variant drift")
+        return self
 
 
 def scenario_input_digest(
@@ -1809,6 +1829,8 @@ class GenericAcceptanceRunner:
         registry: TrustedAcceptanceRegistry,
         authority: ExecutionAuthorizationHandle,
         journal: ProtectedExecutionJournal,
+        oracle_evaluator: Callable[[str, OracleEvidence], Any] | None = None,
+        readback_validator: Callable[..., None] | None = None,
     ) -> None:
         authorization = _authorization_from_handle(
             authority,
@@ -1837,6 +1859,13 @@ class GenericAcceptanceRunner:
         self.registry = registry
         self.authorization = authorization
         self.journal = journal
+        # Finalized-run evidence is intentionally unavailable while an attempt
+        # is being produced.  Production injects a protected pre-acceptance
+        # resolver; tests and archival readers retain the registry default.
+        self._oracle_evaluator = oracle_evaluator or registry.evaluate_oracle
+        self._readback_validator = (
+            readback_validator or registry.validate_readback_window
+        )
 
     def validate_attempt(self, attempt: ScenarioAttemptV2) -> ValidatedAttempt:
         if (
@@ -1922,7 +1951,7 @@ class GenericAcceptanceRunner:
         ):
             raise ExecutionValidationError("structured oracle evidence coverage drift")
         decisions = tuple(
-            self.registry.evaluate_oracle(
+            self._oracle_evaluator(
                 assertion_id,
                 evidence_by_assertion[assertion_id],
             )
@@ -1941,7 +1970,7 @@ class GenericAcceptanceRunner:
             for item in attempt.actual_turns
             if item.timeline.delivered_at is not None
         ]
-        self.registry.validate_readback_window(
+        self._readback_validator(
             baseline=attempt.baseline,
             final=attempt.final,
             final_visible_at=final_visible,
@@ -2077,6 +2106,34 @@ class GenericAcceptanceRunner:
                 )
         return attempt
 
+    def validate_gate_as_attempt(
+        self,
+        attempt: GateAttemptV2,
+        *,
+        current_time: datetime | None = None,
+    ) -> ValidatedAttempt:
+        """Turn protected gate evidence into the only publishable gate outcome."""
+
+        validated = self.validate_gate_attempt(attempt, current_time=current_time)
+        return ValidatedAttempt(
+            execution_id=validated.execution_id,
+            plan_digest=_digest(
+                {
+                    "execution_id": validated.execution_id,
+                    "criterion_ids": tuple(
+                        item.criterion_id
+                        for item in self.registry.compiled_plan.criteria.values()
+                        if validated.execution_id in item.obligation_ids
+                    ),
+                }
+            ),
+            attempt_digest=_digest(validated.model_dump(mode="json")),
+            outcome=validated.outcome,
+            attempt_kind="gate",
+            gate_attempt_digest=_digest(validated.model_dump(mode="json")),
+            oracle_decisions=(),
+        )
+
     def validate_evidence_block(
         self,
         attempt: EvidenceBlockAttemptV2,
@@ -2121,7 +2178,7 @@ class GenericAcceptanceRunner:
                 "evidence-block validation requires executing phase"
             )
         decisions = tuple(
-            self.registry.evaluate_oracle(
+            self._oracle_evaluator(
                 assertion_id,
                 evidence_by_assertion[assertion_id],
             )
@@ -2282,6 +2339,67 @@ class AttemptTransaction:
             f"attempts/{self.transaction_id}/tracked.json",
             redacted,
         )
+
+    def write_validated(
+        self,
+        validated: ValidatedAttempt,
+        *,
+        gate_attempt: GateAttemptV2 | None = None,
+    ) -> tuple[str, str]:
+        """Seal a result assembled only from a runner-validated attempt.
+
+        This is the production-only companion to the low-level raw/tracked
+        transaction API.  It deliberately accepts no caller-selected outcome
+        or attempt kind: both are facts of ``validated``.
+        """
+
+        if not self._journal._attempted_executions:
+            raise ExecutionValidationError("validated attempt was not reserved")
+        if validated.execution_id != self._journal._attempted_executions[-1]:
+            raise ExecutionValidationError(
+                "validated attempt transaction binding drift"
+            )
+        if (validated.attempt_kind == "gate") != (gate_attempt is not None):
+            raise ExecutionValidationError("validated gate payload binding drift")
+        if gate_attempt is not None and (
+            gate_attempt.execution_id != validated.execution_id
+            or _digest(gate_attempt.model_dump(mode="json"))
+            != validated.gate_attempt_digest
+        ):
+            raise ExecutionValidationError("validated gate digest binding drift")
+        semantic_digest = _digest(
+            {
+                "execution_id": validated.execution_id,
+                "plan_digest": validated.plan_digest,
+                "attempt_digest": validated.attempt_digest,
+                "outcome": validated.outcome,
+                "attempt_kind": validated.attempt_kind,
+                "gate_attempt_digest": validated.gate_attempt_digest,
+                "oracle_decisions": validated.oracle_decisions,
+            }
+        )
+        evaluator_digest = _digest(validated.oracle_decisions)
+        evidence_digest = _digest(
+            {
+                "attempt_digest": validated.attempt_digest,
+                "oracle_decisions": validated.oracle_decisions,
+                "gate_attempt_digest": validated.gate_attempt_digest,
+            }
+        )
+        raw = {
+            "schema_version": "noor-e2e-attempt-result/v2",
+            "execution_id": validated.execution_id,
+            "outcome": validated.outcome,
+            "attempt_kind": validated.attempt_kind,
+            "gate_attempt_digest": validated.gate_attempt_digest,
+            "attempt_digest": validated.attempt_digest,
+            "semantic_digest": semantic_digest,
+            "evaluator_digest": evaluator_digest,
+            "evidence_digest": evidence_digest,
+        }
+        raw_digest = self.write_raw(raw)
+        tracked_digest = self.write_tracked()
+        return raw_digest, tracked_digest
 
     def commit(self) -> AttemptRecovery:
         return self._journal._finish_attempt(self.transaction_id, abort=False)
@@ -3969,7 +4087,12 @@ class ProtectedExecutionJournal:
                 "schema_version",
                 "execution_id",
                 "outcome",
+                "attempt_kind",
+                "gate_attempt_digest",
+                "attempt_digest",
                 "semantic_digest",
+                "evaluator_digest",
+                "evidence_digest",
             )
             if (
                 expected_execution not in self.authorization.execution_ids
@@ -3984,8 +4107,32 @@ class ProtectedExecutionJournal:
                 or raw["schema_version"] != "noor-e2e-attempt-result/v2"
                 or raw["outcome"]
                 not in {"PASS", "FAIL", "BLOCKED", "EXCLUDED_BY_CLIENT"}
+                or raw["attempt_kind"] not in {"executed", "gate"}
+                or (
+                    raw["attempt_kind"] == "executed"
+                    and (
+                        raw["outcome"] not in {"PASS", "FAIL"}
+                        or raw["gate_attempt_digest"] is not None
+                    )
+                )
+                or (
+                    raw["attempt_kind"] == "gate"
+                    and (
+                        raw["outcome"] not in {"BLOCKED", "EXCLUDED_BY_CLIENT"}
+                        or not isinstance(raw["gate_attempt_digest"], str)
+                        or len(raw["gate_attempt_digest"]) != 64
+                    )
+                )
                 or not isinstance(raw["semantic_digest"], str)
                 or len(raw["semantic_digest"]) != 64
+                or any(
+                    not isinstance(raw[field], str) or len(raw[field]) != 64
+                    for field in (
+                        "attempt_digest",
+                        "evaluator_digest",
+                        "evidence_digest",
+                    )
+                )
             ):
                 raise ExecutionValidationError(
                     "attempt raw/tracked semantic binding drift"
@@ -3999,12 +4146,24 @@ class ProtectedExecutionJournal:
             "transaction_id": transaction_id,
             "run_id": self.run_id,
             "execution_id": execution_id,
+            "attempt_kind": (
+                str(raw["attempt_kind"]) if status == "committed" else None
+            ),
             "attempt_digest": attempt_digest,
             "status": status,
             "authorization_digest": self.authorization_digest,
             "semantic_digest": semantic_digest,
             "raw_digest": raw_digest,
             "tracked_digest": tracked_digest,
+            "gate_attempt_digest": (
+                raw["gate_attempt_digest"] if status == "committed" else None
+            ),
+            "evaluator_digest": (
+                raw["evaluator_digest"] if status == "committed" else None
+            ),
+            "evidence_digest": (
+                raw["evidence_digest"] if status == "committed" else None
+            ),
         }
         commit_digest = _write_exclusive(
             self.run_root,

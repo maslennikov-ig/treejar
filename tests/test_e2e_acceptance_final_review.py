@@ -1336,6 +1336,226 @@ def test_materialize_execution_snapshot_builds_and_loads_strict_production_v2(
     )
 
 
+def test_materializer_uses_exact_authorized_client_exclusion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, execution, trusted = _modules()
+    from scripts.e2e_acceptance.coordinator import (
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+    )
+
+    execution_id = next(
+        identity
+        for identity in registry.compiled_plan.execution_ids
+        if any(
+            criterion.evidence_mode.value == "external_gate"
+            and identity in criterion.obligation_ids
+            for criterion in registry.compiled_plan.criteria.values()
+        )
+    )
+    criterion_ids = tuple(
+        criterion_id
+        for criterion_id, criterion in registry.compiled_plan.criteria.items()
+        if execution_id in criterion.obligation_ids
+    )
+    grant = execution.ClientExclusionAuthority(
+        authority_id="materializer-exclusion",
+        issuer="client-exclusion-authority",
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        issued_at=journal.authorization.issued_at,
+        expires_at=journal.authorization.expires_at,
+    )
+    coordinator = ProductionRunCoordinator(
+        registry=registry,
+        authorization=journal.authorization,
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=journal.authorization.issued_at,
+    )
+    candidate = coordinator.publication_candidate()
+    sealed = json.loads(
+        (protected / "run-plan/sealed.json").read_text(encoding="utf-8")
+    )
+    object.__setattr__(
+        journal.authorization,
+        "client_exclusion_grants",
+        (grant,),
+    )
+    object.__setattr__(
+        journal.authorization,
+        "client_exclusion_authorities",
+        {execution_id: execution._digest(grant.model_dump(mode="json"))},
+    )
+    observed: dict[str, frozenset[str]] = {}
+    original = trusted.aggregate_criterion_outcome
+
+    def capture(criterion, outcomes, *, valid_exclusions):
+        observed[criterion.criterion_id] = valid_exclusions
+        return original(
+            criterion,
+            outcomes,
+            valid_exclusions=valid_exclusions,
+        )
+
+    monkeypatch.setattr(trusted, "aggregate_criterion_outcome", capture)
+
+    trusted._derive_producer_publication_candidate(
+        registry,
+        journal,
+        sealed,
+        candidate,
+    )
+
+    assert all(execution_id in observed[criterion_id] for criterion_id in criterion_ids)
+
+
+def test_materializer_binds_clean_empty_defect_ledger_and_receipt(
+    tmp_path: Path,
+) -> None:
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+
+    assert snapshot.defect_ledger["entries"] == []
+    assert (
+        snapshot.defect_ledger_receipt["tracked_sha256"]
+        == hashlib.sha256(trusted._canonical_bytes(snapshot.defect_ledger)).hexdigest()
+    )
+    assert (protected / "coordinator/defect-ledger-receipt.json").is_file()
+
+
+@pytest.mark.parametrize("mode", ("missing", "tampered"))
+def test_materializer_rejects_missing_or_tampered_defect_ledger_receipt(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    trusted.materialize_execution_snapshot(registry, journal, plan)
+    receipt_path = protected / "coordinator/defect-ledger-receipt.json"
+    if mode == "missing":
+        receipt_path.unlink()
+    else:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["tracked_sha256"] = "0" * 64
+        _write_json(receipt_path, receipt)
+
+    with pytest.raises(Exception, match="defect ledger"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
+
+
+def _replace_clean_defect_ledger(
+    registry, protected: Path, journal, plan, *, status: str, severity: str
+) -> None:
+    from scripts.e2e_acceptance.coordinator import (
+        DefectLedgerArtifact,
+        DefectLedgerEntry,
+        DefectLedgerReceipt,
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+    )
+
+    _, _, trusted = _modules()
+    coordinator = ProductionRunCoordinator(
+        registry=registry,
+        authorization=journal.authorization,
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=journal.authorization.issued_at,
+    )
+    finalized = coordinator.finalize()
+    execution_id = registry.compiled_plan.execution_ids[0]
+    entry = DefectLedgerEntry(
+        defect_id="tj-ee5f-ledger-defect",
+        severity=severity,
+        status=status,
+        execution_id=execution_id,
+        initial_failed_attempt_ref=f"attempt:{execution_id}",
+        root_cause="Synthetic producer failure.",
+        violated_invariant="Synthetic invariant.",
+        fix_ref="fix:synthetic" if status != "open" else None,
+        deployment_ref="deploy:synthetic" if status != "open" else None,
+        retest_attempt_ref="retest:synthetic" if status == "retested" else None,
+        final_outcome="PASS" if status == "retested" else "FAIL",
+        checksum_refs=("report-source",),
+    )
+    artifact = DefectLedgerArtifact(
+        schema_version="noor-e2e-defect-ledger/v1",
+        status="committed",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        sealed_plan_sha256=coordinator.sealed_plan_sha256,
+        accepted_fold_digest=finalized.final_activity.accepted_fold_digest,
+        evaluation_bundle_digest=finalized.evaluation.bundle_digest,
+        entries=(entry,),
+    )
+    artifact_value = artifact.model_dump(mode="json")
+    receipt_identity = {
+        "schema_version": "noor-e2e-defect-ledger-receipt/v1",
+        "status": "committed",
+        "registry_id": registry.registry_id,
+        "run_id": journal.run_id,
+        "authorization_digest": journal.authorization_digest,
+        "sealed_plan_sha256": coordinator.sealed_plan_sha256,
+        "accepted_fold_digest": finalized.final_activity.accepted_fold_digest,
+        "evaluation_bundle_digest": finalized.evaluation.bundle_digest,
+        "tracked_sha256": hashlib.sha256(
+            trusted._canonical_bytes(artifact_value)
+        ).hexdigest(),
+    }
+    receipt = DefectLedgerReceipt(
+        **receipt_identity,
+        receipt_digest=trusted.canonical_digest(receipt_identity),
+    )
+    _write_json(protected / "coordinator/defect-ledger.json", artifact_value)
+    _write_json(
+        protected / "coordinator/defect-ledger-receipt.json",
+        receipt.model_dump(mode="json"),
+    )
+
+
+def test_materializer_projects_retested_defect_lineage_into_report(
+    tmp_path: Path,
+) -> None:
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    _replace_clean_defect_ledger(
+        registry, protected, journal, plan, status="retested", severity="P2"
+    )
+
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+    defect = snapshot.report["defects"][0]
+
+    assert defect["status"] == "retested"
+    assert defect["fix_ref"] == "fix:synthetic"
+    assert defect["deployment_ref"] == "deploy:synthetic"
+    assert defect["retest_attempt_ref"] == "retest:synthetic"
+
+
+def test_open_p1_defect_is_derived_into_run_requirements_rollup(tmp_path: Path) -> None:
+    registry, _, protected, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    _replace_clean_defect_ledger(
+        registry, protected, journal, plan, status="open", severity="P1"
+    )
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+
+    assert "tj-ee5f-ledger-defect" in snapshot.run["open_p0_p1"]
+    assert (
+        trusted._requirements_met(
+            trusted.TrustedRunDocument.model_validate(snapshot.run)
+        )
+        is False
+    )
+
+
 def test_materializer_never_reads_prewritten_tracked_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

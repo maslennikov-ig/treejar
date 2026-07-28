@@ -309,10 +309,21 @@ class TrustedRunDocument(_StrictModel):
     executions: tuple[ExecutionRow, ...] = Field(min_length=1)
     criteria: tuple[CriterionRow, ...] = Field(min_length=1)
     open_p0_p1: tuple[str, ...]
+    defect_ledger_digest: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     side_effect_ledger_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     final_inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evidence_index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     report_payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def _requirements_met(run: TrustedRunDocument) -> bool:
+    """Acceptance is clean only when every outcome passes and no P0/P1 remains open."""
+
+    return (
+        all(row.outcome == "PASS" for row in run.criteria)
+        and all(row.outcome == "PASS" for row in run.executions)
+        and not run.open_p0_p1
+    )
 
 
 class TrustedRunAnchor(_StrictModel):
@@ -473,6 +484,14 @@ class DefectReport(_StrictModel):
     fix: str
     retest: str
     checksum_refs: tuple[str, ...]
+    severity: Literal["P0", "P1", "P2", "P3"] | None = None
+    status: Literal["open", "fixed", "retested"] | None = None
+    execution_id: str | None = None
+    initial_failed_attempt_ref: str | None = None
+    fix_ref: str | None = None
+    deployment_ref: str | None = None
+    retest_attempt_ref: str | None = None
+    final_outcome: OutcomeValue | None = None
 
 
 class ReportSourceArtifact(_StrictModel):
@@ -579,6 +598,8 @@ class ProtectedCommittedExecutionSnapshot(_StrictModel):
     evaluator: dict[str, Any]
     sealed_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evaluator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    defect_ledger: dict[str, Any] = Field(default_factory=dict)
+    defect_ledger_receipt: dict[str, Any] = Field(default_factory=dict)
     terminal_journal_phase: Literal["attempt_committed"]
     terminal_journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     baseline_sealed_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -1897,7 +1918,12 @@ def _derive_producer_publication_candidate(
         expected_outcome = aggregate_criterion_outcome(
             criterion,
             obligation_outcomes,
-            valid_exclusions=frozenset(),
+            valid_exclusions=frozenset(
+                grant.execution_id
+                for grant in journal.authorization.client_exclusion_grants
+                if grant.execution_id in criterion.obligation_ids
+                and criterion_id in grant.criterion_ids
+            ),
         )
         if evaluation.get(criterion_id) != expected_outcome:
             raise TrustedRunError("coordinator criterion evaluation drift")
@@ -2002,6 +2028,25 @@ def _derive_producer_publication_candidate(
         max_ms=max(ordered_latencies),
         evidence_refs=tuple(row.attempt_ref for row in executions),
     )
+    defect_reports = tuple(
+        DefectReport(
+            defect_id=entry.defect_id,
+            root_cause=entry.root_cause,
+            violated_invariant=entry.violated_invariant,
+            fix=entry.fix_ref or "Не требуется до закрытия дефекта.",
+            retest=entry.retest_attempt_ref or "Ретест ещё не выполнен.",
+            checksum_refs=entry.checksum_refs,
+            severity=entry.severity,
+            status=entry.status,
+            execution_id=entry.execution_id,
+            initial_failed_attempt_ref=entry.initial_failed_attempt_ref,
+            fix_ref=entry.fix_ref,
+            deployment_ref=entry.deployment_ref,
+            retest_attempt_ref=entry.retest_attempt_ref,
+            final_outcome=entry.final_outcome,
+        )
+        for entry in candidate.defect_ledger.entries
+    )
     report_document = ClientReportPayload(
         schema_version="noor-e2e-client-report/v2",
         run_id=journal.run_id,
@@ -2017,7 +2062,7 @@ def _derive_producer_publication_candidate(
         latency=latency,
         limitations=metadata.limitations,
         external_gates=metadata.external_gates,
-        defects=(),
+        defects=defect_reports,
     )
     delivered_at = tuple(
         turn.delivered_at for turn in ordered_turns if turn.delivered_at is not None
@@ -2033,7 +2078,14 @@ def _derive_producer_publication_candidate(
         action_at=(final_artifact.final_turn_anchor_at,),
         executions=tuple(executions),
         criteria=tuple(criteria),
-        open_p0_p1=(),
+        open_p0_p1=tuple(
+            entry.defect_id
+            for entry in candidate.defect_ledger.entries
+            if entry.status == "open" and entry.severity in {"P0", "P1"}
+        ),
+        defect_ledger_digest=canonical_digest(
+            candidate.defect_ledger.model_dump(mode="json")
+        ),
         side_effect_ledger_digest=canonical_digest(
             [item.model_dump(mode="json") for item in side_effects]
         ),
@@ -2102,6 +2154,7 @@ def materialize_execution_snapshot(
     except (ValueError, TrustedRunError) as exc:
         raise TrustedRunError("sealed production artifacts are incomplete") from exc
     from scripts.e2e_acceptance.coordinator import (
+        CoordinatorError,
         ProductionRunCoordinator,
         ProtectedJournalAcceptancePort,
     )
@@ -2115,15 +2168,18 @@ def materialize_execution_snapshot(
         current_time=journal.authorization.issued_at,
     )
     try:
+        candidate = coordinator.publication_candidate()
         run, report, evidence = _derive_producer_publication_candidate(
             registry,
             journal,
             sealed,
-            coordinator.publication_candidate(),
+            candidate,
         )
         run_document = TrustedRunDocument.model_validate(run)
         report_document = ClientReportPayload.model_validate(report)
-    except TrustedRunError:
+    except (TrustedRunError, CoordinatorError) as exc:
+        if isinstance(exc, CoordinatorError):
+            raise TrustedRunError(str(exc)) from exc
         raise
     except ValueError as exc:
         raise TrustedRunError(
@@ -2279,6 +2335,10 @@ def materialize_execution_snapshot(
         "evaluator": sealed_plan.evaluator,
         "sealed_plan_digest": _sha256(sealed_payload),
         "evaluator_digest": sealed_plan.evaluator_digest,
+        "defect_ledger": candidate.defect_ledger.model_dump(mode="json"),
+        "defect_ledger_receipt": candidate.defect_ledger_receipt.model_dump(
+            mode="json"
+        ),
         "terminal_journal_phase": journal.phase,
         "terminal_journal_head_digest": journal.previous_event_digest,
         "baseline_sealed_event_digest": baseline_sealed_event_digest,
@@ -2391,6 +2451,48 @@ def _load_protected_execution_snapshot(
         raise TrustedRunError(
             f"protected committed execution run is invalid: {exc}"
         ) from exc
+    if not legacy and bool(snapshot.defect_ledger) != bool(
+        snapshot.defect_ledger_receipt
+    ):
+        raise TrustedRunError(
+            "protected defect ledger artifact/receipt pair is incomplete"
+        )
+    if not legacy and snapshot.defect_ledger:
+        from scripts.e2e_acceptance.coordinator import (
+            DefectLedgerArtifact,
+            DefectLedgerReceipt,
+        )
+
+        try:
+            ledger = DefectLedgerArtifact.model_validate(snapshot.defect_ledger)
+            ledger_receipt = DefectLedgerReceipt.model_validate(
+                snapshot.defect_ledger_receipt
+            )
+        except ValueError as exc:
+            raise TrustedRunError("protected defect ledger schema is invalid") from exc
+        if (
+            ledger.registry_id != registry.registry_id
+            or ledger.run_id != run_id
+            or ledger.authorization_digest
+            != canonical_digest(run.authorization.model_dump(mode="json"))
+            or ledger_receipt.registry_id != ledger.registry_id
+            or ledger_receipt.run_id != ledger.run_id
+            or ledger_receipt.authorization_digest != ledger.authorization_digest
+            or ledger_receipt.sealed_plan_sha256 != ledger.sealed_plan_sha256
+            or ledger_receipt.accepted_fold_digest != ledger.accepted_fold_digest
+            or ledger_receipt.evaluation_bundle_digest
+            != ledger.evaluation_bundle_digest
+            or ledger_receipt.tracked_sha256
+            != _sha256(_canonical_bytes(snapshot.defect_ledger))
+            or run.defect_ledger_digest != canonical_digest(snapshot.defect_ledger)
+            or run.open_p0_p1
+            != tuple(
+                entry.defect_id
+                for entry in ledger.entries
+                if entry.status == "open" and entry.severity in {"P0", "P1"}
+            )
+        ):
+            raise TrustedRunError("protected defect ledger binding drift")
     if legacy:
         final_receipt_digest, final_inventory_digest = (
             _validate_final_readback_artifacts(
@@ -2534,11 +2636,7 @@ def _derive_publication(
         prewrite_rollups = {
             "coverage_complete": True,
             "execution_complete": True,
-            "requirements_met": (
-                all(row.outcome == "PASS" for row in run.criteria)
-                and all(row.outcome == "PASS" for row in run.executions)
-                and not run.open_p0_p1
-            ),
+            "requirements_met": _requirements_met(run),
         }
         validate_redacted_text(_render_report(report, prewrite_rollups).decode("utf-8"))
     except EvidenceError as exc:
@@ -2654,6 +2752,13 @@ def _derive_publication(
         report_payload_sha256=report_payload_sha256,
         verified_snapshot_digest=report_snapshot_digest,
     ).model_dump(mode="json")
+    if strict_snapshot:
+        if not snapshot.defect_ledger or not snapshot.defect_ledger_receipt:
+            raise TrustedRunError("strict snapshot lacks protected defect ledger")
+        protected_files["coordinator/defect-ledger.json"] = snapshot.defect_ledger
+        protected_files["coordinator/defect-ledger-receipt.json"] = (
+            snapshot.defect_ledger_receipt
+        )
     if isinstance(snapshot, ProtectedCommittedExecutionSnapshot):
         _validate_snapshot_readback_artifacts(
             registry,
@@ -3031,6 +3136,17 @@ def _load_verified_run(
         exclusion_evidence_is_valid = (
             plan.allows_client_exclusion
             and criterion_row.outcome == "EXCLUDED_BY_CLIENT"
+            and all(
+                any(
+                    grant.execution_id == execution_id
+                    and criterion_row.criterion_id in grant.criterion_ids
+                    and run.authorization.client_exclusion_authorities.get(execution_id)
+                    == canonical_digest(grant.model_dump(mode="json"))
+                    for grant in run.authorization.client_exclusion_grants
+                )
+                for execution_id, outcome in criterion_row.obligation_outcomes.items()
+                if outcome == "EXCLUDED_BY_CLIENT"
+            )
             and all(
                 evidence[ref].get("status") == "excluded"
                 and evidence[ref].get("external_gate_resolution")
@@ -3461,12 +3577,7 @@ def _load_verified_run(
     rollups = {
         "coverage_complete": True,
         "execution_complete": True,
-        "requirements_met": (
-            all(row.outcome == "PASS" for row in criteria.values())
-            and all(row.outcome == "PASS" for row in executions.values())
-            and not run.open_p0_p1
-            and not run.open_p0_p1
-        ),
+        "requirements_met": _requirements_met(run),
     }
     rendered = _render_report(report, rollups)
     try:

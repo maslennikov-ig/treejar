@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import subprocess
 import sys
@@ -56,6 +57,761 @@ def test_capability_dispatch_never_uses_scenario_identity() -> None:
         dispatcher.dispatch(capability="scenario-en-new-customer", request={})
     with pytest.raises(ProductionAdapterError, match="registry"):
         CapabilityDispatcher({"SC-OPEN-EN": transport})
+
+
+def test_validated_attempt_producer_has_no_caller_selected_result_facts() -> None:
+    """The public producer owns outcome and all result digests."""
+
+    from scripts.e2e_acceptance.production import produce_validated_execution_attempt
+
+    parameter_names = set(
+        inspect.signature(produce_validated_execution_attempt).parameters
+    )
+    assert {
+        "artifact",
+        "attempted",
+        "outcome",
+        "passed",
+        "reason",
+        "producer",
+        "execution_id",
+        "semantic_digest",
+        "evaluator_digest",
+        "evidence_digest",
+    }.isdisjoint(parameter_names)
+    assert parameter_names == {"producer_handle", "source_output_ref"}
+
+
+def test_validated_attempt_producer_rejects_arbitrary_handle() -> None:
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        produce_validated_execution_attempt,
+    )
+
+    with pytest.raises(ProductionAdapterError, match="handle"):
+        produce_validated_execution_attempt(
+            producer_handle=object(), source_output_ref="producer-observations/01.json"
+        )
+
+
+def test_source_identity_digest_excludes_evidence_but_binds_source_facts() -> None:
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.production import _attempt_source_identity_digest
+
+    attempt = execution.EvidenceBlockAttemptV2(
+        schema_version="noor-e2e-evidence-block-attempt/v2",
+        execution_id="EB-01",
+        evidence_collection_digest="a" * 64,
+        evaluator_config_digest="b" * 64,
+        oracle_evidence=(
+            {
+                "assertion_id": "A-01",
+                "structured_events": [],
+                "tool_results": [],
+                "readbacks": [],
+                "classifier_results": [],
+                "text_supplements": [],
+            },
+        ),
+        permission_evidence=(),
+    )
+
+    assert _attempt_source_identity_digest(
+        attempt
+    ) != execution.evidence_block_input_digest(attempt)
+    assert _attempt_source_identity_digest(
+        attempt.model_copy(update={"evidence_collection_digest": "c" * 64})
+    ) != _attempt_source_identity_digest(attempt)
+    assert _attempt_source_identity_digest(
+        attempt.model_copy(update={"permission_evidence": ("fixture:execute",)})
+    ) != _attempt_source_identity_digest(attempt)
+
+
+def _prepared_gate_producer(tmp_path: Path):
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.production import ProtectedRunPlan, seal_run_plan
+
+    from tests.e2e_acceptance_backend import build_canonical_test_registry
+    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+
+    registry = build_canonical_test_registry()
+    root = tmp_path / "protected"
+    authority = _issued_authority(registry, protected_root=root, run_id="local-run")
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    plan = ProtectedRunPlan.from_payload(
+        {
+            "actions": [
+                {
+                    "spec": item.model_dump(mode="json"),
+                    "message_path": f"requests/{item.action_id}.json",
+                }
+                for item in journal.authorization.action_specs
+            ],
+            "evaluator": {
+                "schema_version": "noor-e2e-protected-evaluator/v1",
+                "publication": {"seed": 1},
+                "decisive_producers": [
+                    {
+                        "producer_id": "fake-local-adapter",
+                        "producer_kind": "adapter",
+                        "capability": "outbound_text",
+                        "source_identity": "fake-local-adapter",
+                        "config_digest": "a" * 64,
+                    }
+                ],
+            },
+        }
+    )
+    seal_run_plan(journal, plan)
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        execution.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="baseline",
+            run_id="local-run",
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="a" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    execution_id = registry.compiled_plan.execution_ids[0]
+    gate_observed_at = datetime.now(UTC)
+    receipt_digest = execution._write_test_gate_evidence_bundle(
+        registry=registry,
+        journal=journal,
+        execution_id=execution_id,
+        outcome="BLOCKED",
+        producer="independent-readback-collector",
+        observed_at=gate_observed_at,
+        expires_at=gate_observed_at + timedelta(minutes=1),
+    )
+    attempt = execution.GateAttemptV2(
+        schema_version="noor-e2e-gate-attempt/v2",
+        execution_id=execution_id,
+        outcome="BLOCKED",
+        run_started_at=journal._execution_started_at,
+        execution_started_event_digest=journal._execution_started_event_digest,
+        receipt_digest=receipt_digest,
+    )
+    return registry, authority, journal, plan, attempt
+
+
+def _prepared_executed_producer(tmp_path: Path):
+    from scripts.e2e_acceptance import execution, policy
+    from scripts.e2e_acceptance.production import ProtectedRunPlan, seal_run_plan
+
+    from tests.e2e_acceptance_backend import build_canonical_test_registry
+    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+
+    registry = build_canonical_test_registry()
+    scenario_id = registry.compiled_plan.execution_ids[0]
+    scenario = registry.compiled_policy.scenarios[scenario_id]
+    assertion_ids = {
+        item.assertion_id
+        for group in (scenario.checkpoints, scenario.prohibited_outcomes)
+        for item in group.values()
+    }
+    for criterion_id in scenario.criterion_ids:
+        assertion_ids.update(
+            item.assertion_id
+            for item in registry.compiled_policy.criteria[
+                criterion_id
+            ].oracle_checks.values()
+        )
+    planned = execution.PlannedTurnV2(
+        turn_id="turn-001",
+        customer_input_digest="1" * 64,
+        expected_behavior_digest="2" * 64,
+        criterion_ids=scenario.criterion_ids,
+        assertion_ids=tuple(sorted(assertion_ids)),
+    )
+    input_digest = execution.scenario_input_digest(
+        execution_id=scenario_id,
+        planned_turns=(planned,),
+        tester_config_digest="5" * 64,
+        judge_config_digest="6" * 64,
+    )
+    root = tmp_path / "protected"
+    input_digests = {
+        identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
+    }
+    input_digests[scenario_id] = input_digest
+    authority = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id="local-run",
+        execution_input_digests=input_digests,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    bindings: dict[str, dict[str, str]] = {}
+    oracle_evidence = []
+    now = datetime.now(UTC)
+    for assertion_id in sorted(assertion_ids):
+        assertion = registry.compiled_policy.assertions[assertion_id]
+        if assertion.oracle.kind == "classifier_result":
+            producer = assertion.oracle.allowed_producers[0]
+            classifier_id = assertion.oracle.classifier_id
+            bindings[producer] = {
+                "producer_kind": "classifier",
+                "source_identity": classifier_id,
+            }
+            artifact = policy.ClassifierResult.build(
+                assertion_id=assertion_id,
+                policy_digest=registry.compiled_policy.policy_digest,
+                evaluator_digest=registry.classifier_evaluator_digest(assertion_id),
+                run_id="local-run",
+                attempt_digest=input_digest,
+                preflight_digest=journal.authorization.preflight_digest,
+                classifier_id=classifier_id,
+                producer=producer,
+                source_id=f"{assertion_id}:classifier",
+                source_digest="3" * 64,
+                observed_at=now,
+                passed=True,
+                reason="Local classifier passed.",
+            )
+            oracle_evidence.append(
+                policy.OracleEvidence(
+                    assertion_id=assertion_id,
+                    structured_events=(),
+                    tool_results=(),
+                    readbacks=(),
+                    classifier_results=(artifact,),
+                    text_supplements=(),
+                )
+            )
+        else:
+            producer = "production-policy-classifier"
+            if producer not in assertion.oracle.allowed_producers:
+                producer = assertion.oracle.allowed_producers[0]
+            if producer == "independent-readback-collector":
+                bindings[producer] = {
+                    "producer_kind": "collector",
+                    "source_identity": producer,
+                }
+            else:
+                bindings[producer] = {
+                    "producer_kind": "classifier",
+                    "source_identity": "scenario_policy.v2",
+                }
+            artifact = policy.StructuredEvent.build(
+                assertion_id=assertion_id,
+                producer=producer,
+                source_id=f"{assertion_id}:event",
+                source_digest="4" * 64,
+                observed_at=now,
+                passed=True,
+                reason="Local structured evidence passed.",
+                run_id="local-run",
+                attempt_digest=input_digest,
+                preflight_digest=journal.authorization.preflight_digest,
+            )
+            oracle_evidence.append(
+                policy.OracleEvidence(
+                    assertion_id=assertion_id,
+                    structured_events=(artifact,),
+                    tool_results=(),
+                    readbacks=(),
+                    classifier_results=(),
+                    text_supplements=(),
+                )
+            )
+    plan = ProtectedRunPlan.from_payload(
+        {
+            "actions": [
+                {
+                    "spec": item.model_dump(mode="json"),
+                    "message_path": f"requests/{item.action_id}.json",
+                }
+                for item in journal.authorization.action_specs
+            ],
+            "evaluator": {
+                "schema_version": "noor-e2e-protected-evaluator/v1",
+                "publication": {"seed": 1},
+                "decisive_producers": [
+                    {
+                        "producer_id": producer,
+                        "producer_kind": binding["producer_kind"],
+                        "capability": "outbound_text",
+                        "source_identity": binding["source_identity"],
+                        "config_digest": "a" * 64,
+                    }
+                    for producer, binding in sorted(bindings.items())
+                ],
+            },
+        }
+    )
+    seal_run_plan(journal, plan)
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="baseline",
+        run_id="local-run",
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
+        causal_event_digest="4" * 64,
+        observed_at=now - timedelta(seconds=2),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    final = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id="independent-readback-collector",
+        source_id="final",
+        run_id="local-run",
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
+        causal_event_digest="5" * 64,
+        observed_at=now + timedelta(seconds=2),
+        inventory={"synthetic:item": {"state": "closed"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+    timeline = execution.TurnTimelineV2(
+        sent_at=now,
+        first_visible_at=now + timedelta(milliseconds=1),
+        final_visible_at=now + timedelta(milliseconds=2),
+        delivered_at=now + timedelta(milliseconds=3),
+    )
+    actual = execution.ActualTurnV2(
+        actual_turn_id="turn-001",
+        planned_turn_id="turn-001",
+        customer_input_digest=planned.customer_input_digest,
+        expected_behavior_digest=planned.expected_behavior_digest,
+        criterion_ids=planned.criterion_ids,
+        assertion_ids=planned.assertion_ids,
+        event_refs=("event",),
+        tool_refs=(),
+        audit_refs=("audit",),
+        timeline=timeline,
+        model_id="fixture/model",
+        token_count=1,
+        cost_usd=0,
+    )
+    attempt = execution.ScenarioAttemptV2(
+        schema_version="noor-e2e-scenario-attempt/v2",
+        execution_id=scenario_id,
+        planned_turns=(planned,),
+        actual_turns=(actual,),
+        adaptive_deviations=(),
+        oracle_evidence=tuple(oracle_evidence),
+        permission_evidence=scenario.required_permissions,
+        readback_evidence=scenario.required_readbacks,
+        baseline=baseline,
+        final=final,
+        action_at=(now + timedelta(milliseconds=2),),
+        tester_config_digest="5" * 64,
+        judge_config_digest="6" * 64,
+    )
+    return registry, authority, journal, plan, attempt
+
+
+def test_producer_handle_commits_only_private_protected_source_output(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.production import (
+        _write_local_fake_producer_observation,
+        issue_decisive_producer_handle,
+        produce_validated_execution_attempt,
+    )
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = _write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+
+    produced = produce_validated_execution_attempt(
+        producer_handle=handle, source_output_ref=source_ref
+    )
+
+    assert produced.artifact["execution_id"] == attempt.execution_id
+    assert produced.artifact["outcome"] == "BLOCKED"
+    assert (journal.run_root / produced.artifact["protected_commit_ref"]).is_file()
+
+
+def test_producer_handle_derives_pass_from_private_executed_evidence(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.production import (
+        _write_local_fake_producer_observation,
+        issue_decisive_producer_handle,
+        produce_validated_execution_attempt,
+    )
+
+    registry, authority, journal, plan, attempt = _prepared_executed_producer(tmp_path)
+    handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = _write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+
+    produced = produce_validated_execution_attempt(
+        producer_handle=handle, source_output_ref=source_ref
+    )
+
+    assert produced.artifact["execution_id"] == attempt.execution_id
+    assert produced.artifact["outcome"] == "PASS"
+
+
+def test_coordinator_publishes_a_produced_attempt_without_caller_result_facts(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.coordinator import (
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+    )
+    from scripts.e2e_acceptance.production import (
+        _write_local_fake_producer_observation,
+        issue_decisive_producer_handle,
+    )
+
+    registry, authority, journal, plan, attempt = _prepared_executed_producer(tmp_path)
+    coordinator = ProductionRunCoordinator(
+        registry=registry,
+        authorization=authority._authorization,
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=datetime.now(UTC),
+    )
+    handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = _write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+
+    artifact = coordinator.publish_next_from_decisive_producer(handle, source_ref)
+
+    assert artifact.execution_id == attempt.execution_id
+    assert artifact.outcome == "PASS"
+    assert (journal.run_root / coordinator.producer_artifact_path(1)).is_file()
+
+
+def test_producer_handle_rejects_missing_private_source_receipt(tmp_path: Path) -> None:
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        _write_local_fake_producer_observation,
+        issue_decisive_producer_handle,
+        produce_validated_execution_attempt,
+    )
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = _write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+    (journal.run_root / "producer-receipts/observations/01.json").unlink()
+
+    with pytest.raises(ProductionAdapterError, match="protected JSON|receipt"):
+        produce_validated_execution_attempt(
+            producer_handle=handle, source_output_ref=source_ref
+        )
+
+
+def test_producer_handle_rejects_tampered_private_source_receipt(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        _write_local_fake_producer_observation,
+        issue_decisive_producer_handle,
+        produce_validated_execution_attempt,
+    )
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = _write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+    receipt_path = journal.run_root / "producer-receipts/observations/01.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["source_attempt_digest"] = "0" * 64
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(ProductionAdapterError, match="source receipt"):
+        produce_validated_execution_attempt(
+            producer_handle=handle, source_output_ref=source_ref
+        )
+
+
+@pytest.mark.parametrize(
+    ("crash_relative", "after_write"),
+    (
+        ("produced-attempts/01.json", False),
+        ("producer-receipts/attempts/SC-OPEN-EN.json", False),
+    ),
+)
+def test_producer_recovers_committed_transaction_after_partial_public_pair(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    crash_relative: str,
+    after_write: bool,
+) -> None:
+    from scripts.e2e_acceptance import execution, production
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    handle = production.issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = production._write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+    original_write = production._write_or_validate_exact
+
+    def crash(target_root, relative, value):
+        if relative == crash_relative and not after_write:
+            raise RuntimeError("crash before public pair")
+        digest = original_write(target_root, relative, value)
+        if relative == crash_relative:
+            raise RuntimeError("crash after public pair")
+        return digest
+
+    monkeypatch.setattr(production, "_write_or_validate_exact", crash)
+    with pytest.raises(RuntimeError, match="crash"):
+        production.produce_validated_execution_attempt(
+            producer_handle=handle, source_output_ref=source_ref
+        )
+    monkeypatch.setattr(production, "_write_or_validate_exact", original_write)
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=journal.protected_root,
+        run_id=journal.run_id,
+        authority=authority,
+    )
+    recovered_handle = production.issue_decisive_producer_handle(
+        registry=registry, journal=reopened, authority=authority, sealed_plan=plan
+    )
+    recovered = production.produce_validated_execution_attempt(
+        producer_handle=recovered_handle, source_output_ref=source_ref
+    )
+
+    assert recovered.artifact["execution_id"] == attempt.execution_id
+    assert (reopened.run_root / "produced-attempts/01.json").is_file()
+    assert (
+        reopened.run_root / f"producer-receipts/attempts/{attempt.execution_id}.json"
+    ).is_file()
+
+
+def test_producer_recovery_rejects_tampered_committed_raw(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from scripts.e2e_acceptance import production
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    handle = production.issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    source_ref = production._write_local_fake_producer_observation(
+        producer_handle=handle, attempted=attempt
+    )
+    original_write = production._write_or_validate_exact
+
+    def crash_before_artifact(target_root, relative, value):
+        if relative == "produced-attempts/01.json":
+            raise RuntimeError("crash")
+        return original_write(target_root, relative, value)
+
+    monkeypatch.setattr(production, "_write_or_validate_exact", crash_before_artifact)
+    with pytest.raises(RuntimeError, match="crash"):
+        production.produce_validated_execution_attempt(
+            producer_handle=handle, source_output_ref=source_ref
+        )
+    monkeypatch.setattr(production, "_write_or_validate_exact", original_write)
+    raw_path = journal.run_root / "attempts/sc-open-en-attempt-001/raw.json"
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    raw["outcome"] = "PASS"
+    raw_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    with pytest.raises(production.ProductionAdapterError, match="recovery binding"):
+        production.produce_validated_execution_attempt(
+            producer_handle=handle, source_output_ref=source_ref
+        )
+
+
+def test_producer_handle_rejects_cross_execution_source_reuse(tmp_path: Path) -> None:
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        _write_local_fake_producer_observation,
+        issue_decisive_producer_handle,
+        produce_validated_execution_attempt,
+    )
+
+    registry, authority, journal, plan, attempt = _prepared_gate_producer(tmp_path)
+    first_handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+    first_ref = _write_local_fake_producer_observation(
+        producer_handle=first_handle, attempted=attempt
+    )
+    produce_validated_execution_attempt(
+        producer_handle=first_handle, source_output_ref=first_ref
+    )
+    second_handle = issue_decisive_producer_handle(
+        registry=registry, journal=journal, authority=authority, sealed_plan=plan
+    )
+
+    with pytest.raises(ProductionAdapterError, match="source reference"):
+        produce_validated_execution_attempt(
+            producer_handle=second_handle, source_output_ref=first_ref
+        )
+
+
+def test_decisive_adapter_binding_requires_exact_authorized_source_identity(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.production import (
+        DecisiveProducerBinding,
+        ProductionAdapterError,
+        _validate_decisive_binding,
+    )
+
+    registry, _, journal, _, _ = _prepared_gate_producer(tmp_path)
+    with pytest.raises(ProductionAdapterError, match="authority drift"):
+        _validate_decisive_binding(
+            binding=DecisiveProducerBinding(
+                producer_id="fake-local-adapter",
+                producer_kind="adapter",
+                capability="outbound_text",
+                source_identity="forged-adapter",
+                config_digest="a" * 64,
+            ),
+            journal=journal,
+            registry=registry,
+        )
+
+
+def test_execution_assertion_scope_rejects_foreign_assertion(tmp_path: Path) -> None:
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        _execution_assertion_ids,
+        _require_execution_assertion,
+    )
+
+    registry, _, _, _, attempt = _prepared_executed_producer(tmp_path)
+    foreign = next(
+        assertion_id
+        for assertion_id in registry.compiled_policy.assertions
+        if assertion_id not in _execution_assertion_ids(registry, attempt.execution_id)
+    )
+
+    with pytest.raises(ProductionAdapterError, match="ownership"):
+        _require_execution_assertion(registry, attempt.execution_id, foreign)
+
+
+def test_aborted_attempt_intent_cannot_advance_producer_execution_scope(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        ProtectedRunPlan,
+        issue_decisive_producer_handle,
+        seal_run_plan,
+    )
+
+    from tests.e2e_acceptance_backend import build_canonical_test_registry
+    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+
+    registry = build_canonical_test_registry()
+    root = tmp_path / "protected"
+    authority = _issued_authority(registry, protected_root=root, run_id="local-run")
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    plan = ProtectedRunPlan.from_payload(
+        {
+            "actions": [
+                {
+                    "spec": item.model_dump(mode="json"),
+                    "message_path": f"requests/{item.action_id}.json",
+                }
+                for item in journal.authorization.action_specs
+            ],
+            "evaluator": {
+                "schema_version": "noor-e2e-protected-evaluator/v1",
+                "publication": {"seed": 1},
+                "decisive_producers": [
+                    {
+                        "producer_id": "fake-local-adapter",
+                        "producer_kind": "adapter",
+                        "capability": "outbound_text",
+                        "source_identity": "fake-local-adapter",
+                        "config_digest": "a" * 64,
+                    }
+                ],
+            },
+        }
+    )
+    seal_run_plan(journal, plan)
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        execution.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="baseline",
+            run_id="local-run",
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="a" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    transaction = journal.begin_attempt(
+        execution_id=registry.compiled_plan.execution_ids[0],
+        attempt_number=1,
+        intent_digest="b" * 64,
+    )
+    assert transaction.commit().status == "aborted"
+
+    with pytest.raises(ProductionAdapterError, match="uncommitted.*recovery"):
+        issue_decisive_producer_handle(
+            registry=registry,
+            journal=journal,
+            authority=authority,
+            sealed_plan=plan,
+        )
+
+
+@pytest.mark.parametrize(
+    "evaluator",
+    (
+        {"seed": 1},
+        {
+            "schema_version": "noor-e2e-protected-evaluator/v1",
+            "publication": {},
+            "decisive_producers": [],
+        },
+    ),
+)
+def test_protected_plan_rejects_arbitrary_or_empty_producer_config(
+    evaluator: dict[str, object],
+) -> None:
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        ProtectedRunPlan,
+    )
+
+    with pytest.raises(ProductionAdapterError, match="evaluator"):
+        ProtectedRunPlan.from_payload(
+            {"actions": [{"action_id": "fixture"}], "evaluator": evaluator}
+        )
 
 
 def test_fake_transport_marks_post_dispatch_failure_uncertain() -> None:
@@ -243,7 +999,19 @@ def test_sealed_run_plan_rejects_replacement_after_restart(tmp_path: Path) -> No
                 {"spec": spec, "message_path": f"requests/{spec['action_id']}.json"}
                 for spec in specs
             ],
-            "evaluator": {"seed": 1},
+            "evaluator": {
+                "schema_version": "noor-e2e-protected-evaluator/v1",
+                "publication": {"seed": 1},
+                "decisive_producers": [
+                    {
+                        "producer_id": "fake-local-adapter",
+                        "producer_kind": "adapter",
+                        "capability": "outbound_text",
+                        "source_identity": "fake-local-adapter",
+                        "config_digest": "a" * 64,
+                    }
+                ],
+            },
         }
     )
 
@@ -262,7 +1030,19 @@ def test_sealed_run_plan_rejects_replacement_after_restart(tmp_path: Path) -> No
                 }
                 for spec in specs
             ],
-            "evaluator": {"seed": 1},
+            "evaluator": {
+                "schema_version": "noor-e2e-protected-evaluator/v1",
+                "publication": {"seed": 1},
+                "decisive_producers": [
+                    {
+                        "producer_id": "fake-local-adapter",
+                        "producer_kind": "adapter",
+                        "capability": "outbound_text",
+                        "source_identity": "fake-local-adapter",
+                        "config_digest": "a" * 64,
+                    }
+                ],
+            },
         }
     )
     with pytest.raises(Exception, match="sealed"):
@@ -748,7 +1528,19 @@ def test_cli_execute_resume_drives_once_then_reopen_blocks_unknown(
                 "message_path": "requests/synthetic-action.json",
             }
         ],
-        "evaluator": {"seed": 1},
+        "evaluator": {
+            "schema_version": "noor-e2e-protected-evaluator/v1",
+            "publication": {"seed": 1},
+            "decisive_producers": [
+                {
+                    "producer_id": "fake-local-adapter",
+                    "producer_kind": "adapter",
+                    "capability": "outbound_text",
+                    "source_identity": "fake-local-adapter",
+                    "config_digest": "a" * 64,
+                }
+            ],
+        },
     }
     execution._write_exclusive(root, "input-plan.json", plan_payload)
     monkeypatch.setattr(cli, "_canonical_registry", lambda _: registry)

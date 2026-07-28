@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import shutil
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ import pytest
 from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.coordinator import (
     CoordinatorError,
+    DefectLedgerEntry,
     JournalAcceptanceEvent,
     ProducerArtifact,
     ProducerReceipt,
@@ -32,6 +34,22 @@ from tests.test_e2e_acceptance_trusted_execution import (
 
 def test_coordinator_is_a_dedicated_protected_core() -> None:
     assert ProductionRunCoordinator.__name__ == "ProductionRunCoordinator"
+
+
+def test_coordinator_publication_boundary_accepts_only_a_decisive_handle_and_source_ref() -> (
+    None
+):
+    """A caller cannot author outcome, source, ordering, or digest publication facts."""
+
+    from scripts.e2e_acceptance import production
+
+    parameters = inspect.signature(
+        ProductionRunCoordinator.publish_next_from_decisive_producer
+    ).parameters
+
+    assert tuple(parameters) == ("self", "producer_handle", "source_output_ref")
+    assert not hasattr(production, "commit_execution_unit_source")
+    assert not hasattr(production, "ProductionUnitCommit")
 
 
 def test_production_authority_bundle_commit_is_validated_idempotent_and_issuable(
@@ -186,7 +204,19 @@ def _coordinator(tmp_path: Path, *, journal: _Journal | None = None):
     sealed = {
         "schema_version": "noor-e2e-sealed-run-plan/v2",
         "actions": [],
-        "evaluator": {"seed": 7},
+        "evaluator": {
+            "schema_version": "noor-e2e-protected-evaluator/v1",
+            "publication": {"seed": 7},
+            "decisive_producers": [
+                {
+                    "producer_id": "fake-local-adapter",
+                    "producer_kind": "adapter",
+                    "capability": "outbound_text",
+                    "source_identity": "fake-local-adapter",
+                    "config_digest": "a" * 64,
+                }
+            ],
+        },
     }
     sealed["plan_digest"] = _digest(
         {"actions": sealed["actions"], "evaluator": sealed["evaluator"]}
@@ -219,6 +249,7 @@ def _write_producer(
     issued_at: datetime | None = None,
     expires_at: datetime | None = None,
     producer_id: str | None = None,
+    outcome: execution.OutcomeValue = "PASS",
 ) -> None:
     expected_id = coordinator.registry.compiled_plan.execution_ids[ordinal - 1]
     expected_kind = kind or coordinator._expected_kind(expected_id)
@@ -269,7 +300,7 @@ def _write_producer(
         ordinal=ordinal,
         execution_id=execution_id or expected_id,
         kind=expected_kind,
-        outcome="PASS",
+        outcome=outcome,
         producer=producer,
         observed_at=observed_at or now - timedelta(seconds=1),
         source=source,
@@ -350,6 +381,77 @@ def test_coordinator_accepts_exact_20_plus_9_order_and_recovers_idempotently(
     )
     assert recovered.accept_available() == accepted
     assert recovered.finalize() == result
+
+
+def test_coordinator_commits_a_bound_empty_defect_ledger_for_clean_acceptance(
+    tmp_path: Path,
+) -> None:
+    coordinator, root, now, _ = _coordinator(tmp_path)
+    for ordinal in range(1, 30):
+        _write_producer(coordinator, ordinal=ordinal, now=now)
+    coordinator.accept_available()
+
+    result = coordinator.finalize()
+    artifact = json.loads(
+        (root / coordinator.run_id / "coordinator/defect-ledger.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    receipt = json.loads(
+        (
+            root / coordinator.run_id / "coordinator/defect-ledger-receipt.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert artifact["entries"] == []
+    assert (
+        artifact["accepted_fold_digest"] == result.final_activity.accepted_fold_digest
+    )
+    assert artifact["evaluation_bundle_digest"] == result.evaluation.bundle_digest
+    assert (
+        receipt["tracked_sha256"]
+        == hashlib.sha256(execution._canonical_bytes(artifact)).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("mode", ("missing", "tampered"))
+def test_coordinator_rejects_partial_or_tampered_defect_ledger(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    coordinator, root, now, _ = _coordinator(tmp_path)
+    for ordinal in range(1, 30):
+        _write_producer(coordinator, ordinal=ordinal, now=now)
+    coordinator.accept_available()
+    coordinator.finalize()
+    receipt_path = root / coordinator.run_id / "coordinator/defect-ledger-receipt.json"
+    if mode == "missing":
+        receipt_path.unlink()
+    else:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["artifact_sha256"] = "0" * 64
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(CoordinatorError, match="defect ledger"):
+        coordinator.finalize()
+
+
+def test_defect_ledger_rejects_malformed_retest_lineage() -> None:
+    with pytest.raises(ValueError, match="lineage"):
+        DefectLedgerEntry(
+            defect_id="tj-ee5f-malformed",
+            severity="P1",
+            status="retested",
+            execution_id="SC-OPEN-EN",
+            initial_failed_attempt_ref="attempt:failed",
+            root_cause="Synthetic root cause.",
+            violated_invariant="Synthetic invariant.",
+            fix_ref="fix:synthetic",
+            deployment_ref="deploy:synthetic",
+            retest_attempt_ref=None,
+            final_outcome="PASS",
+            checksum_refs=("report-source",),
+        )
 
 
 @pytest.mark.parametrize(
@@ -483,16 +585,16 @@ def test_cli_records_fixed_29_pairs_then_closes_with_recoverable_final_boundary(
     """CLI accepts no caller-selected execution and resumes each close boundary."""
 
     from scripts import run_noor_e2e_acceptance as cli
-    from scripts.e2e_acceptance.coordinator import ProtectedJournalAcceptancePort
     from scripts.e2e_acceptance.manifest import load_authorization_manifest
     from scripts.e2e_acceptance.production import (
         FakeReadOnlySshTransport,
         IndependentReadOnlyCollector,
         ProtectedRunPlan,
-        commit_execution_unit_source,
+    )
+    from scripts.e2e_acceptance.production import (
+        LocalFakeAttemptProducer as ProductionLocalFakeAttemptProducer,
     )
     from scripts.e2e_acceptance.schemas import PreflightReadbackIdentity
-    from scripts.e2e_acceptance.trusted_run import TurnReport
 
     source_registry = build_canonical_test_registry()
     project_root = Path(__file__).resolve().parents[1]
@@ -512,6 +614,7 @@ def test_cli_records_fixed_29_pairs_then_closes_with_recoverable_final_boundary(
     root = (tmp_path / "protected").resolve()
     run_id = "cli-coordinator-run"
     now = datetime.now(UTC)
+    producer = ProductionLocalFakeAttemptProducer(observed_at=now)
     draft = load_authorization_manifest(
         project_root / ".codex/stages/tj-ee5f/authorization-manifest.example.json"
     )
@@ -526,9 +629,7 @@ def test_cli_records_fixed_29_pairs_then_closes_with_recoverable_final_boundary(
             "evidence_block_ids": [
                 item["block_id"] for item in scenario_set["evidence_blocks"]
             ],
-            "executable_input_digests": {
-                identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
-            },
+            "executable_input_digests": producer.execution_input_digests(registry),
         }
     )
     v1_quotas = draft.quotas.model_copy(
@@ -693,28 +794,7 @@ def test_cli_records_fixed_29_pairs_then_closes_with_recoverable_final_boundary(
             }
             for spec in authority._authorization.action_specs
         ],
-        "evaluator": {
-            "publication": {
-                "schema_version": "noor-e2e-publication-metadata/v1",
-                "title": "Приёмочное тестирование Noor",
-                "tester": {
-                    "model": "production/fake-tester",
-                    "reasoning_effort": "none",
-                    "seed": 11,
-                    "config_digest": "3" * 64,
-                    "evidence_refs": ["report-source"],
-                },
-                "judge": {
-                    "model": "production/fake-judge",
-                    "reasoning_effort": "none",
-                    "seed": 11,
-                    "config_digest": "4" * 64,
-                    "evidence_refs": ["report-source"],
-                },
-                "limitations": ["Local deterministic fake production flow."],
-                "external_gates": [],
-            }
-        },
+        "evaluator": producer.evaluator(registry),
     }
     execution._write_exclusive(root, "input-plan.json", plan_payload)
     monkeypatch.setattr(cli, "_canonical_registry", lambda _: registry)
@@ -756,297 +836,23 @@ def test_cli_records_fixed_29_pairs_then_closes_with_recoverable_final_boundary(
     )
     _, journal = cli._authority_and_journal(registry, root, run_id, create=False)
     journal.begin_execution()
-    coordinator = ProductionRunCoordinator(
-        registry=registry,
-        authorization=authority._authorization,
-        protected_root=root,
-        run_id=run_id,
-        journal=ProtectedJournalAcceptancePort(journal=journal),
-        current_time=now,
-    )
-    transcript_manifest = []
-    for ordinal in range(1, 30):
-        execution_id = registry.compiled_plan.execution_ids[ordinal - 1]
-        kind = coordinator._expected_kind(execution_id)
-        if ordinal == 1:
-            missing_attempt_ref = f"attempt:{execution_id}"
-            with pytest.raises(Exception, match="attempt commit|unavailable"):
-                commit_execution_unit_source(
-                    registry=registry,
-                    journal=journal,
-                    sealed_plan=plan,
-                    ordinal=ordinal,
-                    outcome="PASS",
-                    source={
-                        "schema_version": "noor-e2e-scenario-publication-source/v1",
-                        "kind": "scenario",
-                        "execution": {
-                            "attempt_ref": missing_attempt_ref,
-                            "evidence_refs": ["fresh"],
-                        },
-                        "evidence": [
-                            {
-                                "evidence_id": missing_attempt_ref,
-                                "producer": "protected-attempt-committer",
-                                "payload": {
-                                    "schema_version": "noor-e2e-committed-execution/v2",
-                                    "execution_id": execution_id,
-                                    "protected_commit_ref": "missing/commit.json",
-                                },
-                            }
-                        ],
-                        "turns": [
-                            {
-                                "execution_id": execution_id,
-                                "attempt_id": "missing",
-                                "turn_id": "missing",
-                            }
-                        ],
-                    },
-                    observed_at=now - timedelta(milliseconds=100),
-                )
-            assert not (
-                coordinator.run_root / coordinator.producer_artifact_path(ordinal)
-            ).exists()
-        attempt_digest = _digest(
-            {"run_id": run_id, "execution_id": execution_id, "ordinal": ordinal}
-        )
-        semantic_digest = _digest({"execution_id": execution_id, "outcome": "PASS"})
-        raw_digest = _digest({"execution_id": execution_id, "store": "raw"})
-        tracked_digest = _digest({"execution_id": execution_id, "store": "tracked"})
-        protected_commit_ref = f"attempts/{execution_id.lower()}/commit.json"
-        protected_commit = {
-            "schema_version": "noor-e2e-attempt-commit/v2",
-            "status": "committed",
-            "run_id": run_id,
-            "execution_id": execution_id,
-            "attempt_kind": "executed",
-            "attempt_digest": attempt_digest,
-            "authorization_digest": coordinator.authorization_digest,
-            "semantic_digest": semantic_digest,
-            "raw_digest": raw_digest,
-            "tracked_digest": tracked_digest,
-            "gate_attempt_digest": None,
-        }
-        protected_commit_digest = execution._write_exclusive(
-            coordinator.run_root, protected_commit_ref, protected_commit
-        )
-        previous = None
-        phase_chain = []
-        for cursor, phase in enumerate(
-            (
-                "prepared",
-                "baseline_sealed",
-                "executing",
-                "final_turn_anchored",
-                "final_readback_sealed",
-                "evaluated",
-                "attempt_committed",
-            ),
-            start=1,
-        ):
-            phase_identity = {
-                "cursor": cursor,
-                "phase": phase,
-                "previous_event_digest": previous,
-                "run_id": run_id,
-                "execution_id": execution_id,
-                "attempt_digest": attempt_digest,
-                "semantic_digest": semantic_digest,
-                "authorization_digest": coordinator.authorization_digest,
-                "protected_commit_digest": protected_commit_digest,
-            }
-            previous = _digest(phase_identity)
-            phase_chain.append(
-                {
-                    "cursor": cursor,
-                    "phase": phase,
-                    "previous_event_digest": phase_identity["previous_event_digest"],
-                    "event_digest": previous,
-                }
-            )
-        attempt_ref = f"attempt:{execution_id}"
-        committed_attempt = {
-            "schema_version": "noor-e2e-committed-execution/v2",
-            "run_id": run_id,
-            "execution_id": execution_id,
-            "outcome": "PASS",
-            "attempt_kind": "executed",
-            "gate_attempt": None,
-            "authorization_digest": coordinator.authorization_digest,
-            "attempt_digest": attempt_digest,
-            "semantic_digest": semantic_digest,
-            "registry_id": registry.registry_id,
-            "protected_commit_ref": protected_commit_ref,
-            "protected_commit_digest": protected_commit_digest,
-            "raw_digest": raw_digest,
-            "tracked_digest": tracked_digest,
-            "phase_head_digest": previous,
-            "phase_chain": phase_chain,
-            "evidence_refs": ["fresh"],
-        }
-        unit_evidence = [
-            {
-                "evidence_id": attempt_ref,
-                "producer": "protected-attempt-committer",
-                "payload": committed_attempt,
-            }
-        ]
-        if ordinal == 1:
-            unit_evidence.extend(
-                (
-                    {
-                        "evidence_id": "fresh",
-                        "producer": "independent-fake-evaluator",
-                        "payload": {
-                            "status": "passed",
-                            "freshness_identity": {"run_id": run_id},
-                        },
-                    },
-                    {
-                        "evidence_id": "reuse",
-                        "producer": "independent-fake-evaluator",
-                        "payload": {
-                            "status": "passed",
-                            "reused_exact_identity": {"run_id": run_id},
-                        },
-                    },
-                    {
-                        "evidence_id": "gate",
-                        "producer": "independent-fake-evaluator",
-                        "payload": {
-                            "status": "passed",
-                            "external_gate_resolution": "implemented",
-                        },
-                    },
-                )
-            )
-        source = {
-            "schema_version": (
-                "noor-e2e-scenario-publication-source/v1"
-                if kind == "scenario"
-                else "noor-e2e-evidence-block-publication-source/v1"
-            ),
-            "kind": kind,
-            "execution": {
-                "attempt_ref": attempt_ref,
-                "evidence_refs": ["fresh"],
-            },
-            "evidence": unit_evidence,
-        }
-        if kind == "scenario":
-            attempt_id = f"attempt:{execution_id}"
-            turn_id = f"turn-{ordinal:03d}"
-            turn = {
-                "execution_id": execution_id,
-                "attempt_id": attempt_id,
-                "turn_id": turn_id,
-                "question": f"Deterministic question {ordinal}.",
-                "answer": f"Deterministic answer {ordinal}.",
-                "sent_at": (now - timedelta(milliseconds=800)).isoformat(),
-                "received_at": (now - timedelta(milliseconds=700)).isoformat(),
-                "first_visible_at": (now - timedelta(milliseconds=600)).isoformat(),
-                "final_visible_at": (now - timedelta(milliseconds=500)).isoformat(),
-                "delivered_at": (now - timedelta(milliseconds=400)).isoformat(),
-                "conversation_id": f"conversation-{ordinal}",
-                "message_id": f"message-{ordinal}",
-                "provider_message_id": f"provider-{ordinal}",
-                "model": "production/fake-main",
-                "tools": ["fake_tool"],
-                "tool_outcomes": ["passed"],
-                "audit_ids": [f"audit-{ordinal}"],
-                "media_refs": [],
-                "token_count": 10,
-                "cost_usd": 0.0,
-                "deviation": None,
-                "evaluator_reasoning": "Protected deterministic checks passed.",
-                "evidence_refs": [attempt_ref, "fresh"],
-            }
-            transcript = {
-                "schema_version": "noor-e2e-protected-transcript/v2",
-                "registry_id": registry.registry_id,
-                "run_id": run_id,
-                "execution_id": execution_id,
-                "attempt_id": attempt_id,
-                "turn_id": turn_id,
-                "turn": TurnReport.model_validate(
-                    {
-                        **turn,
-                        "transcript_digest": "0" * 64,
-                        "producer_receipt_digest": "0" * 64,
-                    }
-                ).model_dump(
-                    mode="json",
-                    exclude={"transcript_digest", "producer_receipt_digest"},
-                ),
-            }
-            transcript_digest = execution._write_exclusive(
-                coordinator.run_root,
-                f"transcripts/{execution_id}/{attempt_id}/{turn_id}.json",
-                transcript,
-            )
-            transcript_receipt = {
-                "schema_version": "noor-e2e-transcript-producer-receipt/v2",
-                "registry_id": registry.registry_id,
-                "run_id": run_id,
-                "execution_id": execution_id,
-                "attempt_id": attempt_id,
-                "turn_id": turn_id,
-                "transcript_sha256": transcript_digest,
-                "authorization_digest": coordinator.authorization_digest,
-                "attempt_digest": attempt_digest,
-                "attempt_phase_head_digest": previous,
-            }
-            transcript_receipt_digest = execution._write_exclusive(
-                coordinator.run_root,
-                (
-                    f"producer-receipts/transcripts/{execution_id}/"
-                    f"{attempt_id}/{turn_id}.json"
-                ),
-                transcript_receipt,
-            )
-            turn.update(
-                transcript_digest=transcript_digest,
-                producer_receipt_digest=transcript_receipt_digest,
-            )
-            source["turns"] = [turn]
-            source["side_effect_dispositions"] = []
-            transcript_manifest.append(
-                [
-                    execution_id,
-                    attempt_id,
-                    turn_id,
-                    transcript_digest,
-                    transcript_receipt_digest,
-                ]
-            )
-        commit_execution_unit_source(
-            registry=registry,
-            journal=journal,
-            sealed_plan=plan,
-            ordinal=ordinal,
-            outcome="PASS",
-            source=source,
-            observed_at=now - timedelta(milliseconds=100),
-        )
-    execution._write_exclusive(
-        coordinator.run_root,
-        "transcripts/manifest.json",
-        {
-            "schema_version": "noor-e2e-protected-transcript-manifest/v2",
-            "registry_id": registry.registry_id,
-            "run_id": run_id,
-            "ordered_turns": transcript_manifest,
-        },
-    )
     for ordinal, execution_id in enumerate(
         registry.compiled_plan.execution_ids, start=1
     ):
+        artifact = producer.emit_next(
+            registry=registry,
+            journal=journal,
+            authority=authority,
+            sealed_plan=plan,
+            execution_id=execution_id,
+        )
+        assert artifact.execution_id == execution_id
         result = cli._lifecycle_result(
             type("Args", (), {"command": "record-attempt", **args})()
         )
         assert result["ordinal"] == ordinal
         assert result["execution_id"] == execution_id
+        _, journal = cli._authority_and_journal(registry, root, run_id, create=False)
 
     with pytest.raises(Exception, match="fixed final collector pair"):
         cli._lifecycle_result(

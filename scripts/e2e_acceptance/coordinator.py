@@ -324,6 +324,83 @@ class EvaluationReceipt(_StrictModel):
         return self
 
 
+class DefectLedgerEntry(_StrictModel):
+    """Immutable defect lineage supplied by the protected acceptance producer."""
+
+    defect_id: str = Field(min_length=1)
+    severity: Literal["P0", "P1", "P2", "P3"]
+    status: Literal["open", "fixed", "retested"]
+    execution_id: str = Field(min_length=1)
+    initial_failed_attempt_ref: str = Field(min_length=1)
+    root_cause: str = Field(min_length=1)
+    violated_invariant: str = Field(min_length=1)
+    fix_ref: str | None = None
+    deployment_ref: str | None = None
+    retest_attempt_ref: str | None = None
+    final_outcome: execution.OutcomeValue
+    checksum_refs: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _lineage_is_complete_for_status(self) -> DefectLedgerEntry:
+        if self.status == "open":
+            valid = (
+                self.final_outcome == "FAIL"
+                and self.fix_ref is None
+                and self.deployment_ref is None
+                and self.retest_attempt_ref is None
+            )
+        elif self.status == "fixed":
+            valid = (
+                self.final_outcome == "FAIL"
+                and bool(self.fix_ref)
+                and bool(self.deployment_ref)
+                and self.retest_attempt_ref is None
+            )
+        else:
+            valid = (
+                self.final_outcome == "PASS"
+                and bool(self.fix_ref)
+                and bool(self.deployment_ref)
+                and bool(self.retest_attempt_ref)
+            )
+        if not valid:
+            raise ValueError("defect ledger lineage/status binding drift")
+        return self
+
+
+class DefectLedgerArtifact(_StrictModel):
+    schema_version: Literal["noor-e2e-defect-ledger/v1"]
+    status: Literal["committed"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sealed_plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    accepted_fold_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluation_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    entries: tuple[DefectLedgerEntry, ...]
+
+
+class DefectLedgerReceipt(_StrictModel):
+    schema_version: Literal["noor-e2e-defect-ledger-receipt/v1"]
+    status: Literal["committed"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sealed_plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    accepted_fold_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluation_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    tracked_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _self_hash(self) -> DefectLedgerReceipt:
+        if self.receipt_digest != _digest(
+            self.model_dump(mode="json", exclude={"receipt_digest"})
+        ):
+            raise ValueError("defect ledger receipt digest drift")
+        return self
+
+
 class JournalAcceptancePort(Protocol):
     """Future journal adapter; production core passes only derived event identity."""
 
@@ -386,6 +463,8 @@ class CoordinatorResult:
     final_activity: FinalActivityProducerReceipt
     evaluation: EvaluationBundle
     receipt: EvaluationReceipt
+    defect_ledger: DefectLedgerArtifact
+    defect_ledger_receipt: DefectLedgerReceipt
 
 
 @dataclass(frozen=True)
@@ -395,6 +474,8 @@ class PublicationCandidate:
     records: tuple[AcceptedExecutionRecord, ...]
     sources: tuple[PublicationUnitSource, ...]
     evaluation: EvaluationBundle
+    defect_ledger: DefectLedgerArtifact
+    defect_ledger_receipt: DefectLedgerReceipt
 
 
 @dataclass(frozen=True)
@@ -488,6 +569,84 @@ class ProductionRunCoordinator:
     @staticmethod
     def accepted_record_path(ordinal: int) -> str:
         return f"{_ACCEPTED_DIR}/{ordinal:02d}.json"
+
+    def publish_next_from_decisive_producer(
+        self, producer_handle: object, source_output_ref: str
+    ) -> ProducerArtifact:
+        """Publish only the next opaque producer result into fixed coordinator paths."""
+
+        from scripts.e2e_acceptance.production import _produce_publication_unit
+
+        publication = _produce_publication_unit(
+            producer_handle=producer_handle, source_output_ref=source_output_ref
+        )
+        records = self._read_accepted_records()
+        ordinal = len(records) + 1
+        if ordinal > 29:
+            raise CoordinatorError("all canonical executions are already accepted")
+        expected_execution = self.registry.compiled_plan.execution_ids[ordinal - 1]
+        attempt = publication.artifact
+        receipt = publication.receipt
+        kind = self._expected_kind(expected_execution)
+        if (
+            attempt.get("execution_id") != expected_execution
+            or attempt.get("registry_id") != self.registry.registry_id
+            or attempt.get("run_id") != self.run_id
+            or attempt.get("authorization_digest") != self.authorization_digest
+            or receipt.get("execution_id") != expected_execution
+            or receipt.get("registry_id") != self.registry.registry_id
+            or receipt.get("run_id") != self.run_id
+            or receipt.get("authorization_digest") != self.authorization_digest
+        ):
+            raise CoordinatorError("opaque producer publication binding drift")
+        typed_source = validate_publication_source(kind, publication.source)
+        producer = (
+            self.authorization.adapter_ids[0]
+            if kind == "scenario"
+            else self.authorization.collector_ids[0]
+        )
+        artifact = ProducerArtifact(
+            schema_version="noor-e2e-coordinator-producer-artifact/v1",
+            status="committed",
+            registry_id=self.registry.registry_id,
+            run_id=self.run_id,
+            authorization_digest=self.authorization_digest,
+            sealed_plan_sha256=self.sealed_plan_sha256,
+            ordinal=ordinal,
+            execution_id=expected_execution,
+            kind=kind,
+            outcome=attempt["outcome"],
+            producer=producer,
+            observed_at=publication.observed_at,
+            source=typed_source.model_dump(mode="json"),
+            source_sha256=_digest(typed_source.model_dump(mode="json")),
+        )
+        artifact_payload = _canonical_bytes(artifact.model_dump(mode="json"))
+        receipt_model = ProducerReceipt(
+            schema_version="noor-e2e-coordinator-producer-receipt/v1",
+            status="committed",
+            registry_id=self.registry.registry_id,
+            run_id=self.run_id,
+            authorization_digest=self.authorization_digest,
+            ordinal=ordinal,
+            execution_id=expected_execution,
+            producer=producer,
+            artifact_sha256=_sha256(artifact_payload),
+            source_sha256=artifact.source_sha256,
+            issued_at=publication.observed_at,
+            expires_at=publication.observed_at + timedelta(minutes=5),
+        )
+        _write_or_validate_exact(
+            self.run_root,
+            self.producer_artifact_path(ordinal),
+            artifact.model_dump(mode="json"),
+        )
+        _write_or_validate_exact(
+            self.run_root,
+            self.producer_receipt_path(ordinal),
+            receipt_model.model_dump(mode="json"),
+        )
+        return artifact
 
     def _expected_kind(
         self, execution_id: str
@@ -832,11 +991,111 @@ class ProductionRunCoordinator:
             for source in sources
         ):
             raise CoordinatorError("accepted publication execution evidence drift")
+        finalized = self.finalize()
         return PublicationCandidate(
             records=tuple(record for record, _ in records_with_digests),
             sources=tuple(sources),
-            evaluation=self.finalize().evaluation,
+            evaluation=finalized.evaluation,
+            defect_ledger=finalized.defect_ledger,
+            defect_ledger_receipt=finalized.defect_ledger_receipt,
         )
+
+    def _load_or_commit_defect_ledger(
+        self,
+        *,
+        records: list[tuple[AcceptedExecutionRecord, str]],
+        evaluation: EvaluationBundle,
+    ) -> tuple[DefectLedgerArtifact, DefectLedgerReceipt]:
+        """Bind the immutable defect ledger to this exact accepted evaluation."""
+
+        artifact_relative = "coordinator/defect-ledger.json"
+        receipt_relative = "coordinator/defect-ledger-receipt.json"
+        artifact_input = _optional_json(self.run_root, artifact_relative)
+        receipt_input = _optional_json(self.run_root, receipt_relative)
+        if (artifact_input is None) != (receipt_input is None):
+            raise CoordinatorError("defect ledger artifact/receipt pair is incomplete")
+        accepted_fold_digest = records[-1][0].fold_digest
+        failed_execution_ids = {
+            record.artifact.execution_id
+            for record, _ in records
+            if record.artifact.outcome == "FAIL"
+        }
+        if artifact_input is None:
+            if failed_execution_ids:
+                raise CoordinatorError(
+                    "defect ledger entries are required for failed accepted outcomes"
+                )
+            artifact = DefectLedgerArtifact(
+                schema_version="noor-e2e-defect-ledger/v1",
+                status="committed",
+                registry_id=self.registry.registry_id,
+                run_id=self.run_id,
+                authorization_digest=self.authorization_digest,
+                sealed_plan_sha256=self.sealed_plan_sha256,
+                accepted_fold_digest=accepted_fold_digest,
+                evaluation_bundle_digest=evaluation.bundle_digest,
+                entries=(),
+            )
+            artifact_payload = artifact.model_dump(mode="json")
+            receipt_identity = {
+                "schema_version": "noor-e2e-defect-ledger-receipt/v1",
+                "status": "committed",
+                "registry_id": self.registry.registry_id,
+                "run_id": self.run_id,
+                "authorization_digest": self.authorization_digest,
+                "sealed_plan_sha256": self.sealed_plan_sha256,
+                "accepted_fold_digest": accepted_fold_digest,
+                "evaluation_bundle_digest": evaluation.bundle_digest,
+                "tracked_sha256": _sha256(_canonical_bytes(artifact_payload)),
+            }
+            receipt = DefectLedgerReceipt(
+                **receipt_identity,
+                receipt_digest=_digest(receipt_identity),
+            )
+            _write_or_validate_exact(self.run_root, artifact_relative, artifact_payload)
+            _write_or_validate_exact(
+                self.run_root,
+                receipt_relative,
+                receipt.model_dump(mode="json"),
+            )
+            return artifact, receipt
+        try:
+            artifact = DefectLedgerArtifact.model_validate(artifact_input[0])
+            receipt = DefectLedgerReceipt.model_validate(receipt_input[0])
+        except ValueError as exc:
+            raise CoordinatorError("defect ledger schema is invalid") from exc
+        expected_binding = {
+            "registry_id": self.registry.registry_id,
+            "run_id": self.run_id,
+            "authorization_digest": self.authorization_digest,
+            "sealed_plan_sha256": self.sealed_plan_sha256,
+            "accepted_fold_digest": accepted_fold_digest,
+            "evaluation_bundle_digest": evaluation.bundle_digest,
+        }
+        if (
+            any(
+                getattr(artifact, key) != value
+                for key, value in expected_binding.items()
+            )
+            or any(
+                getattr(receipt, key) != value
+                for key, value in expected_binding.items()
+            )
+            or receipt.tracked_sha256 != _sha256(artifact_input[1])
+        ):
+            raise CoordinatorError("defect ledger binding drift")
+        defect_ids = {entry.defect_id for entry in artifact.entries}
+        if (
+            len(defect_ids) != len(artifact.entries)
+            or any(
+                entry.execution_id not in self.registry.compiled_plan.execution_ids
+                for entry in artifact.entries
+            )
+            or not failed_execution_ids
+            <= {entry.execution_id for entry in artifact.entries}
+        ):
+            raise CoordinatorError("defect ledger lineage is incomplete")
+        return artifact, receipt
 
     def finalize(self) -> CoordinatorResult:
         records = self._read_accepted_records()
@@ -861,6 +1120,15 @@ class ProductionRunCoordinator:
             record.artifact.execution_id: record.artifact.outcome
             for record, _ in records
         }
+        # An EXCLUDED_BY_CLIENT result is valid only for the exact protected
+        # grant carried in this authorization.  Do not let a generic external
+        # gate marker turn every obligation into an exclusion.
+        granted_exclusions = {
+            grant.execution_id
+            for grant in self.authorization.client_exclusion_grants
+            if grant.execution_id in outcomes
+            and outcomes[grant.execution_id] == "EXCLUDED_BY_CLIENT"
+        }
         rows = tuple(
             EvaluationRow(
                 criterion_id=criterion_id,
@@ -870,7 +1138,11 @@ class ProductionRunCoordinator:
                         identity: outcomes[identity]
                         for identity in criterion.obligation_ids
                     },
-                    valid_exclusions=frozenset(),
+                    valid_exclusions=frozenset(
+                        identity
+                        for identity in criterion.obligation_ids
+                        if identity in granted_exclusions
+                    ),
                 ),
             )
             for criterion_id, criterion in self.registry.compiled_plan.criteria.items()
@@ -911,8 +1183,16 @@ class ProductionRunCoordinator:
             "coordinator/evaluation-receipt.json",
             receipt.model_dump(mode="json"),
         )
+        defect_ledger, defect_ledger_receipt = self._load_or_commit_defect_ledger(
+            records=records,
+            evaluation=bundle,
+        )
         return CoordinatorResult(
-            final_activity=final, evaluation=bundle, receipt=receipt
+            final_activity=final,
+            evaluation=bundle,
+            receipt=receipt,
+            defect_ledger=defect_ledger,
+            defect_ledger_receipt=defect_ledger_receipt,
         )
 
 
@@ -921,6 +1201,9 @@ __all__ = [
     "CoordinatorError",
     "CoordinatorResult",
     "DecisiveEvidenceResolver",
+    "DefectLedgerArtifact",
+    "DefectLedgerEntry",
+    "DefectLedgerReceipt",
     "EvaluationBundle",
     "EvaluationReceipt",
     "FinalActivityProducerReceipt",
