@@ -228,6 +228,7 @@ def _authority_bundle_inputs(
     quotas=None,
     execution_input_digests: dict[str, str] | None = None,
     protected_authorities=None,
+    action_specs=None,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -315,7 +316,7 @@ def _authority_bundle_inputs(
             content_digest="7" * 64,
         ),
     )
-    action_specs = execution.AuthorizedActionSpecs(
+    exact_action_specs = action_specs or execution.AuthorizedActionSpecs(
         schema_version="noor-e2e-authorized-action-specs/v2",
         specs=(
             execution.AuthorizedActionSpec(
@@ -366,7 +367,7 @@ def _authority_bundle_inputs(
         "authorization": authorization,
         "request": request,
         "observation": observation,
-        "action_specs": action_specs,
+        "action_specs": exact_action_specs,
         "store_ids": stores,
         "adapter_ids": execution.AuthorityAdapterIds(
             schema_version="noor-e2e-authority-adapter-ids/v2",
@@ -396,6 +397,7 @@ def _issued_authority(
     quotas=None,
     execution_input_digests: dict[str, str] | None = None,
     protected_authorities=None,
+    action_specs=None,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -407,6 +409,7 @@ def _issued_authority(
         quotas=quotas,
         execution_input_digests=execution_input_digests,
         protected_authorities=protected_authorities,
+        action_specs=action_specs,
     )
     execution._write_test_authority_bundle(**inputs)
     return execution.issue_execution_authorization_handle(
@@ -417,11 +420,19 @@ def _issued_authority(
     )
 
 
-def _reconciled_action_journal(tmp_path: Path, *, run_id: str):
+def _reconciled_action_journal(
+    tmp_path: Path,
+    *,
+    run_id: str,
+    registry=None,
+    authority=None,
+    action_id: str = "synthetic-action",
+    action_request: dict[str, object] | None = None,
+):
     policy, execution = _modules()
-    registry = _registry()
+    registry = registry or _registry()
     protected_root = tmp_path / "protected"
-    authority = _issued_authority(
+    authority = authority or _issued_authority(
         registry,
         protected_root=protected_root,
         run_id=run_id,
@@ -446,11 +457,12 @@ def _reconciled_action_journal(tmp_path: Path, *, run_id: str):
         )
     )
     journal.begin_execution()
+    exact_action_request = action_request or _action_request()
     reservation = journal.reserve_action(
-        action_id="synthetic-action",
+        action_id=action_id,
         adapter_id="fake-local-adapter",
         subsystem="outbound_text",
-        **_action_request(),
+        **exact_action_request,
         messages=1,
         model_calls=1,
         cost_usd=0.25,
@@ -458,7 +470,7 @@ def _reconciled_action_journal(tmp_path: Path, *, run_id: str):
     execution.FakeLocalAdapter(
         adapter_id="fake-local-adapter",
         journal=journal,
-    ).execute(reservation, **_action_request())
+    ).execute(reservation, **exact_action_request)
     journal.complete_action(
         reservation,
         state="unknown",
@@ -499,7 +511,8 @@ def _persisted_cost_settlements(journal):
         event = json.loads(path.read_text(encoding="utf-8"))
         if event["kind"] == "action_cost_settled":
             settlement = event["settlement"]
-            authorization[settlement["action_id"]] = settlement["settlement_digest"]
+            if settlement["run_id"] == journal.run_id:
+                authorization[settlement["action_id"]] = settlement["settlement_digest"]
     for path in sorted((journal.run_root / "journal").glob("*.json")):
         event = json.loads(path.read_text(encoding="utf-8"))
         if event["kind"] == "action_cost_settlement_intent":
@@ -1056,6 +1069,382 @@ def test_cost_settlement_reopen_rejects_tampered_store_mismatch(
             protected_root=tmp_path / "protected",
             run_id=f"settlement-tamper-{tamper}",
             authority=authority,
+        )
+
+
+def test_cost_settlement_consistency_is_run_scoped_but_quota_is_global(
+    tmp_path: Path,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    protected_root = tmp_path / "protected"
+    now = datetime.now(UTC)
+    quotas = execution.ProtectedQuotas(
+        max_scenarios=29,
+        max_messages=1,
+        max_model_calls=1,
+        max_cost_usd=0.25,
+        subsystem_quotas={"outbound_text": 1},
+    )
+
+    def action_spec(action_id: str, idempotency_key: str):
+        return execution.AuthorizedActionSpec(
+            action_id=action_id,
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            quota_charge=_action_quota_charge(execution),
+            **{
+                **_action_request(),
+                "idempotency_key": idempotency_key,
+            },
+        )
+
+    action_specs = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(
+            action_spec("synthetic-action", "fixture-idempotency-001"),
+            action_spec("negative", "fixture-idempotency-001"),
+            action_spec("quota-action", "fixture-idempotency-002"),
+        ),
+    )
+    run_one_authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id="settlement-run-one",
+        now=now,
+        quotas=quotas,
+        action_specs=action_specs,
+    )
+    run_two_authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id="settlement-run-two",
+        now=now,
+        quotas=quotas,
+        action_specs=action_specs,
+    )
+    assert execution.authorization_digest(
+        run_one_authority._authorization
+    ) == execution.authorization_digest(run_two_authority._authorization)
+
+    _, _, run_one, reservation, _ = _reconciled_action_journal(
+        tmp_path,
+        run_id="settlement-run-one",
+        registry=registry,
+        authority=run_one_authority,
+    )
+    run_one.settle_action_cost(reservation, actual_cost_usd=0.10)
+
+    run_two = execution.ProtectedExecutionJournal.create(
+        protected_root=protected_root,
+        run_id="settlement-run-two",
+        authority=run_two_authority,
+    )
+    assert run_two.phase == "prepared"
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=protected_root,
+        run_id="settlement-run-two",
+        authority=run_two_authority,
+    )
+    assert reopened.phase == "prepared"
+    assert reopened.quota_usage.messages == 1
+    assert reopened.quota_usage.model_calls == 1
+    assert reopened.quota_usage.cost_usd == 0.25
+
+    reopened.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="settlement-run-two-baseline",
+            run_id="settlement-run-two",
+            preflight_digest=reopened.authorization.preflight_digest,
+            collector_artifact_digest=(
+                reopened.authorization.readback_collector_digest
+            ),
+            causal_event_digest="4" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    reopened.begin_execution()
+    with pytest.raises(Exception, match="action|idempotency.*consumed"):
+        reopened.reserve_action(
+            action_id="synthetic-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **_action_request(),
+            messages=1,
+            model_calls=1,
+            cost_usd=0.25,
+        )
+    with pytest.raises(Exception, match="action|idempotency.*consumed"):
+        reopened.reserve_action(
+            action_id="negative",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **_action_request(),
+            messages=1,
+            model_calls=1,
+            cost_usd=0.25,
+        )
+    with pytest.raises(Exception, match="quota"):
+        reopened.reserve_action(
+            action_id="quota-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **{
+                **_action_request(),
+                "idempotency_key": "fixture-idempotency-002",
+            },
+            messages=1,
+            model_calls=1,
+            cost_usd=0.25,
+        )
+
+
+def test_cost_settlement_recovery_filters_exact_current_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    protected_root = tmp_path / "protected"
+    now = datetime.now(UTC)
+    quotas = execution.ProtectedQuotas(
+        max_scenarios=29,
+        max_messages=2,
+        max_model_calls=2,
+        max_cost_usd=0.50,
+        subsystem_quotas={"outbound_text": 2},
+    )
+    run_two_request = {
+        **_action_request(),
+        "idempotency_key": "fixture-idempotency-002",
+    }
+    action_specs = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(
+            execution.AuthorizedActionSpec(
+                action_id="synthetic-action",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
+                **_action_request(),
+            ),
+            execution.AuthorizedActionSpec(
+                action_id="negative",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
+                **run_two_request,
+            ),
+        ),
+    )
+    run_one_authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id="recovery-run-one",
+        now=now,
+        quotas=quotas,
+        action_specs=action_specs,
+    )
+    run_two_authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id="recovery-run-two",
+        now=now,
+        quotas=quotas,
+        action_specs=action_specs,
+    )
+    _, _, run_one, run_one_reservation, _ = _reconciled_action_journal(
+        tmp_path,
+        run_id="recovery-run-one",
+        registry=registry,
+        authority=run_one_authority,
+    )
+    run_one.settle_action_cost(run_one_reservation, actual_cost_usd=0.10)
+    _, _, run_two, run_two_reservation, _ = _reconciled_action_journal(
+        tmp_path,
+        run_id="recovery-run-two",
+        registry=registry,
+        authority=run_two_authority,
+        action_id="negative",
+        action_request=run_two_request,
+    )
+
+    class InjectedCrash(RuntimeError):
+        pass
+
+    original_append = run_two._append_event
+
+    def fail_commit(*, phase, kind, data):
+        if kind == "action_cost_settled":
+            raise InjectedCrash("after run-two authorization settlement")
+        return original_append(phase=phase, kind=kind, data=data)
+
+    with monkeypatch.context() as crash:
+        crash.setattr(run_two, "_append_event", fail_commit)
+        with pytest.raises(InjectedCrash):
+            run_two.settle_action_cost(
+                run_two_reservation,
+                actual_cost_usd=0.10,
+            )
+
+    reopened_two = execution.ProtectedExecutionJournal.open(
+        protected_root=protected_root,
+        run_id="recovery-run-two",
+        authority=run_two_authority,
+    )
+    authorization, intents, commits = _persisted_cost_settlements(reopened_two)
+    assert authorization == intents == commits
+    assert set(commits) == {"negative"}
+    assert reopened_two.quota_usage.cost_usd == 0.50
+
+    reopened_one = execution.ProtectedExecutionJournal.open(
+        protected_root=protected_root,
+        run_id="recovery-run-one",
+        authority=run_one_authority,
+    )
+    authorization, intents, commits = _persisted_cost_settlements(reopened_one)
+    assert authorization == intents == commits
+    assert set(commits) == {"synthetic-action"}
+    assert reopened_one.quota_usage.cost_usd == 0.50
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ("missing_journal_run", "wrong_journal_run", "mislabeled_authorization_run"),
+)
+def test_cost_settlement_rejects_cross_run_record_tamper(
+    tmp_path: Path,
+    tamper: str,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    protected_root = tmp_path / "protected"
+    now = datetime.now(UTC)
+    quotas = execution.ProtectedQuotas(
+        max_scenarios=29,
+        max_messages=2,
+        max_model_calls=2,
+        max_cost_usd=0.50,
+        subsystem_quotas={"outbound_text": 2},
+    )
+    run_two_request = {
+        **_action_request(),
+        "idempotency_key": "fixture-idempotency-002",
+    }
+    action_specs = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(
+            execution.AuthorizedActionSpec(
+                action_id="synthetic-action",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
+                **_action_request(),
+            ),
+            execution.AuthorizedActionSpec(
+                action_id="negative",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                quota_charge=_action_quota_charge(execution),
+                **run_two_request,
+            ),
+        ),
+    )
+    run_one_authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id="tamper-run-one",
+        now=now,
+        quotas=quotas,
+        action_specs=action_specs,
+    )
+    run_two_authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id="tamper-run-two",
+        now=now,
+        quotas=quotas,
+        action_specs=action_specs,
+    )
+    _, _, run_one, run_one_reservation, _ = _reconciled_action_journal(
+        tmp_path,
+        run_id="tamper-run-one",
+        registry=registry,
+        authority=run_one_authority,
+    )
+    run_one.settle_action_cost(run_one_reservation, actual_cost_usd=0.10)
+    _, _, run_two, run_two_reservation, _ = _reconciled_action_journal(
+        tmp_path,
+        run_id="tamper-run-two",
+        registry=registry,
+        authority=run_two_authority,
+        action_id="negative",
+        action_request=run_two_request,
+    )
+    run_two.settle_action_cost(run_two_reservation, actual_cost_usd=0.10)
+
+    if tamper == "mislabeled_authorization_run":
+        ledger_path = next(
+            path
+            for path in reversed(
+                sorted(run_two._authorization_ledger_root.glob("*.json"))
+            )
+            if json.loads(path.read_text(encoding="utf-8"))
+            .get("settlement", {})
+            .get("action_id")
+            == "negative"
+        )
+        event = json.loads(ledger_path.read_text(encoding="utf-8"))
+        event["settlement"]["run_id"] = "tamper-run-one"
+        identity = {
+            key: value
+            for key, value in event["settlement"].items()
+            if key != "settlement_digest"
+        }
+        event["settlement"]["settlement_digest"] = execution._digest(identity)
+        ledger_path.write_bytes(execution._canonical_bytes(event))
+    else:
+        journal_events = [
+            (
+                path,
+                json.loads(path.read_text(encoding="utf-8")),
+            )
+            for path in sorted((run_two.run_root / "journal").glob("*.json"))
+        ]
+        intent_path, intent = next(
+            item
+            for item in journal_events
+            if item[1]["kind"] == "action_cost_settlement_intent"
+        )
+        commit_path, commit = next(
+            item for item in journal_events if item[1]["kind"] == "action_cost_settled"
+        )
+        for event in (intent, commit):
+            settlement = event["data"]["settlement"]
+            if tamper == "missing_journal_run":
+                settlement.pop("run_id")
+            else:
+                settlement["run_id"] = "tamper-run-one"
+                identity = {
+                    key: value
+                    for key, value in settlement.items()
+                    if key != "settlement_digest"
+                }
+                settlement["settlement_digest"] = execution._digest(identity)
+        intent_path.write_bytes(execution._canonical_bytes(intent))
+        intent_digest = hashlib.sha256(intent_path.read_bytes()).hexdigest()
+        commit["previous_event_digest"] = intent_digest
+        commit["data"]["intent_event_digest"] = intent_digest
+        commit_path.write_bytes(execution._canonical_bytes(commit))
+
+    with pytest.raises(Exception, match="settlement|run|drift|validation"):
+        execution.ProtectedExecutionJournal.open(
+            protected_root=protected_root,
+            run_id="tamper-run-two",
+            authority=run_two_authority,
         )
 
 

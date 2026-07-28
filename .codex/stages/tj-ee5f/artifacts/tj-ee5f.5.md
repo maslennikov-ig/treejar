@@ -92,15 +92,17 @@ verification:
   - reviewer FIX E RED crash matrix: failed 4 and passed 2 before implementation, proving missing split-brain detection/recovery
   - reviewer FIX E crash/retry/tamper matrix: passed 7
   - reviewer FIX E combined settlement invariants: passed 10
-  - correction focused trust suite: passed 170
+  - reviewer FIX F RED proved a second run with the same authorization digest could not reopen after run-one settlement
+  - reviewer FIX F multi-run reopen/recovery/run-tamper matrix: passed 5
+  - correction focused trust suite: passed 175
   - protected execution authority semantic-drift slice: passed 4
-  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 260
+  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 265
   - uv run ruff check src/ tests/ scripts/e2e_acceptance: passed
   - uv run ruff format --check src/ tests/ scripts/e2e_acceptance: passed, 324 files
   - uv run mypy src/: passed (163 source files)
   - strict module-mode Mypy for policy execution trusted_run and evidence: passed
   - scripts/orchestration/run_process_verification.sh: passed
-  - uv run pytest tests/ -q --tb=short: passed 2140, skipped 19
+  - uv run pytest tests/ -q --tb=short: passed 2145, skipped 19
   - current-tree exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta blocked-secret scan: zero matches
@@ -137,6 +139,11 @@ commit, and journal commit. Restart rolls forward only an exact intent-backed
 partial commit; missing, extra, different, or intent-less settlement state fails
 closed. Finalization requires exact settlement-set equality, while recovery
 neither charges nor refunds quota a second time.
+For multiple runs sharing one exact authorization digest, quota usage and
+action/idempotency uniqueness remain authorization-global. Settlement
+intent/commit equality and recovery use only records whose reservation and
+`run_id` exactly match the current journal; missing, mislabeled, or wrong-run
+records remain fatal.
 Final inventory is accepted only from a fresh protected independent collector
 artifact and producer receipt bound to the exact authorization, preflight,
 collector, journal head, final-turn anchor, and inventory digest. Report turns
@@ -156,7 +163,10 @@ side-effect identities before exposing rollups. Production adapters, real
 producer implementations, and all external transport remain outside this stream.
 The correction E technical premortem verdict was `GO WITH CONDITIONS`: recovery
 must be a deterministic roll-forward from an exact protected intent, and every
-other cross-store mismatch must remain a blocking validation error.
+other cross-store mismatch must remain a blocking validation error. Correction F
+retains that verdict with one added condition: filtering is allowed only after
+the global ledger has validated the settlement against its exact reservation
+and run identity.
 
 # Verification
 
@@ -167,8 +177,10 @@ substitution, quota-charge settlement, and protected client-authority findings.
 Reviewer FIX D additionally closes the late-settlement phase regression and
 duplicate replay path. Reviewer FIX E closes settlement split-brain across every
 intent/authorization/commit crash boundary and rejects missing, extra, or
-different restart state. Fresh correction evidence passed 170 focused trust
-tests, 260 acceptance-contract tests, and the full local suite with 2140 passed
+different restart state. Reviewer FIX F scopes equality/recovery to the current
+run without weakening authorization-global quota, action, or idempotency
+enforcement. Fresh correction evidence passed 175 focused trust tests, 265
+acceptance-contract tests, and the full local suite with 2145 passed
 and 19 skipped. Ruff, format, both Mypy scopes, process verification,
 exact/normalized privacy scans, the blocked-secret scan, and `git diff --check`
 also passed. These results return the stream for a new orchestrator review; they

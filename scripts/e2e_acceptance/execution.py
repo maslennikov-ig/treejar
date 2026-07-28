@@ -2304,6 +2304,10 @@ class ProtectedExecutionJournal:
         self._authorization_reservation_digests: dict[str, str] = {}
         self._authorization_reservation_runs: dict[str, str] = {}
         self._authorization_cost_settlements: dict[str, ActionCostSettlement] = {}
+        self._run_authorization_cost_settlements: dict[
+            str,
+            ActionCostSettlement,
+        ] = {}
         self._journal_cost_settlement_intents: dict[
             str,
             tuple[ActionCostSettlement, str],
@@ -2443,7 +2447,9 @@ class ProtectedExecutionJournal:
             settlement = ActionCostSettlement.model_validate(data["settlement"])
             if (
                 self._actions.get(settlement.action_id) not in {"succeeded", "failed"}
+                or settlement.run_id != self.run_id
                 or self._reservations.get(settlement.action_id) is None
+                or self._reservations[settlement.action_id].run_id != self.run_id
                 or self._reservations[settlement.action_id].reservation_digest
                 != settlement.reservation_digest
                 or settlement.action_id in self._journal_cost_settlement_intents
@@ -2461,8 +2467,9 @@ class ProtectedExecutionJournal:
             intent = self._journal_cost_settlement_intents.get(settlement.action_id)
             intent_event_digest = data.get("intent_event_digest")
             if (
-                self._authorization_cost_settlements.get(settlement.action_id)
+                self._run_authorization_cost_settlements.get(settlement.action_id)
                 != settlement
+                or settlement.run_id != self.run_id
                 or self._actions.get(settlement.action_id)
                 not in {"succeeded", "failed"}
                 or settlement.action_id in self._journal_cost_settlements
@@ -2539,7 +2546,7 @@ class ProtectedExecutionJournal:
 
     def _assert_cost_settlement_consistency(self) -> None:
         if (
-            self._authorization_cost_settlements != self._journal_cost_settlements
+            self._run_authorization_cost_settlements != self._journal_cost_settlements
             or any(
                 action_id not in self._journal_cost_settlements
                 for action_id in self._journal_cost_settlement_intents
@@ -2558,7 +2565,8 @@ class ProtectedExecutionJournal:
             if committed is not None:
                 if (
                     committed != settlement
-                    or self._authorization_cost_settlements.get(action_id) != settlement
+                    or self._run_authorization_cost_settlements.get(action_id)
+                    != settlement
                 ):
                     raise ExecutionValidationError(
                         "action cost settlement recovery digest drift"
@@ -2572,13 +2580,19 @@ class ProtectedExecutionJournal:
                     "action cost settlement recovery is outside executing "
                     "terminal state"
                 )
-            authorized = self._authorization_cost_settlements.get(action_id)
+            globally_authorized = self._authorization_cost_settlements.get(action_id)
+            authorized = self._run_authorization_cost_settlements.get(action_id)
+            if globally_authorized is not None and globally_authorized != settlement:
+                raise ExecutionValidationError(
+                    "action cost settlement recovery cross-run drift"
+                )
             if authorized is None:
                 self._append_authorization_ledger(
                     kind="action_cost_settled",
                     data={"settlement": settlement.model_dump(mode="json")},
                 )
                 self._authorization_cost_settlements[action_id] = settlement
+                self._run_authorization_cost_settlements[action_id] = settlement
             elif authorized != settlement:
                 raise ExecutionValidationError(
                     "action cost settlement recovery authorization drift"
@@ -2653,6 +2667,7 @@ class ProtectedExecutionJournal:
         self._authorization_reservation_digests = {}
         self._authorization_reservation_runs = {}
         self._authorization_cost_settlements = {}
+        self._run_authorization_cost_settlements = {}
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head = None
         try:
@@ -2723,6 +2738,10 @@ class ProtectedExecutionJournal:
                         "authorization action cost settlement drift"
                     )
                 self._authorization_cost_settlements[settlement.action_id] = settlement
+                if settlement.run_id == self.run_id:
+                    self._run_authorization_cost_settlements[settlement.action_id] = (
+                        settlement
+                    )
             elif event.get("kind") == "scenario_reserved":
                 self._authorization_scenarios += 1
             else:
@@ -3062,13 +3081,18 @@ class ProtectedExecutionJournal:
         action_id = reservation.action_id
         pending = self._journal_cost_settlement_intents.get(action_id)
         committed = self._journal_cost_settlements.get(action_id)
-        authorized = self._authorization_cost_settlements.get(action_id)
+        globally_authorized = self._authorization_cost_settlements.get(action_id)
+        authorized = self._run_authorization_cost_settlements.get(action_id)
         if committed is not None:
             if authorized != committed:
                 raise ExecutionValidationError(
                     "action cost settlement commit/authorization drift"
                 )
             raise ExecutionValidationError("action cost is already settled")
+        if pending is None and globally_authorized is not None and authorized is None:
+            raise ExecutionValidationError(
+                "action cost settlement belongs to another run"
+            )
         if pending is None and authorized is not None:
             raise ExecutionValidationError(
                 "action cost settlement lacks a journal intent"
@@ -3113,13 +3137,19 @@ class ProtectedExecutionJournal:
                 raise ExecutionValidationError(
                     "action cost settlement retry differs from intent"
                 )
-        authorized = self._authorization_cost_settlements.get(action_id)
+        globally_authorized = self._authorization_cost_settlements.get(action_id)
+        authorized = self._run_authorization_cost_settlements.get(action_id)
+        if globally_authorized is not None and globally_authorized != settlement:
+            raise ExecutionValidationError(
+                "action cost settlement authorization belongs to another run"
+            )
         if authorized is None:
             self._append_authorization_ledger(
                 kind="action_cost_settled",
                 data={"settlement": settlement.model_dump(mode="json")},
             )
             self._authorization_cost_settlements[action_id] = settlement
+            self._run_authorization_cost_settlements[action_id] = settlement
         elif authorized != settlement:
             raise ExecutionValidationError(
                 "action cost settlement authorization differs from intent"
