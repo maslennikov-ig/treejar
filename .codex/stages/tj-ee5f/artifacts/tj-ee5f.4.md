@@ -38,6 +38,8 @@ write_zone:
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md
 success_criteria:
   - a simulated fresh checkout accepts the official HTTPS origin with or without .git, and rejects URL variants plus top-level or common-dir identity drift
+  - the standard-checkout fixture returns literal .git while repo_root/.git exists, so the relative common-directory branch is exercised
+  - a missing top-level path remains distinguishable from existing top-level identity drift
   - tracked frozen Beads source contains exactly 105 referenced IDs and canonical record digests
   - source validation fails closed on missing extra malformed reordered noncanonical escaped symlinked or digest-drifted data
 selected_docs:
@@ -92,6 +94,12 @@ verification:
   - GREEN: scripts/orchestration/validate_artifact.py .codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md -> artifact validation OK
   - GREEN: scripts/orchestration/run_process_verification.sh -> process verification OK
   - GREEN: uv run pytest tests/ -v --tb=short -> 2084 passed, 19 skipped
+  - RED: uv run pytest tests/test_e2e_acceptance_policy_v2.py::test_canonical_https_origin_rejects_fresh_checkout_path_identity_drift tests/test_e2e_acceptance_policy_v2.py::test_canonical_https_origin_rejects_missing_fresh_checkout_top_level -q -> 1 failed, 2 passed; non-existent other-checkout returned identity is unavailable rather than identity drift
+  - GREEN: focused checkout identity branches -> 5 passed
+  - GREEN: uv run pytest tests/test_e2e_acceptance_policy_v2.py -q -> 39 passed
+  - GREEN: uv run pytest tests/test_e2e_acceptance_*.py -q -> 207 passed
+  - GREEN: uv run ruff check tests/test_e2e_acceptance_policy_v2.py -> passed
+  - GREEN: uv run ruff format --check tests/test_e2e_acceptance_policy_v2.py -> 1 file already formatted
   - EXCEPTION: uv run mypy scripts/e2e_acceptance exits 2 because repository mypy config excludes scripts/; no config change was permitted in this task
 changed_files:
   - .codex/stages/tj-ee5f/frozen-beads-records.jsonl
@@ -104,6 +112,7 @@ changed_files:
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md
 implementation_commit: 58cdae1
 correction_commit: a6f2034
+tdd_correction_commit: 482b017
 explicit_defers:
   - none
 ---
@@ -129,6 +138,15 @@ canonical HTTPS spellings, and rejects top-level and common-directory path
 drift. Path-resolution failures are converted to `PolicyValidationError` so the
 identity guard remains fail-closed.
 
+The subsequent review found that the standard fixture still returned an
+absolute common-directory path, leaving the relative `.git` resolution branch
+unproved; it also used a non-existent top-level drift path, which only proved
+the unavailable-path guard. The third correction keeps `repo_root/.git`
+physical but returns literal `.git`, creates `other-checkout` before asserting
+`identity drift`, and separately proves a missing top-level returns
+`identity is unavailable`. This is test-only: the production guard required no
+further change.
+
 RED was recorded before implementation:
 
 - the no-suffix canonical HTTPS origin raised `PolicyValidationError`;
@@ -147,6 +165,8 @@ data before it can be trusted.
 - `uv run pytest tests/test_e2e_acceptance_policy_v2.py -q` passed 38 tests;
   the focused fresh-checkout matrix passed 11 tests.
 - `uv run pytest tests/test_e2e_acceptance_*.py -q` passed 206 tests.
+- The third correction's focused checkout-identity branches passed 5 tests;
+  its policy and acceptance suites passed 39 and 207 tests respectively.
 - Artifact and process verification passed. Ruff, formatting, `mypy src/`, and
   the full Pytest suite passed as recorded in the frontmatter verification
   ledger.
@@ -156,6 +176,8 @@ data before it can be trusted.
 Implementation commit: `58cdae1` (`fix(acceptance): support canonical CI identity`).
 Checkout-identity correction: `a6f2034`
 (`fix(acceptance): harden canonical checkout identity`).
+TDD-evidence correction: `482b017`
+(`test(acceptance): prove checkout identity branches`).
 No external, paid, production, customer, or business action occurred.
 
 # Risks / Follow-ups / Explicit Defers
