@@ -417,6 +417,80 @@ def _issued_authority(
     )
 
 
+def _reconciled_action_journal(tmp_path: Path, *, run_id: str):
+    policy, execution = _modules()
+    registry = _registry()
+    protected_root = tmp_path / "protected"
+    authority = _issued_authority(
+        registry,
+        protected_root=protected_root,
+        run_id=run_id,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=protected_root,
+        run_id=run_id,
+        authority=authority,
+    )
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id=f"{run_id}-baseline",
+            run_id=run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=(journal.authorization.readback_collector_digest),
+            causal_event_digest="4" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    reservation = journal.reserve_action(
+        action_id="synthetic-action",
+        adapter_id="fake-local-adapter",
+        subsystem="outbound_text",
+        **_action_request(),
+        messages=1,
+        model_calls=1,
+        cost_usd=0.25,
+    )
+    execution.FakeLocalAdapter(
+        adapter_id="fake-local-adapter",
+        journal=journal,
+    ).execute(reservation, **_action_request())
+    journal.complete_action(
+        reservation,
+        state="unknown",
+        outcome_digest="d" * 64,
+    )
+    receipt = execution.UnknownActionReconciliationReceipt(
+        schema_version="noor-e2e-unknown-action-reconciliation/v2",
+        registry_id=registry.registry_id,
+        run_id=run_id,
+        authorization_digest=execution.authorization_digest(journal.authorization),
+        action_id=reservation.action_id,
+        reservation_digest=reservation.reservation_digest,
+        collector_id="independent-readback-collector",
+        producer="independent-readback-collector",
+        causal_event_digest=journal.previous_event_digest,
+        observed_at=now,
+        expires_at=now + timedelta(minutes=1),
+        resolved_state="failed",
+        inventory_digest="e" * 64,
+    )
+    receipt_digest = execution._write_exclusive(
+        journal.run_root,
+        f"independent-reconciliation/{reservation.action_id}.json",
+        receipt.model_dump(mode="json"),
+    )
+    journal.reconcile_unknown_action(
+        action_id=reservation.action_id,
+        receipt_digest=receipt_digest,
+    )
+    return execution, authority, journal, reservation, now
+
+
 def test_compiled_plan_has_exact_29_execution_ids_and_all_required_criteria() -> None:
     registry = _registry()
     scenario_set = json.loads(
@@ -771,6 +845,54 @@ def test_unknown_dispatch_requires_protected_independent_reconciliation(
     with pytest.raises(Exception, match="already settled"):
         reopened.settle_action_cost(reservation, actual_cost_usd=0.10)
     journal.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
+
+
+def test_action_cost_settlement_after_final_anchor_fails_without_phase_regression(
+    tmp_path: Path,
+) -> None:
+    execution, authority, journal, reservation, now = _reconciled_action_journal(
+        tmp_path,
+        run_id="late-settlement-run",
+    )
+    journal.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
+
+    with pytest.raises(Exception, match="executing phase"):
+        journal.settle_action_cost(reservation, actual_cost_usd=0.10)
+
+    assert journal.phase == "final_turn_anchored"
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=tmp_path / "protected",
+        run_id="late-settlement-run",
+        authority=authority,
+    )
+    assert reopened.phase == "final_turn_anchored"
+
+
+def test_reopen_rejects_duplicate_cost_settlement_phase_regression(
+    tmp_path: Path,
+) -> None:
+    execution, authority, journal, reservation, now = _reconciled_action_journal(
+        tmp_path,
+        run_id="settlement-replay-run",
+    )
+    settlement = journal.settle_action_cost(
+        reservation,
+        actual_cost_usd=0.10,
+    )
+    assert journal.phase == "executing"
+    journal.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
+    journal._append_event(
+        phase="executing",
+        kind="action_cost_settled",
+        data={"settlement": settlement.model_dump(mode="json")},
+    )
+
+    with pytest.raises(Exception, match="phase regression|duplicate"):
+        execution.ProtectedExecutionJournal.open(
+            protected_root=tmp_path / "protected",
+            run_id="settlement-replay-run",
+            authority=authority,
+        )
 
 
 def test_zero_turn_gate_requires_protected_receipted_evidence(tmp_path: Path) -> None:

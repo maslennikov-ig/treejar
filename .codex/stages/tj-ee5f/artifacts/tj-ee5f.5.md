@@ -86,15 +86,17 @@ verification:
   - initial independent full-range review decision: FIX
   - correction RED proved caller final readback, incomplete gate provenance, incomplete transcript receipt provenance, and unbound retention authority
   - second correction RED proved dataclass authority-handle substitution, quota undercharge/settlement gaps, and caller-shaped exclusion/retention authority gaps
-  - correction focused trust suite: passed 161
+  - reviewer FIX D RED proved late cost settlement regressed final_turn_anchored back to executing and duplicate replay reopened without rejection
+  - reviewer FIX D focused RED to GREEN: passed 2
+  - correction focused trust suite: passed 163
   - protected execution authority semantic-drift slice: passed 4
-  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 251
+  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 253
   - uv run ruff check src/ tests/ scripts/e2e_acceptance: passed
   - uv run ruff format --check src/ tests/ scripts/e2e_acceptance: passed, 324 files
   - uv run mypy src/: passed (163 source files)
   - strict module-mode Mypy for policy execution trusted_run and evidence: passed
   - scripts/orchestration/run_process_verification.sh: passed
-  - uv run pytest tests/ -q --tb=short: passed 2131, skipped 19
+  - uv run pytest tests/ -q --tb=short: passed 2133, skipped 19
   - current-tree exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta blocked-secret scan: zero matches
@@ -123,7 +125,9 @@ issued authority handle is identity-registered so dataclass replacement cannot
 substitute a broader authorization. Each protected action binds its exact
 messages, model calls, maximum cost, and cost-settlement mode; an independently
 terminal action may record bounded actual cost without refunding the charged
-maximum or weakening retry safety.
+maximum or weakening retry safety. Settlement is permitted only while the
+journal remains in the executing phase; late, duplicate, nonterminal, and
+phase-regressive replay attempts fail closed without reopening finalization.
 Final inventory is accepted only from a fresh protected independent collector
 artifact and producer receipt bound to the exact authorization, preflight,
 collector, journal head, final-turn anchor, and inventory digest. Report turns
@@ -144,13 +148,14 @@ producer implementations, and all external transport remain outside this stream.
 
 # Verification
 
-The original and second independent full-range reviews returned `FIX`; neither
-accepted the stream. The corrections close the final-collector/inventory,
+The independent full-range reviews returned `FIX`; none accepted the stream.
+The corrections close the final-collector/inventory,
 retention-authority, typed-gate, transcript-provenance, authority-handle
 substitution, quota-charge settlement, and protected client-authority findings.
-Fresh correction evidence passed 161 focused trust tests, 251
-acceptance-contract tests, and the full local suite with 2131 passed and 19
-skipped. Ruff, format, both Mypy scopes, process verification,
+Reviewer FIX D additionally closes the late-settlement phase regression and
+duplicate replay path. Fresh correction evidence passed 163 focused trust
+tests, 253 acceptance-contract tests, and the full local suite with 2133 passed
+and 19 skipped. Ruff, format, both Mypy scopes, process verification,
 exact/normalized privacy scans, the blocked-secret scan, and `git diff --check`
 also passed. These results return the stream for a new orchestrator review; they
 do not record acceptance.

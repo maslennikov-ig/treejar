@@ -2295,6 +2295,7 @@ class ProtectedExecutionJournal:
         self._authorization_reservation_digests: dict[str, str] = {}
         self._authorization_reservation_runs: dict[str, str] = {}
         self._authorization_cost_settlements: dict[str, ActionCostSettlement] = {}
+        self._journal_cost_settlement_ids: set[str] = set()
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head: str | None = None
         self._final_turn_occurred_at: datetime | None = None
@@ -2395,9 +2396,16 @@ class ProtectedExecutionJournal:
         return journal
 
     def _apply_loaded_event(self, event: dict[str, Any]) -> None:
-        self.cursor = int(event["cursor"])
-        self.phase = str(event["phase"])
+        replayed_phase = str(event["phase"])
         kind = str(event["kind"])
+        if kind == "action_cost_settled" and (
+            self.phase != "executing" or replayed_phase != self.phase
+        ):
+            raise ExecutionValidationError(
+                "action cost settlement journal phase regression"
+            )
+        self.cursor = int(event["cursor"])
+        self.phase = replayed_phase
         data = event.get("data", {})
         if kind == "action_reserved":
             reservation = ActionReservation.model_validate(data["reservation"])
@@ -2415,10 +2423,15 @@ class ProtectedExecutionJournal:
             if (
                 self._authorization_cost_settlements.get(settlement.action_id)
                 != settlement
+                or self._actions.get(settlement.action_id)
+                not in {"succeeded", "failed"}
+                or settlement.action_id in self._journal_cost_settlement_ids
             ):
                 raise ExecutionValidationError(
-                    "journal cost settlement differs from authorization ledger"
+                    "journal cost settlement is duplicate or differs from "
+                    "terminal authorization state"
                 )
+            self._journal_cost_settlement_ids.add(settlement.action_id)
         elif kind == "attempt_intent":
             self._attempted_executions.append(str(data["execution_id"]))
         elif kind == "execution_started":
@@ -2912,6 +2925,10 @@ class ProtectedExecutionJournal:
     ) -> ActionCostSettlement:
         """Record bounded actual cost without releasing consumed quota."""
 
+        if self.phase != "executing":
+            raise ExecutionValidationError(
+                "action cost settlement requires executing phase"
+            )
         if self._actions.get(reservation.action_id) not in {
             "succeeded",
             "failed",
@@ -2965,10 +2982,11 @@ class ProtectedExecutionJournal:
         )
         self._authorization_cost_settlements[reservation.action_id] = settlement
         self._append_event(
-            phase="executing",
+            phase=self.phase,
             kind="action_cost_settled",
             data={"settlement": settlement.model_dump(mode="json")},
         )
+        self._journal_cost_settlement_ids.add(reservation.action_id)
         return settlement
 
     def reconcile_unknown_action(
