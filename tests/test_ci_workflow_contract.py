@@ -1,15 +1,46 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
+import pytest
 import yaml
 
 
-def test_ci_workflow_skips_docs_and_orchestration_only_changes() -> None:
-    workflow = yaml.load(
+def _load_ci_workflow():
+    return yaml.load(
         Path(".github/workflows/ci.yml").read_text(encoding="utf-8"),
         Loader=yaml.BaseLoader,
     )
+
+
+def _assert_test_job_fetches_full_history(workflow) -> None:
+    test_job = workflow["jobs"]["test"]
+    run_test_steps = [
+        step for step in test_job["steps"] if step.get("name") == "Run tests"
+    ]
+    assert len(run_test_steps) == 1
+    assert shlex.split(run_test_steps[0]["run"]) == [
+        "uv",
+        "run",
+        "pytest",
+        "tests/",
+        "-v",
+        "--tb=short",
+    ]
+
+    checkout_steps = [
+        step
+        for step in test_job["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    ]
+
+    assert len(checkout_steps) == 1
+    assert checkout_steps[0].get("with", {}).get("fetch-depth") == "0"
+
+
+def test_ci_workflow_skips_docs_and_orchestration_only_changes() -> None:
+    workflow = _load_ci_workflow()
 
     expected_ignored_paths = {
         ".codex/**",
@@ -32,21 +63,21 @@ def test_ci_workflow_skips_docs_and_orchestration_only_changes() -> None:
 
 
 def test_ci_test_job_fetches_full_history_for_scope_provenance() -> None:
-    workflow = yaml.load(
-        Path(".github/workflows/ci.yml").read_text(encoding="utf-8"),
-        Loader=yaml.BaseLoader,
-    )
+    workflow = _load_ci_workflow()
 
-    test_job = workflow["jobs"]["test"]
-    assert any(
-        "uv run pytest tests/" in step.get("run", "") for step in test_job["steps"]
-    )
+    _assert_test_job_fetches_full_history(workflow)
 
-    checkout_steps = [
+
+def test_ci_full_test_command_contract_rejects_narrowed_command() -> None:
+    workflow = _load_ci_workflow()
+    run_test_steps = [
         step
-        for step in test_job["steps"]
-        if step.get("uses", "").startswith("actions/checkout@")
+        for step in workflow["jobs"]["test"]["steps"]
+        if step.get("name") == "Run tests"
     ]
 
-    assert len(checkout_steps) == 1
-    assert checkout_steps[0].get("with", {}).get("fetch-depth") == "0"
+    assert len(run_test_steps) == 1
+    run_test_steps[0]["run"] = "uv run pytest tests/test_ci_workflow_contract.py -q"
+
+    with pytest.raises(AssertionError):
+        _assert_test_job_fetches_full_history(workflow)
