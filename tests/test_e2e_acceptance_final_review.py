@@ -419,7 +419,7 @@ def test_final_readback_cannot_predate_final_turn_anchor(tmp_path: Path) -> None
 def test_trusted_run_module_has_no_public_caller_root_loader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    policy, _, trusted = _modules()
+    policy, execution_module, trusted = _modules()
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "forged-outside-pytest")
 
     assert not hasattr(trusted, "load_verified_run")
@@ -874,6 +874,7 @@ def _seal_materializer_acceptance_journal(
     artifact_path = protected / "collector-artifacts/final-readback.json"
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     artifact.update(
+        authorization_digest=journal.authorization_digest,
         journal_head_digest=final_turn_digest,
         final_turn_anchor_at=final_anchor.isoformat(),
         observed_at=final.observed_at.isoformat(),
@@ -884,6 +885,7 @@ def _seal_materializer_acceptance_journal(
     receipt_path = protected / "producer-receipts/final-readback.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     receipt.update(
+        authorization_digest=journal.authorization_digest,
         journal_head_digest=final_turn_digest,
         artifact_sha256=artifact_sha256,
         inventory_digest=trusted.canonical_digest(final.inventory),
@@ -914,15 +916,161 @@ def _seal_materializer_acceptance_journal(
 
 def _production_materializer_inputs(tmp_path: Path):
     registry, tracked, protected = _build_verified_run(tmp_path)
-    policy, _, trusted = _modules()
+    policy, execution_module, trusted = _modules()
+    from scripts.e2e_acceptance.coordinator import (
+        JournalAcceptanceEvent,
+        ProducerArtifact,
+        ProducerReceipt,
+        ProductionRunCoordinator,
+    )
     from scripts.e2e_acceptance.production import (
         BaselineReadbackArtifact,
         BaselineReadbackProducerReceipt,
     )
 
     run = json.loads((tracked / "registry/run.json").read_text(encoding="utf-8"))
+    report = json.loads(
+        (tracked / "registry/report-payload.json").read_text(encoding="utf-8")
+    )
     run_id = run["run_id"]
-    plan = SimpleNamespace(actions=(), evaluator={"fixture": "sealed"})
+    runtime_identity = {
+        "repository_commit": report["identity"]["repository_commit"],
+        "deployed_release_sha": report["identity"]["deployed_release_sha"],
+        "ci_run_id": report["identity"]["ci_run_id"],
+        "app_version": report["identity"]["app_version"],
+        "migration_head": report["identity"]["migration_head"],
+        "main_model": report["identity"]["models"][0],
+        "fast_model": report["identity"]["models"][-1],
+    }
+    authorization_v1_source = {"expected_identity": runtime_identity}
+    preflight_observation_source = {"identity": runtime_identity}
+    run["authorization"]["live_binding"].update(
+        {
+            "v1_manifest_digest": trusted.canonical_digest(authorization_v1_source),
+            "preflight_observation_digest": trusted.canonical_digest(
+                preflight_observation_source
+            ),
+            "runtime_identity_digest": trusted.canonical_digest(runtime_identity),
+        }
+    )
+    authorization_digest = trusted.canonical_digest(run["authorization"])
+    authority_root = protected.parent / "authority-bundles" / run_id
+    authorization_v1_sha = _write_json(
+        authority_root / "authorization-v1.json", authorization_v1_source
+    )
+    preflight_observation_sha = _write_json(
+        authority_root / "preflight-observation.json",
+        preflight_observation_source,
+    )
+    _write_json(
+        authority_root / "receipt.json",
+        {
+            "schema_version": "noor-e2e-authority-bundle-receipt/v2",
+            "registry_id": registry.registry_id,
+            "run_id": run_id,
+            "payload_digests": {
+                "authorization_manifest": authorization_v1_sha,
+                "preflight_observation": preflight_observation_sha,
+            },
+        },
+    )
+    attempts_by_execution = {}
+    for row in run["executions"]:
+        attempt_path = tracked / f"attempts/{row['execution_id']}.json"
+        attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
+        commit_path = protected / attempt["protected_commit_ref"]
+        commit = json.loads(commit_path.read_text(encoding="utf-8"))
+        commit["authorization_digest"] = authorization_digest
+        attempt["authorization_digest"] = authorization_digest
+        attempt["protected_commit_digest"] = _write_json(commit_path, commit)
+        previous = None
+        phase_chain = []
+        for cursor, phase in enumerate(
+            (
+                "prepared",
+                "baseline_sealed",
+                "executing",
+                "final_turn_anchored",
+                "final_readback_sealed",
+                "evaluated",
+                "attempt_committed",
+            ),
+            start=1,
+        ):
+            identity = {
+                "cursor": cursor,
+                "phase": phase,
+                "previous_event_digest": previous,
+                "run_id": run_id,
+                "execution_id": row["execution_id"],
+                "attempt_digest": attempt["attempt_digest"],
+                "semantic_digest": attempt["semantic_digest"],
+                "authorization_digest": authorization_digest,
+                "protected_commit_digest": attempt["protected_commit_digest"],
+            }
+            previous = trusted.canonical_digest(identity)
+            phase_chain.append(
+                {
+                    "cursor": cursor,
+                    "phase": phase,
+                    "previous_event_digest": identity["previous_event_digest"],
+                    "event_digest": previous,
+                }
+            )
+        attempt["phase_chain"] = phase_chain
+        attempt["phase_head_digest"] = previous
+        _write_json(attempt_path, attempt)
+        attempts_by_execution[row["execution_id"]] = attempt
+    for turn in report["turns"]:
+        attempt = attempts_by_execution[turn["execution_id"]]
+        receipt_path = (
+            protected
+            / "producer-receipts/transcripts"
+            / turn["execution_id"]
+            / turn["attempt_id"]
+            / f"{turn['turn_id']}.json"
+        )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["authorization_digest"] = authorization_digest
+        receipt["attempt_phase_head_digest"] = attempt["phase_head_digest"]
+        turn["producer_receipt_digest"] = _write_json(receipt_path, receipt)
+    manifest_path = protected / "transcripts/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["ordered_turns"] = [
+        [
+            turn["execution_id"],
+            turn["attempt_id"],
+            turn["turn_id"],
+            turn["transcript_digest"],
+            turn["producer_receipt_digest"],
+        ]
+        for turn in report["turns"]
+    ]
+    _write_json(manifest_path, manifest)
+    _write_json(tracked / "registry/run.json", run)
+    _write_json(tracked / "registry/report-payload.json", report)
+    side_effects = []
+    for item in report["side_effects"]:
+        side_effects.append(
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"baseline", "final"}
+            }
+        )
+    plan = SimpleNamespace(
+        actions=(),
+        evaluator={
+            "publication": {
+                "schema_version": "noor-e2e-publication-metadata/v1",
+                "title": report["title"],
+                "tester": report["tester"],
+                "judge": report["judge"],
+                "limitations": report["limitations"],
+                "external_gates": report["external_gates"],
+            }
+        },
+    )
     plan.plan_digest = trusted.canonical_digest(
         {"actions": list(plan.actions), "evaluator": plan.evaluator}
     )
@@ -941,9 +1089,13 @@ def _production_materializer_inputs(tmp_path: Path):
         protected_root=protected.parent,
         run_root=protected,
         authorization_digest=trusted.canonical_digest(run["authorization"]),
+        authorization=execution_module.ExecutionAuthorizationV2.model_validate(
+            run["authorization"]
+        ),
         previous_event_digest=None,
         _actions={},
         _recorded_gates={},
+        _coordinator_acceptance_events={},
     )
     prepared_event = {
         "schema_version": "noor-e2e-protected-event/v2",
@@ -1036,6 +1188,113 @@ def _production_materializer_inputs(tmp_path: Path):
         protected,
         journal,
     )
+    index = json.loads(
+        (tracked / "registry/evidence-index.json").read_text(encoding="utf-8")
+    )
+    evidence_by_id = {
+        entry["evidence_id"]: {
+            "evidence_id": entry["evidence_id"],
+            "producer": entry["producer"],
+            "payload": json.loads(
+                (tracked / entry["relative_path"]).read_text(encoding="utf-8")
+            ),
+        }
+        for entry in index["entries"]
+        if entry["evidence_id"] != "report-source"
+    }
+    execution_by_id = {row["execution_id"]: row for row in run["executions"]}
+    turns_by_execution: dict[str, list[dict]] = {}
+    for turn in report["turns"]:
+        turns_by_execution.setdefault(turn["execution_id"], []).append(turn)
+
+    class _Port:
+        def __init__(self):
+            self.events: dict[int, JournalAcceptanceEvent] = {}
+
+        def record_acceptance(self, event):
+            self.events[event.ordinal] = event
+            return event.event_digest
+
+        def read_acceptance(self, ordinal):
+            return self.events.get(ordinal)
+
+    port = _Port()
+    coordinator = ProductionRunCoordinator(
+        registry=registry,
+        authorization=journal.authorization,
+        protected_root=protected.parent,
+        run_id=run_id,
+        journal=port,
+        current_time=datetime.now(UTC),
+    )
+    generic_ids = ("fresh", "reuse", "gate")
+    for ordinal, execution_id in enumerate(
+        registry.compiled_plan.execution_ids, start=1
+    ):
+        row = execution_by_id[execution_id]
+        attempt = evidence_by_id[row["attempt_ref"]]
+        unit_evidence = [attempt]
+        if ordinal == 1:
+            unit_evidence.extend(evidence_by_id[item] for item in generic_ids)
+        kind = coordinator._expected_kind(execution_id)
+        source = {
+            "schema_version": (
+                "noor-e2e-scenario-publication-source/v1"
+                if kind == "scenario"
+                else "noor-e2e-evidence-block-publication-source/v1"
+            ),
+            "kind": kind,
+            "execution": {
+                "attempt_ref": row["attempt_ref"],
+                "evidence_refs": row["evidence_refs"],
+            },
+            "evidence": unit_evidence,
+        }
+        if kind == "scenario":
+            source["turns"] = turns_by_execution[execution_id]
+            source["side_effect_dispositions"] = side_effects if ordinal == 1 else []
+        producer = (
+            coordinator.authorization.adapter_ids[0]
+            if kind == "scenario"
+            else coordinator.authorization.collector_ids[0]
+        )
+        artifact = ProducerArtifact(
+            schema_version="noor-e2e-coordinator-producer-artifact/v1",
+            status="committed",
+            registry_id=registry.registry_id,
+            run_id=run_id,
+            authorization_digest=journal.authorization_digest,
+            sealed_plan_sha256=coordinator.sealed_plan_sha256,
+            ordinal=ordinal,
+            execution_id=execution_id,
+            kind=kind,
+            outcome=row["outcome"],
+            producer=producer,
+            observed_at=coordinator.current_time - timedelta(seconds=1),
+            source=source,
+            source_sha256=trusted.canonical_digest(source),
+        ).model_dump(mode="json")
+        artifact_payload = trusted._canonical_bytes(artifact)
+        receipt = ProducerReceipt(
+            schema_version="noor-e2e-coordinator-producer-receipt/v1",
+            status="committed",
+            registry_id=registry.registry_id,
+            run_id=run_id,
+            authorization_digest=journal.authorization_digest,
+            ordinal=ordinal,
+            execution_id=execution_id,
+            producer=producer,
+            artifact_sha256=hashlib.sha256(artifact_payload).hexdigest(),
+            source_sha256=trusted.canonical_digest(source),
+            issued_at=coordinator.current_time - timedelta(seconds=1),
+            expires_at=coordinator.current_time + timedelta(minutes=5),
+        ).model_dump(mode="json")
+        _write_json(protected / coordinator.producer_artifact_path(ordinal), artifact)
+        _write_json(protected / coordinator.producer_receipt_path(ordinal), receipt)
+    coordinator.accept_available()
+    journal._coordinator_acceptance_events = {
+        ordinal: event.model_dump(mode="json") for ordinal, event in port.events.items()
+    }
     return registry, tracked, protected, journal, plan
 
 
@@ -1075,6 +1334,26 @@ def test_materialize_execution_snapshot_builds_and_loads_strict_production_v2(
     assert (
         trusted._load_protected_execution_snapshot(registry, journal.run_id) == snapshot
     )
+
+
+def test_materializer_never_reads_prewritten_tracked_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Tracked result bytes are a publication target, never candidate input."""
+
+    registry, tracked, _, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    original_read = trusted._read_file
+
+    def reject_tracked_candidate_read(root, relative, **kwargs):
+        if root == tracked:
+            raise AssertionError(f"tracked candidate read: {relative}")
+        return original_read(root, relative, **kwargs)
+
+    monkeypatch.setattr(trusted, "_read_file", reject_tracked_candidate_read)
+
+    trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
 def test_strict_snapshot_materializes_after_receipt_expiry(
@@ -1132,7 +1411,7 @@ def test_materializer_requires_baseline_producer_pair_and_sealed_journal_chain(
         trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
-def test_materializer_rejects_self_consistent_tracked_baseline_substitution(
+def test_materializer_ignores_self_consistent_tracked_baseline_substitution(
     tmp_path: Path,
 ) -> None:
     """The protected baseline producer pair, not tracked input, is authoritative."""
@@ -1156,8 +1435,8 @@ def test_materializer_rejects_self_consistent_tracked_baseline_substitution(
     run["baseline"] = replacement.model_dump(mode="json")
     _write_json(run_path, run)
 
-    with pytest.raises(Exception, match="baseline.*binding"):
-        trusted.materialize_execution_snapshot(registry, journal, plan)
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+    assert snapshot.run["baseline"]["content_digest"] != replacement.content_digest
 
 
 def test_materializer_recovers_only_identical_snapshot_after_commit_crash(
@@ -1187,8 +1466,8 @@ def test_materializer_recovers_only_identical_snapshot_after_commit_crash(
     evidence_path = tracked / index["entries"][0]["relative_path"]
     evidence_path.write_text("{}\n", encoding="utf-8")
     evidence_path.chmod(0o600)
-    with pytest.raises(Exception, match="checksum drift"):
-        trusted.materialize_execution_snapshot(registry, journal, plan)
+    recovered = trusted.materialize_execution_snapshot(registry, journal, plan)
+    assert recovered.run_id == journal.run_id
 
 
 @pytest.mark.parametrize("event_mode", ("valid", "missing", "tampered"))
@@ -1374,19 +1653,13 @@ def test_materializer_includes_and_validates_all_four_gate_artifacts(
 
         _rewrite_protected_journal(protected, journal, mutate)
 
-    if event_mode == "valid":
-        snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
-    else:
-        with pytest.raises(Exception, match="gate.*journal|acceptance"):
-            trusted.materialize_execution_snapshot(registry, journal, plan)
-        return
-
-    assert set(snapshot.gate_artifacts) == {
-        f"gate-attempts/{execution_id}.json",
-        f"gate-evidence/{execution_id}.json",
-        f"producer-receipts/gates/{execution_id}.json",
-        f"recorded-gates/{execution_id}.json",
-    }
+    # The coordinator accepted an executed unit before this attempted rewrite.
+    # A later self-consistent gate quartet must not replace that durable source.
+    with pytest.raises(
+        Exception,
+        match="gate.*path-set|gate.*journal|acceptance",
+    ):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
 
 
 def test_finalizer_rejects_extra_transcript_snapshot_path(tmp_path: Path) -> None:

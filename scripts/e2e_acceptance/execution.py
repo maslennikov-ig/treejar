@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import stat
 import weakref
 from contextlib import suppress
 from dataclasses import dataclass
@@ -604,11 +605,45 @@ def _validated_protected_root(root: Path, *, create: bool) -> Path:
     return root
 
 
-def _expected_store_root_digests(root: Path) -> dict[str, str]:
+def _git_common_dir(repo_root: Path) -> Path:
+    git_marker = repo_root / ".git"
+    if git_marker.is_dir() and not git_marker.is_symlink():
+        git_dir = git_marker
+    elif git_marker.is_file() and not git_marker.is_symlink():
+        marker = git_marker.read_text(encoding="utf-8").strip()
+        if not marker.startswith("gitdir:"):
+            raise ExecutionValidationError("repository gitdir marker is invalid")
+        git_dir = Path(marker.removeprefix("gitdir:").strip())
+        if not git_dir.is_absolute():
+            git_dir = (repo_root / git_dir).resolve(strict=True)
+    else:
+        raise ExecutionValidationError("repository git directory is unavailable")
+    common_marker = git_dir / "commondir"
+    if common_marker.is_file() and not common_marker.is_symlink():
+        common_dir = Path(common_marker.read_text(encoding="utf-8").strip())
+        if not common_dir.is_absolute():
+            common_dir = (git_dir / common_dir).resolve(strict=True)
+        return common_dir
+    return git_dir
+
+
+def _expected_store_root_digests(
+    registry: TrustedAcceptanceRegistry, run_id: str
+) -> dict[str, str]:
+    protected_run_root = (
+        _git_common_dir(registry.repo_root)
+        / "codex-orchestration"
+        / "noor-e2e-acceptance"
+        / "published-runs"
+        / run_id
+    )
+    tracked_run_root = (
+        registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+    )
     return {
-        "raw": store_root_digest(root),
-        "tracked": store_root_digest(root / "tracked"),
-        "anchor": store_root_digest(root / "anchors"),
+        "raw": store_root_digest(protected_run_root),
+        "tracked": store_root_digest(tracked_run_root),
+        "anchor": store_root_digest(protected_run_root),
     }
 
 
@@ -715,7 +750,6 @@ def issue_execution_authorization_handle(
         or receipt.run_id != run_id
         or receipt.protected_root_digest != store_root_digest(root)
         or receipt.run_root_digest != store_root_digest(root / run_id)
-        or receipt.store_root_digests != _expected_store_root_digests(root)
         or not receipt.issued_at <= now < receipt.expires_at
     ):
         raise ExecutionValidationError("protected authority bundle receipt drift")
@@ -861,6 +895,162 @@ def issue_execution_authorization_handle(
     )
 
 
+def _write_or_validate_authority_payload(
+    root: Path, relative: str, value: object
+) -> str:
+    expected = _digest(value)
+    try:
+        return _write_exclusive(root, relative, value)
+    except ExecutionValidationError as exc:
+        try:
+            actual = hashlib.sha256(_read_protected(root, relative)).hexdigest()
+        except ExecutionValidationError as read_error:
+            raise ExecutionValidationError(
+                "protected authority replay is unreadable"
+            ) from read_error
+        if actual != expected:
+            raise ExecutionValidationError(
+                "protected authority replay differs from committed bytes"
+            ) from exc
+        return actual
+
+
+def commit_execution_authority_bundle(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    protected_root: Path,
+    run_id: str,
+    authorization: AuthorizationManifest,
+    request: PreflightRequest,
+    observation: PreflightObservation,
+    action_specs: AuthorizedActionSpecs,
+    store_ids: StoreIdentities,
+    adapter_ids: AuthorityAdapterIds,
+    collector_ids: AuthorityCollectorIds,
+    task1_bindings: Task1AuthorityBindings,
+    execution_authorities: ProtectedExecutionAuthorities,
+    receipt_issued_at: datetime,
+    receipt_expires_at: datetime,
+) -> AuthorityBundleReceipt:
+    """Validate and atomically commit one typed upstream authority bundle."""
+
+    if not isinstance(registry, TrustedAcceptanceRegistry):
+        raise ExecutionValidationError("trusted acceptance registry is required")
+    _validate_run_id(run_id)
+    if (
+        receipt_issued_at.tzinfo is None
+        or receipt_issued_at.utcoffset() is None
+        or receipt_expires_at.tzinfo is None
+        or receipt_expires_at.utcoffset() is None
+        or not authorization.issued_at
+        <= receipt_issued_at
+        < receipt_expires_at
+        <= authorization.expires_at
+    ):
+        raise ExecutionValidationError("authority receipt window binding drift")
+    if not protected_root.is_absolute() or any(
+        part in {"", ".", ".."} for part in protected_root.parts[1:]
+    ):
+        raise ExecutionValidationError(
+            "protected authority root must be absolute and normalized"
+        )
+    root = protected_root
+    expected_store_roots = _expected_store_root_digests(registry, run_id)
+    if (
+        store_ids.raw_root_digest != expected_store_roots["raw"]
+        or store_ids.tracked_root_digest != expected_store_roots["tracked"]
+        or store_ids.anchor_root_digest != expected_store_roots["anchor"]
+    ):
+        raise ExecutionValidationError("authority store root binding drift")
+    if (
+        task1_bindings.authorization_digest != registry.task1_authorization_digest
+        or task1_bindings.input_digests != registry.task1_input_digests
+        or not adapter_ids.values
+        or not collector_ids.values
+    ):
+        raise ExecutionValidationError("authority registry/producer binding drift")
+    _validate_protected_execution_authorities(
+        execution_authorities,
+        authorization=authorization,
+        plan=registry.compiled_plan,
+        bundle_issued_at=receipt_issued_at,
+    )
+    derived = build_execution_authorization_from_v1(
+        authorization,
+        observation,
+        request,
+        policy=registry.compiled_policy,
+        plan=registry.compiled_plan,
+        registry_id=registry.registry_id,
+        task1_authorization_digest=task1_bindings.authorization_digest,
+        task1_input_digests=task1_bindings.input_digests,
+        adapter_ids=adapter_ids.values,
+        collector_ids=collector_ids.values,
+        action_specs=action_specs.specs,
+        execution_authorities=execution_authorities,
+        store_ids=store_ids,
+        current_time=receipt_issued_at,
+    )
+    validate_execution_authorization(
+        derived,
+        policy=registry.compiled_policy,
+        plan=registry.compiled_plan,
+        registry_id=registry.registry_id,
+        current_time=receipt_issued_at,
+    )
+    payload_models: dict[str, BaseModel] = {
+        "authorization_manifest": authorization,
+        "preflight_request": request,
+        "preflight_observation": observation,
+        "action_specs": action_specs,
+        "store_identities": store_ids,
+        "adapter_ids": adapter_ids,
+        "collector_ids": collector_ids,
+        "task1_bindings": task1_bindings,
+        "execution_authorities": execution_authorities,
+    }
+    root = _validated_protected_root(root, create=True)
+    payload_digests = {
+        identity: _write_or_validate_authority_payload(
+            root,
+            _authority_bundle_relative(run_id, _AUTHORITY_PAYLOAD_PATHS[identity]),
+            model.model_dump(mode="json"),
+        )
+        for identity, model in payload_models.items()
+    }
+    expected_names = set(_AUTHORITY_PAYLOAD_PATHS.values())
+    bundle_fd = _open_absolute_chain(root / "authority-bundles" / run_id, create=False)
+    try:
+        actual_names = set(os.listdir(bundle_fd))
+        if actual_names != expected_names and actual_names != expected_names | {
+            "receipt.json"
+        }:
+            raise ExecutionValidationError("protected authority path-set drift")
+        for name in actual_names:
+            metadata = os.stat(name, dir_fd=bundle_fd, follow_symlinks=False)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ExecutionValidationError("protected authority path-set is unsafe")
+    finally:
+        os.close(bundle_fd)
+    receipt = AuthorityBundleReceipt(
+        schema_version="noor-e2e-authority-bundle-receipt/v2",
+        registry_id=registry.registry_id,
+        run_id=run_id,
+        protected_root_digest=store_root_digest(root),
+        run_root_digest=store_root_digest(root / run_id),
+        store_root_digests=expected_store_roots,
+        payload_digests=payload_digests,
+        issued_at=receipt_issued_at,
+        expires_at=receipt_expires_at,
+    )
+    _write_or_validate_authority_payload(
+        root,
+        _authority_bundle_relative(run_id, "receipt.json"),
+        receipt.model_dump(mode="json"),
+    )
+    return receipt
+
+
 def _write_test_authority_bundle(
     *,
     registry: TrustedAcceptanceRegistry,
@@ -878,19 +1068,12 @@ def _write_test_authority_bundle(
     receipt_issued_at: datetime,
     receipt_expires_at: datetime,
 ) -> AuthorityBundleReceipt:
-    """Fixture-only producer for a complete persistent typed authority bundle."""
+    """Fixture-only writer that preserves deliberately invalid test inputs."""
 
     if not isinstance(registry, TrustedAcceptanceRegistry):
         raise ExecutionValidationError("trusted acceptance registry is required")
     _validate_run_id(run_id)
     root = _validated_protected_root(protected_root, create=True)
-    expected_store_roots = _expected_store_root_digests(root)
-    if (
-        store_ids.raw_root_digest != expected_store_roots["raw"]
-        or store_ids.tracked_root_digest != expected_store_roots["tracked"]
-        or store_ids.anchor_root_digest != expected_store_roots["anchor"]
-    ):
-        raise ExecutionValidationError("test authority store root binding drift")
     payload_models: dict[str, BaseModel] = {
         "authorization_manifest": authorization,
         "preflight_request": request,
@@ -916,7 +1099,11 @@ def _write_test_authority_bundle(
         run_id=run_id,
         protected_root_digest=store_root_digest(root),
         run_root_digest=store_root_digest(root / run_id),
-        store_root_digests=expected_store_roots,
+        store_root_digests={
+            "raw": store_ids.raw_root_digest,
+            "tracked": store_ids.tracked_root_digest,
+            "anchor": store_ids.anchor_root_digest,
+        },
         payload_digests=payload_digests,
         issued_at=receipt_issued_at,
         expires_at=receipt_expires_at,

@@ -538,6 +538,17 @@ class ClientReportPayload(_StrictModel):
     defects: tuple[DefectReport, ...]
 
 
+class ProtectedPublicationMetadata(_StrictModel):
+    """Sealed run-level facts; execution outcomes and transcript facts are excluded."""
+
+    schema_version: Literal["noor-e2e-publication-metadata/v1"]
+    title: str = Field(min_length=1)
+    tester: EvaluatorReport
+    judge: EvaluatorReport
+    limitations: tuple[str, ...]
+    external_gates: tuple[str, ...]
+
+
 class VerifiedRun(_StrictModel):
     rollups: dict[str, bool]
     report_bytes: bytes
@@ -896,6 +907,8 @@ def _validate_baseline_readback_artifacts(
         receipt = BaselineReadbackProducerReceipt.model_validate(
             artifacts[receipt_relative]
         )
+    except TrustedRunError:
+        raise
     except (KeyError, ValueError) as exc:
         raise TrustedRunError(
             "baseline readback protected producer artifact is invalid"
@@ -1692,6 +1705,349 @@ def _tree_relative_files(
     return frozenset(result)
 
 
+def _publication_evidence_path(
+    evidence_id: str,
+    producer: str,
+    payload: dict[str, Any],
+) -> str:
+    """Derive publication paths from typed identities, never producer-supplied paths."""
+
+    if producer == "protected-attempt-committer":
+        execution_id = payload.get("execution_id")
+        if not isinstance(execution_id, str) or not execution_id:
+            raise TrustedRunError("attempt publication source lacks execution identity")
+        return f"attempts/{execution_id}.json"
+    if not evidence_id or any(
+        character
+        not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._"
+        for character in evidence_id
+    ):
+        raise TrustedRunError("publication evidence identity is unsafe")
+    return f"evidence/{evidence_id}.json"
+
+
+def _derive_producer_publication_candidate(
+    registry: Any,
+    journal: Any,
+    sealed: dict[str, Any],
+    candidate: Any,
+) -> tuple[dict[str, Any], dict[str, Any], tuple[ProtectedEvidenceRecord, ...]]:
+    """Derive run/report/evidence solely from accepted typed protected facts."""
+
+    try:
+        metadata = ProtectedPublicationMetadata.model_validate(
+            sealed["evaluator"]["publication"]
+        )
+        baseline = BaselineReadbackArtifact.model_validate(
+            _parse_json(
+                _read_file(
+                    journal.run_root,
+                    "collector-artifacts/baseline-readback.json",
+                    protected=True,
+                ),
+                "baseline publication producer artifact",
+            )
+        ).observation
+        final_artifact = ProtectedFinalReadbackArtifact.model_validate(
+            _parse_json(
+                _read_file(
+                    journal.run_root,
+                    "collector-artifacts/final-readback.json",
+                    protected=True,
+                ),
+                "final publication producer artifact",
+            )
+        )
+        final = final_artifact.observation
+    except TrustedRunError:
+        raise
+    except (KeyError, ValueError) as exc:
+        raise TrustedRunError("sealed publication metadata is invalid") from exc
+
+    try:
+        authorization_v1_payload = _read_file(
+            journal.protected_root,
+            f"authority-bundles/{journal.run_id}/authorization-v1.json",
+            protected=True,
+        )
+        observation_payload = _read_file(
+            journal.protected_root,
+            f"authority-bundles/{journal.run_id}/preflight-observation.json",
+            protected=True,
+        )
+        receipt = _parse_json(
+            _read_file(
+                journal.protected_root,
+                f"authority-bundles/{journal.run_id}/receipt.json",
+                protected=True,
+            ),
+            "protected authority bundle receipt",
+        )
+        authorization_v1 = _parse_json(
+            authorization_v1_payload, "protected runtime identity authority"
+        )
+        observation = _parse_json(
+            observation_payload, "protected preflight observation"
+        )
+        expected_identity = authorization_v1["expected_identity"]
+        observed_identity = observation["identity"]
+        payload_digests = receipt["payload_digests"]
+        if (
+            receipt.get("schema_version") != "noor-e2e-authority-bundle-receipt/v2"
+            or receipt.get("registry_id") != registry.registry_id
+            or receipt.get("run_id") != journal.run_id
+            or not isinstance(payload_digests, dict)
+            or payload_digests.get("authorization_manifest")
+            != _sha256(authorization_v1_payload)
+            or payload_digests.get("preflight_observation")
+            != _sha256(observation_payload)
+            or canonical_digest(authorization_v1)
+            != journal.authorization.live_binding.v1_manifest_digest
+            or canonical_digest(observation)
+            != journal.authorization.live_binding.preflight_observation_digest
+            or not isinstance(expected_identity, dict)
+            or observed_identity != expected_identity
+            or canonical_digest(expected_identity)
+            != journal.authorization.live_binding.runtime_identity_digest
+        ):
+            raise TrustedRunError("protected runtime identity binding drift")
+        runtime_identity = RuntimeIdentityReport(
+            repository_commit=expected_identity["repository_commit"],
+            deployed_release_sha=expected_identity["deployed_release_sha"],
+            ci_run_id=expected_identity["ci_run_id"],
+            app_version=expected_identity["app_version"],
+            migration_head=expected_identity["migration_head"],
+            models=(
+                expected_identity["main_model"],
+                expected_identity["fast_model"],
+            ),
+            services={"runtime": "preflight-verified"},
+            evidence_refs=("report-source",),
+        )
+    except (KeyError, ValueError) as exc:
+        raise TrustedRunError("protected runtime identity is invalid") from exc
+
+    evidence: list[ProtectedEvidenceRecord] = []
+    executions: list[ExecutionRow] = []
+    turns: list[TurnReport] = []
+    disposition_sources: list[Any] = []
+    for record, source in zip(candidate.records, candidate.sources, strict=True):
+        execution_row = ExecutionRow(
+            execution_id=record.artifact.execution_id,
+            outcome=record.artifact.outcome,
+            attempt_ref=source.execution.attempt_ref,
+            evidence_refs=source.execution.evidence_refs,
+        )
+        executions.append(execution_row)
+        attempt_sources = [
+            item
+            for item in source.evidence
+            if item.evidence_id == source.execution.attempt_ref
+            and item.producer == "protected-attempt-committer"
+        ]
+        if (
+            len(attempt_sources) != 1
+            or attempt_sources[0].payload.get("execution_id")
+            != record.artifact.execution_id
+            or attempt_sources[0].payload.get("outcome") != record.artifact.outcome
+        ):
+            raise TrustedRunError("accepted attempt publication outcome binding drift")
+        for item in source.evidence:
+            evidence.append(
+                ProtectedEvidenceRecord(
+                    evidence_id=item.evidence_id,
+                    relative_path=_publication_evidence_path(
+                        item.evidence_id, item.producer, item.payload
+                    ),
+                    producer=item.producer,
+                    payload=item.payload,
+                )
+            )
+        raw_turns = getattr(source, "turns", ())
+        disposition_sources.extend(getattr(source, "side_effect_dispositions", ()))
+        try:
+            turns.extend(TurnReport.model_validate(item) for item in raw_turns)
+        except ValueError as exc:
+            raise TrustedRunError(
+                "accepted scenario transcript facts are invalid"
+            ) from exc
+
+    execution_ids = tuple(row.execution_id for row in executions)
+    if execution_ids != registry.compiled_plan.execution_ids:
+        raise TrustedRunError("accepted publication execution order drift")
+    evidence_ids = {item.evidence_id for item in evidence}
+    if len(evidence_ids) != len(evidence):
+        raise TrustedRunError("accepted publication evidence identity drift")
+    if any(
+        row.attempt_ref not in evidence_ids
+        or not set(row.evidence_refs) <= evidence_ids
+        for row in executions
+    ):
+        raise TrustedRunError("accepted publication execution evidence drift")
+
+    outcomes = {row.execution_id: row.outcome for row in executions}
+    evaluation = {
+        row.criterion_id: row.outcome for row in candidate.evaluation.criteria
+    }
+    criteria: list[CriterionRow] = []
+    for criterion_id, criterion in registry.compiled_plan.criteria.items():
+        obligation_outcomes = {
+            identity: outcomes[identity] for identity in criterion.obligation_ids
+        }
+        expected_outcome = aggregate_criterion_outcome(
+            criterion,
+            obligation_outcomes,
+            valid_exclusions=frozenset(),
+        )
+        if evaluation.get(criterion_id) != expected_outcome:
+            raise TrustedRunError("coordinator criterion evaluation drift")
+        mode_refs = tuple(
+            item.evidence_id
+            for item in evidence
+            if (
+                (
+                    criterion.evidence_mode is EvidenceMode.FRESH
+                    and isinstance(item.payload.get("freshness_identity"), dict)
+                )
+                or (
+                    criterion.evidence_mode is EvidenceMode.REUSED_EXACT
+                    and isinstance(item.payload.get("reused_exact_identity"), dict)
+                )
+                or (
+                    criterion.evidence_mode is EvidenceMode.EXTERNAL_GATE
+                    and isinstance(item.payload.get("external_gate_resolution"), str)
+                )
+            )
+        )
+        if not mode_refs:
+            raise TrustedRunError(
+                f"accepted publication lacks {criterion.evidence_mode.value} proof"
+            )
+        criteria.append(
+            CriterionRow(
+                criterion_id=criterion_id,
+                outcome=expected_outcome,
+                evidence_mode=criterion.evidence_mode,
+                obligation_outcomes=obligation_outcomes,
+                evidence_refs=mode_refs,
+                reasoning="Derived from protected accepted producer facts.",
+            )
+        )
+
+    report_criteria = tuple(
+        ReportCriterion(
+            criterion_id=row.criterion_id,
+            evidence_mode=row.evidence_mode,
+            outcome=row.outcome,
+            evidence_refs=row.evidence_refs,
+            reasoning=row.reasoning,
+        )
+        for row in criteria
+    )
+    report_executions = tuple(
+        ReportExecution(
+            execution_id=row.execution_id,
+            outcome=row.outcome,
+            attempt_ref=row.attempt_ref,
+            evidence_refs=row.evidence_refs,
+        )
+        for row in executions
+    )
+    side_effects: list[SideEffectReport] = []
+    changed_artifacts = {
+        artifact_id
+        for artifact_id in set(baseline.inventory) | set(final.inventory)
+        if baseline.inventory.get(artifact_id) != final.inventory.get(artifact_id)
+    }
+    disposition_ids = {disposition.artifact_id for disposition in disposition_sources}
+    if disposition_ids != changed_artifacts or len(disposition_ids) != len(
+        disposition_sources
+    ):
+        raise TrustedRunError(
+            "side-effect disposition metadata does not cover collector delta"
+        )
+    for disposition in disposition_sources:
+        raw = disposition.model_dump(mode="json")
+        artifact_id = disposition.artifact_id
+        if (
+            not isinstance(artifact_id, str)
+            or artifact_id not in baseline.inventory
+            or artifact_id not in final.inventory
+        ):
+            raise TrustedRunError("side-effect disposition lacks collector identity")
+        side_effects.append(
+            SideEffectReport.model_validate(
+                {
+                    **raw,
+                    "baseline": baseline.inventory[artifact_id],
+                    "final": final.inventory[artifact_id],
+                }
+            )
+        )
+    if not turns:
+        raise TrustedRunError("accepted scenario publication has no transcript turns")
+    ordered_turns = tuple(turns)
+    latencies = tuple(
+        max(0, int((turn.final_visible_at - turn.sent_at).total_seconds() * 1000))
+        for turn in ordered_turns
+    )
+    ordered_latencies = sorted(latencies)
+    p50 = ordered_latencies[(len(ordered_latencies) - 1) // 2]
+    p95 = ordered_latencies[
+        min(len(ordered_latencies) - 1, (95 * len(ordered_latencies) - 1) // 100)
+    ]
+    latency = LatencyReport(
+        p50_ms=p50,
+        p95_ms=p95,
+        max_ms=max(ordered_latencies),
+        evidence_refs=tuple(row.attempt_ref for row in executions),
+    )
+    report_document = ClientReportPayload(
+        schema_version="noor-e2e-client-report/v2",
+        run_id=journal.run_id,
+        title=metadata.title,
+        generated_at=final.observed_at,
+        identity=runtime_identity,
+        tester=metadata.tester,
+        judge=metadata.judge,
+        turns=ordered_turns,
+        executions=report_executions,
+        criteria=report_criteria,
+        side_effects=tuple(side_effects),
+        latency=latency,
+        limitations=metadata.limitations,
+        external_gates=metadata.external_gates,
+        defects=(),
+    )
+    delivered_at = tuple(
+        turn.delivered_at for turn in ordered_turns if turn.delivered_at is not None
+    )
+    run_document = TrustedRunDocument(
+        schema_version="noor-e2e-trusted-run/v2",
+        run_id=journal.run_id,
+        authorization=journal.authorization,
+        baseline=baseline,
+        final=final,
+        final_visible_at=tuple(turn.final_visible_at for turn in ordered_turns),
+        delivered_at=delivered_at,
+        action_at=(final_artifact.final_turn_anchor_at,),
+        executions=tuple(executions),
+        criteria=tuple(criteria),
+        open_p0_p1=(),
+        side_effect_ledger_digest=canonical_digest(
+            [item.model_dump(mode="json") for item in side_effects]
+        ),
+        final_inventory_digest=canonical_digest(final.inventory),
+        evidence_index_digest="0" * 64,
+        report_payload_digest="0" * 64,
+    )
+    return (
+        run_document.model_dump(mode="json"),
+        report_document.model_dump(mode="json"),
+        tuple(evidence),
+    )
+
+
 def materialize_execution_snapshot(
     registry: Any,
     journal: Any,
@@ -1715,7 +2071,6 @@ def materialize_execution_snapshot(
             "snapshot materialization requires a terminal attempt-committed journal"
         )
     run_id = journal.run_id
-    tracked = registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
     try:
         sealed_payload = _read_file(
             journal.run_root, "run-plan/sealed.json", protected=True
@@ -1744,49 +2099,45 @@ def materialize_execution_snapshot(
             or canonical_digest(sealed.get("evaluator")) != sealed_plan.evaluator_digest
         ):
             raise TrustedRunError("sealed plan/evaluator drift")
-        index = EvidenceIndex.model_validate(
-            _parse_json(
-                _read_file(tracked, "registry/evidence-index.json"),
-                "candidate evidence index",
-            )
-        )
-        run = _parse_json(_read_file(tracked, "registry/run.json"), "candidate run")
-        report = _parse_json(
-            _read_file(tracked, "registry/report-payload.json"), "candidate report"
-        )
     except (ValueError, TrustedRunError) as exc:
-        raise TrustedRunError("canonical candidate artifacts are incomplete") from exc
+        raise TrustedRunError("sealed production artifacts are incomplete") from exc
+    from scripts.e2e_acceptance.coordinator import (
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+    )
+
+    coordinator = ProductionRunCoordinator(
+        registry=registry,
+        authorization=journal.authorization,
+        protected_root=journal.protected_root,
+        run_id=run_id,
+        journal=ProtectedJournalAcceptancePort(journal=journal),
+        current_time=journal.authorization.issued_at,
+    )
     try:
+        run, report, evidence = _derive_producer_publication_candidate(
+            registry,
+            journal,
+            sealed,
+            coordinator.publication_candidate(),
+        )
         run_document = TrustedRunDocument.model_validate(run)
         report_document = ClientReportPayload.model_validate(report)
+    except TrustedRunError:
+        raise
     except ValueError as exc:
-        raise TrustedRunError("candidate run or report contract is invalid") from exc
+        raise TrustedRunError(
+            "producer-derived run or report contract is invalid"
+        ) from exc
     if (
-        index.run_id != run_id
-        or run_document.run_id != run_id
+        run_document.run_id != run_id
         or report_document.run_id != run_id
         or canonical_digest(run_document.authorization.model_dump(mode="json"))
         != journal.authorization_digest
         or tuple(row.execution_id for row in run_document.executions)
         != registry.compiled_plan.execution_ids
-        or len({entry.evidence_id for entry in index.entries}) != len(index.entries)
-        or len({entry.relative_path for entry in index.entries}) != len(index.entries)
     ):
-        raise TrustedRunError("canonical candidate run/report authorization drift")
-    evidence_records: list[ProtectedEvidenceRecord] = []
-    for entry in index.entries:
-        payload = _read_file(tracked, entry.relative_path)
-        if _sha256(payload) != entry.sha256:
-            raise TrustedRunError("candidate evidence index checksum drift")
-        evidence_records.append(
-            ProtectedEvidenceRecord(
-                evidence_id=entry.evidence_id,
-                relative_path=entry.relative_path,
-                producer=entry.producer,
-                payload=_parse_json(payload, "candidate evidence"),
-            )
-        )
-    evidence = tuple(evidence_records)
+        raise TrustedRunError("producer-derived run/report authorization drift")
     attempt_commits = {
         record.payload["execution_id"]: _parse_json(
             _read_file(
@@ -2993,6 +3344,11 @@ def _load_verified_run(
                 **retention_payload,
                 "authority_digest": canonical_digest(retention_payload),
             }
+        changed_inventory = {
+            artifact_id: final_state
+            for artifact_id, final_state in run.final.inventory.items()
+            if run.baseline.inventory.get(artifact_id) != final_state
+        }
         validate_side_effect_closeout(
             [
                 {
@@ -3016,7 +3372,7 @@ def _load_verified_run(
                 }
                 for item in report.side_effects
             ],
-            observed_inventory=run.final.inventory,
+            observed_inventory=changed_inventory,
             authorized_cleanup_owner=(
                 run.authorization.side_effect_authority.cleanup_owner
             ),

@@ -159,6 +159,76 @@ class ProducerReceipt(_StrictModel):
         return self
 
 
+class PublicationEvidenceSource(_StrictModel):
+    """One producer-owned evidence payload; publication paths are derived later."""
+
+    evidence_id: str = Field(min_length=1)
+    producer: str = Field(min_length=1)
+    payload: dict[str, Any]
+
+
+class PublicationExecutionSource(_StrictModel):
+    """Outcome-free execution facts bound to the outer producer artifact."""
+
+    attempt_ref: str = Field(min_length=1)
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
+
+
+class SideEffectDispositionSource(_StrictModel):
+    artifact_id: str = Field(min_length=1)
+    scenario_id: str = Field(min_length=1)
+    subsystem: str = Field(min_length=1)
+    artifact_type: str = Field(min_length=1)
+    expected_effect: dict[str, Any]
+    disposition: str = Field(min_length=1)
+    owner: str = Field(min_length=1)
+    cleanup_authority: str = Field(min_length=1)
+    follow_up_suppressed: bool
+    retention_pre_authorized: bool | None = None
+    retention_owner: str | None = None
+    retention_authority_digest: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    retention_expires_at: datetime | None = None
+    final_disposition_date: datetime | None = None
+    checksum_refs: tuple[str, ...]
+
+
+class ScenarioPublicationSource(_StrictModel):
+    schema_version: Literal["noor-e2e-scenario-publication-source/v1"]
+    kind: Literal["scenario"]
+    execution: PublicationExecutionSource
+    evidence: tuple[PublicationEvidenceSource, ...] = Field(min_length=1)
+    turns: tuple[dict[str, Any], ...] = Field(min_length=1)
+    side_effect_dispositions: tuple[SideEffectDispositionSource, ...] = ()
+
+
+class EvidenceBlockPublicationSource(_StrictModel):
+    schema_version: Literal["noor-e2e-evidence-block-publication-source/v1"]
+    kind: Literal["evidence_block"]
+    execution: PublicationExecutionSource
+    evidence: tuple[PublicationEvidenceSource, ...] = Field(min_length=1)
+
+
+PublicationUnitSource = ScenarioPublicationSource | EvidenceBlockPublicationSource
+
+
+def validate_publication_source(
+    kind: Literal["scenario", "evidence_block"], source: dict[str, Any]
+) -> PublicationUnitSource:
+    model = (
+        ScenarioPublicationSource
+        if kind == "scenario"
+        else EvidenceBlockPublicationSource
+    )
+    try:
+        return model.model_validate(source)
+    except ValueError as exc:
+        raise CoordinatorError(
+            "producer publication source contract is invalid"
+        ) from exc
+
+
 class JournalAcceptanceEvent(_StrictModel):
     schema_version: Literal["noor-e2e-coordinator-journal-acceptance/v1"]
     run_id: str = Field(min_length=1)
@@ -319,6 +389,15 @@ class CoordinatorResult:
 
 
 @dataclass(frozen=True)
+class PublicationCandidate:
+    """Typed accepted facts used by the protected publication builder."""
+
+    records: tuple[AcceptedExecutionRecord, ...]
+    sources: tuple[PublicationUnitSource, ...]
+    evaluation: EvaluationBundle
+
+
+@dataclass(frozen=True)
 class DecisiveEvidenceResolver:
     """Digest-addressable, current-run evidence only."""
 
@@ -419,6 +498,15 @@ class ProductionRunCoordinator:
             return "evidence_block"
         raise CoordinatorError("canonical execution kind is unknown")
 
+    def _allowed_producers(
+        self, kind: Literal["scenario", "evidence_block"]
+    ) -> tuple[str, ...]:
+        return (
+            tuple(self.authorization.adapter_ids)
+            if kind == "scenario"
+            else tuple(self.authorization.collector_ids)
+        )
+
     def _validate_path_set(self, directory: str, expected: set[str]) -> None:
         """Enumerate one fixed protected directory through no-follow descriptors."""
 
@@ -466,6 +554,7 @@ class ProductionRunCoordinator:
             raise CoordinatorError(
                 "producer artifact/receipt contract is invalid"
             ) from exc
+        validate_publication_source(artifact.kind, artifact.source)
         if (
             artifact.registry_id != self.registry.registry_id
             or artifact.run_id != self.run_id
@@ -474,6 +563,7 @@ class ProductionRunCoordinator:
             or artifact.ordinal != ordinal
             or artifact.execution_id != expected_execution
             or artifact.kind != self._expected_kind(expected_execution)
+            or artifact.producer not in self._allowed_producers(artifact.kind)
             or receipt.registry_id != artifact.registry_id
             or receipt.run_id != artifact.run_id
             or receipt.authorization_digest != artifact.authorization_digest
@@ -508,6 +598,7 @@ class ProductionRunCoordinator:
                 record = AcceptedExecutionRecord.model_validate(value)
             except ValueError as exc:
                 raise CoordinatorError("accepted record is invalid") from exc
+            validate_publication_source(record.artifact.kind, record.artifact.source)
             expected_fold = _digest(
                 {
                     "prior_fold_digest": previous,
@@ -538,6 +629,8 @@ class ProductionRunCoordinator:
                 or record.artifact.execution_id != execution_id
                 or record.artifact.ordinal != ordinal
                 or record.artifact.kind != self._expected_kind(execution_id)
+                or record.artifact.producer
+                not in self._allowed_producers(record.artifact.kind)
                 or record.artifact.sealed_plan_sha256 != self.sealed_plan_sha256
                 or record.receipt.ordinal != ordinal
                 or record.receipt.execution_id != execution_id
@@ -681,6 +774,70 @@ class ProductionRunCoordinator:
             digests=digests,
         )
 
+    def publication_candidate(self) -> PublicationCandidate:
+        """Return only typed, accepted per-unit producer facts in canonical order."""
+
+        records_with_digests = self._read_accepted_records()
+        if len(records_with_digests) != 29:
+            raise CoordinatorError(
+                "publication requires exactly 29 accepted producer records"
+            )
+        sources: list[PublicationUnitSource] = []
+        evidence_ids: set[str] = set()
+        turn_ids: set[tuple[str, str, str]] = set()
+        for record, _ in records_with_digests:
+            model = (
+                ScenarioPublicationSource
+                if record.artifact.kind == "scenario"
+                else EvidenceBlockPublicationSource
+            )
+            try:
+                source = model.model_validate(record.artifact.source)
+            except ValueError as exc:
+                raise CoordinatorError(
+                    "accepted publication source schema is invalid"
+                ) from exc
+            if source.kind != record.artifact.kind:
+                raise CoordinatorError("accepted publication source kind drift")
+            unit_evidence = {item.evidence_id for item in source.evidence}
+            if (
+                source.execution.attempt_ref not in unit_evidence
+                or evidence_ids.intersection(unit_evidence)
+            ):
+                raise CoordinatorError(
+                    "accepted publication evidence identity/binding drift"
+                )
+            evidence_ids.update(unit_evidence)
+            if isinstance(source, ScenarioPublicationSource):
+                for raw_turn in source.turns:
+                    identity = (
+                        raw_turn.get("execution_id"),
+                        raw_turn.get("attempt_id"),
+                        raw_turn.get("turn_id"),
+                    )
+                    if (
+                        identity[0] != record.artifact.execution_id
+                        or any(
+                            not isinstance(item, str) or not item for item in identity
+                        )
+                        or identity in turn_ids
+                    ):
+                        raise CoordinatorError(
+                            "accepted scenario transcript identity drift"
+                        )
+                    turn_ids.add(identity)  # type: ignore[arg-type]
+            sources.append(source)
+        if any(
+            not set(source.execution.evidence_refs) <= evidence_ids
+            for source in sources
+        ):
+            raise CoordinatorError("accepted publication execution evidence drift")
+        return PublicationCandidate(
+            records=tuple(record for record, _ in records_with_digests),
+            sources=tuple(sources),
+            evaluation=self.finalize().evaluation,
+        )
+
     def finalize(self) -> CoordinatorResult:
         records = self._read_accepted_records()
         if len(records) != 29:
@@ -772,5 +929,12 @@ __all__ = [
     "ProtectedJournalAcceptancePort",
     "ProducerArtifact",
     "ProducerReceipt",
+    "PublicationCandidate",
+    "PublicationEvidenceSource",
+    "PublicationExecutionSource",
+    "SideEffectDispositionSource",
+    "ScenarioPublicationSource",
+    "EvidenceBlockPublicationSource",
+    "validate_publication_source",
     "ProductionRunCoordinator",
 ]

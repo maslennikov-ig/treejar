@@ -19,7 +19,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.evidence import redact_payload, validate_redacted_payload
-from scripts.e2e_acceptance.policy import ReadbackObservation
+from scripts.e2e_acceptance.policy import ReadbackObservation, TrustedAcceptanceRegistry
 
 
 class ProductionAdapterError(ValueError):
@@ -217,15 +217,15 @@ class AdapterDispatchResult(_StrictModel):
     projection: dict[str, Any]
 
 
-def _tracked_root(journal: execution.ProtectedExecutionJournal) -> Path:
-    root = journal.protected_root / "tracked"
-    if (
-        not journal.authorization.store_ids.tracked_store_id
-        or execution.store_root_digest(root)
-        != journal.authorization.store_ids.tracked_root_digest
-    ):
+def _runtime_projection_root(
+    journal: execution.ProtectedExecutionJournal,
+) -> Path:
+    if not journal.authorization.store_ids.tracked_store_id:
         raise ProductionAdapterError("authorization lacks tracked store identity")
-    return root / journal.run_id
+    # The authority receipt separately binds journal.protected_root. StoreIdentities
+    # bind the canonical final publication roots and must not be repurposed for
+    # mutable execution-time projections.
+    return journal.protected_root / "tracked" / journal.run_id
 
 
 def write_protected_message(
@@ -300,7 +300,7 @@ class WazzupWebhookAdapter:
         validate_redacted_payload(redacted)
         tracked_ref = f"adapter-responses/{reservation.action_id}.json"
         tracked_digest = _write_or_validate_exact(
-            _tracked_root(self.journal),
+            _runtime_projection_root(self.journal),
             tracked_ref,
             {"raw_sha256": raw_digest, "response": redacted},
         )
@@ -369,6 +369,173 @@ class ProtectedRunPlan:
     @classmethod
     def load(cls, protected_root: Path, relative_path: str) -> ProtectedRunPlan:
         return cls.from_payload(_read_protected_json(protected_root, relative_path))
+
+
+@dataclass(frozen=True)
+class ProductionUnitCommit:
+    artifact: Any
+    receipt: Any
+
+
+def commit_execution_unit_source(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    journal: execution.ProtectedExecutionJournal,
+    sealed_plan: ProtectedRunPlan,
+    ordinal: int,
+    outcome: execution.OutcomeValue,
+    source: Mapping[str, Any],
+    observed_at: datetime | None = None,
+) -> ProductionUnitCommit:
+    """Commit one typed unit from an authorization-selected production producer."""
+
+    from scripts.e2e_acceptance.coordinator import (
+        ProducerArtifact,
+        ProducerReceipt,
+        ProductionRunCoordinator,
+        validate_publication_source,
+    )
+
+    if (
+        not isinstance(registry, TrustedAcceptanceRegistry)
+        or journal.phase != "executing"
+        or ordinal < 1
+        or ordinal > len(registry.compiled_plan.execution_ids)
+    ):
+        raise ProductionAdapterError("production unit commit boundary is invalid")
+    load_sealed_run_plan(journal, sealed_plan)
+    execution_id = registry.compiled_plan.execution_ids[ordinal - 1]
+    kind = (
+        "scenario"
+        if execution_id in registry.compiled_policy.scenarios
+        else "evidence_block"
+    )
+    typed_source = validate_publication_source(kind, dict(source))
+    attempt_items = [
+        item
+        for item in typed_source.evidence
+        if item.evidence_id == typed_source.execution.attempt_ref
+        and item.producer == "protected-attempt-committer"
+    ]
+    if len(attempt_items) != 1:
+        raise ProductionAdapterError("production unit lacks one protected attempt")
+    attempt = attempt_items[0].payload
+    protected_commit_ref = attempt.get("protected_commit_ref")
+    try:
+        commit_payload = execution._read_protected(
+            journal.run_root, str(protected_commit_ref)
+        )
+        protected_commit = json.loads(commit_payload)
+    except (execution.ExecutionValidationError, json.JSONDecodeError) as exc:
+        raise ProductionAdapterError(
+            "production unit protected attempt commit is unavailable"
+        ) from exc
+    if (
+        attempt.get("schema_version") != "noor-e2e-committed-execution/v2"
+        or attempt.get("run_id") != journal.run_id
+        or attempt.get("registry_id") != registry.registry_id
+        or attempt.get("execution_id") != execution_id
+        or attempt.get("outcome") != outcome
+        or attempt.get("authorization_digest") != journal.authorization_digest
+        or attempt.get("protected_commit_digest")
+        != hashlib.sha256(commit_payload).hexdigest()
+        or protected_commit.get("schema_version") != "noor-e2e-attempt-commit/v2"
+        or protected_commit.get("status") != "committed"
+        or protected_commit.get("run_id") != journal.run_id
+        or protected_commit.get("execution_id") != execution_id
+        or protected_commit.get("authorization_digest") != journal.authorization_digest
+        or protected_commit.get("attempt_digest") != attempt.get("attempt_digest")
+        or protected_commit.get("semantic_digest") != attempt.get("semantic_digest")
+    ):
+        raise ProductionAdapterError("production unit attempt/outcome binding drift")
+    for turn in getattr(typed_source, "turns", ()):
+        try:
+            transcript_relative = f"transcripts/{execution_id}/{turn['attempt_id']}/{turn['turn_id']}.json"
+            receipt_relative = (
+                f"producer-receipts/transcripts/{execution_id}/"
+                f"{turn['attempt_id']}/{turn['turn_id']}.json"
+            )
+            transcript_payload = execution._read_protected(
+                journal.run_root, transcript_relative
+            )
+            transcript_receipt_payload = execution._read_protected(
+                journal.run_root, receipt_relative
+            )
+            transcript_receipt = json.loads(transcript_receipt_payload)
+        except (
+            KeyError,
+            execution.ExecutionValidationError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise ProductionAdapterError(
+                "production scenario transcript source is unavailable"
+            ) from exc
+        if (
+            turn.get("execution_id") != execution_id
+            or turn.get("transcript_digest")
+            != hashlib.sha256(transcript_payload).hexdigest()
+            or turn.get("producer_receipt_digest")
+            != hashlib.sha256(transcript_receipt_payload).hexdigest()
+            or transcript_receipt.get("authorization_digest")
+            != journal.authorization_digest
+            or transcript_receipt.get("attempt_digest") != attempt.get("attempt_digest")
+            or transcript_receipt.get("attempt_phase_head_digest")
+            != attempt.get("phase_head_digest")
+        ):
+            raise ProductionAdapterError(
+                "production scenario transcript/attempt binding drift"
+            )
+    producer = (
+        journal.authorization.adapter_ids[0]
+        if kind == "scenario"
+        else journal.authorization.collector_ids[0]
+    )
+    issued_at = observed_at or datetime.now(UTC)
+    if issued_at.tzinfo is None or issued_at.utcoffset() is None:
+        raise ProductionAdapterError("production unit time must be aware")
+    sealed_payload = execution._read_protected(journal.run_root, "run-plan/sealed.json")
+    artifact = ProducerArtifact(
+        schema_version="noor-e2e-coordinator-producer-artifact/v1",
+        status="committed",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        sealed_plan_sha256=hashlib.sha256(sealed_payload).hexdigest(),
+        ordinal=ordinal,
+        execution_id=execution_id,
+        kind=kind,
+        outcome=outcome,
+        producer=producer,
+        observed_at=issued_at,
+        source=typed_source.model_dump(mode="json"),
+        source_sha256=_digest(typed_source.model_dump(mode="json")),
+    )
+    artifact_payload = _canonical_bytes(artifact.model_dump(mode="json"))
+    receipt = ProducerReceipt(
+        schema_version="noor-e2e-coordinator-producer-receipt/v1",
+        status="committed",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        ordinal=ordinal,
+        execution_id=execution_id,
+        producer=producer,
+        artifact_sha256=hashlib.sha256(artifact_payload).hexdigest(),
+        source_sha256=artifact.source_sha256,
+        issued_at=issued_at,
+        expires_at=issued_at + timedelta(minutes=5),
+    )
+    _write_or_validate_exact(
+        journal.run_root,
+        ProductionRunCoordinator.producer_artifact_path(ordinal),
+        artifact.model_dump(mode="json"),
+    )
+    _write_or_validate_exact(
+        journal.run_root,
+        ProductionRunCoordinator.producer_receipt_path(ordinal),
+        receipt.model_dump(mode="json"),
+    )
+    return ProductionUnitCommit(artifact=artifact, receipt=receipt)
 
 
 class BaselineReadbackArtifact(_StrictModel):
@@ -740,7 +907,7 @@ class IndependentReadOnlyCollector:
             receipt.model_dump(mode="json"),
         )
         _write_or_validate_exact(
-            _tracked_root(journal),
+            _runtime_projection_root(journal),
             "collector-projections/baseline-readback.json",
             {
                 "raw_sha256": hashlib.sha256(raw).hexdigest(),
@@ -749,7 +916,7 @@ class IndependentReadOnlyCollector:
         )
         return observation
 
-    def seal_final(
+    def commit_final_pair(
         self,
         journal: execution.ProtectedExecutionJournal,
         *,
@@ -824,20 +991,44 @@ class IndependentReadOnlyCollector:
             issued_at=issued_at,
             expires_at=issued_at + timedelta(minutes=5),
         )
-        receipt_digest = _write_or_validate_exact(
+        _write_or_validate_exact(
             journal.run_root,
             "producer-receipts/final-readback.json",
             receipt.model_dump(mode="json"),
         )
         _write_or_validate_exact(
-            _tracked_root(journal),
+            _runtime_projection_root(journal),
             "collector-projections/final-readback.json",
             {
                 "raw_sha256": hashlib.sha256(raw).hexdigest(),
                 "inventory_digest": _digest(inventory),
             },
         )
-        journal.seal_final_readback(observation, receipt_digest=receipt_digest)
+        return observation
+
+    def seal_final(
+        self,
+        journal: execution.ProtectedExecutionJournal,
+        *,
+        source_id: str,
+        observed_at: datetime | None = None,
+        replay_raw: bytes | None = None,
+    ) -> ReadbackObservation:
+        """Compatibility owner that commits the pair and advances the journal."""
+
+        observation = self.commit_final_pair(
+            journal,
+            source_id=source_id,
+            observed_at=observed_at,
+            replay_raw=replay_raw,
+        )
+        if journal.phase == "final_turn_anchored":
+            receipt_digest = hashlib.sha256(
+                execution._read_protected(
+                    journal.run_root, "producer-receipts/final-readback.json"
+                )
+            ).hexdigest()
+            journal.seal_final_readback(observation, receipt_digest=receipt_digest)
         return observation
 
 
@@ -980,6 +1171,8 @@ __all__ = [
     "IndependentReadOnlyCollector",
     "ProductionAdapterError",
     "ProtectedRunPlan",
+    "ProductionUnitCommit",
+    "commit_execution_unit_source",
     "WazzupWebhookAdapter",
     "load_protected_baseline",
     "seal_fixed_final_readback",
