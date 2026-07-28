@@ -184,6 +184,31 @@ def test_read_only_ssh_rejects_unknown_or_mutating_commands_without_running() ->
 
 
 @pytest.mark.parametrize(
+    "command",
+    [
+        ("find", "/tmp", "-maxdepth", "0", "-fprint", "/tmp/collector-write"),
+        ("find", "/tmp", "-ok", "rm", "{}", ";"),
+        ("journalctl", "--vacuum-time=1s"),
+        ("journalctl", "--rotate"),
+    ],
+)
+def test_read_only_ssh_rejects_binaries_with_mutating_argument_surfaces(
+    command: tuple[str, ...],
+) -> None:
+    from scripts.e2e_acceptance.live_transport import ReadOnlySshTransport
+
+    runner = _SshRunner(subprocess.CompletedProcess([], 0, stdout=b""))
+
+    with pytest.raises(ProductionAdapterError, match="read-only"):
+        ReadOnlySshTransport(
+            host_alias="noor-production",
+            source_commands={"inventory": command},
+            runner=runner,
+        )
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize(
     "outcome",
     [
         subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"private failure"),

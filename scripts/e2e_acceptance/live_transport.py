@@ -29,7 +29,7 @@ _WEBHOOK_PATH = "/api/v1/webhook/wazzup"
 _TRANSPORT_TIMEOUT_SECONDS = 10.0
 _HOST_ALIAS_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _READ_ONLY_EXECUTABLES = frozenset(
-    {"cat", "find", "grep", "head", "jq", "journalctl", "sha256sum", "stat", "tail"}
+    {"cat", "grep", "head", "jq", "sha256sum", "stat", "tail"}
 )
 _MUTATING_COMMAND_TOKENS = frozenset(
     {

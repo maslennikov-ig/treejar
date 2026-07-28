@@ -14,16 +14,19 @@ Status: complete; no external network or SSH operation was performed.
   disabled, and reports every post-dispatch exception as uncertain without
   logging endpoint or body.
 - `ReadOnlySshTransport` freezes a host alias and source-command allowlist,
-  rejects shell/mutation-capable vocabulary, uses a fixed timeout and
-  `shell=False`, exposes command identities/digests, and fails closed on
-  timeout or a non-zero exit.
+  rejects shell/mutation-capable vocabulary, and excludes `find` and
+  `journalctl` because their argument surfaces can mutate files or logs. It
+  uses a fixed timeout and `shell=False`, exposes command identities/digests,
+  and fails closed on timeout or a non-zero exit.
 
 ## Verification
 
 - RED: `uv run --extra dev pytest tests/test_e2e_acceptance_live_transport.py -q --tb=short` failed with the missing module (9 failures).
 - RED: the focused secret-output test failed while a post-dispatch exception
   retained its raw cause, then passed after suppression.
-- GREEN: the same focused command passed `9 passed` after implementation.
+- GREEN: the focused command passed `13 passed` after implementation and the
+  independent-review correction for `find -fprint` and
+  `journalctl --vacuum-*`.
 - `uv run --extra dev ruff check ...`, `ruff format --check ...`, and
   `git diff --check` passed.
 
