@@ -1,11 +1,11 @@
 # Orchestrator Handoff
 
 Updated: 2026-07-28
-Current branch: `codex/tj-ee5f-delivery`
+Current branch: `main`
 Current stage id: `tj-ee5f`
-Current stage status: Task 1, policy-v2, privacy cleanup, and the accepted
-`tj-r1f3` release evidence are integrated; frozen provenance is refreshed and
-full local gates are green; stage remains open for delivery and E2E execution
+Current stage status: the reviewed local production trust facade is integrated
+and full local gates are green; stage remains open for real Task 3 transports,
+exact production execution, client report acceptance, and PDF delivery
 
 ## Current Truth
 
@@ -59,6 +59,18 @@ full local gates are green; stage remains open for delivery and E2E execution
 - Execution task: `tj-ee5f.1`, unblocked by the accepted `tj-r1f3` proof.
 - Task 1 immutable contracts and the reviewed generic policy-v2 trust boundary
   are integrated locally.
+- Task 2 production trust facade is integrated at `3074999`. It provides the
+  exact 29-unit coordinator lifecycle, protected producer recovery, derived
+  materialization, criterion-scoped evidence, defect ledger, and local fake
+  adapter/collector proof.
+- Final Task 2 independent review found `0 P0`, three corrected `P1`, and one
+  explicitly deferred non-blocking `P2`. The final acceptance suite passed
+  `360`; full Pytest passed `2240` with `19 skipped`; Ruff, format, Mypy over
+  163 source files, process verification, artifact validation, diff and privacy
+  scans passed.
+- Real HTTP/SSH transports and production attempt, gate, reconciliation, and
+  inventory producers are not implemented. Fake output is not production E2E
+  evidence and cannot be used for the client report.
 - The current tracked tree redacts the protected historical test identity and
   live scripts require an explicit validated destination; Git-history exposure
   remains an explicit destructive-action defer.
@@ -98,11 +110,12 @@ full local gates are green; stage remains open for delivery and E2E execution
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: deliver the verified policy-v2/provenance candidate, bind
-the exact deployed/runtime/test identities into an approved authorization
-manifest, then execute the approved E2E plan.
+Recommended action: deliver `main@3074999`, add only the minimal real Task 3
+HTTP/SSH and producer boundary from the accepted repair plan, bind the exact
+runtime/test identities into the protected authorization manifest, then execute
+the approved E2E sequentially.
 
-- Local preparation for `tj-ee5f.1` may proceed from `main`.
+- Task 3 implementation and execution proceed from `main@3074999`.
 - Mutation-capable E2E remains gated by its own exact live authorization
   manifest, preflight, quota reservations, and side-effect policy.
 - Acceptance execution never edits product code in place. A failure creates a
