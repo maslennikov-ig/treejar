@@ -7,7 +7,7 @@ orchestration_level: slice_acceptance
 scope_kind: foundation
 immediate_consumer: canonical GitHub Actions acceptance compilation
 public_facade: TrustedAcceptanceRegistry canonical identity and traceability source validation
-bounded_acceptance: canonical HTTPS origin in a fresh checkout accepts only the optional .git suffix, enforces repository path identity, and frozen traceability data is tracked, exact, and fail-closed
+bounded_acceptance: canonical HTTPS origin in a fresh checkout accepts only the optional .git suffix, enforces repository path identity, requires full Git history for provenance in CI, and frozen traceability data is tracked, exact, and fail-closed
 non_goals:
   - production deploy or readback
   - provider customer Wazzup Zoho CRM quotation order or paid action
@@ -28,24 +28,28 @@ base_branch: main
 base_commit: 0b0e0704a20a321ad30872689bafc57f7e3c2f53
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-ci-identity-fix
 write_zone:
+  - .github/workflows/ci.yml
   - scripts/e2e_acceptance/policy.py
   - scripts/e2e_acceptance/manifest.py
   - .codex/stages/tj-ee5f/traceability-manifest.json
   - .codex/stages/tj-ee5f/frozen-beads-records.jsonl
   - tests/test_e2e_acceptance_policy_v2.py
   - tests/test_e2e_acceptance_manifests.py
+  - tests/test_ci_workflow_contract.py
   - .codex/stages/tj-ee5f/stage-manifest.json
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md
 success_criteria:
   - a simulated fresh checkout accepts the official HTTPS origin with or without .git, and rejects URL variants plus top-level or common-dir identity drift
   - the standard-checkout fixture returns literal .git while repo_root/.git exists, so the relative common-directory branch is exercised
   - a missing top-level path remains distinguishable from existing top-level identity drift
+  - the CI test job that executes full Pytest fetches full Git history for scope-provenance validation
   - tracked frozen Beads source contains exactly 105 referenced IDs and canonical record digests
   - source validation fails closed on missing extra malformed reordered noncanonical escaped symlinked or digest-drifted data
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
   - .codex/handoff.md
+  - https://github.com/actions/checkout
 selected_skills:
   - superpowers:test-driven-development
   - superpowers:systematic-debugging
@@ -76,7 +80,7 @@ invariants:
   - test-matrix
 docs_impact: behavior
 docs_reviewed: no-change-needed
-docs_review_notes: the tracked traceability manifest and this artifact fully describe the portable source replacement; no durable user documentation changed
+docs_review_notes: official actions/checkout README confirms the default single-commit checkout and fetch-depth 0 full-history behavior; no durable user documentation changed
 verification:
   - RED: uv run pytest tests/test_e2e_acceptance_policy_v2.py::test_canonical_https_origin_allows_only_optional_git_suffix -q -> expected PolicyValidationError identity drift
   - RED: uv run pytest tests/test_e2e_acceptance_manifests.py::test_traceability_uses_exact_tracked_frozen_beads_records -q -> expected old .beads/issues.jsonl path assertion failure
@@ -100,19 +104,31 @@ verification:
   - GREEN: uv run pytest tests/test_e2e_acceptance_*.py -q -> 207 passed
   - GREEN: uv run ruff check tests/test_e2e_acceptance_policy_v2.py -> passed
   - GREEN: uv run ruff format --check tests/test_e2e_acceptance_policy_v2.py -> 1 file already formatted
+  - CI RED: GitHub Actions run 30335662631 on main@65ca9bce8f0fe51e1ef855a4137331379ce6f119 -> test job 108 failed, 1977 passed, 19 skipped; first/root exception scope provenance creation commit is invalid; lint and type-check passed, deploy skipped
+  - RED: focused CI workflow contract -> 1 failed; test job checkout fetch-depth was absent
+  - GREEN: focused CI workflow contract -> 1 passed
+  - GREEN: uv run pytest tests/test_ci_workflow_contract.py -q -> 2 passed
+  - GREEN: uv run pytest tests/test_e2e_acceptance_*.py -q -> 207 passed
+  - GREEN: uv run ruff check src/ tests/ -> passed
+  - GREEN: uv run ruff format --check src/ tests/ -> 315 files already formatted
+  - GREEN: uv run mypy src/ -> 163 source files, no issues
+  - GREEN: uv run pytest tests/ -v --tb=short -> 2086 passed, 19 skipped
   - EXCEPTION: uv run mypy scripts/e2e_acceptance exits 2 because repository mypy config excludes scripts/; no config change was permitted in this task
 changed_files:
+  - .github/workflows/ci.yml
   - .codex/stages/tj-ee5f/frozen-beads-records.jsonl
   - .codex/stages/tj-ee5f/traceability-manifest.json
   - scripts/e2e_acceptance/manifest.py
   - scripts/e2e_acceptance/policy.py
   - tests/test_e2e_acceptance_manifests.py
   - tests/test_e2e_acceptance_policy_v2.py
+  - tests/test_ci_workflow_contract.py
   - .codex/stages/tj-ee5f/stage-manifest.json
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md
 implementation_commit: 58cdae1
 correction_commit: a6f2034
 tdd_correction_commit: 482b017
+ci_history_correction_commit: 0e390a8
 explicit_defers:
   - none
 ---
@@ -147,6 +163,18 @@ physical but returns literal `.git`, creates `other-checkout` before asserting
 `identity is unavailable`. This is test-only: the production guard required no
 further change.
 
+Canonical CI run `30335662631` on
+`main@65ca9bce8f0fe51e1ef855a4137331379ce6f119` exposed a separate environment
+defect: `jobs.test` used the checkout action's default shallow history, while
+scope provenance intentionally reads the anchor creation commit and
+first-addition history. The run produced 108 failures (1977 passed, 19
+skipped); its first/root exception was `scope provenance creation commit is
+invalid`. The official actions/checkout README records the default
+single-commit checkout and `fetch-depth: 0` full-history behavior. The fix is
+limited to the checkout in `jobs.test`, and its semantic contract proves that
+this exact job runs full Pytest with `fetch-depth: 0`; provenance validation and
+runtime network behavior are unchanged.
+
 RED was recorded before implementation:
 
 - the no-suffix canonical HTTPS origin raised `PolicyValidationError`;
@@ -167,6 +195,9 @@ data before it can be trusted.
 - `uv run pytest tests/test_e2e_acceptance_*.py -q` passed 206 tests.
 - The third correction's focused checkout-identity branches passed 5 tests;
   its policy and acceptance suites passed 39 and 207 tests respectively.
+- The CI-history correction's focused contract passed, as did its acceptance
+  surface (207), full configured gates, and full Pytest (2086 passed, 19
+  skipped).
 - Artifact and process verification passed. Ruff, formatting, `mypy src/`, and
   the full Pytest suite passed as recorded in the frontmatter verification
   ledger.
@@ -178,6 +209,8 @@ Checkout-identity correction: `a6f2034`
 (`fix(acceptance): harden canonical checkout identity`).
 TDD-evidence correction: `482b017`
 (`test(acceptance): prove checkout identity branches`).
+CI-history correction: `0e390a8`
+(`fix(ci): fetch provenance history for test job`).
 No external, paid, production, customer, or business action occurred.
 
 # Risks / Follow-ups / Explicit Defers
