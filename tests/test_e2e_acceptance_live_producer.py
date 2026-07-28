@@ -97,6 +97,24 @@ def test_completed_gate_only_run_seals_empty_transcript_manifest(
     assert manifest["ordered_turns"] == []
 
 
+def test_published_gate_path_set_includes_full_typed_quartet() -> None:
+    from scripts.e2e_acceptance.trusted_run import _expected_published_gate_paths
+
+    paths = _expected_published_gate_paths(
+        {
+            "SC-OPEN-EN": SimpleNamespace(attempt_kind="gate"),
+            "SC-OPEN-AR": SimpleNamespace(attempt_kind="executed"),
+        }
+    )
+
+    assert paths == {
+        "gate-attempts/SC-OPEN-EN.json",
+        "gate-evidence/SC-OPEN-EN.json",
+        "producer-receipts/gates/SC-OPEN-EN.json",
+        "recorded-gates/SC-OPEN-EN.json",
+    }
+
+
 def test_record_blocked_starts_gate_only_execution_after_baseline(
     monkeypatch,
 ) -> None:

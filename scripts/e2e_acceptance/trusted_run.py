@@ -3008,6 +3008,22 @@ def _finalize_verified_run(registry: Any, run_id: str) -> None:
         raise
 
 
+def _expected_published_gate_paths(
+    attempts_by_execution: dict[str, Any],
+) -> set[str]:
+    return {
+        relative
+        for execution_id, attempt in attempts_by_execution.items()
+        if attempt.attempt_kind == "gate"
+        for relative in (
+            f"gate-attempts/{execution_id}.json",
+            f"gate-evidence/{execution_id}.json",
+            f"producer-receipts/gates/{execution_id}.json",
+            f"recorded-gates/{execution_id}.json",
+        )
+    }
+
+
 def _load_verified_run(
     registry: Any,
     run_id: str,
@@ -3321,15 +3337,7 @@ def _load_verified_run(
         ):
             raise TrustedRunError(f"typed report execution binding drift: {identity}")
 
-    expected_gate_paths = {
-        relative
-        for execution_id, attempt in attempts_by_execution.items()
-        if attempt.attempt_kind == "gate"
-        for relative in (
-            f"gate-evidence/{execution_id}.json",
-            f"producer-receipts/gates/{execution_id}.json",
-        )
-    }
+    expected_gate_paths = _expected_published_gate_paths(attempts_by_execution)
     actual_gate_paths = _tree_relative_files(
         protected_root,
         prefixes=(
