@@ -17,7 +17,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f
 milestone: CI portability repair for trusted acceptance identity
-milestone_status: returned
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -62,11 +62,11 @@ parallel_group: tj-ee5f
 depends_on_streams:
   - tj-ee5f.3 policy-v2 trust center
 parallel_decision: local
-status: returned
-delivery_method: manual integration
-accepted_by_orchestrator: no
-cleanup_status: not_applicable
-cleanup_notes: dedicated worktree retained for orchestrator integration
+status: accepted
+delivery_method: merge
+accepted_by_orchestrator: yes
+cleanup_status: pending
+cleanup_notes: dedicated worktree retained until tj-ee5f stage closeout
 risk_level: high
 verification_tier: integration
 risk_tags:
@@ -120,6 +120,7 @@ verification:
   - GREEN: uv run ruff format --check src/ tests/ -> 315 files already formatted
   - GREEN: uv run mypy src/ -> 163 source files, no issues
   - GREEN: uv run pytest tests/ -v --tb=short -> 2087 passed, 19 skipped
+  - GREEN: GitHub Actions run 30336804422 on main@4457b541322f4b726ec5b69336296550392f5a25 -> test, lint, and type-check passed; deploy correctly skipped for the CI-only change
   - EXCEPTION: uv run mypy scripts/e2e_acceptance exits 2 because repository mypy config excludes scripts/; no config change was permitted in this task
 changed_files:
   - .github/workflows/ci.yml
@@ -191,6 +192,11 @@ locates exactly one `Run tests` step in `jobs.test` and compares
 bind `fetch-depth: 0` to the single checkout in that same job. This correction
 changes tests only and leaves the workflow YAML untouched.
 
+Canonical GitHub Actions run `30336804422` then passed on
+`main@4457b541322f4b726ec5b69336296550392f5a25`: the full test, lint, and
+type-check jobs were green, and the deploy job was correctly skipped because
+the delivered change affected only CI, tests, and orchestration evidence.
+
 RED was recorded before implementation:
 
 - the no-suffix canonical HTTPS origin raised `PolicyValidationError`;
@@ -217,6 +223,8 @@ data before it can be trusted.
 - The final command-contract mutation was RED before tightening and green
   afterward; its contract suite passed 3 tests, acceptance passed 207, and the
   full suite passed 2087 tests with 19 skips.
+- Canonical GitHub Actions run `30336804422` passed against the exact delivered
+  `main` commit; this is the terminal fresh-checkout proof for `tj-ee5f.4`.
 - Artifact and process verification passed. Ruff, formatting, `mypy src/`, and
   the full Pytest suite passed as recorded in the frontmatter verification
   ledger.
