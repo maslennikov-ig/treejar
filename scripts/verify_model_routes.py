@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 
 from src.core.config import settings
-from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
+from src.llm.communication_policy import finalize_evidence_grounding_prompt
 from src.llm.grounding_output import (
     contains_future_stock_check,
     contains_specific_product_showroom_trial,
@@ -206,10 +206,9 @@ def build_sales_payload(model: str, case: SalesSmokeCase) -> dict[str, Any]:
         "messages": [
             {
                 "role": "system",
-                "content": (
+                "content": finalize_evidence_grounding_prompt(
                     "You are Noor, Treejar's UAE office-furniture sales "
                     "assistant. Use only the evidence supplied for this case.\n\n"
-                    f"{EVIDENCE_GROUNDING_POLICY}\n\n"
                     f"[CASE EVIDENCE]\n{case.evidence}\n\n"
                     "Call submit_grounded_answer exactly once. Keep the reply "
                     "concise and do not mention this test."

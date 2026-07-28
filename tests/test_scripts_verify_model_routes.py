@@ -16,6 +16,8 @@ from scripts.verify_model_routes import (
     sanitize_error,
 )
 
+from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
+
 
 def test_model_route_payloads_use_approved_models_and_safe_controls() -> None:
     sales_payload = build_sales_payload(MAIN_MODEL_ID, SALES_CASES[0])
@@ -32,6 +34,15 @@ def test_model_route_payloads_use_approved_models_and_safe_controls() -> None:
     assert fast_payload["provider"] == {"require_parameters": True}
     assert fast_payload["response_format"]["type"] == "json_schema"
     assert fast_payload["response_format"]["json_schema"]["strict"] is True
+
+
+def test_sales_payload_uses_the_runtime_prompt_tail_invariant() -> None:
+    payload = build_sales_payload(MAIN_MODEL_ID, SALES_CASES[2])
+
+    system_prompt = payload["messages"][0]["content"]
+
+    assert system_prompt.count(EVIDENCE_GROUNDING_POLICY) == 1
+    assert system_prompt.rstrip().endswith(EVIDENCE_GROUNDING_POLICY)
 
 
 def test_catalog_preflight_requires_route_specific_capabilities() -> None:

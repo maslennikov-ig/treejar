@@ -13,11 +13,11 @@ The exact AI path is:
    construction consume only the enforced text.
 5. The chat layer later persists and delivers that `LLMResponse.text`.
 
-The failure was not a parsing or prompt-tail assembly defect. Attempt 3 proved
-that an advisory prompt can still yield two prohibited customer semantics, and
-the application trusted that model output. The smoke evaluator separately had
-a narrower actor grammar that missed `arrange for our team to check and get
-back`.
+The attempt-3 production failure was not a parsing or production prompt-tail
+assembly defect. It proved that an advisory prompt can still yield two
+prohibited customer semantics, and the application trusted that model output.
+The smoke evaluator separately had a narrower actor grammar that missed
+`arrange for our team to check and get back`.
 
 ## TDD lane and RED evidence
 
@@ -487,12 +487,74 @@ uv run mypy src/
 Results: Ruff and format passed after organizing the new test import; Mypy
 passed over 163 source files.
 
+## Postdeploy attempt-4 smoke-harness correction
+
+Exact release `0dd9615a16fdf4eb17abe156551c53fb77f39c21` deployed through
+CI run `30330683062` and passed exact release/model/service/API readback.
+The authorized provider run consumed exactly five synthetic paid calls and
+returned `4/5`. The medical case correctly refused the unsupported health
+claim but again offered a visit to experience the specific Nova chair. The
+other four cases passed deterministic and manual semantic review. No retry was
+performed.
+
+The exact attempt-4 reply was then passed through the deployed production
+classifier locally. It produced
+`specific_product_showroom_trial`, the production enforcer removed the unsafe
+showroom sentence while retaining the medical refusal, and the repaired result
+classified with no violation. This isolated the new defect to the release
+smoke boundary rather than the customer-output guard.
+
+The smoke payload differed from production prompt assembly: it inserted the
+immutable grounding policy before `[CASE EVIDENCE]` and its tool instruction.
+The runtime uses `finalize_evidence_grounding_prompt()` and guarantees exactly
+one policy copy at the final tail.
+
+TDD RED:
+
+```text
+uv run pytest tests/test_scripts_verify_model_routes.py::test_sales_payload_uses_the_runtime_prompt_tail_invariant -q --tb=short
+```
+
+Result: failed because the system prompt did not end with
+`EVIDENCE_GROUNDING_POLICY`.
+
+The minimal correction builds the synthetic prompt through the same production
+finalizer. No policy wording, model, temperature, case evidence, schema,
+provider parameter, quota, or production response behavior changed.
+
+Focused GREEN:
+
+```text
+uv run pytest tests/test_scripts_verify_model_routes.py::test_sales_payload_uses_the_runtime_prompt_tail_invariant -q --tb=short
+uv run pytest tests/test_scripts_verify_model_routes.py tests/test_llm_grounding_output.py -q --tb=short
+```
+
+Results: `1 passed`; `185 passed`.
+
+Fresh release gates:
+
+```text
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
+uv run mypy src/
+uv run pytest tests/ -q --tb=short
+scripts/orchestration/run_process_verification.sh
+```
+
+Results: Ruff passed; 306 files formatted; Mypy passed over 163 source files;
+`1878 passed, 19 skipped`; process verification passed.
+
+Independent delta review found one documentation-only P2: the historical
+implementation-lane statement still said no external action had occurred after
+attempt 4 was appended. The audit trail now explicitly separates the original
+local implementation lane from the later authorized deployment and five-call
+smoke. Re-review returned `APPROVE` with no remaining P0-P3 findings.
+
 ## Remaining environment-level checks
 
-- Independent delta review.
-- Full release tests and process verification owned by stage closeout.
-- Deployment and exact release/model/service/API readback.
-- Only with fresh explicit authorization: bounded provider smoke and manual
-  semantic review.
+- Deployment and exact release/model/service/API readback for the harness
+  correction.
+- A new separately quota-bound provider smoke and manual semantic review.
 
-No external or live action was performed in this stream.
+Attempt 4 is immutable failed evidence. Its exact five-call quota is exhausted;
+no provider retry or business mutation was performed after the failure.
