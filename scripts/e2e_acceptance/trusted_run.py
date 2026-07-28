@@ -559,11 +559,59 @@ class ProtectedCommittedExecutionSnapshot(_StrictModel):
     transcript_artifacts: dict[str, dict[str, Any]] = Field(min_length=1)
     collector_artifacts: dict[str, dict[str, Any]] = Field(min_length=2, max_length=2)
     gate_artifacts: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    sealed_plan: dict[str, Any]
+    evaluator: dict[str, Any]
+    sealed_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    terminal_journal_phase: Literal["attempt_committed"]
+    terminal_journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ProtectedSnapshotCommit(_StrictModel):
     schema_version: Literal["noor-e2e-protected-execution-snapshot-commit/v2"]
+    status: Literal["committed"]
+    run_id: str = Field(min_length=1)
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_chain_heads_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operator_store_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_readback_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sealed_plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    terminal_journal_phase: Literal["attempt_committed"]
+    terminal_journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LegacyProtectedCommittedExecutionSnapshot(_StrictModel):
+    """Read-only compatibility for pre-production final-review fixtures.
+
+    Production materialization never emits this schema.  It exists solely so
+    frozen fixture snapshots retain their originally explicit legacy boundary.
+    """
+
+    schema_version: Literal["noor-e2e-protected-execution-snapshot/v1"]
+    run_id: str = Field(min_length=1)
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_ids: tuple[str, ...] = Field(min_length=29, max_length=29)
+    run: dict[str, Any]
+    report: dict[str, Any]
+    evidence: tuple[ProtectedEvidenceRecord, ...] = Field(min_length=30)
+    attempt_commits: dict[str, dict[str, Any]] = Field(min_length=29, max_length=29)
+    transcript_artifacts: dict[str, dict[str, Any]] = Field(min_length=1)
+    collector_artifacts: dict[str, dict[str, Any]] = Field(min_length=2, max_length=2)
+    gate_artifacts: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LegacyProtectedSnapshotCommit(_StrictModel):
+    schema_version: Literal["noor-e2e-protected-execution-snapshot-commit/v1"]
     status: Literal["committed"]
     run_id: str = Field(min_length=1)
     registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -835,8 +883,10 @@ def _validate_gate_artifacts(
         relative
         for execution_id in gate_attempts
         for relative in (
+            f"gate-attempts/{execution_id}.json",
             f"gate-evidence/{execution_id}.json",
             f"producer-receipts/gates/{execution_id}.json",
+            f"recorded-gates/{execution_id}.json",
         )
     }
     if set(artifacts) != expected_paths:
@@ -848,7 +898,12 @@ def _validate_gate_artifacts(
             raise TrustedRunError("typed gate attempt payload is missing")
         artifact_relative = f"gate-evidence/{execution_id}.json"
         receipt_relative = f"producer-receipts/gates/{execution_id}.json"
+        attempt_relative = f"gate-attempts/{execution_id}.json"
+        recorded_relative = f"recorded-gates/{execution_id}.json"
         try:
+            materialized_attempt = GateAttemptV2.model_validate(
+                artifacts[attempt_relative]
+            )
             artifact = GateEvidenceArtifact.model_validate(artifacts[artifact_relative])
             receipt = GateEvidenceReceipt.model_validate(artifacts[receipt_relative])
         except ValueError as exc:
@@ -866,8 +921,20 @@ def _validate_gate_artifacts(
         )
         artifact_sha256 = _sha256(_canonical_bytes(artifacts[artifact_relative]))
         receipt_sha256 = _sha256(_canonical_bytes(artifacts[receipt_relative]))
+        gate_attempt_sha256 = _sha256(_canonical_bytes(artifacts[attempt_relative]))
+        recorded = artifacts[recorded_relative]
         common_drift = (
-            artifact.registry_id != registry.registry_id
+            materialized_attempt != gate_attempt
+            or recorded
+            != {
+                "schema_version": "noor-e2e-recorded-gate/v2",
+                "execution_id": execution_id,
+                "outcome": committed.outcome,
+                "gate_attempt_sha256": gate_attempt_sha256,
+                "journal_head_digest": recorded.get("journal_head_digest"),
+                "gate_attempt": gate_attempt.model_dump(mode="json"),
+            }
+            or artifact.registry_id != registry.registry_id
             or artifact.run_id != run.run_id
             or artifact.authorization_digest != authorization_digest
             or artifact.execution_id != execution_id
@@ -1115,23 +1182,139 @@ def _write_snapshot_tree(
     root: Path,
     files: dict[str, dict[str, Any]],
 ) -> None:
-    for relative, value in files.items():
-        parts = Path(relative)
-        if (
-            parts.is_absolute()
-            or not parts.parts
-            or any(part in {"", ".", ".."} for part in parts.parts)
-        ):
-            raise TrustedRunError("verified snapshot contains unsafe path")
-        destination = root / parts
-        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(destination, flags, 0o600)
+    root_fd = _open_or_create_snapshot_root(root)
+    try:
+        for relative, value in files.items():
+            parts = _snapshot_relative_parts(relative)
+            parent_fd = _open_or_create_snapshot_parent(root_fd, parts[:-1])
+            try:
+                flags = (
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+                )
+                fd = os.open(parts[-1], flags, 0o600, dir_fd=parent_fd)
+                try:
+                    payload = _canonical_bytes(value)
+                    offset = 0
+                    while offset < len(payload):
+                        offset += os.write(fd, payload[offset:])
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                os.fsync(parent_fd)
+            except OSError as exc:
+                raise TrustedRunError(
+                    f"protected snapshot write violates no-follow policy: {exc}"
+                ) from exc
+            finally:
+                os.close(parent_fd)
+        os.fsync(root_fd)
+    finally:
+        os.close(root_fd)
+
+
+def _snapshot_relative_parts(relative: str) -> tuple[str, ...]:
+    parts = Path(relative)
+    if (
+        parts.is_absolute()
+        or not parts.parts
+        or any(part in {"", ".", ".."} for part in parts.parts)
+    ):
+        raise TrustedRunError("verified snapshot contains unsafe path")
+    return parts.parts
+
+
+def _open_or_create_snapshot_root(root: Path) -> int:
+    """Create/open an absolute snapshot root without following any component."""
+
+    if not root.is_absolute() or any(
+        part in {"", ".", ".."} for part in root.parts[1:]
+    ):
+        raise TrustedRunError("protected snapshot root is unsafe")
+    current_fd = os.open("/", _directory_flags())
+    try:
+        for part in root.parts[1:]:
+            created = False
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=current_fd)
+                created = True
+            except FileExistsError:
+                pass
+            if created:
+                os.fsync(current_fd)
+            next_fd = os.open(part, _directory_flags(), dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+    except OSError as exc:
+        os.close(current_fd)
+        raise TrustedRunError(
+            f"protected snapshot root violates no-follow policy: {exc}"
+        ) from exc
+    return current_fd
+
+
+def _open_or_create_snapshot_parent(root_fd: int, directories: tuple[str, ...]) -> int:
+    current_fd = os.dup(root_fd)
+    try:
+        for directory in directories:
+            created = False
+            try:
+                os.mkdir(directory, mode=0o700, dir_fd=current_fd)
+                created = True
+            except FileExistsError:
+                pass
+            if created:
+                os.fsync(current_fd)
+            next_fd = os.open(directory, _directory_flags(), dir_fd=current_fd)
+            os.close(current_fd)
+            current_fd = next_fd
+    except OSError as exc:
+        os.close(current_fd)
+        raise TrustedRunError(
+            f"protected snapshot parent violates no-follow policy: {exc}"
+        ) from exc
+    return current_fd
+
+
+def _read_snapshot_file_if_present(root: Path, relative: str) -> bytes | None:
+    root_fd = _open_or_create_snapshot_root(root)
+    try:
+        parts = _snapshot_relative_parts(relative)
+        parent_fd = _open_or_create_snapshot_parent(root_fd, parts[:-1])
         try:
-            os.write(fd, _canonical_bytes(value))
-            os.fsync(fd)
+            try:
+                file_fd = os.open(
+                    parts[-1],
+                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                return None
+            try:
+                metadata = os.fstat(file_fd)
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or stat.S_IMODE(metadata.st_mode) != 0o600
+                ):
+                    raise TrustedRunError(
+                        "protected snapshot file mode/type is invalid"
+                    )
+                chunks: list[bytes] = []
+                while True:
+                    chunk = os.read(file_fd, 1024 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                return b"".join(chunks)
+            finally:
+                os.close(file_fd)
+        except OSError as exc:
+            raise TrustedRunError(
+                f"protected snapshot read violates no-follow policy: {exc}"
+            ) from exc
         finally:
-            os.close(fd)
+            os.close(parent_fd)
+    finally:
+        os.close(root_fd)
 
 
 def _write_atomic_final_commit(
@@ -1205,22 +1388,305 @@ def _tree_relative_files(
     return frozenset(result)
 
 
+def materialize_execution_snapshot(
+    registry: Any,
+    journal: Any,
+    sealed_plan: Any,
+) -> ProtectedCommittedExecutionSnapshot:
+    """Package only canonical, independently produced candidate evidence.
+
+    The caller supplies no roots: tracked candidate evidence is fixed under the
+    stage result root and protected evidence is fixed to the current journal.
+    """
+
+    if (
+        journal.phase != "attempt_committed"
+        or journal.previous_event_digest is None
+        or journal.run_root != journal.protected_root / journal.run_id
+        or any(
+            state not in {"succeeded", "failed"} for state in journal._actions.values()
+        )
+    ):
+        raise TrustedRunError(
+            "snapshot materialization requires a terminal attempt-committed journal"
+        )
+    run_id = journal.run_id
+    tracked = registry.repo_root / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
+    try:
+        sealed_payload = _read_file(
+            journal.run_root, "run-plan/sealed.json", protected=True
+        )
+        sealed = _parse_json(
+            sealed_payload,
+            "sealed run plan",
+        )
+        if (
+            set(sealed)
+            != {
+                "schema_version",
+                "plan_digest",
+                "evaluator_digest",
+                "actions",
+                "evaluator",
+            }
+            or sealed.get("schema_version") != "noor-e2e-sealed-run-plan/v2"
+            or sealed.get("plan_digest") != sealed_plan.plan_digest
+            or sealed.get("evaluator_digest") != sealed_plan.evaluator_digest
+            or sealed.get("evaluator") != sealed_plan.evaluator
+            or canonical_digest(
+                {"actions": sealed.get("actions"), "evaluator": sealed.get("evaluator")}
+            )
+            != sealed_plan.plan_digest
+            or canonical_digest(sealed.get("evaluator")) != sealed_plan.evaluator_digest
+        ):
+            raise TrustedRunError("sealed plan/evaluator drift")
+        index = EvidenceIndex.model_validate(
+            _parse_json(
+                _read_file(tracked, "registry/evidence-index.json"),
+                "candidate evidence index",
+            )
+        )
+        run = _parse_json(_read_file(tracked, "registry/run.json"), "candidate run")
+        report = _parse_json(
+            _read_file(tracked, "registry/report-payload.json"), "candidate report"
+        )
+    except (ValueError, TrustedRunError) as exc:
+        raise TrustedRunError("canonical candidate artifacts are incomplete") from exc
+    try:
+        run_document = TrustedRunDocument.model_validate(run)
+        report_document = ClientReportPayload.model_validate(report)
+    except ValueError as exc:
+        raise TrustedRunError("candidate run or report contract is invalid") from exc
+    if (
+        index.run_id != run_id
+        or run_document.run_id != run_id
+        or report_document.run_id != run_id
+        or canonical_digest(run_document.authorization.model_dump(mode="json"))
+        != journal.authorization_digest
+        or tuple(row.execution_id for row in run_document.executions)
+        != registry.compiled_plan.execution_ids
+        or len({entry.evidence_id for entry in index.entries}) != len(index.entries)
+        or len({entry.relative_path for entry in index.entries}) != len(index.entries)
+    ):
+        raise TrustedRunError("canonical candidate run/report authorization drift")
+    evidence_records: list[ProtectedEvidenceRecord] = []
+    for entry in index.entries:
+        payload = _read_file(tracked, entry.relative_path)
+        if _sha256(payload) != entry.sha256:
+            raise TrustedRunError("candidate evidence index checksum drift")
+        evidence_records.append(
+            ProtectedEvidenceRecord(
+                evidence_id=entry.evidence_id,
+                relative_path=entry.relative_path,
+                producer=entry.producer,
+                payload=_parse_json(payload, "candidate evidence"),
+            )
+        )
+    evidence = tuple(evidence_records)
+    attempt_commits = {
+        record.payload["execution_id"]: _parse_json(
+            _read_file(
+                journal.run_root, record.payload["protected_commit_ref"], protected=True
+            ),
+            "protected attempt commit",
+        )
+        for record in evidence
+        if record.producer == "protected-attempt-committer"
+    }
+    transcript_artifacts = {
+        path.relative_to(journal.run_root).as_posix(): _parse_json(
+            _read_file(
+                journal.run_root,
+                path.relative_to(journal.run_root).as_posix(),
+                protected=True,
+            ),
+            "protected transcript artifact",
+        )
+        for base in (
+            journal.run_root / "transcripts",
+            journal.run_root / "producer-receipts" / "transcripts",
+        )
+        if base.exists()
+        for path in base.rglob("*.json")
+    }
+    collector_artifacts = {
+        relative: _parse_json(
+            _read_file(journal.run_root, relative, protected=True),
+            "final collector artifact",
+        )
+        for relative in (
+            "collector-artifacts/final-readback.json",
+            "producer-receipts/final-readback.json",
+        )
+    }
+    gate_artifacts: dict[str, dict[str, Any]] = {}
+    for execution_id, gate in journal._recorded_gates.items():
+        expected = gate.model_dump(mode="json")
+        relatives = {
+            f"gate-attempts/{execution_id}.json": expected,
+            f"gate-evidence/{execution_id}.json": None,
+            f"producer-receipts/gates/{execution_id}.json": None,
+            f"recorded-gates/{execution_id}.json": None,
+        }
+        loaded = {
+            relative: _parse_json(
+                _read_file(journal.run_root, relative, protected=True),
+                "recorded gate artifact",
+            )
+            for relative in relatives
+        }
+        record = loaded[f"recorded-gates/{execution_id}.json"]
+        if (
+            loaded[f"gate-attempts/{execution_id}.json"] != expected
+            or record.get("execution_id") != execution_id
+            or record.get("outcome") != gate.outcome
+            or record.get("gate_attempt") != expected
+            or record.get("gate_attempt_sha256") != _sha256(_canonical_bytes(expected))
+        ):
+            raise TrustedRunError("recorded gate artifact binding drift")
+        gate_artifacts.update(loaded)
+    expected_gate_paths = {
+        relative
+        for execution_id in journal._recorded_gates
+        for relative in (
+            f"gate-attempts/{execution_id}.json",
+            f"gate-evidence/{execution_id}.json",
+            f"producer-receipts/gates/{execution_id}.json",
+            f"recorded-gates/{execution_id}.json",
+        )
+    }
+    actual_gate_paths = {
+        path.relative_to(journal.run_root).as_posix()
+        for prefix in (
+            "gate-attempts",
+            "gate-evidence",
+            "producer-receipts/gates",
+            "recorded-gates",
+        )
+        for path in (journal.run_root / prefix).rglob("*.json")
+        if path.is_file() and not path.is_symlink()
+    }
+    if actual_gate_paths != expected_gate_paths:
+        raise TrustedRunError("recorded gate artifact path-set drift")
+    try:
+        attempt_models = {
+            record.payload["execution_id"]: CommittedExecutionArtifact.model_validate(
+                record.payload
+            )
+            for record in evidence
+            if record.producer == "protected-attempt-committer"
+        }
+    except ValueError as exc:
+        raise TrustedRunError("protected attempt commit is invalid") from exc
+    _validate_gate_artifacts(
+        registry,
+        run_document,
+        attempt_models,
+        gate_artifacts,
+        current_time=datetime.now(UTC),
+    )
+    identity = {
+        "schema_version": "noor-e2e-protected-execution-snapshot/v2",
+        "run_id": run_id,
+        "registry_id": registry.registry_id,
+        "execution_ids": list(registry.compiled_plan.execution_ids),
+        "run": run,
+        "report": report,
+        "evidence": [item.model_dump(mode="json") for item in evidence],
+        "attempt_commits": attempt_commits,
+        "transcript_artifacts": transcript_artifacts,
+        "collector_artifacts": collector_artifacts,
+        "gate_artifacts": gate_artifacts,
+        "sealed_plan": sealed,
+        "evaluator": sealed_plan.evaluator,
+        "sealed_plan_digest": _sha256(sealed_payload),
+        "evaluator_digest": sealed_plan.evaluator_digest,
+        "terminal_journal_phase": journal.phase,
+        "terminal_journal_head_digest": journal.previous_event_digest,
+        "final_causal_event_digest": run_document.final.causal_event_digest,
+    }
+    snapshot = ProtectedCommittedExecutionSnapshot(
+        **identity, snapshot_digest=canonical_digest(identity)
+    )
+    # Validate the complete publication projection before writing either half
+    # of the snapshot transaction.  Parsing the three candidate roots alone
+    # is not enough: this also checks attempt commits, transcripts, final
+    # collector receipts and the exact typed-gate artifact set together.
+    _derive_publication(registry, snapshot)
+    root = _execution_snapshot_root(registry) / run_id
+    payload = _canonical_bytes(snapshot.model_dump(mode="json"))
+    existing_snapshot = _read_snapshot_file_if_present(root, "snapshot.json")
+    if existing_snapshot is not None:
+        if existing_snapshot != payload:
+            raise TrustedRunError("snapshot replay differs from committed bytes")
+    else:
+        _write_snapshot_tree(root, {"snapshot.json": snapshot.model_dump(mode="json")})
+    attempt_heads = {
+        record.payload["execution_id"]: record.payload["phase_head_digest"]
+        for record in evidence
+        if record.producer == "protected-attempt-committer"
+    }
+    commit = ProtectedSnapshotCommit(
+        schema_version="noor-e2e-protected-execution-snapshot-commit/v2",
+        status="committed",
+        run_id=run_id,
+        registry_id=registry.registry_id,
+        snapshot_sha256=_sha256(payload),
+        snapshot_digest=snapshot.snapshot_digest,
+        authorization_digest=journal.authorization_digest,
+        journal_head_digest=journal.previous_event_digest,
+        attempt_chain_heads_digest=canonical_digest(attempt_heads),
+        operator_store_digest=store_root_digest(_operator_root(registry)),
+        final_readback_receipt_digest=_sha256(
+            _read_file(
+                journal.run_root,
+                "producer-receipts/final-readback.json",
+                protected=True,
+            )
+        ),
+        final_inventory_digest=run["final_inventory_digest"],
+        sealed_plan_digest=snapshot.sealed_plan_digest,
+        evaluator_digest=sealed_plan.evaluator_digest,
+        terminal_journal_phase=journal.phase,
+        terminal_journal_head_digest=journal.previous_event_digest,
+        final_causal_event_digest=run_document.final.causal_event_digest,
+    )
+    existing_commit = _read_snapshot_file_if_present(root, "commit.json")
+    if existing_commit is not None:
+        if existing_commit != _canonical_bytes(commit.model_dump(mode="json")):
+            raise TrustedRunError("snapshot commit replay drift")
+    else:
+        _write_snapshot_tree(root, {"commit.json": commit.model_dump(mode="json")})
+    return snapshot
+
+
 def _load_protected_execution_snapshot(
     registry: Any,
     run_id: str,
-) -> ProtectedCommittedExecutionSnapshot:
+) -> ProtectedCommittedExecutionSnapshot | LegacyProtectedCommittedExecutionSnapshot:
     root = _execution_snapshot_root(registry) / run_id
     try:
         snapshot_payload = _read_file(root, "snapshot.json", protected=True)
-        snapshot = ProtectedCommittedExecutionSnapshot.model_validate(
-            _parse_json(snapshot_payload, "protected committed execution snapshot")
+        snapshot_value = _parse_json(
+            snapshot_payload, "protected committed execution snapshot"
         )
-        commit = ProtectedSnapshotCommit.model_validate(
-            _parse_json(
-                _read_file(root, "commit.json", protected=True),
-                "protected committed execution snapshot marker",
+        commit_value = _parse_json(
+            _read_file(root, "commit.json", protected=True),
+            "protected committed execution snapshot marker",
+        )
+        legacy = snapshot_value.get("schema_version") == (
+            "noor-e2e-protected-execution-snapshot/v1"
+        )
+        if legacy:
+            snapshot = LegacyProtectedCommittedExecutionSnapshot.model_validate(
+                snapshot_value
             )
-        )
+            commit = LegacyProtectedSnapshotCommit.model_validate(commit_value)
+        else:
+            snapshot = ProtectedCommittedExecutionSnapshot.model_validate(
+                snapshot_value
+            )
+            commit = ProtectedSnapshotCommit.model_validate(commit_value)
     except (TrustedRunError, ValueError) as exc:
         raise TrustedRunError(
             f"protected committed execution snapshot is invalid: {exc}"
@@ -1244,8 +1710,7 @@ def _load_protected_execution_snapshot(
         current_time=datetime.now(UTC),
     )
     authorization_digest = canonical_digest(snapshot.run["authorization"])
-    journal_head_digest = str(snapshot.run["final"]["causal_event_digest"])
-    if (
+    common_binding_drift = (
         snapshot.run_id != run_id
         or snapshot.registry_id != registry.registry_id
         or snapshot.execution_ids != registry.compiled_plan.execution_ids
@@ -1255,12 +1720,42 @@ def _load_protected_execution_snapshot(
         or commit.snapshot_sha256 != _sha256(snapshot_payload)
         or commit.snapshot_digest != snapshot.snapshot_digest
         or commit.authorization_digest != authorization_digest
-        or commit.journal_head_digest != journal_head_digest
         or commit.attempt_chain_heads_digest != canonical_digest(attempt_chain_heads)
         or commit.operator_store_digest != store_root_digest(_operator_root(registry))
         or commit.final_readback_receipt_digest != final_receipt_digest
         or commit.final_inventory_digest != final_inventory_digest
-    ):
+    )
+    if legacy:
+        binding_drift = common_binding_drift or (
+            commit.journal_head_digest != run.final.causal_event_digest
+        )
+    else:
+        binding_drift = common_binding_drift or (
+            snapshot.terminal_journal_phase != "attempt_committed"
+            or snapshot.sealed_plan.get("schema_version")
+            != "noor-e2e-sealed-run-plan/v2"
+            or snapshot.sealed_plan.get("evaluator") != snapshot.evaluator
+            or snapshot.sealed_plan.get("evaluator_digest") != snapshot.evaluator_digest
+            or snapshot.sealed_plan.get("plan_digest")
+            != canonical_digest(
+                {
+                    "actions": snapshot.sealed_plan.get("actions"),
+                    "evaluator": snapshot.evaluator,
+                }
+            )
+            or _sha256(_canonical_bytes(snapshot.sealed_plan))
+            != snapshot.sealed_plan_digest
+            or canonical_digest(snapshot.evaluator) != snapshot.evaluator_digest
+            or snapshot.final_causal_event_digest != run.final.causal_event_digest
+            or commit.journal_head_digest != snapshot.terminal_journal_head_digest
+            or commit.terminal_journal_phase != snapshot.terminal_journal_phase
+            or commit.terminal_journal_head_digest
+            != snapshot.terminal_journal_head_digest
+            or commit.final_causal_event_digest != snapshot.final_causal_event_digest
+            or commit.sealed_plan_digest != snapshot.sealed_plan_digest
+            or commit.evaluator_digest != snapshot.evaluator_digest
+        )
+    if binding_drift:
         raise TrustedRunError("protected committed execution snapshot binding drift")
     return snapshot
 
@@ -1899,7 +2394,12 @@ def _load_verified_run(
     }
     actual_gate_paths = _tree_relative_files(
         protected_root,
-        prefixes=("gate-evidence/", "producer-receipts/gates/"),
+        prefixes=(
+            "gate-attempts/",
+            "gate-evidence/",
+            "producer-receipts/gates/",
+            "recorded-gates/",
+        ),
     )
     if actual_gate_paths != expected_gate_paths:
         raise TrustedRunError("typed gate published artifact path-set drift")

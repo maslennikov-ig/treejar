@@ -30,6 +30,7 @@ def test_cli_exposes_resumable_local_only_lifecycle() -> None:
         "prepare",
         "preflight",
         "execute-resume",
+        "reconcile-action",
         "record-gate",
         "finalize",
     ):
@@ -275,14 +276,13 @@ def test_record_gate_uses_opaque_authority_not_public_authorization(
 
     root = (tmp_path / "protected").resolve()
     root.mkdir()
-    recorded: list[dict[str, object]] = []
+    recorded: list[tuple[object, str]] = []
 
     class Journal:
         run_root = root
-        previous_event_digest = "c" * 64
 
-        def _append_event(self, **event) -> None:
-            recorded.append(event)
+        def record_gate_attempt(self, attempt, *, protected_attempt_digest) -> None:
+            recorded.append((attempt, protected_attempt_digest))
 
     journal = Journal()
     gate = execution.GateAttemptV2(
@@ -302,9 +302,7 @@ def test_record_gate_uses_opaque_authority_not_public_authorization(
             captured.update(registry=registry, authority=authority, journal=journal)
 
         def validate_gate_attempt(self, attempt, *, current_time):
-            return SimpleNamespace(
-                execution_id=attempt.execution_id, outcome=attempt.outcome
-            )
+            return attempt
 
     monkeypatch.setattr(cli, "_canonical_registry", lambda _: "registry")
     monkeypatch.setattr(
@@ -326,7 +324,7 @@ def test_record_gate_uses_opaque_authority_not_public_authorization(
         "outcome": "BLOCKED",
     }
     assert captured["authority"] is opaque_authority
-    assert recorded[0]["kind"] == "gate_recorded"
+    assert recorded[0][0].execution_id == "EB-RUNTIME"
 
 
 def test_adapter_consumes_exact_permit_before_transport_and_projects_checksum(
@@ -475,6 +473,288 @@ def test_adapter_pre_dispatch_timeout_leaves_permit_unconsumed(tmp_path: Path) -
     assert consumed == []
 
 
+def test_adapter_nested_sensitive_response_stays_only_in_protected_raw(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance import production
+
+    root = (tmp_path / "protected").resolve()
+    root.mkdir()
+
+    class Journal:
+        run_root = root
+        protected_root = root
+        run_id = "local-run"
+        authorization = SimpleNamespace(
+            store_ids=SimpleNamespace(
+                tracked_store_id="tracked",
+                tracked_root_digest=production.execution.store_root_digest(
+                    (root / "tracked").resolve()
+                ),
+            )
+        )
+
+        def consume_permit(self, reservation, **request) -> None:
+            return None
+
+    class Transport:
+        def preflight(self, capability, request) -> None:
+            return None
+
+        def request(self, capability, request):
+            return {"nested": {"production_logs": ["private raw collector record"]}}
+
+    production.write_protected_message(
+        Journal(), action_id="action-1", payload={"text": "local"}
+    )
+    result = production.WazzupWebhookAdapter(
+        adapter_id="adapter-1",
+        journal=Journal(),
+        dispatcher=production.CapabilityDispatcher({"webhook.inbound": Transport()}),
+    ).dispatch(
+        SimpleNamespace(adapter_id="adapter-1", action_id="action-1"),
+        message_path="requests/action-1.json",
+        execution_id="unit",
+        step_id="step",
+        capability="webhook.inbound",
+        operation_permission="fixture:execute",
+        destination_digest="a" * 64,
+        payload_digest=production._digest({"text": "local"}),
+        idempotency_key="idempotent",
+        capability_units={"outbound_text": 1},
+    )
+    raw = production.execution._read_protected(root, "adapter-responses/action-1.json")
+    tracked = production.execution._read_protected(
+        root, "tracked/local-run/adapter-responses/action-1.json"
+    )
+    assert b"private raw collector record" in raw
+    assert b"private raw collector record" not in tracked
+    assert b"private raw collector record" not in result.model_dump_json().encode()
+
+
+def _prepared_collector_journal(tmp_path: Path):
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        IndependentReadOnlyCollector,
+    )
+
+    from tests.e2e_acceptance_backend import build_canonical_test_registry
+    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+
+    registry = build_canonical_test_registry()
+    root = tmp_path / "protected"
+    authority = _issued_authority(registry, protected_root=root, run_id="local-run")
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    collector = IndependentReadOnlyCollector(
+        collector_id="independent-readback-collector",
+        transport=FakeReadOnlySshTransport(
+            responses={
+                "inventory": b'{"inventory":{"synthetic:item":{"state":"absent"}}}'
+            }
+        ),
+    )
+    return execution, authority, root, journal, collector
+
+
+def _final_collector_journal(tmp_path: Path):
+    execution, authority, root, journal, collector = _prepared_collector_journal(
+        tmp_path
+    )
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        execution.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="baseline",
+            run_id="local-run",
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="a" * 64,
+            observed_at=now - timedelta(seconds=2),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    journal.anchor_final_turn(
+        event_digest="b" * 64, occurred_at=now - timedelta(seconds=1)
+    )
+    return execution, authority, root, journal, collector
+
+
+@pytest.mark.parametrize("phase", ("baseline", "final"))
+def test_collector_validates_raw_before_writing_producer_files(
+    tmp_path: Path, phase: str
+) -> None:
+    from scripts.e2e_acceptance.production import ProductionAdapterError
+
+    setup = (
+        _prepared_collector_journal if phase == "baseline" else _final_collector_journal
+    )
+    _, _, root, journal, collector = setup(tmp_path)
+    collector.transport.responses["inventory"] = b'{"not_inventory":{}}'
+
+    with pytest.raises(ProductionAdapterError, match="lacks inventory"):
+        if phase == "baseline":
+            collector.seal_baseline(journal, source_id="baseline")
+        else:
+            collector.seal_final(journal, source_id="final")
+
+    assert not (root / "local-run" / "collector-raw" / f"{phase}.json").exists()
+    assert not (
+        root / "local-run" / "collector-artifacts" / f"{phase}-readback.json"
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    "crash_after",
+    (
+        "collector-raw/baseline.json",
+        "collector-artifacts/baseline-readback.json",
+        "producer-receipts/baseline-readback.json",
+    ),
+)
+def test_baseline_collector_reopens_partial_producer_transaction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, crash_after: str
+) -> None:
+    from scripts.e2e_acceptance import production
+
+    execution, authority, root, journal, collector = _prepared_collector_journal(
+        tmp_path
+    )
+    original_write = production._write_or_validate_exact
+
+    def crash_after_write(target_root, relative, value):
+        digest = original_write(target_root, relative, value)
+        if relative == crash_after:
+            raise RuntimeError(f"crash after {relative}")
+        return digest
+
+    monkeypatch.setattr(production, "_write_or_validate_exact", crash_after_write)
+    with pytest.raises(RuntimeError, match="crash"):
+        collector.seal_baseline(journal, source_id="baseline")
+    monkeypatch.setattr(production, "_write_or_validate_exact", original_write)
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    collector.transport.timeout_reads = frozenset({"inventory"})
+    baseline = collector.seal_baseline(reopened, source_id="baseline")
+    reopened.seal_baseline(baseline)
+    assert reopened.phase == "baseline_sealed"
+    assert (
+        sum(
+            "baseline_sealed" in path.read_text(encoding="utf-8")
+            for path in (root / "local-run" / "journal").glob("*.json")
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "crash_after",
+    (
+        "collector-raw/final.json",
+        "collector-artifacts/final-readback.json",
+        "producer-receipts/final-readback.json",
+    ),
+)
+def test_final_collector_reopens_partial_producer_transaction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, crash_after: str
+) -> None:
+    from scripts.e2e_acceptance import production
+
+    execution, authority, root, journal, collector = _final_collector_journal(tmp_path)
+    original_write = production._write_or_validate_exact
+
+    def crash_after_write(target_root, relative, value):
+        digest = original_write(target_root, relative, value)
+        if relative == crash_after:
+            raise RuntimeError(f"crash after {relative}")
+        return digest
+
+    monkeypatch.setattr(production, "_write_or_validate_exact", crash_after_write)
+    with pytest.raises(RuntimeError, match="crash"):
+        collector.seal_final(journal, source_id="final")
+    monkeypatch.setattr(production, "_write_or_validate_exact", original_write)
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    collector.transport.timeout_reads = frozenset({"inventory"})
+    assert collector.seal_final(reopened, source_id="final").phase == "final"
+    assert reopened.phase == "final_readback_sealed"
+    assert (
+        sum(
+            "final_readback_sealed" in path.read_text(encoding="utf-8")
+            for path in (root / "local-run" / "journal").glob("*.json")
+        )
+        == 1
+    )
+
+
+def test_final_collector_rejects_differing_replay_after_durable_raw(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from scripts.e2e_acceptance import production
+
+    execution, authority, root, journal, collector = _final_collector_journal(tmp_path)
+    original_write = production._write_or_validate_exact
+
+    def crash_after_raw(target_root, relative, value):
+        digest = original_write(target_root, relative, value)
+        if relative == "collector-raw/final.json":
+            raise RuntimeError("crash after raw")
+        return digest
+
+    monkeypatch.setattr(production, "_write_or_validate_exact", crash_after_raw)
+    with pytest.raises(RuntimeError, match="crash"):
+        collector.seal_final(journal, source_id="final")
+    monkeypatch.setattr(production, "_write_or_validate_exact", original_write)
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    with pytest.raises(production.ProductionAdapterError, match="differs"):
+        collector.seal_final(
+            reopened,
+            source_id="final",
+            replay_raw=b'{"inventory":{"synthetic:item":{"state":"present"}}}',
+        )
+    assert reopened.phase == "final_turn_anchored"
+
+
+def test_final_collector_recovers_after_crash_before_and_after_journal_seal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    execution, authority, root, journal, collector = _final_collector_journal(tmp_path)
+    original_append = journal._append_event
+
+    def crash_after_journal_seal(**event):
+        digest = original_append(**event)
+        if event["kind"] == "final_readback_sealed":
+            raise RuntimeError("crash after journal seal")
+        return digest
+
+    monkeypatch.setattr(journal, "_append_event", crash_after_journal_seal)
+    with pytest.raises(RuntimeError, match="after journal seal"):
+        collector.seal_final(journal, source_id="final")
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=root, run_id="local-run", authority=authority
+    )
+    assert collector.seal_final(reopened, source_id="final").phase == "final"
+    assert reopened.phase == "final_readback_sealed"
+    assert (
+        sum(
+            "final_readback_sealed" in path.read_text(encoding="utf-8")
+            for path in (root / "local-run" / "journal").glob("*.json")
+        )
+        == 1
+    )
+
+
 def test_cli_execute_resume_drives_once_then_reopen_blocks_unknown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -557,9 +837,84 @@ def test_cli_execute_resume_drives_once_then_reopen_blocks_unknown(
         == "baseline_sealed"
     )
 
-    with pytest.raises(Exception, match="unknown"):
-        cli._lifecycle_result(SimpleNamespace(command="execute-resume", **vars(args)))
-    _, reopened = cli._authority_and_journal(registry, root, "local-run", create=False)
+    dispatched = cli._lifecycle_result(
+        SimpleNamespace(command="execute-resume", **vars(args))
+    )
+    assert dispatched["action_id"] == "synthetic-action"
+    assert dispatched["state"] == "unknown"
+    authority, reopened = cli._authority_and_journal(
+        registry, root, "local-run", create=False
+    )
     assert reopened._actions == {"synthetic-action": "unknown"}
-    with pytest.raises(Exception, match="nonterminal"):
-        cli._lifecycle_result(SimpleNamespace(command="execute-resume", **vars(args)))
+    reservation = reopened._reservations["synthetic-action"]
+    now = datetime.now(UTC)
+    receipt = execution.UnknownActionReconciliationReceipt(
+        schema_version="noor-e2e-unknown-action-reconciliation/v2",
+        registry_id=registry.registry_id,
+        run_id="local-run",
+        authorization_digest=reopened.authorization_digest,
+        action_id=reservation.action_id,
+        reservation_digest=reservation.reservation_digest,
+        collector_id="independent-readback-collector",
+        producer="independent-readback-collector",
+        causal_event_digest=reopened.previous_event_digest,
+        observed_at=now,
+        expires_at=now + timedelta(minutes=1),
+        resolved_state="succeeded",
+        inventory_digest="e" * 64,
+    )
+    execution._write_exclusive(
+        reopened.run_root,
+        "independent-reconciliation/synthetic-action.json",
+        receipt.model_dump(mode="json"),
+    )
+    original_append = reopened._append_event
+
+    def crash_after_reconciliation(*, phase, kind, data):
+        digest = original_append(phase=phase, kind=kind, data=data)
+        if kind == "unknown_action_reconciled":
+            raise RuntimeError("crash after reconciliation")
+        return digest
+
+    reopened._append_event = crash_after_reconciliation
+    with pytest.raises(RuntimeError, match="crash after reconciliation"):
+        reopened.reconcile_and_settle_action(
+            action_id="synthetic-action",
+            receipt_digest=hashlib.sha256(
+                execution._read_protected(
+                    reopened.run_root,
+                    "independent-reconciliation/synthetic-action.json",
+                )
+            ).hexdigest(),
+        )
+    reconciled = cli._lifecycle_result(
+        SimpleNamespace(
+            command="reconcile-action", action_id="synthetic-action", **vars(args)
+        )
+    )
+    assert reconciled["state"] == "succeeded"
+    assert reconciled["settled_reserved_max_cost_usd"] == 0.25
+    _, settled_reopen = cli._authority_and_journal(
+        registry, root, "local-run", create=False
+    )
+    with pytest.raises(Exception, match="replay differs"):
+        settled_reopen.reconcile_and_settle_action(
+            action_id="synthetic-action", receipt_digest="0" * 64
+        )
+    assert (
+        cli._lifecycle_result(
+            SimpleNamespace(
+                command="reconcile-action", action_id="synthetic-action", **vars(args)
+            )
+        )
+        == reconciled
+    )
+    assert cli._lifecycle_result(
+        SimpleNamespace(command="execute-resume", **vars(args))
+    ) == {
+        "phase": "executing",
+        "state": "complete",
+        "plan_digest": production.ProtectedRunPlan.load(
+            root, "input-plan.json"
+        ).plan_digest,
+    }

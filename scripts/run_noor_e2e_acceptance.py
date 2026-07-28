@@ -25,6 +25,7 @@ from scripts.e2e_acceptance.production import (
     load_sealed_run_plan,
     seal_run_plan,
 )
+from scripts.e2e_acceptance.trusted_run import materialize_execution_snapshot
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare",
         "preflight",
         "execute-resume",
+        "reconcile-action",
         "record-gate",
         "finalize",
     ):
@@ -49,12 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
         lifecycle.add_argument("--repo-root", type=Path, required=True)
         lifecycle.add_argument("--protected-root", type=Path, required=True)
         lifecycle.add_argument("--run-id", required=True)
-        if command in {"prepare", "execute-resume"}:
+        if command in {"prepare", "execute-resume", "finalize"}:
             lifecycle.add_argument("--run-plan", required=True)
         if command == "preflight":
             lifecycle.add_argument("--baseline", required=True)
         if command == "record-gate":
             lifecycle.add_argument("--gate-attempt", required=True)
+        if command == "reconcile-action":
+            lifecycle.add_argument("--action-id", required=True)
     return parser
 
 
@@ -139,8 +143,16 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         dispatcher = CapabilityDispatcher(transports)
         for item in plan.actions:
             spec = dict(item["spec"])
-            if spec["action_id"] in journal._actions:
-                raise ProductionAdapterError("sealed action already has journal state")
+            action_id = str(spec["action_id"])
+            if action_id in journal._actions:
+                if (
+                    journal._actions[action_id] not in {"succeeded", "failed"}
+                    or action_id not in journal._journal_cost_settlements
+                ):
+                    raise ProductionAdapterError(
+                        "sealed action is not terminally settled"
+                    )
+                continue
             charge = dict(spec.pop("quota_charge"))
             reservation = journal.reserve_action(
                 action_id=str(spec.pop("action_id")),
@@ -158,10 +170,31 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
                 message_path=str(item["message_path"]),
                 request=spec,
             )
-            raise ProductionAdapterError(
-                "local dispatch is unknown until independent reconciliation"
-            )
-        return {"phase": journal.phase, "plan_digest": plan.plan_digest}
+            return {
+                "phase": journal.phase,
+                "plan_digest": plan.plan_digest,
+                "action_id": action_id,
+                "state": "unknown",
+            }
+        return {
+            "phase": journal.phase,
+            "plan_digest": plan.plan_digest,
+            "state": "complete",
+        }
+    if args.command == "reconcile-action":
+        action_id = args.action_id
+        payload = execution._read_protected(
+            journal.run_root, f"independent-reconciliation/{action_id}.json"
+        )
+        receipt_digest = hashlib.sha256(payload).hexdigest()
+        settlement = journal.reconcile_and_settle_action(
+            action_id=action_id, receipt_digest=receipt_digest
+        )
+        return {
+            "action_id": action_id,
+            "state": journal._actions[action_id],
+            "settled_reserved_max_cost_usd": settlement.actual_cost_usd,
+        }
     if args.command == "record-gate":
         payload = execution._read_protected(journal.run_root, args.gate_attempt)
         gate = execution.GateAttemptV2.model_validate(json.loads(payload))
@@ -170,37 +203,20 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             authority=authority,
             journal=journal,
         ).validate_gate_attempt(gate, current_time=datetime.now(UTC))
-        record_path = f"recorded-gates/{validated.execution_id}.json"
+        canonical_gate = validated.model_dump(mode="json")
+        gate_path = f"gate-attempts/{validated.execution_id}.json"
         try:
-            existing = json.loads(
-                execution._read_protected(journal.run_root, record_path)
-            )
+            existing = execution._read_protected(journal.run_root, gate_path)
         except execution.ExecutionValidationError:
-            existing = None
-        if existing is not None:
-            if (
-                existing.get("gate_attempt_sha256")
-                != hashlib.sha256(payload).hexdigest()
-                or existing.get("execution_id") != validated.execution_id
-                or existing.get("outcome") != validated.outcome
-            ):
-                raise ProductionAdapterError("gate record replay drift")
-            return {
-                "execution_id": validated.execution_id,
-                "outcome": validated.outcome,
-            }
-        record = {
-            "schema_version": "noor-e2e-recorded-gate/v2",
-            "execution_id": validated.execution_id,
-            "outcome": validated.outcome,
-            "gate_attempt_sha256": hashlib.sha256(payload).hexdigest(),
-            "journal_head_digest": journal.previous_event_digest,
-        }
-        execution._write_exclusive(journal.run_root, record_path, record)
-        journal._append_event(
-            phase="executing",
-            kind="gate_recorded",
-            data=record,
+            execution._write_exclusive(journal.run_root, gate_path, canonical_gate)
+        else:
+            if existing != execution._canonical_bytes(canonical_gate):
+                raise ProductionAdapterError("gate attempt replay drift")
+        journal.record_gate_attempt(
+            validated,
+            protected_attempt_digest=hashlib.sha256(
+                execution._canonical_bytes(canonical_gate)
+            ).hexdigest(),
         )
         return {"execution_id": validated.execution_id, "outcome": validated.outcome}
     if args.command == "finalize":
@@ -208,6 +224,13 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             raise ProductionAdapterError(
                 "finalize requires a terminal committed journal"
             )
+        plan = load_sealed_run_plan(
+            journal,
+            ProtectedRunPlan.load(
+                args.protected_root.resolve(strict=True), args.run_plan
+            ),
+        )
+        materialize_execution_snapshot(registry, journal, plan)
         registry.finalize_run(args.run_id)
         return {"run_id": args.run_id, "finalized": True}
     raise ProductionAdapterError("unknown local lifecycle command")

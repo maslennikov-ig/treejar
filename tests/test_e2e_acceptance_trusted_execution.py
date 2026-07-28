@@ -1508,6 +1508,56 @@ def test_zero_turn_gate_requires_protected_receipted_evidence(tmp_path: Path) ->
             attempt.model_copy(update={"receipt_digest": "0" * 64})
         )
 
+    protected_attempt_digest = execution._digest(attempt.model_dump(mode="json"))
+    original_append = journal._append_event
+
+    def crash_before_gate_event(*, phase, kind, data):
+        if kind == "gate_recorded":
+            raise RuntimeError("crash before gate event")
+        return original_append(phase=phase, kind=kind, data=data)
+
+    journal._append_event = crash_before_gate_event
+    with pytest.raises(RuntimeError, match="crash before gate event"):
+        journal.record_gate_attempt(
+            attempt, protected_attempt_digest=protected_attempt_digest
+        )
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=tmp_path / "protected",
+        run_id="gate-run",
+        authority=authority,
+    )
+    reopened.record_gate_attempt(
+        attempt, protected_attempt_digest=protected_attempt_digest
+    )
+    after_event = execution.ProtectedExecutionJournal.open(
+        protected_root=tmp_path / "protected",
+        run_id="gate-run",
+        authority=authority,
+    )
+    after_event.record_gate_attempt(
+        attempt, protected_attempt_digest=protected_attempt_digest
+    )
+    record_path = after_event.run_root / f"recorded-gates/{execution_id}.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    for field, value in (
+        ("schema_version", "tampered"),
+        ("journal_head_digest", "0" * 64),
+    ):
+        tampered = dict(record)
+        tampered[field] = value
+        record_path.write_text(json.dumps(tampered), encoding="utf-8")
+        with pytest.raises(Exception, match="replay drift"):
+            after_event.record_gate_attempt(
+                attempt, protected_attempt_digest=protected_attempt_digest
+            )
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    assert reopened._recorded_gates == {execution_id: attempt}
+    with pytest.raises(Exception, match="replay|commit-ready"):
+        reopened.record_gate_attempt(
+            attempt.model_copy(update={"outcome": "EXCLUDED_BY_CLIENT"}),
+            protected_attempt_digest=protected_attempt_digest,
+        )
+
 
 def test_fake_adapter_refuses_unreserved_call() -> None:
     _, execution = _modules()
@@ -1520,6 +1570,15 @@ def test_fake_adapter_refuses_unreserved_call() -> None:
 
     with pytest.raises(Exception, match="reservation"):
         adapter.execute(None, **_action_request())
+
+
+@pytest.mark.parametrize("run_id", (".", "..", "nested/run"))
+def test_run_id_rejects_path_escape_before_journal_write(run_id: str) -> None:
+    _, execution = _modules()
+
+    with pytest.raises(Exception, match="run identity"):
+        execution._validate_run_id(run_id)
+    execution._validate_run_id("synthetic-run.v2_1")
 
 
 def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:

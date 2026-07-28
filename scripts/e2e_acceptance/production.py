@@ -504,6 +504,120 @@ def load_sealed_run_plan(
     return sealed
 
 
+def _optional_protected_payload(root: Path, relative: str) -> bytes | None:
+    try:
+        return execution._read_protected(root, relative)
+    except FileNotFoundError:
+        return None
+    except execution.ExecutionValidationError as exc:
+        if isinstance(exc.__cause__, FileNotFoundError):
+            return None
+        raise ProductionAdapterError("protected collector payload is invalid") from exc
+    except OSError as exc:
+        raise ProductionAdapterError("protected collector payload is invalid") from exc
+
+
+def _load_baseline_artifact(
+    journal: execution.ProtectedExecutionJournal,
+    *,
+    source_id: str,
+    inventory: Mapping[str, Any],
+) -> tuple[BaselineReadbackArtifact, str] | None:
+    payload = _optional_protected_payload(
+        journal.run_root, "collector-artifacts/baseline-readback.json"
+    )
+    if payload is None:
+        return None
+    try:
+        artifact = BaselineReadbackArtifact.model_validate(json.loads(payload))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ProductionAdapterError("baseline collector artifact is invalid") from exc
+    if (
+        journal.previous_event_digest is None
+        or artifact.registry_id != journal.authorization.registry_id
+        or artifact.run_id != journal.run_id
+        or artifact.authorization_digest != journal.authorization_digest
+        or artifact.preflight_digest != journal.authorization.preflight_digest
+        or artifact.collector_id not in journal.authorization.collector_ids
+        or artifact.collector_artifact_digest
+        != journal.authorization.readback_collector_digest
+        or artifact.journal_head_digest != journal.previous_event_digest
+        or artifact.observation.source_id != source_id
+        or artifact.inventory_digest != _digest(inventory)
+    ):
+        raise ProductionAdapterError("baseline collector replay binding drift")
+    return artifact, hashlib.sha256(payload).hexdigest()
+
+
+def _load_final_artifact(
+    journal: execution.ProtectedExecutionJournal,
+    *,
+    source_id: str,
+    inventory: Mapping[str, Any],
+) -> tuple[execution.ProtectedFinalReadbackArtifact, str] | None:
+    payload = _optional_protected_payload(
+        journal.run_root, "collector-artifacts/final-readback.json"
+    )
+    if payload is None:
+        return None
+    try:
+        artifact = execution.ProtectedFinalReadbackArtifact.model_validate(
+            json.loads(payload)
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ProductionAdapterError("final collector artifact is invalid") from exc
+    if (
+        journal.previous_event_digest is None
+        or journal._final_turn_occurred_at is None
+        or artifact.registry_id != journal.authorization.registry_id
+        or artifact.run_id != journal.run_id
+        or artifact.authorization_digest != journal.authorization_digest
+        or artifact.preflight_digest != journal.authorization.preflight_digest
+        or artifact.collector_id not in journal.authorization.collector_ids
+        or artifact.collector_artifact_digest
+        != journal.authorization.readback_collector_digest
+        or artifact.journal_head_digest != journal.previous_event_digest
+        or artifact.final_turn_anchor_at != journal._final_turn_occurred_at
+        or artifact.observation.source_id != source_id
+        or artifact.inventory_digest != _digest(inventory)
+    ):
+        raise ProductionAdapterError("final collector replay binding drift")
+    return artifact, hashlib.sha256(payload).hexdigest()
+
+
+def _load_or_collect_raw(
+    collector: IndependentReadOnlyCollector,
+    journal: execution.ProtectedExecutionJournal,
+    *,
+    phase: str,
+    replay_raw: bytes | None,
+) -> tuple[bytes, dict[str, Any]]:
+    relative = f"collector-raw/{phase}.json"
+    payload = _optional_protected_payload(journal.run_root, relative)
+    if payload is None:
+        raw = collector.transport.read(collector.source_name)
+        inventory = collector._inventory(raw)
+        _write_or_validate_exact(
+            journal.run_root, relative, {"raw": raw.decode("utf-8")}
+        )
+        return raw, inventory
+    try:
+        committed = json.loads(payload)
+        raw_text = committed["raw"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ProductionAdapterError("protected collector raw is invalid") from exc
+    if not isinstance(raw_text, str):
+        raise ProductionAdapterError("protected collector raw is invalid")
+    raw = raw_text.encode("utf-8")
+    inventory = collector._inventory(raw)
+    if replay_raw is not None:
+        collector._inventory(replay_raw)
+        _write_or_validate_exact(
+            journal.run_root, relative, {"raw": replay_raw.decode("utf-8")}
+        )
+    return raw, inventory
+
+
 @dataclass
 class IndependentReadOnlyCollector:
     """Read-only collector; it owns no mutation-capable adapter or dispatcher."""
@@ -517,7 +631,7 @@ class IndependentReadOnlyCollector:
         try:
             payload = json.loads(raw)
             inventory = payload["inventory"]
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
             raise ProductionAdapterError("collector response lacks inventory") from exc
         if not isinstance(inventory, dict):
             raise ProductionAdapterError("collector inventory must be an object")
@@ -552,6 +666,7 @@ class IndependentReadOnlyCollector:
         *,
         source_id: str,
         observed_at: datetime | None = None,
+        replay_raw: bytes | None = None,
     ) -> ReadbackObservation:
         """Commit an independent baseline producer artifact before execution."""
 
@@ -562,41 +677,44 @@ class IndependentReadOnlyCollector:
             or journal.previous_event_digest is None
         ):
             raise ProductionAdapterError("baseline collector is not solely authorized")
-        raw = self.transport.read(self.source_name)
-        inventory = self._inventory(raw)
-        _write_or_validate_exact(
-            journal.run_root,
-            "collector-raw/baseline.json",
-            {"raw": raw.decode("utf-8")},
+        raw, inventory = _load_or_collect_raw(
+            self, journal, phase="baseline", replay_raw=replay_raw
         )
-        observation = ReadbackObservation.build(
-            phase="baseline",
-            collector_id=self.collector_id,
-            source_id=source_id,
-            run_id=journal.run_id,
-            preflight_digest=journal.authorization.preflight_digest,
-            collector_artifact_digest=journal.authorization.readback_collector_digest,
-            causal_event_digest=journal.previous_event_digest,
-            observed_at=observed_at or datetime.now(UTC),
-            inventory=inventory,
+        existing = _load_baseline_artifact(
+            journal, source_id=source_id, inventory=inventory
         )
-        artifact = BaselineReadbackArtifact(
-            registry_id=journal.authorization.registry_id,
-            run_id=journal.run_id,
-            authorization_digest=journal.authorization_digest,
-            preflight_digest=journal.authorization.preflight_digest,
-            collector_id=self.collector_id,
-            collector_artifact_digest=observation.collector_artifact_digest,
-            journal_head_digest=journal.previous_event_digest,
-            observed_at=observation.observed_at,
-            inventory_digest=_digest(observation.inventory),
-            observation=observation,
-        )
-        artifact_sha256 = _write_or_validate_exact(
-            journal.run_root,
-            "collector-artifacts/baseline-readback.json",
-            artifact.model_dump(mode="json"),
-        )
+        if existing is None:
+            observation = ReadbackObservation.build(
+                phase="baseline",
+                collector_id=self.collector_id,
+                source_id=source_id,
+                run_id=journal.run_id,
+                preflight_digest=journal.authorization.preflight_digest,
+                collector_artifact_digest=journal.authorization.readback_collector_digest,
+                causal_event_digest=journal.previous_event_digest,
+                observed_at=observed_at or datetime.now(UTC),
+                inventory=inventory,
+            )
+            artifact = BaselineReadbackArtifact(
+                registry_id=journal.authorization.registry_id,
+                run_id=journal.run_id,
+                authorization_digest=journal.authorization_digest,
+                preflight_digest=journal.authorization.preflight_digest,
+                collector_id=self.collector_id,
+                collector_artifact_digest=observation.collector_artifact_digest,
+                journal_head_digest=journal.previous_event_digest,
+                observed_at=observation.observed_at,
+                inventory_digest=_digest(observation.inventory),
+                observation=observation,
+            )
+            artifact_sha256 = _write_or_validate_exact(
+                journal.run_root,
+                "collector-artifacts/baseline-readback.json",
+                artifact.model_dump(mode="json"),
+            )
+        else:
+            artifact, artifact_sha256 = existing
+            observation = artifact.observation
         receipt = BaselineReadbackProducerReceipt(
             registry_id=artifact.registry_id,
             run_id=artifact.run_id,
@@ -611,19 +729,18 @@ class IndependentReadOnlyCollector:
             issued_at=artifact.observed_at,
             expires_at=artifact.observed_at + timedelta(minutes=5),
         )
-        tracked_payload = {
-            "raw_sha256": hashlib.sha256(raw).hexdigest(),
-            "inventory_digest": _digest(inventory),
-        }
-        _write_or_validate_exact(
-            _tracked_root(journal),
-            "collector-projections/baseline-readback.json",
-            tracked_payload,
-        )
         _write_or_validate_exact(
             journal.run_root,
             "producer-receipts/baseline-readback.json",
             receipt.model_dump(mode="json"),
+        )
+        _write_or_validate_exact(
+            _tracked_root(journal),
+            "collector-projections/baseline-readback.json",
+            {
+                "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                "inventory_digest": _digest(inventory),
+            },
         )
         return observation
 
@@ -633,49 +750,58 @@ class IndependentReadOnlyCollector:
         *,
         source_id: str,
         observed_at: datetime | None = None,
+        replay_raw: bytes | None = None,
     ) -> ReadbackObservation:
         if self.collector_id not in journal.authorization.collector_ids:
             raise ProductionAdapterError("collector is not authorized")
+        if journal.phase == "final_readback_sealed":
+            return _load_sealed_final_observation(journal)
         if (
-            journal.previous_event_digest is None
+            journal.phase != "final_turn_anchored"
+            or journal.previous_event_digest is None
             or journal._final_turn_occurred_at is None
         ):
             raise ProductionAdapterError("final collector requires final-turn anchor")
-        raw = self.transport.read(self.source_name)
-        inventory = self._inventory(raw)
-        _write_or_validate_exact(
-            journal.run_root, "collector-raw/final.json", {"raw": raw.decode("utf-8")}
+        raw, inventory = _load_or_collect_raw(
+            self, journal, phase="final", replay_raw=replay_raw
         )
-        observation = ReadbackObservation.build(
-            phase="final",
-            collector_id=self.collector_id,
-            source_id=source_id,
-            run_id=journal.run_id,
-            preflight_digest=journal.authorization.preflight_digest,
-            collector_artifact_digest=journal.authorization.readback_collector_digest,
-            causal_event_digest=journal.previous_event_digest,
-            observed_at=observed_at or datetime.now(UTC),
-            inventory=inventory,
+        existing = _load_final_artifact(
+            journal, source_id=source_id, inventory=inventory
         )
-        artifact = execution.ProtectedFinalReadbackArtifact(
-            schema_version="noor-e2e-final-readback-artifact/v2",
-            registry_id=journal.authorization.registry_id,
-            run_id=journal.run_id,
-            authorization_digest=journal.authorization_digest,
-            preflight_digest=journal.authorization.preflight_digest,
-            collector_id=self.collector_id,
-            collector_artifact_digest=observation.collector_artifact_digest,
-            journal_head_digest=journal.previous_event_digest,
-            final_turn_anchor_at=journal._final_turn_occurred_at,
-            observed_at=observation.observed_at,
-            inventory_digest=_digest(observation.inventory),
-            observation=observation,
-        )
-        artifact_sha256 = _write_or_validate_exact(
-            journal.run_root,
-            "collector-artifacts/final-readback.json",
-            artifact.model_dump(mode="json"),
-        )
+        if existing is None:
+            observation = ReadbackObservation.build(
+                phase="final",
+                collector_id=self.collector_id,
+                source_id=source_id,
+                run_id=journal.run_id,
+                preflight_digest=journal.authorization.preflight_digest,
+                collector_artifact_digest=journal.authorization.readback_collector_digest,
+                causal_event_digest=journal.previous_event_digest,
+                observed_at=observed_at or datetime.now(UTC),
+                inventory=inventory,
+            )
+            artifact = execution.ProtectedFinalReadbackArtifact(
+                schema_version="noor-e2e-final-readback-artifact/v2",
+                registry_id=journal.authorization.registry_id,
+                run_id=journal.run_id,
+                authorization_digest=journal.authorization_digest,
+                preflight_digest=journal.authorization.preflight_digest,
+                collector_id=self.collector_id,
+                collector_artifact_digest=observation.collector_artifact_digest,
+                journal_head_digest=journal.previous_event_digest,
+                final_turn_anchor_at=journal._final_turn_occurred_at,
+                observed_at=observation.observed_at,
+                inventory_digest=_digest(observation.inventory),
+                observation=observation,
+            )
+            artifact_sha256 = _write_or_validate_exact(
+                journal.run_root,
+                "collector-artifacts/final-readback.json",
+                artifact.model_dump(mode="json"),
+            )
+        else:
+            artifact, artifact_sha256 = existing
+            observation = artifact.observation
         issued_at = observation.observed_at
         receipt = execution.FinalReadbackProducerReceipt(
             schema_version="noor-e2e-final-readback-producer-receipt/v2",
@@ -693,6 +819,11 @@ class IndependentReadOnlyCollector:
             issued_at=issued_at,
             expires_at=issued_at + timedelta(minutes=5),
         )
+        receipt_digest = _write_or_validate_exact(
+            journal.run_root,
+            "producer-receipts/final-readback.json",
+            receipt.model_dump(mode="json"),
+        )
         _write_or_validate_exact(
             _tracked_root(journal),
             "collector-projections/final-readback.json",
@@ -701,13 +832,46 @@ class IndependentReadOnlyCollector:
                 "inventory_digest": _digest(inventory),
             },
         )
-        receipt_digest = _write_or_validate_exact(
-            journal.run_root,
-            "producer-receipts/final-readback.json",
-            receipt.model_dump(mode="json"),
-        )
         journal.seal_final_readback(observation, receipt_digest=receipt_digest)
         return observation
+
+
+def _load_sealed_final_observation(
+    journal: execution.ProtectedExecutionJournal,
+) -> ReadbackObservation:
+    """Read the immutable final producer pair after a completed seal."""
+
+    try:
+        artifact_payload = execution._read_protected(
+            journal.run_root, "collector-artifacts/final-readback.json"
+        )
+        receipt_payload = execution._read_protected(
+            journal.run_root, "producer-receipts/final-readback.json"
+        )
+        artifact = execution.ProtectedFinalReadbackArtifact.model_validate(
+            json.loads(artifact_payload)
+        )
+        receipt = execution.FinalReadbackProducerReceipt.model_validate(
+            json.loads(receipt_payload)
+        )
+    except (
+        ValueError,
+        json.JSONDecodeError,
+        execution.ExecutionValidationError,
+    ) as exc:
+        raise ProductionAdapterError("sealed final collector pair is invalid") from exc
+    if (
+        artifact.registry_id != journal.authorization.registry_id
+        or artifact.run_id != journal.run_id
+        or artifact.authorization_digest != journal.authorization_digest
+        or artifact.preflight_digest != journal.authorization.preflight_digest
+        or artifact.collector_id not in journal.authorization.collector_ids
+        or receipt.artifact_sha256 != hashlib.sha256(artifact_payload).hexdigest()
+        or receipt.collector_id != artifact.collector_id
+        or receipt.inventory_digest != artifact.inventory_digest
+    ):
+        raise ProductionAdapterError("sealed final collector binding drift")
+    return artifact.observation
 
 
 def load_protected_baseline(

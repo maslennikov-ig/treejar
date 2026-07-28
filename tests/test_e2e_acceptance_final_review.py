@@ -8,6 +8,7 @@ import json
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,6 +31,29 @@ EVIDENCE_BLOCK_IDS = tuple(
         )
     )["evidence_blocks"]
 )
+
+
+def test_snapshot_writer_rejects_intermediate_symlink_without_external_write(
+    tmp_path: Path,
+) -> None:
+    """Creating a snapshot must not traverse a symlink below its operator root."""
+
+    _, _, trusted = _modules()
+    operator_root = tmp_path / "operator"
+    outside = tmp_path / "outside"
+    operator_root.mkdir()
+    outside.mkdir()
+    (operator_root / "execution-snapshots").symlink_to(
+        outside, target_is_directory=True
+    )
+
+    with pytest.raises(Exception, match="no-follow|snapshot root|protected"):
+        trusted._write_snapshot_tree(
+            operator_root / "execution-snapshots" / "synthetic-run",
+            {"snapshot.json": {"status": "committed"}},
+        )
+
+    assert not (outside / "synthetic-run").exists()
 
 
 def _stage_protected_execution_snapshot(
@@ -88,7 +112,9 @@ def _stage_protected_execution_snapshot(
                 )
             )
     snapshot_identity = {
-        "schema_version": "noor-e2e-protected-execution-snapshot/v2",
+        # Frozen pre-production fixture: compatibility is explicit and cannot
+        # be emitted by the v2 production materializer.
+        "schema_version": "noor-e2e-protected-execution-snapshot/v1",
         "run_id": run_id,
         "registry_id": registry.registry_id,
         "execution_ids": list(registry.compiled_plan.execution_ids),
@@ -114,7 +140,7 @@ def _stage_protected_execution_snapshot(
     _write_json(
         source_root / "commit.json",
         {
-            "schema_version": "noor-e2e-protected-execution-snapshot-commit/v2",
+            "schema_version": "noor-e2e-protected-execution-snapshot-commit/v1",
             "status": "committed",
             "run_id": run_id,
             "registry_id": registry.registry_id,
@@ -134,6 +160,65 @@ def _stage_protected_execution_snapshot(
             "final_inventory_digest": snapshot["run"]["final_inventory_digest"],
         },
     )
+
+
+def _promote_fixture_snapshot_to_production_v2(
+    registry, run_id: str
+) -> tuple[Path, Path]:
+    """Convert only a fixture copy into the explicit strict production shape."""
+
+    _, _, trusted = _modules()
+    source_root = trusted._execution_snapshot_root(registry) / run_id
+    snapshot_path = source_root / "snapshot.json"
+    commit_path = source_root / "commit.json"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    causal_head = snapshot["run"]["final"]["causal_event_digest"]
+    terminal_head = "d" * 64
+    evaluator = {"fixture": "sealed"}
+    sealed_plan = {
+        "schema_version": "noor-e2e-sealed-run-plan/v2",
+        "actions": [],
+        "evaluator": evaluator,
+        "plan_digest": trusted.canonical_digest(
+            {"actions": [], "evaluator": evaluator}
+        ),
+        "evaluator_digest": trusted.canonical_digest(evaluator),
+    }
+    snapshot.update(
+        {
+            "schema_version": "noor-e2e-protected-execution-snapshot/v2",
+            "sealed_plan": sealed_plan,
+            "evaluator": evaluator,
+            "sealed_plan_digest": hashlib.sha256(
+                trusted._canonical_bytes(sealed_plan)
+            ).hexdigest(),
+            "evaluator_digest": sealed_plan["evaluator_digest"],
+            "terminal_journal_phase": "attempt_committed",
+            "terminal_journal_head_digest": terminal_head,
+            "final_causal_event_digest": causal_head,
+        }
+    )
+    identity = {
+        key: value for key, value in snapshot.items() if key != "snapshot_digest"
+    }
+    snapshot["snapshot_digest"] = trusted.canonical_digest(identity)
+    snapshot_sha256 = _write_json(snapshot_path, snapshot)
+    commit = json.loads(commit_path.read_text(encoding="utf-8"))
+    commit.update(
+        {
+            "schema_version": "noor-e2e-protected-execution-snapshot-commit/v2",
+            "snapshot_sha256": snapshot_sha256,
+            "snapshot_digest": snapshot["snapshot_digest"],
+            "sealed_plan_digest": snapshot["sealed_plan_digest"],
+            "evaluator_digest": snapshot["evaluator_digest"],
+            "terminal_journal_phase": "attempt_committed",
+            "journal_head_digest": terminal_head,
+            "terminal_journal_head_digest": terminal_head,
+            "final_causal_event_digest": causal_head,
+        }
+    )
+    _write_json(commit_path, commit)
+    return snapshot_path, commit_path
 
 
 def _refresh_test_publication_marker(
@@ -606,6 +691,330 @@ def test_finalizer_publishes_only_complete_verified_snapshot(tmp_path: Path) -> 
     assert registry.calculate_rollups()["coverage_complete"] is True
     assert (tracked / "registry/run.json").is_file()
     assert (protected / "registry/anchor.json").is_file()
+
+
+def test_production_v2_snapshot_has_no_implicit_legacy_field_bypass(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    source_root = _modules()[2]._execution_snapshot_root(registry) / run_id
+    snapshot_path = source_root / "snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    snapshot["schema_version"] = "noor-e2e-protected-execution-snapshot/v2"
+    _write_json(snapshot_path, snapshot)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+
+    with pytest.raises(Exception, match="sealed_plan|terminal_journal"):
+        registry.finalize_run(run_id)
+
+
+def test_production_v2_snapshot_rejects_terminal_journal_head_drift(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    snapshot_path, commit_path = _promote_fixture_snapshot_to_production_v2(
+        registry, run_id
+    )
+    commit = json.loads(commit_path.read_text(encoding="utf-8"))
+    commit["journal_head_digest"] = "f" * 64
+    _write_json(commit_path, commit)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+
+    with pytest.raises(Exception, match="snapshot binding drift"):
+        registry.finalize_run(run_id)
+
+
+def test_production_v2_snapshot_rejects_final_causal_head_drift(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    snapshot_path, commit_path = _promote_fixture_snapshot_to_production_v2(
+        registry, run_id
+    )
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    snapshot["final_causal_event_digest"] = "f" * 64
+    identity = {
+        key: value for key, value in snapshot.items() if key != "snapshot_digest"
+    }
+    snapshot["snapshot_digest"] = _modules()[2].canonical_digest(identity)
+    snapshot_sha256 = _write_json(snapshot_path, snapshot)
+    commit = json.loads(commit_path.read_text(encoding="utf-8"))
+    commit["snapshot_sha256"] = snapshot_sha256
+    commit["snapshot_digest"] = snapshot["snapshot_digest"]
+    commit["final_causal_event_digest"] = "f" * 64
+    _write_json(commit_path, commit)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+
+    with pytest.raises(Exception, match="snapshot binding drift"):
+        registry.finalize_run(run_id)
+
+
+def _production_materializer_inputs(tmp_path: Path):
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    _, _, trusted = _modules()
+    run = json.loads((tracked / "registry/run.json").read_text(encoding="utf-8"))
+    run_id = run["run_id"]
+    plan = SimpleNamespace(actions=(), evaluator={"fixture": "sealed"})
+    plan.plan_digest = trusted.canonical_digest(
+        {"actions": list(plan.actions), "evaluator": plan.evaluator}
+    )
+    plan.evaluator_digest = trusted.canonical_digest(plan.evaluator)
+    sealed = {
+        "schema_version": "noor-e2e-sealed-run-plan/v2",
+        "plan_digest": plan.plan_digest,
+        "evaluator_digest": plan.evaluator_digest,
+        "actions": list(plan.actions),
+        "evaluator": plan.evaluator,
+    }
+    _write_json(protected / "run-plan/sealed.json", sealed)
+    journal = SimpleNamespace(
+        phase="attempt_committed",
+        run_id=run_id,
+        protected_root=protected.parent,
+        run_root=protected,
+        authorization_digest=trusted.canonical_digest(run["authorization"]),
+        previous_event_digest="d" * 64,
+        _actions={},
+        _recorded_gates={},
+    )
+    return registry, tracked, protected, journal, plan
+
+
+def test_materialize_execution_snapshot_builds_and_loads_strict_production_v2(
+    tmp_path: Path,
+) -> None:
+    registry, _, _, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+
+    assert snapshot.terminal_journal_head_digest == journal.previous_event_digest
+    assert (
+        snapshot.final_causal_event_digest
+        == json.loads(
+            (
+                registry.repo_root
+                / ".codex/stages/tj-ee5f/results"
+                / journal.run_id
+                / "registry/run.json"
+            ).read_text(encoding="utf-8")
+        )["final"]["causal_event_digest"]
+    )
+    assert snapshot.terminal_journal_head_digest != snapshot.final_causal_event_digest
+    assert (
+        trusted._load_protected_execution_snapshot(registry, journal.run_id) == snapshot
+    )
+
+
+def test_materializer_recovers_only_identical_snapshot_after_commit_crash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    registry, tracked, _, journal, plan = _production_materializer_inputs(tmp_path)
+    _, _, trusted = _modules()
+    original_write = trusted._write_snapshot_tree
+
+    def crash_before_commit(root, files):
+        if set(files) == {"commit.json"}:
+            raise OSError("crash before snapshot commit")
+        return original_write(root, files)
+
+    monkeypatch.setattr(trusted, "_write_snapshot_tree", crash_before_commit)
+    with pytest.raises(OSError, match="crash before snapshot commit"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
+    snapshot_root = trusted._execution_snapshot_root(registry) / journal.run_id
+    assert (snapshot_root / "snapshot.json").is_file()
+    assert not (snapshot_root / "commit.json").exists()
+
+    monkeypatch.setattr(trusted, "_write_snapshot_tree", original_write)
+    trusted.materialize_execution_snapshot(registry, journal, plan)
+    index = json.loads(
+        (tracked / "registry/evidence-index.json").read_text(encoding="utf-8")
+    )
+    evidence_path = tracked / index["entries"][0]["relative_path"]
+    evidence_path.write_text("{}\n", encoding="utf-8")
+    evidence_path.chmod(0o600)
+    with pytest.raises(Exception, match="checksum drift"):
+        trusted.materialize_execution_snapshot(registry, journal, plan)
+
+
+def test_materializer_includes_and_validates_all_four_gate_artifacts(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected, journal, plan = _production_materializer_inputs(
+        tmp_path
+    )
+    _, execution, trusted = _modules()
+    run = json.loads((tracked / "registry/run.json").read_text(encoding="utf-8"))
+    index_path = tracked / "registry/evidence-index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    entry = next(
+        item
+        for item in index["entries"]
+        if item["producer"] == "protected-attempt-committer"
+    )
+    committed_path = tracked / entry["relative_path"]
+    committed = json.loads(committed_path.read_text(encoding="utf-8"))
+    execution_id = committed["execution_id"]
+    now = datetime.now(UTC)
+    criterion_ids = tuple(
+        item.criterion_id
+        for item in registry.compiled_plan.criteria.values()
+        if execution_id in item.obligation_ids
+    )
+    started_digest = "a" * 64
+    artifact = execution.GateEvidenceArtifact(
+        schema_version="noor-e2e-gate-evidence/v2",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        execution_owner=run["authorization"]["authorization_id"],
+        execution_started_event_digest=started_digest,
+        outcome="BLOCKED",
+        producer="independent-readback-collector",
+        observed_at=now,
+        evidence_digest="b" * 64,
+    ).model_dump(mode="json")
+    artifact_sha256 = hashlib.sha256(trusted._canonical_bytes(artifact)).hexdigest()
+    receipt = execution.GateEvidenceReceipt(
+        schema_version="noor-e2e-gate-evidence-receipt/v2",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        execution_owner=run["authorization"]["authorization_id"],
+        execution_started_event_digest=started_digest,
+        artifact_sha256=artifact_sha256,
+        outcome="BLOCKED",
+        producer="independent-readback-collector",
+        issued_at=now,
+        expires_at=now + timedelta(minutes=1),
+    ).model_dump(mode="json")
+    receipt_sha256 = hashlib.sha256(trusted._canonical_bytes(receipt)).hexdigest()
+    gate = execution.GateAttemptV2(
+        schema_version="noor-e2e-gate-attempt/v2",
+        execution_id=execution_id,
+        outcome="BLOCKED",
+        run_started_at=now - timedelta(seconds=1),
+        execution_started_event_digest=started_digest,
+        receipt_digest=receipt_sha256,
+    )
+    gate_payload = gate.model_dump(mode="json")
+    gate_sha256 = hashlib.sha256(trusted._canonical_bytes(gate_payload)).hexdigest()
+    committed.update(attempt_kind="gate", outcome="BLOCKED", gate_attempt=gate_payload)
+    protected_commit_path = protected / committed["protected_commit_ref"]
+    protected_commit = json.loads(protected_commit_path.read_text(encoding="utf-8"))
+    protected_commit.update(
+        attempt_kind="gate",
+        gate_attempt_digest=trusted.canonical_digest(gate_payload),
+    )
+    protected_commit_digest = _write_json(protected_commit_path, protected_commit)
+    committed["protected_commit_digest"] = protected_commit_digest
+    previous = None
+    phase_chain = []
+    for cursor, phase in enumerate(
+        (
+            "prepared",
+            "baseline_sealed",
+            "executing",
+            "final_turn_anchored",
+            "final_readback_sealed",
+            "evaluated",
+            "attempt_committed",
+        ),
+        start=1,
+    ):
+        event = {
+            "cursor": cursor,
+            "phase": phase,
+            "previous_event_digest": previous,
+            "run_id": journal.run_id,
+            "execution_id": execution_id,
+            "attempt_digest": committed["attempt_digest"],
+            "semantic_digest": committed["semantic_digest"],
+            "authorization_digest": journal.authorization_digest,
+            "protected_commit_digest": protected_commit_digest,
+        }
+        previous = trusted.canonical_digest(event)
+        phase_chain.append(
+            {
+                "cursor": cursor,
+                "phase": phase,
+                "previous_event_digest": event["previous_event_digest"],
+                "event_digest": previous,
+            }
+        )
+    committed["phase_chain"] = phase_chain
+    committed["phase_head_digest"] = previous
+    entry["sha256"] = _write_json(committed_path, committed)
+    _write_json(index_path, index)
+    for payload, relative in (
+        (run, tracked / "registry/run.json"),
+        (
+            json.loads(
+                (tracked / "registry/report-payload.json").read_text(encoding="utf-8")
+            ),
+            tracked / "registry/report-payload.json",
+        ),
+    ):
+        for row in payload["executions"]:
+            if row["execution_id"] == execution_id:
+                row["outcome"] = "BLOCKED"
+        if "turns" in payload:
+            payload["turns"] = [
+                row for row in payload["turns"] if row["execution_id"] != execution_id
+            ]
+        if "criteria" in payload:
+            for row in payload["criteria"]:
+                if execution_id in row.get("obligation_outcomes", {}):
+                    row["obligation_outcomes"][execution_id] = "BLOCKED"
+                    row["outcome"] = "BLOCKED"
+                if row["criterion_id"] in criterion_ids:
+                    row["outcome"] = "BLOCKED"
+        _write_json(relative, payload)
+    shutil.rmtree(protected / "transcripts" / execution_id)
+    shutil.rmtree(protected / "producer-receipts" / "transcripts" / execution_id)
+    manifest_path = protected / "transcripts/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["ordered_turns"] = [
+        row for row in manifest["ordered_turns"] if row[0] != execution_id
+    ]
+    _write_json(manifest_path, manifest)
+    for relative, payload in {
+        f"gate-attempts/{execution_id}.json": gate_payload,
+        f"gate-evidence/{execution_id}.json": artifact,
+        f"producer-receipts/gates/{execution_id}.json": receipt,
+        f"recorded-gates/{execution_id}.json": {
+            "schema_version": "noor-e2e-recorded-gate/v2",
+            "execution_id": execution_id,
+            "outcome": "BLOCKED",
+            "gate_attempt_sha256": gate_sha256,
+            "journal_head_digest": "c" * 64,
+            "gate_attempt": gate_payload,
+        },
+    }.items():
+        _write_json(protected / relative, payload)
+    journal._recorded_gates = {execution_id: gate}
+
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+
+    assert set(snapshot.gate_artifacts) == {
+        f"gate-attempts/{execution_id}.json",
+        f"gate-evidence/{execution_id}.json",
+        f"producer-receipts/gates/{execution_id}.json",
+        f"recorded-gates/{execution_id}.json",
+    }
 
 
 def test_finalizer_rejects_extra_transcript_snapshot_path(tmp_path: Path) -> None:

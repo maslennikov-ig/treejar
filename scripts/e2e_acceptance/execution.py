@@ -568,9 +568,15 @@ def _register_authority_handle(
 
 
 def _validate_run_id(run_id: str) -> None:
-    if not run_id or any(
-        character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
-        for character in run_id.lower()
+    if (
+        not run_id
+        or run_id in {".", ".."}
+        or Path(run_id).is_absolute()
+        or len(Path(run_id).parts) != 1
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
+            for character in run_id.lower()
+        )
     ):
         raise ExecutionValidationError("run identity is unsafe")
 
@@ -2297,6 +2303,9 @@ class ProtectedExecutionJournal:
         self.quota_usage = QuotaUsage()
         self._actions: dict[str, ActionState] = {}
         self._reservations: dict[str, ActionReservation] = {}
+        self._reconciliations: dict[str, UnknownActionReconciliationReceipt] = {}
+        self._recorded_gates: dict[str, GateAttemptV2] = {}
+        self._recorded_gate_records: dict[str, dict[str, Any]] = {}
         self._attempted_executions: list[str] = []
         self._authorization_scenarios = 0
         self._authorization_action_ids: set[str] = set()
@@ -2440,6 +2449,11 @@ class ProtectedExecutionJournal:
             self._actions[str(data["action_id"])] = str(data["state"])  # type: ignore[assignment]
         elif kind == "unknown_action_reconciled":
             receipt = UnknownActionReconciliationReceipt.model_validate(data)
+            if receipt.action_id in self._reconciliations:
+                raise ExecutionValidationError(
+                    "unknown action reconciliation duplicate"
+                )
+            self._reconciliations[receipt.action_id] = receipt
             self._actions[receipt.action_id] = receipt.resolved_state
         elif kind == "permit_consumed":
             self._actions[str(data["action_id"])] = "unknown"
@@ -2490,6 +2504,18 @@ class ProtectedExecutionJournal:
             self._journal_cost_settlements[settlement.action_id] = settlement
         elif kind == "attempt_intent":
             self._attempted_executions.append(str(data["execution_id"]))
+        elif kind == "gate_recorded":
+            attempt = GateAttemptV2.model_validate(data["gate_attempt"])
+            if (
+                attempt.execution_id not in self.authorization.execution_ids
+                or attempt.execution_id in self._recorded_gates
+                or attempt.execution_id in self._attempted_executions
+                or data.get("journal_head_digest") != event["previous_event_digest"]
+            ):
+                raise ExecutionValidationError("recorded gate execution drift")
+            self._recorded_gates[attempt.execution_id] = attempt
+            self._recorded_gate_records[attempt.execution_id] = data
+            self._attempted_executions.append(attempt.execution_id)
         elif kind == "execution_started":
             started_at = datetime.fromisoformat(str(data["started_at"]))
             if started_at.tzinfo is None or started_at.utcoffset() is None:
@@ -3213,6 +3239,105 @@ class ProtectedExecutionJournal:
             data=receipt.model_dump(mode="json"),
         )
         self._actions[action_id] = receipt.resolved_state
+        self._reconciliations[action_id] = receipt
+
+    def reconcile_and_settle_action(
+        self, *, action_id: str, receipt_digest: str
+    ) -> ActionCostSettlement:
+        """Recover an uncertain action and conservative settlement exactly once."""
+
+        if self._actions.get(action_id) == "unknown":
+            self.reconcile_unknown_action(
+                action_id=action_id, receipt_digest=receipt_digest
+            )
+        else:
+            try:
+                payload = _read_protected(
+                    self.run_root, f"independent-reconciliation/{action_id}.json"
+                )
+                receipt = UnknownActionReconciliationReceipt.model_validate(
+                    json.loads(payload)
+                )
+            except (ExecutionValidationError, ValueError, json.JSONDecodeError) as exc:
+                raise ExecutionValidationError(
+                    "reconciliation replay is invalid"
+                ) from exc
+            if (
+                hashlib.sha256(payload).hexdigest() != receipt_digest
+                or self._reconciliations.get(action_id) != receipt
+                or self._actions.get(action_id) != receipt.resolved_state
+            ):
+                raise ExecutionValidationError("reconciliation replay differs")
+        reservation = self._reservations.get(action_id)
+        if reservation is None:
+            raise ExecutionValidationError("reconciliation reservation is missing")
+        settled = self._journal_cost_settlements.get(action_id)
+        if settled is not None:
+            if settled.reservation_digest != reservation.reservation_digest:
+                raise ExecutionValidationError("settlement replay differs")
+            return settled
+        return self.settle_action_cost(
+            reservation, actual_cost_usd=reservation.cost_usd
+        )
+
+    def record_gate_attempt(
+        self,
+        attempt: GateAttemptV2,
+        *,
+        protected_attempt_digest: str,
+    ) -> None:
+        """Commit an already independently validated zero-turn gate exactly once."""
+
+        if (
+            self.phase != "executing"
+            or attempt.execution_id not in self.authorization.execution_ids
+            or len(protected_attempt_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in protected_attempt_digest
+            )
+            or protected_attempt_digest != _digest(attempt.model_dump(mode="json"))
+        ):
+            raise ExecutionValidationError(
+                "gate attempt is duplicate or not commit-ready"
+            )
+        record = {
+            "schema_version": "noor-e2e-recorded-gate/v2",
+            "execution_id": attempt.execution_id,
+            "outcome": attempt.outcome,
+            "gate_attempt_sha256": protected_attempt_digest,
+            "journal_head_digest": self.previous_event_digest,
+            "gate_attempt": attempt.model_dump(mode="json"),
+        }
+        relative = f"recorded-gates/{attempt.execution_id}.json"
+        try:
+            existing = json.loads(_read_protected(self.run_root, relative))
+        except ExecutionValidationError:
+            existing = None
+        except json.JSONDecodeError as exc:
+            raise ExecutionValidationError("recorded gate payload is invalid") from exc
+        existing_attempt = self._recorded_gates.get(attempt.execution_id)
+        if existing_attempt is not None:
+            if (
+                existing_attempt != attempt
+                or not isinstance(existing, dict)
+                or existing != self._recorded_gate_records.get(attempt.execution_id)
+            ):
+                raise ExecutionValidationError("recorded gate replay drift")
+            return
+        if attempt.execution_id in self._attempted_executions:
+            raise ExecutionValidationError(
+                "gate attempt is duplicate or not commit-ready"
+            )
+        if existing is not None:
+            if existing != record:
+                raise ExecutionValidationError("recorded gate replay drift")
+        else:
+            _write_exclusive(self.run_root, relative, record)
+        self._append_event(phase="executing", kind="gate_recorded", data=record)
+        self._recorded_gates[attempt.execution_id] = attempt
+        self._recorded_gate_records[attempt.execution_id] = record
+        self._attempted_executions.append(attempt.execution_id)
 
     def anchor_final_turn(self, *, event_digest: str, occurred_at: datetime) -> None:
         self._assert_cost_settlement_consistency()
