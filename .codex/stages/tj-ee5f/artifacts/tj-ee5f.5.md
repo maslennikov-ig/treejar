@@ -17,7 +17,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f.5
 milestone: trusted production execution and evidence core
-milestone_status: returned
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: high
@@ -58,9 +58,9 @@ parallel_group: tj-ee5f-production-trust
 depends_on_streams:
   - tj-ee5f.3-policy-v2
 parallel_decision: local
-status: returned
+status: accepted
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: not_applicable
 cleanup_notes: no external state was created
 risk_level: high
@@ -94,6 +94,7 @@ verification:
   - reviewer FIX E combined settlement invariants: passed 10
   - reviewer FIX F RED proved a second run with the same authorization digest could not reopen after run-one settlement
   - reviewer FIX F multi-run reopen/recovery/run-tamper matrix: passed 5
+  - final independent full-range review: MERGE with no P0-P3 findings
   - correction focused trust suite: passed 175
   - protected execution authority semantic-drift slice: passed 4
   - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 265
@@ -107,7 +108,7 @@ verification:
   - full Task 1 delta exact and separator-normalized protected-identity scans: zero matches
   - full Task 1 delta blocked-secret scan: zero matches
   - artifact validator: passed
-  - check_stage_ready tj-ee5f: reported structurally ready; stage was not closed and this returned artifact remains unaccepted
+  - check_stage_ready tj-ee5f: reported structurally ready; stage was not closed
   - git diff --check: passed
 changed_files:
   - scripts/e2e_acceptance/evidence.py
@@ -183,14 +184,13 @@ enforcement. Fresh correction evidence passed 175 focused trust tests, 265
 acceptance-contract tests, and the full local suite with 2145 passed
 and 19 skipped. Ruff, format, both Mypy scopes, process verification,
 exact/normalized privacy scans, the blocked-secret scan, and `git diff --check`
-also passed. These results return the stream for a new orchestrator review; they
-do not record acceptance.
+also passed. The final independent full-range review returned `MERGE` with no
+P0-P3 findings, so the orchestrator accepted this Task 1 stream.
 
 # Delivery / Cleanup
 
-Returned for orchestrator review with `accepted_by_orchestrator: no`; no Git
-merge, push, production action, business action, or external cleanup was
-performed.
+Accepted by the orchestrator for local integration. No push, production action,
+business action, or external cleanup was performed.
 
 # Risks / Follow-ups / Explicit Defers
 
