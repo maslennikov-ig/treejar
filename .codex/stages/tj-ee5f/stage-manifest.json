@@ -240,6 +240,11 @@
       "task_id": "tj-ee5f.4",
       "stream_owner": "tj-ee5f.4-ci-identity-fix",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.4.md"
+    },
+    {
+      "task_id": "tj-ee5f.5",
+      "stream_owner": "tj-ee5f.5-task1-trust-core",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.5.md"
     }
   ],
   "scope_provenance": {

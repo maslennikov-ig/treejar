@@ -646,6 +646,18 @@ def test_snapshot_commit_binds_journal_authorization_attempts_and_store() -> Non
     } <= set(trusted.ProtectedSnapshotCommit.model_fields)
 
 
+def test_finalizer_derives_side_effect_closeout_from_ledger_and_inventory() -> None:
+    """The final run contract cannot accept an operator-authored closeout flag."""
+
+    _, _, trusted = _modules()
+
+    assert "side_effect_closeout" not in trusted.TrustedRunDocument.model_fields
+    assert {
+        "side_effect_ledger_digest",
+        "final_inventory_digest",
+    } <= set(trusted.TrustedRunDocument.model_fields)
+
+
 def test_registry_trust_context_is_frozen_and_has_no_mutable_digest_stores() -> None:
     registry = _registry()
 

@@ -7,7 +7,7 @@ import json
 import math
 import os
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -16,16 +16,23 @@ from scripts.e2e_acceptance.evidence import (
     redact_payload,
     validate_redacted_payload,
 )
+from scripts.e2e_acceptance.manifest import validate_preflight
 from scripts.e2e_acceptance.policy import (
     CompiledPolicy,
     OracleEvidence,
     ReadbackObservation,
     TrustedAcceptanceRegistry,
 )
-from scripts.e2e_acceptance.schemas import EvidenceMode
+from scripts.e2e_acceptance.schemas import (
+    AuthorizationManifest,
+    EvidenceMode,
+    PreflightObservation,
+    PreflightRequest,
+)
 
 COMPILER_ID = "treejar.acceptance-policy-compiler.v2"
 LOCAL_ADAPTER_IDS = ("fake-local-adapter",)
+_MAX_PREFLIGHT_AGE = timedelta(minutes=15)
 _PHASES = (
     "prepared",
     "baseline_sealed",
@@ -194,6 +201,32 @@ class ProtectedQuotas(_StrictModel):
         return self
 
 
+class ExactLiveAuthorizationBinding(_StrictModel):
+    """Digest-only bridge from one approved v1 manifest and fresh preflight."""
+
+    v1_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_observation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_identity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    target_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    permissions_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    cleanup_retention_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    adapter_ids_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    collector_ids_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    stores_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_observed_at: datetime
+
+    @model_validator(mode="after")
+    def _aware_preflight_time(self) -> ExactLiveAuthorizationBinding:
+        if (
+            self.preflight_observed_at.tzinfo is None
+            or self.preflight_observed_at.utcoffset() is None
+        ):
+            raise ValueError("preflight bridge observation time must be aware")
+        return self
+
+
 class ExecutionAuthorizationV2(_StrictModel):
     schema_version: Literal["noor-e2e-authorization/v2"]
     authorization_id: str = Field(min_length=1)
@@ -210,6 +243,9 @@ class ExecutionAuthorizationV2(_StrictModel):
     execution_ids: tuple[str, ...] = Field(min_length=1)
     execution_input_digests: dict[str, str] = Field(min_length=29)
     adapter_ids: tuple[str, ...] = Field(min_length=1)
+    collector_ids: tuple[str, ...] = Field(min_length=1)
+    permissions: tuple[str, ...]
+    live_binding: ExactLiveAuthorizationBinding
     store_ids: StoreIdentities
     registry_id: str = Field(min_length=1)
     quotas: ProtectedQuotas
@@ -237,6 +273,107 @@ class ExecutionAuthorizationV2(_StrictModel):
         ):
             raise ValueError("authorization Task 1 input digest binding drift")
         return self
+
+
+def build_execution_authorization_from_v1(
+    authorization: AuthorizationManifest,
+    observation: PreflightObservation,
+    request: PreflightRequest,
+    *,
+    policy: CompiledPolicy,
+    plan: CompiledExecutionPlan,
+    registry_id: str,
+    task1_authorization_digest: str,
+    task1_input_digests: dict[str, str],
+    adapter_ids: tuple[str, ...],
+    collector_ids: tuple[str, ...],
+    store_ids: StoreIdentities,
+    current_time: datetime,
+) -> ExecutionAuthorizationV2:
+    """Build executable authority solely from an approved v1/preflight pair.
+
+    The public v1 model is read here as a typed immutable source; arbitrary
+    mappings never cross this boundary.  Only digests of protected identities
+    are carried into v2 so tracked output cannot disclose targets.
+    """
+
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        raise ExecutionValidationError("bridge time must be timezone-aware")
+    validate_preflight(authorization, observation, request, now=current_time)
+    readback = observation.readback_identity
+    if readback is None or current_time - readback.observed_at > _MAX_PREFLIGHT_AGE:
+        raise ExecutionValidationError("successful preflight is missing or stale")
+    execution_ids = tuple(
+        [
+            *authorization.scenario_binding.scenario_ids,
+            *authorization.scenario_binding.evidence_block_ids,
+        ]
+    )
+    if execution_ids != plan.execution_ids or set(
+        authorization.scenario_binding.executable_input_digests
+    ) != set(plan.execution_ids):
+        raise ExecutionValidationError("approved authorization execution set drift")
+    if not adapter_ids or not collector_ids:
+        raise ExecutionValidationError(
+            "approved adapter and collector IDs are required"
+        )
+    quotas = ProtectedQuotas(**authorization.quotas.model_dump(mode="json"))
+    binding = ExactLiveAuthorizationBinding(
+        v1_manifest_digest=_digest(authorization.model_dump(mode="json")),
+        preflight_request_digest=_digest(request.model_dump(mode="json")),
+        preflight_observation_digest=_digest(observation.model_dump(mode="json")),
+        runtime_identity_digest=_digest(
+            authorization.expected_identity.model_dump(mode="json")
+        ),
+        target_digest=_digest(authorization.targets.model_dump(mode="json")),
+        permissions_digest=_digest(tuple(authorization.permissions)),
+        cleanup_retention_digest=_digest(
+            {
+                "cleanup_method": authorization.cleanup_method,
+                "stop_conditions": authorization.stop_conditions,
+                "readbacks": authorization.readbacks,
+            }
+        ),
+        execution_set_digest=_digest(
+            {
+                "execution_ids": execution_ids,
+                "input_digests": authorization.scenario_binding.executable_input_digests,
+                "quotas": authorization.quotas.model_dump(mode="json"),
+            }
+        ),
+        adapter_ids_digest=_digest(adapter_ids),
+        collector_ids_digest=_digest(collector_ids),
+        stores_digest=_digest(store_ids.model_dump(mode="json")),
+        preflight_observed_at=readback.observed_at,
+    )
+    return ExecutionAuthorizationV2(
+        schema_version="noor-e2e-authorization/v2",
+        authorization_id=authorization.authorization_id,
+        status="approved",
+        issued_at=authorization.issued_at,
+        expires_at=authorization.expires_at,
+        task1_authorization_digest=task1_authorization_digest,
+        task1_input_digests=task1_input_digests,
+        preflight_digest=_digest(
+            {
+                "request": request.model_dump(mode="json"),
+                "observation": observation.model_dump(mode="json"),
+            }
+        ),
+        readback_collector_digest=_digest(collector_ids),
+        policy_digest=policy.policy_digest,
+        compiler_id=plan.compiler_id,
+        compiled_plan_digest=plan.plan_digest,
+        execution_ids=execution_ids,
+        execution_input_digests=authorization.scenario_binding.executable_input_digests,
+        adapter_ids=adapter_ids,
+        collector_ids=collector_ids,
+        permissions=tuple(authorization.permissions),
+        live_binding=binding,
+        store_ids=store_ids,
+        registry_id=registry_id,
+        quotas=quotas,
+    )
 
 
 def authorization_digest(authorization: ExecutionAuthorizationV2) -> str:
@@ -281,6 +418,28 @@ def validate_execution_authorization(
         )
     if authorization.adapter_ids != LOCAL_ADAPTER_IDS:
         raise ExecutionValidationError("authorization adapter is not allowed")
+    if authorization.live_binding.adapter_ids_digest != _digest(
+        authorization.adapter_ids
+    ) or authorization.live_binding.collector_ids_digest != _digest(
+        authorization.collector_ids
+    ):
+        raise ExecutionValidationError("authorization adapter/collector binding drift")
+    if authorization.live_binding.permissions_digest != _digest(
+        authorization.permissions
+    ):
+        raise ExecutionValidationError("authorization permission binding drift")
+    if authorization.live_binding.execution_set_digest != _digest(
+        {
+            "execution_ids": authorization.execution_ids,
+            "input_digests": authorization.execution_input_digests,
+            "quotas": authorization.quotas.model_dump(mode="json"),
+        }
+    ):
+        raise ExecutionValidationError("authorization execution/quota binding drift")
+    if authorization.live_binding.stores_digest != _digest(
+        authorization.store_ids.model_dump(mode="json")
+    ):
+        raise ExecutionValidationError("authorization store binding drift")
     if authorization.registry_id != registry_id:
         raise ExecutionValidationError("authorization registry drift")
     now = current_time or datetime.now(UTC)
@@ -305,17 +464,39 @@ ActionState = Literal["reserved", "succeeded", "failed", "unknown"]
 
 class ActionReservation(_StrictModel):
     action_id: str
+    run_id: str
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_id: str
+    step_id: str
+    capability: str
+    operation_permission: str
     adapter_id: str
     subsystem: str
+    destination_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1)
+    capability_units: dict[str, int] = Field(min_length=1)
     messages: int = Field(ge=0)
     model_calls: int = Field(ge=0)
     cost_usd: float = Field(ge=0)
+    issued_at: datetime
+    expires_at: datetime
     reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def _finite_cost(self) -> ActionReservation:
         if not math.isfinite(self.cost_usd):
             raise ValueError("reservation cost must be finite")
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError("reservation permit window is invalid")
+        if any(value <= 0 for value in self.capability_units.values()):
+            raise ValueError("reservation capability units must be positive")
         return self
 
 
@@ -816,7 +997,19 @@ class FakeLocalAdapter:
         self.adapter_id = adapter_id
         self._journal = journal
 
-    def execute(self, reservation: ActionReservation | None) -> dict[str, str]:
+    def execute(
+        self,
+        reservation: ActionReservation | None,
+        *,
+        execution_id: str,
+        step_id: str,
+        capability: str,
+        operation_permission: str,
+        destination_digest: str,
+        payload_digest: str,
+        idempotency_key: str,
+        capability_units: dict[str, int],
+    ) -> dict[str, str]:
         if (
             reservation is None
             or self._journal is None
@@ -828,6 +1021,14 @@ class FakeLocalAdapter:
         self._journal.consume_permit(
             reservation,
             adapter_id=self.adapter_id,
+            execution_id=execution_id,
+            step_id=step_id,
+            capability=capability,
+            operation_permission=operation_permission,
+            destination_digest=destination_digest,
+            payload_digest=payload_digest,
+            idempotency_key=idempotency_key,
+            capability_units=capability_units,
         )
         return {
             "status": "synthetic",
@@ -1039,7 +1240,10 @@ class ProtectedExecutionJournal:
 
     def _consume(self, reservation: ActionReservation) -> None:
         subsystems = dict(self.quota_usage.subsystem_usage)
-        subsystems[reservation.subsystem] = subsystems.get(reservation.subsystem, 0) + 1
+        subsystems[reservation.subsystem] = (
+            subsystems.get(reservation.subsystem, 0)
+            + reservation.capability_units[reservation.subsystem]
+        )
         self.quota_usage = QuotaUsage(
             messages=self.quota_usage.messages + reservation.messages,
             model_calls=self.quota_usage.model_calls + reservation.model_calls,
@@ -1133,6 +1337,14 @@ class ProtectedExecutionJournal:
         action_id: str,
         adapter_id: str,
         subsystem: str,
+        execution_id: str,
+        step_id: str,
+        capability: str,
+        operation_permission: str,
+        destination_digest: str,
+        payload_digest: str,
+        idempotency_key: str,
+        capability_units: dict[str, int],
         messages: int,
         model_calls: int,
         cost_usd: float,
@@ -1143,6 +1355,35 @@ class ProtectedExecutionJournal:
             )
         if adapter_id not in self.authorization.adapter_ids:
             raise ExecutionValidationError("action adapter is not authorized")
+        if execution_id not in self.authorization.execution_ids:
+            raise ExecutionValidationError("action execution is not authorized")
+        if operation_permission not in self.authorization.permissions:
+            raise ExecutionValidationError(
+                "action operation permission is not authorized"
+            )
+        if (
+            not step_id
+            or not capability
+            or not idempotency_key
+            or len(destination_digest) != 64
+            or len(payload_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in destination_digest + payload_digest
+            )
+            or set(capability_units) != {subsystem}
+            or any(value <= 0 for value in capability_units.values())
+        ):
+            raise ExecutionValidationError("action request binding is invalid")
+        issued_at = datetime.now(UTC)
+        if (
+            not self.authorization.issued_at
+            <= issued_at
+            < self.authorization.expires_at
+        ):
+            raise ExecutionValidationError(
+                "action reservation authorization is expired"
+            )
         if action_id in self._actions:
             raise ExecutionValidationError("action identity is already reserved")
         if (
@@ -1157,27 +1398,53 @@ class ProtectedExecutionJournal:
         self._reload_authorization_ledger()
         identity = {
             "action_id": action_id,
+            "run_id": self.run_id,
+            "authorization_digest": self.authorization_digest,
+            "execution_id": execution_id,
+            "step_id": step_id,
+            "capability": capability,
+            "operation_permission": operation_permission,
             "adapter_id": adapter_id,
             "subsystem": subsystem,
+            "destination_digest": destination_digest,
+            "payload_digest": payload_digest,
+            "idempotency_key": idempotency_key,
+            "capability_units": capability_units,
             "messages": messages,
             "model_calls": model_calls,
             "cost_usd": cost_usd,
-            "authorization_digest": self.authorization_digest,
+            "issued_at": issued_at.isoformat(),
+            "expires_at": self.authorization.expires_at.isoformat(),
             "next_cursor": self.cursor + 1,
         }
         reservation = ActionReservation(
             action_id=action_id,
+            run_id=self.run_id,
+            authorization_digest=self.authorization_digest,
+            execution_id=execution_id,
+            step_id=step_id,
+            capability=capability,
+            operation_permission=operation_permission,
             adapter_id=adapter_id,
             subsystem=subsystem,
+            destination_digest=destination_digest,
+            payload_digest=payload_digest,
+            idempotency_key=idempotency_key,
+            capability_units=capability_units,
             messages=messages,
             model_calls=model_calls,
             cost_usd=cost_usd,
+            issued_at=issued_at,
+            expires_at=self.authorization.expires_at,
             reservation_digest=_digest(identity),
         )
         projected_messages = self.quota_usage.messages + messages
         projected_calls = self.quota_usage.model_calls + model_calls
         projected_cost = self.quota_usage.cost_usd + cost_usd
-        projected_subsystem = self.quota_usage.subsystem_usage.get(subsystem, 0) + 1
+        projected_subsystem = (
+            self.quota_usage.subsystem_usage.get(subsystem, 0)
+            + capability_units[subsystem]
+        )
         quotas = self.authorization.quotas
         if (
             projected_messages > quotas.max_messages
@@ -1205,12 +1472,31 @@ class ProtectedExecutionJournal:
         reservation: ActionReservation,
         *,
         adapter_id: str,
+        execution_id: str,
+        step_id: str,
+        capability: str,
+        operation_permission: str,
+        destination_digest: str,
+        payload_digest: str,
+        idempotency_key: str,
+        capability_units: dict[str, int],
     ) -> None:
         """Atomically validate and consume the one-use protected permit."""
 
         if (
             self.phase != "executing"
             or adapter_id != reservation.adapter_id
+            or reservation.run_id != self.run_id
+            or reservation.authorization_digest != self.authorization_digest
+            or execution_id != reservation.execution_id
+            or step_id != reservation.step_id
+            or capability != reservation.capability
+            or operation_permission != reservation.operation_permission
+            or destination_digest != reservation.destination_digest
+            or payload_digest != reservation.payload_digest
+            or idempotency_key != reservation.idempotency_key
+            or capability_units != reservation.capability_units
+            or not reservation.issued_at <= datetime.now(UTC) < reservation.expires_at
             or self._actions.get(reservation.action_id) != "reserved"
             or self._reservations.get(reservation.action_id) != reservation
         ):
@@ -1224,6 +1510,14 @@ class ProtectedExecutionJournal:
                 "action_id": reservation.action_id,
                 "reservation_digest": reservation.reservation_digest,
                 "adapter_id": adapter_id,
+                "execution_id": execution_id,
+                "step_id": step_id,
+                "capability": capability,
+                "operation_permission": operation_permission,
+                "destination_digest": destination_digest,
+                "payload_digest": payload_digest,
+                "idempotency_key": idempotency_key,
+                "capability_units": capability_units,
             },
         )
         self._actions[reservation.action_id] = "unknown"

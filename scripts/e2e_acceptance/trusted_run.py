@@ -282,7 +282,8 @@ class TrustedRunDocument(_StrictModel):
     executions: tuple[ExecutionRow, ...] = Field(min_length=1)
     criteria: tuple[CriterionRow, ...] = Field(min_length=1)
     open_p0_p1: tuple[str, ...]
-    side_effect_closeout: Literal["passed", "failed", "blocked"]
+    side_effect_ledger_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evidence_index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     report_payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -356,6 +357,8 @@ class TurnReport(_StrictModel):
     cost_usd: float = Field(ge=0)
     deviation: str | None
     evaluator_reasoning: str
+    transcript_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    producer_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
@@ -1469,23 +1472,54 @@ def _load_verified_run(
             raise TrustedRunError(f"typed report execution binding drift: {identity}")
 
     scenario_ids = tuple(registry.compiled_policy.scenarios)
-    turn_execution_ids = tuple(turn.execution_id for turn in report.turns)
-    if (
-        len(report.turns) != len(scenario_ids)
-        or len(set(turn_execution_ids)) != len(scenario_ids)
-        or set(turn_execution_ids) != set(scenario_ids)
-    ):
-        raise TrustedRunError("typed report scenario turn coverage drift")
+    turns_by_execution: dict[str, list[TurnReport]] = {
+        identity: [] for identity in scenario_ids
+    }
+    previous_scenario_position = -1
     for turn in report.turns:
+        if turn.execution_id not in turns_by_execution:
+            raise TrustedRunError("typed report turn has phantom execution")
+        position = scenario_ids.index(turn.execution_id)
+        if position < previous_scenario_position:
+            raise TrustedRunError("typed report turn ordering drift")
+        previous_scenario_position = position
+        turns_by_execution[turn.execution_id].append(turn)
         execution_row = executions[turn.execution_id]
         if (
             turn.attempt_id != execution_row.attempt_ref
             or execution_row.attempt_ref not in turn.evidence_refs
             or not set(turn.evidence_refs) <= set(evidence)
+            or not turn.transcript_digest
+            or not turn.producer_receipt_digest
         ):
             raise TrustedRunError(
                 f"typed report turn evidence binding drift: {turn.execution_id}"
             )
+    for execution_id, turns in turns_by_execution.items():
+        execution_row = executions[execution_id]
+        if len({(turn.attempt_id, turn.turn_id) for turn in turns}) != len(turns):
+            raise TrustedRunError("typed report duplicate transcript turn")
+        if not turns and execution_row.outcome not in {
+            "BLOCKED",
+            "EXCLUDED_BY_CLIENT",
+        }:
+            raise TrustedRunError(
+                "executed scenario requires committed transcript turns"
+            )
+        if not turns and execution_row.outcome == "EXCLUDED_BY_CLIENT":
+            criterion_outcomes = [
+                row.outcome
+                for row in criteria.values()
+                if execution_id
+                in registry.compiled_plan.criteria[row.criterion_id].obligation_ids
+            ]
+            if "EXCLUDED_BY_CLIENT" not in criterion_outcomes:
+                raise TrustedRunError("zero-turn client exclusion lacks gate authority")
+
+    if run.side_effect_ledger_digest != canonical_digest(
+        [item.model_dump(mode="json") for item in report.side_effects]
+    ) or run.final_inventory_digest != canonical_digest(run.final.inventory):
+        raise TrustedRunError("computed side-effect ledger/inventory digest drift")
     report_refs = (
         *report.identity.evidence_refs,
         *report.tester.evidence_refs,
@@ -1567,7 +1601,7 @@ def _load_verified_run(
             all(row.outcome == "PASS" for row in criteria.values())
             and all(row.outcome == "PASS" for row in executions.values())
             and not run.open_p0_p1
-            and run.side_effect_closeout == "passed"
+            and not run.open_p0_p1
         ),
     }
     rendered = _render_report(report, rollups)

@@ -86,6 +86,8 @@ def _authorization(registry, *, trusted: bool = True, **updates):
             identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
         },
         "adapter_ids": ("fake-local-adapter",),
+        "collector_ids": ("independent-readback-collector",),
+        "permissions": ("fixture:execute",),
         "store_ids": execution.StoreIdentities(
             raw_store_id="synthetic-raw-store",
             tracked_store_id="synthetic-tracked-store",
@@ -103,11 +105,76 @@ def _authorization(registry, *, trusted: bool = True, **updates):
             subsystem_quotas={"outbound_text": 2},
         ),
     }
+    values["live_binding"] = execution.ExactLiveAuthorizationBinding(
+        v1_manifest_digest="1" * 64,
+        preflight_request_digest="2" * 64,
+        preflight_observation_digest="3" * 64,
+        runtime_identity_digest="4" * 64,
+        target_digest="5" * 64,
+        permissions_digest=execution._digest(values["permissions"]),
+        cleanup_retention_digest="6" * 64,
+        execution_set_digest=execution._digest(
+            {
+                "execution_ids": values["execution_ids"],
+                "input_digests": values["execution_input_digests"],
+                "quotas": values["quotas"].model_dump(mode="json"),
+            }
+        ),
+        adapter_ids_digest=execution._digest(values["adapter_ids"]),
+        collector_ids_digest=execution._digest(values["collector_ids"]),
+        stores_digest=execution._digest(values["store_ids"].model_dump(mode="json")),
+        preflight_observed_at=now - timedelta(minutes=1),
+    )
     values.update(updates)
+    if (
+        any(
+            name in updates
+            for name in (
+                "execution_ids",
+                "execution_input_digests",
+                "quotas",
+                "adapter_ids",
+                "collector_ids",
+                "permissions",
+                "store_ids",
+            )
+        )
+        and "live_binding" not in updates
+    ):
+        values["live_binding"] = values["live_binding"].model_copy(
+            update={
+                "permissions_digest": execution._digest(values["permissions"]),
+                "execution_set_digest": execution._digest(
+                    {
+                        "execution_ids": values["execution_ids"],
+                        "input_digests": values["execution_input_digests"],
+                        "quotas": values["quotas"].model_dump(mode="json"),
+                    }
+                ),
+                "adapter_ids_digest": execution._digest(values["adapter_ids"]),
+                "collector_ids_digest": execution._digest(values["collector_ids"]),
+                "stores_digest": execution._digest(
+                    values["store_ids"].model_dump(mode="json")
+                ),
+            }
+        )
     authorization = execution.ExecutionAuthorizationV2(**values)
     if trusted:
         registry._load_execution_authorization(authorization)
     return authorization
+
+
+def _action_request(*, execution_id: str = "SC-OPEN-EN") -> dict[str, object]:
+    return {
+        "execution_id": execution_id,
+        "step_id": "fixture-step-001",
+        "capability": "outbound_text",
+        "operation_permission": "fixture:execute",
+        "destination_digest": "a" * 64,
+        "payload_digest": "b" * 64,
+        "idempotency_key": "fixture-idempotency-001",
+        "capability_units": {"outbound_text": 1},
+    }
 
 
 def test_compiled_plan_has_exact_29_execution_ids_and_all_required_criteria() -> None:
@@ -334,6 +401,7 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         action_id="synthetic-action",
         adapter_id="fake-local-adapter",
         subsystem="outbound_text",
+        **_action_request(),
         messages=1,
         model_calls=0,
         cost_usd=0,
@@ -342,7 +410,7 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         adapter_id="fake-local-adapter",
         journal=journal,
     )
-    adapter.execute(reservation)
+    adapter.execute(reservation, **_action_request())
     journal.complete_action(
         reservation,
         state="unknown",
@@ -368,7 +436,7 @@ def test_fake_adapter_refuses_unreserved_call() -> None:
     )
 
     with pytest.raises(Exception, match="reservation"):
-        adapter.execute(None)
+        adapter.execute(None, **_action_request())
 
 
 def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:
@@ -434,11 +502,16 @@ def test_fake_adapter_rejects_publicly_forged_reservation(tmp_path: Path) -> Non
     journal.begin_execution()
     forged = execution.ActionReservation(
         action_id="forged",
+        run_id="synthetic-run",
+        authorization_digest=execution.authorization_digest(authorization),
+        **_action_request(),
         adapter_id="fake-local-adapter",
         subsystem="outbound_text",
         messages=0,
         model_calls=0,
         cost_usd=0,
+        issued_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
         reservation_digest="f" * 64,
     )
     adapter = execution.FakeLocalAdapter(
@@ -447,7 +520,7 @@ def test_fake_adapter_rejects_publicly_forged_reservation(tmp_path: Path) -> Non
     )
 
     with pytest.raises(Exception, match="protected.*reservation|forged"):
-        adapter.execute(forged)
+        adapter.execute(forged, **_action_request())
 
 
 def test_negative_quota_inputs_and_max_scenarios_are_enforced(
@@ -489,6 +562,7 @@ def test_negative_quota_inputs_and_max_scenarios_are_enforced(
             action_id="negative",
             adapter_id="fake-local-adapter",
             subsystem="outbound_text",
+            **_action_request(),
             messages=-1,
             model_calls=-1,
             cost_usd=-1,
@@ -973,3 +1047,32 @@ def test_generic_runner_validates_every_canonical_evidence_block(
     assert result.execution_id == block_id
     assert result.outcome == "PASS"
     assert result.plan_digest == plan_digest
+
+
+def test_v1_authorization_can_enter_v2_only_through_exact_preflight_bridge() -> None:
+    """A caller-built v2 document must not substitute for approved v1 authority."""
+
+    _, execution = _modules()
+
+    assert hasattr(execution, "build_execution_authorization_from_v1")
+
+
+def test_permit_contract_binds_the_exact_request_identity() -> None:
+    """External permits must carry every value revalidated immediately before I/O."""
+
+    _, execution = _modules()
+
+    assert {
+        "run_id",
+        "authorization_digest",
+        "execution_id",
+        "step_id",
+        "capability",
+        "operation_permission",
+        "destination_digest",
+        "payload_digest",
+        "idempotency_key",
+        "capability_units",
+        "issued_at",
+        "expires_at",
+    } <= set(execution.ActionReservation.model_fields)

@@ -99,6 +99,46 @@ def _build_verified_run(
             identity: "2" * 64 for identity in registry.compiled_plan.execution_ids
         },
         adapter_ids=("fake-local-adapter",),
+        collector_ids=("independent-readback-collector",),
+        permissions=("fixture:execute",),
+        live_binding=execution.ExactLiveAuthorizationBinding(
+            v1_manifest_digest="1" * 64,
+            preflight_request_digest="2" * 64,
+            preflight_observation_digest="3" * 64,
+            runtime_identity_digest="4" * 64,
+            target_digest="5" * 64,
+            permissions_digest=execution._digest(("fixture:execute",)),
+            cleanup_retention_digest="6" * 64,
+            execution_set_digest=execution._digest(
+                {
+                    "execution_ids": registry.compiled_plan.execution_ids,
+                    "input_digests": {
+                        identity: "2" * 64
+                        for identity in registry.compiled_plan.execution_ids
+                    },
+                    "quotas": {
+                        "max_scenarios": 29,
+                        "max_messages": 100,
+                        "max_model_calls": 100,
+                        "max_cost_usd": 10.0,
+                        "subsystem_quotas": {"outbound_text": 100},
+                    },
+                }
+            ),
+            adapter_ids_digest=execution._digest(("fake-local-adapter",)),
+            collector_ids_digest=execution._digest(("independent-readback-collector",)),
+            stores_digest=execution._digest(
+                {
+                    "raw_store_id": "synthetic-raw-store",
+                    "tracked_store_id": "synthetic-tracked-store",
+                    "anchor_store_id": "synthetic-anchor-store",
+                    "raw_root_digest": execution.store_root_digest(protected_run),
+                    "tracked_root_digest": execution.store_root_digest(tracked_run),
+                    "anchor_root_digest": execution.store_root_digest(protected_run),
+                }
+            ),
+            preflight_observed_at=now - timedelta(minutes=1),
+        ),
         store_ids=execution.StoreIdentities(
             raw_store_id="synthetic-raw-store",
             tracked_store_id="synthetic-tracked-store",
@@ -377,6 +417,12 @@ def _build_verified_run(
                 "cost_usd": 0,
                 "deviation": None,
                 "evaluator_reasoning": "Structured checks passed.",
+                "transcript_digest": hashlib.sha256(
+                    f"transcript:{identity}".encode()
+                ).hexdigest(),
+                "producer_receipt_digest": hashlib.sha256(
+                    f"receipt:{identity}".encode()
+                ).hexdigest(),
                 "evidence_refs": [
                     f"attempt:{identity}",
                     "report-source",
@@ -493,7 +539,10 @@ def _build_verified_run(
         "executions": executions,
         "criteria": criteria,
         "open_p0_p1": [],
-        "side_effect_closeout": "passed",
+        "side_effect_ledger_digest": trusted.canonical_digest(
+            report_payload["side_effects"]
+        ),
+        "final_inventory_digest": trusted.canonical_digest(final.inventory),
         "evidence_index_digest": index_digest,
         "report_payload_digest": report_digest,
     }
@@ -593,3 +642,14 @@ def test_typed_russian_report_and_final_serialized_privacy(
     )
     with pytest.raises(Exception, match="phone|privacy|redact"):
         leaked_registry.open_run(run_id="synthetic-trusted-run")
+
+
+def test_report_turns_are_bound_to_committed_transcript_identity() -> None:
+    """A report row is a projection of a protected transcript, not caller prose."""
+
+    _, _, trusted = _modules()
+
+    assert {
+        "transcript_digest",
+        "producer_receipt_digest",
+    } <= set(trusted.TurnReport.model_fields)
