@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -9,8 +10,44 @@ from scripts.e2e_acceptance.evidence import (
     EvidenceError,
     EvidenceStore,
     validate_redacted_payload,
-    validate_side_effect_closeout,
 )
+from scripts.e2e_acceptance.evidence import (
+    validate_side_effect_closeout as _validate_side_effect_closeout,
+)
+
+_CLOSEOUT_NOW = datetime(2026, 7, 28, tzinfo=UTC)
+_RETENTION_AUTHORITY = {
+    "artifact_id": "crm:test-001",
+    "cleanup_owner": "acceptance-owner",
+    "cleanup_authority": "application-path-only",
+    "retention_owner": "client-owner",
+    "issued_at": "2026-07-27T00:00:00+00:00",
+    "expires_at": "2026-08-27T00:00:00+00:00",
+    "authority_digest": "a" * 64,
+}
+
+
+def validate_side_effect_closeout(
+    entries,
+    *,
+    observed_inventory,
+    authorized_cleanup_owner="acceptance-owner",
+    authorized_cleanup_authority="application-path-only",
+    authorized_retentions=None,
+    current_time=_CLOSEOUT_NOW,
+):
+    return _validate_side_effect_closeout(
+        entries,
+        observed_inventory=observed_inventory,
+        authorized_cleanup_owner=authorized_cleanup_owner,
+        authorized_cleanup_authority=authorized_cleanup_authority,
+        authorized_retentions=(
+            {"crm:test-001": _RETENTION_AUTHORITY}
+            if authorized_retentions is None
+            else authorized_retentions
+        ),
+        current_time=current_time,
+    )
 
 
 def _store(tmp_path: Path) -> EvidenceStore:
@@ -310,8 +347,9 @@ def test_retained_side_effect_requires_preapproval_owner_expiry_and_readback() -
             "disposition": "retained_as_test_evidence",
             "retention_pre_authorized": True,
             "retention_owner": "client-owner",
+            "retention_authority_digest": "a" * 64,
             "retention_expires_at": "2026-08-27T00:00:00Z",
-            "final_disposition_date": "2026-08-27T00:00:00Z",
+            "final_disposition_date": "2026-07-27T00:00:00Z",
         }
     ]
 
@@ -325,6 +363,82 @@ def test_retained_side_effect_requires_preapproval_owner_expiry_and_readback() -
         validate_side_effect_closeout(
             missing_expiry,
             observed_inventory={"crm:test-001": {"state": "retained"}},
+        )
+
+    expired = {
+        **ledger[0],
+        "retention_expires_at": "2026-07-27T12:00:00Z",
+        "final_disposition_date": "2026-07-27T00:00:00Z",
+    }
+    expired_authority = {
+        **_RETENTION_AUTHORITY,
+        "expires_at": "2026-07-27T12:00:00+00:00",
+    }
+    with pytest.raises(EvidenceError, match="retention.*time|retention.*authority"):
+        validate_side_effect_closeout(
+            [expired],
+            observed_inventory={"crm:test-001": {"state": "retained"}},
+            authorized_retentions={"crm:test-001": expired_authority},
+        )
+
+
+def test_retention_rejects_garbage_expiry_and_untrusted_owner() -> None:
+    entry = {
+        "artifact_id": "crm:test-001",
+        "scenario_id": "SCN-CRM",
+        "subsystem": "crm",
+        "artifact_type": "crm_deal",
+        "creation_path": "fixture",
+        "cleanup_owner": "acceptance-owner",
+        "cleanup_authority": "application-path-only",
+        "baseline_readback": {"state": "absent"},
+        "expected_effect": {"state": "created_for_test"},
+        "follow_up_suppressed": True,
+        "final_readback": {"state": "retained"},
+        "disposition": "retained_as_test_evidence",
+        "retention_pre_authorized": True,
+        "retention_owner": "caller-invented-owner",
+        "retention_expires_at": "not-a-time",
+        "final_disposition_date": "also-not-a-time",
+    }
+
+    with pytest.raises(EvidenceError, match="retention.*time|retention.*owner"):
+        validate_side_effect_closeout(
+            [entry],
+            observed_inventory={"crm:test-001": {"state": "retained"}},
+        )
+
+
+def test_retention_rejects_arbitrary_owner_with_valid_aware_times() -> None:
+    now = datetime.now(UTC)
+    entry = {
+        "artifact_id": "crm:test-001",
+        "scenario_id": "SCN-CRM",
+        "subsystem": "crm",
+        "artifact_type": "crm_deal",
+        "creation_path": "fixture",
+        "cleanup_owner": "caller-invented-owner",
+        "cleanup_authority": "caller-invented-authority",
+        "baseline_readback": {"state": "absent"},
+        "expected_effect": {"state": "created_for_test"},
+        "follow_up_suppressed": True,
+        "final_readback": {"state": "retained"},
+        "disposition": "retained_as_test_evidence",
+        "retention_pre_authorized": True,
+        "retention_owner": "caller-invented-owner",
+        "retention_authority_digest": "a" * 64,
+        "retention_expires_at": (now + timedelta(days=1)).isoformat(),
+        "final_disposition_date": now.isoformat(),
+    }
+
+    with pytest.raises(EvidenceError, match="cleanup.*authority|retention.*authority"):
+        validate_side_effect_closeout(
+            [entry],
+            observed_inventory={"crm:test-001": {"state": "retained"}},
+            authorized_cleanup_owner="acceptance-owner",
+            authorized_cleanup_authority="application-path-only",
+            authorized_retentions={},
+            current_time=now,
         )
 
 

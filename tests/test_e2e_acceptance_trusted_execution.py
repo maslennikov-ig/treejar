@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import pickle
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from scripts.e2e_acceptance.manifest import load_authorization_manifest
+from scripts.e2e_acceptance.schemas import PreflightReadbackIdentity
 
 from tests.e2e_acceptance_backend import build_canonical_test_registry
 
@@ -88,6 +90,24 @@ def _authorization(registry, *, trusted: bool = True, **updates):
         "adapter_ids": ("fake-local-adapter",),
         "collector_ids": ("independent-readback-collector",),
         "permissions": ("fixture:execute",),
+        "action_specs": (
+            execution.AuthorizedActionSpec(
+                action_id="synthetic-action",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                **_action_request(),
+            ),
+            execution.AuthorizedActionSpec(
+                action_id="negative",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                **_action_request(),
+            ),
+        ),
+        "side_effect_authority": execution.SideEffectAuthority(
+            cleanup_owner="acceptance-owner",
+            cleanup_authority="application-path-only",
+        ),
         "store_ids": execution.StoreIdentities(
             raw_store_id="synthetic-raw-store",
             tracked_store_id="synthetic-tracked-store",
@@ -112,7 +132,14 @@ def _authorization(registry, *, trusted: bool = True, **updates):
         runtime_identity_digest="4" * 64,
         target_digest="5" * 64,
         permissions_digest=execution._digest(values["permissions"]),
-        cleanup_retention_digest="6" * 64,
+        cleanup_retention_digest=execution._digest(
+            {
+                "side_effect_authority": values["side_effect_authority"].model_dump(
+                    mode="json"
+                ),
+                "client_exclusion_authorities": {},
+            }
+        ),
         execution_set_digest=execution._digest(
             {
                 "execution_ids": values["execution_ids"],
@@ -175,6 +202,185 @@ def _action_request(*, execution_id: str = "SC-OPEN-EN") -> dict[str, object]:
         "idempotency_key": "fixture-idempotency-001",
         "capability_units": {"outbound_text": 1},
     }
+
+
+def _authority_bundle_inputs(
+    registry,
+    *,
+    protected_root: Path,
+    run_id: str,
+    now: datetime | None = None,
+    quotas=None,
+    execution_input_digests: dict[str, str] | None = None,
+):
+    _, execution = _modules()
+    current_time = now or datetime.now(UTC)
+    draft = load_authorization_manifest(AUTHORIZATION_V1_PATH)
+    exact_input_digests = execution_input_digests or {
+        identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
+    }
+    scenario_binding = draft.scenario_binding.model_copy(
+        update={
+            "scenario_ids": list(SCENARIO_IDS),
+            "evidence_block_ids": list(EVIDENCE_BLOCK_IDS),
+            "executable_input_digests": exact_input_digests,
+        }
+    )
+    v1_quotas = (
+        type(draft.quotas).model_validate(quotas.model_dump(mode="json"))
+        if quotas is not None
+        else draft.quotas.model_copy(
+            update={
+                "max_scenarios": 29,
+                "max_messages": 2,
+                "max_model_calls": 2,
+                "max_cost_usd": 1.0,
+                "subsystem_quotas": {"outbound_text": 2},
+            }
+        )
+    )
+    authorization = draft.model_copy(
+        update={
+            "authorization_id": "synthetic-local-auth-v1",
+            "status": type(draft.status).APPROVED,
+            "issuer": "synthetic-local-issuer",
+            "issued_at": current_time - timedelta(minutes=2),
+            "expires_at": current_time + timedelta(hours=1),
+            "allowed_executor": "synthetic-local-executor",
+            "allowed_source": "synthetic-local-source",
+            "expected_identity": draft.expected_identity.model_copy(
+                update={
+                    "repository_commit": "1" * 40,
+                    "deployed_release_sha": "2" * 40,
+                    "ci_run_id": "synthetic-ci-run",
+                    "app_version": "synthetic-app-version",
+                    "migration_head": "synthetic-migration-head",
+                    "main_model": "synthetic-main-model",
+                    "fast_model": "synthetic-fast-model",
+                }
+            ),
+            "targets": draft.targets.model_copy(
+                update={
+                    "recipient": "synthetic-recipient",
+                    "wazzup_channel": "synthetic-channel",
+                    "telegram_target": "synthetic-telegram-target",
+                    "synthetic_suffix": "synthetic-run-suffix",
+                }
+            ),
+            "quotas": v1_quotas,
+            "permissions": ["fixture:execute"],
+            "callback_types": ["synthetic-callback"],
+            "test_data_identities": ["synthetic-test-identity"],
+            "cleanup_method": "synthetic-cleanup",
+            "readbacks": ["synthetic-readback"],
+            "stop_conditions": ["synthetic-stop"],
+            "scenario_binding": scenario_binding,
+        }
+    )
+    authorization = type(draft).model_validate(authorization.model_dump(mode="json"))
+    request = execution.PreflightRequest(
+        quotas=authorization.quotas,
+        permissions=authorization.permissions,
+        callback_types=authorization.callback_types,
+        test_data_identities=authorization.test_data_identities,
+        cleanup_method=authorization.cleanup_method,
+        readbacks=authorization.readbacks,
+        stop_conditions=authorization.stop_conditions,
+        scenario_binding=authorization.scenario_binding,
+    )
+    observation = execution.PreflightObservation(
+        identity=authorization.expected_identity,
+        targets=authorization.targets,
+        executor=authorization.allowed_executor,
+        source=authorization.allowed_source,
+        readback_identity=PreflightReadbackIdentity(
+            source_id="synthetic-preflight-readback",
+            observed_at=current_time - timedelta(seconds=30),
+            content_digest="7" * 64,
+        ),
+    )
+    action_specs = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(
+            execution.AuthorizedActionSpec(
+                action_id="synthetic-action",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                **_action_request(),
+            ),
+            execution.AuthorizedActionSpec(
+                action_id="negative",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                **_action_request(),
+            ),
+        ),
+    )
+    stores = execution.StoreIdentities(
+        raw_store_id="synthetic-raw-store",
+        tracked_store_id="synthetic-tracked-store",
+        anchor_store_id="synthetic-anchor-store",
+        raw_root_digest=execution.store_root_digest(protected_root.resolve()),
+        tracked_root_digest=execution.store_root_digest(
+            (protected_root / "tracked").resolve()
+        ),
+        anchor_root_digest=execution.store_root_digest(
+            (protected_root / "anchors").resolve()
+        ),
+    )
+    return {
+        "registry": registry,
+        "protected_root": protected_root,
+        "run_id": run_id,
+        "authorization": authorization,
+        "request": request,
+        "observation": observation,
+        "action_specs": action_specs,
+        "store_ids": stores,
+        "adapter_ids": execution.AuthorityAdapterIds(
+            schema_version="noor-e2e-authority-adapter-ids/v2",
+            values=("fake-local-adapter",),
+        ),
+        "collector_ids": execution.AuthorityCollectorIds(
+            schema_version="noor-e2e-authority-collector-ids/v2",
+            values=("independent-readback-collector",),
+        ),
+        "task1_bindings": execution.Task1AuthorityBindings(
+            schema_version="noor-e2e-task1-authority-bindings/v2",
+            authorization_digest=registry.task1_authorization_digest,
+            input_digests=registry.task1_input_digests,
+        ),
+        "receipt_issued_at": current_time - timedelta(seconds=1),
+        "receipt_expires_at": current_time + timedelta(minutes=5),
+    }
+
+
+def _issued_authority(
+    registry,
+    *,
+    protected_root: Path,
+    run_id: str,
+    now: datetime | None = None,
+    quotas=None,
+    execution_input_digests: dict[str, str] | None = None,
+):
+    _, execution = _modules()
+    current_time = now or datetime.now(UTC)
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=protected_root,
+        run_id=run_id,
+        now=current_time,
+        quotas=quotas,
+        execution_input_digests=execution_input_digests,
+    )
+    execution._write_test_authority_bundle(**inputs)
+    return execution.issue_execution_authorization_handle(
+        registry=registry,
+        protected_root=protected_root,
+        run_id=run_id,
+        current_time=current_time,
+    )
 
 
 def test_compiled_plan_has_exact_29_execution_ids_and_all_required_criteria() -> None:
@@ -290,19 +496,23 @@ def test_criterion_all_required_lattice_blocks_missing_and_validates_exclusion()
 def test_phase_machine_uses_cursor_and_digest_causality(tmp_path: Path) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -318,26 +528,30 @@ def test_phase_machine_uses_cursor_and_digest_causality(tmp_path: Path) -> None:
         execution.ProtectedExecutionJournal.open(
             protected_root=tmp_path / "protected",
             run_id="synthetic-run",
-            authorization=authorization,
+            authority=authority,
         )
 
 
 def test_phase_machine_closes_in_exact_causal_order(tmp_path: Path) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -354,20 +568,21 @@ def test_phase_machine_closes_in_exact_causal_order(tmp_path: Path) -> None:
         collector_id="independent-readback-collector",
         source_id="synthetic-final",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest=journal.previous_event_digest,
         observed_at=datetime.now(UTC),
         inventory={"synthetic:item": {"state": "closed"}},
     )
-    journal.seal_final_readback(final)
+    receipt_digest = execution._write_test_final_readback_bundle(journal, final)
+    journal.seal_final_readback(final, receipt_digest=receipt_digest)
     journal.mark_evaluated(evaluation_digest="b" * 64)
     journal.commit_phase(attempt_chain_digest="c" * 64)
 
     reopened = execution.ProtectedExecutionJournal.open(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     assert reopened.phase == "attempt_committed"
     assert reopened.cursor == 7
@@ -378,19 +593,23 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
 ) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -423,6 +642,145 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         journal.anchor_final_turn(
             event_digest="e" * 64,
             occurred_at=datetime(2026, 7, 27, 10, 1, tzinfo=UTC),
+        )
+
+
+def test_unknown_dispatch_requires_protected_independent_reconciliation(
+    tmp_path: Path,
+) -> None:
+    """A direct adapter result cannot turn a consumed permit into a terminal fact."""
+
+    policy, execution = _modules()
+    registry = _registry()
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="reconciliation-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="reconciliation-run",
+        authority=authority,
+    )
+    authorization = journal.authorization
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="reconciliation-baseline",
+            run_id="reconciliation-run",
+            preflight_digest=authorization.preflight_digest,
+            collector_artifact_digest=authorization.readback_collector_digest,
+            causal_event_digest="4" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    reservation = journal.reserve_action(
+        action_id="synthetic-action",
+        adapter_id="fake-local-adapter",
+        subsystem="outbound_text",
+        **_action_request(),
+        messages=1,
+        model_calls=0,
+        cost_usd=0,
+    )
+    execution.FakeLocalAdapter(
+        adapter_id="fake-local-adapter", journal=journal
+    ).execute(reservation, **_action_request())
+    with pytest.raises(Exception, match="independent reconciliation"):
+        journal.complete_action(
+            reservation,
+            state="failed",
+            outcome_digest="d" * 64,
+        )
+    receipt = execution.UnknownActionReconciliationReceipt(
+        schema_version="noor-e2e-unknown-action-reconciliation/v2",
+        registry_id=registry.registry_id,
+        run_id="reconciliation-run",
+        authorization_digest=execution.authorization_digest(authorization),
+        action_id=reservation.action_id,
+        reservation_digest=reservation.reservation_digest,
+        collector_id="independent-readback-collector",
+        producer="independent-readback-collector",
+        causal_event_digest=journal.previous_event_digest,
+        observed_at=now,
+        expires_at=now + timedelta(minutes=1),
+        resolved_state="failed",
+        inventory_digest="e" * 64,
+    )
+    receipt_digest = execution._write_exclusive(
+        journal.run_root,
+        f"independent-reconciliation/{reservation.action_id}.json",
+        receipt.model_dump(mode="json"),
+    )
+    journal.reconcile_unknown_action(
+        action_id=reservation.action_id,
+        receipt_digest=receipt_digest,
+    )
+    journal.anchor_final_turn(event_digest="f" * 64, occurred_at=now)
+
+
+def test_zero_turn_gate_requires_protected_receipted_evidence(tmp_path: Path) -> None:
+    """A shaped BLOCKED object cannot substitute for a committed gate receipt."""
+
+    _, execution = _modules()
+    registry = _registry()
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="gate-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="gate-run",
+        authority=authority,
+    )
+    authorization = journal.authorization
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        _modules()[0].ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="gate-baseline",
+            run_id="gate-run",
+            preflight_digest=authorization.preflight_digest,
+            collector_artifact_digest=authorization.readback_collector_digest,
+            causal_event_digest="4" * 64,
+            observed_at=now - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    runner = execution.GenericAcceptanceRunner(
+        registry=registry,
+        authority=authority,
+        journal=journal,
+    )
+    execution_id = registry.compiled_plan.execution_ids[0]
+    receipt_digest = execution._write_test_gate_evidence_bundle(
+        registry=registry,
+        journal=journal,
+        execution_id=execution_id,
+        outcome="BLOCKED",
+        producer="independent-readback-collector",
+        observed_at=datetime.now(UTC),
+        expires_at=now + timedelta(minutes=1),
+    )
+    attempt = execution.GateAttemptV2(
+        schema_version="noor-e2e-gate-attempt/v2",
+        execution_id=execution_id,
+        outcome="BLOCKED",
+        run_started_at=journal._execution_started_at,
+        execution_started_event_digest=journal._execution_started_event_digest,
+        receipt_digest=receipt_digest,
+    )
+    assert runner.validate_gate_attempt(attempt) == attempt
+    with pytest.raises(Exception, match="protected producer receipt|receipt drift"):
+        runner.validate_gate_attempt(
+            attempt.model_copy(update={"receipt_digest": "0" * 64})
         )
 
 
@@ -481,19 +839,24 @@ def test_classifier_result_cannot_be_reused_for_another_assertion() -> None:
 def test_fake_adapter_rejects_publicly_forged_reservation(tmp_path: Path) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
+    authorization = journal.authorization
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -528,28 +891,31 @@ def test_negative_quota_inputs_and_max_scenarios_are_enforced(
 ) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(
+    quotas = execution.ProtectedQuotas(
+        max_scenarios=1,
+        max_messages=2,
+        max_model_calls=2,
+        max_cost_usd=1,
+        subsystem_quotas={"outbound_text": 2},
+    )
+    authority = _issued_authority(
         registry,
-        quotas=execution.ProtectedQuotas(
-            max_scenarios=1,
-            max_messages=2,
-            max_model_calls=2,
-            max_cost_usd=1,
-            subsystem_quotas={"outbound_text": 2},
-        ),
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+        quotas=quotas,
     )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -585,29 +951,34 @@ def test_scenario_quota_is_authorization_scoped_across_runs(
 ) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(
-        registry,
-        quotas=execution.ProtectedQuotas(
-            max_scenarios=1,
-            max_messages=1,
-            max_model_calls=1,
-            max_cost_usd=1,
-            subsystem_quotas={"outbound_text": 1},
-        ),
+    quotas = execution.ProtectedQuotas(
+        max_scenarios=1,
+        max_messages=1,
+        max_model_calls=1,
+        max_cost_usd=1,
+        subsystem_quotas={"outbound_text": 1},
     )
+    authority_now = datetime.now(UTC)
     for run_id in ("synthetic-run-one", "synthetic-run-two"):
+        authority = _issued_authority(
+            registry,
+            protected_root=tmp_path / "protected",
+            run_id=run_id,
+            now=authority_now,
+            quotas=quotas,
+        )
         journal = execution.ProtectedExecutionJournal.create(
             protected_root=tmp_path / "protected",
             run_id=run_id,
-            authorization=authorization,
+            authority=authority,
         )
         baseline = policy.ReadbackObservation.build(
             phase="baseline",
             collector_id="independent-readback-collector",
             source_id=f"{run_id}-baseline",
             run_id=run_id,
-            preflight_digest="8" * 64,
-            collector_artifact_digest="9" * 64,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
             causal_event_digest="4" * 64,
             observed_at=datetime.now(UTC) - timedelta(minutes=1),
             inventory={"synthetic:item": {"state": "absent"}},
@@ -632,19 +1003,23 @@ def test_scenario_quota_is_authorization_scoped_across_runs(
 def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -692,19 +1067,23 @@ def test_attempt_commit_binds_raw_and_tracked_semantics(tmp_path: Path) -> None:
 def test_interrupted_two_phase_attempt_recovers_as_aborted(tmp_path: Path) -> None:
     policy, execution = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="synthetic-run",
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id="synthetic-run",
-        authorization=authorization,
+        authority=authority,
     )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id="synthetic-baseline",
         run_id="synthetic-run",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_artifact_digest=journal.authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime.now(UTC) - timedelta(minutes=1),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -780,6 +1159,23 @@ def test_generic_runner_validates_every_canonical_scenario(
         tester_config_digest="5" * 64,
         judge_config_digest="6" * 64,
     )
+    input_digests = {
+        identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
+    }
+    input_digests[scenario_id] = attempt_binding_digest
+    run_id = f"run-{scenario_id.lower()}"
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+        execution_input_digests=input_digests,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+        authority=authority,
+    )
+    authorization = journal.authorization
     oracle_evidence = []
     for assertion_id in sorted(assertion_ids):
         assertion = registry.compiled_policy.assertions[assertion_id]
@@ -788,9 +1184,9 @@ def test_generic_runner_validates_every_canonical_scenario(
                 assertion_id=assertion_id,
                 policy_digest=registry.compiled_policy.policy_digest,
                 evaluator_digest=registry.classifier_evaluator_digest(assertion_id),
-                run_id=f"run-{scenario_id.lower()}",
+                run_id=run_id,
                 attempt_digest=attempt_binding_digest,
-                preflight_digest="8" * 64,
+                preflight_digest=authorization.preflight_digest,
                 classifier_id=assertion.oracle.classifier_id,
                 producer=assertion.oracle.allowed_producers[0],
                 source_id=f"{assertion_id}:classifier",
@@ -818,9 +1214,9 @@ def test_generic_runner_validates_every_canonical_scenario(
                 observed_at=datetime(2026, 7, 27, 10, 0, 2, tzinfo=UTC),
                 passed=True,
                 reason="Structured evidence passed.",
-                run_id=f"run-{scenario_id.lower()}",
+                run_id=run_id,
                 attempt_digest=attempt_binding_digest,
-                preflight_digest="8" * 64,
+                preflight_digest=authorization.preflight_digest,
             )
             oracle_evidence.append(
                 policy.OracleEvidence(
@@ -836,9 +1232,9 @@ def test_generic_runner_validates_every_canonical_scenario(
         phase="baseline",
         collector_id="independent-readback-collector",
         source_id=f"{scenario_id}:baseline",
-        run_id=f"run-{scenario_id.lower()}",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        run_id=run_id,
+        preflight_digest=authorization.preflight_digest,
+        collector_artifact_digest=authorization.readback_collector_digest,
         causal_event_digest="4" * 64,
         observed_at=datetime(2026, 7, 27, 9, 59, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "absent"}},
@@ -847,9 +1243,9 @@ def test_generic_runner_validates_every_canonical_scenario(
         phase="final",
         collector_id="independent-readback-collector",
         source_id=f"{scenario_id}:final",
-        run_id=f"run-{scenario_id.lower()}",
-        preflight_digest="8" * 64,
-        collector_artifact_digest="9" * 64,
+        run_id=run_id,
+        preflight_digest=authorization.preflight_digest,
+        collector_artifact_digest=authorization.readback_collector_digest,
         causal_event_digest="5" * 64,
         observed_at=datetime(2026, 7, 27, 10, 0, 5, tzinfo=UTC),
         inventory={"synthetic:item": {"state": "closed"}},
@@ -870,14 +1266,7 @@ def test_generic_runner_validates_every_canonical_scenario(
         judge_config_digest="6" * 64,
     )
     plan_digest = execution.scenario_plan_digest(attempt)
-    input_digests = {
-        identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
-    }
-    input_digests[scenario_id] = plan_digest
-    authorization = _authorization(
-        registry,
-        execution_input_digests=input_digests,
-    )
+    assert plan_digest == attempt_binding_digest
     registry._load_trusted_readback(baseline)
     registry._load_trusted_readback(final)
     for item in oracle_evidence:
@@ -889,16 +1278,11 @@ def test_generic_runner_validates_every_canonical_scenario(
             *item.readbacks,
         ):
             _trust_decisive_for_unit(registry, structured)
-    journal = execution.ProtectedExecutionJournal.create(
-        protected_root=tmp_path / "protected",
-        run_id=f"run-{scenario_id.lower()}",
-        authorization=authorization,
-    )
     journal.seal_baseline(baseline)
     journal.begin_execution()
     runner = execution.GenericAcceptanceRunner(
         registry=registry,
-        authorization=authorization,
+        authority=authority,
         journal=journal,
     )
 
@@ -962,10 +1346,18 @@ def test_generic_runner_validates_every_canonical_evidence_block(
         identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
     }
     input_digests[block_id] = plan_digest
-    authorization = _authorization(
+    authority = _issued_authority(
         registry,
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
         execution_input_digests=input_digests,
     )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+        authority=authority,
+    )
+    authorization = journal.authorization
     oracle_evidence = []
     for assertion_id in sorted(assertion_ids):
         assertion = registry.compiled_policy.assertions[assertion_id]
@@ -1018,11 +1410,6 @@ def test_generic_runner_validates_every_canonical_evidence_block(
             )
         oracle_evidence.append(item)
     attempt = input_seed.model_copy(update={"oracle_evidence": tuple(oracle_evidence)})
-    journal = execution.ProtectedExecutionJournal.create(
-        protected_root=tmp_path / "protected",
-        run_id=run_id,
-        authorization=authorization,
-    )
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
@@ -1038,7 +1425,7 @@ def test_generic_runner_validates_every_canonical_evidence_block(
     journal.begin_execution()
     runner = execution.GenericAcceptanceRunner(
         registry=registry,
-        authorization=authorization,
+        authority=authority,
         journal=journal,
     )
 
@@ -1055,6 +1442,305 @@ def test_v1_authorization_can_enter_v2_only_through_exact_preflight_bridge() -> 
     _, execution = _modules()
 
     assert hasattr(execution, "build_execution_authorization_from_v1")
+
+
+def test_registry_factory_rebuilds_authority_from_protected_typed_payloads(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id="factory-run",
+    )
+
+    execution._write_test_authority_bundle(**inputs)
+    handle = execution.issue_execution_authorization_handle(
+        registry=registry,
+        protected_root=root,
+        run_id="factory-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id="factory-run",
+        authority=handle,
+    )
+
+    assert journal.authorization.registry_id == registry.registry_id
+    with pytest.raises(TypeError):
+        json.dumps(handle)
+    with pytest.raises(TypeError):
+        pickle.dumps(handle)
+
+
+@pytest.mark.parametrize("missing_name", ["receipt.json", "preflight-request.json"])
+def test_authority_factory_rejects_missing_receipt_or_payload(
+    tmp_path: Path,
+    missing_name: str,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = "missing-bundle-run"
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+    )
+    execution._write_test_authority_bundle(**inputs)
+    (root / "authority-bundles" / run_id / missing_name).unlink()
+
+    with pytest.raises(Exception, match="protected|receipt|payload"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id=run_id,
+        )
+
+
+def test_authority_factory_rejects_forged_payload_and_receipt(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+
+    payload_inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id="forged-payload-run",
+    )
+    execution._write_test_authority_bundle(**payload_inputs)
+    payload_path = (
+        root / "authority-bundles" / "forged-payload-run" / "preflight-request.json"
+    )
+    payload_path.write_bytes(payload_path.read_bytes() + b" ")
+    with pytest.raises(Exception, match="payload digest drift"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id="forged-payload-run",
+        )
+
+    receipt_inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id="forged-receipt-run",
+    )
+    execution._write_test_authority_bundle(**receipt_inputs)
+    receipt_path = root / "authority-bundles" / "forged-receipt-run" / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["registry_id"] = "forged-registry"
+    receipt_path.write_bytes(execution._canonical_bytes(receipt))
+    with pytest.raises(Exception, match="receipt drift"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id="forged-receipt-run",
+        )
+
+
+def test_authority_factory_rejects_task1_other_registry_and_run_drift(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = "exact-owner-run"
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+    )
+    execution._write_test_authority_bundle(**inputs)
+
+    other_registry = _registry()
+    other_registry.registry_id = "other-registry"
+    with pytest.raises(Exception, match="receipt drift"):
+        execution.issue_execution_authorization_handle(
+            registry=other_registry,
+            protected_root=root,
+            run_id=run_id,
+        )
+    with pytest.raises(Exception, match="protected|receipt"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id="other-run",
+        )
+
+    bundle_root = root / "authority-bundles" / run_id
+    task1_path = bundle_root / "task1-bindings.json"
+    task1 = json.loads(task1_path.read_text(encoding="utf-8"))
+    task1["authorization_digest"] = "f" * 64
+    task1_path.write_bytes(execution._canonical_bytes(task1))
+    receipt_path = bundle_root / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["payload_digests"]["task1_bindings"] = hashlib.sha256(
+        task1_path.read_bytes()
+    ).hexdigest()
+    receipt_path.write_bytes(execution._canonical_bytes(receipt))
+    with pytest.raises(Exception, match="Task 1"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id=run_id,
+        )
+
+
+@pytest.mark.parametrize(
+    "observation_delta",
+    [timedelta(minutes=-16), timedelta(seconds=1)],
+    ids=["stale", "future"],
+)
+def test_authority_factory_rejects_stale_or_future_preflight(
+    tmp_path: Path,
+    observation_delta: timedelta,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = f"preflight-{observation_delta.total_seconds():g}"
+    now = datetime.now(UTC)
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+        now=now,
+    )
+    observation = inputs["observation"]
+    inputs["observation"] = observation.model_copy(
+        update={
+            "readback_identity": observation.readback_identity.model_copy(
+                update={"observed_at": now + observation_delta}
+            )
+        }
+    )
+    execution._write_test_authority_bundle(**inputs)
+
+    with pytest.raises(Exception, match="stale|future"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id=run_id,
+            current_time=now,
+        )
+
+
+def test_authority_factory_rejects_store_root_and_symlink_root_drift(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = "store-drift-run"
+    inputs = _authority_bundle_inputs(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+    )
+    execution._write_test_authority_bundle(**inputs)
+    bundle_root = root / "authority-bundles" / run_id
+    stores_path = bundle_root / "store-identities.json"
+    stores = json.loads(stores_path.read_text(encoding="utf-8"))
+    stores["anchor_root_digest"] = "f" * 64
+    stores_path.write_bytes(execution._canonical_bytes(stores))
+    receipt_path = bundle_root / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["payload_digests"]["store_identities"] = hashlib.sha256(
+        stores_path.read_bytes()
+    ).hexdigest()
+    receipt_path.write_bytes(execution._canonical_bytes(receipt))
+
+    with pytest.raises(Exception, match="store root binding drift"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id=run_id,
+        )
+
+    symlink = tmp_path / "protected-link"
+    symlink.symlink_to(root, target_is_directory=True)
+    with pytest.raises(Exception, match="no-follow|protected.*root|receipt drift"):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=symlink,
+            run_id=run_id,
+        )
+
+
+def test_authority_handle_rejects_other_run_root_and_registry(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    handle = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id="bound-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id="bound-run",
+        authority=handle,
+    )
+    (tmp_path / "other-root").mkdir()
+
+    for other_root, other_run in (
+        (tmp_path / "other-root", "bound-run"),
+        (root, "other-run"),
+    ):
+        with pytest.raises(Exception, match="authority handle"):
+            execution.ProtectedExecutionJournal.create(
+                protected_root=other_root,
+                run_id=other_run,
+                authority=handle,
+            )
+
+    other_registry = _registry()
+    other_registry.registry_id = "other-registry"
+    with pytest.raises(Exception, match="authority handle"):
+        execution.GenericAcceptanceRunner(
+            registry=other_registry,
+            authority=handle,
+            journal=journal,
+        )
+
+
+def test_reparsed_v2_cannot_substitute_for_authority_handle(tmp_path: Path) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    handle = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id="reparsed-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id="reparsed-run",
+        authority=handle,
+    )
+    reparsed = execution.ExecutionAuthorizationV2.model_validate_json(
+        journal.authorization.model_dump_json()
+    )
+
+    with pytest.raises(Exception, match="authority handle"):
+        execution.ProtectedExecutionJournal.open(
+            protected_root=root,
+            run_id="reparsed-run",
+            authority=reparsed,
+        )
+    with pytest.raises(TypeError):
+        execution.issue_execution_authorization_handle(
+            registry=registry,
+            protected_root=root,
+            run_id="reparsed-run",
+            authorization=reparsed,
+        )
 
 
 def test_permit_contract_binds_the_exact_request_identity() -> None:
@@ -1076,3 +1762,315 @@ def test_permit_contract_binds_the_exact_request_identity() -> None:
         "issued_at",
         "expires_at",
     } <= set(execution.ActionReservation.model_fields)
+
+
+def test_caller_built_authorization_cannot_open_a_protected_journal(
+    tmp_path: Path,
+) -> None:
+    """Typed caller input is not registry-owned executable authority."""
+
+    _, execution = _modules()
+    registry = _registry()
+    caller_authorization = _authorization(registry, trusted=False)
+
+    with pytest.raises(Exception, match="authority handle"):
+        execution.ProtectedExecutionJournal.create(
+            protected_root=tmp_path / "protected",
+            run_id="caller-auth-run",
+            authority=caller_authorization,
+        )
+
+
+def test_persistent_authority_handle_binds_exact_protected_root(
+    tmp_path: Path,
+) -> None:
+    _, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    handle = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id="authority-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id="authority-run",
+        authority=handle,
+    )
+    assert journal.authorization_digest == execution.authorization_digest(
+        journal.authorization
+    )
+    (tmp_path / "other").mkdir()
+    with pytest.raises(Exception, match="authority handle"):
+        execution.ProtectedExecutionJournal.create(
+            protected_root=tmp_path / "other",
+            run_id="authority-run",
+            authority=handle,
+        )
+
+
+def test_final_readback_rejects_caller_object_without_collector_receipt(
+    tmp_path: Path,
+) -> None:
+    """A caller-built observation is not independent final inventory."""
+
+    policy, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = "caller-final-readback"
+    authority = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id=run_id,
+        authority=authority,
+    )
+    authorization = journal.authorization
+    now = datetime.now(UTC)
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="caller-final-baseline",
+            run_id=run_id,
+            preflight_digest=authorization.preflight_digest,
+            collector_artifact_digest=authorization.readback_collector_digest,
+            causal_event_digest="1" * 64,
+            observed_at=now - timedelta(seconds=2),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    journal.anchor_final_turn(
+        event_digest="2" * 64,
+        occurred_at=now - timedelta(seconds=1),
+    )
+    caller_final = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id="independent-readback-collector",
+        source_id="caller-built-final",
+        run_id=run_id,
+        preflight_digest=authorization.preflight_digest,
+        collector_artifact_digest=authorization.readback_collector_digest,
+        causal_event_digest=journal.previous_event_digest,
+        observed_at=now,
+        inventory={"synthetic:item": {"state": "closed"}},
+    )
+
+    with pytest.raises(Exception, match="collector.*receipt|producer.*receipt"):
+        journal.seal_final_readback(caller_final)
+
+
+def test_gate_receipt_binds_full_protected_provenance() -> None:
+    _, execution = _modules()
+
+    assert {
+        "registry_id",
+        "run_id",
+        "authorization_digest",
+        "execution_id",
+        "criterion_ids",
+        "execution_owner",
+        "execution_started_event_digest",
+        "artifact_sha256",
+    } <= set(execution.GateEvidenceReceipt.model_fields)
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ("stale", "future", "wrong-collector", "wrong-head"),
+)
+def test_final_readback_rejects_invalid_collector_provenance(
+    tmp_path: Path,
+    variant: str,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    root = tmp_path / "protected"
+    run_id = f"invalid-final-{variant}"
+    now = datetime.now(UTC)
+    authority = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+        now=now,
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id=run_id,
+        authority=authority,
+    )
+    authorization = journal.authorization
+    anchor_at = (
+        now - timedelta(minutes=7) if variant == "stale" else now - timedelta(seconds=2)
+    )
+    observed_at = {
+        "stale": now - timedelta(minutes=6),
+        "future": now + timedelta(seconds=1),
+    }.get(variant, now - timedelta(seconds=1))
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id=f"{variant}-baseline",
+            run_id=run_id,
+            preflight_digest=authorization.preflight_digest,
+            collector_artifact_digest=authorization.readback_collector_digest,
+            causal_event_digest="1" * 64,
+            observed_at=anchor_at - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    journal.anchor_final_turn(event_digest="2" * 64, occurred_at=anchor_at)
+    final = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id=(
+            "caller-collector"
+            if variant == "wrong-collector"
+            else "independent-readback-collector"
+        ),
+        source_id=f"{variant}-final",
+        run_id=run_id,
+        preflight_digest=authorization.preflight_digest,
+        collector_artifact_digest=authorization.readback_collector_digest,
+        causal_event_digest=(
+            "f" * 64 if variant == "wrong-head" else journal.previous_event_digest
+        ),
+        observed_at=observed_at,
+        inventory={"synthetic:item": {"state": "closed"}},
+    )
+
+    with pytest.raises(Exception, match="collector|receipt|binding|fresh|future"):
+        receipt_digest = execution._write_test_final_readback_bundle(journal, final)
+        journal.seal_final_readback(
+            final,
+            receipt_digest=receipt_digest,
+            current_time=now,
+        )
+
+
+def test_future_blocked_gate_and_unbound_client_exclusion_fail_closed(
+    tmp_path: Path,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+
+    for run_id, execution_id, outcome, producer, observed_at in (
+        (
+            "future-blocked-gate",
+            registry.compiled_plan.execution_ids[0],
+            "BLOCKED",
+            "independent-readback-collector",
+            datetime.now(UTC) + timedelta(seconds=1),
+        ),
+        (
+            "unbound-client-exclusion",
+            "EB-REFERRAL",
+            "EXCLUDED_BY_CLIENT",
+            "client-exclusion-authority",
+            datetime.now(UTC) - timedelta(seconds=30),
+        ),
+    ):
+        root = tmp_path / run_id
+        authority = _issued_authority(
+            registry,
+            protected_root=root,
+            run_id=run_id,
+        )
+        journal = execution.ProtectedExecutionJournal.create(
+            protected_root=root,
+            run_id=run_id,
+            authority=authority,
+        )
+        authorization = journal.authorization
+        now = datetime.now(UTC)
+        journal.seal_baseline(
+            policy.ReadbackObservation.build(
+                phase="baseline",
+                collector_id="independent-readback-collector",
+                source_id=f"{run_id}-baseline",
+                run_id=run_id,
+                preflight_digest=authorization.preflight_digest,
+                collector_artifact_digest=authorization.readback_collector_digest,
+                causal_event_digest="1" * 64,
+                observed_at=now - timedelta(seconds=1),
+                inventory={"synthetic:item": {"state": "absent"}},
+            )
+        )
+        journal.begin_execution()
+        receipt_digest = execution._write_test_gate_evidence_bundle(
+            registry=registry,
+            journal=journal,
+            execution_id=execution_id,
+            outcome=outcome,
+            producer=producer,
+            observed_at=observed_at,
+            expires_at=now + timedelta(minutes=1),
+            client_authority_digest=(
+                "a" * 64 if outcome == "EXCLUDED_BY_CLIENT" else None
+            ),
+        )
+        attempt = execution.GateAttemptV2(
+            schema_version="noor-e2e-gate-attempt/v2",
+            execution_id=execution_id,
+            outcome=outcome,
+            run_started_at=journal._execution_started_at,
+            execution_started_event_digest=journal._execution_started_event_digest,
+            receipt_digest=receipt_digest,
+        )
+        runner = execution.GenericAcceptanceRunner(
+            registry=registry,
+            authority=authority,
+            journal=journal,
+        )
+
+        with pytest.raises(Exception, match="receipt drift|client exclusion"):
+            runner.validate_gate_attempt(attempt, current_time=now)
+
+
+def test_reservation_rejects_request_not_present_in_protected_action_spec(
+    tmp_path: Path,
+) -> None:
+    """A well-shaped digest is insufficient without an exact protected action spec."""
+
+    policy, execution = _modules()
+    registry = _registry()
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="unlisted-action-run",
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="unlisted-action-run",
+        authority=authority,
+    )
+    authorization = journal.authorization
+    baseline = policy.ReadbackObservation.build(
+        phase="baseline",
+        collector_id="independent-readback-collector",
+        source_id="unlisted-action-baseline",
+        run_id="unlisted-action-run",
+        preflight_digest=authorization.preflight_digest,
+        collector_artifact_digest=authorization.readback_collector_digest,
+        causal_event_digest="1" * 64,
+        observed_at=datetime.now(UTC) - timedelta(seconds=1),
+        inventory={"synthetic:item": {"state": "absent"}},
+    )
+    journal.seal_baseline(baseline)
+    journal.begin_execution()
+
+    with pytest.raises(Exception, match="action spec|protected action"):
+        journal.reserve_action(
+            action_id="unlisted-action",
+            adapter_id="fake-local-adapter",
+            subsystem="outbound_text",
+            **_action_request(),
+            messages=0,
+            model_calls=0,
+            cost_usd=0,
+        )

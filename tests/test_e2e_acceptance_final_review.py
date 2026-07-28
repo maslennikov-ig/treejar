@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_e2e_acceptance_trusted_execution import (
-    _authorization,
+    _issued_authority,
     _registry,
 )
 from tests.test_e2e_acceptance_trusted_report import (
@@ -51,6 +51,24 @@ def _stage_protected_execution_snapshot(
         report_mutation(report)
     evidence = []
     attempt_commits = {}
+    transcript_artifacts = {
+        path.relative_to(protected).as_posix(): json.loads(
+            path.read_text(encoding="utf-8")
+        )
+        for parent in (
+            protected / "transcripts",
+            protected / "producer-receipts" / "transcripts",
+        )
+        if parent.exists()
+        for path in parent.rglob("*.json")
+    }
+    collector_artifacts = {
+        relative: json.loads((protected / relative).read_text(encoding="utf-8"))
+        for relative in (
+            "collector-artifacts/final-readback.json",
+            "producer-receipts/final-readback.json",
+        )
+    }
     for entry in index["entries"]:
         payload = json.loads(
             (tracked / entry["relative_path"]).read_text(encoding="utf-8")
@@ -78,6 +96,9 @@ def _stage_protected_execution_snapshot(
         "report": report,
         "evidence": evidence,
         "attempt_commits": attempt_commits,
+        "transcript_artifacts": transcript_artifacts,
+        "collector_artifacts": collector_artifacts,
+        "gate_artifacts": {},
     }
     snapshot = {
         **snapshot_identity,
@@ -107,6 +128,10 @@ def _stage_protected_execution_snapshot(
             "operator_store_digest": trusted.store_root_digest(
                 trusted._operator_root(registry)
             ),
+            "final_readback_receipt_digest": hashlib.sha256(
+                (protected / "producer-receipts/final-readback.json").read_bytes()
+            ).hexdigest(),
+            "final_inventory_digest": snapshot["run"]["final_inventory_digest"],
         },
     )
 
@@ -172,7 +197,10 @@ def test_trusted_report_rejects_one_turn_for_twenty_scenario_executions(
         incomplete_turns=True,
     )
 
-    with pytest.raises(Exception, match="turn|scenario.*coverage|report.*coverage"):
+    with pytest.raises(
+        Exception,
+        match="turn|scenario.*coverage|report.*coverage|transcript",
+    ):
         registry.open_run(run_id="synthetic-trusted-run")
 
 
@@ -252,14 +280,20 @@ def test_caller_forged_structured_pass_is_not_decisive() -> None:
 def test_final_readback_cannot_predate_final_turn_anchor(tmp_path: Path) -> None:
     policy, execution, _ = _modules()
     registry = _registry()
-    authorization = _authorization(registry)
     run_id = "future-anchor-run"
     now = datetime.now(UTC)
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id=run_id,
+        now=now,
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=tmp_path / "protected",
         run_id=run_id,
-        authorization=authorization,
+        authority=authority,
     )
+    authorization = journal.authorization
     baseline = policy.ReadbackObservation.build(
         phase="baseline",
         collector_id="independent-readback-collector",
@@ -289,8 +323,12 @@ def test_final_readback_cannot_predate_final_turn_anchor(tmp_path: Path) -> None
         inventory={"synthetic:item": {"state": "closed"}},
     )
 
-    with pytest.raises(Exception, match="timestamp|occurred|predate|final-turn"):
-        journal.seal_final_readback(final)
+    with pytest.raises(
+        Exception,
+        match="timestamp|occurred|predate|final-turn|observation binding",
+    ):
+        receipt_digest = execution._write_test_final_readback_bundle(journal, final)
+        journal.seal_final_readback(final, receipt_digest=receipt_digest)
 
 
 def test_trusted_run_module_has_no_public_caller_root_loader(
@@ -570,6 +608,86 @@ def test_finalizer_publishes_only_complete_verified_snapshot(tmp_path: Path) -> 
     assert (protected / "registry/anchor.json").is_file()
 
 
+def test_finalizer_rejects_extra_transcript_snapshot_path(tmp_path: Path) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    run_id = "synthetic-trusted-run"
+    _stage_protected_execution_snapshot(registry, tracked, protected)
+    _, _, trusted = _modules()
+    source_root = trusted._execution_snapshot_root(registry) / run_id
+    snapshot_path = source_root / "snapshot.json"
+    commit_path = source_root / "commit.json"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    snapshot["transcript_artifacts"]["transcripts/extra.json"] = {
+        "schema_version": "noor-e2e-protected-transcript/v2",
+        "registry_id": registry.registry_id,
+        "run_id": run_id,
+        "execution_id": registry.compiled_plan.execution_ids[0],
+        "attempt_id": "phantom-attempt",
+        "turn_id": "phantom-turn",
+        "turn": {},
+    }
+    snapshot_identity = {
+        key: value for key, value in snapshot.items() if key != "snapshot_digest"
+    }
+    snapshot["snapshot_digest"] = trusted.canonical_digest(snapshot_identity)
+    snapshot_sha256 = _write_json(snapshot_path, snapshot)
+    commit = json.loads(commit_path.read_text(encoding="utf-8"))
+    commit["snapshot_sha256"] = snapshot_sha256
+    commit["snapshot_digest"] = snapshot["snapshot_digest"]
+    _write_json(commit_path, commit)
+    shutil.rmtree(tracked)
+    shutil.rmtree(protected)
+
+    with pytest.raises(Exception, match="transcript.*path-set|ordered path-set"):
+        registry.finalize_run(run_id)
+
+
+def test_loader_requires_exact_independent_final_inventory_commit(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    receipt_path = protected / "producer-receipts/final-readback.json"
+    receipt_path.unlink()
+    _refresh_test_publication_marker(registry, tracked, protected)
+
+    with pytest.raises(Exception, match="final readback|producer|receipt"):
+        registry.open_run(run_id="synthetic-trusted-run")
+
+
+def test_loader_rejects_self_consistent_forged_collector_inventory(
+    tmp_path: Path,
+) -> None:
+    registry, tracked, protected = _build_verified_run(tmp_path)
+    policy, _, trusted = _modules()
+    run = json.loads((tracked / "registry/run.json").read_text(encoding="utf-8"))
+    original = policy.ReadbackObservation.model_validate(run["final"])
+    forged = policy.ReadbackObservation.build(
+        phase="final",
+        collector_id=original.collector_id,
+        source_id="forged-independent-final",
+        run_id=original.run_id,
+        preflight_digest=original.preflight_digest,
+        collector_artifact_digest=original.collector_artifact_digest,
+        causal_event_digest=original.causal_event_digest,
+        observed_at=original.observed_at,
+        inventory={"synthetic:item": {"state": "active"}},
+    )
+    artifact_path = protected / "collector-artifacts/final-readback.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["observation"] = forged.model_dump(mode="json")
+    artifact["inventory_digest"] = trusted.canonical_digest(forged.inventory)
+    artifact_sha256 = _write_json(artifact_path, artifact)
+    receipt_path = protected / "producer-receipts/final-readback.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["artifact_sha256"] = artifact_sha256
+    receipt["inventory_digest"] = artifact["inventory_digest"]
+    _write_json(receipt_path, receipt)
+    _refresh_test_publication_marker(registry, tracked, protected)
+
+    with pytest.raises(Exception, match="final readback.*binding|inventory"):
+        registry.open_run(run_id="synthetic-trusted-run")
+
+
 def test_finalizer_removes_partial_publish_when_inner_receipt_is_invalid(
     tmp_path: Path,
 ) -> None:
@@ -587,7 +705,10 @@ def test_finalizer_removes_partial_publish_when_inner_receipt_is_invalid(
     shutil.rmtree(tracked)
     shutil.rmtree(protected)
 
-    with pytest.raises(Exception, match="turn|scenario.*coverage|report.*coverage"):
+    with pytest.raises(
+        Exception,
+        match="turn|scenario.*coverage|report.*coverage|transcript",
+    ):
         registry.finalize_run(run_id)
 
     assert not tracked.exists()
@@ -643,7 +764,17 @@ def test_snapshot_commit_binds_journal_authorization_attempts_and_store() -> Non
         "journal_head_digest",
         "attempt_chain_heads_digest",
         "operator_store_digest",
+        "final_readback_receipt_digest",
+        "final_inventory_digest",
     } <= set(trusted.ProtectedSnapshotCommit.model_fields)
+
+
+def test_committed_execution_requires_typed_executed_or_gate_variant() -> None:
+    _, _, trusted = _modules()
+
+    assert {"attempt_kind", "gate_attempt"} <= set(
+        trusted.CommittedExecutionArtifact.model_fields
+    )
 
 
 def test_finalizer_derives_side_effect_closeout_from_ledger_and_inventory() -> None:

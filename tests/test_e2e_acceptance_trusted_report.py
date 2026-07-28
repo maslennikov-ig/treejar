@@ -78,7 +78,7 @@ def _build_verified_run(
     run_id = "synthetic-trusted-run"
     tracked_run = tracked / run_id
     protected_run = protected / run_id
-    now = datetime.now(UTC)
+    now = datetime.now(UTC) - timedelta(seconds=20)
     authorization = execution.ExecutionAuthorizationV2(
         schema_version="noor-e2e-authorization/v2",
         authorization_id="synthetic-report-auth",
@@ -101,6 +101,25 @@ def _build_verified_run(
         adapter_ids=("fake-local-adapter",),
         collector_ids=("independent-readback-collector",),
         permissions=("fixture:execute",),
+        action_specs=(
+            execution.AuthorizedActionSpec(
+                action_id="synthetic-report-action",
+                execution_id=registry.compiled_plan.execution_ids[0],
+                step_id="fixture-step-001",
+                capability="outbound_text",
+                operation_permission="fixture:execute",
+                adapter_id="fake-local-adapter",
+                subsystem="outbound_text",
+                destination_digest="a" * 64,
+                payload_digest="b" * 64,
+                idempotency_key="fixture-report-idempotency",
+                capability_units={"outbound_text": 1},
+            ),
+        ),
+        side_effect_authority=execution.SideEffectAuthority(
+            cleanup_owner="acceptance-owner",
+            cleanup_authority="application-path-only",
+        ),
         live_binding=execution.ExactLiveAuthorizationBinding(
             v1_manifest_digest="1" * 64,
             preflight_request_digest="2" * 64,
@@ -108,7 +127,16 @@ def _build_verified_run(
             runtime_identity_digest="4" * 64,
             target_digest="5" * 64,
             permissions_digest=execution._digest(("fixture:execute",)),
-            cleanup_retention_digest="6" * 64,
+            cleanup_retention_digest=execution._digest(
+                {
+                    "side_effect_authority": {
+                        "cleanup_owner": "acceptance-owner",
+                        "cleanup_authority": "application-path-only",
+                        "retention_authorities": [],
+                    },
+                    "client_exclusion_authorities": {},
+                }
+            ),
             execution_set_digest=execution._digest(
                 {
                     "execution_ids": registry.compiled_plan.execution_ids,
@@ -178,6 +206,47 @@ def _build_verified_run(
         observed_at=now + timedelta(seconds=10),
         inventory={"synthetic:item": {"state": "closed"}},
     )
+    authorization_digest = trusted.canonical_digest(
+        authorization.model_dump(mode="json")
+    )
+    final_inventory_digest = trusted.canonical_digest(final.inventory)
+    final_readback_artifact = {
+        "schema_version": "noor-e2e-final-readback-artifact/v2",
+        "registry_id": registry.registry_id,
+        "run_id": run_id,
+        "authorization_digest": authorization_digest,
+        "preflight_digest": authorization.preflight_digest,
+        "collector_id": final.collector_id,
+        "collector_artifact_digest": final.collector_artifact_digest,
+        "journal_head_digest": final.causal_event_digest,
+        "final_turn_anchor_at": (now + timedelta(seconds=5)).isoformat(),
+        "observed_at": final.observed_at.isoformat(),
+        "inventory_digest": final_inventory_digest,
+        "observation": final.model_dump(mode="json"),
+    }
+    final_readback_artifact_digest = _write_json(
+        protected_run / "collector-artifacts/final-readback.json",
+        final_readback_artifact,
+    )
+    _write_json(
+        protected_run / "producer-receipts/final-readback.json",
+        {
+            "schema_version": "noor-e2e-final-readback-producer-receipt/v2",
+            "registry_id": registry.registry_id,
+            "run_id": run_id,
+            "authorization_digest": authorization_digest,
+            "preflight_digest": authorization.preflight_digest,
+            "producer": "independent-readback-collector",
+            "collector_id": final.collector_id,
+            "collector_artifact_digest": final.collector_artifact_digest,
+            "journal_head_digest": final.causal_event_digest,
+            "artifact_sha256": final_readback_artifact_digest,
+            "inventory_digest": final_inventory_digest,
+            "observed_at": final.observed_at.isoformat(),
+            "issued_at": final.observed_at.isoformat(),
+            "expires_at": (final.observed_at + timedelta(minutes=5)).isoformat(),
+        },
+    )
     evidence_values = {
         "fresh": {
             "status": "passed",
@@ -233,10 +302,8 @@ def _build_verified_run(
         }
     if partial_scope:
         criteria = criteria[:1]
-    authorization_digest = trusted.canonical_digest(
-        authorization.model_dump(mode="json")
-    )
     attempt_chain_heads = {}
+    attempt_digests = {}
     executions = []
     for identity in registry.compiled_plan.execution_ids:
         attempt_ref = f"attempt:{identity}"
@@ -251,6 +318,7 @@ def _build_verified_run(
         if without_attempts:
             continue
         attempt_digest = hashlib.sha256(identity.encode()).hexdigest()
+        attempt_digests[identity] = attempt_digest
         semantic_digest = hashlib.sha256(f"semantic:{identity}".encode()).hexdigest()
         raw_digest = hashlib.sha256(f"raw:{identity}".encode()).hexdigest()
         tracked_digest = hashlib.sha256(f"tracked:{identity}".encode()).hexdigest()
@@ -263,6 +331,7 @@ def _build_verified_run(
                 "transaction_id": transaction_id,
                 "run_id": run_id,
                 "execution_id": identity,
+                "attempt_kind": "executed",
                 "attempt_digest": (
                     "0" * 64 if protected_attempt_digest_drift else attempt_digest
                 ),
@@ -271,6 +340,7 @@ def _build_verified_run(
                 "semantic_digest": semantic_digest,
                 "raw_digest": raw_digest,
                 "tracked_digest": tracked_digest,
+                "gate_attempt_digest": None,
             },
         )
         previous = None
@@ -312,6 +382,8 @@ def _build_verified_run(
             "run_id": run_id,
             "execution_id": identity,
             "outcome": "PASS",
+            "attempt_kind": "executed",
+            "gate_attempt": None,
             "authorization_digest": authorization_digest,
             "attempt_digest": attempt_digest,
             "semantic_digest": semantic_digest,
@@ -343,6 +415,7 @@ def _build_verified_run(
                     "registry_id": registry.registry_id,
                     "run_id": run_id,
                     "execution_id": identity,
+                    "attempt_kind": "executed",
                     "attempt_digest": attempt_digest,
                     "authorization_digest": authorization_digest,
                     "semantic_digest": semantic_digest,
@@ -356,6 +429,9 @@ def _build_verified_run(
     if without_attempts:
         attempt_chain_heads = {
             identity: "6" * 64 for identity in registry.compiled_plan.execution_ids
+        }
+        attempt_digests = {
+            identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
         }
     scenario_ids = tuple(registry.compiled_policy.scenarios)
     if incomplete_turns:
@@ -464,6 +540,7 @@ def _build_verified_run(
                 "follow_up_suppressed": True,
                 "retention_pre_authorized": None,
                 "retention_owner": None,
+                "retention_authority_digest": None,
                 "retention_expires_at": None,
                 "final_disposition_date": None,
                 "checksum_refs": ["report-source"],
@@ -488,6 +565,67 @@ def _build_verified_run(
             }
         ],
     }
+    for turn in report_payload["turns"]:
+        normalized_turn = trusted.TurnReport.model_validate(turn).model_dump(
+            mode="json",
+            exclude={"transcript_digest", "producer_receipt_digest"},
+        )
+        transcript = {
+            "schema_version": "noor-e2e-protected-transcript/v2",
+            "registry_id": registry.registry_id,
+            "run_id": run_id,
+            "execution_id": turn["execution_id"],
+            "attempt_id": turn["attempt_id"],
+            "turn_id": turn["turn_id"],
+            "turn": normalized_turn,
+        }
+        transcript_path = (
+            protected_run
+            / "transcripts"
+            / turn["execution_id"]
+            / turn["attempt_id"]
+            / f"{turn['turn_id']}.json"
+        )
+        turn["transcript_digest"] = _write_json(transcript_path, transcript)
+        receipt = {
+            "schema_version": "noor-e2e-transcript-producer-receipt/v2",
+            "registry_id": registry.registry_id,
+            "run_id": run_id,
+            "execution_id": turn["execution_id"],
+            "attempt_id": turn["attempt_id"],
+            "turn_id": turn["turn_id"],
+            "transcript_sha256": turn["transcript_digest"],
+            "authorization_digest": authorization_digest,
+            "attempt_digest": attempt_digests[turn["execution_id"]],
+            "attempt_phase_head_digest": attempt_chain_heads[turn["execution_id"]],
+        }
+        receipt_path = (
+            protected_run
+            / "producer-receipts"
+            / "transcripts"
+            / turn["execution_id"]
+            / turn["attempt_id"]
+            / f"{turn['turn_id']}.json"
+        )
+        turn["producer_receipt_digest"] = _write_json(receipt_path, receipt)
+    _write_json(
+        protected_run / "transcripts/manifest.json",
+        {
+            "schema_version": "noor-e2e-protected-transcript-manifest/v2",
+            "registry_id": registry.registry_id,
+            "run_id": run_id,
+            "ordered_turns": [
+                [
+                    turn["execution_id"],
+                    turn["attempt_id"],
+                    turn["turn_id"],
+                    turn["transcript_digest"],
+                    turn["producer_receipt_digest"],
+                ]
+                for turn in report_payload["turns"]
+            ],
+        },
+    )
     validated_report = trusted.ClientReportPayload.model_validate(report_payload)
     expected_report_digest = hashlib.sha256(_bytes(report_payload)).hexdigest()
     verified_snapshot_digest = trusted._verified_report_snapshot_digest(
@@ -550,7 +688,7 @@ def _build_verified_run(
         "side_effect_ledger_digest": trusted.canonical_digest(
             report_payload["side_effects"]
         ),
-        "final_inventory_digest": trusted.canonical_digest(final.inventory),
+        "final_inventory_digest": final_inventory_digest,
         "evidence_index_digest": index_digest,
         "report_payload_digest": report_digest,
     }
@@ -661,3 +799,27 @@ def test_report_turns_are_bound_to_committed_transcript_identity() -> None:
         "transcript_digest",
         "producer_receipt_digest",
     } <= set(trusted.TurnReport.model_fields)
+
+
+def test_loader_rejects_report_turns_without_protected_transcript_artifacts(
+    tmp_path: Path,
+) -> None:
+    """A protected report snapshot alone cannot invent a customer transcript."""
+
+    registry, _, protected = _build_verified_run(tmp_path)
+    # A tracked report must not become decisive merely because it has digest
+    # shaped fields; its protected producer source is mandatory.
+    next((protected / "transcripts").rglob("*.json")).unlink()
+
+    with pytest.raises(Exception, match="transcript|producer receipt|final commit"):
+        registry.open_run(run_id="synthetic-trusted-run")
+
+
+def test_transcript_receipt_binds_authorization_attempt_and_phase_head() -> None:
+    _, _, trusted = _modules()
+
+    assert {
+        "authorization_digest",
+        "attempt_digest",
+        "attempt_phase_head_digest",
+    } <= set(trusted.TranscriptProducerReceipt.model_fields)

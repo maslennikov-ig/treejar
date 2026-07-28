@@ -8,7 +8,7 @@ import os
 import shutil
 import stat
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -21,7 +21,12 @@ from scripts.e2e_acceptance.evidence import (
 )
 from scripts.e2e_acceptance.execution import (
     ExecutionAuthorizationV2,
+    FinalReadbackProducerReceipt,
+    GateAttemptV2,
+    GateEvidenceArtifact,
+    GateEvidenceReceipt,
     OutcomeValue,
+    ProtectedFinalReadbackArtifact,
     aggregate_criterion_outcome,
     store_root_digest,
     validate_execution_authorization,
@@ -234,6 +239,8 @@ class CommittedExecutionArtifact(_StrictModel):
     run_id: str = Field(min_length=1)
     execution_id: str = Field(min_length=1)
     outcome: OutcomeValue
+    attempt_kind: Literal["executed", "gate"]
+    gate_attempt: GateAttemptV2 | None = None
     authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     semantic_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -246,12 +253,27 @@ class CommittedExecutionArtifact(_StrictModel):
     phase_chain: tuple[AttemptPhase, ...] = Field(min_length=7, max_length=7)
     evidence_refs: tuple[str, ...] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _typed_attempt_variant(self) -> CommittedExecutionArtifact:
+        if self.attempt_kind == "executed":
+            if self.outcome not in {"PASS", "FAIL"} or self.gate_attempt is not None:
+                raise ValueError("executed attempt variant outcome drift")
+        elif (
+            self.outcome not in {"BLOCKED", "EXCLUDED_BY_CLIENT"}
+            or self.gate_attempt is None
+            or self.gate_attempt.execution_id != self.execution_id
+            or self.gate_attempt.outcome != self.outcome
+        ):
+            raise ValueError("gate attempt variant outcome drift")
+        return self
+
 
 class AttemptProducerReceipt(_StrictModel):
     schema_version: Literal["noor-e2e-attempt-producer-receipt/v2"]
     registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     run_id: str = Field(min_length=1)
     execution_id: str = Field(min_length=1)
+    attempt_kind: Literal["executed", "gate"]
     attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     semantic_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -363,6 +385,38 @@ class TurnReport(_StrictModel):
     evidence_refs: tuple[str, ...] = Field(min_length=1)
 
 
+class ProtectedTranscriptArtifact(_StrictModel):
+    """The immutable producer-owned source for one visible customer turn."""
+
+    schema_version: Literal["noor-e2e-protected-transcript/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+    turn: dict[str, Any]
+
+
+class TranscriptProducerReceipt(_StrictModel):
+    schema_version: Literal["noor-e2e-transcript-producer-receipt/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+    transcript_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_phase_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ProtectedTranscriptManifest(_StrictModel):
+    schema_version: Literal["noor-e2e-protected-transcript-manifest/v2"]
+    registry_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_id: str = Field(min_length=1)
+    ordered_turns: tuple[tuple[str, str, str, str, str], ...]
+
+
 class ReportExecution(_StrictModel):
     execution_id: str = Field(min_length=1)
     outcome: OutcomeValue
@@ -392,8 +446,12 @@ class SideEffectReport(_StrictModel):
     follow_up_suppressed: bool
     retention_pre_authorized: bool | None = None
     retention_owner: str | None = None
-    retention_expires_at: str | None = None
-    final_disposition_date: str | None = None
+    retention_authority_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    retention_expires_at: datetime | None = None
+    final_disposition_date: datetime | None = None
     checksum_refs: tuple[str, ...]
 
 
@@ -498,6 +556,9 @@ class ProtectedCommittedExecutionSnapshot(_StrictModel):
     report: dict[str, Any]
     evidence: tuple[ProtectedEvidenceRecord, ...] = Field(min_length=30)
     attempt_commits: dict[str, dict[str, Any]] = Field(min_length=29, max_length=29)
+    transcript_artifacts: dict[str, dict[str, Any]] = Field(min_length=1)
+    collector_artifacts: dict[str, dict[str, Any]] = Field(min_length=2, max_length=2)
+    gate_artifacts: dict[str, dict[str, Any]] = Field(default_factory=dict)
     snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -512,6 +573,8 @@ class ProtectedSnapshotCommit(_StrictModel):
     journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     attempt_chain_heads_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     operator_store_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_readback_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class PublishedRunCommit(_StrictModel):
@@ -657,11 +720,18 @@ def _validate_protected_attempt_commit(
         or value.get("status") != "committed"
         or value.get("run_id") != artifact.run_id
         or value.get("execution_id") != artifact.execution_id
+        or value.get("attempt_kind") != artifact.attempt_kind
         or value.get("attempt_digest") != artifact.attempt_digest
         or value.get("authorization_digest") != authorization_digest
         or value.get("semantic_digest") != artifact.semantic_digest
         or value.get("raw_digest") != artifact.raw_digest
         or value.get("tracked_digest") != artifact.tracked_digest
+        or value.get("gate_attempt_digest")
+        != (
+            canonical_digest(artifact.gate_attempt.model_dump(mode="json"))
+            if artifact.gate_attempt is not None
+            else None
+        )
     ):
         raise TrustedRunError(
             f"protected attempt commit binding drift: {artifact.execution_id}"
@@ -687,6 +757,177 @@ def _validate_readback_contract(
         or final.observed_at < max(timeline)
     ):
         raise TrustedRunError("trusted readback window binding drift")
+
+
+def _validate_final_readback_artifacts(
+    registry: Any,
+    run: TrustedRunDocument,
+    artifacts: dict[str, dict[str, Any]],
+    *,
+    current_time: datetime,
+) -> tuple[str, str]:
+    artifact_relative = "collector-artifacts/final-readback.json"
+    receipt_relative = "producer-receipts/final-readback.json"
+    if set(artifacts) != {artifact_relative, receipt_relative}:
+        raise TrustedRunError("final readback protected artifact path-set drift")
+    try:
+        artifact = ProtectedFinalReadbackArtifact.model_validate(
+            artifacts[artifact_relative]
+        )
+        receipt = FinalReadbackProducerReceipt.model_validate(
+            artifacts[receipt_relative]
+        )
+    except ValueError as exc:
+        raise TrustedRunError(
+            f"final readback protected producer artifact is invalid: {exc}"
+        ) from exc
+    authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
+    artifact_payload = _canonical_bytes(artifacts[artifact_relative])
+    receipt_payload = _canonical_bytes(artifacts[receipt_relative])
+    final_anchor_at = max((*run.final_visible_at, *run.delivered_at, *run.action_at))
+    if current_time.tzinfo is None or current_time.utcoffset() is None:
+        raise TrustedRunError("final readback validation time must be aware")
+    if (
+        artifact.registry_id != registry.registry_id
+        or artifact.run_id != run.run_id
+        or artifact.authorization_digest != authorization_digest
+        or artifact.preflight_digest != run.authorization.preflight_digest
+        or tuple(run.authorization.collector_ids) != (artifact.collector_id,)
+        or artifact.collector_artifact_digest
+        != run.authorization.readback_collector_digest
+        or artifact.journal_head_digest != run.final.causal_event_digest
+        or artifact.final_turn_anchor_at != final_anchor_at
+        or artifact.observation != run.final
+        or artifact.inventory_digest != canonical_digest(run.final.inventory)
+        or artifact.observed_at > current_time
+        or current_time - artifact.observed_at > timedelta(minutes=5)
+        or receipt.registry_id != artifact.registry_id
+        or receipt.run_id != artifact.run_id
+        or receipt.authorization_digest != authorization_digest
+        or receipt.preflight_digest != artifact.preflight_digest
+        or receipt.producer != "independent-readback-collector"
+        or receipt.collector_id != artifact.collector_id
+        or receipt.collector_artifact_digest != artifact.collector_artifact_digest
+        or receipt.journal_head_digest != artifact.journal_head_digest
+        or receipt.artifact_sha256 != _sha256(artifact_payload)
+        or receipt.inventory_digest != artifact.inventory_digest
+        or receipt.observed_at != artifact.observed_at
+        or not receipt.issued_at <= current_time < receipt.expires_at
+    ):
+        raise TrustedRunError("final readback protected producer binding drift")
+    return _sha256(receipt_payload), artifact.inventory_digest
+
+
+def _validate_gate_artifacts(
+    registry: Any,
+    run: TrustedRunDocument,
+    attempts: dict[str, CommittedExecutionArtifact],
+    artifacts: dict[str, dict[str, Any]],
+    *,
+    current_time: datetime,
+) -> None:
+    gate_attempts = {
+        execution_id: attempt
+        for execution_id, attempt in attempts.items()
+        if attempt.attempt_kind == "gate"
+    }
+    expected_paths = {
+        relative
+        for execution_id in gate_attempts
+        for relative in (
+            f"gate-evidence/{execution_id}.json",
+            f"producer-receipts/gates/{execution_id}.json",
+        )
+    }
+    if set(artifacts) != expected_paths:
+        raise TrustedRunError("typed gate protected artifact path-set drift")
+    authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
+    for execution_id, committed in gate_attempts.items():
+        gate_attempt = committed.gate_attempt
+        if gate_attempt is None:
+            raise TrustedRunError("typed gate attempt payload is missing")
+        artifact_relative = f"gate-evidence/{execution_id}.json"
+        receipt_relative = f"producer-receipts/gates/{execution_id}.json"
+        try:
+            artifact = GateEvidenceArtifact.model_validate(artifacts[artifact_relative])
+            receipt = GateEvidenceReceipt.model_validate(artifacts[receipt_relative])
+        except ValueError as exc:
+            raise TrustedRunError(
+                f"typed gate protected artifact is invalid: {execution_id}: {exc}"
+            ) from exc
+        criterion_ids = tuple(
+            criterion.criterion_id
+            for criterion in registry.compiled_plan.criteria.values()
+            if execution_id in criterion.obligation_ids
+        )
+        criterion_models = tuple(
+            registry.compiled_plan.criteria[criterion_id]
+            for criterion_id in criterion_ids
+        )
+        artifact_sha256 = _sha256(_canonical_bytes(artifacts[artifact_relative]))
+        receipt_sha256 = _sha256(_canonical_bytes(artifacts[receipt_relative]))
+        common_drift = (
+            artifact.registry_id != registry.registry_id
+            or artifact.run_id != run.run_id
+            or artifact.authorization_digest != authorization_digest
+            or artifact.execution_id != execution_id
+            or artifact.criterion_ids != criterion_ids
+            or artifact.execution_owner != run.authorization.authorization_id
+            or artifact.outcome != committed.outcome
+            or receipt.registry_id != artifact.registry_id
+            or receipt.run_id != artifact.run_id
+            or receipt.authorization_digest != authorization_digest
+            or receipt.execution_id != execution_id
+            or receipt.criterion_ids != criterion_ids
+            or receipt.execution_owner != artifact.execution_owner
+            or receipt.execution_started_event_digest
+            != artifact.execution_started_event_digest
+            or gate_attempt.execution_started_event_digest
+            != artifact.execution_started_event_digest
+            or receipt.artifact_sha256 != artifact_sha256
+            or receipt.outcome != artifact.outcome
+            or receipt.producer != artifact.producer
+            or receipt.issued_at != artifact.observed_at
+            or gate_attempt.receipt_digest != receipt_sha256
+            or gate_attempt.run_started_at.tzinfo is None
+            or gate_attempt.run_started_at.utcoffset() is None
+            or not receipt.issued_at <= current_time < receipt.expires_at
+        )
+        if common_drift:
+            raise TrustedRunError(
+                f"typed gate protected provenance drift: {execution_id}"
+            )
+        if committed.outcome == "BLOCKED":
+            if (
+                receipt.producer
+                not in {
+                    "independent-readback-collector",
+                    "trusted-evidence-registry",
+                }
+                or receipt.issued_at < gate_attempt.run_started_at
+                or receipt.client_authority_digest is not None
+            ):
+                raise TrustedRunError(
+                    f"typed blocked gate lacks independent evidence: {execution_id}"
+                )
+        else:
+            expected_authority = run.authorization.client_exclusion_authorities.get(
+                execution_id
+            )
+            if (
+                receipt.producer != "client-exclusion-authority"
+                or not criterion_models
+                or not all(
+                    criterion.allows_client_exclusion for criterion in criterion_models
+                )
+                or expected_authority is None
+                or receipt.client_authority_digest != expected_authority
+                or receipt.issued_at >= gate_attempt.run_started_at
+                or receipt.issued_at < run.authorization.issued_at
+            ):
+                raise TrustedRunError(
+                    f"typed client exclusion authority drift: {execution_id}"
+                )
 
 
 def _load_decisive_evidence(
@@ -942,6 +1183,28 @@ def _tree_digest(root: Path, *, exclude: frozenset[str] = frozenset()) -> str:
     return canonical_digest(manifest)
 
 
+def _tree_relative_files(
+    root: Path,
+    *,
+    prefixes: tuple[str, ...],
+) -> frozenset[str]:
+    if not root.is_dir() or root.is_symlink():
+        raise TrustedRunError("published run tree is unavailable")
+    result: set[str] = set()
+    for directory, directories, files in os.walk(root, followlinks=False):
+        base = Path(directory)
+        if any((base / name).is_symlink() for name in (*directories, *files)):
+            raise TrustedRunError("published run tree contains a symlink")
+        for name in files:
+            path = base / name
+            if not path.is_file():
+                raise TrustedRunError("published run tree contains a non-file")
+            relative = path.relative_to(root).as_posix()
+            if relative.startswith(prefixes):
+                result.add(relative)
+    return frozenset(result)
+
+
 def _load_protected_execution_snapshot(
     registry: Any,
     run_id: str,
@@ -968,6 +1231,18 @@ def _load_protected_execution_snapshot(
         for record in snapshot.evidence
         if record.producer == "protected-attempt-committer"
     }
+    try:
+        run = TrustedRunDocument.model_validate(snapshot.run)
+    except ValueError as exc:
+        raise TrustedRunError(
+            f"protected committed execution run is invalid: {exc}"
+        ) from exc
+    final_receipt_digest, final_inventory_digest = _validate_final_readback_artifacts(
+        registry,
+        run,
+        snapshot.collector_artifacts,
+        current_time=datetime.now(UTC),
+    )
     authorization_digest = canonical_digest(snapshot.run["authorization"])
     journal_head_digest = str(snapshot.run["final"]["causal_event_digest"])
     if (
@@ -983,6 +1258,8 @@ def _load_protected_execution_snapshot(
         or commit.journal_head_digest != journal_head_digest
         or commit.attempt_chain_heads_digest != canonical_digest(attempt_chain_heads)
         or commit.operator_store_digest != store_root_digest(_operator_root(registry))
+        or commit.final_readback_receipt_digest != final_receipt_digest
+        or commit.final_inventory_digest != final_inventory_digest
     ):
         raise TrustedRunError("protected committed execution snapshot binding drift")
     return snapshot
@@ -1097,6 +1374,7 @@ def _derive_publication(
                 registry_id=registry.registry_id,
                 run_id=snapshot.run_id,
                 execution_id=execution_id,
+                attempt_kind=attempt.attempt_kind,
                 attempt_digest=attempt.attempt_digest,
                 authorization_digest=authorization_digest,
                 semantic_digest=attempt.semantic_digest,
@@ -1115,6 +1393,108 @@ def _derive_publication(
         report_payload_sha256=report_payload_sha256,
         verified_snapshot_digest=report_snapshot_digest,
     ).model_dump(mode="json")
+    _validate_final_readback_artifacts(
+        registry,
+        run,
+        snapshot.collector_artifacts,
+        current_time=datetime.now(UTC),
+    )
+    protected_files.update(snapshot.collector_artifacts)
+    typed_attempts = {
+        execution_id: value[0] for execution_id, value in attempts_by_execution.items()
+    }
+    _validate_gate_artifacts(
+        registry,
+        run,
+        typed_attempts,
+        snapshot.gate_artifacts,
+        current_time=datetime.now(UTC),
+    )
+    protected_files.update(snapshot.gate_artifacts)
+    expected_transcript_paths = {"transcripts/manifest.json"}
+    expected_manifest_turns = []
+    for turn in report.turns:
+        transcript_relative = (
+            f"transcripts/{turn.execution_id}/{turn.attempt_id}/{turn.turn_id}.json"
+        )
+        receipt_relative = (
+            f"producer-receipts/transcripts/{turn.execution_id}/"
+            f"{turn.attempt_id}/{turn.turn_id}.json"
+        )
+        expected_transcript_paths.update((transcript_relative, receipt_relative))
+        expected_manifest_turns.append(
+            (
+                turn.execution_id,
+                turn.attempt_id,
+                turn.turn_id,
+                turn.transcript_digest,
+                turn.producer_receipt_digest,
+            )
+        )
+        attempt_entry = attempts_by_execution.get(turn.execution_id)
+        if attempt_entry is None:
+            raise TrustedRunError("protected transcript attempt is missing")
+        attempt = attempt_entry[0]
+        try:
+            transcript = ProtectedTranscriptArtifact.model_validate(
+                snapshot.transcript_artifacts[transcript_relative]
+            )
+            transcript_receipt = TranscriptProducerReceipt.model_validate(
+                snapshot.transcript_artifacts[receipt_relative]
+            )
+        except (KeyError, ValueError) as exc:
+            raise TrustedRunError(
+                "protected transcript snapshot artifact is invalid"
+            ) from exc
+        normalized_turn = turn.model_dump(
+            mode="json",
+            exclude={"transcript_digest", "producer_receipt_digest"},
+        )
+        if (
+            _sha256(
+                _canonical_bytes(snapshot.transcript_artifacts[transcript_relative])
+            )
+            != turn.transcript_digest
+            or _sha256(
+                _canonical_bytes(snapshot.transcript_artifacts[receipt_relative])
+            )
+            != turn.producer_receipt_digest
+            or transcript.registry_id != registry.registry_id
+            or transcript.run_id != snapshot.run_id
+            or transcript.execution_id != turn.execution_id
+            or transcript.attempt_id != turn.attempt_id
+            or transcript.turn_id != turn.turn_id
+            or transcript.turn != normalized_turn
+            or transcript_receipt.registry_id != registry.registry_id
+            or transcript_receipt.run_id != snapshot.run_id
+            or transcript_receipt.execution_id != turn.execution_id
+            or transcript_receipt.attempt_id != turn.attempt_id
+            or transcript_receipt.turn_id != turn.turn_id
+            or transcript_receipt.transcript_sha256 != turn.transcript_digest
+            or transcript_receipt.authorization_digest != authorization_digest
+            or transcript_receipt.attempt_digest != attempt.attempt_digest
+            or transcript_receipt.attempt_phase_head_digest != attempt.phase_head_digest
+        ):
+            raise TrustedRunError("protected transcript snapshot binding drift")
+    try:
+        transcript_manifest = ProtectedTranscriptManifest.model_validate(
+            snapshot.transcript_artifacts["transcripts/manifest.json"]
+        )
+    except (KeyError, ValueError) as exc:
+        raise TrustedRunError(
+            "protected transcript snapshot manifest is invalid"
+        ) from exc
+    if (
+        set(snapshot.transcript_artifacts) != expected_transcript_paths
+        or transcript_manifest.registry_id != registry.registry_id
+        or transcript_manifest.run_id != snapshot.run_id
+        or transcript_manifest.ordered_turns != tuple(expected_manifest_turns)
+        or len(set(transcript_manifest.ordered_turns))
+        != len(transcript_manifest.ordered_turns)
+    ):
+        raise TrustedRunError("protected transcript snapshot ordered path-set drift")
+    for relative, payload in snapshot.transcript_artifacts.items():
+        protected_files[relative] = payload
     protected_files["registry/anchor.json"] = TrustedRunAnchor(
         schema_version="noor-e2e-trusted-run-anchor/v2",
         run_id=snapshot.run_id,
@@ -1340,6 +1720,31 @@ def _load_verified_run(
     ):
         raise TrustedRunError("authorization Task 1 immutable bundle digest drift")
     _validate_readback_contract(run)
+    try:
+        final_readback_artifacts = {
+            relative: _parse_json(
+                _read_file(protected_root, relative, protected=True),
+                "protected final readback producer artifact",
+            )
+            for relative in (
+                "collector-artifacts/final-readback.json",
+                "producer-receipts/final-readback.json",
+            )
+        }
+    except TrustedRunError as exc:
+        raise TrustedRunError(
+            f"protected final readback producer receipt is missing: {exc}"
+        ) from exc
+    _, independent_inventory_digest = _validate_final_readback_artifacts(
+        registry,
+        run,
+        final_readback_artifacts,
+        current_time=datetime.now(UTC),
+    )
+    if run.final_inventory_digest != independent_inventory_digest:
+        raise TrustedRunError(
+            "trusted ledger inventory differs from independent collector commit"
+        )
 
     entries = _unique(index.entries, "evidence_id", "evidence index identity")
     evidence: dict[str, dict[str, Any]] = {}
@@ -1392,6 +1797,7 @@ def _load_verified_run(
 
     authorization_digest = canonical_digest(run.authorization.model_dump(mode="json"))
     verified_attempt_digests: set[str] = set()
+    attempts_by_execution: dict[str, CommittedExecutionArtifact] = {}
     for identity, execution_row in executions.items():
         if not set(execution_row.evidence_refs) <= set(evidence):
             raise TrustedRunError(f"execution evidence reference drift: {identity}")
@@ -1459,6 +1865,7 @@ def _load_verified_run(
             or receipt.registry_id != registry.registry_id
             or receipt.run_id != run.run_id
             or receipt.execution_id != identity
+            or receipt.attempt_kind != attempt.attempt_kind
             or receipt.attempt_digest != attempt.attempt_digest
             or receipt.authorization_digest != authorization_digest
             or receipt.semantic_digest != attempt.semantic_digest
@@ -1472,6 +1879,7 @@ def _load_verified_run(
                 f"execution committed attempt binding drift: {identity}"
             )
         verified_attempt_digests.add(attempt.attempt_digest)
+        attempts_by_execution[identity] = attempt
         report_execution = report_executions[identity]
         if (
             report_execution.outcome != execution_row.outcome
@@ -1480,7 +1888,82 @@ def _load_verified_run(
         ):
             raise TrustedRunError(f"typed report execution binding drift: {identity}")
 
+    expected_gate_paths = {
+        relative
+        for execution_id, attempt in attempts_by_execution.items()
+        if attempt.attempt_kind == "gate"
+        for relative in (
+            f"gate-evidence/{execution_id}.json",
+            f"producer-receipts/gates/{execution_id}.json",
+        )
+    }
+    actual_gate_paths = _tree_relative_files(
+        protected_root,
+        prefixes=("gate-evidence/", "producer-receipts/gates/"),
+    )
+    if actual_gate_paths != expected_gate_paths:
+        raise TrustedRunError("typed gate published artifact path-set drift")
+    gate_artifacts = {
+        relative: _parse_json(
+            _read_file(protected_root, relative, protected=True),
+            "typed gate protected producer artifact",
+        )
+        for relative in actual_gate_paths
+    }
+    _validate_gate_artifacts(
+        registry,
+        run,
+        attempts_by_execution,
+        gate_artifacts,
+        current_time=datetime.now(UTC),
+    )
+
     scenario_ids = tuple(registry.compiled_policy.scenarios)
+    try:
+        transcript_manifest = ProtectedTranscriptManifest.model_validate(
+            _parse_json(
+                _read_file(
+                    protected_root,
+                    "transcripts/manifest.json",
+                    protected=True,
+                ),
+                "protected transcript manifest",
+            )
+        )
+    except (TrustedRunError, ValueError) as exc:
+        raise TrustedRunError("protected transcript manifest is invalid") from exc
+    expected_manifest_turns = tuple(
+        (
+            turn.execution_id,
+            turn.attempt_id,
+            turn.turn_id,
+            turn.transcript_digest,
+            turn.producer_receipt_digest,
+        )
+        for turn in report.turns
+    )
+    expected_transcript_paths = {"transcripts/manifest.json"}
+    for turn in report.turns:
+        expected_transcript_paths.add(
+            f"transcripts/{turn.execution_id}/{turn.attempt_id}/{turn.turn_id}.json"
+        )
+        expected_transcript_paths.add(
+            f"producer-receipts/transcripts/{turn.execution_id}/"
+            f"{turn.attempt_id}/{turn.turn_id}.json"
+        )
+    actual_transcript_paths = _tree_relative_files(
+        protected_root,
+        prefixes=("transcripts/", "producer-receipts/transcripts/"),
+    )
+    if (
+        transcript_manifest.registry_id != registry.registry_id
+        or transcript_manifest.run_id != run.run_id
+        or transcript_manifest.ordered_turns != expected_manifest_turns
+        or len(set(transcript_manifest.ordered_turns))
+        != len(transcript_manifest.ordered_turns)
+        or actual_transcript_paths != expected_transcript_paths
+    ):
+        raise TrustedRunError("protected transcript ordered-set binding drift")
     turns_by_execution: dict[str, list[TurnReport]] = {
         identity: [] for identity in scenario_ids
     }
@@ -1504,14 +1987,69 @@ def _load_verified_run(
             raise TrustedRunError(
                 f"typed report turn evidence binding drift: {turn.execution_id}"
             )
+        transcript_relative = (
+            f"transcripts/{turn.execution_id}/{turn.attempt_id}/{turn.turn_id}.json"
+        )
+        receipt_relative = (
+            f"producer-receipts/transcripts/{turn.execution_id}/"
+            f"{turn.attempt_id}/{turn.turn_id}.json"
+        )
+        try:
+            transcript_payload = _read_file(
+                protected_root,
+                transcript_relative,
+                protected=True,
+            )
+            transcript = ProtectedTranscriptArtifact.model_validate(
+                _parse_json(transcript_payload, "protected transcript artifact")
+            )
+            receipt_payload = _read_file(
+                protected_root,
+                receipt_relative,
+                protected=True,
+            )
+            transcript_receipt = TranscriptProducerReceipt.model_validate(
+                _parse_json(receipt_payload, "protected transcript receipt")
+            )
+        except (TrustedRunError, ValueError) as exc:
+            raise TrustedRunError(
+                f"protected transcript/producer receipt is invalid: {turn.execution_id}"
+            ) from exc
+        reported_turn = turn.model_dump(
+            mode="json",
+            exclude={"transcript_digest", "producer_receipt_digest"},
+        )
+        attempt = attempts_by_execution[turn.execution_id]
+        if (
+            _sha256(transcript_payload) != turn.transcript_digest
+            or _sha256(receipt_payload) != turn.producer_receipt_digest
+            or transcript.registry_id != registry.registry_id
+            or transcript.run_id != run.run_id
+            or transcript.execution_id != turn.execution_id
+            or transcript.attempt_id != turn.attempt_id
+            or transcript.turn_id != turn.turn_id
+            or transcript.turn != reported_turn
+            or transcript_receipt.registry_id != registry.registry_id
+            or transcript_receipt.run_id != run.run_id
+            or transcript_receipt.execution_id != turn.execution_id
+            or transcript_receipt.attempt_id != turn.attempt_id
+            or transcript_receipt.turn_id != turn.turn_id
+            or transcript_receipt.transcript_sha256 != turn.transcript_digest
+            or transcript_receipt.authorization_digest != authorization_digest
+            or transcript_receipt.attempt_digest != attempt.attempt_digest
+            or transcript_receipt.attempt_phase_head_digest != attempt.phase_head_digest
+        ):
+            raise TrustedRunError(
+                f"protected transcript field binding drift: {turn.execution_id}"
+            )
     for execution_id, turns in turns_by_execution.items():
         execution_row = executions[execution_id]
+        committed_attempt = attempts_by_execution[execution_id]
         if len({(turn.attempt_id, turn.turn_id) for turn in turns}) != len(turns):
             raise TrustedRunError("typed report duplicate transcript turn")
-        if not turns and execution_row.outcome not in {
-            "BLOCKED",
-            "EXCLUDED_BY_CLIENT",
-        }:
+        if turns and committed_attempt.attempt_kind != "executed":
+            raise TrustedRunError("gate attempt cannot contain transcript turns")
+        if not turns and committed_attempt.attempt_kind != "gate":
             raise TrustedRunError(
                 "executed scenario requires committed transcript turns"
             )
@@ -1530,6 +2068,13 @@ def _load_verified_run(
     ) or run.final_inventory_digest != canonical_digest(run.final.inventory):
         raise TrustedRunError("computed side-effect ledger/inventory digest drift")
     try:
+        retention_authorities = {}
+        for authority in run.authorization.side_effect_authority.retention_authorities:
+            retention_payload = authority.model_dump(mode="json")
+            retention_authorities[authority.artifact_id] = {
+                **retention_payload,
+                "authority_digest": canonical_digest(retention_payload),
+            }
         validate_side_effect_closeout(
             [
                 {
@@ -1547,12 +2092,21 @@ def _load_verified_run(
                     "disposition": item.disposition,
                     "retention_pre_authorized": item.retention_pre_authorized,
                     "retention_owner": item.retention_owner,
+                    "retention_authority_digest": item.retention_authority_digest,
                     "retention_expires_at": item.retention_expires_at,
                     "final_disposition_date": item.final_disposition_date,
                 }
                 for item in report.side_effects
             ],
             observed_inventory=run.final.inventory,
+            authorized_cleanup_owner=(
+                run.authorization.side_effect_authority.cleanup_owner
+            ),
+            authorized_cleanup_authority=(
+                run.authorization.side_effect_authority.cleanup_authority
+            ),
+            authorized_retentions=retention_authorities,
+            current_time=datetime.now(UTC),
         )
     except EvidenceError as exc:
         raise TrustedRunError(f"computed side-effect closeout failed: {exc}") from exc

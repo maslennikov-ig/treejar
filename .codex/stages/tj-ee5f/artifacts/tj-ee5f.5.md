@@ -17,7 +17,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f.5
 milestone: trusted production execution and evidence core
-milestone_status: accepted
+milestone_status: returned
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: high
@@ -82,54 +82,76 @@ docs_reviewed: updated
 docs_review_notes: this stage artifact records the new local trust contract; no end-user documentation changed
 verification:
   - RED focused authorization/permit/transcript/closeout tests: failed as expected before implementation
-  - uv run pytest tests/test_e2e_acceptance_*.py -q: passed 211
-  - uv run ruff check src/ tests/: passed
-  - uv run ruff format --check src/ tests/: passed
+  - initial independent full-range review decision: FIX
+  - correction RED proved caller final readback, incomplete gate provenance, incomplete transcript receipt provenance, and unbound retention authority
+  - correction focused trust suite: passed 151
+  - uv run pytest tests/test_e2e_acceptance_*.py -q --tb=short: passed 241
+  - uv run ruff check src/ tests/ scripts/e2e_acceptance: passed
+  - uv run ruff format --check src/ tests/ scripts/e2e_acceptance: passed, 324 files
   - uv run mypy src/: passed (163 source files)
+  - strict module-mode Mypy for policy execution trusted_run and evidence: passed
   - scripts/orchestration/run_process_verification.sh: passed
-  - uv run pytest tests/ -v --tb=short: blocked by seven pre-existing frontend checks because local esbuild is absent; 2084 passed, 19 skipped
+  - uv run pytest tests/ -q --tb=short: passed 2121, skipped 19
+  - current-tree exact and separator-normalized protected-identity scans: zero matches
+  - full Task 1 delta exact and separator-normalized protected-identity scans: zero matches
+  - full Task 1 delta blocked-secret scan: zero matches
+  - artifact validator: passed
+  - check_stage_ready tj-ee5f: reported structurally ready; stage was not closed and this returned artifact remains unaccepted
+  - git diff --check: passed
 changed_files:
+  - scripts/e2e_acceptance/evidence.py
   - scripts/e2e_acceptance/execution.py
   - scripts/e2e_acceptance/trusted_run.py
+  - tests/test_e2e_acceptance_evidence.py
   - tests/test_e2e_acceptance_trusted_execution.py
   - tests/test_e2e_acceptance_trusted_report.py
   - tests/test_e2e_acceptance_final_review.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5.md
-  - .codex/stages/tj-ee5f/stage-manifest.json
 explicit_defers:
-  - Task 2 owns production adapters, collector, and CLI wiring; no local contract in this task authorizes external I/O
+  - Task 2 must provide the real protected collector, gate, transcript, and inventory producers plus adapter and CLI wiring; fixture-only Task 1 producers authorize no external I/O
 ---
 
 # Summary
 
 Added the local trusted-execution core for Task 1. An executable v2 authorization
 can be built only from typed v1/preflight inputs, action permits are request-bound
-and one-use, report turns carry protected transcript/receipt identities, and the
-run document derives closeout from bound ledger/inventory identities rather than a
-caller-supplied status.
+and one-use, and committed attempts are typed as executed or gate variants.
+Final inventory is accepted only from a fresh protected independent collector
+artifact and producer receipt bound to the exact authorization, preflight,
+collector, journal head, final-turn anchor, and inventory digest. Report turns
+carry protected transcript/receipt identities bound to the authorization,
+attempt digest, phase head, and exact ordered manifest path set. The run document
+derives closeout from an authority-bound ledger and independently committed
+inventory rather than a caller-supplied status.
 
 # Scope / Routing
 
 The changed path is local-only: policy/manifest input enters the v1 bridge,
 `ProtectedExecutionJournal` reserves and consumes one action permit, and
-`trusted_run` verifies report/side-effect identities before exposing rollups.
-Production adapters and all external transport remain outside this stream.
+`trusted_run` independently verifies collector, gate, transcript, retention, and
+side-effect identities before exposing rollups. Production adapters, real
+producer implementations, and all external transport remain outside this stream.
 
 # Verification
 
-The focused RED suite failed before implementation for each contract family.
-The focused acceptance suite passed 211 tests after implementation. Ruff, format,
-Mypy, and process verification passed. The full suite reached 2084 passed and 19
-skipped; seven unrelated frontend regression tests could not load the missing local
-`esbuild` package.
+The original independent full-range review returned `FIX`; it did not accept the
+stream. The correction closes its final-collector/inventory, retention-authority,
+typed-gate, and transcript-provenance findings. Fresh correction evidence passed
+151 focused trust tests, 241 acceptance-contract tests, and the full local suite
+with 2121 passed and 19 skipped. Ruff, format, both Mypy scopes, process
+verification, exact/normalized privacy scans, the blocked-secret scan, and
+`git diff --check` also passed. These results return the stream for a new
+orchestrator review; they do not record acceptance.
 
 # Delivery / Cleanup
 
-Returned for orchestrator review; no Git merge, push, production action, or
-external cleanup was performed.
+Returned for orchestrator review with `accepted_by_orchestrator: no`; no Git
+merge, push, production action, business action, or external cleanup was
+performed.
 
 # Risks / Follow-ups / Explicit Defers
 
 Task 2 must pass the exact permit parameters immediately before its real adapter
-I/O and produce protected transcript/ledger artifacts. The local core intentionally
-does not expose a transport or fallback path that could bypass these checks.
+I/O and implement the real protected collector, gate, transcript, and final
+inventory producers. The local core intentionally exposes only fixture producers
+and no transport or fallback path that could bypass these checks.

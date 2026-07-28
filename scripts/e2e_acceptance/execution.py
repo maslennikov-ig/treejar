@@ -7,9 +7,10 @@ import json
 import math
 import os
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, NoReturn, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from scripts.e2e_acceptance.evidence import (
@@ -33,6 +34,7 @@ from scripts.e2e_acceptance.schemas import (
 COMPILER_ID = "treejar.acceptance-policy-compiler.v2"
 LOCAL_ADAPTER_IDS = ("fake-local-adapter",)
 _MAX_PREFLIGHT_AGE = timedelta(minutes=15)
+_MAX_FINAL_READBACK_AGE = timedelta(minutes=5)
 _PHASES = (
     "prepared",
     "baseline_sealed",
@@ -227,6 +229,54 @@ class ExactLiveAuthorizationBinding(_StrictModel):
         return self
 
 
+class AuthorizedActionSpec(_StrictModel):
+    action_id: str
+    execution_id: str
+    step_id: str
+    capability: str
+    operation_permission: str
+    adapter_id: str
+    subsystem: str
+    destination_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1)
+    capability_units: dict[str, int] = Field(min_length=1)
+
+
+class AuthorizedRetentionSpec(_StrictModel):
+    artifact_id: str = Field(min_length=1)
+    cleanup_owner: str = Field(min_length=1)
+    cleanup_authority: str = Field(min_length=1)
+    retention_owner: str = Field(min_length=1)
+    issued_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> AuthorizedRetentionSpec:
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError("authorized retention window is invalid")
+        return self
+
+
+class SideEffectAuthority(_StrictModel):
+    cleanup_owner: str = Field(min_length=1)
+    cleanup_authority: str = Field(min_length=1)
+    retention_authorities: tuple[AuthorizedRetentionSpec, ...] = ()
+
+    @model_validator(mode="after")
+    def _unique_artifacts(self) -> SideEffectAuthority:
+        identities = [item.artifact_id for item in self.retention_authorities]
+        if len(identities) != len(set(identities)):
+            raise ValueError("retention authority artifact IDs must be unique")
+        return self
+
+
 class ExecutionAuthorizationV2(_StrictModel):
     schema_version: Literal["noor-e2e-authorization/v2"]
     authorization_id: str = Field(min_length=1)
@@ -245,6 +295,9 @@ class ExecutionAuthorizationV2(_StrictModel):
     adapter_ids: tuple[str, ...] = Field(min_length=1)
     collector_ids: tuple[str, ...] = Field(min_length=1)
     permissions: tuple[str, ...]
+    action_specs: tuple[AuthorizedActionSpec, ...] = Field(min_length=1)
+    client_exclusion_authorities: dict[str, str] = Field(default_factory=dict)
+    side_effect_authority: SideEffectAuthority
     live_binding: ExactLiveAuthorizationBinding
     store_ids: StoreIdentities
     registry_id: str = Field(min_length=1)
@@ -272,7 +325,452 @@ class ExecutionAuthorizationV2(_StrictModel):
             for value in self.task1_input_digests.values()
         ):
             raise ValueError("authorization Task 1 input digest binding drift")
+        if any(
+            execution_id not in self.execution_ids
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for execution_id, value in self.client_exclusion_authorities.items()
+        ):
+            raise ValueError("authorization client exclusion binding drift")
         return self
+
+
+class AuthorizedActionSpecs(_StrictModel):
+    schema_version: Literal["noor-e2e-authorized-action-specs/v2"]
+    specs: tuple[AuthorizedActionSpec, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique_action_ids(self) -> AuthorizedActionSpecs:
+        if len({item.action_id for item in self.specs}) != len(self.specs):
+            raise ValueError("authorized action IDs must be unique")
+        return self
+
+
+class AuthorityAdapterIds(_StrictModel):
+    schema_version: Literal["noor-e2e-authority-adapter-ids/v2"]
+    values: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique_adapter_ids(self) -> AuthorityAdapterIds:
+        if len(set(self.values)) != len(self.values):
+            raise ValueError("authority adapter IDs must be unique")
+        return self
+
+
+class AuthorityCollectorIds(_StrictModel):
+    schema_version: Literal["noor-e2e-authority-collector-ids/v2"]
+    values: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique_collector_ids(self) -> AuthorityCollectorIds:
+        if len(set(self.values)) != len(self.values):
+            raise ValueError("authority collector IDs must be unique")
+        return self
+
+
+class Task1AuthorityBindings(_StrictModel):
+    schema_version: Literal["noor-e2e-task1-authority-bindings/v2"]
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    input_digests: dict[str, str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _sha256_input_digests(self) -> Task1AuthorityBindings:
+        if any(
+            len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in self.input_digests.values()
+        ):
+            raise ValueError("Task 1 authority input digests must be SHA-256")
+        return self
+
+
+_AUTHORITY_PAYLOAD_PATHS = {
+    "authorization_manifest": "authorization-v1.json",
+    "preflight_request": "preflight-request.json",
+    "preflight_observation": "preflight-observation.json",
+    "action_specs": "authorized-action-specs.json",
+    "store_identities": "store-identities.json",
+    "adapter_ids": "adapter-ids.json",
+    "collector_ids": "collector-ids.json",
+    "task1_bindings": "task1-bindings.json",
+}
+_AUTHORITY_STORE_ROOT_KEYS = frozenset({"raw", "tracked", "anchor"})
+
+
+class AuthorityBundleReceipt(_StrictModel):
+    """Persistent registry-issued binding for one run and protected journal root."""
+
+    schema_version: Literal["noor-e2e-authority-bundle-receipt/v2"]
+    registry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    protected_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    store_root_digests: dict[str, str] = Field(min_length=3, max_length=3)
+    payload_digests: dict[str, str] = Field(
+        min_length=len(_AUTHORITY_PAYLOAD_PATHS),
+        max_length=len(_AUTHORITY_PAYLOAD_PATHS),
+    )
+    issued_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def _exact_receipt_contract(self) -> AuthorityBundleReceipt:
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError("authority bundle receipt window is invalid")
+        if (
+            set(self.payload_digests) != set(_AUTHORITY_PAYLOAD_PATHS)
+            or set(self.store_root_digests) != _AUTHORITY_STORE_ROOT_KEYS
+        ):
+            raise ValueError("authority bundle receipt coverage is incomplete")
+        for digest in (
+            *self.payload_digests.values(),
+            *self.store_root_digests.values(),
+        ):
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError("authority bundle receipt digest is invalid")
+        return self
+
+
+_HANDLE_TOKEN = object()
+
+
+@dataclass(frozen=True)
+class ExecutionAuthorizationHandle:
+    """Opaque, non-serializable capability issued after protected receipt validation."""
+
+    _authorization: ExecutionAuthorizationV2
+    _protected_root: Path
+    _run_id: str
+    _registry_id: str
+    _receipt_digest: str
+    _token: object
+
+    def __getstate__(self) -> object:
+        raise TypeError("execution authority handles are not serializable")
+
+    def __reduce__(self) -> NoReturn:
+        raise TypeError("execution authority handles are not serializable")
+
+
+def _validate_run_id(run_id: str) -> None:
+    if not run_id or any(
+        character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
+        for character in run_id.lower()
+    ):
+        raise ExecutionValidationError("run identity is unsafe")
+
+
+def _authority_bundle_relative(run_id: str, name: str) -> str:
+    _validate_run_id(run_id)
+    return f"authority-bundles/{run_id}/{name}"
+
+
+def _validated_protected_root(root: Path, *, create: bool) -> Path:
+    if not root.is_absolute() or any(
+        part in {"", ".", ".."} for part in root.parts[1:]
+    ):
+        raise ExecutionValidationError(
+            "protected authority root must be absolute and normalized"
+        )
+    fd = _open_absolute_chain(root, create=create)
+    os.close(fd)
+    return root
+
+
+def _expected_store_root_digests(root: Path) -> dict[str, str]:
+    return {
+        "raw": store_root_digest(root),
+        "tracked": store_root_digest(root / "tracked"),
+        "anchor": store_root_digest(root / "anchors"),
+    }
+
+
+def _parse_authority_payload(
+    payload: bytes,
+    model: type[BaseModel],
+    *,
+    label: str,
+) -> BaseModel:
+    try:
+        return model.model_validate(json.loads(payload))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ExecutionValidationError(
+            f"protected authority {label} payload is invalid"
+        ) from exc
+
+
+def issue_execution_authorization_handle(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    protected_root: Path,
+    run_id: str,
+    current_time: datetime | None = None,
+) -> ExecutionAuthorizationHandle:
+    """Rebuild exact v2 authority from one persistent protected typed bundle."""
+
+    if not isinstance(registry, TrustedAcceptanceRegistry):
+        raise ExecutionValidationError("trusted acceptance registry is required")
+    _validate_run_id(run_id)
+    root = _validated_protected_root(protected_root, create=False)
+    now = current_time or datetime.now(UTC)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ExecutionValidationError("authority issue time must be timezone-aware")
+    receipt_payload = _read_protected(
+        root, _authority_bundle_relative(run_id, "receipt.json")
+    )
+    try:
+        receipt = AuthorityBundleReceipt.model_validate(json.loads(receipt_payload))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ExecutionValidationError(
+            "protected authority bundle receipt is invalid"
+        ) from exc
+    if (
+        receipt.registry_id != registry.registry_id
+        or receipt.run_id != run_id
+        or receipt.protected_root_digest != store_root_digest(root)
+        or receipt.run_root_digest != store_root_digest(root / run_id)
+        or receipt.store_root_digests != _expected_store_root_digests(root)
+        or not receipt.issued_at <= now < receipt.expires_at
+    ):
+        raise ExecutionValidationError("protected authority bundle receipt drift")
+
+    payloads: dict[str, bytes] = {}
+    for identity, filename in _AUTHORITY_PAYLOAD_PATHS.items():
+        payload = _read_protected(root, _authority_bundle_relative(run_id, filename))
+        if hashlib.sha256(payload).hexdigest() != receipt.payload_digests[identity]:
+            raise ExecutionValidationError(
+                f"protected authority {identity} payload digest drift"
+            )
+        payloads[identity] = payload
+
+    authorization_v1 = cast(
+        "AuthorizationManifest",
+        _parse_authority_payload(
+            payloads["authorization_manifest"],
+            AuthorizationManifest,
+            label="authorization manifest",
+        ),
+    )
+    request = cast(
+        "PreflightRequest",
+        _parse_authority_payload(
+            payloads["preflight_request"],
+            PreflightRequest,
+            label="preflight request",
+        ),
+    )
+    observation = cast(
+        "PreflightObservation",
+        _parse_authority_payload(
+            payloads["preflight_observation"],
+            PreflightObservation,
+            label="preflight observation",
+        ),
+    )
+    action_specs = cast(
+        "AuthorizedActionSpecs",
+        _parse_authority_payload(
+            payloads["action_specs"],
+            AuthorizedActionSpecs,
+            label="action specs",
+        ),
+    )
+    stores = cast(
+        "StoreIdentities",
+        _parse_authority_payload(
+            payloads["store_identities"],
+            StoreIdentities,
+            label="store identities",
+        ),
+    )
+    adapters = cast(
+        "AuthorityAdapterIds",
+        _parse_authority_payload(
+            payloads["adapter_ids"],
+            AuthorityAdapterIds,
+            label="adapter IDs",
+        ),
+    )
+    collectors = cast(
+        "AuthorityCollectorIds",
+        _parse_authority_payload(
+            payloads["collector_ids"],
+            AuthorityCollectorIds,
+            label="collector IDs",
+        ),
+    )
+    task1 = cast(
+        "Task1AuthorityBindings",
+        _parse_authority_payload(
+            payloads["task1_bindings"],
+            Task1AuthorityBindings,
+            label="Task 1 bindings",
+        ),
+    )
+    if (
+        stores.raw_root_digest != receipt.store_root_digests["raw"]
+        or stores.tracked_root_digest != receipt.store_root_digests["tracked"]
+        or stores.anchor_root_digest != receipt.store_root_digests["anchor"]
+        or task1.authorization_digest != registry.task1_authorization_digest
+        or task1.input_digests != registry.task1_input_digests
+    ):
+        raise ExecutionValidationError(
+            "protected authority Task 1/store root binding drift"
+        )
+    if (
+        receipt.issued_at < authorization_v1.issued_at
+        or receipt.expires_at > authorization_v1.expires_at
+    ):
+        raise ExecutionValidationError(
+            "protected authority receipt exceeds authorization window"
+        )
+
+    authorization = build_execution_authorization_from_v1(
+        authorization_v1,
+        observation,
+        request,
+        policy=registry.compiled_policy,
+        plan=registry.compiled_plan,
+        registry_id=registry.registry_id,
+        task1_authorization_digest=task1.authorization_digest,
+        task1_input_digests=task1.input_digests,
+        adapter_ids=adapters.values,
+        collector_ids=collectors.values,
+        action_specs=action_specs.specs,
+        store_ids=stores,
+        current_time=now,
+    )
+    validate_execution_authorization(
+        authorization,
+        policy=registry.compiled_policy,
+        plan=registry.compiled_plan,
+        registry_id=registry.registry_id,
+        current_time=now,
+    )
+    return ExecutionAuthorizationHandle(
+        authorization,
+        root,
+        run_id,
+        registry.registry_id,
+        hashlib.sha256(receipt_payload).hexdigest(),
+        _HANDLE_TOKEN,
+    )
+
+
+def _write_test_authority_bundle(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    protected_root: Path,
+    run_id: str,
+    authorization: AuthorizationManifest,
+    request: PreflightRequest,
+    observation: PreflightObservation,
+    action_specs: AuthorizedActionSpecs,
+    store_ids: StoreIdentities,
+    adapter_ids: AuthorityAdapterIds,
+    collector_ids: AuthorityCollectorIds,
+    task1_bindings: Task1AuthorityBindings,
+    receipt_issued_at: datetime,
+    receipt_expires_at: datetime,
+) -> AuthorityBundleReceipt:
+    """Fixture-only producer for a complete persistent typed authority bundle."""
+
+    if not isinstance(registry, TrustedAcceptanceRegistry):
+        raise ExecutionValidationError("trusted acceptance registry is required")
+    _validate_run_id(run_id)
+    root = _validated_protected_root(protected_root, create=True)
+    expected_store_roots = _expected_store_root_digests(root)
+    if (
+        store_ids.raw_root_digest != expected_store_roots["raw"]
+        or store_ids.tracked_root_digest != expected_store_roots["tracked"]
+        or store_ids.anchor_root_digest != expected_store_roots["anchor"]
+    ):
+        raise ExecutionValidationError("test authority store root binding drift")
+    payload_models: dict[str, BaseModel] = {
+        "authorization_manifest": authorization,
+        "preflight_request": request,
+        "preflight_observation": observation,
+        "action_specs": action_specs,
+        "store_identities": store_ids,
+        "adapter_ids": adapter_ids,
+        "collector_ids": collector_ids,
+        "task1_bindings": task1_bindings,
+    }
+    payload_digests = {
+        identity: _write_exclusive(
+            root,
+            _authority_bundle_relative(run_id, _AUTHORITY_PAYLOAD_PATHS[identity]),
+            model.model_dump(mode="json"),
+        )
+        for identity, model in payload_models.items()
+    }
+    receipt = AuthorityBundleReceipt(
+        schema_version="noor-e2e-authority-bundle-receipt/v2",
+        registry_id=registry.registry_id,
+        run_id=run_id,
+        protected_root_digest=store_root_digest(root),
+        run_root_digest=store_root_digest(root / run_id),
+        store_root_digests=expected_store_roots,
+        payload_digests=payload_digests,
+        issued_at=receipt_issued_at,
+        expires_at=receipt_expires_at,
+    )
+    _write_exclusive(
+        root,
+        _authority_bundle_relative(run_id, "receipt.json"),
+        receipt.model_dump(mode="json"),
+    )
+    return receipt
+
+
+def _authorization_from_handle(
+    authority: object,
+    *,
+    protected_root: Path,
+    run_id: str,
+    registry_id: str | None = None,
+) -> ExecutionAuthorizationV2:
+    if (
+        not isinstance(authority, ExecutionAuthorizationHandle)
+        or authority._token is not _HANDLE_TOKEN
+        or authority._protected_root != protected_root
+        or authority._run_id != run_id
+        or authority._authorization.registry_id != authority._registry_id
+        or (registry_id is not None and authority._registry_id != registry_id)
+    ):
+        raise ExecutionValidationError("registry-issued authority handle binding drift")
+    root = _validated_protected_root(protected_root, create=False)
+    receipt_payload = _read_protected(
+        root, _authority_bundle_relative(run_id, "receipt.json")
+    )
+    try:
+        receipt = AuthorityBundleReceipt.model_validate(json.loads(receipt_payload))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ExecutionValidationError(
+            "protected authority bundle receipt is invalid"
+        ) from exc
+    now = datetime.now(UTC)
+    if (
+        hashlib.sha256(receipt_payload).hexdigest() != authority._receipt_digest
+        or receipt.registry_id != authority._registry_id
+        or receipt.run_id != run_id
+        or receipt.protected_root_digest != store_root_digest(root)
+        or receipt.run_root_digest != store_root_digest(root / run_id)
+        or not receipt.issued_at <= now < receipt.expires_at
+        or not authority._authorization.issued_at
+        <= now
+        < authority._authorization.expires_at
+    ):
+        raise ExecutionValidationError("registry-issued authority handle receipt drift")
+    return authority._authorization
 
 
 def build_execution_authorization_from_v1(
@@ -287,6 +785,7 @@ def build_execution_authorization_from_v1(
     task1_input_digests: dict[str, str],
     adapter_ids: tuple[str, ...],
     collector_ids: tuple[str, ...],
+    action_specs: tuple[AuthorizedActionSpec, ...],
     store_ids: StoreIdentities,
     current_time: datetime,
 ) -> ExecutionAuthorizationV2:
@@ -301,8 +800,14 @@ def build_execution_authorization_from_v1(
         raise ExecutionValidationError("bridge time must be timezone-aware")
     validate_preflight(authorization, observation, request, now=current_time)
     readback = observation.readback_identity
-    if readback is None or current_time - readback.observed_at > _MAX_PREFLIGHT_AGE:
-        raise ExecutionValidationError("successful preflight is missing or stale")
+    if (
+        readback is None
+        or readback.observed_at > current_time
+        or current_time - readback.observed_at > _MAX_PREFLIGHT_AGE
+    ):
+        raise ExecutionValidationError(
+            "successful preflight is missing, stale, or future-dated"
+        )
     execution_ids = tuple(
         [
             *authorization.scenario_binding.scenario_ids,
@@ -318,6 +823,10 @@ def build_execution_authorization_from_v1(
             "approved adapter and collector IDs are required"
         )
     quotas = ProtectedQuotas(**authorization.quotas.model_dump(mode="json"))
+    side_effect_authority = SideEffectAuthority(
+        cleanup_owner=authorization.allowed_executor,
+        cleanup_authority=authorization.cleanup_method,
+    )
     binding = ExactLiveAuthorizationBinding(
         v1_manifest_digest=_digest(authorization.model_dump(mode="json")),
         preflight_request_digest=_digest(request.model_dump(mode="json")),
@@ -329,9 +838,8 @@ def build_execution_authorization_from_v1(
         permissions_digest=_digest(tuple(authorization.permissions)),
         cleanup_retention_digest=_digest(
             {
-                "cleanup_method": authorization.cleanup_method,
-                "stop_conditions": authorization.stop_conditions,
-                "readbacks": authorization.readbacks,
+                "side_effect_authority": side_effect_authority.model_dump(mode="json"),
+                "client_exclusion_authorities": {},
             }
         ),
         execution_set_digest=_digest(
@@ -369,6 +877,8 @@ def build_execution_authorization_from_v1(
         adapter_ids=adapter_ids,
         collector_ids=collector_ids,
         permissions=tuple(authorization.permissions),
+        action_specs=action_specs,
+        side_effect_authority=side_effect_authority,
         live_binding=binding,
         store_ids=store_ids,
         registry_id=registry_id,
@@ -428,6 +938,19 @@ def validate_execution_authorization(
         authorization.permissions
     ):
         raise ExecutionValidationError("authorization permission binding drift")
+    if authorization.live_binding.cleanup_retention_digest != _digest(
+        {
+            "side_effect_authority": authorization.side_effect_authority.model_dump(
+                mode="json"
+            ),
+            "client_exclusion_authorities": (
+                authorization.client_exclusion_authorities
+            ),
+        }
+    ):
+        raise ExecutionValidationError(
+            "authorization cleanup/retention authority binding drift"
+        )
     if authorization.live_binding.execution_set_digest != _digest(
         {
             "execution_ids": authorization.execution_ids,
@@ -440,6 +963,15 @@ def validate_execution_authorization(
         authorization.store_ids.model_dump(mode="json")
     ):
         raise ExecutionValidationError("authorization store binding drift")
+    if len({item.action_id for item in authorization.action_specs}) != len(
+        authorization.action_specs
+    ) or any(
+        item.adapter_id not in authorization.adapter_ids
+        or item.operation_permission not in authorization.permissions
+        or item.execution_id not in authorization.execution_ids
+        for item in authorization.action_specs
+    ):
+        raise ExecutionValidationError("authorization protected action spec drift")
     if authorization.registry_id != registry_id:
         raise ExecutionValidationError("authorization registry drift")
     now = current_time or datetime.now(UTC)
@@ -497,6 +1029,36 @@ class ActionReservation(_StrictModel):
             raise ValueError("reservation permit window is invalid")
         if any(value <= 0 for value in self.capability_units.values()):
             raise ValueError("reservation capability units must be positive")
+        return self
+
+
+class UnknownActionReconciliationReceipt(_StrictModel):
+    """Independent, one-use evidence needed to resolve an uncertain dispatch."""
+
+    schema_version: Literal["noor-e2e-unknown-action-reconciliation/v2"]
+    registry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    action_id: str = Field(min_length=1)
+    reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    collector_id: str = Field(min_length=1)
+    producer: Literal["independent-readback-collector"]
+    causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observed_at: datetime
+    expires_at: datetime
+    resolved_state: Literal["succeeded", "failed"]
+    inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> UnknownActionReconciliationReceipt:
+        if (
+            self.observed_at.tzinfo is None
+            or self.observed_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.observed_at
+        ):
+            raise ValueError("reconciliation receipt window is invalid")
         return self
 
 
@@ -585,6 +1147,144 @@ class EvidenceBlockAttemptV2(_StrictModel):
     permission_evidence: tuple[str, ...]
 
 
+class GateEvidenceReceipt(_StrictModel):
+    """Receipt emitted before execution by a protected independent gate source."""
+
+    schema_version: Literal["noor-e2e-gate-evidence-receipt/v2"]
+    registry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_id: str = Field(min_length=1)
+    criterion_ids: tuple[str, ...] = Field(min_length=1)
+    execution_owner: str = Field(min_length=1)
+    execution_started_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome: Literal["BLOCKED", "EXCLUDED_BY_CLIENT"]
+    producer: Literal[
+        "independent-readback-collector",
+        "trusted-evidence-registry",
+        "client-exclusion-authority",
+    ]
+    issued_at: datetime
+    expires_at: datetime
+    client_authority_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> GateEvidenceReceipt:
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError("gate receipt window is invalid")
+        return self
+
+
+class GateEvidenceArtifact(_StrictModel):
+    """Producer-owned gate evidence committed independently of the attempt."""
+
+    schema_version: Literal["noor-e2e-gate-evidence/v2"]
+    registry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_id: str = Field(min_length=1)
+    criterion_ids: tuple[str, ...] = Field(min_length=1)
+    execution_owner: str = Field(min_length=1)
+    execution_started_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome: Literal["BLOCKED", "EXCLUDED_BY_CLIENT"]
+    producer: Literal[
+        "independent-readback-collector",
+        "trusted-evidence-registry",
+        "client-exclusion-authority",
+    ]
+    observed_at: datetime
+    evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ProtectedFinalReadbackArtifact(_StrictModel):
+    """Independent collector output used as the only final inventory source."""
+
+    schema_version: Literal["noor-e2e-final-readback-artifact/v2"]
+    registry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    collector_id: str = Field(min_length=1)
+    collector_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_turn_anchor_at: datetime
+    observed_at: datetime
+    inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observation: ReadbackObservation
+
+    @model_validator(mode="after")
+    def _exact_observation_binding(self) -> ProtectedFinalReadbackArtifact:
+        if (
+            self.observation.phase != "final"
+            or self.observation.run_id != self.run_id
+            or self.observation.preflight_digest != self.preflight_digest
+            or self.observation.collector_id != self.collector_id
+            or self.observation.collector_artifact_digest
+            != self.collector_artifact_digest
+            or self.observation.causal_event_digest != self.journal_head_digest
+            or self.observation.observed_at != self.observed_at
+            or _digest(self.observation.inventory) != self.inventory_digest
+            or self.final_turn_anchor_at.tzinfo is None
+            or self.final_turn_anchor_at.utcoffset() is None
+            or self.observed_at.tzinfo is None
+            or self.observed_at.utcoffset() is None
+            or self.observed_at < self.final_turn_anchor_at
+        ):
+            raise ValueError("final readback artifact observation binding drift")
+        return self
+
+
+class FinalReadbackProducerReceipt(_StrictModel):
+    """Receipt from the protected independent final-readback producer store."""
+
+    schema_version: Literal["noor-e2e-final-readback-producer-receipt/v2"]
+    registry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preflight_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    producer: Literal["independent-readback-collector"]
+    collector_id: str = Field(min_length=1)
+    collector_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    journal_head_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observed_at: datetime
+    issued_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def _valid_window(self) -> FinalReadbackProducerReceipt:
+        values = (self.observed_at, self.issued_at, self.expires_at)
+        if (
+            any(item.tzinfo is None or item.utcoffset() is None for item in values)
+            or not self.observed_at <= self.issued_at < self.expires_at
+        ):
+            raise ValueError("final readback receipt window is invalid")
+        return self
+
+
+class GateAttemptV2(_StrictModel):
+    schema_version: Literal["noor-e2e-gate-attempt/v2"]
+    execution_id: str = Field(min_length=1)
+    outcome: Literal["BLOCKED", "EXCLUDED_BY_CLIENT"]
+    run_started_at: datetime
+    execution_started_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+ExecutedAttemptV2 = ScenarioAttemptV2 | EvidenceBlockAttemptV2
+
+
 class ValidatedAttempt(_StrictModel):
     execution_id: str
     plan_digest: str
@@ -636,10 +1336,29 @@ class GenericAcceptanceRunner:
         self,
         *,
         registry: TrustedAcceptanceRegistry,
-        authorization: ExecutionAuthorizationV2,
+        authority: ExecutionAuthorizationHandle,
         journal: ProtectedExecutionJournal,
     ) -> None:
-        registry.validate_execution_authorization(authorization)
+        authorization = _authorization_from_handle(
+            authority,
+            protected_root=journal.protected_root,
+            run_id=journal.run_id,
+            registry_id=registry.registry_id,
+        )
+        validate_execution_authorization(
+            authorization,
+            policy=registry.compiled_policy,
+            plan=registry.compiled_plan,
+            registry_id=registry.registry_id,
+        )
+        if (
+            authorization.task1_authorization_digest
+            != registry.task1_authorization_digest
+            or authorization.task1_input_digests != registry.task1_input_digests
+        ):
+            raise ExecutionValidationError(
+                "authority handle Task 1 immutable binding drift"
+            )
         if journal.authorization_digest != _digest(
             authorization.model_dump(mode="json")
         ):
@@ -772,6 +1491,107 @@ class GenericAcceptanceRunner:
             outcome=outcome,
             oracle_decisions=tuple(item.model_dump(mode="json") for item in decisions),
         )
+
+    def validate_gate_attempt(
+        self,
+        attempt: GateAttemptV2,
+        *,
+        current_time: datetime | None = None,
+    ) -> GateAttemptV2:
+        """Validate a zero-turn non-pass without inventing an executed turn."""
+
+        try:
+            artifact_payload = _read_protected(
+                self.journal.run_root,
+                f"gate-evidence/{attempt.execution_id}.json",
+            )
+            artifact = GateEvidenceArtifact.model_validate(json.loads(artifact_payload))
+            receipt_payload = _read_protected(
+                self.journal.run_root,
+                f"producer-receipts/gates/{attempt.execution_id}.json",
+            )
+            receipt = GateEvidenceReceipt.model_validate(json.loads(receipt_payload))
+        except (ExecutionValidationError, ValueError, json.JSONDecodeError) as exc:
+            raise ExecutionValidationError(
+                "gate attempt requires a protected producer receipt"
+            ) from exc
+        now = current_time or datetime.now(UTC)
+        criteria = tuple(
+            item.criterion_id
+            for item in self.registry.compiled_plan.criteria.values()
+            if attempt.execution_id in item.obligation_ids
+        )
+        if (
+            attempt.execution_id not in self.authorization.execution_ids
+            or artifact.registry_id != self.registry.registry_id
+            or artifact.run_id != self.journal.run_id
+            or artifact.authorization_digest != self.journal.authorization_digest
+            or artifact.execution_id != attempt.execution_id
+            or artifact.criterion_ids != criteria
+            or artifact.execution_owner != self.authorization.authorization_id
+            or artifact.execution_started_event_digest
+            != self.journal._execution_started_event_digest
+            or artifact.outcome != attempt.outcome
+            or receipt.registry_id != artifact.registry_id
+            or receipt.run_id != artifact.run_id
+            or receipt.execution_id != attempt.execution_id
+            or hashlib.sha256(receipt_payload).hexdigest() != attempt.receipt_digest
+            or receipt.artifact_sha256 != hashlib.sha256(artifact_payload).hexdigest()
+            or receipt.authorization_digest != self.journal.authorization_digest
+            or receipt.criterion_ids != criteria
+            or receipt.execution_owner != self.authorization.authorization_id
+            or receipt.execution_started_event_digest
+            != self.journal._execution_started_event_digest
+            or receipt.outcome != attempt.outcome
+            or receipt.producer != artifact.producer
+            or receipt.issued_at != artifact.observed_at
+            or attempt.run_started_at.tzinfo is None
+            or attempt.run_started_at.utcoffset() is None
+            or self.journal._execution_started_at is None
+            or attempt.run_started_at != self.journal._execution_started_at
+            or attempt.execution_started_event_digest
+            != self.journal._execution_started_event_digest
+            or not receipt.issued_at <= now < receipt.expires_at
+        ):
+            raise ExecutionValidationError("gate attempt protected receipt drift")
+        criterion_models = [
+            self.registry.compiled_plan.criteria[criterion_id]
+            for criterion_id in criteria
+        ]
+        if not criterion_models:
+            raise ExecutionValidationError("gate attempt criterion binding drift")
+        if attempt.outcome == "BLOCKED":
+            if (
+                receipt.producer
+                not in {
+                    "independent-readback-collector",
+                    "trusted-evidence-registry",
+                }
+                or self.journal._execution_started_at is None
+                or receipt.issued_at < self.journal._execution_started_at
+                or receipt.client_authority_digest is not None
+            ):
+                raise ExecutionValidationError(
+                    "blocked gate lacks independent evidence"
+                )
+        else:
+            expected_client_authority = (
+                self.authorization.client_exclusion_authorities.get(
+                    attempt.execution_id
+                )
+            )
+            if (
+                receipt.producer != "client-exclusion-authority"
+                or not all(item.allows_client_exclusion for item in criterion_models)
+                or expected_client_authority is None
+                or receipt.client_authority_digest != expected_client_authority
+                or receipt.issued_at >= attempt.run_started_at
+                or receipt.issued_at < self.authorization.issued_at
+            ):
+                raise ExecutionValidationError(
+                    "client exclusion lacks pre-existing protected authority"
+                )
+        return attempt
 
     def validate_evidence_block(
         self,
@@ -1036,6 +1856,138 @@ class FakeLocalAdapter:
         }
 
 
+def _write_test_final_readback_bundle(
+    journal: ProtectedExecutionJournal,
+    observation: ReadbackObservation,
+    *,
+    issued_at: datetime | None = None,
+    expires_at: datetime | None = None,
+) -> str:
+    """Fixture-only stand-in for the Task 2 independent collector producer."""
+
+    if journal._final_turn_occurred_at is None or journal.previous_event_digest is None:
+        raise ExecutionValidationError(
+            "final readback producer requires a final-turn journal anchor"
+        )
+    receipt_issued_at = issued_at or observation.observed_at
+    receipt_expires_at = expires_at or receipt_issued_at + _MAX_FINAL_READBACK_AGE
+    artifact = ProtectedFinalReadbackArtifact(
+        schema_version="noor-e2e-final-readback-artifact/v2",
+        registry_id=journal.authorization.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        preflight_digest=journal.authorization.preflight_digest,
+        collector_id=observation.collector_id,
+        collector_artifact_digest=observation.collector_artifact_digest,
+        journal_head_digest=journal.previous_event_digest,
+        final_turn_anchor_at=journal._final_turn_occurred_at,
+        observed_at=observation.observed_at,
+        inventory_digest=_digest(observation.inventory),
+        observation=observation,
+    )
+    artifact_sha256 = _write_exclusive(
+        journal.run_root,
+        "collector-artifacts/final-readback.json",
+        artifact.model_dump(mode="json"),
+    )
+    receipt = FinalReadbackProducerReceipt(
+        schema_version="noor-e2e-final-readback-producer-receipt/v2",
+        registry_id=artifact.registry_id,
+        run_id=artifact.run_id,
+        authorization_digest=artifact.authorization_digest,
+        preflight_digest=artifact.preflight_digest,
+        producer="independent-readback-collector",
+        collector_id=artifact.collector_id,
+        collector_artifact_digest=artifact.collector_artifact_digest,
+        journal_head_digest=artifact.journal_head_digest,
+        artifact_sha256=artifact_sha256,
+        inventory_digest=artifact.inventory_digest,
+        observed_at=artifact.observed_at,
+        issued_at=receipt_issued_at,
+        expires_at=receipt_expires_at,
+    )
+    return _write_exclusive(
+        journal.run_root,
+        "producer-receipts/final-readback.json",
+        receipt.model_dump(mode="json"),
+    )
+
+
+def _write_test_gate_evidence_bundle(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    journal: ProtectedExecutionJournal,
+    execution_id: str,
+    outcome: Literal["BLOCKED", "EXCLUDED_BY_CLIENT"],
+    producer: Literal[
+        "independent-readback-collector",
+        "trusted-evidence-registry",
+        "client-exclusion-authority",
+    ],
+    observed_at: datetime,
+    expires_at: datetime,
+    client_authority_digest: str | None = None,
+) -> str:
+    """Fixture-only stand-in for protected gate evidence producers."""
+
+    if journal._execution_started_event_digest is None:
+        raise ExecutionValidationError(
+            "gate producer requires journal-owned execution start"
+        )
+    criterion_ids = tuple(
+        criterion.criterion_id
+        for criterion in registry.compiled_plan.criteria.values()
+        if execution_id in criterion.obligation_ids
+    )
+    artifact = GateEvidenceArtifact(
+        schema_version="noor-e2e-gate-evidence/v2",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        execution_owner=journal.authorization.authorization_id,
+        execution_started_event_digest=journal._execution_started_event_digest,
+        outcome=outcome,
+        producer=producer,
+        observed_at=observed_at,
+        evidence_digest=_digest(
+            {
+                "execution_id": execution_id,
+                "criterion_ids": criterion_ids,
+                "outcome": outcome,
+                "observed_at": observed_at.isoformat(),
+            }
+        ),
+    )
+    artifact_sha256 = _write_exclusive(
+        journal.run_root,
+        f"gate-evidence/{execution_id}.json",
+        artifact.model_dump(mode="json"),
+    )
+    receipt = GateEvidenceReceipt(
+        schema_version="noor-e2e-gate-evidence-receipt/v2",
+        registry_id=artifact.registry_id,
+        run_id=artifact.run_id,
+        authorization_digest=artifact.authorization_digest,
+        execution_id=execution_id,
+        criterion_ids=criterion_ids,
+        execution_owner=artifact.execution_owner,
+        execution_started_event_digest=artifact.execution_started_event_digest,
+        artifact_sha256=artifact_sha256,
+        outcome=outcome,
+        producer=producer,
+        issued_at=observed_at,
+        expires_at=expires_at,
+        client_authority_digest=client_authority_digest,
+    )
+    return _write_exclusive(
+        journal.run_root,
+        f"producer-receipts/gates/{execution_id}.json",
+        receipt.model_dump(mode="json"),
+    )
+
+
 class ProtectedExecutionJournal:
     """Append-only phase/action journal under a protected external root."""
 
@@ -1045,17 +1997,15 @@ class ProtectedExecutionJournal:
         protected_root: Path,
         run_id: str,
         authorization: ExecutionAuthorizationV2,
+        authority_receipt_digest: str,
     ) -> None:
-        if not run_id or any(
-            character not in "abcdefghijklmnopqrstuvwxyz0123456789-._"
-            for character in run_id.lower()
-        ):
-            raise ExecutionValidationError("run identity is unsafe")
+        _validate_run_id(run_id)
         self.protected_root = protected_root
         self.run_id = run_id
         self.run_root = protected_root / run_id
         self.authorization = authorization
         self.authorization_digest = _digest(authorization.model_dump(mode="json"))
+        self.authority_receipt_digest = authority_receipt_digest
         self.phase = "prepared"
         self.cursor = 0
         self.previous_event_digest: str | None = None
@@ -1064,9 +2014,13 @@ class ProtectedExecutionJournal:
         self._reservations: dict[str, ActionReservation] = {}
         self._attempted_executions: list[str] = []
         self._authorization_scenarios = 0
+        self._authorization_action_ids: set[str] = set()
+        self._authorization_idempotency_keys: set[str] = set()
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head: str | None = None
         self._final_turn_occurred_at: datetime | None = None
+        self._execution_started_at: datetime | None = None
+        self._execution_started_event_digest: str | None = None
 
     @classmethod
     def create(
@@ -1074,12 +2028,18 @@ class ProtectedExecutionJournal:
         *,
         protected_root: Path,
         run_id: str,
-        authorization: ExecutionAuthorizationV2,
+        authority: ExecutionAuthorizationHandle,
     ) -> ProtectedExecutionJournal:
+        authorization = _authorization_from_handle(
+            authority,
+            protected_root=protected_root,
+            run_id=run_id,
+        )
         journal = cls(
             protected_root=protected_root,
             run_id=run_id,
             authorization=authorization,
+            authority_receipt_digest=authority._receipt_digest,
         )
         journal._reload_authorization_ledger()
         fd = _open_absolute_chain(journal.run_root, create=True)
@@ -1091,6 +2051,7 @@ class ProtectedExecutionJournal:
             data={
                 "authorization_digest": journal.authorization_digest,
                 "anchor_store_id": authorization.store_ids.anchor_store_id,
+                "authority_receipt_digest": authority._receipt_digest,
             },
         )
         return journal
@@ -1101,12 +2062,18 @@ class ProtectedExecutionJournal:
         *,
         protected_root: Path,
         run_id: str,
-        authorization: ExecutionAuthorizationV2,
+        authority: ExecutionAuthorizationHandle,
     ) -> ProtectedExecutionJournal:
+        authorization = _authorization_from_handle(
+            authority,
+            protected_root=protected_root,
+            run_id=run_id,
+        )
         journal = cls(
             protected_root=protected_root,
             run_id=run_id,
             authorization=authorization,
+            authority_receipt_digest=authority._receipt_digest,
         )
         journal._reload_authorization_ledger()
         journal_fd = _open_absolute_chain(
@@ -1135,10 +2102,14 @@ class ProtectedExecutionJournal:
                 event.get("kind") != "prepared"
                 or event.get("data", {}).get("authorization_digest")
                 != journal.authorization_digest
+                or event.get("data", {}).get("authority_receipt_digest")
+                != journal.authority_receipt_digest
             ):
                 raise ExecutionValidationError("journal authorization binding drift")
             journal._apply_loaded_event(event)
             previous_digest = hashlib.sha256(payload).hexdigest()
+            if event.get("kind") == "execution_started":
+                journal._execution_started_event_digest = previous_digest
         if not names:
             raise ExecutionValidationError("protected journal is empty")
         journal.previous_event_digest = previous_digest
@@ -1155,10 +2126,18 @@ class ProtectedExecutionJournal:
             self._actions[reservation.action_id] = "reserved"
         elif kind == "action_completed":
             self._actions[str(data["action_id"])] = str(data["state"])  # type: ignore[assignment]
+        elif kind == "unknown_action_reconciled":
+            receipt = UnknownActionReconciliationReceipt.model_validate(data)
+            self._actions[receipt.action_id] = receipt.resolved_state
         elif kind == "permit_consumed":
             self._actions[str(data["action_id"])] = "unknown"
         elif kind == "attempt_intent":
             self._attempted_executions.append(str(data["execution_id"]))
+        elif kind == "execution_started":
+            started_at = datetime.fromisoformat(str(data["started_at"]))
+            if started_at.tzinfo is None or started_at.utcoffset() is None:
+                raise ExecutionValidationError("execution start timestamp is invalid")
+            self._execution_started_at = started_at
         elif kind == "final_turn_anchored":
             occurred_at = datetime.fromisoformat(str(data["occurred_at"]))
             if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
@@ -1231,12 +2210,14 @@ class ProtectedExecutionJournal:
         )
 
     def begin_execution(self) -> None:
-        self._transition(
+        started_at = datetime.now(UTC)
+        self._execution_started_event_digest = self._transition(
             expected="baseline_sealed",
             target="executing",
             kind="execution_started",
-            data={},
+            data={"started_at": started_at.isoformat()},
         )
+        self._execution_started_at = started_at
 
     def _consume(self, reservation: ActionReservation) -> None:
         subsystems = dict(self.quota_usage.subsystem_usage)
@@ -1260,6 +2241,8 @@ class ProtectedExecutionJournal:
     def _reload_authorization_ledger(self) -> None:
         self.quota_usage = QuotaUsage()
         self._authorization_scenarios = 0
+        self._authorization_action_ids = set()
+        self._authorization_idempotency_keys = set()
         self._authorization_ledger_cursor = 0
         self._authorization_ledger_head = None
         try:
@@ -1298,7 +2281,18 @@ class ProtectedExecutionJournal:
                     "authorization quota ledger causality drift"
                 )
             if event.get("kind") == "action_reserved":
-                self._consume(ActionReservation.model_validate(event["reservation"]))
+                reservation = ActionReservation.model_validate(event["reservation"])
+                if (
+                    reservation.action_id in self._authorization_action_ids
+                    or reservation.idempotency_key
+                    in self._authorization_idempotency_keys
+                ):
+                    raise ExecutionValidationError(
+                        "authorization action/idempotency ledger duplicate"
+                    )
+                self._authorization_action_ids.add(reservation.action_id)
+                self._authorization_idempotency_keys.add(reservation.idempotency_key)
+                self._consume(reservation)
             elif event.get("kind") == "scenario_reserved":
                 self._authorization_scenarios += 1
             else:
@@ -1384,6 +2378,21 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError(
                 "action reservation authorization is expired"
             )
+        requested_spec = AuthorizedActionSpec(
+            action_id=action_id,
+            execution_id=execution_id,
+            step_id=step_id,
+            capability=capability,
+            operation_permission=operation_permission,
+            adapter_id=adapter_id,
+            subsystem=subsystem,
+            destination_digest=destination_digest,
+            payload_digest=payload_digest,
+            idempotency_key=idempotency_key,
+            capability_units=capability_units,
+        )
+        if requested_spec not in self.authorization.action_specs:
+            raise ExecutionValidationError("protected authorized action spec mismatch")
         if action_id in self._actions:
             raise ExecutionValidationError("action identity is already reserved")
         if (
@@ -1396,6 +2405,13 @@ class ProtectedExecutionJournal:
                 "reservation quota values must be non-negative and finite"
             )
         self._reload_authorization_ledger()
+        if (
+            action_id in self._authorization_action_ids
+            or idempotency_key in self._authorization_idempotency_keys
+        ):
+            raise ExecutionValidationError(
+                "authorization action/idempotency identity was already consumed"
+            )
         identity = {
             "action_id": action_id,
             "run_id": self.run_id,
@@ -1465,6 +2481,8 @@ class ProtectedExecutionJournal:
         self._reservations[action_id] = reservation
         self._actions[action_id] = "reserved"
         self._consume(reservation)
+        self._authorization_action_ids.add(action_id)
+        self._authorization_idempotency_keys.add(idempotency_key)
         return reservation
 
     def consume_permit(
@@ -1535,6 +2553,11 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError("action reservation identity drift")
         if len(outcome_digest) != 64:
             raise ExecutionValidationError("action outcome digest must be SHA-256")
+        if state != "unknown":
+            raise ExecutionValidationError(
+                "dispatch result cannot terminalize an uncertain action; "
+                "independent reconciliation is required"
+            )
         self._append_event(
             phase="executing",
             kind="action_completed",
@@ -1546,6 +2569,55 @@ class ProtectedExecutionJournal:
             },
         )
         self._actions[reservation.action_id] = state
+
+    def reconcile_unknown_action(
+        self,
+        *,
+        action_id: str,
+        receipt_digest: str,
+    ) -> None:
+        """Resolve unknown dispatch only from an independent fresh collector."""
+
+        if len(receipt_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in receipt_digest
+        ):
+            raise ExecutionValidationError("reconciliation receipt digest is invalid")
+        try:
+            payload = _read_protected(
+                self.run_root,
+                f"independent-reconciliation/{action_id}.json",
+            )
+            receipt = UnknownActionReconciliationReceipt.model_validate(
+                json.loads(payload)
+            )
+        except (ExecutionValidationError, ValueError, json.JSONDecodeError) as exc:
+            raise ExecutionValidationError(
+                "unknown action needs a protected independent reconciliation receipt"
+            ) from exc
+        reservation = self._reservations.get(action_id)
+        if (
+            reservation is None
+            or self._actions.get(action_id) != "unknown"
+            or receipt.registry_id != self.authorization.registry_id
+            or receipt.run_id != self.run_id
+            or receipt.authorization_digest != self.authorization_digest
+            or receipt.action_id != action_id
+            or receipt.reservation_digest != reservation.reservation_digest
+            or receipt.collector_id not in self.authorization.collector_ids
+            or receipt.producer != "independent-readback-collector"
+            or hashlib.sha256(payload).hexdigest() != receipt_digest
+            or receipt.causal_event_digest != self.previous_event_digest
+            or not receipt.observed_at <= datetime.now(UTC) < receipt.expires_at
+        ):
+            raise ExecutionValidationError(
+                "unknown action requires a fresh independent reconciliation receipt"
+            )
+        self._append_event(
+            phase="executing",
+            kind="unknown_action_reconciled",
+            data=receipt.model_dump(mode="json"),
+        )
+        self._actions[action_id] = receipt.resolved_state
 
     def anchor_final_turn(self, *, event_digest: str, occurred_at: datetime) -> None:
         if any(state in {"reserved", "unknown"} for state in self._actions.values()):
@@ -1570,13 +2642,71 @@ class ProtectedExecutionJournal:
         )
         self._final_turn_occurred_at = occurred_at
 
-    def seal_final_readback(self, observation: ReadbackObservation) -> None:
+    def seal_final_readback(
+        self,
+        observation: ReadbackObservation,
+        *,
+        receipt_digest: str | None = None,
+        current_time: datetime | None = None,
+    ) -> None:
+        try:
+            artifact_payload = _read_protected(
+                self.run_root,
+                "collector-artifacts/final-readback.json",
+            )
+            artifact = ProtectedFinalReadbackArtifact.model_validate(
+                json.loads(artifact_payload)
+            )
+            receipt_payload = _read_protected(
+                self.run_root,
+                "producer-receipts/final-readback.json",
+            )
+            receipt = FinalReadbackProducerReceipt.model_validate(
+                json.loads(receipt_payload)
+            )
+        except (ExecutionValidationError, ValueError, json.JSONDecodeError) as exc:
+            raise ExecutionValidationError(
+                "final readback requires a protected collector producer receipt"
+            ) from exc
+        now = current_time or datetime.now(UTC)
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ExecutionValidationError(
+                "final readback validation time must be aware"
+            )
         if (
             self._final_turn_occurred_at is None
-            or observation.observed_at < self._final_turn_occurred_at
+            or receipt_digest is None
+            or hashlib.sha256(receipt_payload).hexdigest() != receipt_digest
+            or receipt.artifact_sha256 != hashlib.sha256(artifact_payload).hexdigest()
+            or artifact.observation != observation
+            or artifact.registry_id != self.authorization.registry_id
+            or artifact.run_id != self.run_id
+            or artifact.authorization_digest != self.authorization_digest
+            or artifact.preflight_digest != self.authorization.preflight_digest
+            or artifact.collector_id not in self.authorization.collector_ids
+            or tuple(self.authorization.collector_ids) != (artifact.collector_id,)
+            or artifact.collector_artifact_digest
+            != self.authorization.readback_collector_digest
+            or artifact.journal_head_digest != self.previous_event_digest
+            or artifact.final_turn_anchor_at != self._final_turn_occurred_at
+            or artifact.inventory_digest != _digest(observation.inventory)
+            or receipt.registry_id != artifact.registry_id
+            or receipt.run_id != artifact.run_id
+            or receipt.authorization_digest != artifact.authorization_digest
+            or receipt.preflight_digest != artifact.preflight_digest
+            or receipt.collector_id != artifact.collector_id
+            or receipt.collector_artifact_digest != artifact.collector_artifact_digest
+            or receipt.journal_head_digest != artifact.journal_head_digest
+            or receipt.inventory_digest != artifact.inventory_digest
+            or receipt.observed_at != artifact.observed_at
+            or receipt.producer != "independent-readback-collector"
+            or artifact.observed_at < self._final_turn_occurred_at
+            or artifact.observed_at > now
+            or now - artifact.observed_at > _MAX_FINAL_READBACK_AGE
+            or not receipt.issued_at <= now < receipt.expires_at
         ):
             raise ExecutionValidationError(
-                "final readback timestamp predates final-turn anchor"
+                "final readback protected collector receipt binding drift"
             )
         if (
             observation.phase != "final"
@@ -1599,6 +2729,8 @@ class ProtectedExecutionJournal:
                 "observed_at": observation.observed_at.isoformat(),
                 "content_digest": observation.content_digest,
                 "causal_event_digest": observation.causal_event_digest,
+                "collector_receipt_digest": receipt_digest,
+                "inventory_digest": artifact.inventory_digest,
             },
         )
 

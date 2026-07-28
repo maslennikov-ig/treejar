@@ -9,6 +9,7 @@ import re
 import stat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -785,9 +786,18 @@ def validate_side_effect_closeout(
     entries: Sequence[Mapping[str, object]],
     *,
     observed_inventory: Mapping[str, Mapping[str, object]],
+    authorized_cleanup_owner: str,
+    authorized_cleanup_authority: str,
+    authorized_retentions: Mapping[str, Mapping[str, object]],
+    current_time: datetime | None = None,
 ) -> None:
     """Require exact coverage and verified safe terminal state for every artifact."""
 
+    now = current_time or datetime.now(UTC)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise EvidenceError("side-effect closeout time must be timezone-aware")
+    if not authorized_cleanup_owner or not authorized_cleanup_authority:
+        raise EvidenceError("authorized cleanup ownership is incomplete")
     listed_ids = [str(entry.get("artifact_id", "")) for entry in entries]
     if not all(listed_ids) or len(listed_ids) != len(set(listed_ids)):
         raise EvidenceError(
@@ -818,8 +828,13 @@ def validate_side_effect_closeout(
             raise EvidenceError(f"missing baseline readback for {artifact_id}")
         if not entry.get("expected_effect"):
             raise EvidenceError(f"missing expected side effect for {artifact_id}")
-        if not entry.get("cleanup_owner") or not entry.get("cleanup_authority"):
-            raise EvidenceError(f"missing cleanup ownership for {artifact_id}")
+        if (
+            entry.get("cleanup_owner") != authorized_cleanup_owner
+            or entry.get("cleanup_authority") != authorized_cleanup_authority
+        ):
+            raise EvidenceError(
+                f"cleanup owner/authority binding drift for {artifact_id}"
+            )
         subsystem = str(entry.get("subsystem", ""))
         artifact_type = str(entry.get("artifact_type", ""))
         allowed_types = _ARTIFACT_TYPES_BY_SUBSYSTEM.get(subsystem)
@@ -849,3 +864,50 @@ def validate_side_effect_closeout(
             )
         ):
             raise EvidenceError(f"retention metadata is incomplete for {artifact_id}")
+        if disposition == "retained_as_test_evidence":
+            authority = authorized_retentions.get(artifact_id)
+            if authority is None:
+                raise EvidenceError(f"retention authority is missing for {artifact_id}")
+            try:
+                expires_at = datetime.fromisoformat(str(entry["retention_expires_at"]))
+                disposition_at = datetime.fromisoformat(
+                    str(entry["final_disposition_date"])
+                )
+                authority_issued_at = datetime.fromisoformat(
+                    str(authority["issued_at"])
+                )
+                authority_expires_at = datetime.fromisoformat(
+                    str(authority["expires_at"])
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise EvidenceError(
+                    f"retention time is invalid for {artifact_id}"
+                ) from exc
+            if (
+                expires_at.tzinfo is None
+                or expires_at.utcoffset() is None
+                or disposition_at.tzinfo is None
+                or disposition_at.utcoffset() is None
+                or authority_issued_at.tzinfo is None
+                or authority_issued_at.utcoffset() is None
+                or authority_expires_at.tzinfo is None
+                or authority_expires_at.utcoffset() is None
+            ):
+                raise EvidenceError(
+                    f"retention owner/time binding is invalid for {artifact_id}"
+                )
+            if (
+                authority.get("artifact_id") != artifact_id
+                or authority.get("cleanup_owner") != authorized_cleanup_owner
+                or authority.get("cleanup_authority") != authorized_cleanup_authority
+                or entry.get("retention_owner") != authority.get("retention_owner")
+                or expires_at != authority_expires_at
+                or entry.get("retention_authority_digest")
+                != authority.get("authority_digest")
+                or not authority_issued_at <= disposition_at <= now
+                or not now < expires_at
+                or not authority_issued_at < authority_expires_at
+            ):
+                raise EvidenceError(
+                    f"retention authority/time binding is invalid for {artifact_id}"
+                )
