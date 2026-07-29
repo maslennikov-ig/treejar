@@ -16458,6 +16458,38 @@ def test_exact_quote_candidate_respects_general_quote_hold(text: str) -> None:
     assert extract_exact_quote_candidate(text) is None
 
 
+def test_delivery_availability_interruption_recognizes_catalog_recommendation(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    conv.metadata_ = {}
+    text = "Before we continue, do you provide delivery and assembly in Dubai?"
+    decision = engine_module.evaluate_verified_answer_policy(text, [])
+    recent_history = [
+        "user: I need two executive desks for an eight-person team.",
+        (
+            "assistant: LUMA 9719-4 Walnut is available at 1,883 AED per unit, "
+            "with 30 units in stock."
+        ),
+    ]
+
+    assert engine_module._is_low_risk_service_availability_interruption(
+        text,
+        decision,
+        conv,
+        recent_history,
+    )
+    urgent_text = "Can you guarantee delivery tomorrow?"
+    assert not engine_module._is_low_risk_service_availability_interruption(
+        urgent_text,
+        engine_module.evaluate_verified_answer_policy(urgent_text, []),
+        conv,
+        recent_history,
+    )
+
+
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -16514,15 +16546,7 @@ async def test_active_quote_does_not_hijack_delivery_interruption(
         ModelRequest(parts=[UserPromptPart(content=text)]),
     ]
     mock_get_system_config.return_value = "mock-model"
-    mock_search_knowledge.return_value = [
-        {
-            "title": "Delivery and installation",
-            "content": (
-                "Q: Do you provide installation?\n"
-                "A: We provide delivery and installation across UAE."
-            ),
-        }
-    ]
+    mock_search_knowledge.return_value = []
     mock_search_behavior_rules.return_value = []
 
     response = await process_message(

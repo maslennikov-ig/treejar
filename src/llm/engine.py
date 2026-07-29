@@ -2110,6 +2110,14 @@ def _has_active_product_selection_context(
 
     last_assistant = _last_assistant_message(recent_history)
     normalized_last = _normalize_text(last_assistant)
+    normalized_sku_text = _normalize_sku_homoglyphs(last_assistant)
+    if _SKU_SIGNAL_RE.search(normalized_sku_text) and (
+        _PRICE_SIGNAL_RE.search(last_assistant)
+        or any(
+            term in normalized_last for term in ("stock", "price", "sku", "per unit")
+        )
+    ):
+        return True
     return bool(
         normalized_last
         and (
