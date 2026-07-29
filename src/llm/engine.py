@@ -373,7 +373,9 @@ PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
     "do not hand off to manager unless the customer explicitly requests a human or asks a high-risk commercial or service commitment",
 )
 CROSS_SELL_VERIFICATION_DIRECTIVES = (
-    "recheck the budget configuration with search_products and the cross-sell with recommend_products(cross_sell); use only returned price and stock, never exceed stock, and say when no cross-sell is verified",
+    "Use search_products and recommend_products(cross_sell); under 900 characters "
+    "give the cheapest verified complete plan, total, remaining budget, and one "
+    "verified cross-sell or none; omit tables",
 )
 _CROSS_SELL_REQUEST_RE = re.compile(r"\bcross(?:-|\s)?sell\b", re.IGNORECASE)
 PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"

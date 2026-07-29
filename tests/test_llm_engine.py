@@ -5209,6 +5209,10 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     assert any(
         "recommend_products" in directive for directive in run_deps.runtime_directives
     )
+    assert any(
+        "under 900 characters" in directive and "omit tables" in directive.casefold()
+        for directive in run_deps.runtime_directives
+    )
     mock_notify.assert_not_awaited()
 
 
