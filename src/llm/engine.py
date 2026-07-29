@@ -2791,7 +2791,12 @@ def _expected_answer_frame_from_assistant_response(
         return _build_product_preference_frame(conversation)
     if _response_asks_sku_quantity(response_text):
         return _build_sku_quantity_frame(conversation, response_text)
-    if _last_assistant_asked_quote_customer_details(response_history):
+    if _last_assistant_asked_quote_customer_details(
+        response_history,
+        quote_context_active=quote_frame_is_active(
+            _quote_frame_from_conversation(conversation)
+        ),
+    ):
         return _build_quote_details_frame(conversation)
     if _response_asks_post_quote_approval(response_text):
         return _build_post_quote_approval_frame(conversation)
@@ -7806,34 +7811,67 @@ def _has_active_sales_detail_capture_context(
 
 def _last_assistant_asked_quote_customer_details(
     recent_history: list[str] | None,
+    *,
+    quote_context_active: bool = False,
 ) -> bool:
     last_assistant = _normalize_text(_last_assistant_message(recent_history))
     if not last_assistant:
         return False
-    asks_details = any(
-        term in last_assistant
-        for term in (
-            "company",
-            "individual",
-            "delivery address",
-            "specific delivery",
-            "address",
-            "customer name",
-            "full name",
+    text_has_quote_context = bool(
+        re.search(
+            r"\b(?:quote|quotation|commercial\s+(?:offer|proposal))\b",
+            last_assistant,
+        )
+        or re.search(
+            r"(?:عرض\s+السعر|عرض\s+أسعار|عرض\s+تجاري)",
+            last_assistant,
         )
     )
-    quote_context = any(
-        term in last_assistant
-        for term in (
-            "quotation",
-            "quote",
-            "prepare",
-            "pdf",
-            "company",
-            "delivery address",
+    if not quote_context_active and not text_has_quote_context:
+        return False
+
+    english_field = (
+        r"(?:company(?:\s+name)?|(?:specific\s+)?delivery\s+address|address|"
+        r"(?:customer|full)\s+name|(?:customer\s+)?email(?:\s+address)?|"
+        r"(?:phone|mobile)(?:\s+number)?)"
+    )
+    english_field_value = (
+        rf"(?:(?:your|the)\s+)?{english_field}"
+        r"(?=\s*(?:[(),;:/?!.]|$|\band\b|\bor\b|\bfor\b|\bto\b|\bbefore\b|\bso\b))"
+    )
+    english_field_prefix = r"\s*(?:[:,-]\s*)?(?:\d{1,2}[.)]\s*)?"
+    english_requests = (
+        rf"\b(?:please\s+)?(?:share|provide|send){english_field_prefix}"
+        rf"{english_field_value}",
+        rf"\b(?:can|could|may)\s+i\s+(?:get|have)\s+{english_field_value}",
+        rf"\b(?:can|could|may)\s+you\s+(?:share|provide|send)"
+        rf"{english_field_prefix}{english_field_value}",
+        rf"\bwhat(?:'s|\s+is)\s+(?:your|the)\s+{english_field_value}",
+        rf"\bplease\s+let\s+me\s+know\s+{english_field_value}",
+        rf"\b(?:please\s+)?confirm\s+{english_field_value}",
+        rf"\b(?:i|we)\s+need\s+{english_field_value}",
+        r"\b(?:please\s+)?confirm\s+you\s+are\s+buying\s+as\s+an\s+individual\b",
+    )
+    if any(re.search(pattern, last_assistant) for pattern in english_requests):
+        return True
+
+    arabic_field = (
+        r"(?:اسم\s+العميل|اسم\s+الشركة|عنوان\s+التوصيل(?:\s+المحدد)?|"
+        r"البريد\s+الإلكتروني|رقم\s+الهاتف)"
+    )
+    arabic_field_value = (
+        rf"{arabic_field}"
+        r"(?=\s*(?:[،؛,:.?؟!]|$|و|أو|لإعداد|قبل))"
+    )
+    return bool(
+        re.search(
+            rf"(?:يرجى\s+(?:مشاركة|تزويد)|"
+            rf"هل\s+يمكنك\s+(?:مشاركة|تزويد|إرسال)|"
+            rf"(?:من\s+فضلك\s+)?(?:شارك|زودني|أرسل)|(?:أحتاج|نحتاج))"
+            rf"\s*[:،-]?\s*{arabic_field_value}",
+            last_assistant,
         )
     )
-    return asks_details and quote_context
 
 
 def _detail_capture_acknowledgement(
@@ -12701,7 +12739,10 @@ async def process_message(
         else ()
     )
     assistant_asked_quote_details = _last_assistant_asked_quote_customer_details(
-        recent_history
+        recent_history,
+        quote_context_active=(
+            has_pending_quote_selection or order_runtime_blocks_kernel_reply
+        ),
     )
     assistant_offered_quote_selection = _last_assistant_offered_quote_for_selection(
         recent_history

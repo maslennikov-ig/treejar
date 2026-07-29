@@ -12566,6 +12566,154 @@ async def test_process_message_recommendation_after_quote_offer_stays_consultati
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
 )
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_product_preference_question_does_not_start_quote_detail_capture(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Nadia"
+    conv.language = "en"
+    conv.metadata_ = {"quote_customer_details": {"name": "Nadia"}}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "I found suitable task chairs and compact desks. "
+                        "Would you prefer individual compact desks or shared "
+                        "two-person workstations? That will help me prepare the "
+                        "right quote."
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "For long shifts, I would verify lumbar support before pairing a chair "
+        "with a compact desk."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=(
+            "Staff use their seats for long shifts, so lumbar support matters. "
+            "Which chair-and-desk pairing would you recommend?"
+        ),
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model"
+    assert "saved quote frame" not in response.text.casefold()
+    assert conv.metadata_["quote_customer_details"] == {"name": "Nadia"}
+    assert "pending_quote_selection" not in conv.metadata_
+    mock_run.assert_awaited_once()
+    mock_create_quotation.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("assistant_text", "expected"),
+    [
+        ("Please share company and address for the quotation.", True),
+        ("Could I get your company name before I prepare the quote?", True),
+        ("May I have your delivery address for the quotation?", True),
+        (
+            "To prepare the quotation, I need your company name and delivery address.",
+            True,
+        ),
+        ("For the quote, we need your delivery address and email.", True),
+        ("What is your company name and delivery address for the quotation?", True),
+        ("Please let me know your company name before I prepare the quote.", True),
+        (
+            "قبل أن أجهز عرض السعر، يرجى مشاركة: اسم الشركة؛ عنوان التوصيل المحدد. "
+            "أحتاج هذه التفاصيل لإضافتها إلى ملف PDF.",
+            True,
+        ),
+        (
+            "هل يمكنك مشاركة اسم الشركة وعنوان التوصيل لإعداد عرض السعر؟",
+            True,
+        ),
+        ("لإعداد عرض السعر، أحتاج اسم الشركة وعنوان التوصيل.", True),
+        (
+            "Would you prefer individual compact desks or shared workstations? "
+            "That will help me prepare the right quote.",
+            False,
+        ),
+        (
+            "Please confirm whether you prefer individual compact desks or shared "
+            "workstations so I can prepare the right quote.",
+            False,
+        ),
+        (
+            "Please confirm whether your company prefers individual compact desks "
+            "or shared workstations so I can prepare the right quote.",
+            False,
+        ),
+        (
+            "Please confirm whether this configuration addresses your needs before "
+            "I prepare the quote.",
+            False,
+        ),
+        (
+            "Please share whether your company prefers individual compact desks or "
+            "shared workstations so I can prepare the quote.",
+            False,
+        ),
+        (
+            "Can you share whether your company prefers individual desks or shared "
+            "workstations for the quote?",
+            False,
+        ),
+        (
+            "Please share your email address so I can send the product brochure.",
+            False,
+        ),
+        (
+            "May I have your phone number so our manager can call you?",
+            False,
+        ),
+        (
+            "يرجى مشاركة البريد الإلكتروني لإرسال كتالوج المنتجات.",
+            False,
+        ),
+        ("Please share company and address.", False),
+    ],
+)
+def test_quote_detail_context_requires_request_for_a_customer_field(
+    assistant_text: str,
+    expected: bool,
+) -> None:
+    history = [f"assistant: {assistant_text}"]
+
+    assert (
+        engine_module._last_assistant_asked_quote_customer_details(history) is expected
+    )
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
 @patch(
     "src.llm.engine._resolve_exact_quote_candidate_sku",
     new_callable=AsyncMock,

@@ -946,7 +946,10 @@ async def _order_quote_route_for_turn(
                     ),
                 ),
             )
-        if _last_assistant_asked_quote_customer_details(deps.recent_history):
+        if _last_assistant_asked_quote_customer_details(
+            deps.recent_history,
+            quote_context_active=True,
+        ):
             quote_items = _active_quote_items(conversation, pending_quote_selection)
             missing_required = _quote_missing_required_details(
                 deps,
