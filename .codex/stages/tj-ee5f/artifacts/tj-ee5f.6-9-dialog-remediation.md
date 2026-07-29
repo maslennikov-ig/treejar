@@ -42,7 +42,7 @@ success_criteria:
   - quote details are collected only after opt-in and interruptions or quote holds take precedence
   - an explicitly named exact SKU is not expanded to similar variants without a request
   - inline customer fields preserve company digits and the complete delivery address
-  - repeated identical quotation execution creates one Zoho order and sends one PDF
+  - retries of one inbound quote operation reuse its Zoho order and PDF while a distinct inbound can create a new quote
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -50,6 +50,7 @@ selected_docs:
   - docs/client/noor-live-sales-tool-e2e-2026-07-28.md
 selected_skills:
   - orchestrator-stage
+  - superpowers:receiving-code-review
   - superpowers:systematic-debugging
   - superpowers:test-driven-development
 selected_agents:
@@ -87,7 +88,9 @@ verification:
   - focused RED for Arabic catalog and furniture no-match routing: failed as expected
   - focused RED for typed name-gate resume, quote hold, interruption, exact SKU, and inline fields: failed as expected
   - focused RED for duplicate quotation effects: failed with two create_sale_order calls as expected
+  - correction RED for distinct inbound quote operations: failed by returning the prior SA-001 instead of creating SA-002
   - focused dialogue, parser, Zoho, and idempotency pytest set: passed 14
+  - correction focused same-message, distinct-message, legacy-v1, and process propagation set: passed 4
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -127,8 +130,14 @@ Customer details use delimiter-aware labeled-field parsing. Zoho contact and
 sales-order payloads have typed shapes, preserve full delivery addresses, reuse
 exact existing contacts after duplicate conflicts, and store a versioned
 quotation-effect fingerprint. Repeating the same quote request returns the
-already-sent result without creating another order or sending another PDF. A
-retry after draft creation must verify the stored Zoho order before resuming.
+already-sent result without creating another order or sending another PDF. The
+fingerprint is scoped to the stable inbound message ID when available, and a
+bounded versioned journal lets an older inbound retry remain idempotent even
+after a newer quote was created. A different inbound message may create a new
+quote for unchanged lines. Direct tool calls keep a conservative content-based
+fallback; legacy v1 content-only effects are never trusted for a real identified
+inbound. A retry after draft creation must verify the stored Zoho order before
+resuming.
 
 # Scope / Routing
 
@@ -144,6 +153,11 @@ furniture no-match, typed name-gate resume, delimiter-safe inline details,
 quote opt-in, general quote holds, delivery interruption, exact-SKU filtering,
 address payloads, duplicate-contact recovery, Zoho payload creation, and
 quotation idempotency.
+
+The correction set additionally passed four focused tests for immediate
+same-message retry, a distinct-message new quote, retrying the first message
+after the second, legacy-v1 isolation for a real inbound, and propagation of the
+source message ID through `process_message` into `SalesDeps`.
 
 Targeted Ruff lint and formatting checks passed for all seven changed source and
 test files. Targeted Mypy passed for the two changed production modules, and

@@ -14230,6 +14230,10 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
         return mapping.get(candidate.item_candidate)
 
     async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        assert (
+            getattr(ctx.deps, "source_message_id", None)
+            == "provider-message-sales-order-1"
+        )
         ctx.deps.quotation_created = True
         return "Your Treejar quotation: SO-123"
 
@@ -14248,6 +14252,7 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
             embedding_engine=engine,
             zoho_client=zoho,
             messaging_client=messaging,
+            source_message_id="provider-message-sales-order-1",
         )
 
     _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-123")

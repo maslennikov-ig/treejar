@@ -1017,6 +1017,7 @@ class SalesDeps:
     ] = "full"
     runtime_directives: tuple[str, ...] = ()
     customer_facts_context: str | None = None
+    source_message_id: str | None = None
     inventory_confirmed: bool = False
     quotation_created: bool = False
     catalog_mismatch_alerted: bool = False
@@ -8662,10 +8663,44 @@ async def resolve_inventory_customer_id(
     return contact_id
 
 
-_QUOTATION_EFFECT_VERSION = 1
+_QUOTATION_EFFECT_VERSION = 2
+_QUOTATION_EFFECT_JOURNAL_VERSION = 1
+_QUOTATION_EFFECT_JOURNAL_LIMIT = 8
 
 
 def _quotation_effect_fingerprint(
+    *,
+    customer_id: str,
+    line_items: list[ZohoSaleOrderLineItemPayload],
+    source_message_id: str | None,
+) -> str:
+    normalized_lines = sorted(
+        (
+            str(item["item_id"]).strip(),
+            int(item["quantity"]),
+            f"{float(item['rate']):.4f}",
+        )
+        for item in line_items
+    )
+    material = "\n".join(
+        [
+            f"v{_QUOTATION_EFFECT_VERSION}",
+            (
+                f"inbound:{source_message_id}"
+                if source_message_id
+                else "direct-content-fallback"
+            ),
+            customer_id.strip(),
+            *(
+                f"{item_id}|{quantity}|{rate}"
+                for item_id, quantity, rate in normalized_lines
+            ),
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _legacy_quotation_effect_fingerprint(
     *,
     customer_id: str,
     line_items: list[ZohoSaleOrderLineItemPayload],
@@ -8680,7 +8715,7 @@ def _quotation_effect_fingerprint(
     )
     material = "\n".join(
         [
-            f"v{_QUOTATION_EFFECT_VERSION}",
+            "v1",
             customer_id.strip(),
             *(
                 f"{item_id}|{quantity}|{rate}"
@@ -8691,22 +8726,74 @@ def _quotation_effect_fingerprint(
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def _quotation_source_message_id(deps: SalesDeps) -> str | None:
+    raw_source_message_id = getattr(deps, "source_message_id", None)
+    if not isinstance(raw_source_message_id, str):
+        return None
+    return raw_source_message_id.strip() or None
+
+
 def _matching_quotation_effect(
     conversation: Conversation,
     *,
     fingerprint: str,
+    legacy_fingerprint: str | None = None,
 ) -> dict[str, Any] | None:
     metadata = conversation.metadata_
     if not isinstance(metadata, Mapping):
         return None
-    effect = metadata.get("quotation_effect")
-    if not isinstance(effect, Mapping):
-        return None
-    if effect.get("version") != _QUOTATION_EFFECT_VERSION:
-        return None
-    if _string_value(effect.get("fingerprint")) != fingerprint:
-        return None
-    return dict(effect)
+
+    candidates: list[Mapping[str, Any]] = []
+    latest_effect = metadata.get("quotation_effect")
+    if isinstance(latest_effect, Mapping):
+        candidates.append(latest_effect)
+
+    raw_journal = metadata.get("quotation_effect_journal")
+    if isinstance(raw_journal, Mapping):
+        raw_entries = raw_journal.get("entries")
+        if isinstance(raw_entries, list):
+            candidates.extend(
+                entry for entry in raw_entries if isinstance(entry, Mapping)
+            )
+
+    for effect in reversed(candidates):
+        version = effect.get("version")
+        effect_fingerprint = _string_value(effect.get("fingerprint"))
+        if version == _QUOTATION_EFFECT_VERSION and effect_fingerprint == fingerprint:
+            return dict(effect)
+        if (
+            legacy_fingerprint
+            and version == 1
+            and effect_fingerprint == legacy_fingerprint
+        ):
+            return dict(effect)
+    return None
+
+
+def _store_quotation_effect(
+    conversation: Conversation,
+    effect: Mapping[str, Any],
+) -> None:
+    normalized_effect = dict(effect)
+    fingerprint = _string_value(normalized_effect.get("fingerprint"))
+    metadata = dict(conversation.metadata_ or {})
+    raw_journal = metadata.get("quotation_effect_journal")
+    raw_entries = (
+        raw_journal.get("entries") if isinstance(raw_journal, Mapping) else None
+    )
+    entries = [
+        dict(entry)
+        for entry in raw_entries or []
+        if isinstance(entry, Mapping)
+        and _string_value(entry.get("fingerprint")) != fingerprint
+    ]
+    entries.append(normalized_effect)
+    metadata["quotation_effect"] = normalized_effect
+    metadata["quotation_effect_journal"] = {
+        "version": _QUOTATION_EFFECT_JOURNAL_VERSION,
+        "entries": entries[-_QUOTATION_EFFECT_JOURNAL_LIMIT:],
+    }
+    conversation.metadata_ = metadata
 
 
 def _quotation_prepared_message(conversation: Conversation, quote_number: str) -> str:
@@ -9541,13 +9628,23 @@ async def create_quotation(
     if customer_id is None:
         return await _fail_closed_exact_quote_request(ctx.deps)
 
+    source_message_id = _quotation_source_message_id(ctx.deps)
     effect_fingerprint = _quotation_effect_fingerprint(
         customer_id=customer_id,
         line_items=zoho_line_items,
+        source_message_id=source_message_id,
     )
     existing_effect = _matching_quotation_effect(
         ctx.deps.conversation,
         fingerprint=effect_fingerprint,
+        legacy_fingerprint=(
+            _legacy_quotation_effect_fingerprint(
+                customer_id=customer_id,
+                line_items=zoho_line_items,
+            )
+            if source_message_id is None
+            else None
+        ),
     )
     if existing_effect and existing_effect.get("status") == "pdf_sent":
         quote_number = (
@@ -9591,15 +9688,21 @@ async def create_quotation(
                 metadata["zoho_sale_order_id"] = sale_order_id
             if sale_order_number:
                 metadata["zoho_sale_order_number"] = sale_order_number
-            metadata["quotation_effect"] = {
-                "version": _QUOTATION_EFFECT_VERSION,
-                "fingerprint": effect_fingerprint,
-                "customer_id": customer_id,
-                "sale_order_id": sale_order_id,
-                "sale_order_number": quote_number,
-                "status": "sale_order_created",
-            }
             conv.metadata_ = metadata
+            _store_quotation_effect(
+                conv,
+                {
+                    "version": _QUOTATION_EFFECT_VERSION,
+                    "fingerprint": effect_fingerprint,
+                    "operation_scope": (
+                        "inbound_message" if source_message_id else "direct_fallback"
+                    ),
+                    "customer_id": customer_id,
+                    "sale_order_id": sale_order_id,
+                    "sale_order_number": quote_number,
+                    "status": "sale_order_created",
+                },
+            )
             try:
                 await ctx.deps.db.flush()
             except Exception as flush_err:
@@ -9698,17 +9801,21 @@ async def create_quotation(
         quote_number=quote_number,
         sale_order_id=sale_order_id,
     )
-    metadata = dict(ctx.deps.conversation.metadata_ or {})
-    metadata["quotation_effect"] = {
-        "version": _QUOTATION_EFFECT_VERSION,
-        "fingerprint": effect_fingerprint,
-        "customer_id": customer_id,
-        "sale_order_id": sale_order_id,
-        "sale_order_number": quote_number,
-        "media_message_id": _string_value(media_message_id),
-        "status": "pdf_sent",
-    }
-    ctx.deps.conversation.metadata_ = metadata
+    _store_quotation_effect(
+        ctx.deps.conversation,
+        {
+            "version": _QUOTATION_EFFECT_VERSION,
+            "fingerprint": effect_fingerprint,
+            "operation_scope": (
+                "inbound_message" if source_message_id else "direct_fallback"
+            ),
+            "customer_id": customer_id,
+            "sale_order_id": sale_order_id,
+            "sale_order_number": quote_number,
+            "media_message_id": _string_value(media_message_id),
+            "status": "pdf_sent",
+        },
+    )
     proposal_metadata_persisted = False
     try:
         await ctx.deps.db.flush()
@@ -10363,6 +10470,7 @@ async def process_message(
         user_query=masked_text,
         recent_history=recent_history,
         defer_product_media=True,
+        source_message_id=source_message_id,
     )
 
     from src.core.config import get_system_config

@@ -49,6 +49,170 @@ def test_inventory_contact_payload_preserves_delivery_address() -> None:
     assert payload["shipping_address"] == payload["billing_address"]
 
 
+def _quotation_idempotency_context() -> tuple[MagicMock, AsyncMock, AsyncMock]:
+    mock_inventory = AsyncMock()
+    mock_inventory.get_stock_bulk.return_value = [
+        {
+            "sku": "CHAIR-1",
+            "item_id": "123",
+            "rate": 150.0,
+            "stock_on_hand": 25,
+            "description": "A nice chair",
+            "name": "Chair",
+        }
+    ]
+    mock_inventory.create_sale_order.side_effect = [
+        {
+            "saleorder": {
+                "salesorder_id": "so-123",
+                "salesorder_number": "SA-001",
+                "status": "draft",
+            }
+        },
+        {
+            "saleorder": {
+                "salesorder_id": "so-124",
+                "salesorder_number": "SA-002",
+                "status": "draft",
+            }
+        },
+        {
+            "saleorder": {
+                "salesorder_id": "so-125",
+                "salesorder_number": "SA-003",
+                "status": "draft",
+            }
+        },
+    ]
+    mock_inventory.find_customer_by_phone.return_value = {
+        "contact_id": "inventory-contact-001",
+        "contact_type": "customer",
+        "status": "active",
+    }
+
+    mock_messaging = AsyncMock()
+    mock_messaging.send_media.side_effect = [
+        "media-quotation-1",
+        "media-quotation-2",
+        "media-quotation-3",
+    ]
+    mock_conversation = SimpleNamespace(
+        id="conv-1",
+        phone="+1234567890",
+        customer_name="Test Customer",
+        language="en",
+        metadata_=_quote_metadata(),
+    )
+    mock_db = AsyncMock()
+    mock_db.flush = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = execute_result
+
+    deps = MagicMock(spec=SalesDeps)
+    deps.zoho_inventory = mock_inventory
+    deps.messaging_client = mock_messaging
+    deps.conversation = mock_conversation
+    deps.crm_context = None
+    deps.redis = AsyncMock()
+    deps.db = mock_db
+    deps.zoho_crm = None
+    deps.source_message_id = "provider-message-1"
+
+    ctx = MagicMock(spec=RunContext)
+    ctx.deps = deps
+    return ctx, mock_inventory, mock_messaging
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_reuses_effect_for_same_source_message() -> None:
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+    ):
+        first = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+        retry = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "SA-001" in first
+    assert "SA-001" in retry
+    assert mock_inventory.create_sale_order.await_count == 1
+    assert mock_messaging.send_media.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_creates_new_effect_for_distinct_source_message() -> (
+    None
+):
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+    ):
+        first = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+        ctx.deps.source_message_id = "provider-message-2"
+        second = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+        ctx.deps.source_message_id = "provider-message-1"
+        first_retry_after_second = await create_quotation(
+            ctx, [QuotationItem(sku="CHAIR-1", quantity=1)]
+        )
+
+    assert "SA-001" in first
+    assert "SA-002" in second
+    assert "SA-001" in first_retry_after_second
+    assert mock_inventory.create_sale_order.await_count == 2
+    assert mock_messaging.send_media.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_does_not_reuse_legacy_effect_for_real_message() -> None:
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+    ctx.deps.conversation.metadata_["quotation_effect"] = {
+        "version": 1,
+        "fingerprint": (
+            "65b4286aac5084606f30974cbabc9944c0c20c72b1e7d42233fcd4b8955ff460"
+        ),
+        "customer_id": "inventory-contact-001",
+        "sale_order_id": "so-legacy",
+        "sale_order_number": "SA-LEGACY",
+        "status": "pdf_sent",
+    }
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+    ):
+        result = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "SA-001" in result
+    assert "SA-LEGACY" not in result
+    assert mock_inventory.create_sale_order.await_count == 1
+    assert mock_messaging.send_media.await_count == 1
+
+
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -169,7 +333,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     assert render_context["items"][0]["image_url"].startswith("data:image/jpeg;base64,")
     assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-123"
     assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-001"
-    assert mock_conversation.metadata_["quotation_effect"]["version"] == 1
+    assert mock_conversation.metadata_["quotation_effect"]["version"] == 2
     assert mock_conversation.metadata_["quotation_effect"]["status"] == "pdf_sent"
     proposal_state = mock_conversation.metadata_["proposal_followup"]
     assert proposal_state["kp_message_id"] == "media-quotation-1"
