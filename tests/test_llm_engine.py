@@ -3926,8 +3926,8 @@ async def test_process_message_first_turn_inline_name_continues_substantive_requ
     conv.customer_name = None
     conv.metadata_ = {}
     text = (
-        "Hi, I'm Lilia. I need ergonomic chair options for a small office. "
-        "Please help me choose."
+        "Hi, my name is Lilia and I purchase for Northstar QA LLC. I need "
+        "workstation options with individual privacy panels for a small office."
     )
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
@@ -3948,6 +3948,8 @@ async def test_process_message_first_turn_inline_name_continues_substantive_requ
 
     assert conv.customer_name == "Lilia"
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
+    assert conv.metadata_["quote_customer_details"]["company"] == "Northstar QA LLC"
+    assert "customer_type" not in conv.metadata_["quote_customer_details"]
     assert response.model == "mock-model"
     assert "may i know your name" not in response.text.casefold()
     assert "ergonomic chair" in response.text

@@ -289,6 +289,11 @@ NATURAL_NAME_PATTERNS = (
 )
 NATURAL_COMPANY_PATTERNS = (
     re.compile(
+        r"\b(?:i\s+)?(?:buy|purchase|procure)\s+for\s+"
+        r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s?)",
+        re.I | re.S,
+    ),
+    re.compile(
         r"\b(?:facilit(?:y|ies)|office|procurement|operations|project|workspace)"
         r"\s+(?:manager|lead|director|coordinator|buyer)\s+"
         r"(?:at|for|with)\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s?)",
@@ -5272,6 +5277,7 @@ def _strip_synthetic_test_marker(text: str) -> str:
 
 def _clean_natural_customer_name(value: str) -> str:
     name = BOT_TEST_MARKER_RE.sub(" ", value)
+    name = re.split(r"\s*(?:,\s*)?\band\s+i\b", name, maxsplit=1, flags=re.I)[0]
     name = re.split(
         r"\b(?:please|show|quote|quotation|price|stock|availability|need|want)\b",
         name,
@@ -5734,9 +5740,17 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
         details.update(compact_details)
 
     normalized = _normalize_text(text)
-    if re.search(
+    individual_customer_signal = re.search(
         r"\b(?:individual|personal|private customer|for myself)\b",
         normalized,
+    )
+    individual_product_descriptor = re.search(
+        r"\bindividual\s+(?:privacy|workstations?|desks?|chairs?|tables?|"
+        r"offices?|seats?|users?)\b",
+        normalized,
+    )
+    if (
+        individual_customer_signal is not None and individual_product_descriptor is None
     ) or re.search(r"(?:частное\s+лицо|для\s+себя|лично)", text, re.IGNORECASE):
         details["customer_type"] = "individual"
 
