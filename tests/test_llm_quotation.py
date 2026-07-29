@@ -97,10 +97,11 @@ def _quotation_idempotency_context() -> tuple[MagicMock, AsyncMock, AsyncMock]:
         "media-quotation-3",
     ]
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         language="en",
+        escalation_status="none",
         metadata_=_quote_metadata(),
     )
     mock_db = AsyncMock()
@@ -214,6 +215,83 @@ async def test_create_quotation_does_not_reuse_legacy_effect_for_real_message() 
 
 
 @pytest.mark.asyncio
+async def test_create_quotation_retry_after_lost_response_sends_pdf_once() -> None:
+    ctx, mock_inventory, mock_messaging = _quotation_idempotency_context()
+    mock_inventory.get_sale_order.return_value = {
+        "saleorder": {
+            "salesorder_id": "so-123",
+            "salesorder_number": "SA-001",
+            "status": "draft",
+        }
+    }
+    mock_messaging.send_media.side_effect = TimeoutError("provider response lost")
+    customer_visible_dispatches: set[str] = set()
+    dispatch_attempts: list[str] = []
+
+    async def audited_send_side_effect(
+        db: AsyncMock,
+        **kwargs: object,
+    ) -> SimpleNamespace:
+        effect = ctx.deps.conversation.metadata_["quotation_effect"]
+        assert effect["status"] == "pdf_sending"
+        assert db.commit.await_count >= 1
+        crm_message_id = str(kwargs["crm_message_id"])
+        dispatch_attempts.append(crm_message_id)
+        if crm_message_id not in customer_visible_dispatches:
+            customer_visible_dispatches.add(crm_message_id)
+            raise TimeoutError("provider accepted PDF but response was lost")
+        if len(dispatch_attempts) == 2:
+            request = httpx.Request("POST", "https://api.wazzup24.com/v3/message")
+            response = httpx.Response(
+                400,
+                json={"error": "repeatedCrmMessageId"},
+                request=request,
+            )
+            raise httpx.HTTPStatusError(
+                "duplicate provider operation",
+                request=request,
+                response=response,
+            )
+        return SimpleNamespace(
+            media=SimpleNamespace(provider_message_id="provider-pdf-1"),
+            skipped=True,
+        )
+
+    with (
+        patch(
+            "src.services.pdf.generator.generate_pdf",
+            new_callable=AsyncMock,
+            return_value=b"pdf_data",
+        ),
+        patch(
+            "src.services.pdf.generator.render_quotation_html",
+            return_value="<html>",
+        ),
+        patch(
+            "src.services.outbound_audit.send_wazzup_media_with_audit",
+            new_callable=AsyncMock,
+            side_effect=audited_send_side_effect,
+        ),
+        patch(
+            "src.integrations.notifications.escalation.notify_manager_escalation",
+            new_callable=AsyncMock,
+        ),
+    ):
+        first = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+        retry = await create_quotation(ctx, [QuotationItem(sku="CHAIR-1", quantity=1)])
+
+    assert "SA-001" not in first
+    assert "SA-001" in retry
+    assert len(customer_visible_dispatches) == 1
+    assert len(dispatch_attempts) == 3
+    assert len(set(dispatch_attempts)) == 1
+    assert "provider-message-1" not in dispatch_attempts[0]
+    assert mock_inventory.create_sale_order.await_count == 1
+    assert ctx.deps.conversation.metadata_["quotation_effect"]["status"] == "pdf_sent"
+    mock_messaging.send_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
@@ -247,6 +325,7 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     mock_messaging = AsyncMock()
     mock_messaging.send_media.return_value = "media-quotation-1"
     mock_conversation = MagicMock(spec=Conversation)
+    mock_conversation.id = "00000000-0000-0000-0000-000000000001"
     mock_conversation.phone = "+1234567890"
     mock_conversation.customer_name = "Test Customer"
     mock_conversation.metadata_ = _quote_metadata()
@@ -386,6 +465,7 @@ async def test_create_quotation_skips_pdf_image_when_catalog_image_missing(
     }
 
     mock_conversation = MagicMock(spec=Conversation)
+    mock_conversation.id = "00000000-0000-0000-0000-000000000001"
     mock_conversation.phone = "+1234567890"
     mock_conversation.customer_name = "Test Customer"
     mock_conversation.metadata_ = _quote_metadata()
@@ -476,7 +556,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     }
 
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         language="ar-AE",
@@ -525,7 +605,7 @@ async def test_create_quotation_preserves_real_sale_order_identifiers_from_flat_
     assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-flat-123"
     assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-REAL-001"
     assert mock_conversation.metadata_["proposal_followup"]["kp_read"] is False
-    assert mock_db.flush.await_count == 2
+    assert mock_db.flush.await_count >= 2
 
     mock_redis.setex.assert_not_awaited()
     mock_notify.assert_not_awaited()
@@ -565,7 +645,7 @@ async def test_create_quotation_keeps_draft_only_when_sale_order_number_missing(
     }
 
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         metadata_=_quote_metadata(),
@@ -631,7 +711,7 @@ async def test_create_quotation_sku_not_found() -> None:
     deps = MagicMock(spec=SalesDeps)
     deps.zoho_inventory = mock_inventory
     deps.conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         metadata_=_quote_metadata(),
@@ -685,7 +765,7 @@ async def test_create_quotation_without_company_email_uses_temp_customer(
     }
 
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         metadata_=_quote_metadata(company="", customer_type="individual"),
@@ -752,7 +832,7 @@ async def test_create_quotation_inventory_contact_creation_failure_fails_closed(
     mock_inventory.create_contact.side_effect = RuntimeError("inventory create failed")
 
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         escalation_status="none",
@@ -862,7 +942,7 @@ async def test_create_quotation_catalog_mismatch_notifies_and_aborts(
     mock_inventory.get_stock.return_value = None
 
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         metadata_=_quote_metadata(),
@@ -917,7 +997,7 @@ async def test_create_quotation_malformed_inventory_payload_fails_closed(
     mock_inventory.get_stock.return_value = {"sku": "CHAIR-1", "rate": "oops"}
 
     mock_conversation = SimpleNamespace(
-        id="conv-1",
+        id="00000000-0000-0000-0000-000000000001",
         phone="+1234567890",
         customer_name="Test Customer",
         metadata_=_quote_metadata(),

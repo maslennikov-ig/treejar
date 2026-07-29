@@ -43,6 +43,7 @@ success_criteria:
   - an explicitly named exact SKU is not expanded to similar variants without a request
   - inline customer fields preserve company digits and the complete delivery address
   - retries of one inbound quote operation reuse its Zoho order and PDF while a distinct inbound can create a new quote
+  - an ambiguous provider success followed by a lost response cannot deliver the quotation PDF twice
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -89,8 +90,10 @@ verification:
   - focused RED for typed name-gate resume, quote hold, interruption, exact SKU, and inline fields: failed as expected
   - focused RED for duplicate quotation effects: failed with two create_sale_order calls as expected
   - correction RED for distinct inbound quote operations: failed by returning the prior SA-001 instead of creating SA-002
+  - correction RED for lost provider response after accepted PDF: failed by attempting a second customer-visible send
   - focused dialogue, parser, Zoho, and idempotency pytest set: passed 14
   - correction focused same-message, distinct-message, legacy-v1, and process propagation set: passed 4
+  - correction focused quotation retry and compatibility set: passed 7
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -139,6 +142,13 @@ fallback; legacy v1 content-only effects are never trusted for a real identified
 inbound. A retry after draft creation must verify the stored Zoho order before
 resuming.
 
+PDF delivery now derives a stable, hashed CRM idempotency key from the inbound-
+scoped quotation effect, without storing the raw provider message ID. The
+`pdf_sending` state is committed before dispatch, and delivery uses the audited
+media path while retaining generic messaging-provider compatibility. On a lost
+response after provider acceptance, the retry reconciles the provider duplicate
+and produces only one customer-visible PDF.
+
 # Scope / Routing
 
 The production changes are limited to deterministic routing, typed metadata,
@@ -166,6 +176,11 @@ production-source scan found none of the captured customer identities used by
 the regression tests. Artifact validation is intentionally deferred until the
 parent registers this returned stream in the owning stage manifest; that file is
 outside this stream's write zone.
+
+The final correction set passed seven focused quotation tests, including
+provider-success/lost-response retry, same- and distinct-message behavior,
+legacy-effect isolation, the standard quotation path, missing catalog images,
+and preservation of real Zoho order identifiers.
 
 # Delivery / Cleanup
 

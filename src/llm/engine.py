@@ -8524,6 +8524,25 @@ def _is_duplicate_inventory_contact_error(exc: Exception) -> bool:
     return "already exists" in exc.response.text.casefold()
 
 
+def _is_repeated_outbound_message_error(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    if exc.response.status_code != 400:
+        return False
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        return False
+    if not isinstance(payload, Mapping):
+        return False
+    normalized_error = re.sub(
+        r"[^a-z]",
+        "",
+        str(payload.get("error") or "").casefold(),
+    )
+    return normalized_error == "repeatedcrmmessageid"
+
+
 def _build_inventory_contact_payload(
     *,
     phone: str,
@@ -9656,7 +9675,10 @@ async def create_quotation(
     # Create a draft once. If an earlier attempt stopped after order creation,
     # verify and resume that order instead of creating a duplicate.
     try:
-        if existing_effect and existing_effect.get("status") == "sale_order_created":
+        if existing_effect and existing_effect.get("status") in {
+            "sale_order_created",
+            "pdf_sending",
+        }:
             persisted_order_id = _string_value(existing_effect.get("sale_order_id"))
             if not persisted_order_id:
                 return await _fail_closed_exact_quote_request(ctx.deps)
@@ -9784,12 +9806,69 @@ async def create_quotation(
             )
             else f"Your Treejar quotation: {quote_number}"
         )
-        media_message_id = await ctx.deps.messaging_client.send_media(
-            chat_id=ctx.deps.conversation.phone,
-            content=pdf_bytes,
-            content_type="application/pdf",
-            caption=pdf_caption,
+        from src.services.outbound_audit import (
+            deterministic_crm_message_id,
+            send_wazzup_media_with_audit,
         )
+
+        media_crm_message_id = _string_value(
+            (existing_effect or {}).get("media_crm_message_id")
+        ) or deterministic_crm_message_id(
+            "quotation",
+            ctx.deps.conversation.id,
+            effect_fingerprint,
+            "pdf",
+        )
+        caption_crm_message_id = _string_value(
+            (existing_effect or {}).get("caption_crm_message_id")
+        ) or deterministic_crm_message_id(
+            "quotation",
+            ctx.deps.conversation.id,
+            effect_fingerprint,
+            "caption",
+        )
+        _store_quotation_effect(
+            ctx.deps.conversation,
+            {
+                "version": _QUOTATION_EFFECT_VERSION,
+                "fingerprint": effect_fingerprint,
+                "operation_scope": (
+                    "inbound_message" if source_message_id else "direct_fallback"
+                ),
+                "customer_id": customer_id,
+                "sale_order_id": sale_order_id,
+                "sale_order_number": quote_number,
+                "media_crm_message_id": media_crm_message_id,
+                "caption_crm_message_id": caption_crm_message_id,
+                "status": "pdf_sending",
+            },
+        )
+        await ctx.deps.db.flush()
+        await ctx.deps.db.commit()
+
+        async def _send_audited_pdf() -> Any:
+            return await send_wazzup_media_with_audit(
+                ctx.deps.db,
+                provider=ctx.deps.messaging_client,
+                conversation_id=UUID(str(ctx.deps.conversation.id)),
+                chat_id=ctx.deps.conversation.phone,
+                source="quotation_pdf",
+                crm_message_id=media_crm_message_id,
+                caption_crm_message_id=caption_crm_message_id,
+                content=pdf_bytes,
+                content_type="application/pdf",
+                caption=pdf_caption,
+                file_name=pdf_filename,
+            )
+
+        try:
+            audited_send = await _send_audited_pdf()
+        except httpx.HTTPStatusError as exc:
+            if not _is_repeated_outbound_message_error(exc):
+                raise
+            audited_send = await _send_audited_pdf()
+
+        media_message_id = audited_send.media.provider_message_id
     except Exception as e:
         logger.error("Failed to send quotation PDF %s to customer: %s", pdf_filename, e)
         return await _fail_closed_exact_quote_request(ctx.deps)
@@ -9812,6 +9891,8 @@ async def create_quotation(
             "customer_id": customer_id,
             "sale_order_id": sale_order_id,
             "sale_order_number": quote_number,
+            "media_crm_message_id": media_crm_message_id,
+            "caption_crm_message_id": caption_crm_message_id,
             "media_message_id": _string_value(media_message_id),
             "status": "pdf_sent",
         },
