@@ -686,6 +686,25 @@ class ZohoInventoryClient(InventoryProvider):
             return dict(payload)
         return {}
 
+    async def update_contact(
+        self,
+        contact_id: str,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update an existing Zoho Inventory contact."""
+        response = await self._request(
+            "PUT",
+            f"/contacts/{contact_id}",
+            json=data,
+        )
+        payload = response.json()
+        contact = _coerce_inventory_contact(payload.get("contact"))
+        if contact is not None:
+            return contact
+        if isinstance(payload, Mapping):
+            return dict(payload)
+        return {}
+
     async def activate_contact(self, contact_id: str) -> None:
         """Mark an existing Zoho Inventory contact active."""
         await self._request("POST", f"/contacts/{contact_id}/active")

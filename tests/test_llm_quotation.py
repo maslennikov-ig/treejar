@@ -941,11 +941,27 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
     )
     inactive_contact = {
         "contact_id": "inactive-inventory-contact",
+        "contact_name": "Example QA",
+        "company_name": "Example QA",
         "contact_type": "customer",
         "status": "inactive",
         "contact_persons": [{"email": "owner@example.com"}],
     }
-    active_contact = {**inactive_contact, "status": "active"}
+    active_contact = {
+        **inactive_contact,
+        "status": "active",
+        "billing_address": {"address": "Test Tower, Dubai, UAE"},
+        "shipping_address": {"address": "Test Tower, Dubai, UAE"},
+        "contact_persons": [
+            {
+                "first_name": "Test",
+                "last_name": "Owner",
+                "email": "owner@example.com",
+                "phone": "+15550001111",
+                "mobile": "+15550001111",
+            }
+        ],
+    }
 
     mock_inventory = AsyncMock()
     mock_inventory.find_customer_by_phone.return_value = None
@@ -963,6 +979,7 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
         customer_name="Test Owner",
         customer_email="owner@example.com",
         customer_company="Example QA",
+        customer_address="Test Tower, Dubai, UAE",
         zoho_inventory=mock_inventory,
     )
 
@@ -973,7 +990,54 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
     mock_inventory.activate_contact.assert_awaited_once_with(
         "inactive-inventory-contact"
     )
+    update_args = mock_inventory.update_contact.await_args.args
+    assert update_args[0] == "inactive-inventory-contact"
+    assert update_args[1]["billing_address"]["address"] == ("Test Tower, Dubai, UAE")
     mock_inventory.get_contact.assert_awaited_once_with("inactive-inventory-contact")
+
+
+@pytest.mark.asyncio
+async def test_resolve_inventory_customer_id_rejects_stale_reactivated_readback() -> (
+    None
+):
+    duplicate_response = httpx.Response(
+        400,
+        json={"code": 3062, "message": "The customer already exists."},
+        request=httpx.Request("POST", "https://example.com/contacts"),
+    )
+    mock_inventory = AsyncMock()
+    mock_inventory.find_customer_by_phone.return_value = None
+    mock_inventory.find_customer_by_email.return_value = None
+    mock_inventory.find_inactive_customer_by_email.return_value = {
+        "contact_id": "inactive-inventory-contact",
+        "contact_type": "customer",
+        "status": "inactive",
+    }
+    mock_inventory.create_contact.side_effect = httpx.HTTPStatusError(
+        "duplicate contact",
+        request=duplicate_response.request,
+        response=duplicate_response,
+    )
+    mock_inventory.get_contact.return_value = {
+        "contact_id": "inactive-inventory-contact",
+        "contact_type": "customer",
+        "status": "active",
+        "company_name": "Example QA",
+        "billing_address": {"address": "stale address"},
+        "shipping_address": {"address": "stale address"},
+        "contact_persons": [{"email": "owner@example.com"}],
+    }
+
+    result = await resolve_inventory_customer_id(
+        phone="+15550001111",
+        customer_name="Test Owner",
+        customer_email="owner@example.com",
+        customer_company="Example QA",
+        customer_address="Test Tower, Dubai, UAE",
+        zoho_inventory=mock_inventory,
+    )
+
+    assert result is None
 
 
 @pytest.mark.asyncio

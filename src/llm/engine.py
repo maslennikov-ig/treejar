@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from html import escape
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
 import httpx
@@ -8680,6 +8680,66 @@ def _build_inventory_contact_payload(
     return payload
 
 
+def _inventory_contact_matches_payload(
+    contact: Mapping[str, Any] | None,
+    payload: ZohoInventoryContactPayload,
+) -> bool:
+    if not isinstance(contact, Mapping):
+        return False
+
+    def normalized(value: Any) -> str:
+        return " ".join(str(value or "").split()).casefold()
+
+    if normalized(contact.get("status")) != "active":
+        return False
+    if normalized(contact.get("contact_type")) not in {"", "customer"}:
+        return False
+    for key in ("contact_name", "company_name"):
+        expected = normalized(payload.get(key))
+        if expected and normalized(contact.get(key)) != expected:
+            return False
+
+    expected_people = payload.get("contact_persons") or []
+    expected_person: Mapping[str, Any] = (
+        cast("Mapping[str, Any]", expected_people[0]) if expected_people else {}
+    )
+    people = contact.get("contact_persons")
+    if not isinstance(people, list):
+        return False
+    expected_email = normalized(expected_person.get("email"))
+    expected_phone = "".join(
+        ch for ch in str(expected_person.get("phone") or "") if ch.isdigit()
+    )
+    if expected_email and not any(
+        isinstance(person, Mapping)
+        and normalized(person.get("email")) == expected_email
+        for person in people
+    ):
+        return False
+    if expected_phone and not any(
+        isinstance(person, Mapping)
+        and expected_phone
+        in {
+            "".join(ch for ch in str(person.get(key) or "") if ch.isdigit())
+            for key in ("phone", "mobile")
+        }
+        for person in people
+    ):
+        return False
+
+    for key in ("billing_address", "shipping_address"):
+        expected_address = payload.get(key)
+        if not isinstance(expected_address, Mapping):
+            continue
+        actual_address = contact.get(key)
+        if not isinstance(actual_address, Mapping) or normalized(
+            actual_address.get("address")
+        ) != normalized(expected_address.get("address")):
+            return False
+
+    return True
+
+
 async def resolve_inventory_customer_id(
     *,
     phone: str,
@@ -8759,16 +8819,20 @@ async def resolve_inventory_customer_id(
             if exact_duplicate_id and exact_duplicate_status == "inactive":
                 try:
                     await zoho_inventory.activate_contact(exact_duplicate_id)
+                    await zoho_inventory.update_contact(
+                        exact_duplicate_id,
+                        dict(payload),
+                    )
                     reactivated = await zoho_inventory.get_contact(exact_duplicate_id)
                 except Exception:
                     logger.exception(
                         "Failed to reactivate exact Zoho Inventory duplicate"
                     )
                     return None
-                if (
-                    _inventory_contact_id(reactivated) == exact_duplicate_id
-                    and _string_value((reactivated or {}).get("status")).casefold()
-                    == "active"
+                if _inventory_contact_id(
+                    reactivated
+                ) == exact_duplicate_id and _inventory_contact_matches_payload(
+                    reactivated, payload
                 ):
                     return exact_duplicate_id
                 return None
