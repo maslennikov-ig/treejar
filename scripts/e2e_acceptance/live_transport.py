@@ -18,10 +18,12 @@ from types import MappingProxyType
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from scripts.e2e_acceptance.production import (
     Capability,
+    CapabilityDispatcher,
     DispatchUncertainError,
+    IndependentReadOnlyCollector,
     ProductionAdapterError,
 )
 
@@ -90,6 +92,26 @@ class _WazzupInboundPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     messages: list[_WazzupMessage] = Field(min_length=1, max_length=1)
+
+
+class LiveRuntimeConfig(BaseModel):
+    """Protected, sealed transport identities for one authorized live run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["noor-e2e-live-runtime/v1"]
+    adapter_id: Literal["wazzup-webhook-adapter"]
+    webhook_endpoint: str = Field(min_length=1)
+    target_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    collector_id: str = Field(min_length=1)
+    ssh_host_alias: str = Field(min_length=1)
+    source_commands: dict[str, tuple[str, ...]] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _fixed_sources(self) -> LiveRuntimeConfig:
+        if not {"baseline", "final"} <= set(self.source_commands):
+            raise ValueError("live runtime requires baseline and final sources")
+        return self
 
 
 class _HttpResponse(Protocol):
@@ -297,4 +319,69 @@ class ReadOnlySshTransport:
         return bytes(completed.stdout)
 
 
-__all__ = ["OneShotWazzupWebhookTransport", "ReadOnlySshTransport"]
+@dataclass(frozen=True)
+class LiveRuntimeComponents:
+    dispatcher: CapabilityDispatcher
+    collector: IndependentReadOnlyCollector
+    producer: Any
+    reconciler: Any
+
+
+def build_live_runtime_components(
+    *,
+    config: LiveRuntimeConfig,
+    authorization: Any,
+    http_client: _HttpClient,
+    ssh_runner: _SshRunner = subprocess,
+) -> LiveRuntimeComponents:
+    """Build only transports whose identities match the protected authority."""
+
+    from scripts.e2e_acceptance.live_producer import (
+        IndependentActionReconciler,
+        IndependentExecutionProducer,
+    )
+
+    if (
+        tuple(authorization.adapter_ids) != (config.adapter_id,)
+        or config.collector_id not in authorization.collector_ids
+    ):
+        raise ProductionAdapterError("live runtime adapter/collector authority drift")
+    if authorization.live_binding.target_digest != config.target_digest:
+        raise ProductionAdapterError("live runtime target authority drift")
+    ssh = ReadOnlySshTransport(
+        host_alias=config.ssh_host_alias,
+        source_commands=config.source_commands,
+        runner=ssh_runner,
+    )
+    return LiveRuntimeComponents(
+        dispatcher=CapabilityDispatcher(
+            {
+                Capability.WEBHOOK_INBOUND: OneShotWazzupWebhookTransport(
+                    endpoint=config.webhook_endpoint,
+                    client=http_client,
+                )
+            }
+        ),
+        collector=IndependentReadOnlyCollector(
+            collector_id=config.collector_id,
+            transport=ssh,
+            source_names={"baseline": "baseline", "final": "final"},
+        ),
+        producer=IndependentExecutionProducer(
+            collector_id=config.collector_id,
+            transport=ssh,
+        ),
+        reconciler=IndependentActionReconciler(
+            collector_id=config.collector_id,
+            transport=ssh,
+        ),
+    )
+
+
+__all__ = [
+    "LiveRuntimeComponents",
+    "LiveRuntimeConfig",
+    "OneShotWazzupWebhookTransport",
+    "ReadOnlySshTransport",
+    "build_live_runtime_components",
+]

@@ -393,6 +393,7 @@ class TurnReport(_StrictModel):
     media_refs: tuple[str, ...]
     token_count: int = Field(ge=0)
     cost_usd: float = Field(ge=0)
+    duration_ms: int | None = Field(default=None, ge=0)
     deviation: str | None
     evaluator_reasoning: str
     transcript_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -1459,6 +1460,7 @@ def _render_report(payload: ClientReportPayload, rollups: dict[str, bool]) -> by
                 f"Аудит: {', '.join(turn.audit_ids) or 'нет'}; media: "
                 f"{', '.join(turn.media_refs) or 'нет'}",
                 f"Токены: {turn.token_count}; стоимость USD: {turn.cost_usd}",
+                f"Длительность: {turn.duration_ms if turn.duration_ms is not None else int((turn.final_visible_at - turn.sent_at).total_seconds() * 1000)} ms",
                 f"Отклонение: {turn.deviation or 'нет'}",
                 f"Оценка: {turn.evaluator_reasoning}",
                 "",

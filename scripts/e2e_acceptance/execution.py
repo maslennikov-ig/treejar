@@ -36,6 +36,8 @@ from scripts.e2e_acceptance.schemas import (
 
 COMPILER_ID = "treejar.acceptance-policy-compiler.v2"
 LOCAL_ADAPTER_IDS = ("fake-local-adapter",)
+LIVE_ADAPTER_IDS = ("wazzup-webhook-adapter",)
+EXECUTABLE_ADAPTER_IDS = frozenset((*LOCAL_ADAPTER_IDS, *LIVE_ADAPTER_IDS))
 _MAX_PREFLIGHT_AGE = timedelta(minutes=15)
 _MAX_FINAL_READBACK_AGE = timedelta(minutes=5)
 _PHASES = (
@@ -1329,7 +1331,10 @@ def validate_execution_authorization(
         raise ExecutionValidationError(
             "authorization execution drift: exact canonical 29 required"
         )
-    if authorization.adapter_ids != LOCAL_ADAPTER_IDS:
+    if (
+        len(authorization.adapter_ids) != 1
+        or authorization.adapter_ids[0] not in EXECUTABLE_ADAPTER_IDS
+    ):
         raise ExecutionValidationError("authorization adapter is not allowed")
     if authorization.live_binding.adapter_ids_digest != _digest(
         authorization.adapter_ids
@@ -1520,6 +1525,7 @@ class UnknownActionReconciliationReceipt(_StrictModel):
     expires_at: datetime
     resolved_state: Literal["succeeded", "failed"]
     inventory_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    actual_cost_usd: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _valid_window(self) -> UnknownActionReconciliationReceipt:
@@ -1529,6 +1535,10 @@ class UnknownActionReconciliationReceipt(_StrictModel):
             or self.expires_at.tzinfo is None
             or self.expires_at.utcoffset() is None
             or self.expires_at <= self.observed_at
+            or (
+                self.actual_cost_usd is not None
+                and not math.isfinite(self.actual_cost_usd)
+            )
         ):
             raise ValueError("reconciliation receipt window is invalid")
         return self
@@ -3806,6 +3816,9 @@ class ProtectedExecutionJournal:
                 or self._actions.get(action_id) != receipt.resolved_state
             ):
                 raise ExecutionValidationError("reconciliation replay differs")
+        receipt = self._reconciliations.get(action_id)
+        if receipt is None:
+            raise ExecutionValidationError("reconciliation receipt is missing")
         reservation = self._reservations.get(action_id)
         if reservation is None:
             raise ExecutionValidationError("reconciliation reservation is missing")
@@ -3815,7 +3828,12 @@ class ProtectedExecutionJournal:
                 raise ExecutionValidationError("settlement replay differs")
             return settled
         return self.settle_action_cost(
-            reservation, actual_cost_usd=reservation.cost_usd
+            reservation,
+            actual_cost_usd=(
+                receipt.actual_cost_usd
+                if receipt.actual_cost_usd is not None
+                else reservation.cost_usd
+            ),
         )
 
     def record_gate_attempt(

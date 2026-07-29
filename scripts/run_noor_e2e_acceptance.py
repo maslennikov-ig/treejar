@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 from pydantic import ValidationError
 from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.coordinator import (
@@ -17,6 +19,11 @@ from scripts.e2e_acceptance.coordinator import (
 )
 from scripts.e2e_acceptance.live_authority import build_live_authority_bundle
 from scripts.e2e_acceptance.live_producer import materialize_next_conservative_gate
+from scripts.e2e_acceptance.live_transport import (
+    LiveRuntimeComponents,
+    LiveRuntimeConfig,
+    build_live_runtime_components,
+)
 from scripts.e2e_acceptance.policy import (
     PolicyValidationError,
     TrustedAcceptanceRegistry,
@@ -35,6 +42,9 @@ from scripts.e2e_acceptance.production import (
     seal_run_plan,
 )
 from scripts.e2e_acceptance.trusted_run import materialize_execution_snapshot
+
+_http_client_factory = httpx.Client
+_ssh_runner = subprocess
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,8 +84,10 @@ def build_parser() -> argparse.ArgumentParser:
             lifecycle.add_argument("--run-plan", required=True)
         if command == "preflight":
             lifecycle.add_argument("--baseline", required=True)
+            lifecycle.add_argument("--run-plan", required=True)
         if command == "reconcile-action":
             lifecycle.add_argument("--action-id", required=True)
+            lifecycle.add_argument("--run-plan", required=True)
     return parser
 
 
@@ -129,6 +141,36 @@ def _coordinator(
     )
 
 
+def _live_components(
+    plan: ProtectedRunPlan,
+    journal: execution.ProtectedExecutionJournal,
+) -> tuple[LiveRuntimeComponents, object] | None:
+    if plan.runtime is None:
+        return None
+    try:
+        config = LiveRuntimeConfig.model_validate(plan.runtime)
+    except ValidationError as exc:
+        raise ProductionAdapterError(
+            "sealed live runtime configuration is invalid"
+        ) from exc
+    client = _http_client_factory()
+    return (
+        build_live_runtime_components(
+            config=config,
+            authorization=journal.authorization,
+            http_client=client,
+            ssh_runner=_ssh_runner,
+        ),
+        client,
+    )
+
+
+def _close_client(client: object) -> None:
+    close = getattr(client, "close", None)
+    if callable(close):
+        close()
+
+
 def _record_committed_gate(
     journal: execution.ProtectedExecutionJournal, execution_id: str, ordinal: int
 ) -> None:
@@ -155,8 +197,80 @@ def _seal_zero_turn_manifest_if_complete(
     journal: execution.ProtectedExecutionJournal,
     accepted_ordinal: int,
 ) -> None:
+    """Compatibility entrypoint; mixed runs use the same truthful builder."""
+
+    _seal_transcript_manifest_if_complete(
+        registry=registry,
+        journal=journal,
+        accepted_ordinal=accepted_ordinal,
+    )
+
+
+def _seal_transcript_manifest_if_complete(
+    *,
+    registry: TrustedAcceptanceRegistry,
+    journal: execution.ProtectedExecutionJournal,
+    accepted_ordinal: int,
+) -> None:
+    """Seal all real transcript pairs in canonical execution/turn order."""
+
     if accepted_ordinal != len(registry.compiled_plan.execution_ids):
         return
+    ordered_turns: list[list[str]] = []
+    seen: set[tuple[str, str]] = set()
+    for ordinal, execution_id in enumerate(
+        registry.compiled_plan.execution_ids, start=1
+    ):
+        try:
+            source = json.loads(
+                execution._read_protected(
+                    journal.run_root, f"producer-observations/{ordinal:02d}.json"
+                )
+            )
+        except FileNotFoundError:
+            continue
+        except (json.JSONDecodeError, execution.ExecutionValidationError) as exc:
+            if isinstance(exc.__cause__, FileNotFoundError):
+                continue
+            raise ProductionAdapterError(
+                "protected transcript source is invalid"
+            ) from exc
+        if source.get("execution_id") != execution_id:
+            raise ProductionAdapterError(
+                "protected transcript source execution order drift"
+            )
+        facts = source.get("transcript_facts")
+        if not isinstance(facts, list):
+            raise ProductionAdapterError(
+                "protected transcript source facts are invalid"
+            )
+        attempt_id = f"attempt:{execution_id}"
+        for fact in facts:
+            turn_id = fact.get("turn_id") if isinstance(fact, dict) else None
+            identity = (execution_id, str(turn_id))
+            if not isinstance(turn_id, str) or not turn_id or identity in seen:
+                raise ProductionAdapterError(
+                    "protected transcript source turn order drift"
+                )
+            seen.add(identity)
+            transcript_ref = f"transcripts/{execution_id}/{attempt_id}/{turn_id}.json"
+            receipt_ref = (
+                f"producer-receipts/transcripts/{execution_id}/"
+                f"{attempt_id}/{turn_id}.json"
+            )
+            ordered_turns.append(
+                [
+                    execution_id,
+                    attempt_id,
+                    turn_id,
+                    hashlib.sha256(
+                        execution._read_protected(journal.run_root, transcript_ref)
+                    ).hexdigest(),
+                    hashlib.sha256(
+                        execution._read_protected(journal.run_root, receipt_ref)
+                    ).hexdigest(),
+                ]
+            )
     _write_or_validate_exact(
         journal.run_root,
         "transcripts/manifest.json",
@@ -164,7 +278,7 @@ def _seal_zero_turn_manifest_if_complete(
             "schema_version": "noor-e2e-protected-transcript-manifest/v2",
             "registry_id": registry.registry_id,
             "run_id": journal.run_id,
-            "ordered_turns": [],
+            "ordered_turns": ordered_turns,
         },
     )
 
@@ -210,12 +324,29 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
                 "phase": journal.phase,
                 "baseline_digest": journal._baseline_content_digest,
             }
-        observation = load_protected_baseline(
+        plan = load_sealed_run_plan(
             journal,
-            artifact_path=args.baseline,
-            current_time=datetime.now(UTC),
+            ProtectedRunPlan.load(
+                args.protected_root.resolve(strict=True), args.run_plan
+            ),
         )
-        journal.seal_baseline(observation)
+        live = _live_components(plan, journal)
+        if live is None:
+            observation = load_protected_baseline(
+                journal,
+                artifact_path=args.baseline,
+                current_time=datetime.now(UTC),
+            )
+            journal.seal_baseline(observation)
+        else:
+            components, client = live
+            try:
+                observation = components.collector.seal_baseline(
+                    journal, source_id="baseline"
+                )
+                journal.seal_baseline(observation)
+            finally:
+                _close_client(client)
         return {"phase": journal.phase, "baseline_digest": observation.content_digest}
     if args.command == "execute-resume":
         plan = ProtectedRunPlan.load(
@@ -228,13 +359,19 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             raise ProductionAdapterError("resume requires an executing journal")
         if any(state == "unknown" for state in journal._actions.values()):
             raise ProductionAdapterError("resume is blocked by nonterminal actions")
-        transports = {
-            str(item["spec"]["capability"]): FakeHttpTransport(
-                responses={str(item["spec"]["capability"]): {"local": "accepted"}}
-            )
-            for item in plan.actions
-        }
-        dispatcher = CapabilityDispatcher(transports)
+        live = _live_components(plan, journal)
+        client: object | None = None
+        if live is None:
+            transports = {
+                str(item["spec"]["capability"]): FakeHttpTransport(
+                    responses={str(item["spec"]["capability"]): {"local": "accepted"}}
+                )
+                for item in plan.actions
+            }
+            dispatcher = CapabilityDispatcher(transports)
+        else:
+            components, client = live
+            dispatcher = components.dispatcher
         for item in plan.actions:
             spec = dict(item["spec"])
             charge = dict(spec.pop("quota_charge"))
@@ -266,13 +403,17 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
                     cost_usd=float(charge["max_cost_usd"]),
                     **spec,
                 )
-            dispatch_local_action(
-                journal=journal,
-                dispatcher=dispatcher,
-                reservation=reservation,
-                message_path=str(item["message_path"]),
-                request=spec,
-            )
+            try:
+                dispatch_local_action(
+                    journal=journal,
+                    dispatcher=dispatcher,
+                    reservation=reservation,
+                    message_path=str(item["message_path"]),
+                    request=spec,
+                )
+            finally:
+                if client is not None:
+                    _close_client(client)
             return {
                 "phase": journal.phase,
                 "plan_digest": plan.plan_digest,
@@ -286,6 +427,19 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         }
     if args.command == "reconcile-action":
         action_id = args.action_id
+        plan = load_sealed_run_plan(
+            journal,
+            ProtectedRunPlan.load(
+                args.protected_root.resolve(strict=True), args.run_plan
+            ),
+        )
+        live = _live_components(plan, journal)
+        if live is not None:
+            components, client = live
+            try:
+                components.reconciler.materialize(journal, action_id=action_id)
+            finally:
+                _close_client(client)
         payload = execution._read_protected(
             journal.run_root, f"independent-reconciliation/{action_id}.json"
         )
@@ -297,6 +451,7 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             "action_id": action_id,
             "state": journal._actions[action_id],
             "settled_reserved_max_cost_usd": settlement.actual_cost_usd,
+            "settled_actual_cost_usd": settlement.actual_cost_usd,
         }
     if args.command == "record-attempt":
         plan = load_sealed_run_plan(
@@ -305,7 +460,30 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
                 args.protected_root.resolve(strict=True), args.run_plan
             ),
         )
-        record = _coordinator(registry, authority, journal).accept_next()
+        coordinator = _coordinator(registry, authority, journal)
+        live = _live_components(plan, journal)
+        if live is not None:
+            components, client = live
+            try:
+                handle = issue_decisive_producer_handle(
+                    registry=registry,
+                    journal=journal,
+                    authority=authority,
+                    sealed_plan=plan,
+                )
+                source_ref = components.producer.materialize_next(
+                    producer_handle=handle,
+                    observed_at=datetime.now(UTC),
+                )
+                coordinator.publish_next_from_decisive_producer(handle, source_ref)
+            finally:
+                _close_client(client)
+        record = coordinator.accept_next()
+        _seal_transcript_manifest_if_complete(
+            registry=registry,
+            journal=journal,
+            accepted_ordinal=record.ordinal,
+        )
         return {
             "phase": journal.phase,
             "plan_digest": plan.plan_digest,
@@ -353,7 +531,7 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             "outcome": artifact.outcome,
         }
     if args.command == "close-execution":
-        load_sealed_run_plan(
+        plan = load_sealed_run_plan(
             journal,
             ProtectedRunPlan.load(
                 args.protected_root.resolve(strict=True), args.run_plan
@@ -371,7 +549,15 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
         ):
             raise ProductionAdapterError("final activity anchor replay drift")
         if journal.phase == "final_turn_anchored":
-            seal_fixed_final_readback(journal, current_time=datetime.now(UTC))
+            live = _live_components(plan, journal)
+            if live is None:
+                seal_fixed_final_readback(journal, current_time=datetime.now(UTC))
+            else:
+                components, client = live
+                try:
+                    components.collector.seal_final(journal, source_id="final")
+                finally:
+                    _close_client(client)
         if journal.phase == "final_readback_sealed":
             journal.mark_evaluated(evaluation_digest=result.evaluation.bundle_digest)
         elif journal.phase == "evaluated" and (
@@ -416,7 +602,10 @@ def main() -> int:
                 "scenario_count": len(registry.compiled_policy.scenarios),
                 "evidence_block_count": len(registry.compiled_policy.evidence_blocks),
                 "criterion_count": len(registry.compiled_plan.criteria),
-                "adapter_ids": ["fake-local-adapter"],
+                "adapter_ids": [
+                    "fake-local-adapter",
+                    "wazzup-webhook-adapter",
+                ],
             }
         elif args.command == "verify-run":
             registry.open_run(

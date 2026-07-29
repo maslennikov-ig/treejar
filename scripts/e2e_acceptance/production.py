@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import weakref
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -216,6 +217,39 @@ def _write_or_validate_exact(root: Path, relative: str, value: object) -> str:
         return actual
 
 
+def _write_or_validate_bytes(root: Path, relative: str, payload: bytes) -> str:
+    """Seal exact producer bytes, preserving their original digest on replay."""
+
+    expected = hashlib.sha256(payload).hexdigest()
+    parent_fd, name = execution._open_relative_parent(root, relative, create=True)
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(name, flags, 0o600, dir_fd=parent_fd)
+        except FileExistsError:
+            actual = execution._read_protected(root, relative)
+            if actual != payload:
+                raise ProductionAdapterError(
+                    "protected producer replay differs from committed bytes"
+                ) from None
+            return expected
+        try:
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(fd, remaining)
+                if written == 0:
+                    raise OSError("protected producer raw write made no progress")
+                remaining = remaining[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise ProductionAdapterError("protected producer raw write failed") from exc
+    finally:
+        os.close(parent_fd)
+    return expected
+
+
 class AdapterDispatchResult(_StrictModel):
     """No raw adapter response crosses the protected adapter boundary."""
 
@@ -370,6 +404,7 @@ class ProtectedRunPlan:
 
     actions: tuple[dict[str, Any], ...]
     evaluator: dict[str, Any]
+    runtime: dict[str, Any] | None
     plan_digest: str
     evaluator_digest: str
 
@@ -396,10 +431,18 @@ class ProtectedRunPlan:
                 "protected run plan action identities are invalid"
             )
         normalized_evaluator = evaluator_config.model_dump(mode="json")
+        runtime = payload.get("runtime")
+        if runtime is not None and not isinstance(runtime, dict):
+            raise ProductionAdapterError(
+                "protected run plan runtime configuration is invalid"
+            )
         identity = {"actions": actions, "evaluator": normalized_evaluator}
+        if runtime is not None:
+            identity["runtime"] = runtime
         return cls(
             actions=tuple(dict(item) for item in actions),
             evaluator=normalized_evaluator,
+            runtime=dict(runtime) if runtime is not None else None,
             plan_digest=_digest(identity),
             evaluator_digest=_digest(normalized_evaluator),
         )
@@ -1095,6 +1138,7 @@ def _write_producer_observation(
     producer_handle: DecisiveProducerHandle,
     attempted: execution.ExecutedAttemptV2 | execution.GateAttemptV2,
     transcript_facts: list[dict[str, Any]],
+    side_effect_dispositions: list[dict[str, Any]] | None = None,
 ) -> str:
     """Private bridge from a typed producer result to protected publication state."""
 
@@ -1221,6 +1265,7 @@ def _write_producer_observation(
             for criterion_id in criterion_ids
         ],
         "transcript_facts": transcript_facts,
+        "side_effect_dispositions": side_effect_dispositions or [],
     }
     _write_or_validate_exact(record.journal.run_root, source_ref, source)
     _write_or_validate_exact(
@@ -2009,7 +2054,12 @@ def _derive_protected_publication_source(
                 }
             )
         result["turns"] = turns
-        result["side_effect_dispositions"] = []
+        dispositions = source.get("side_effect_dispositions")
+        if not isinstance(dispositions, list):
+            raise ProductionAdapterError(
+                "protected side-effect dispositions are unavailable"
+            )
+        result["side_effect_dispositions"] = dispositions
     return result
 
 
@@ -2140,16 +2190,19 @@ def seal_run_plan(
         raise ProductionAdapterError("run plan can only be sealed before preflight")
     _validate_plan_actions(journal, plan)
     _validate_evaluator_bindings(journal, plan)
+    sealed_payload = {
+        "schema_version": "noor-e2e-sealed-run-plan/v2",
+        "plan_digest": plan.plan_digest,
+        "evaluator_digest": plan.evaluator_digest,
+        "actions": list(plan.actions),
+        "evaluator": plan.evaluator,
+    }
+    if plan.runtime is not None:
+        sealed_payload["runtime"] = plan.runtime
     digest = _write_or_validate_exact(
         journal.run_root,
         "run-plan/sealed.json",
-        {
-            "schema_version": "noor-e2e-sealed-run-plan/v2",
-            "plan_digest": plan.plan_digest,
-            "evaluator_digest": plan.evaluator_digest,
-            "actions": list(plan.actions),
-            "evaluator": plan.evaluator,
-        },
+        sealed_payload,
     )
     if journal._sealed_run_plan_digest is not None:
         if journal._sealed_run_plan_digest != digest:
@@ -2279,7 +2332,12 @@ def _load_or_collect_raw(
     relative = f"collector-raw/{phase}.json"
     payload = _optional_protected_payload(journal.run_root, relative)
     if payload is None:
-        raw = collector.transport.read(collector.source_name)
+        source = (
+            collector.source_names.get(phase, collector.source_name)
+            if collector.source_names is not None
+            else collector.source_name
+        )
+        raw = collector.transport.read(source)
         inventory = collector._inventory(raw)
         _write_or_validate_exact(
             journal.run_root, relative, {"raw": raw.decode("utf-8")}
@@ -2309,6 +2367,7 @@ class IndependentReadOnlyCollector:
     collector_id: str
     transport: FakeReadOnlySshTransport
     source_name: str = "inventory"
+    source_names: Mapping[str, str] | None = None
 
     @staticmethod
     def _inventory(raw: bytes) -> dict[str, Any]:
