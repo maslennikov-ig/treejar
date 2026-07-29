@@ -5255,11 +5255,12 @@ async def test_process_message_requirement_correction_keeps_quote_hold(
         messaging_client=messaging,
     )
 
-    assert response.model == "detail-capture"
-    assert "do not create a quotation" in response.text
-    mock_run.assert_not_awaited()
+    assert response.model == "mock-model"
+    assert "no quotation will be prepared" in response.text
+    mock_run.assert_awaited_once()
     mock_notify.assert_not_awaited()
     assert "pending_quote_selection" not in (conv.metadata_ or {})
+    assert conv.metadata_["sales_memory"]["latest_product_note"] == text
 
 
 @pytest.mark.asyncio
