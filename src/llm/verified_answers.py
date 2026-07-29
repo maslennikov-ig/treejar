@@ -72,6 +72,8 @@ _PRODUCT_SIGNALS = (
     "pods",
     "booth",
     "booths",
+    "bench",
+    "benches",
     "cabinet",
     "cabinets",
     "drawer",
@@ -104,8 +106,15 @@ _PRODUCT_SIGNALS = (
     "ergonomic",
     "furniture",
     "كرسي",
+    "كراسي",
+    "أثاث",
+    "اثاث",
     "مكتب",
+    "مكاتب",
+    "محطة عمل",
+    "محطات عمل",
     "طاولة",
+    "طاولات",
 )
 _PRODUCT_SIGNAL_TOKENS = frozenset(
     {

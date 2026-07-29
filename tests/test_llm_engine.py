@@ -16050,3 +16050,309 @@ async def test_tools_check_order_status_crm_exception(
     # Should not raise, should return something (may be "no order found" if no inventory data either)
     assert isinstance(result, str)
     zoho_crm.get_deal_status.assert_awaited_once_with("DEAL_ERR")
+
+
+@pytest.mark.asyncio
+async def test_name_gate_pending_request_stores_typed_resume_context() -> None:
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        language="ar",
+        metadata_={},
+    )
+    db = AsyncMock()
+
+    await engine_module._store_name_gate_pending_request(
+        db,
+        conversation,
+        "أحتاج إلى محطات عمل خاصة وكراسي مريحة لستة موظفين.",
+    )
+
+    pending = conversation.metadata_["name_gate_pending_request"]
+    assert pending["version"] == 2
+    assert pending["intent"] == "catalog_discovery"
+    assert pending["language"] == "ar"
+    assert pending["identity"] == {}
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_name_gate_resume_preserves_comparison_intent(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    query = (
+        "Hello. I want to compare a private LUMA four-person workstation "
+        "with an open NOVO four-person setup for our design team."
+    )
+    name_reply = "Nadia"
+    mock_build_history.side_effect = [
+        _first_turn_history(query),
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=query)]),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content=(
+                            "Hello, I'm Noor from Treejar. May I know your name "
+                            "so I can address you properly?"
+                        )
+                    )
+                ]
+            ),
+            ModelRequest(parts=[UserPromptPart(content=name_reply)]),
+        ],
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Thank you, Nadia. I will compare the LUMA and NOVO four-person setups."
+    )
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=query,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=name_reply,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert first_response.model == "name-gate"
+    assert second_response.model == "mock-model"
+    assert "compare" in second_response.text.casefold()
+    assert "quantity" not in second_response.text.casefold()
+    mock_run.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+
+
+def test_extract_quote_customer_details_splits_inline_labels() -> None:
+    text = (
+        "Name: Fatima Noor Test. Company: Cedarline E2E 20260728. "
+        "Email: fatima.noor.e2e.20260728@example.com. Delivery address: "
+        "Office 1204, Test Tower, Business Bay, Dubai, UAE. "
+        "Please quote exactly 4 x CH 616 NEW black."
+    )
+
+    assert engine_module._extract_quote_customer_details(text) == {
+        "name": "Fatima Noor Test",
+        "company": "Cedarline E2E 20260728",
+        "email": "fatima.noor.e2e.20260728@example.com",
+        "address": "Office 1204, Test Tower, Business Bay, Dubai, UAE",
+    }
+
+
+def test_selection_confirmation_waits_for_quote_opt_in_before_requesting_details() -> (
+    None
+):
+    prompt = engine_module._selection_confirmation_quote_prompt(
+        quote_details={"name": "Leila"},
+        customer_name="Leila",
+    )
+
+    assert "would you like me to prepare" in prompt.casefold()
+    assert "please share" not in prompt.casefold()
+    assert "company" not in prompt.casefold()
+    assert "email" not in prompt.casefold()
+    assert "address" not in prompt.casefold()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        (
+            "We are planning to buy 20 CH 616 NEW black chairs this month and "
+            "want help moving the project forward, but no quotation yet."
+        ),
+        (
+            "Please record this sales opportunity and tell me the next commercial "
+            "step without creating a quotation."
+        ),
+    ],
+)
+def test_exact_quote_candidate_respects_general_quote_hold(text: str) -> None:
+    assert extract_exact_quote_candidate(text) is None
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.llm.engine.search_behavior_rules", new_callable=AsyncMock)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_active_quote_does_not_hijack_delivery_interruption(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_search_behavior_rules: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Leila"
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "LUMA 9719-4", "quantity": 2}],
+            "unresolved_items": [],
+        },
+        "order_runtime": {
+            "quote_frame": {
+                "version": 1,
+                "source": "selection_confirmation",
+                "status": "collecting_details",
+                "lines": [{"sku": "LUMA 9719-4", "quantity": 2}],
+                "quote_details": {"name": "Leila"},
+                "missing_quote_fields": ["company", "email"],
+            }
+        },
+    }
+    text = "Before we continue, do you provide delivery and assembly in Dubai?"
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Before I prepare the quotation, please share your "
+                        "company and customer email."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = [
+        {
+            "title": "Delivery and installation",
+            "content": (
+                "Q: Do you provide installation?\n"
+                "A: We provide delivery and installation across UAE."
+            ),
+        }
+    ]
+    mock_search_behavior_rules.return_value = []
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|service-availability"
+    assert "delivery" in response.text.casefold()
+    assert "assembly" in response.text.casefold()
+    assert "pending_quote_selection" in conv.metadata_
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_exact_sku_stock_request_returns_only_requested_variant(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Aisha"
+    text = (
+        "Please confirm from live inventory whether 12 units of CH 616 NEW "
+        "black are available and the exact unit price. Do not prepare a quotation yet."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    requested = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 NEW black",
+        zoho_item_id="zoho-ch-616-new-black",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        price=295.0,
+        currency="AED",
+        stock=43,
+        attributes={},
+        is_active=True,
+    )
+    similar = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 black",
+        zoho_item_id="zoho-ch-616-black",
+        name_en="Executive Office Chair CH 616 black",
+        price=220.0,
+        currency="AED",
+        stock=3,
+        attributes={},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = [similar, requested]
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": requested.sku,
+        "stock_on_hand": 43,
+        "rate": 295.0,
+        "currency_code": "AED",
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|stock-price-options"
+    assert requested.name_en in response.text
+    assert similar.name_en not in response.text
+    assert "quotation" not in response.text.casefold()
+    zoho.get_item.assert_awaited_once()
+    mock_run.assert_not_awaited()

@@ -57,7 +57,11 @@ from src.integrations.crm.zoho_crm import (
     apply_zoho_attribution_mapping,
 )
 from src.integrations.inventory.zoho_inventory import (
+    ZohoContactAddressPayload,
+    ZohoContactPersonPayload,
     ZohoInventoryClient,
+    ZohoInventoryContactPayload,
+    ZohoSaleOrderLineItemPayload,
     extract_sale_order_data,
 )
 from src.integrations.messaging.base import MessagingProvider
@@ -382,6 +386,25 @@ _EXACT_QUOTE_NEGATION_RE = re.compile(
     r")\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
     r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
     r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b",
+    re.IGNORECASE,
+)
+_QUOTE_HOLD_RE = re.compile(
+    r"(?:"
+    r"\bno\s+(?:formal\s+)?(?:quote|quotation|commercial\s+offer|proposal)"
+    r"\s+(?:yet|now)\b|"
+    r"\bnot\s+ready\s+for\s+(?:an?\s+)?(?:quote|quotation|proposal)\b|"
+    r"\bwithout\s+(?:creating|preparing|making|issuing|generating|sending)"
+    r"\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
+    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
+    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b|"
+    r"\b(?:do\s+not|don't|dont)\s+"
+    r"(?:create|prepare|make|issue|generate|send)\s+"
+    r"(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
+    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
+    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)(?:\s+yet)?\b|"
+    r"(?:بدون|لا)\s+(?:إنشاء|اعداد|إعداد|ارسال|إرسال)?\s*"
+    r"(?:عرض\s+سعر|عرض\s+رسمي)"
+    r")",
     re.IGNORECASE,
 )
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
@@ -1474,7 +1497,7 @@ def _tokenize_exact_match_text(text: str) -> list[str]:
 
 
 def _has_exact_commitment_intent(normalized: str) -> bool:
-    if _EXACT_QUOTE_NEGATION_RE.search(normalized):
+    if _has_explicit_quote_hold(normalized):
         return False
     if any(blocker in normalized for blocker in _CONSULTATIVE_QUOTE_BLOCKERS):
         return False
@@ -1495,6 +1518,17 @@ def _has_exact_commitment_intent(normalized: str) -> bool:
     )
 
     return has_commitment_target and has_exactness_signal
+
+
+def _has_explicit_quote_hold(text: str) -> bool:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    return bool(
+        normalized
+        and (
+            _EXACT_QUOTE_NEGATION_RE.search(normalized)
+            or _QUOTE_HOLD_RE.search(normalized)
+        )
+    )
 
 
 def _looks_like_exact_item_candidate(candidate: str) -> bool:
@@ -2053,6 +2087,8 @@ def _has_active_product_selection_context(
     conversation: Conversation,
     recent_history: list[str] | None,
 ) -> bool:
+    if _active_pending_quote_selection_from_conversation(conversation) is not None:
+        return True
     state = DialogueState.from_conversation(conversation)
     if state.active_flow == "product_selection":
         return True
@@ -2094,7 +2130,7 @@ def _is_low_risk_service_availability_interruption(
 ) -> bool:
     if policy_decision.question_class not in {"service_low_risk", "service_high_risk"}:
         return False
-    if policy_decision.policy_action != "handoff":
+    if policy_decision.policy_action not in {"allow", "handoff"}:
         return False
     if policy_decision.is_order_status:
         return False
@@ -4313,6 +4349,9 @@ async def _stock_price_resolved_options(
         if not products:
             product = await _find_catalog_product_by_sku(db, ref.normalized)
             products = [product] if product is not None else []
+        exact_products = _explicitly_named_sku_products(products, text)
+        if exact_products:
+            products = exact_products
         quantity = ref.quantity if ref.quantity is not None and ref.quantity > 0 else 1
 
         resolved.extend(
@@ -4325,6 +4364,31 @@ async def _stock_price_resolved_options(
             )
         )
     return tuple(resolved)
+
+
+def _explicitly_named_sku_products(
+    products: Iterable[Any],
+    text: str,
+) -> list[Any]:
+    normalized_text = re.sub(
+        r"[^a-z0-9]+",
+        "",
+        _normalize_text(_normalize_sku_homoglyphs(text)),
+    )
+    matches: list[tuple[int, Any]] = []
+    for product in products:
+        sku = _string_value(getattr(product, "sku", None))
+        normalized_sku = re.sub(
+            r"[^a-z0-9]+",
+            "",
+            _normalize_text(_normalize_sku_homoglyphs(sku)),
+        )
+        if normalized_sku and normalized_sku in normalized_text:
+            matches.append((len(normalized_sku), product))
+    if not matches:
+        return []
+    longest = max(length for length, _ in matches)
+    return [product for length, product in matches if length == longest]
 
 
 async def _selection_variant_resolved_options(
@@ -4394,6 +4458,7 @@ def _stock_price_options_response(
     *,
     language: str,
     purpose: str = "stock_price",
+    offer_quote: bool = True,
 ) -> str:
     if not options:
         return ""
@@ -4456,7 +4521,25 @@ def _stock_price_options_response(
             )
         lines.append("")
 
-    if arabic:
+    if not offer_quote:
+        first = options[0]
+        enough_stock = (
+            first.availability is not None
+            and first.availability >= first.requested.quantity
+        )
+        if arabic:
+            lines.append(
+                "الكمية المطلوبة متوفرة بالسعر المؤكد."
+                if enough_stock
+                else "المخزون المؤكد لا يغطي الكمية المطلوبة بالكامل."
+            )
+        else:
+            lines.append(
+                "The requested quantity is available at the confirmed unit price."
+                if enough_stock
+                else "The confirmed stock does not cover the full requested quantity."
+            )
+    elif arabic:
         lines.append("أي خيار تفضل؟ أستطيع بعدها تجهيز عرض سعر رسمي.")
     else:
         lines.append(
@@ -4502,8 +4585,7 @@ def _selection_confirmation_quote_prompt(
         )
     return (
         "Would you like me to prepare a formal quotation for these selected "
-        "items? I can use this WhatsApp number for the draft. To make the PDF "
-        f"complete, please share: {'; '.join(missing)}."
+        "items? If so, I will collect the remaining PDF details next."
     )
 
 
@@ -5035,11 +5117,55 @@ def _quote_customer_details_from_metadata(
     return details
 
 
+_QUOTE_DETAIL_LABELS: dict[str, tuple[str, ...]] = {
+    "name": (
+        "full name",
+        "customer name",
+        "name",
+        "имя",
+        "фио",
+    ),
+    "company": (
+        "company name",
+        "company",
+        "organization",
+        "organisation",
+        "название компании",
+        "компания",
+        "организация",
+    ),
+    "address": (
+        "delivery address",
+        "address",
+        "location",
+        "адрес доставки",
+        "адрес",
+        "локация",
+    ),
+    "email": ("email", "e-mail"),
+    "phone": ("phone", "mobile", "telephone", "телефон", "номер"),
+}
+_QUOTE_DETAIL_LABEL_SEPARATOR = r"(?::|：|=|-|\bis\b|\bare\b)"
+
+
 def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
-    label_pattern = "|".join(re.escape(label) for label in labels)
+    label_pattern = "|".join(
+        re.escape(label) for label in sorted(labels, key=len, reverse=True)
+    )
+    all_label_pattern = "|".join(
+        re.escape(label)
+        for label in sorted(
+            {label for aliases in _QUOTE_DETAIL_LABELS.values() for label in aliases},
+            key=len,
+            reverse=True,
+        )
+    )
     pattern = re.compile(
-        rf"(?im)^\s*(?:the\s+|my\s+|our\s+)?(?:{label_pattern})\s*"
-        rf"(?::|：|=|-|\bis\b|\bare\b)\s*(?P<value>.+?)\s*$",
+        rf"(?is)(?:^|(?<=[.;\n]))\s*"
+        rf"(?:the\s+|my\s+|our\s+)?(?:{label_pattern})\s*"
+        rf"{_QUOTE_DETAIL_LABEL_SEPARATOR}\s*(?P<value>.+?)"
+        rf"(?=(?:\s*[.;,\n]\s*)?(?:the\s+|my\s+|our\s+)?"
+        rf"(?:{all_label_pattern})\s*{_QUOTE_DETAIL_LABEL_SEPARATOR}|\s*$)",
     )
     match = pattern.search(text)
     if not match:
@@ -5048,6 +5174,12 @@ def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
     value = re.split(
         r"(?<=[.!?])\s+"
         r"(?=(?:need|please|can|could|will|would|do|does|also|and|but)\b)",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    value = re.split(
+        r"(?<=[.!?])\s+(?=(?:please|need|can|could|will|would|do|does)\b)",
         value,
         maxsplit=1,
         flags=re.IGNORECASE,
@@ -5317,9 +5449,18 @@ async def _store_name_gate_pending_request(
         return
 
     metadata = dict(conversation.metadata_ or {})
+    identity = {
+        key: value
+        for key, value in _extract_quote_customer_details(text).items()
+        if key in {"name", "company"} and value
+    }
     metadata[NAME_GATE_PENDING_REQUEST_KEY] = {
+        "version": 2,
         "text": " ".join(text.split())[:MAX_NAME_GATE_PENDING_REQUEST_CHARS],
         "source": "first_turn_name_gate",
+        "intent": _classify_name_gate_pending_intent(text),
+        "language": _string_value(getattr(conversation, "language", None)) or "en",
+        "identity": identity,
     }
     conversation.metadata_ = metadata
     try:
@@ -5345,6 +5486,47 @@ def _name_gate_pending_request_from_metadata(
     if not isinstance(text, str) or not text.strip():
         return None
     return text.strip()
+
+
+def _classify_name_gate_pending_intent(text: str) -> str:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    if _has_explicit_quote_hold(text):
+        if any(term in normalized for term in ("opportunity", "deal", "crm")):
+            return "sales_opportunity"
+        return "catalog_discovery"
+    if (
+        re.search(r"\b(?:compare|comparison|versus|vs\.?|difference)\b", normalized)
+        or "مقارنة" in normalized
+        or "قارن" in normalized
+    ):
+        return "catalog_comparison"
+    if extract_exact_quote_candidate(text) is not None or is_quote_or_proposal_request(
+        text
+    ):
+        return "exact_quote"
+    if _has_product_or_quote_routing_signal(text):
+        return "catalog_discovery"
+    if evaluate_verified_answer_policy(text, ()).question_class == "product":
+        return "catalog_discovery"
+    return "general_request"
+
+
+def _name_gate_pending_intent_from_metadata(
+    conversation: Conversation,
+) -> str | None:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    raw = metadata.get(NAME_GATE_PENDING_REQUEST_KEY)
+    if not isinstance(raw, Mapping):
+        return None
+    intent = raw.get("intent")
+    if isinstance(intent, str) and intent.strip():
+        return intent.strip()
+    text = raw.get("text")
+    if isinstance(text, str) and text.strip():
+        return _classify_name_gate_pending_intent(text)
+    return None
 
 
 async def _consume_name_gate_pending_request(
@@ -5948,12 +6130,7 @@ def _extract_sales_memory_updates(text: str) -> dict[str, str]:
     ):
         updates["assembly_required"] = "yes"
 
-    if re.search(
-        r"\b(?:don'?t|do\s+not|dont|not)\s+"
-        r"(?:create|prepare|send|make)\s+(?:a\s+|the\s+)?"
-        r"(?:quotation|quote|commercial\s+offer|proposal)\s+yet\b",
-        normalized,
-    ):
+    if _has_explicit_quote_hold(normalized):
         updates["quotation_hold"] = "yes"
 
     return updates
@@ -7859,6 +8036,28 @@ async def _clear_pending_quote_selection(
         )
 
 
+async def _suspend_quote_workflow(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> None:
+    """Clear quote-only routing state after an explicit customer hold."""
+    metadata = dict(conversation.metadata_ or {})
+    metadata.pop(PENDING_QUOTE_SELECTION_KEY, None)
+    metadata.pop(QUOTE_INTENT_FRAME_KEY, None)
+    metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
+    metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
+    metadata = quote_frame_cleared_metadata(metadata)
+    conversation.metadata_ = metadata
+    try:
+        await db.flush()
+    except Exception:
+        logger.warning(
+            "Failed to suspend quote workflow for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+
+
 def _catalog_mismatch_customer_message() -> str:
     return (
         "I couldn't confirm exact price and availability in Zoho for this item. "
@@ -8330,7 +8529,8 @@ def _build_inventory_contact_payload(
     customer_name: str,
     customer_email: str,
     customer_company: str,
-) -> dict[str, Any]:
+    customer_address: str = "",
+) -> ZohoInventoryContactPayload:
     fallback_suffix = "".join(ch for ch in phone if ch.isdigit())[-4:] or "customer"
     contact_name = (
         customer_company or customer_name or f"WhatsApp Customer {fallback_suffix}"
@@ -8340,7 +8540,7 @@ def _build_inventory_contact_payload(
     if not first_name:
         first_name = contact_name
 
-    contact_person: dict[str, Any] = {
+    contact_person: ZohoContactPersonPayload = {
         "first_name": first_name,
         "phone": phone,
         "mobile": phone,
@@ -8351,13 +8551,17 @@ def _build_inventory_contact_payload(
     if customer_email:
         contact_person["email"] = customer_email
 
-    payload: dict[str, Any] = {
+    payload: ZohoInventoryContactPayload = {
         "contact_name": contact_name,
         "contact_type": "customer",
         "contact_persons": [contact_person],
     }
     if customer_company:
         payload["company_name"] = customer_company
+    if customer_address:
+        address: ZohoContactAddressPayload = {"address": customer_address[:500]}
+        payload["billing_address"] = address
+        payload["shipping_address"] = {"address": address["address"]}
 
     return payload
 
@@ -8368,6 +8572,7 @@ async def resolve_inventory_customer_id(
     customer_name: str,
     customer_email: str,
     customer_company: str,
+    customer_address: str = "",
     zoho_inventory: ZohoInventoryClient,
 ) -> str | None:
     """Resolve or create a valid Zoho Inventory customer contact for quotations."""
@@ -8406,10 +8611,11 @@ async def resolve_inventory_customer_id(
         customer_name=customer_name,
         customer_email=customer_email,
         customer_company=customer_company,
+        customer_address=customer_address,
     )
 
     try:
-        created_contact = await zoho_inventory.create_contact(payload)
+        created_contact = await zoho_inventory.create_contact(dict(payload))
     except Exception as exc:
         if _is_duplicate_inventory_contact_error(exc):
             seen_names: set[str] = set()
@@ -8454,6 +8660,62 @@ async def resolve_inventory_customer_id(
             created_contact,
         )
     return contact_id
+
+
+_QUOTATION_EFFECT_VERSION = 1
+
+
+def _quotation_effect_fingerprint(
+    *,
+    customer_id: str,
+    line_items: list[ZohoSaleOrderLineItemPayload],
+) -> str:
+    normalized_lines = sorted(
+        (
+            str(item["item_id"]).strip(),
+            int(item["quantity"]),
+            f"{float(item['rate']):.4f}",
+        )
+        for item in line_items
+    )
+    material = "\n".join(
+        [
+            f"v{_QUOTATION_EFFECT_VERSION}",
+            customer_id.strip(),
+            *(
+                f"{item_id}|{quantity}|{rate}"
+                for item_id, quantity, rate in normalized_lines
+            ),
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _matching_quotation_effect(
+    conversation: Conversation,
+    *,
+    fingerprint: str,
+) -> dict[str, Any] | None:
+    metadata = conversation.metadata_
+    if not isinstance(metadata, Mapping):
+        return None
+    effect = metadata.get("quotation_effect")
+    if not isinstance(effect, Mapping):
+        return None
+    if effect.get("version") != _QUOTATION_EFFECT_VERSION:
+        return None
+    if _string_value(effect.get("fingerprint")) != fingerprint:
+        return None
+    return dict(effect)
+
+
+def _quotation_prepared_message(conversation: Conversation, quote_number: str) -> str:
+    if is_arabic_customer_language(getattr(conversation, "language", "en")):
+        return f"تم تجهيز عرض السعر {quote_number} وإرساله إليك. هل يناسبك العرض؟"
+    return (
+        f"Quotation {quote_number} has been prepared and sent to you. "
+        "Please let me know if the quotation works for you."
+    )
 
 
 async def _notify_catalog_mismatch_and_escalate(
@@ -9174,7 +9436,7 @@ async def create_quotation(
         if zoho_item:
             stock_map[str(zoho_item["sku"])] = zoho_item
 
-    zoho_line_items = []
+    zoho_line_items: list[ZohoSaleOrderLineItemPayload] = []
     template_items = []
     subtotal = 0.0
 
@@ -9249,37 +9511,6 @@ async def create_quotation(
             }
         )
 
-    # Customer-facing quotation assets are catalog-owned. If the catalog image is
-    # missing or cannot be downloaded, render the PDF without an image instead of
-    # falling back to Zoho's operational media.
-    import asyncio
-    import base64
-
-    sem = asyncio.Semaphore(3)  # limit concurrent image downloads
-
-    async def _fetch_image(tpl_item: dict[str, Any]) -> None:
-        if not tpl_item.get("_catalog_image_url"):
-            return
-        async with sem:
-            try:
-                result = await _download_catalog_image(
-                    str(tpl_item["_catalog_image_url"])
-                )
-                if result:
-                    img_bytes, content_type = result
-                    b64 = base64.b64encode(img_bytes).decode("ascii")
-                    tpl_item["image_url"] = f"data:{content_type};base64,{b64}"
-            except Exception as e:
-                logger.warning(
-                    "Failed to download image for %s: %s", tpl_item["sku"], e
-                )
-
-    await asyncio.gather(*[_fetch_image(ti) for ti in template_items])
-
-    # Clean up internal keys before passing to template
-    for ti in template_items:
-        ti.pop("_catalog_image_url", None)
-
     # Customer-facing quotation fields must come from the current quote details,
     # not stale CRM/test context attached to the WhatsApp number.
     quote_customer_details = _quote_customer_details_from_metadata(
@@ -9304,28 +9535,70 @@ async def create_quotation(
         customer_name=customer_name,
         customer_email=customer_email,
         customer_company=customer_company,
+        customer_address=customer_address,
         zoho_inventory=ctx.deps.zoho_inventory,
     )
     if customer_id is None:
         return await _fail_closed_exact_quote_request(ctx.deps)
 
-    # Create Draft Order in Zoho
-    try:
-        draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
-            customer_id=customer_id, items=zoho_line_items, status="draft"
+    effect_fingerprint = _quotation_effect_fingerprint(
+        customer_id=customer_id,
+        line_items=zoho_line_items,
+    )
+    existing_effect = _matching_quotation_effect(
+        ctx.deps.conversation,
+        fingerprint=effect_fingerprint,
+    )
+    if existing_effect and existing_effect.get("status") == "pdf_sent":
+        quote_number = (
+            _string_value(existing_effect.get("sale_order_number")) or "DRAFT"
         )
-        saleorder_data = extract_sale_order_data(draft_resp)
-        sale_order_number = _string_value(saleorder_data.get("salesorder_number"))
-        quote_number = sale_order_number or "DRAFT"
+        ctx.deps.quotation_created = True
+        return _quotation_prepared_message(ctx.deps.conversation, quote_number)
 
+    # Create a draft once. If an earlier attempt stopped after order creation,
+    # verify and resume that order instead of creating a duplicate.
+    try:
+        if existing_effect and existing_effect.get("status") == "sale_order_created":
+            persisted_order_id = _string_value(existing_effect.get("sale_order_id"))
+            if not persisted_order_id:
+                return await _fail_closed_exact_quote_request(ctx.deps)
+            draft_readback = await ctx.deps.zoho_inventory.get_sale_order(
+                persisted_order_id
+            )
+            saleorder_data = extract_sale_order_data(draft_readback)
+            if _string_value(saleorder_data.get("salesorder_id")) != persisted_order_id:
+                return await _fail_closed_exact_quote_request(ctx.deps)
+        else:
+            draft_resp = await ctx.deps.zoho_inventory.create_sale_order(
+                customer_id=customer_id,
+                items=[dict(item) for item in zoho_line_items],
+                status="draft",
+            )
+            saleorder_data = extract_sale_order_data(draft_resp)
+
+        sale_order_number = _string_value(saleorder_data.get("salesorder_number"))
         sale_order_id = _string_value(saleorder_data.get("salesorder_id"))
-        if sale_order_id or sale_order_number:
+        quote_number = (
+            sale_order_number
+            or _string_value((existing_effect or {}).get("sale_order_number"))
+            or "DRAFT"
+        )
+        if sale_order_id or sale_order_number or existing_effect:
             conv = ctx.deps.conversation
             metadata = dict(conv.metadata_ or {})
             if sale_order_id:
                 metadata["zoho_sale_order_id"] = sale_order_id
             if sale_order_number:
                 metadata["zoho_sale_order_number"] = sale_order_number
+            metadata["quotation_effect"] = {
+                "version": _QUOTATION_EFFECT_VERSION,
+                "fingerprint": effect_fingerprint,
+                "customer_id": customer_id,
+                "sale_order_id": sale_order_id,
+                "sale_order_number": quote_number,
+                "status": "sale_order_created",
+            }
             conv.metadata_ = metadata
             try:
                 await ctx.deps.db.flush()
@@ -9336,6 +9609,34 @@ async def create_quotation(
     except Exception as e:
         logger.error("Failed to create draft sale order: %s", e)
         return await _fail_closed_exact_quote_request(ctx.deps)
+
+    # Customer-facing quotation assets are catalog-owned. A missing image never
+    # falls back to operational media from Zoho.
+    import asyncio
+    import base64
+
+    sem = asyncio.Semaphore(3)
+
+    async def _fetch_image(tpl_item: dict[str, Any]) -> None:
+        if not tpl_item.get("_catalog_image_url"):
+            return
+        async with sem:
+            try:
+                result = await _download_catalog_image(
+                    str(tpl_item["_catalog_image_url"])
+                )
+                if result:
+                    img_bytes, content_type = result
+                    b64 = base64.b64encode(img_bytes).decode("ascii")
+                    tpl_item["image_url"] = f"data:{content_type};base64,{b64}"
+            except Exception as e:
+                logger.warning(
+                    "Failed to download image for %s: %s", tpl_item["sku"], e
+                )
+
+    await asyncio.gather(*[_fetch_image(ti) for ti in template_items])
+    for ti in template_items:
+        ti.pop("_catalog_image_url", None)
 
     # Generate PDF context
     import datetime as _dt
@@ -9397,6 +9698,17 @@ async def create_quotation(
         quote_number=quote_number,
         sale_order_id=sale_order_id,
     )
+    metadata = dict(ctx.deps.conversation.metadata_ or {})
+    metadata["quotation_effect"] = {
+        "version": _QUOTATION_EFFECT_VERSION,
+        "fingerprint": effect_fingerprint,
+        "customer_id": customer_id,
+        "sale_order_id": sale_order_id,
+        "sale_order_number": quote_number,
+        "media_message_id": _string_value(media_message_id),
+        "status": "pdf_sent",
+    }
+    ctx.deps.conversation.metadata_ = metadata
     proposal_metadata_persisted = False
     try:
         await ctx.deps.db.flush()
@@ -9417,12 +9729,7 @@ async def create_quotation(
         )
 
     ctx.deps.quotation_created = True
-    if is_arabic_customer_language(getattr(ctx.deps.conversation, "language", "en")):
-        return f"تم تجهيز عرض السعر {quote_number} وإرساله إليك. هل يناسبك العرض؟"
-    return (
-        f"Quotation {quote_number} has been prepared and sent to you. "
-        "Please let me know if the quotation works for you."
-    )
+    return _quotation_prepared_message(ctx.deps.conversation, quote_number)
 
 
 @sales_agent.tool
@@ -10199,6 +10506,9 @@ async def process_message(
             allow_product_media=False,
         )
 
+    if _has_explicit_quote_hold(combined_text):
+        await _suspend_quote_workflow(db, conv)
+
     order_runtime_blocks_kernel_reply = (
         _active_pending_quote_selection_from_conversation(conv) is not None
         or _quote_intent_frame_from_metadata(conv) is not None
@@ -10275,6 +10585,8 @@ async def process_message(
     )
     current_sales_memory_updates = _extract_sales_memory_updates(combined_text)
     pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
+    pending_name_gate_intent = _name_gate_pending_intent_from_metadata(conv)
+    resumed_name_gate_intent: str | None = None
     pending_quote_selection_at_start = (
         _active_pending_quote_selection_from_conversation(conv)
     )
@@ -10427,6 +10739,7 @@ async def process_message(
         pending_name_gate_request = None
     elif name_gate_completion_reply:
         captured_customer_name = _string_value(current_quote_customer_details["name"])
+        resumed_name_gate_intent = pending_name_gate_intent
         pending_name_gate_request = await _consume_name_gate_pending_request(db, conv)
         if pending_name_gate_request:
             name_gate_resume_customer_name = captured_customer_name
@@ -10520,6 +10833,7 @@ async def process_message(
             _stock_price_options_response(
                 stock_price_options,
                 language=str(conv.language),
+                offer_quote=not _has_explicit_quote_hold(combined_text),
             ),
             f"{db_model_main}|stock-price-options",
             allow_product_media=False,
@@ -10580,6 +10894,7 @@ async def process_message(
         trace_enabled=dialogue_kernel_trace_enabled,
         build_static_response=_build_static_response,
         clear_verified_policy_repair_state=_clear_verified_policy_repair_state,
+        resumed_name_gate_intent=resumed_name_gate_intent,
     )
     if order_quote_response is not None:
         return order_quote_response
@@ -10670,6 +10985,34 @@ async def process_message(
                 if latency_trace is not None and agent_started is not None:
                     latency_trace.finish_phase("model_tools", agent_started)
 
+        if (
+            not policy_decision.is_order_status
+            and policy_decision.sales_fallback_intent is not None
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                build_sales_fallback_response(
+                    policy_decision.sales_fallback_intent,
+                    str(deps.conversation.language),
+                ),
+                f"{db_model_main}|sales-fallback",
+            )
+
+        if _is_low_risk_service_availability_interruption(
+            combined_text,
+            policy_decision,
+            deps.conversation,
+            deps.recent_history,
+        ):
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                _service_availability_interruption_response(
+                    str(deps.conversation.language)
+                ),
+                f"{db_model_main}|service-availability",
+                allow_product_media=False,
+            )
+
         order_quote_response = await _order_quote_route_for_turn(
             phase="post_policy",
             db=db,
@@ -10699,6 +11042,7 @@ async def process_message(
             build_llm_response=_build_llm_response,
             has_escalation=_has_escalation,
             quote_brief_confirmation_details=quote_brief_confirmation_details,
+            resumed_name_gate_intent=resumed_name_gate_intent,
         )
         if order_quote_response is not None:
             return order_quote_response

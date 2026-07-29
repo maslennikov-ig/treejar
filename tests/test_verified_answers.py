@@ -542,3 +542,31 @@ def test_product_match_marks_exact_when_query_terms_are_present() -> None:
     )
 
     assert match == "exact"
+
+
+def test_policy_routes_arabic_workstation_discovery_to_catalog() -> None:
+    decision = evaluate_verified_answer_policy(
+        query=(
+            "نحتاج إلى محطات عمل خاصة وكراسي مريحة لستة موظفين في دبي، "
+            "والميزانية ١٠٬٠٠٠ درهم. ماذا تقترحين؟"
+        ),
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_policy_routes_furniture_no_match_request_to_catalog() -> None:
+    decision = evaluate_verified_answer_policy(
+        query=(
+            "Do you sell laboratory fume hoods and chemical-resistant lab "
+            "benches for a research facility?"
+        ),
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False

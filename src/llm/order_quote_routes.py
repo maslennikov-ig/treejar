@@ -258,12 +258,20 @@ async def _order_quote_route_for_turn(
     build_llm_response: Callable[..., LLMResponse] | None = None,
     has_escalation: Callable[[Conversation], bool] | None = None,
     quote_brief_confirmation_details: Mapping[str, str] | None = None,
+    resumed_name_gate_intent: str | None = None,
 ) -> LLMResponse | None:
     _bind_engine_globals()
 
     pending_reference_selection = pending_reference_route.selection
+    consultative_name_gate_resume = resumed_name_gate_intent in {
+        "catalog_comparison",
+        "catalog_discovery",
+        "sales_opportunity",
+    }
 
     if phase == "pre_policy":
+        if consultative_name_gate_resume:
+            return None
         early_purchase_selection = None
         if (
             not quote_detail_context_active
@@ -324,6 +332,9 @@ async def _order_quote_route_for_turn(
     assert run_agent is not None
     assert build_llm_response is not None
     assert has_escalation is not None
+
+    if consultative_name_gate_resume:
+        return None
 
     if quote_brief_confirmation_details is not None:
         await _store_pending_quote_brief_confirmation(

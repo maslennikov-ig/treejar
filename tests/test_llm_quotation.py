@@ -8,6 +8,7 @@ from pydantic_ai import RunContext
 from src.llm.engine import (
     QuotationItem,
     SalesDeps,
+    _build_inventory_contact_payload,
     create_quotation,
     resolve_inventory_customer_id,
 )
@@ -31,6 +32,21 @@ def _quote_metadata(
     if customer_type:
         details["customer_type"] = customer_type
     return {"quote_customer_details": details}
+
+
+def test_inventory_contact_payload_preserves_delivery_address() -> None:
+    payload = _build_inventory_contact_payload(
+        phone="+971501234567",
+        customer_name="Fatima Noor Test",
+        customer_email="fatima@example.com",
+        customer_company="Cedarline E2E 20260728",
+        customer_address="Office 1204, Test Tower, Business Bay, Dubai, UAE",
+    )
+
+    assert payload["billing_address"]["address"] == (
+        "Office 1204, Test Tower, Business Bay, Dubai, UAE"
+    )
+    assert payload["shipping_address"] == payload["billing_address"]
 
 
 @pytest.mark.asyncio
@@ -130,11 +146,14 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     ):
         mock_pdf.return_value = b"pdf_data"
         result = await create_quotation(ctx, items)
+        repeated_result = await create_quotation(ctx, items)
 
     assert "SA-001" in result
+    assert "SA-001" in repeated_result
 
     # Verify Inventory calls
-    mock_inventory.get_stock_bulk.assert_called_once_with(["CHAIR-1"])
+    assert mock_inventory.get_stock_bulk.await_count == 2
+    mock_inventory.get_stock_bulk.assert_awaited_with(["CHAIR-1"])
     mock_inventory.create_sale_order.assert_called_once()
     _, kwargs = mock_inventory.create_sale_order.call_args
     assert kwargs["customer_id"] == "inventory-contact-001"
@@ -150,6 +169,8 @@ async def test_create_quotation_tool(mock_notify: AsyncMock) -> None:
     assert render_context["items"][0]["image_url"].startswith("data:image/jpeg;base64,")
     assert mock_conversation.metadata_["zoho_sale_order_id"] == "so-123"
     assert mock_conversation.metadata_["zoho_sale_order_number"] == "SA-001"
+    assert mock_conversation.metadata_["quotation_effect"]["version"] == 1
+    assert mock_conversation.metadata_["quotation_effect"]["status"] == "pdf_sent"
     proposal_state = mock_conversation.metadata_["proposal_followup"]
     assert proposal_state["kp_message_id"] == "media-quotation-1"
     assert proposal_state["kp_read"] is False

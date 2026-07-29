@@ -4,7 +4,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
 import httpx
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
@@ -23,6 +23,35 @@ from src.integrations.zoho_oauth import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ZohoContactAddressPayload(TypedDict):
+    address: str
+
+
+class ZohoContactPersonPayload(TypedDict):
+    first_name: str
+    phone: str
+    mobile: str
+    is_primary_contact: bool
+    last_name: NotRequired[str]
+    email: NotRequired[str]
+
+
+class ZohoInventoryContactPayload(TypedDict):
+    contact_name: str
+    contact_type: str
+    contact_persons: list[ZohoContactPersonPayload]
+    company_name: NotRequired[str]
+    billing_address: NotRequired[ZohoContactAddressPayload]
+    shipping_address: NotRequired[ZohoContactAddressPayload]
+
+
+class ZohoSaleOrderLineItemPayload(TypedDict):
+    item_id: str
+    quantity: int
+    rate: float
+    description: str
 
 
 def _normalize_phone(value: str | None) -> str | None:
@@ -618,7 +647,10 @@ class ZohoInventoryClient(InventoryProvider):
         return {}
 
     async def create_sale_order(
-        self, customer_id: str, items: list[dict[str, Any]], status: str = "draft"
+        self,
+        customer_id: str,
+        items: list[dict[str, Any]],
+        status: str = "draft",
     ) -> dict[str, Any]:
         """Create a sale order / quotation in Zoho Inventory."""
         data = {
