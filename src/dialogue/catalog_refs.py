@@ -78,7 +78,25 @@ _QUANTITY_WORDS = {
     "EIGHT": 8,
     "NINE": 9,
     "TEN": 10,
+    "ELEVEN": 11,
+    "TWELVE": 12,
+    "THIRTEEN": 13,
+    "FOURTEEN": 14,
+    "FIFTEEN": 15,
+    "SIXTEEN": 16,
+    "SEVENTEEN": 17,
+    "EIGHTEEN": 18,
+    "NINETEEN": 19,
+    "TWENTY": 20,
 }
+_QUANTITY_TOKEN_PATTERN = r"\d{1,3}|" + "|".join(
+    sorted(_QUANTITY_WORDS, key=len, reverse=True)
+)
+_SINGLE_REF_FOLLOWING_QUANTITY_RE = re.compile(
+    rf"(?<![A-Z0-9])(?P<qty>{_QUANTITY_TOKEN_PATTERN})"
+    r"\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -194,6 +212,20 @@ def extract_catalog_references(text: str) -> list[CatalogParsedRef]:
                 end=end,
             )
         )
+    if len(refs) == 1 and refs[0].quantity is None:
+        parsed = refs[0]
+        trailing_quantity = _single_ref_following_quantity(
+            normalized_text,
+            parsed.end or 0,
+        )
+        if trailing_quantity is not None:
+            refs[0] = CatalogParsedRef(
+                raw=parsed.raw,
+                normalized=parsed.normalized,
+                quantity=trailing_quantity,
+                start=parsed.start,
+                end=parsed.end,
+            )
     return refs
 
 
@@ -335,7 +367,7 @@ def _text_attr(item: Any, attr: str) -> str | None:
 def _quantity_before_ref(normalized_text: str, ref_start: int) -> int | None:
     prefix = normalized_text[max(0, ref_start - 32) : ref_start]
     match = re.search(
-        r"(?:^|[^A-Z0-9])(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+        rf"(?:^|[^A-Z0-9])(?P<qty>{_QUANTITY_TOKEN_PATTERN})"
         r"(?:\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?))?"
         r"(?:\s+OF)?(?:\s+SKU)?\s*$",
         prefix,
@@ -358,10 +390,30 @@ def _quantity_after_ref(normalized_text: str, ref_end: int) -> int | None:
     suffix = normalized_text[ref_end : ref_end + 32]
     match = re.search(
         r"^(?:\s+(?!(?:AND|OR|PLUS|WITH)\b)[A-Z][A-Z0-9-]{1,20}){0,4}"
-        r"\s+(?P<qty>\d{1,3}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+        rf"\s+(?P<qty>{_QUANTITY_TOKEN_PATTERN})"
         r"\s+(?:X|PCS?|PIECES?|UNITS?|POSITIONS?|POINTS?)\b",
         suffix,
         flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    raw_quantity = match.group("qty").upper()
+    quantity = (
+        int(raw_quantity)
+        if raw_quantity.isdigit()
+        else _QUANTITY_WORDS.get(raw_quantity)
+    )
+    if quantity is None or quantity <= 0:
+        return None
+    return quantity
+
+
+def _single_ref_following_quantity(
+    normalized_text: str,
+    ref_end: int,
+) -> int | None:
+    match = _SINGLE_REF_FOLLOWING_QUANTITY_RE.search(
+        normalized_text[ref_end : ref_end + 96]
     )
     if match is None:
         return None

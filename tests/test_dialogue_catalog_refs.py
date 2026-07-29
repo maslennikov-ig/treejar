@@ -78,6 +78,14 @@ def test_extract_catalog_references_preserves_multi_item_quantities() -> None:
     ]
 
 
+def test_extract_catalog_references_captures_spelled_quantity_after_sku() -> None:
+    refs = extract_catalog_references(
+        "Please check SKU CP-2.1S. I may need twelve units."
+    )
+
+    assert [(ref.normalized, ref.quantity) for ref in refs] == [("CP-2.1S", 12)]
+
+
 def test_extract_catalog_references_rejects_connector_or_as_sku() -> None:
     refs = extract_catalog_references("I need 2 CH 616 or 4 CH 620")
 
