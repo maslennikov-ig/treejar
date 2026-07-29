@@ -1209,7 +1209,7 @@ def _catalog_product_capacity(product_text: str) -> int | None:
 
 def _contains_catalog_term(normalized: str, term: str) -> bool:
     arabic = re.search(r"[\u0600-\u06ff]", term) is not None
-    prefix = "(?:و)?" if arabic else ""
+    prefix = "(?:و)?(?:ال)?" if arabic else ""
     suffix = "" if arabic else "(?:s|es)?"
     return (
         re.search(

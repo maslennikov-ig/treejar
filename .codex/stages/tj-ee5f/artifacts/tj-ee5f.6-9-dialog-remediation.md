@@ -54,6 +54,7 @@ success_criteria:
   - an independent product intent starts a new planning epoch while an explicit continuation retains state
   - new, add, and replace actions have explicit precedence without treating another option as another order
   - explicit new intent outranks a bare reference word while a plan-specific reference retains the current epoch
+  - Arabic catalog families accept conjunction and definite-article prefixes without substring matching
   - per-item and total budget limits are typed and retained independently in either clause order
   - exact product-model identifiers remain atomic across hyphens, digits, and case
   - budgeted cross-sell output cannot exceed the remainder in aggregate
@@ -123,6 +124,9 @@ verification:
   - final micro-review RED for overlapping-family intent and plan-specific continuation: failed 2 of 2 as expected
   - final micro-review transition set: passed 13
   - final micro-review Ruff, format, Mypy, diff, and artifact checks: passed
+  - final Arabic micro-review RED for definite-form replacement: failed as expected
+  - final Arabic micro-review focused EN/AR transition and boundary set: passed 9
+  - final Arabic micro-review Ruff, format, Mypy, diff, and artifact checks: passed
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -230,6 +234,11 @@ office` and the requested family overlaps the old plan. A phrase such as `this
 configuration`, `same selection`, or its Arabic equivalent retains the current
 plan; explicit add and replace actions still take precedence.
 
+The final Arabic micro-review added token-bounded support for the conjunction
+and definite article on catalog-family terms. Natural forms such as
+`الكراسي`, `المكاتب`, and `والمكاتب` now resolve to their typed families,
+while longer unrelated words such as `المكتبة` still fail closed.
+
 Structured product matching now keeps model identifiers such as `COMP-4`
 atomic, including mixed case, so `COMP-5`, `COMP`, and `COMP-40` cannot satisfy
 that request. General wording such as `with individual privacy panels` is no
@@ -294,6 +303,10 @@ The final micro-review transition set passed 13 tests covering the
 overlapping-family reproduction, plan-specific continuation, prior independent
 intent, EN/AR new intent, regular continuation, add, replace, and option
 alternative behavior.
+
+The final Arabic micro-review set passed nine tests covering definite-form
+replacement, Arabic and English family addition, regular continuation, new
+intent, and catalog-term substring boundaries.
 
 # Delivery / Cleanup
 

@@ -17520,6 +17520,7 @@ async def test_cross_sell_falls_back_to_verified_catalog_product(
 
 def test_catalog_family_matching_uses_token_boundaries() -> None:
     assert engine_module._catalog_product_family("adjustable height base") is None
+    assert engine_module._catalog_product_family("أثاث المكتبة") is None
     assert (
         engine_module._catalog_product_family("adjustable office table") == "workspace"
     )
@@ -17881,8 +17882,16 @@ def test_catalog_plan_adds_disjoint_family_within_continuation(
     assert planning.budget_cap == 7000.0
 
 
-def test_catalog_plan_replaces_family_without_starting_a_new_epoch() -> None:
-    current = "Use chairs instead of desks."
+@pytest.mark.parametrize(
+    "current",
+    [
+        "Use chairs instead of desks.",
+        "استخدم الكراسي بدلاً من المكاتب.",
+    ],
+)
+def test_catalog_plan_replaces_family_without_starting_a_new_epoch(
+    current: str,
+) -> None:
     conversation = SimpleNamespace(
         id=uuid.uuid4(),
         metadata_=_stored_catalog_plan(families=["workspace"]),
