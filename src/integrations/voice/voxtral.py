@@ -49,6 +49,7 @@ class VoiceTranscriptionResult:
     cost: float | None = None
     duration_seconds: float | None = None
     request_duration_seconds: float = 0.0
+    generation_id: str | None = None
 
 
 def _magic_audio_format(audio_bytes: bytes) -> str | None:
@@ -221,11 +222,12 @@ async def _transcribe_with_client(
     cost = _coerce_float(_usage_number(usage, "cost", "cost_usd"))
     duration_seconds = _coerce_float(_usage_number(usage, "seconds", "duration"))
     response_model = str(payload.get("model") or settings.voice_transcription_model)
+    generation_id = response.headers.get("X-Generation-Id") or None
 
     logger.info(
         "Voice transcription complete: model=%s audio_size=%d format=%s "
         "request_duration_seconds=%.3f audio_duration_seconds=%s "
-        "total_tokens=%s cost=%s",
+        "total_tokens=%s cost=%s generation_id=%s",
         response_model,
         len(audio_bytes),
         audio_format,
@@ -233,6 +235,7 @@ async def _transcribe_with_client(
         duration_seconds,
         total_tokens,
         cost,
+        generation_id,
     )
     return VoiceTranscriptionResult(
         text=text.strip(),
@@ -243,4 +246,5 @@ async def _transcribe_with_client(
         cost=cost,
         duration_seconds=duration_seconds,
         request_duration_seconds=request_duration_seconds,
+        generation_id=generation_id,
     )

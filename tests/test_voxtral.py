@@ -21,12 +21,18 @@ def _response(
     payload: dict[str, object],
     *,
     status_code: int = 200,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     request = httpx.Request(
         "POST",
         "https://openrouter.ai/api/v1/audio/transcriptions",
     )
-    return httpx.Response(status_code, request=request, json=payload)
+    return httpx.Response(
+        status_code,
+        request=request,
+        json=payload,
+        headers=headers,
+    )
 
 
 class TestAudioFormatDetection:
@@ -164,7 +170,8 @@ class TestTranscribeAudio:
                     "total_tokens": 113,
                     "cost": 0.000508,
                 },
-            }
+            },
+            headers={"X-Generation-Id": "gen-voice-123"},
         )
 
         result = await transcribe_audio_with_metadata(
@@ -181,6 +188,7 @@ class TestTranscribeAudio:
         assert result.cost == 0.000508
         assert result.duration_seconds == 9.2
         assert result.request_duration_seconds >= 0
+        assert result.generation_id == "gen-voice-123"
 
     async def test_creates_and_closes_internal_client_for_legacy_callers(
         self,

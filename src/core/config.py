@@ -126,6 +126,11 @@ class Settings(BaseSettings):
         return self.app_env == "production"
 
     @property
+    def voxtral_model(self) -> str:
+        """Deprecated Python alias for voice transcription configuration."""
+        return self.voice_transcription_model
+
+    @property
     def migration_database_url(self) -> str:
         """URL for Alembic migrations (direct connection, no pooler)."""
         return self.database_url_direct or self.database_url
