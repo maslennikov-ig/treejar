@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-29
-Status: in progress; local remediation accepted, remote delivery and production proof pending
+Status: in progress; local release gate accepted, remote delivery and production proof pending
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -34,31 +34,29 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
 - Prompt validation passes for Codex gpt-5.6 fallback.
 - Captured S01-S11 phrases were not added to production logic.
 - `src/llm/prompts.py` has no delta; net product system-prompt growth is zero.
-- Independent combined review initially found four P1 issues. Correction
-  commits closed all four; delta re-review verdict is `ACCEPT` with no P0/P1.
-- The final reviewer P2 on voice-audit bounds was also fixed through focused
-  RED/GREEN tests.
-- The one full repository test run completed with `2295 passed`, `19 skipped`,
-  and `18 failed`. The failures were isolated to missing offline frontend
-  dependencies plus six affected contracts; each failed node and its adjacent
-  risk tests now passes after focused correction. Per the release policy, the
-  broad suite was not repeated.
-- Full Ruff, format, and Mypy gates pass. Canonical process verification passes
-  on the final orchestration files.
+- Independent dialog review verdict is `APPROVE`.
+- Independent production-trust review first found six P1 and one P2 issue.
+  Provider-bound request/receipt, telemetry, reconciliation, identity, Mypy,
+  and crash-recovery corrections closed every finding; final delta-review
+  verdict is `APPROVE`.
+- The single final release gate passed: `2464 passed`, `19 skipped`, Ruff,
+  format, Mypy, and canonical process verification are green.
+- All eleven tracked stage artifacts validate, stage readiness passes, and the
+  accepted local release head is `36b8985`.
 
 ## External state
 
-No fetch, push, deploy, paid model call, provider message, production readback,
-Zoho/CRM mutation, quotation/PDF send, callback, or cleanup was performed in
-this local remediation session.
+No fetch, push, deploy, paid model call, provider message, production mutation,
+Zoho/CRM mutation, quotation/PDF send, callback, or cleanup has been performed
+since the final local release gate. Public health and delivery-access checks
+were read-only.
 
 ## Remaining acceptance
 
-1. Obtain current authority for the exact remote/live action batch.
-2. Fresh-fetch, non-force deliver, deploy, and verify the exact release.
-3. Run at least ten production text scenarios plus EN/AR/voice provider
+1. Fresh-fetch, non-force deliver, deploy, and verify the exact release.
+2. Run at least ten production text scenarios plus EN/AR/voice provider
    canaries, reconcile all side effects, and verify the quotation/PDF.
-4. Publish the redacted Russian report and inspected PDF, update Beads and
+3. Publish the redacted Russian report and inspected PDF, update Beads and
    handoff, then run canonical stage closeout only if every blocker is terminal.
 
 ## Explicit defers

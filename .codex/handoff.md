@@ -3,7 +3,7 @@
 Updated: 2026-07-29
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
-Current stage status: local remediation integrated and independently accepted;
+Current stage status: local release gate complete and independently accepted;
 remote delivery, deploy, and production retest remain pending
 
 ## Current truth
@@ -13,11 +13,11 @@ remote delivery, deploy, and production retest remain pending
   release-bound production proof.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
-- Local remediation branch is based on `main@844a394`; unrelated and untracked
-  user files in the primary worktree were preserved.
-- Final local remediation commit is `fc1e7f8`.
-- The last known production identity in repository evidence is release
-  `0dd9615`; it has not been refreshed in this local-only session.
+- Local remediation branch contains `origin/main@ed8e24d`; unrelated and
+  untracked user files in the primary worktree were preserved.
+- Accepted local release head is `36b8985`.
+- The failed pre-remediation evidence is bound to release `ed8e24d`; the exact
+  post-remediation runtime SHA has not been deployed or read back yet.
 
 ## Local remediation
 
@@ -36,27 +36,26 @@ remote delivery, deploy, and production retest remain pending
 
 ## Local proof
 
-- Three focused stream artifacts are registered and pass artifact validation.
+- All eleven tracked stage artifacts pass artifact validation.
 - Compact orchestrator prompt passes
-  `orch-prompts prompt-check --runtime codex --profile gpt-5.6 --kind fallback`.
-- Independent combined review: initial `0 P0 / 4 P1`; all four corrected.
-- Independent delta re-review: `ACCEPT`, no P0/P1. Its final P2 on voice trace
-  bounds was fixed with focused RED/GREEN proof.
-- Full Ruff, format, and Mypy gates pass.
-- The one full test run produced `2295 passed`, `19 skipped`, and `18 failed`.
-  Those failures were traced to the isolated worktree's absent offline frontend
-  dependencies and six affected contracts. Every failed node plus adjacent
-  trust/runtime coverage now passes after focused fixes; the broad suite was
-  not repeated, as required by the paid/release rerun policy.
-- Canonical process verification passes on the final orchestration state.
+  `orch-prompts prompt-check --runtime codex --profile gpt-5.6 --kind fallback`
+  at 2568 characters.
+- Independent dialog review: `APPROVE`.
+- Independent production-trust review: initial `6 P1 / 1 P2`; all findings and
+  the subsequent judge crash-recovery P1 were corrected. Final delta-review:
+  `APPROVE`.
+- The single final release gate passed with `2464 passed`, `19 skipped`, Ruff,
+  format, Mypy, and canonical process verification green.
+- Stage readiness passes. Product prompt and frozen AC-01..AC-30 snapshot are
+  unchanged.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: obtain current authority for the exact remote/live batch:
-fresh fetch, safe non-force delivery, canonical deploy/readback, paid test-only
-models, protected Wazzup/WhatsApp, test-only Zoho quotation/PDF and cleanup.
+Recommended action: fresh fetch, prove `origin/main` is an ancestor of the
+accepted head, non-force deliver to `main`, wait for canonical CI/deploy, and
+read back the exact release before one bounded production acceptance set.
 
 At provider-canary time, pause once and ask the owner to send EN, AR, and voice
 from the protected test WhatsApp. Do not close the epic if that proof is
@@ -71,10 +70,11 @@ Use $orchestrator-stage with the compact prompt in
 
 - Reversible local edits, tests, orchestration docs, and Beads truth updates are
   authorized.
-- No remote/live action was performed in this remediation session.
-- Ask immediately before the exact fetch/push/deploy/paid/provider/production
-  batch. Force push, history rewrite, real customers, secrets/access changes,
-  and destructive production work remain excluded.
+- Current owner authority covers fresh fetch, safe non-force push, canonical
+  deploy/readback, paid test-only model/voice calls, protected test Wazzup,
+  test-only Zoho/CRM/quotation/PDF/callback/readbacks, and safe cleanup.
+- Force push, history rewrite, real customers, secrets/access changes,
+  destructive production work, and unlisted external effects remain excluded.
 
 ## Explicit defers
 
