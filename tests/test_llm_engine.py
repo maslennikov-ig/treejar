@@ -5139,6 +5139,55 @@ async def test_process_message_incomplete_proforma_invoice_request_clarifies_wit
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_quote_hold_skips_proposal_clarification(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Samir"
+    text = (
+        "That configuration is still too expensive. Give me a cheaper option "
+        "and one relevant cross-sell while keeping the total under AED 7,000. "
+        "Do not prepare a quotation."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Here is a lower-cost configuration and a relevant accessory."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model"
+    assert "lower-cost" in response.text
+    mock_run.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_second_benign_no_match_escalates_after_clarification(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,

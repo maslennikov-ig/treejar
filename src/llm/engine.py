@@ -11334,6 +11334,7 @@ async def process_message(
             and policy_decision.question_class == "service_low_risk"
             and policy_decision.policy_action == "allow"
             and is_quote_or_proposal_request(masked_text)
+            and not _has_explicit_quote_hold(masked_text)
         ):
             await _clear_verified_policy_repair_state()
             return _build_static_response(
