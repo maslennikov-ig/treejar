@@ -928,6 +928,54 @@ async def test_resolve_inventory_customer_id_recovers_from_duplicate_name_confli
 
 
 @pytest.mark.asyncio
+async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicate() -> (
+    None
+):
+    duplicate_response = httpx.Response(
+        400,
+        json={
+            "code": 3062,
+            "message": "The customer already exists.",
+        },
+        request=httpx.Request("POST", "https://example.com/contacts"),
+    )
+    inactive_contact = {
+        "contact_id": "inactive-inventory-contact",
+        "contact_type": "customer",
+        "status": "inactive",
+        "contact_persons": [{"email": "owner@example.com"}],
+    }
+    active_contact = {**inactive_contact, "status": "active"}
+
+    mock_inventory = AsyncMock()
+    mock_inventory.find_customer_by_phone.return_value = None
+    mock_inventory.find_customer_by_email.side_effect = [None, inactive_contact]
+    mock_inventory.create_contact.side_effect = httpx.HTTPStatusError(
+        "duplicate contact",
+        request=duplicate_response.request,
+        response=duplicate_response,
+    )
+    mock_inventory.get_contact.return_value = active_contact
+
+    result = await resolve_inventory_customer_id(
+        phone="+15550001111",
+        customer_name="Test Owner",
+        customer_email="owner@example.com",
+        customer_company="Example QA",
+        zoho_inventory=mock_inventory,
+    )
+
+    assert result == "inactive-inventory-contact"
+    assert mock_inventory.find_customer_by_email.await_args_list[-1].kwargs == {
+        "include_inactive": True
+    }
+    mock_inventory.activate_contact.assert_awaited_once_with(
+        "inactive-inventory-contact"
+    )
+    mock_inventory.get_contact.assert_awaited_once_with("inactive-inventory-contact")
+
+
+@pytest.mark.asyncio
 @patch("src.services.notifications.notify_catalog_mismatch", new_callable=AsyncMock)
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",

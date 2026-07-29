@@ -338,6 +338,79 @@ async def test_find_customer_by_email_matches_contact_person_email() -> None:
 
 
 @pytest.mark.asyncio
+async def test_find_customer_by_email_can_include_exact_inactive_contact() -> None:
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = b"test_token"
+    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
+
+    list_response = httpx.Response(
+        200,
+        json={
+            "contacts": [
+                {
+                    "contact_id": "460000000026049",
+                    "contact_name": "Example QA",
+                    "contact_type": "customer",
+                    "status": "inactive",
+                    "contact_persons": [{"email": "owner@example.com"}],
+                }
+            ]
+        },
+        request=httpx.Request("GET", "https://example.com/contacts"),
+    )
+    get_response = httpx.Response(
+        200,
+        json={
+            "contact": {
+                "contact_id": "460000000026049",
+                "contact_name": "Example QA",
+                "contact_type": "customer",
+                "status": "inactive",
+                "contact_persons": [{"email": "owner@example.com"}],
+            }
+        },
+        request=httpx.Request("GET", "https://example.com/contacts/460000000026049"),
+    )
+
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.side_effect = [list_response, get_response]
+        result = await zoho_client.find_customer_by_email(
+            "owner@example.com", include_inactive=True
+        )
+
+    assert result is not None
+    assert result["status"] == "inactive"
+    assert mock_request.await_args_list[0].kwargs["params"]["filter_by"] == (
+        "Status.All"
+    )
+
+
+@pytest.mark.asyncio
+async def test_activate_contact_uses_official_active_endpoint() -> None:
+    redis_mock = AsyncMock()
+    redis_mock.get.return_value = b"test_token"
+    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
+    response = httpx.Response(
+        200,
+        json={"code": 0, "message": "The contact has been marked as active."},
+        request=httpx.Request(
+            "POST", "https://example.com/contacts/460000000026049/active"
+        ),
+    )
+
+    with patch.object(
+        zoho_client.client, "request", new_callable=AsyncMock
+    ) as mock_request:
+        mock_request.return_value = response
+        await zoho_client.activate_contact("460000000026049")
+
+    assert mock_request.await_args.kwargs["method"] == "POST"
+    assert mock_request.await_args.kwargs["url"] == ("/contacts/460000000026049/active")
+
+
+@pytest.mark.asyncio
 async def test_find_customer_by_name_scans_pages_for_exact_match() -> None:
     redis_mock = AsyncMock()
     redis_mock.get.return_value = b"test_token"

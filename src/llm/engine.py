@@ -8732,6 +8732,45 @@ async def resolve_inventory_customer_id(
         created_contact = await zoho_inventory.create_contact(dict(payload))
     except Exception as exc:
         if _is_duplicate_inventory_contact_error(exc):
+            exact_duplicate: Mapping[str, Any] | None = None
+            try:
+                if customer_email:
+                    exact_duplicate = await zoho_inventory.find_customer_by_email(
+                        customer_email,
+                        include_inactive=True,
+                    )
+                elif inventory_phone:
+                    exact_duplicate = await zoho_inventory.find_customer_by_phone(
+                        inventory_phone,
+                        include_inactive=True,
+                    )
+            except Exception:
+                logger.exception("Failed exact duplicate lookup in Zoho Inventory")
+                return None
+
+            exact_duplicate_id = _inventory_contact_id(exact_duplicate)
+            exact_duplicate_status = _string_value(
+                (exact_duplicate or {}).get("status")
+            ).casefold()
+            if exact_duplicate_id and exact_duplicate_status == "active":
+                return exact_duplicate_id
+            if exact_duplicate_id and exact_duplicate_status == "inactive":
+                try:
+                    await zoho_inventory.activate_contact(exact_duplicate_id)
+                    reactivated = await zoho_inventory.get_contact(exact_duplicate_id)
+                except Exception:
+                    logger.exception(
+                        "Failed to reactivate exact Zoho Inventory duplicate"
+                    )
+                    return None
+                if (
+                    _inventory_contact_id(reactivated) == exact_duplicate_id
+                    and _string_value((reactivated or {}).get("status")).casefold()
+                    == "active"
+                ):
+                    return exact_duplicate_id
+                return None
+
             seen_names: set[str] = set()
             for candidate_name in (
                 _string_value(payload.get("contact_name")),

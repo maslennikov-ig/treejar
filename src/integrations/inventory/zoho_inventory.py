@@ -501,10 +501,16 @@ class ZohoInventoryClient(InventoryProvider):
         return None
 
     async def _first_accessible_customer(
-        self, contacts: list[dict[str, Any]]
+        self,
+        contacts: list[dict[str, Any]],
+        *,
+        include_inactive: bool = False,
     ) -> dict[str, Any] | None:
         for candidate in contacts:
-            if not _is_active_customer(candidate):
+            candidate_status = str(candidate.get("status") or "").strip().lower()
+            if not _is_active_customer(candidate) and not (
+                include_inactive and candidate_status == "inactive"
+            ):
                 continue
 
             contact_id = str(candidate.get("contact_id") or "").strip()
@@ -512,15 +518,24 @@ class ZohoInventoryClient(InventoryProvider):
                 continue
 
             contact = await self.get_contact(contact_id)
-            if contact is None or not _is_active_customer(contact):
+            contact_status = str((contact or {}).get("status") or "").strip().lower()
+            if contact is None or (
+                not _is_active_customer(contact)
+                and not (include_inactive and contact_status == "inactive")
+            ):
                 continue
 
             return contact
 
         return None
 
-    async def find_customer_by_phone(self, phone: str) -> dict[str, Any] | None:
-        """Find an accessible active customer using normalized phone matching."""
+    async def find_customer_by_phone(
+        self,
+        phone: str,
+        *,
+        include_inactive: bool = False,
+    ) -> dict[str, Any] | None:
+        """Find an exact customer by normalized phone matching."""
         normalized_phone = _normalize_phone(phone)
         digits = _phone_digits(phone)
         if not normalized_phone or not digits:
@@ -540,7 +555,8 @@ class ZohoInventoryClient(InventoryProvider):
             seen_queries.add(query)
 
             contacts = await self.search_contacts(
-                filter_by="Status.Active", **{field: value}
+                filter_by="Status.All" if include_inactive else "Status.Active",
+                **{field: value},
             )
             matched_contacts = [
                 contact
@@ -550,20 +566,29 @@ class ZohoInventoryClient(InventoryProvider):
                     for candidate_phone in _contact_phone_values(contact)
                 )
             ]
-            contact = await self._first_accessible_customer(matched_contacts)
+            contact = await self._first_accessible_customer(
+                matched_contacts,
+                include_inactive=include_inactive,
+            )
             if contact is not None:
                 return contact
 
         return None
 
-    async def find_customer_by_email(self, email: str) -> dict[str, Any] | None:
-        """Find an accessible active customer by email address."""
+    async def find_customer_by_email(
+        self,
+        email: str,
+        *,
+        include_inactive: bool = False,
+    ) -> dict[str, Any] | None:
+        """Find an exact customer by email address."""
         normalized_email = email.strip().casefold()
         if not normalized_email:
             return None
 
         contacts = await self.search_contacts(
-            filter_by="Status.Active", email=email.strip()
+            filter_by="Status.All" if include_inactive else "Status.Active",
+            email=email.strip(),
         )
         exact_matches = [
             contact
@@ -573,7 +598,10 @@ class ZohoInventoryClient(InventoryProvider):
                 for candidate_email in _contact_email_values(contact)
             )
         ]
-        return await self._first_accessible_customer(exact_matches)
+        return await self._first_accessible_customer(
+            exact_matches,
+            include_inactive=include_inactive,
+        )
 
     async def find_customer_by_name(self, name: str) -> dict[str, Any] | None:
         """Find an accessible active customer by exact normalized name.
@@ -645,6 +673,10 @@ class ZohoInventoryClient(InventoryProvider):
         if isinstance(payload, Mapping):
             return dict(payload)
         return {}
+
+    async def activate_contact(self, contact_id: str) -> None:
+        """Mark an existing Zoho Inventory contact active."""
+        await self._request("POST", f"/contacts/{contact_id}/active")
 
     async def create_sale_order(
         self,
