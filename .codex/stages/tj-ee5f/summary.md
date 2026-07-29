@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-29
-Status: in progress; local release gate accepted, remote delivery and production proof pending
+Status: in progress; remediation deployed, bounded S05 retest blocked by provider response
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -39,30 +39,43 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
   Provider-bound request/receipt, telemetry, reconciliation, identity, Mypy,
   and crash-recovery corrections closed every finding; final delta-review
   verdict is `APPROVE`.
-- The single final release gate passed: `2464 passed`, `19 skipped`, Ruff,
+- The latest final release gate passed: `2559 passed`, `19 skipped`, Ruff,
   format, Mypy, and canonical process verification are green.
 - All eleven tracked stage artifacts validate, stage readiness passes, and the
-  accepted local release head is `36b8985`.
+  current release head is `06b6087`.
+- Independent review of the final quote-state delta is `APPROVE`, with no
+  P0/P1. `src/llm/prompts.py` remains unchanged.
 
 ## External state
 
-No fetch, push, deploy, paid model call, provider message, production mutation,
-Zoho/CRM mutation, quotation/PDF send, callback, or cleanup has been performed
-since the final local release gate. Public health and delivery-access checks
-were read-only.
+`06b6087` was delivered to `main` after a fresh fetch and non-force push.
+Canonical CI/deploy run `30489291826` succeeded. Production readback confirmed
+the exact release, healthy Redis/database, all services running, and 8/8 API
+smoke.
+
+The affected S05 scenario was retried only within the bounded infrastructure
+allowance. Production readback proves that quote-offer prose and explicit
+no-quote no longer open quote collection:
+`active_flow=product_selection`, `quote_sent=false`,
+`post_quotation_status=null`, `quotation_hold=yes`. The final answer still
+failed because OpenRouter returned `finish_reason=error`, which the current
+Pydantic AI response model rejects. No broad paid rerun followed.
 
 ## Remaining acceptance
 
-1. Fresh-fetch, non-force deliver, deploy, and verify the exact release.
-2. Run at least ten production text scenarios plus EN/AR/voice provider
-   canaries, reconcile all side effects, and verify the quotation/PDF.
-3. Publish the redacted Russian report and inspected PDF, update Beads and
-   handoff, then run canonical stage closeout only if every blocker is terminal.
+1. Handle the OpenRouter `finish_reason=error` compatibility path and rerun
+   only S05.
+2. Run the complete final-release text set plus EN/AR/voice provider canaries,
+   reconcile all side effects, and verify quotation/PDF readbacks.
+3. Publish the accepted Russian report and inspected PDF, then run canonical
+   stage closeout only if every blocker is terminal.
 
 ## Explicit defers
 
 - Provider-originated canaries require the owner to send protected EN, AR, and
   voice messages when requested. If unavailable, that criterion remains
   `BLOCKED` and the epic stays open.
+- Test-message outbound effects still need terminal readback or an approved
+  retained disposition.
 - Repository-history privacy cleanup remains a separate destructive-action
   decision; current-tree redaction remains the local privacy boundary.

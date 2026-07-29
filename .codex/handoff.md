@@ -3,8 +3,8 @@
 Updated: 2026-07-29
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
-Current stage status: local release gate complete and independently accepted;
-remote delivery, deploy, and production retest remain pending
+Current stage status: remediation deployed; S05 typed-state fix verified on
+production, but final acceptance remains blocked
 
 ## Current truth
 
@@ -13,11 +13,12 @@ remote delivery, deploy, and production retest remain pending
   release-bound production proof.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
-- Local remediation branch contains `origin/main@ed8e24d`; unrelated and
-  untracked user files in the primary worktree were preserved.
-- Accepted local release head is `36b8985`.
-- The failed pre-remediation evidence is bound to release `ed8e24d`; the exact
-  post-remediation runtime SHA has not been deployed or read back yet.
+- `origin/main`, the remediation worktree, and production are on
+  `06b6087844ff4e650aa0dbfe6c50b2b3c8bfa744`.
+- Canonical CI/deploy run `30489291826` succeeded. Exact release, health,
+  Redis, database, five running services, and 8/8 API smoke were read back.
+- Unrelated and untracked user files in the primary worktree were preserved.
+- Failed and incomplete production attempts remain immutable outside Git.
 
 ## Local remediation
 
@@ -33,6 +34,9 @@ remote delivery, deploy, and production retest remain pending
   a bounded persisted usage/cost/timing trace.
 - Exact captured scenario wording remains in tests only. Product system-prompt
   growth is zero.
+- Quote routing no longer infers sent/detail state from assistant prose.
+  Explicit no-quote instructions interrupt typed quote-detail collection and
+  return the conversation to product selection.
 
 ## Local proof
 
@@ -44,22 +48,35 @@ remote delivery, deploy, and production retest remain pending
 - Independent production-trust review: initial `6 P1 / 1 P2`; all findings and
   the subsequent judge crash-recovery P1 were corrected. Final delta-review:
   `APPROVE`.
-- The single final release gate passed with `2464 passed`, `19 skipped`, Ruff,
+- The latest final release gate passed with `2559 passed`, `19 skipped`, Ruff,
   format, Mypy, and canonical process verification green.
 - Stage readiness passes. Product prompt and frozen AC-01..AC-30 snapshot are
   unchanged.
+
+## Production proof and blocker
+
+- S05 no longer enters quote collection after a quote offer or an explicit
+  refusal. Production readback shows `active_flow=product_selection`,
+  `quote_sent=false`, `post_quotation_status=null`, and
+  `quotation_hold=yes`.
+- Name gate, catalog consultation, catalog tool traces, duration, and
+  provider-reported cost were collected from production facts.
+- The final S05 answer did not complete. Bounded retries were exhausted after
+  OpenRouter returned `finish_reason=error`; the current Pydantic AI client
+  rejects that provider response as `UnexpectedModelBehavior`.
+- A complete final-release set of ten text scenarios was therefore not run.
+  Provider-originated EN/AR/voice canaries and terminal outbound-effect
+  readbacks are still missing.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: fresh fetch, prove `origin/main` is an ancestor of the
-accepted head, non-force deliver to `main`, wait for canonical CI/deploy, and
-read back the exact release before one bounded production acceptance set.
-
-At provider-canary time, pause once and ask the owner to send EN, AR, and voice
-from the protected test WhatsApp. Do not close the epic if that proof is
-unavailable.
+Recommended action: handle the OpenRouter `finish_reason=error` compatibility
+path without prompt growth, then rerun only S05. If it completes, run the
+remaining final-release acceptance set and reconcile every side effect.
+Provider-originated EN/AR/voice still requires the owner's protected test
+WhatsApp. Do not close the epic if any proof is unavailable.
 
 ## Starter prompt for next orchestrator
 
@@ -78,9 +95,13 @@ Use $orchestrator-stage with the compact prompt in
 
 ## Explicit defers
 
-- Production acceptance, report/PDF delivery, Beads closure, and canonical
-  stage closeout remain pending.
+- Complete production acceptance, accepted report/PDF, Beads closure, and
+  canonical stage closeout remain pending.
+- OpenRouter `finish_reason=error` compatibility is a release-bound runtime
+  blocker; no more paid retries should run before it is resolved.
 - Provider-originated EN/AR/voice canaries remain an owner-assisted gate.
+- Test-message outbound audits still need terminal readback or an explicitly
+  accepted retention disposition.
 - Repository-history privacy cleanup remains a separate destructive action.
 - Existing unrelated backlog remains separate: `tj-qy7y`, `tj-n8p6`,
   `tj-b93r`, `tj-final27.6`, `tj-gh21`, `tj-2pkk`, `tj-g3f`, `tj-9q0`,
