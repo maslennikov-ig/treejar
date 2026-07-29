@@ -1135,6 +1135,12 @@ _CATALOG_OPTION_CONTEXT_RE = re.compile(
     r"\b(?:option|alternative|variant)\b|(?:خيار|بديل)",
     re.IGNORECASE,
 )
+_CATALOG_PLAN_REFERENCE_RE = re.compile(
+    r"\b(?:this|that|same|selected)\s+(?:selected\s+)?"
+    r"(?:configuration|selection|plan)\b|"
+    r"(?:هذا|هذه|نفس)\s+(?:التكوين|الاختيار|الخطة)",
+    re.IGNORECASE,
+)
 _ADD_CATALOG_ACTION_RE = re.compile(
     r"\b(?:add|also|too)\b|(?:أضف|اضف|أيضاً|أيضا|ايضاً|ايضا)",
     re.IGNORECASE,
@@ -1401,6 +1407,8 @@ def _catalog_planning_for_turn(
     )
     replaces_family = _REPLACE_CATALOG_ACTION_RE.search(current_text) is not None
     adds_family = _ADD_CATALOG_ACTION_RE.search(current_text) is not None
+    explicit_new_intent = _NEW_CATALOG_INTENT_RE.search(current_text) is not None
+    references_plan = _CATALOG_PLAN_REFERENCE_RE.search(current_text) is not None
     references_existing = any(
         _contains_catalog_term(normalized_current, term)
         for term in _CATALOG_CONTINUATION_TERMS
@@ -1415,17 +1423,8 @@ def _catalog_planning_for_turn(
         and not adds_family
         and (
             starts_new_epoch
-            or (
-                disjoint_family_request
-                and _NEW_CATALOG_INTENT_RE.search(current_text) is not None
-            )
-            or (
-                not is_continuation
-                and (
-                    disjoint_family_request
-                    or _NEW_CATALOG_INTENT_RE.search(current_text) is not None
-                )
-            )
+            or (explicit_new_intent and not references_plan)
+            or (not is_continuation and disjoint_family_request)
         )
     )
     if starts_independent_intent:

@@ -53,6 +53,7 @@ success_criteria:
   - unknown explicit product and finish discriminators fail closed without an allowlist
   - an independent product intent starts a new planning epoch while an explicit continuation retains state
   - new, add, and replace actions have explicit precedence without treating another option as another order
+  - explicit new intent outranks a bare reference word while a plan-specific reference retains the current epoch
   - per-item and total budget limits are typed and retained independently in either clause order
   - exact product-model identifiers remain atomic across hyphens, digits, and case
   - budgeted cross-sell output cannot exceed the remainder in aggregate
@@ -119,6 +120,9 @@ verification:
   - final-review RED for action precedence, mixed budget clauses, atomic model identifiers, and general privacy wording: failed 13 of 20 as expected
   - final-review reviewer RED for another-option continuation and explicit disjoint intent with a bare reference: failed as expected
   - final-review focused affected set: passed 35
+  - final micro-review RED for overlapping-family intent and plan-specific continuation: failed 2 of 2 as expected
+  - final micro-review transition set: passed 13
+  - final micro-review Ruff, format, Mypy, diff, and artifact checks: passed
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -220,6 +224,12 @@ another cheaper option stays in the current epoch. Per-item and total caps are
 parsed from every local clause, stored separately in a backward-readable
 versioned state, and retained regardless of clause order.
 
+The final micro-review separated ordinary pronouns from plan references. An
+explicit `I/we need` request starts a new epoch even when it says `this home
+office` and the requested family overlaps the old plan. A phrase such as `this
+configuration`, `same selection`, or its Arabic equivalent retains the current
+plan; explicit add and replace actions still take precedence.
+
 Structured product matching now keeps model identifiers such as `COMP-4`
 atomic, including mixed case, so `COMP-5`, `COMP`, and `COMP-40` cannot satisfy
 that request. General wording such as `with individual privacy panels` is no
@@ -280,11 +290,16 @@ identifiers, general privacy wording, and the prior catalog/cross-sell
 contracts. Targeted Ruff lint and format checks and targeted Mypy for both
 production modules also passed.
 
+The final micro-review transition set passed 13 tests covering the
+overlapping-family reproduction, plan-specific continuation, prior independent
+intent, EN/AR new intent, regular continuation, add, replace, and option
+alternative behavior.
+
 # Delivery / Cleanup
 
-Returned to the parent orchestrator as a single correction commit on
-`codex/tj-ee5f-dialog-acceptance-review`. No push, deploy, production mutation,
-paid call, or external message was performed.
+Returned the final micro-correction as one commit on
+`codex/tj-ee5f-dialog-final-review`. No push, deploy, production mutation, paid
+call, or external message was performed.
 
 # Risks / Follow-ups / Explicit Defers
 

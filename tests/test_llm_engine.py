@@ -17714,11 +17714,11 @@ def test_catalog_plan_starts_new_epoch_for_independent_product_intent() -> None:
     assert planning.family_totals == {}
 
 
-def test_explicit_disjoint_intent_outranks_bare_reference_word() -> None:
+def test_explicit_intent_outranks_bare_reference_when_family_overlaps() -> None:
     current = "Now I need a chair for this home office."
     conversation = SimpleNamespace(
         id=uuid.uuid4(),
-        metadata_=_stored_catalog_plan(families=["workspace"]),
+        metadata_=_stored_catalog_plan(),
     )
 
     planning = engine_module._catalog_planning_for_turn(
@@ -17732,6 +17732,25 @@ def test_explicit_disjoint_intent_outranks_bare_reference_word() -> None:
     assert planning.requested_seats is None
     assert planning.budget_cap is None
     assert planning.family_totals == {}
+
+
+def test_explicit_intent_keeps_plan_when_reference_is_plan_specific() -> None:
+    current = "I need chairs for this configuration."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 1
+    assert planning.families == ("workspace", "seating")
+    assert planning.requested_seats == 12
+    assert planning.budget_cap == 7000.0
 
 
 @pytest.mark.parametrize(
