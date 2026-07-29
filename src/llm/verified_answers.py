@@ -401,6 +401,31 @@ _PRICE_OBJECTION_TERMS = (
     "competitor",
     "better price",
 )
+_EXTERNAL_PRICE_COMPARISON_TERMS = (
+    "competitor",
+    "another supplier",
+    "other supplier",
+    "elsewhere",
+    "why should i buy",
+)
+_INTERNAL_PRICE_OPTIMIZATION_TERMS = (
+    "configuration",
+    "option",
+    "alternative",
+    "cross-sell",
+    "cross sell",
+    "within budget",
+    "under aed",
+    "below aed",
+    "keep the total",
+)
+_INTERNAL_PRICE_OPTIMIZATION_ACTIONS = (
+    "give me",
+    "show me",
+    "find",
+    "recommend",
+    "suggest",
+)
 _RETENTION_TERMS = (
     "don't think we need this anymore",
     "do not think we need this anymore",
@@ -774,6 +799,14 @@ def detect_sales_fallback_intent(query: str) -> SalesFallbackIntent | None:
     if any(term in normalized for term in _RETENTION_TERMS):
         return "retention"
     if any(term in normalized for term in _PRICE_OBJECTION_TERMS):
+        internal_optimization = any(
+            term in normalized for term in _INTERNAL_PRICE_OPTIMIZATION_TERMS
+        ) and any(term in normalized for term in _INTERNAL_PRICE_OPTIMIZATION_ACTIONS)
+        external_comparison = any(
+            term in normalized for term in _EXTERNAL_PRICE_COMPARISON_TERMS
+        )
+        if internal_optimization and not external_comparison:
+            return None
         return "price_objection"
     if any(
         term in normalized for term in _OFF_CATALOG_TERMS

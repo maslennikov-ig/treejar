@@ -436,6 +436,20 @@ def test_policy_routes_product_price_objection_to_sales_fallback() -> None:
     assert decision.sales_fallback_intent == "price_objection"
 
 
+def test_policy_keeps_internal_cheaper_configuration_on_product_path() -> None:
+    decision = evaluate_verified_answer_policy(
+        query=(
+            "That configuration is too expensive. Give me a cheaper option and "
+            "one relevant cross-sell while keeping the total under AED 7,000."
+        ),
+        faq_context=[],
+    )
+
+    assert decision.question_class == "product"
+    assert decision.policy_action == "allow"
+    assert decision.sales_fallback_intent is None
+
+
 def test_policy_routes_retention_dropoff_to_sales_fallback() -> None:
     decision = evaluate_verified_answer_policy(
         query="Actually I don't think we need this anymore.",
