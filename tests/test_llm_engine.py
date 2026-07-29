@@ -5225,6 +5225,280 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_materializes_verified_catalog_after_empty_model_output(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai import UnexpectedModelBehavior
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Samir"
+    text = (
+        "That configuration is still too expensive. Give me a cheaper option "
+        "and one relevant cross-sell while keeping the total under AED 7,000. "
+        "Do not prepare a quotation."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_with_empty_output(*args: object, **kwargs: object) -> object:
+        run_deps = kwargs["deps"]
+        assert isinstance(run_deps, SalesDeps)
+        run_deps.catalog_planning = engine_module.CatalogPlanningContext(
+            requested_seats=12,
+            families=("seating", "workspace"),
+            complete_coverage=True,
+            budget_cap=7000.0,
+            family_totals={"seating": 2400.0, "workspace": 3600.0},
+        )
+        run_deps.verified_catalog_selections = {
+            "seating": (
+                engine_module.VerifiedCatalogLine(
+                    family="seating",
+                    name="Task Chair",
+                    sku="CHAIR-A",
+                    quantity=12,
+                    unit_price=200.0,
+                    total=2400.0,
+                    currency="AED",
+                    stock=20,
+                    capacity=1,
+                ),
+            ),
+            "workspace": (
+                engine_module.VerifiedCatalogLine(
+                    family="workspace",
+                    name="Two-person Workstation",
+                    sku="DESK-A",
+                    quantity=6,
+                    unit_price=600.0,
+                    total=3600.0,
+                    currency="AED",
+                    stock=10,
+                    capacity=2,
+                ),
+            ),
+        }
+        run_deps.verified_cross_sell = engine_module.VerifiedCrossSell(
+            name="Mobile Pedestal",
+            sku="STORAGE-A",
+            price=250.0,
+            currency="AED",
+            stock=8,
+        )
+        usage = kwargs["usage"]
+        usage.input_tokens = 321
+        usage.output_tokens = 45
+        model = kwargs["model"]
+        model._treejar_provider_cost_usd = 0.0123
+        run_deps.executed_tool_names.extend(
+            ("search_products", "search_products", "recommend_products")
+        )
+        for sequence, (tool_name, arguments, outcome) in enumerate(
+            (
+                ("search_products", {"query": "task chairs"}, "verified chairs"),
+                ("search_products", {"query": "compact desks"}, "verified desks"),
+                (
+                    "recommend_products",
+                    {"category": "desk", "recommendation_type": "cross_sell"},
+                    "verified pedestal",
+                ),
+            ),
+            start=1,
+        ):
+            run_deps.recovery_tool_traces.append(
+                engine_module.build_runtime_tool_trace(
+                    tool_name=tool_name,
+                    arguments={"sequence": sequence, **arguments},
+                    outcome=outcome,
+                )
+            )
+        raise UnexpectedModelBehavior(
+            "Exceeded maximum retries (2) for output validation"
+        )
+
+    mock_run.side_effect = run_with_empty_output
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|verified-catalog-recovery"
+    assert response.tokens_in == 321
+    assert response.tokens_out == 45
+    assert response.cost == pytest.approx(0.0123)
+    assert response.usage_provenance == "provider_reported"
+    assert "Task Chair" in response.text
+    assert "12 × AED 200.00 = AED 2400.00" in response.text
+    assert "Two-person Workstation" in response.text
+    assert "Mobile Pedestal" in response.text
+    assert "AED 6250.00" in response.text
+    assert "No quotation was created." in response.text
+    assert len(response.text) <= 900
+    assert [trace.tool_name for trace in response.tool_traces] == [
+        "search_products",
+        "search_products",
+        "recommend_products",
+    ]
+    assert all(trace.state == "returned" for trace in response.tool_traces)
+    run_deps = mock_run.await_args.kwargs["deps"]
+    assert isinstance(run_deps, SalesDeps)
+    assert run_deps.quotation_created is False
+    run_deps.verified_catalog_selections["seating"] = (
+        engine_module.VerifiedCatalogLine(
+            family="seating",
+            name="X" * 1000,
+            sku="CHAIR-A",
+            quantity=12,
+            unit_price=200.0,
+            total=2400.0,
+            currency="AED",
+            stock=20,
+            capacity=1,
+        ),
+    )
+    assert (
+        engine_module._materialize_verified_catalog_recovery(
+            run_deps,
+            response.tool_traces,
+            explicit_quote_hold=True,
+        )
+        is None
+    )
+    mock_run.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_does_not_recover_catalog_after_side_effect_tool(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai import UnexpectedModelBehavior
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Samir"
+    text = (
+        "Give me a cheaper chair-and-desk configuration with a cross-sell "
+        "under AED 7,000. Do not prepare a quotation."
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_with_side_effect(*args: object, **kwargs: object) -> object:
+        run_deps = kwargs["deps"]
+        assert isinstance(run_deps, SalesDeps)
+        run_deps.catalog_planning = engine_module.CatalogPlanningContext(
+            requested_seats=12,
+            families=("seating", "workspace"),
+            complete_coverage=True,
+            budget_cap=7000.0,
+            family_totals={"seating": 2400.0, "workspace": 3600.0},
+        )
+        run_deps.verified_catalog_selections = {
+            "seating": (
+                engine_module.VerifiedCatalogLine(
+                    family="seating",
+                    name="Task Chair",
+                    sku="CHAIR-A",
+                    quantity=12,
+                    unit_price=200.0,
+                    total=2400.0,
+                    currency="AED",
+                    stock=20,
+                    capacity=1,
+                ),
+            ),
+            "workspace": (
+                engine_module.VerifiedCatalogLine(
+                    family="workspace",
+                    name="Workstation",
+                    sku="DESK-A",
+                    quantity=6,
+                    unit_price=600.0,
+                    total=3600.0,
+                    currency="AED",
+                    stock=10,
+                    capacity=2,
+                ),
+            ),
+        }
+        run_deps.required_cross_sell_disclosure = (
+            "No verified cross-sell fits the remaining budget."
+        )
+        run_deps.executed_tool_names.extend(
+            ("search_products", "recommend_products", "create_deal")
+        )
+        for sequence, tool_name in enumerate(
+            ("search_products", "recommend_products", "create_deal"),
+            start=1,
+        ):
+            run_deps.recovery_tool_traces.append(
+                engine_module.build_runtime_tool_trace(
+                    tool_name=tool_name,
+                    arguments={"sequence": sequence},
+                    outcome="returned",
+                )
+            )
+        raise UnexpectedModelBehavior(
+            "Exceeded maximum retries (2) for output validation"
+        )
+
+    mock_run.side_effect = run_with_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model|error"
+    assert "temporary issue" in response.text
+    mock_run.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_requirement_correction_keeps_quote_hold(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -6501,6 +6775,17 @@ async def test_recommend_products_cross_sell_returns_grounding_contract(
     assert "70.80 AED" in result.return_value
     assert "in stock: 10" in result.return_value
     assert "do not invent another cross-sell" in result.content.casefold()
+    assert deps.verified_cross_sell == engine_module.VerifiedCrossSell(
+        name="Desk Screen Divider",
+        sku=None,
+        price=70.8,
+        currency="AED",
+        stock=10,
+    )
+    assert deps.executed_tool_names == ["recommend_products"]
+    assert [trace.tool_name for trace in deps.recovery_tool_traces] == [
+        "recommend_products"
+    ]
     mock_get_cross_sell.assert_awaited_once_with(db, "desk", limit=3)
 
 
@@ -17898,9 +18183,27 @@ async def test_catalog_search_keeps_lower_verified_family_total_across_alternati
 
     assert isinstance(result, ToolReturn)
     assert planning.family_totals["seating"] == 3480.0
+    assert deps.verified_catalog_selections["seating"] == (
+        engine_module.VerifiedCatalogLine(
+            family="seating",
+            name="Operative Office Chair",
+            sku="CHAIR-LOWER",
+            quantity=12,
+            unit_price=290.0,
+            total=3480.0,
+            currency="AED",
+            stock=12,
+            capacity=1,
+        ),
+    )
     assert "3480.00 AED" in result.content
     assert "3564.00 AED" in result.content
     assert "do not call the current option cheapest" in result.content.casefold()
+    assert deps.executed_tool_names == ["search_products", "search_products"]
+    assert [trace.tool_name for trace in deps.recovery_tool_traces] == [
+        "search_products",
+        "search_products",
+    ]
 
 
 @pytest.mark.asyncio

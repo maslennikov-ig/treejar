@@ -287,6 +287,7 @@ def test_openrouter_chat_model_preserves_provider_reported_cost() -> None:
     details = model._process_provider_details(response)
 
     assert details["usage_cost_usd"] == 0.00125
+    assert model.provider_cost_snapshot() == 0.00125
     result = SimpleNamespace(
         usage=lambda: SimpleNamespace(input_tokens=10, output_tokens=5),
         new_messages=lambda: [

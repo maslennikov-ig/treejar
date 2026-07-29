@@ -10,16 +10,18 @@ from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
+from functools import wraps
 from html import escape
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, SkipValidation, ValidationError
-from pydantic_ai import Agent, RunContext, ToolReturn
+from pydantic_ai import Agent, RunContext, ToolReturn, UnexpectedModelBehavior
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import RunUsage
 from redis.asyncio import Redis
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -138,6 +140,7 @@ from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
 from src.services.runtime_execution_evidence import (
     RuntimeToolTrace,
+    build_runtime_tool_trace,
     extract_runtime_tool_traces,
 )
 
@@ -1221,6 +1224,39 @@ class CatalogPlanningContext(BaseModel):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedCatalogLine:
+    family: CatalogFamily
+    name: str
+    sku: str
+    quantity: int
+    unit_price: float
+    total: float
+    currency: str
+    stock: int
+    capacity: int
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedCrossSell:
+    name: str
+    sku: str | None
+    price: float
+    currency: str
+    stock: int
+
+
+@dataclass(frozen=True, slots=True)
+class _CatalogCoverageCandidate:
+    family: CatalogFamily
+    name: str
+    sku: str
+    capacity: int
+    stock: int
+    unit_price: float
+    currency: str
+
+
 @dataclass(frozen=True)
 class CatalogBudgetConstraints:
     total_cap: float | None = None
@@ -1571,6 +1607,60 @@ def _minimum_catalog_coverage_total(
     return round(total, 2) if total is not None else None
 
 
+def _minimum_catalog_coverage_selection(
+    candidates: Sequence[_CatalogCoverageCandidate],
+    requested_seats: int,
+) -> tuple[VerifiedCatalogLine, ...] | None:
+    if requested_seats <= 0 or not candidates:
+        return None
+    states: dict[int, tuple[float, tuple[int, ...]]] = {
+        0: (0.0, (0,) * len(candidates))
+    }
+    for index, candidate in enumerate(candidates):
+        if candidate.capacity <= 0 or candidate.stock <= 0 or candidate.unit_price <= 0:
+            continue
+        max_units = min(
+            candidate.stock,
+            (requested_seats + candidate.capacity - 1) // candidate.capacity,
+        )
+        updated = dict(states)
+        for covered, (cost, quantities) in states.items():
+            for quantity in range(1, max_units + 1):
+                new_covered = min(
+                    requested_seats,
+                    covered + quantity * candidate.capacity,
+                )
+                new_cost = cost + quantity * candidate.unit_price
+                previous = updated.get(new_covered)
+                if previous is not None and previous[0] <= new_cost:
+                    continue
+                new_quantities = list(quantities)
+                new_quantities[index] = quantity
+                updated[new_covered] = (new_cost, tuple(new_quantities))
+        states = updated
+
+    selected = states.get(requested_seats)
+    if selected is None:
+        return None
+    _, quantities = selected
+    lines = tuple(
+        VerifiedCatalogLine(
+            family=candidate.family,
+            name=candidate.name,
+            sku=candidate.sku,
+            quantity=quantity,
+            unit_price=round(candidate.unit_price, 2),
+            total=round(quantity * candidate.unit_price, 2),
+            currency=candidate.currency,
+            stock=candidate.stock,
+            capacity=candidate.capacity,
+        )
+        for candidate, quantity in zip(candidates, quantities, strict=True)
+        if quantity > 0
+    )
+    return lines or None
+
+
 def _catalog_remaining_budget(planning: CatalogPlanningContext) -> float | None:
     selected_total = planning.selected_total
     if planning.budget_cap is None or selected_total is None:
@@ -1828,6 +1918,12 @@ class SalesDeps:
     quotation_created: bool = False
     catalog_mismatch_alerted: bool = False
     required_cross_sell_disclosure: str | None = None
+    verified_catalog_selections: dict[
+        CatalogFamily, tuple[VerifiedCatalogLine, ...]
+    ] = field(default_factory=dict)
+    verified_cross_sell: VerifiedCrossSell | None = None
+    executed_tool_names: list[str] = field(default_factory=list)
+    recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
 
 
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
@@ -1835,6 +1931,190 @@ def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
     if not disclosure or _normalize_text(disclosure) in _normalize_text(text):
         return text
     return f"{text.rstrip()}\n\n{disclosure}"
+
+
+def _track_sales_tool(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Record every executed sales tool without changing its public signature."""
+
+    @wraps(func)
+    async def tracked(
+        ctx: RunContext[SalesDeps],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        executed_tool_names = getattr(ctx.deps, "executed_tool_names", None)
+        if isinstance(executed_tool_names, list):
+            executed_tool_names.append(func.__name__)
+        return await func(ctx, *args, **kwargs)
+
+    return tracked
+
+
+def _record_recovery_tool_result(
+    deps: SalesDeps,
+    *,
+    tool_name: str,
+    arguments: Mapping[str, object],
+    result: str | ToolReturn,
+) -> str | ToolReturn:
+    outcome = (
+        {
+            "return_value": result.return_value,
+            "content": result.content,
+        }
+        if isinstance(result, ToolReturn)
+        else result
+    )
+    traces = getattr(deps, "recovery_tool_traces", None)
+    if isinstance(traces, list):
+        traces.append(
+            build_runtime_tool_trace(
+                tool_name=tool_name,
+                arguments={
+                    "sequence": len(traces) + 1,
+                    **arguments,
+                },
+                outcome=outcome,
+            )
+        )
+    return result
+
+
+def _materialize_verified_catalog_recovery(
+    deps: SalesDeps,
+    tool_traces: tuple[RuntimeToolTrace, ...],
+    *,
+    explicit_quote_hold: bool,
+) -> str | None:
+    planning = deps.catalog_planning
+    required_families = tuple(dict.fromkeys(planning.families))
+    trace_names = tuple(trace.tool_name for trace in tool_traces)
+    allowed_tools = {"search_products", "recommend_products"}
+    if (
+        not explicit_quote_hold
+        or deps.quotation_created
+        or is_active_human_handoff(deps.conversation.escalation_status)
+        or not planning.complete_coverage
+        or planning.requested_seats is None
+        or planning.budget_cap is None
+        or planning.selected_total is None
+        or not required_families
+        or not tool_traces
+        or any(trace.state != "returned" for trace in tool_traces)
+        or not set(trace_names).issubset(allowed_tools)
+        or tuple(deps.executed_tool_names) != trace_names
+        or trace_names.count("search_products") < len(required_families)
+        or "recommend_products" not in trace_names
+    ):
+        return None
+
+    selected_lines: list[VerifiedCatalogLine] = []
+    for family in required_families:
+        family_lines = deps.verified_catalog_selections.get(family)
+        if not family_lines:
+            return None
+        family_total = 0.0
+        family_coverage = 0
+        for line in family_lines:
+            if (
+                line.family != family
+                or not line.name.strip()
+                or not line.sku.strip()
+                or line.quantity <= 0
+                or line.unit_price <= 0
+                or line.stock < line.quantity
+                or line.capacity <= 0
+                or abs(line.total - line.quantity * line.unit_price) > 0.01
+            ):
+                return None
+            family_total += line.total
+            family_coverage += line.quantity * line.capacity
+        if family_coverage < planning.requested_seats:
+            return None
+        if abs(family_total - planning.family_totals.get(family, -1.0)) > 0.01:
+            return None
+        selected_lines.extend(family_lines)
+
+    selected_total = round(sum(line.total for line in selected_lines), 2)
+    if (
+        abs(selected_total - planning.selected_total) > 0.01
+        or selected_total > planning.budget_cap
+    ):
+        return None
+
+    cross_sell = deps.verified_cross_sell
+    disclosure = _string_value(deps.required_cross_sell_disclosure)
+    if cross_sell is None and not disclosure:
+        return None
+    currencies = {line.currency.strip().upper() for line in selected_lines}
+    if len(currencies) != 1 or "" in currencies:
+        return None
+    currency = currencies.pop()
+    final_total = selected_total
+    if cross_sell is not None:
+        if (
+            not cross_sell.name.strip()
+            or cross_sell.price <= 0
+            or cross_sell.stock <= 0
+            or cross_sell.currency.strip().upper() != currency
+        ):
+            return None
+        final_total = round(selected_total + cross_sell.price, 2)
+        if final_total > planning.budget_cap:
+            return None
+
+    remaining = round(planning.budget_cap - final_total, 2)
+    language = str(deps.conversation.language)
+    if language == "ar":
+        lines = [f"تكوين مؤكد أقل تكلفة لـ {planning.requested_seats} مقعداً:"]
+        lines.extend(
+            (
+                f"- {line.name} (SKU {line.sku}): {line.quantity} × "
+                f"{line.unit_price:.2f} {currency} = {line.total:.2f} {currency}"
+            )
+            for line in selected_lines
+        )
+        lines.append(f"إجمالي التكوين: {selected_total:.2f} {currency}.")
+        if cross_sell is not None:
+            sku = f" (SKU {cross_sell.sku})" if cross_sell.sku else ""
+            lines.append(
+                f"إضافة مؤكدة: {cross_sell.name}{sku} — "
+                f"{cross_sell.price:.2f} {currency}."
+            )
+            lines.append(
+                f"الإجمالي مع الإضافة: {final_total:.2f} {currency}. "
+                f"المتبقي من الميزانية: {remaining:.2f} {currency}."
+            )
+        elif disclosure:
+            lines.append(disclosure)
+        lines.append("لم يتم إنشاء عرض سعر.")
+        response_text = "\n".join(lines)
+        return response_text if len(response_text) <= 900 else None
+
+    lines = [f"Verified lower-cost configuration for {planning.requested_seats} seats:"]
+    lines.extend(
+        (
+            f"- {line.name} (SKU {line.sku}): {line.quantity} × "
+            f"{currency} {line.unit_price:.2f} = {currency} {line.total:.2f}"
+        )
+        for line in selected_lines
+    )
+    lines.append(f"Configuration total: {currency} {selected_total:.2f}.")
+    if cross_sell is not None:
+        sku = f" (SKU {cross_sell.sku})" if cross_sell.sku else ""
+        lines.append(
+            f"Verified cross-sell: {cross_sell.name}{sku} — "
+            f"{currency} {cross_sell.price:.2f}."
+        )
+        lines.append(
+            f"Total with cross-sell: {currency} {final_total:.2f}. "
+            f"Remaining budget: {currency} {remaining:.2f}."
+        )
+    elif disclosure:
+        lines.append(disclosure)
+    lines.append("No quotation was created.")
+    response_text = "\n".join(lines)
+    return response_text if len(response_text) <= 900 else None
 
 
 # Allowed transitions for the advance_stage tool
@@ -10413,6 +10693,7 @@ async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
 # NOTE: Function name MUST match prompt references (prompts.py) exactly.
 # PydanticAI derives tool name from function name.
 @sales_agent.tool
+@_track_sales_tool
 async def search_products(
     ctx: RunContext[SalesDeps],
     query: str,
@@ -10593,7 +10874,7 @@ async def search_products(
     target_product_family = _catalog_product_family(effective_query)
     available_seat_coverage = 0
     has_capacity_evidence = False
-    coverage_variants: list[tuple[int, int, float]] = []
+    coverage_candidates: list[_CatalogCoverageCandidate] = []
     for r in results.products:
         catalog_price = _valid_catalog_price(r)
         discounted_price: float | None = None
@@ -10632,8 +10913,16 @@ async def search_products(
             product_stock = max(int(r.stock or 0), 0)
             available_seat_coverage += product_stock * product_capacity
             if discounted_price is not None and discounted_price > 0:
-                coverage_variants.append(
-                    (product_capacity, product_stock, discounted_price)
+                coverage_candidates.append(
+                    _CatalogCoverageCandidate(
+                        family=product_family,
+                        name=str(r.name_en),
+                        sku=str(r.sku),
+                        capacity=product_capacity,
+                        stock=product_stock,
+                        unit_price=discounted_price,
+                        currency=str(r.currency),
+                    )
                 )
         if product_capacity is not None and product_capacity > 1:
             desc += (
@@ -10697,9 +10986,14 @@ async def search_products(
             target_product_family is not None
             and ctx.deps.catalog_planning.complete_coverage
         ):
-            planned_total = _minimum_catalog_coverage_total(
-                coverage_variants,
+            planned_selection = _minimum_catalog_coverage_selection(
+                coverage_candidates,
                 requested_seats,
+            )
+            planned_total = (
+                round(sum(line.total for line in planned_selection), 2)
+                if planned_selection is not None
+                else None
             )
             prior_total = ctx.deps.catalog_planning.family_totals.get(
                 target_product_family
@@ -10715,6 +11009,10 @@ async def search_products(
                     planned_total,
                     prior_total if prior_total is not None else planned_total,
                 )
+                if prior_total is None or planned_total <= prior_total:
+                    ctx.deps.verified_catalog_selections[target_product_family] = (
+                        planned_selection or ()
+                    )
             await _store_catalog_planning(
                 ctx.deps.db,
                 ctx.deps.conversation,
@@ -10736,18 +11034,28 @@ async def search_products(
     search_budget_exhausted = (
         ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
     )
-    return ToolReturn(
-        return_value="\n---\n".join(formatted_results),
-        content=_product_search_response_contract(
-            match_kind=product_match,
-            search_budget_exhausted=search_budget_exhausted,
-            target_coverage_complete=target_coverage_complete,
-            lower_verified_family_total=lower_verified_family_total,
+    return _record_recovery_tool_result(
+        ctx.deps,
+        tool_name="search_products",
+        arguments={
+            "query": query,
+            "max_price": max_price,
+            "min_price": min_price,
+        },
+        result=ToolReturn(
+            return_value="\n---\n".join(formatted_results),
+            content=_product_search_response_contract(
+                match_kind=product_match,
+                search_budget_exhausted=search_budget_exhausted,
+                target_coverage_complete=target_coverage_complete,
+                lower_verified_family_total=lower_verified_family_total,
+            ),
         ),
     )
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
     """Check the Zoho-confirmed exact stock level and unit price for a specific product SKU.
 
@@ -10805,6 +11113,7 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def advance_stage(ctx: RunContext[SalesDeps], next_stage: SalesStage) -> str:
     """Advance the sales conversation to the next stage when the current objective is met.
 
@@ -10825,6 +11134,7 @@ async def advance_stage(ctx: RunContext[SalesDeps], next_stage: SalesStage) -> s
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def update_language(ctx: RunContext[SalesDeps], language: Language) -> str:
     """Update the preferred language of the conversation based on the user's messages.
     Call this immediately if the user starts speaking a language different from the current setting.
@@ -10836,6 +11146,7 @@ async def update_language(ctx: RunContext[SalesDeps], language: Language) -> str
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def lookup_customer(ctx: RunContext[SalesDeps], phone: str) -> str:
     """Check if the customer's phone number already exists in the CRM system.
     Call this when clarifying customer details or preparing to create a deal.
@@ -11268,6 +11579,7 @@ def _sales_opportunity_response(
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def create_deal(
     ctx: RunContext[SalesDeps], title: str, amount: float | None = None
 ) -> str:
@@ -11307,6 +11619,7 @@ async def create_deal(
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def create_quotation(
     ctx: RunContext[SalesDeps],
     items: list[QuotationItem],
@@ -11766,6 +12079,7 @@ def _no_verified_cross_sell_disclosure(
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def recommend_products(
     ctx: RunContext[SalesDeps],
     product_id: str | None = None,
@@ -11811,6 +12125,20 @@ async def recommend_products(
 
     elif recommendation_type == "cross_sell" and category:
         ctx.deps.required_cross_sell_disclosure = None
+        ctx.deps.verified_cross_sell = None
+
+        def _finish_cross_sell(result: str | ToolReturn) -> str | ToolReturn:
+            return _record_recovery_tool_result(
+                ctx.deps,
+                tool_name="recommend_products",
+                arguments={
+                    "product_id": product_id,
+                    "category": category,
+                    "recommendation_type": recommendation_type,
+                },
+                result=result,
+            )
+
         remaining_budget = _catalog_remaining_budget(ctx.deps.catalog_planning)
         if (
             ctx.deps.catalog_planning.budget_cap is not None
@@ -11819,14 +12147,16 @@ async def recommend_products(
             ctx.deps.required_cross_sell_disclosure = (
                 _no_verified_cross_sell_disclosure(str(ctx.deps.conversation.language))
             )
-            return ToolReturn(
-                return_value=(
-                    "No cross-sell is verified within the remaining budget because "
-                    "the selected configuration total is incomplete."
-                ),
-                content=(
-                    "Do not add a cross-sell until the selected catalog configuration "
-                    "has a verified total."
+            return _finish_cross_sell(
+                ToolReturn(
+                    return_value=(
+                        "No cross-sell is verified within the remaining budget because "
+                        "the selected configuration total is incomplete."
+                    ),
+                    content=(
+                        "Do not add a cross-sell until the selected catalog configuration "
+                        "has a verified total."
+                    ),
                 ),
             )
 
@@ -11844,14 +12174,16 @@ async def recommend_products(
                         has_budget=(ctx.deps.catalog_planning.budget_cap is not None),
                     )
                 )
-                return ToolReturn(
-                    return_value=(
-                        "No verified cross-sell fits the remaining budget of "
-                        f"{remaining_budget:.2f} AED."
-                    ),
-                    content=(
-                        "Do not add a cross-sell or exceed the customer's stated "
-                        "budget cap."
+                return _finish_cross_sell(
+                    ToolReturn(
+                        return_value=(
+                            "No verified cross-sell fits the remaining budget of "
+                            f"{remaining_budget:.2f} AED."
+                        ),
+                        content=(
+                            "Do not add a cross-sell or exceed the customer's stated "
+                            "budget cap."
+                        ),
                     ),
                 )
             items = [
@@ -11896,30 +12228,41 @@ async def recommend_products(
                         has_budget=(ctx.deps.catalog_planning.budget_cap is not None),
                     )
                 )
-                return ToolReturn(
-                    return_value=(
-                        f"No cross-sell items found for category '{category}'."
-                    ),
-                    content=(
-                        "No verified catalog cross-sell was found. Say that honestly "
-                        "and do not invent an item, price, availability, or budget fit."
+                return _finish_cross_sell(
+                    ToolReturn(
+                        return_value=(
+                            f"No cross-sell items found for category '{category}'."
+                        ),
+                        content=(
+                            "No verified catalog cross-sell was found. Say that honestly "
+                            "and do not invent an item, price, availability, or budget fit."
+                        ),
                     ),
                 )
             product = min(
                 fallback_items,
                 key=lambda item: _valid_catalog_price(item) or float("inf"),
             )
-            return ToolReturn(
-                return_value=(
-                    "Verified complementary catalog option:\n"
-                    f"- {product.name_en} (SKU: {product.sku}): "
-                    f"{float(product.price):.2f} {product.currency} "
-                    f"(in stock: {product.stock})"
-                ),
-                content=(
-                    "Use this one verified complementary item only; include it only "
-                    "with the verified selected total and remaining budget shown "
-                    "by this tool."
+            ctx.deps.verified_cross_sell = VerifiedCrossSell(
+                name=str(product.name_en),
+                sku=str(product.sku),
+                price=float(product.price),
+                currency=str(product.currency),
+                stock=int(product.stock),
+            )
+            return _finish_cross_sell(
+                ToolReturn(
+                    return_value=(
+                        "Verified complementary catalog option:\n"
+                        f"- {product.name_en} (SKU: {product.sku}): "
+                        f"{float(product.price):.2f} {product.currency} "
+                        f"(in stock: {product.stock})"
+                    ),
+                    content=(
+                        "Use this one verified complementary item only; include it only "
+                        "with the verified selected total and remaining budget shown "
+                        "by this tool."
+                    ),
                 ),
             )
 
@@ -11928,16 +12271,26 @@ async def recommend_products(
             lines.append(
                 f"- {item.name}: {item.price:.2f} AED (in stock: {item.stock})"
             )
-        return ToolReturn(
-            return_value="\n".join(lines),
-            content=(
-                "Use only these verified cross-sell items and their returned "
-                "price and stock. Do not invent another cross-sell."
-                + (
-                    f" The verified remaining budget is {remaining_budget:.2f} AED."
-                    if remaining_budget is not None
-                    else ""
-                )
+        selected_item = items[0]
+        ctx.deps.verified_cross_sell = VerifiedCrossSell(
+            name=str(selected_item.name),
+            sku=None,
+            price=float(selected_item.price),
+            currency="AED",
+            stock=int(selected_item.stock),
+        )
+        return _finish_cross_sell(
+            ToolReturn(
+                return_value="\n".join(lines),
+                content=(
+                    "Use only these verified cross-sell items and their returned "
+                    "price and stock. Do not invent another cross-sell."
+                    + (
+                        f" The verified remaining budget is {remaining_budget:.2f} AED."
+                        if remaining_budget is not None
+                        else ""
+                    )
+                ),
             ),
         )
 
@@ -11947,6 +12300,7 @@ async def recommend_products(
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def generate_referral_code(ctx: RunContext[SalesDeps]) -> str:
     """Generate a referral code for the current customer.
     The customer can share this code with friends for a discount.
@@ -11965,6 +12319,7 @@ async def generate_referral_code(ctx: RunContext[SalesDeps]) -> str:
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
     """Apply a referral code provided by the customer.
     This gives them a discount on their purchase.
@@ -11985,6 +12340,7 @@ async def apply_referral_code(ctx: RunContext[SalesDeps], code: str) -> str:
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def save_feedback(
     ctx: RunContext[SalesDeps],
     rating_overall: int,
@@ -12051,6 +12407,7 @@ async def save_feedback(
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
     """Check the current status of the customer's order.
     Call this when the customer asks about their order status, delivery, or shipment.
@@ -12106,6 +12463,7 @@ async def check_order_status(ctx: RunContext[SalesDeps]) -> str:
 
 
 @sales_agent.tool
+@_track_sales_tool
 async def escalate_to_manager(
     ctx: RunContext[SalesDeps],
     reason: str,
@@ -13200,11 +13558,14 @@ async def process_message(
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
             settings=model_settings_for_path(PATH_CORE_CHAT, model_name=db_model_main),
         )
+        failed_run_usage: RunUsage | None = None
 
         async def _run_agent(run_deps: SalesDeps) -> Any:
+            nonlocal failed_run_usage
             agent_started = (
                 latency_trace.start_phase() if latency_trace is not None else None
             )
+            run_usage = RunUsage()
             try:
                 result = await run_agent_with_safety(
                     sales_agent,
@@ -13214,10 +13575,14 @@ async def process_message(
                     message_history=history,
                     model=dynamic_model,
                     model_name=db_model_main,
+                    usage=run_usage,
                 )
                 if run_deps.inventory_confirmed:
                     deps.inventory_confirmed = True
                 return result
+            except UnexpectedModelBehavior:
+                failed_run_usage = run_usage
+                raise
             finally:
                 if latency_trace is not None and agent_started is not None:
                     latency_trace.finish_phase("model_tools", agent_started)
@@ -13487,7 +13852,49 @@ async def process_message(
                     *CROSS_SELL_VERIFICATION_DIRECTIVES,
                 ),
             )
-        result = await _run_agent(run_deps)
+        try:
+            result = await _run_agent(run_deps)
+        except UnexpectedModelBehavior:
+            recovery_traces = tuple(run_deps.recovery_tool_traces)
+            recovery_text = _materialize_verified_catalog_recovery(
+                run_deps,
+                recovery_traces,
+                explicit_quote_hold=(
+                    _has_explicit_quote_hold(masked_text)
+                    or _has_explicit_quote_hold(combined_text)
+                ),
+            )
+            if recovery_text is None:
+                raise
+            await _clear_verified_policy_repair_state()
+            final_text = unmask_pii(recovery_text, pii_map)
+            final_text = _repair_closed_questions(final_text)
+            final_text = _apply_first_turn_opening_guard(final_text)
+            record_legacy_route(
+                conv,
+                dialogue_kernel_result,
+                legacy_route=f"{db_model_main}|verified-catalog-recovery",
+            )
+            _capture_expected_answer_frames_from_assistant_response(
+                conv,
+                response_text=final_text,
+                dialogue_kernel_mode=dialogue_kernel_mode,
+            )
+            usage = failed_run_usage or RunUsage()
+            return LLMResponse(
+                text=final_text,
+                tokens_in=usage.input_tokens,
+                tokens_out=usage.output_tokens,
+                cost=dynamic_model.provider_cost_snapshot(),
+                model=f"{db_model_main}|verified-catalog-recovery",
+                usage_provenance="provider_reported",
+                deferred_product_media=_deferred_product_media_for_response(
+                    run_deps,
+                    allow_product_media=True,
+                    response_text=final_text,
+                ),
+                tool_traces=recovery_traces,
+            )
         await _clear_verified_policy_repair_state()
         return _build_llm_response(
             result,

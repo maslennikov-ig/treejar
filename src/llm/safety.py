@@ -163,7 +163,10 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
             if (valid := _valid_cost(value)) is not None
         ]
         if valid_costs:
-            details["usage_cost_usd"] = sum(valid_costs)
+            response_cost = sum(valid_costs)
+            details["usage_cost_usd"] = response_cost
+            prior_cost = self.provider_cost_snapshot() or 0.0
+            self._treejar_provider_cost_usd = prior_cost + response_cost
 
         retry_count = _usage_number(response, _OPENROUTER_RETRY_COUNT_ATTR)
         if isinstance(retry_count, int) and retry_count > 0:
@@ -172,6 +175,10 @@ class OpenRouterTelemetryChatModel(OpenAIChatModel):
             if isinstance(error_type, str) and error_type:
                 details["openrouter_error_type"] = error_type
         return details
+
+    def provider_cost_snapshot(self) -> float | None:
+        """Return cost reported by provider responses processed in this run."""
+        return _valid_cost(getattr(self, "_treejar_provider_cost_usd", None))
 
 
 @dataclass(frozen=True, slots=True)
