@@ -140,6 +140,19 @@ class InboundBatchTerminalError(RuntimeError):
         super().__init__(kind)
 
 
+_VOICE_AUDIT_MAX_RECORDS = 16
+_VOICE_AUDIT_MAX_ID_LENGTH = 256
+_VOICE_AUDIT_MAX_MODEL_LENGTH = 128
+
+
+def _bounded_voice_audit_value(value: str | None, *, max_length: int) -> str | None:
+    if value is None or len(value) <= max_length:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    prefix_length = max_length - len(digest) - 1
+    return f"{value[:prefix_length]}:{digest}"
+
+
 def _voice_fallback_text(language: str | None) -> str:
     return VOICE_FALLBACK_AR if language == "ar" else VOICE_FALLBACK_EN
 
@@ -160,11 +173,25 @@ def _record_voice_transcription_audit(
     conversation: Any,
     audio_results: Mapping[str, _AudioProcessingResult],
 ) -> None:
+    successful_results = [
+        (message_id, result)
+        for message_id, result in sorted(audio_results.items())
+        if not result.failed
+    ][:_VOICE_AUDIT_MAX_RECORDS]
     records = [
         {
-            "message_id": message_id,
-            "model": result.model,
-            "generation_id": result.generation_id,
+            "message_id": _bounded_voice_audit_value(
+                message_id,
+                max_length=_VOICE_AUDIT_MAX_ID_LENGTH,
+            ),
+            "model": _bounded_voice_audit_value(
+                result.model,
+                max_length=_VOICE_AUDIT_MAX_MODEL_LENGTH,
+            ),
+            "generation_id": _bounded_voice_audit_value(
+                result.generation_id,
+                max_length=_VOICE_AUDIT_MAX_ID_LENGTH,
+            ),
             "tokens_in": result.tokens_in,
             "tokens_out": result.tokens_out,
             "total_tokens": result.total_tokens,
@@ -172,8 +199,7 @@ def _record_voice_transcription_audit(
             "duration_seconds": result.duration_seconds,
             "request_duration_seconds": result.request_duration_seconds,
         }
-        for message_id, result in sorted(audio_results.items())
-        if not result.failed
+        for message_id, result in successful_results
     ]
     if not records:
         return

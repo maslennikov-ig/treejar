@@ -10,7 +10,9 @@ from src.models.message import Message
 from src.services.chat import (
     INBOUND_EXECUTION_STARTED,
     InboundBatchTerminalError,
+    _AudioProcessingResult,
     _format_for_whatsapp,
+    _record_voice_transcription_audit,
     _voice_fallback_crm_message_id,
     process_incoming_batch,
 )
@@ -76,6 +78,30 @@ def test_voice_fallback_id_is_stable_per_distinct_inbound_message_set() -> None:
     assert first == "voice-fallback:conversation-1:audio-a:audio-b"
     assert retry == first
     assert another_message != first
+
+
+def test_voice_transcription_audit_is_bounded() -> None:
+    conversation = SimpleNamespace(metadata_={"existing": "preserved"})
+    audio_results = {
+        f"message-{index}-{'m' * 300}": _AudioProcessingResult(
+            url="https://protected.invalid/audio",
+            transcription="sensitive transcript",
+            model="model-" + ("x" * 300),
+            generation_id="generation-" + ("y" * 300),
+        )
+        for index in range(20)
+    }
+
+    _record_voice_transcription_audit(conversation, audio_results)
+
+    audit = conversation.metadata_["voice_transcription_audit"]
+    assert conversation.metadata_["existing"] == "preserved"
+    assert len(audit["records"]) == 16
+    assert all(len(record["message_id"]) <= 256 for record in audit["records"])
+    assert all(len(record["generation_id"]) <= 256 for record in audit["records"])
+    assert all(len(record["model"]) <= 128 for record in audit["records"])
+    assert "protected.invalid" not in str(audit)
+    assert "sensitive transcript" not in str(audit)
 
 
 def test_format_for_whatsapp_tables() -> None:
