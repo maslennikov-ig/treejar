@@ -712,6 +712,47 @@ async def test_dialogue_kernel_post_quotation_hold_preserves_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_quote_offer_does_not_mark_quote_sent() -> None:
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Samir")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 1,
+                "active_flow": "product_selection",
+                "slots": {
+                    "customer_name": "Samir",
+                    "quote_sent": False,
+                    "post_quotation_status": None,
+                },
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="No quotation. Please give me a cheaper configuration.",
+        recent_history=[
+            (
+                "assistant: Would you like a formal quotation so you can review "
+                "the pricing and decide whether to proceed?"
+            ),
+            "user: No quotation. Please give me a cheaper configuration.",
+        ],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("post_quotation_hold",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.flow == "legacy_fallback"
+    assert result.state.slots.quote_sent is False
+    assert result.state.slots.post_quotation_status is None
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_post_quotation_hold_loads_legacy_quote_metadata() -> (
     None
 ):

@@ -286,7 +286,7 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
             "after_state": after_state,
         }
 
-    if _is_post_quotation_context(dialogue_state, state["recent_history"]):
+    if _is_post_quotation_context(dialogue_state):
         after_state = mark_quote_sent(
             dialogue_state,
             post_quotation_status="awaiting_customer_decision",
@@ -412,24 +412,8 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
 
 def _is_post_quotation_context(
     state: DialogueState,
-    recent_history: list[str],
 ) -> bool:
-    if state.slots.quote_sent or state.active_flow == "post_quotation_hold":
-        return True
-    last_assistant = next(
-        (
-            item.removeprefix("assistant: ").casefold()
-            for item in reversed(recent_history)
-            if item.startswith("assistant: ")
-        ),
-        "",
-    )
-    return "quotation" in last_assistant and (
-        "sent" in last_assistant
-        or "pdf" in last_assistant
-        or "shared" in last_assistant
-        or "proceed" in last_assistant
-    )
+    return state.slots.quote_sent or state.active_flow == "post_quotation_hold"
 
 
 def _is_quote_details_context(
