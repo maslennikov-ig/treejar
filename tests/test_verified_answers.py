@@ -562,6 +562,23 @@ def test_product_match_marks_exact_when_query_terms_are_present() -> None:
     assert match == "exact"
 
 
+def test_product_match_accepts_verified_capacity_and_privacy_constraints() -> None:
+    match = classify_product_match(
+        query=(
+            "We need a private desk arrangement for four people with individual "
+            "privacy panels rather than an open bench."
+        ),
+        candidates=[
+            (
+                "SKYLAND LUMA Four Person Workstation. Screen dividers for each "
+                "user and a dedicated personal workspace."
+            ),
+        ],
+    )
+
+    assert match == "exact"
+
+
 def test_policy_routes_arabic_workstation_discovery_to_catalog() -> None:
     decision = evaluate_verified_answer_policy(
         query=(

@@ -1148,11 +1148,83 @@ def build_quote_or_proposal_clarification_response(language: str) -> str:
     )
 
 
+_CAPACITY_WORD_VALUES = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twelve": 12,
+}
+_CAPACITY_RE = re.compile(
+    r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|twelve)"
+    r"(?:[\s-]+)(?:person|people|staff|employees?|users?|seats?)\b",
+    re.IGNORECASE,
+)
+_WORKSTATION_MATCH_TERMS = frozenset(
+    {"desk", "desks", "workstation", "workstations", "bench", "benches"}
+)
+_PRIVACY_MATCH_TERMS = frozenset(
+    {
+        "private",
+        "privacy",
+        "panel",
+        "panels",
+        "divider",
+        "dividers",
+        "screen",
+        "screens",
+        "enclosed",
+        "dedicated",
+    }
+)
+
+
+def _capacity_value(text: str) -> int | None:
+    match = _CAPACITY_RE.search(_normalize(text))
+    if match is None:
+        return None
+    raw_count = match.group("count").casefold()
+    return int(raw_count) if raw_count.isdigit() else _CAPACITY_WORD_VALUES[raw_count]
+
+
+def _matches_structured_workstation_constraints(
+    query: str,
+    candidate: str,
+) -> bool:
+    query_tokens = _tokenize(query)
+    if not (
+        query_tokens & _WORKSTATION_MATCH_TERMS and query_tokens & _PRIVACY_MATCH_TERMS
+    ):
+        return False
+    requested_capacity = _capacity_value(query)
+    if requested_capacity is None:
+        return False
+
+    candidate_tokens = _tokenize(candidate)
+    return bool(
+        candidate_tokens & _WORKSTATION_MATCH_TERMS
+        and candidate_tokens & _PRIVACY_MATCH_TERMS
+        and _capacity_value(candidate) == requested_capacity
+    )
+
+
 def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatch:
     if not candidates:
         return "missing"
 
     normalized_query = _normalize(query)
+    if any(
+        _matches_structured_workstation_constraints(normalized_query, candidate)
+        for candidate in candidates
+    ):
+        return "exact"
+
     candidate_tokens = [_tokenize(candidate) for candidate in candidates]
     query_tokens = {
         token

@@ -962,10 +962,145 @@ def _explicit_product_option_cap(text: str) -> int | None:
     }[count_match.group("count")]
 
 
+_PLANNING_COUNT_VALUES = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+_PLANNING_CAPACITY_RE = re.compile(
+    r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve)(?:[\s-]+)(?:(?:[a-z][\w-]*)\s+){0,2}"
+    r"(?:person|people|staff|employees?|users?|designers?|seats?)\b",
+    re.IGNORECASE,
+)
+_CATALOG_CAPACITY_RE = re.compile(
+    r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve)(?:[\s-]+)(?:person|people|staff|employees?|users?|seats?)\b",
+    re.IGNORECASE,
+)
+_CATALOG_UNIT_PRODUCT_TERMS = (
+    "chair",
+    "desk",
+    "stool",
+)
+_CATALOG_PRODUCT_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("seating", ("chair", "stool", "seat")),
+    ("workspace", ("desk", "table", "workstation", "bench")),
+    ("storage", ("pedestal", "cabinet", "locker", "storage", "shelf")),
+    ("privacy", ("pod", "booth")),
+)
+
+
+def _planning_count_value(raw: str) -> int:
+    normalized = raw.casefold()
+    return (
+        int(normalized) if normalized.isdigit() else _PLANNING_COUNT_VALUES[normalized]
+    )
+
+
+def _requested_seat_count(text: str) -> int | None:
+    match = _PLANNING_CAPACITY_RE.search(_normalize_text(text))
+    return _planning_count_value(match.group("count")) if match else None
+
+
+def _catalog_product_capacity(product_text: str) -> int | None:
+    normalized = _normalize_text(product_text)
+    match = _CATALOG_CAPACITY_RE.search(normalized)
+    if match:
+        return _planning_count_value(match.group("count"))
+    if any(term in normalized for term in _CATALOG_UNIT_PRODUCT_TERMS):
+        return 1
+    return None
+
+
+def _catalog_product_family(text: str) -> str | None:
+    normalized = _normalize_text(text)
+    matched = [
+        family
+        for family, terms in _CATALOG_PRODUCT_FAMILIES
+        if any(term in normalized for term in terms)
+    ]
+    return matched[0] if len(matched) == 1 else None
+
+
+def _catalog_search_query_with_constraints(query: str, customer_text: str) -> str:
+    requested_seats = _requested_seat_count(customer_text)
+    enriched = " ".join(query.split())
+    if requested_seats is not None and _requested_seat_count(enriched) is None:
+        enriched = f"{enriched} {requested_seats} person"
+
+    normalized_customer = _normalize_text(customer_text)
+    normalized_query = _normalize_text(enriched)
+    customer_needs_privacy = any(
+        term in normalized_customer
+        for term in ("private", "privacy", "divider", "panel", "screen", "enclosed")
+    )
+    query_has_privacy = any(
+        term in normalized_query
+        for term in ("private", "privacy", "divider", "panel", "screen", "enclosed")
+    )
+    if customer_needs_privacy and not query_has_privacy:
+        enriched = f"{enriched} privacy panels"
+    return enriched
+
+
+def _needs_complete_catalog_coverage(text: str) -> bool:
+    normalized = _normalize_text(text)
+    return _requested_seat_count(text) is not None and any(
+        term in normalized
+        for term in (
+            "cheaper",
+            "lowest cost",
+            "complete configuration",
+            "full configuration",
+            "cover all",
+            "all seats",
+            "all staff",
+        )
+    )
+
+
+def _requested_catalog_evidence_gaps(
+    customer_text: str,
+    product_text: str,
+) -> tuple[str, ...]:
+    normalized_customer = _normalize_text(customer_text)
+    normalized_product = _normalize_text(product_text)
+    gaps: list[str] = []
+    if any(
+        term in normalized_customer for term in ("acoustic", "sound", "noise")
+    ) and not any(
+        term in normalized_product
+        for term in ("acoustic", "sound", "noise", "decibel", " db ")
+    ):
+        gaps.append("acoustic_performance=not_stated")
+    if any(
+        term in normalized_customer for term in ("footprint", "dimensions", "size")
+    ) and not (
+        "dimension" in normalized_product
+        or re.search(
+            r"\b\d{2,4}\s*(?:x|×)\s*\d{2,4}(?:\s*(?:x|×)\s*\d{2,4})?\b",
+            normalized_product,
+        )
+    ):
+        gaps.append("footprint_dimensions=not_stated")
+    return tuple(gaps)
+
+
 def _product_search_response_contract(
     *,
     match_kind: Literal["exact", "nearby", "missing"] = "exact",
     search_budget_exhausted: bool = False,
+    target_coverage_complete: bool | None = None,
 ) -> str:
     if match_kind == "nearby":
         contract_parts = [
@@ -977,6 +1112,7 @@ def _product_search_response_contract(
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "After the alternatives, ask at most one narrow follow-up; do not offer sourcing or escalation for an ordinary no-match.",
+            "Tie one verified fact to the stated need and end with one concrete next action.",
         ]
     elif match_kind == "missing":
         contract_parts = [
@@ -986,6 +1122,7 @@ def _product_search_response_contract(
             "Use only facts already present in tool results; do not invent specs, prices, or quantities above returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default for any catalog option you do show.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
+            "If showing an alternative, tie one verified fact to the stated need and give one concrete next action.",
         ]
     else:
         contract_parts = [
@@ -997,7 +1134,14 @@ def _product_search_response_contract(
             "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
             "After presenting the options, you may ask at most one targeted follow-up to narrow the recommendation.",
             "Do not start with generic discovery like budget, use case, or timeline if the current results are already relevant enough to show options.",
+            "Tie one verified fact to the stated need and end with one concrete next action.",
         ]
+
+    if target_coverage_complete is not None:
+        contract_parts.append(
+            "Do not call a configuration viable unless it covers the full target; "
+            "state any verified coverage gap explicitly."
+        )
 
     if search_budget_exhausted:
         contract_parts.extend(
@@ -1240,6 +1384,7 @@ class SalesOpportunityRequest:
     amount: float | None
     currency: str | None
     quote_on_hold: bool
+    decision_horizon_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -6333,6 +6478,27 @@ _SALES_BUDGET_RE = re.compile(
     r"(?:\s*(?P<currency_after>AED|DHS|dirhams?))?\b",
     re.IGNORECASE,
 )
+_DECISION_HORIZON_RE = re.compile(
+    r"\b(?:decision|approval)(?:\s+(?:is\s+)?expected)?\s+(?:within|in)\s+"
+    r"(?P<count>\d{1,2}|one|two|three|four)\s+"
+    r"(?P<unit>days?|weeks?|months?)\b",
+    re.IGNORECASE,
+)
+
+
+def _decision_horizon_days(text: str) -> int | None:
+    match = _DECISION_HORIZON_RE.search(text)
+    if match is None:
+        return None
+    raw_count = match.group("count").casefold()
+    count = (
+        int(raw_count)
+        if raw_count.isdigit()
+        else {"one": 1, "two": 2, "three": 3, "four": 4}[raw_count]
+    )
+    unit = match.group("unit").casefold()
+    multiplier = 1 if unit.startswith("day") else 7 if unit.startswith("week") else 30
+    return count * multiplier
 
 
 def _extract_sales_opportunity_request(
@@ -6363,6 +6529,7 @@ def _extract_sales_opportunity_request(
         amount=amount,
         currency=currency,
         quote_on_hold=_has_explicit_quote_hold(normalized),
+        decision_horizon_days=_decision_horizon_days(normalized),
     )
 
 
@@ -9521,9 +9688,15 @@ async def search_products(
         MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE,
         query,
     )
+    effective_query = _catalog_search_query_with_constraints(
+        query,
+        ctx.deps.user_query,
+    )
+    explicit_option_cap = _explicit_product_option_cap(ctx.deps.user_query)
     search_query = ProductSearchQuery(
-        query=query,
-        limit=_explicit_product_option_cap(ctx.deps.user_query) or 3,
+        query=effective_query,
+        limit=explicit_option_cap
+        or (5 if _needs_complete_catalog_coverage(ctx.deps.user_query) else 3),
         min_price=min_price,
         max_price=max_price,
     )
@@ -9562,7 +9735,7 @@ async def search_products(
         )
 
     product_match = classify_product_match(
-        query,
+        effective_query,
         [_product_match_text(product) for product in results.products],
     )
     exact_media_product_keys: set[str] | None = None
@@ -9570,7 +9743,8 @@ async def search_products(
         exact_keys = {
             str(getattr(product, "id", None) or product.sku)
             for product in results.products
-            if classify_product_match(query, [_product_match_text(product)]) == "exact"
+            if classify_product_match(effective_query, [_product_match_text(product)])
+            == "exact"
         }
         if exact_keys:
             exact_media_product_keys = exact_keys
@@ -9631,6 +9805,10 @@ async def search_products(
         except Exception as e:
             logger.warning("Failed to send product image: %s", e, exc_info=True)
 
+    requested_seats = _requested_seat_count(ctx.deps.user_query)
+    target_product_family = _catalog_product_family(effective_query)
+    available_seat_coverage = 0
+    has_capacity_evidence = False
     for r in results.products:
         catalog_price = _valid_catalog_price(r)
         if catalog_price is not None:
@@ -9656,6 +9834,27 @@ async def search_products(
             f"Catalog stock: {r.stock}\n"
             f"Description: {r.description_en}"
         )
+        product_text = _product_match_text(r)
+        product_capacity = _catalog_product_capacity(product_text)
+        product_family = _catalog_product_family(product_text)
+        if (
+            product_capacity is not None
+            and target_product_family is not None
+            and product_family == target_product_family
+        ):
+            has_capacity_evidence = True
+            available_seat_coverage += max(int(r.stock or 0), 0) * product_capacity
+        if product_capacity is not None and product_capacity > 1:
+            desc += (
+                f"\nCatalog price basis: full {product_capacity}-seat SKU unit "
+                "(not per seat)."
+            )
+        evidence_gaps = _requested_catalog_evidence_gaps(
+            ctx.deps.user_query,
+            product_text,
+        )
+        if evidence_gaps:
+            desc += "\nRequested fact status: " + "; ".join(evidence_gaps)
 
         if r.image_url:
             product_key = str(getattr(r, "id", None) or r.sku)
@@ -9693,6 +9892,16 @@ async def search_products(
 
         formatted_results.append(desc)
 
+    target_coverage_complete: bool | None = None
+    if requested_seats is not None and has_capacity_evidence:
+        covered_seats = min(requested_seats, available_seat_coverage)
+        target_coverage_complete = covered_seats >= requested_seats
+        formatted_results.insert(
+            0,
+            f"Target coverage: {covered_seats} of {requested_seats} seats across "
+            "the returned in-stock variants.",
+        )
+
     if product_match == "nearby":
         formatted_results.insert(
             0,
@@ -9711,7 +9920,9 @@ async def search_products(
     return ToolReturn(
         return_value="\n---\n".join(formatted_results),
         content=_product_search_response_contract(
-            match_kind=product_match, search_budget_exhausted=search_budget_exhausted
+            match_kind=product_match,
+            search_budget_exhausted=search_budget_exhausted,
+            target_coverage_complete=target_coverage_complete,
         ),
     )
 
@@ -10192,16 +10403,36 @@ def _sales_opportunity_response(
             "that it was recorded. No quotation was created."
         )
 
+    follow_up_days = (
+        max(1, request.decision_horizon_days // 2)
+        if request.decision_horizon_days is not None
+        else None
+    )
     if is_arabic_customer_language(language):
         hold = " وسيبقى عرض السعر معلقاً." if request.quote_on_hold else ""
+        follow_up = (
+            f" هل نتفق على متابعة خلال {follow_up_days} أيام قبل موعد القرار؟"
+            if follow_up_days is not None
+            else ""
+        )
         return (
             "تم تسجيل فرصة البيع والتحقق منها في نظام CRM. الخطوة التجارية التالية "
-            f"هي تأكيد خطة التسليم واعتماد صاحب القرار.{hold}"
+            f"هي تأكيد خطة التسليم واعتماد صاحب القرار.{hold}{follow_up}"
         )
     hold = " The quotation remains on hold." if request.quote_on_hold else ""
+    if follow_up_days == 7:
+        follow_up = " Can we schedule a follow-up in one week, ahead of your decision?"
+    elif follow_up_days is not None:
+        follow_up = (
+            f" Can we schedule a follow-up in {follow_up_days} days, ahead of "
+            "your decision?"
+        )
+    else:
+        follow_up = ""
     return (
         "I recorded and verified this as a CRM sales opportunity. The next commercial "
         f"step is to confirm the delivery plan and decision-maker approval.{hold}"
+        f"{follow_up}"
     )
 
 
@@ -10653,6 +10884,25 @@ async def create_quotation(
     return _quotation_prepared_message(ctx.deps.conversation, quote_number)
 
 
+def _cross_sell_catalog_fallback_query(
+    *,
+    category: str,
+    customer_text: str,
+) -> str:
+    normalized = _normalize_text(f"{category} {customer_text}")
+    has_chair = "chair" in normalized
+    has_desk = any(
+        term in normalized for term in ("desk", "workstation", "table", "bench")
+    )
+    if has_chair and has_desk:
+        return "mobile pedestal office storage"
+    if has_chair:
+        return "compact office desk"
+    if has_desk:
+        return "ergonomic office chair"
+    return "office storage accessory"
+
+
 @sales_agent.tool
 async def recommend_products(
     ctx: RunContext[SalesDeps],
@@ -10700,11 +10950,54 @@ async def recommend_products(
     elif recommendation_type == "cross_sell" and category:
         items = await get_cross_sell(ctx.deps.db, category, limit=3)
         if not items:
+            fallback_query = _cross_sell_catalog_fallback_query(
+                category=category,
+                customer_text=ctx.deps.user_query,
+            )
+            fallback_family = _catalog_product_family(fallback_query)
+            fallback_results = await rag_search_products(
+                db=ctx.deps.db,
+                query=ProductSearchQuery(
+                    query=fallback_query,
+                    limit=3,
+                ),
+                embedding_engine=ctx.deps.embedding_engine,
+            )
+            fallback_items = [
+                product
+                for product in fallback_results.products
+                if int(product.stock or 0) > 0
+                and _valid_catalog_price(product) is not None
+                and _catalog_product_family(
+                    f"{product.name_en} {product.description_en or ''} "
+                    f"{product.category or ''}"
+                )
+                == fallback_family
+            ]
+            if not fallback_items:
+                return ToolReturn(
+                    return_value=(
+                        f"No cross-sell items found for category '{category}'."
+                    ),
+                    content=(
+                        "No verified catalog cross-sell was found. Say that honestly "
+                        "and do not invent an item, price, or availability."
+                    ),
+                )
+            product = min(
+                fallback_items,
+                key=lambda item: _valid_catalog_price(item) or float("inf"),
+            )
             return ToolReturn(
-                return_value=(f"No cross-sell items found for category '{category}'."),
+                return_value=(
+                    "Verified complementary catalog option:\n"
+                    f"- {product.name_en} (SKU: {product.sku}): "
+                    f"{float(product.price):.2f} {product.currency} "
+                    f"(in stock: {product.stock})"
+                ),
                 content=(
-                    "No verified catalog cross-sell was found. Say that honestly "
-                    "and do not invent an item, price, or availability."
+                    "Use this one verified complementary item only; include it only "
+                    "if the combined total stays within the customer's stated cap."
                 ),
             )
 

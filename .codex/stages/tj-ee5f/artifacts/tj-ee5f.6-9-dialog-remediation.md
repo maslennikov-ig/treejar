@@ -23,9 +23,9 @@ subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: stateful sales routing and idempotent external effects require careful focused verification
 repo: treejar
-branch: codex/tj-ee5f-dialog-remediation
-base_branch: main
-base_commit: 844a3946f36070ca282b9fbe921fd9225cefeddc
+branch: codex/tj-ee5f-dialog-acceptance
+base_branch: codex/tj-ee5f-remediation
+base_commit: 9234909
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-dialog-remediation
 write_zone:
   - src/llm/engine.py
@@ -44,6 +44,10 @@ success_criteria:
   - inline customer fields preserve company digits and the complete delivery address
   - retries of one inbound quote operation reuse its Zoho order and PDF while a distinct inbound can create a new quote
   - an ambiguous provider success followed by a lost response cannot deliver the quotation PDF twice
+  - verified capacity and privacy constraints prevent false exact-match denial
+  - comparison claims expose missing acoustic and footprint evidence and keep multi-seat prices at the SKU-unit basis
+  - catalog configurations cannot claim full coverage across mixed or under-stocked product families
+  - a verified opportunity with a decision horizon proposes a concrete follow-up before that horizon
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -54,6 +58,7 @@ selected_skills:
   - superpowers:receiving-code-review
   - superpowers:systematic-debugging
   - superpowers:test-driven-development
+  - superpowers:using-git-worktrees
 selected_agents:
   - none
 catalog_candidates:
@@ -94,12 +99,14 @@ verification:
   - focused dialogue, parser, Zoho, and idempotency pytest set: passed 14
   - correction focused same-message, distinct-message, legacy-v1, and process propagation set: passed 4
   - correction focused quotation retry and compatibility set: passed 7
+  - acceptance correction RED for catalog match, evidence, coverage, cross-sell, and timed follow-up: failed as expected
+  - acceptance correction focused catalog and opportunity set: passed 19
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
   - git diff --check: passed
   - product system-prompt delta and captured-identity source scan: empty
-  - artifact validator: blocked until the parent adds this returned artifact to the stage manifest
+  - artifact validator: passed
 changed_files:
   - src/integrations/inventory/zoho_inventory.py
   - src/llm/engine.py
@@ -149,6 +156,21 @@ media path while retaining generic messaging-provider compatibility. On a lost
 response after provider acceptance, the retry reconciles the provider duplicate
 and produces only one customer-visible PDF.
 
+Production acceptance feedback also exposed four catalog-consultation gaps.
+Capacity and privacy constraints now stay attached to catalog searches, so a
+verified four-person private workstation is not denied as missing. Product
+results expose compact fact-status flags for requested but unsupported acoustic
+or footprint claims and identify a multi-seat catalog price as one complete SKU
+unit, not a per-seat amount.
+
+For complete or cheaper configurations, the search may inspect up to five
+catalog candidates and reports stock coverage only for one unambiguous requested
+product family. Mixed chair/desk results are never summed into a false complete
+configuration. When configured cross-sell rules return nothing, one
+complementary in-stock catalog item may be selected through the existing catalog
+search, with no invented product or price. A verified CRM opportunity with a
+known decision horizon now asks to agree a specific earlier follow-up.
+
 # Scope / Routing
 
 The production changes are limited to deterministic routing, typed metadata,
@@ -173,19 +195,24 @@ Targeted Ruff lint and formatting checks passed for all seven changed source and
 test files. Targeted Mypy passed for the two changed production modules, and
 `git diff --check` passed. The product prompt file has no delta, and the
 production-source scan found none of the captured customer identities used by
-the regression tests. Artifact validation is intentionally deferred until the
-parent registers this returned stream in the owning stage manifest; that file is
-outside this stream's write zone.
+the regression tests. Artifact validation passed against the owning stage
+manifest.
 
 The final correction set passed seven focused quotation tests, including
 provider-success/lost-response retry, same- and distinct-message behavior,
 legacy-effect isolation, the standard quotation path, missing catalog images,
 and preservation of real Zoho order identifiers.
 
+The production-acceptance correction set passed 19 focused tests covering the
+existing catalog contracts plus structured private/capacity matching, compact
+evidence limits, SKU-unit pricing, per-family stock coverage, mixed-family
+fail-closed behavior, verified cross-sell fallback, and a one-week follow-up for
+a two-week decision horizon.
+
 # Delivery / Cleanup
 
-Returned to the parent orchestrator as a single commit on
-`codex/tj-ee5f-dialog-remediation`. No push, deploy, production mutation, paid
+Returned to the parent orchestrator as a single correction commit on
+`codex/tj-ee5f-dialog-acceptance`. No push, deploy, production mutation, paid
 call, or external message was performed.
 
 # Risks / Follow-ups / Explicit Defers

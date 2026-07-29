@@ -16958,6 +16958,7 @@ async def test_process_message_records_explicit_sales_opportunity_without_quote(
     assert response.model == "sales-opportunity"
     assert "recorded" in response.text.casefold()
     assert "quotation remains on hold" in response.text.casefold()
+    assert "follow-up in one week" in response.text.casefold()
     zoho_crm.create_deal.assert_awaited_once_with(
         {
             "Deal_Name": "Horizon QA Test LLC: 20 x CH-616",
@@ -17163,3 +17164,370 @@ async def test_exact_sku_stock_request_returns_only_requested_variant(
     assert "quotation" not in response.text.casefold()
     zoho.get_item.assert_awaited_once()
     mock_run.assert_not_awaited()
+
+
+def _catalog_acceptance_product(
+    *,
+    sku: str,
+    name: str,
+    price: float,
+    stock: int,
+    description: str,
+) -> ProductRead:
+    return ProductRead(
+        id=uuid.uuid4(),
+        sku=sku,
+        name_en=name,
+        price=price,
+        currency="AED",
+        stock=stock,
+        is_active=True,
+        description_en=description,
+        created_at=datetime.datetime.now(datetime.UTC),
+    )
+
+
+@pytest.mark.asyncio
+async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Compare a private four-person workstation by acoustic separation, "
+            "footprint, current price, and stock."
+        ),
+    )
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="WORK-4",
+                    name="LUMA Four Person Workstation",
+                    price=1883.0,
+                    stock=30,
+                    description=(
+                        "Screen dividers for each user and four mobile pedestals."
+                    ),
+                )
+            ],
+            total_found=1,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="private workstation",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "private workstation")
+
+    search_query = mock_search.await_args.kwargs["query"]
+    assert "4 person" in search_query.query.casefold()
+    assert isinstance(result, ToolReturn)
+    assert "full 4-seat sku unit" in result.return_value.casefold()
+    assert "acoustic_performance=not_stated" in result.return_value.casefold()
+    assert "footprint_dimensions=not_stated" in result.return_value.casefold()
+    assert "stated need" in result.content.casefold()
+    assert "next action" in result.content.casefold()
+
+
+@pytest.mark.asyncio
+async def test_catalog_search_reports_complete_multi_variant_seat_coverage(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "We need compact desks for twelve call-center staff and a complete "
+            "configuration within budget."
+        ),
+    )
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="DESK-A",
+                    name="Compact Computer Desk A",
+                    price=58.0,
+                    stock=4,
+                    description="Compact individual computer desk.",
+                ),
+                _catalog_acceptance_product(
+                    sku="DESK-B",
+                    name="Compact Computer Desk B",
+                    price=75.0,
+                    stock=4,
+                    description="Compact individual computer desk.",
+                ),
+                _catalog_acceptance_product(
+                    sku="DESK-C",
+                    name="Compact Computer Desk C",
+                    price=90.0,
+                    stock=4,
+                    description="Compact individual computer desk.",
+                ),
+            ],
+            total_found=3,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="compact desks",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "compact desks")
+
+    assert mock_search.await_args.kwargs["query"].limit == 5
+    assert isinstance(result, ToolReturn)
+    assert "target coverage: 12 of 12 seats" in result.return_value.casefold()
+    assert "do not call a configuration viable unless it covers the full target" in (
+        result.content.casefold()
+    )
+
+
+@pytest.mark.asyncio
+async def test_catalog_coverage_does_not_mix_chairs_into_desk_capacity(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="We need a complete desk configuration for twelve employees.",
+    )
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="DESK-4",
+                    name="Compact Computer Desk",
+                    price=90.0,
+                    stock=4,
+                    description="Individual office desk.",
+                ),
+                _catalog_acceptance_product(
+                    sku="CHAIR-12",
+                    name="Operative Office Chair",
+                    price=250.0,
+                    stock=12,
+                    description="Individual task chair.",
+                ),
+            ],
+            total_found=2,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="compact desks",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "compact desks")
+
+    assert isinstance(result, ToolReturn)
+    assert "target coverage: 4 of 12 seats" in result.return_value.casefold()
+    assert "target coverage: 12 of 12 seats" not in result.return_value.casefold()
+
+
+@pytest.mark.asyncio
+async def test_catalog_coverage_is_omitted_for_mixed_product_family_query(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "We need a complete chair-and-desk configuration for twelve employees."
+        ),
+    )
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="DESK-4",
+                    name="Compact Computer Desk",
+                    price=90.0,
+                    stock=4,
+                    description="Individual office desk.",
+                ),
+                _catalog_acceptance_product(
+                    sku="CHAIR-12",
+                    name="Operative Office Chair",
+                    price=250.0,
+                    stock=12,
+                    description="Individual task chair.",
+                ),
+            ],
+            total_found=2,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="chairs and desks",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "chairs and desks")
+
+    assert isinstance(result, ToolReturn)
+    assert "target coverage:" not in result.return_value.casefold()
+    assert "configuration viable" not in result.content.casefold()
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_falls_back_to_verified_catalog_product(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "We selected chairs and desks. Add one relevant cross-sell within "
+            "the remaining budget."
+        ),
+    )
+    fallback_product = _catalog_acceptance_product(
+        sku="STORAGE-1",
+        name="Mobile Pedestal",
+        price=185.0,
+        stock=12,
+        description="Three-drawer mobile office storage.",
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="cross sell",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with (
+        patch(
+            "src.services.recommendations.get_cross_sell",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch.object(
+            engine_module,
+            "rag_search_products",
+            new_callable=AsyncMock,
+            return_value=ProductSearchResult(
+                products=[fallback_product],
+                total_found=1,
+            ),
+        ),
+    ):
+        result = await engine_module.recommend_products(
+            ctx,
+            category="desk",
+            recommendation_type="cross_sell",
+        )
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "Mobile Pedestal" in result_text
+    assert "STORAGE-1" in result_text
+    assert "No cross-sell items found" not in result_text
+
+
+def test_sales_opportunity_with_horizon_proposes_timed_follow_up() -> None:
+    request = engine_module._extract_sales_opportunity_request(
+        "Budget: AED 8,500. Decision expected within two weeks. "
+        "Record this opportunity without preparing a quotation."
+    )
+
+    assert request is not None
+    response = engine_module._sales_opportunity_response(
+        request,
+        engine_module.SalesOpportunityWriteResult(
+            verified=True,
+            deal_id="verified-deal",
+        ),
+        language="en",
+    )
+
+    assert "follow-up in one week" in response.casefold()
