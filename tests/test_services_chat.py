@@ -11,6 +11,7 @@ from src.services.chat import (
     INBOUND_EXECUTION_STARTED,
     InboundBatchTerminalError,
     _format_for_whatsapp,
+    _voice_fallback_crm_message_id,
     process_incoming_batch,
 )
 
@@ -56,6 +57,25 @@ def test_format_for_whatsapp() -> None:
         _format_for_whatsapp("This is `code1` and `code2`")
         == "This is ```code1``` and ```code2```"
     )
+
+
+def test_voice_fallback_id_is_stable_per_distinct_inbound_message_set() -> None:
+    first = _voice_fallback_crm_message_id(
+        "conversation-1",
+        ["audio-b", "audio-a", "audio-a"],
+    )
+    retry = _voice_fallback_crm_message_id(
+        "conversation-1",
+        ["audio-a", "audio-b"],
+    )
+    another_message = _voice_fallback_crm_message_id(
+        "conversation-1",
+        ["audio-c"],
+    )
+
+    assert first == "voice-fallback:conversation-1:audio-a:audio-b"
+    assert retry == first
+    assert another_message != first
 
 
 def test_format_for_whatsapp_tables() -> None:
@@ -340,7 +360,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     chat_id = "79991234567"
-    audio_url = "https://cdn.wazzup24.com/files/voice.ogg"
+    audio_url = "https://cdn.wazzup24.com/files/voice.flac"
     mock_redis = chat_context["redis"]
     _seed_inbound_redis(
         mock_redis,
@@ -355,7 +375,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
                     "status": "inbound",
                     "authorType": "client",
                     "dateTime": "2026-04-30T10:00:00.000",
-                    "media": {"url": audio_url, "mimeType": "audio/ogg"},
+                    "media": {"url": audio_url, "mimeType": "audio/flac"},
                 }
             ),
         ],
@@ -398,7 +418,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     mock_zoho_crm_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
     mock_provider = AsyncMock()
-    mock_provider.download_media.return_value = b"audio-bytes"
+    mock_provider.download_media.return_value = b"fLaC\x00\x00\x00\x22audio"
     mock_provider.resolve_channel_phone.return_value = None
     mock_provider.send_text.return_value = "msg_out_1"
     mock_provider_class.return_value.__aenter__ = AsyncMock(return_value=mock_provider)
@@ -431,6 +451,10 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
 
     legacy_transcribe.assert_not_awaited()
     transcribe_with_metadata.assert_awaited_once()
+    assert (
+        transcribe_with_metadata.await_args.kwargs["audio_format"]
+        == "flac"
+    )
     mock_process_message.assert_awaited_once()
     assert (
         mock_process_message.await_args.kwargs["combined_text"]
@@ -610,6 +634,10 @@ async def test_audio_only_transcription_error_sends_safe_fallback_without_llm(
     transcribe_with_metadata.assert_awaited_once()
     mock_process_message.assert_not_awaited()
     mock_provider.send_text.assert_awaited_once()
+    assert (
+        mock_provider.send_text.await_args.kwargs["crm_message_id"]
+        == "voice-fallback:conv-uuid-123:audio-unreadable"
+    )
 
     added_messages = [
         call.args[0]

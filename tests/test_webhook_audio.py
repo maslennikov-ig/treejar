@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from src.core.config import Settings, settings
 from src.integrations.messaging.wazzup import WazzupProvider
 from src.models.message import Message
@@ -11,10 +13,41 @@ from src.schemas.webhook import WazzupIncomingMessage, WazzupMedia
 
 
 class TestVoxtralConfig:
-    def test_voxtral_model_setting_exists(self) -> None:
-        """Test that voxtral_model config setting exists and has correct default."""
-        assert hasattr(settings, "voxtral_model")
-        assert settings.voxtral_model == "openai/gpt-audio-mini"
+    def test_voice_transcription_model_has_stt_default(self) -> None:
+        assert settings.voice_transcription_model == (
+            "openai/gpt-4o-mini-transcribe"
+        )
+
+    def test_legacy_voxtral_model_env_is_temporary_alias(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("VOICE_TRANSCRIPTION_MODEL", raising=False)
+        monkeypatch.setenv("VOXTRAL_MODEL", "mistralai/voxtral-mini-transcribe")
+
+        legacy = Settings(_env_file=None)
+
+        assert (
+            legacy.voice_transcription_model
+            == "mistralai/voxtral-mini-transcribe"
+        )
+
+    def test_new_voice_model_env_takes_precedence_over_legacy_alias(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv(
+            "VOICE_TRANSCRIPTION_MODEL",
+            "openai/gpt-4o-mini-transcribe",
+        )
+        monkeypatch.setenv("VOXTRAL_MODEL", "mistralai/voxtral-mini-transcribe")
+
+        configured = Settings(_env_file=None)
+
+        assert (
+            configured.voice_transcription_model
+            == "openai/gpt-4o-mini-transcribe"
+        )
 
     def test_default_openrouter_models_use_approved_routes(self) -> None:
         """Test model defaults without reading developer-local environment files."""

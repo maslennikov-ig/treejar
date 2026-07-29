@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,7 +35,13 @@ class Settings(BaseSettings):
     openrouter_model_fast: str = "deepseek/deepseek-v4-flash"
     openrouter_model_main: str = "z-ai/glm-5.2"
     llm_non_core_budget_blocked: bool = False
-    voxtral_model: str = "openai/gpt-audio-mini"
+    voice_transcription_model: str = Field(
+        default="openai/gpt-4o-mini-transcribe",
+        validation_alias=AliasChoices(
+            "VOICE_TRANSCRIPTION_MODEL",
+            "VOXTRAL_MODEL",
+        ),
+    )
 
     # Dialogue kernel rollout
     dialogue_kernel_mode: str = "legacy"

@@ -126,6 +126,8 @@ class _AudioProcessingResult:
     tokens_out: int | None = None
     cost: float | None = None
     model: str | None = None
+    duration_seconds: float | None = None
+    request_duration_seconds: float | None = None
 
 
 class InboundBatchTerminalError(RuntimeError):
@@ -138,6 +140,18 @@ class InboundBatchTerminalError(RuntimeError):
 
 def _voice_fallback_text(language: str | None) -> str:
     return VOICE_FALLBACK_AR if language == "ar" else VOICE_FALLBACK_EN
+
+
+def _voice_fallback_crm_message_id(
+    conversation_id: object,
+    message_ids: Sequence[str],
+) -> str:
+    stable_ids = sorted({message_id for message_id in message_ids if message_id})
+    return deterministic_crm_message_id(
+        "voice-fallback",
+        conversation_id,
+        *(stable_ids or ["missing-source"]),
+    )
 
 
 def _inbound_batch_id(raw_messages: Sequence[str]) -> str:
@@ -1033,6 +1047,7 @@ async def _process_batch_inner(
         await _ensure_side_effect_guard()
         from src.integrations.voice.voxtral import (
             MAX_AUDIO_SIZE,
+            detect_audio_format,
             transcribe_audio_with_metadata,
         )
 
@@ -1080,15 +1095,10 @@ async def _process_batch_inner(
                     .split(";")[0]
                     .strip()
                 )
-                format_map = {
-                    "audio/ogg": "ogg",
-                    "audio/mpeg": "mp3",
-                    "audio/mp3": "mp3",
-                    "audio/wav": "wav",
-                    "audio/x-wav": "wav",
-                    "audio/webm": "webm",
-                }
-                audio_format = format_map.get(mime, "mp3")
+                audio_format = detect_audio_format(
+                    audio_bytes,
+                    mime_type=mime,
+                )
 
                 transcription = await transcribe_audio_with_metadata(
                     audio_bytes, audio_format=audio_format, client=shared_client
@@ -1107,6 +1117,16 @@ async def _process_batch_inner(
                             tokens_out=transcription.tokens_out,
                             cost=transcription.cost,
                             model=transcription.model,
+                            duration_seconds=getattr(
+                                transcription,
+                                "duration_seconds",
+                                None,
+                            ),
+                            request_duration_seconds=getattr(
+                                transcription,
+                                "request_duration_seconds",
+                                None,
+                            ),
                         ),
                     )
 
@@ -1367,10 +1387,13 @@ async def _process_batch_inner(
                     chat_id=chat_id,
                     text=fallback_text,
                     source="voice_fallback",
-                    crm_message_id=deterministic_crm_message_id(
-                        "voice-fallback",
+                    crm_message_id=_voice_fallback_crm_message_id(
                         conv.id,
-                        hashlib.sha256(combined_text.encode("utf-8")).hexdigest()[:16],
+                        [
+                            message_id
+                            for message_id, result in audio_results.items()
+                            if result.failed
+                        ],
                     ),
                 )
                 db.add(
