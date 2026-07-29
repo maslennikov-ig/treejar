@@ -8735,14 +8735,16 @@ async def resolve_inventory_customer_id(
             exact_duplicate: Mapping[str, Any] | None = None
             try:
                 if customer_email:
-                    exact_duplicate = await zoho_inventory.find_customer_by_email(
-                        customer_email,
-                        include_inactive=True,
+                    exact_duplicate = (
+                        await zoho_inventory.find_inactive_customer_by_email(
+                            customer_email
+                        )
                     )
                 elif inventory_phone:
-                    exact_duplicate = await zoho_inventory.find_customer_by_phone(
-                        inventory_phone,
-                        include_inactive=True,
+                    exact_duplicate = (
+                        await zoho_inventory.find_inactive_customer_by_phone(
+                            inventory_phone
+                        )
                     )
             except Exception:
                 logger.exception("Failed exact duplicate lookup in Zoho Inventory")

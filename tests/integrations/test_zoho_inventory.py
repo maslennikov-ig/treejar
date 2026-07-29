@@ -338,7 +338,7 @@ async def test_find_customer_by_email_matches_contact_person_email() -> None:
 
 
 @pytest.mark.asyncio
-async def test_find_customer_by_email_can_include_exact_inactive_contact() -> None:
+async def test_find_inactive_customer_by_email_uses_inactive_filter() -> None:
     redis_mock = AsyncMock()
     redis_mock.get.return_value = b"test_token"
     zoho_client = ZohoInventoryClient(redis_client=redis_mock)
@@ -376,14 +376,12 @@ async def test_find_customer_by_email_can_include_exact_inactive_contact() -> No
         zoho_client.client, "request", new_callable=AsyncMock
     ) as mock_request:
         mock_request.side_effect = [list_response, get_response]
-        result = await zoho_client.find_customer_by_email(
-            "owner@example.com", include_inactive=True
-        )
+        result = await zoho_client.find_inactive_customer_by_email("owner@example.com")
 
     assert result is not None
     assert result["status"] == "inactive"
     assert mock_request.await_args_list[0].kwargs["params"]["filter_by"] == (
-        "Status.All"
+        "Status.Inactive"
     )
 
 

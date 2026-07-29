@@ -555,7 +555,7 @@ class ZohoInventoryClient(InventoryProvider):
             seen_queries.add(query)
 
             contacts = await self.search_contacts(
-                filter_by="Status.All" if include_inactive else "Status.Active",
+                filter_by=("Status.Inactive" if include_inactive else "Status.Active"),
                 **{field: value},
             )
             matched_contacts = [
@@ -575,6 +575,12 @@ class ZohoInventoryClient(InventoryProvider):
 
         return None
 
+    async def find_inactive_customer_by_phone(
+        self, phone: str
+    ) -> dict[str, Any] | None:
+        """Find an exact inactive customer by normalized phone."""
+        return await self.find_customer_by_phone(phone, include_inactive=True)
+
     async def find_customer_by_email(
         self,
         email: str,
@@ -587,7 +593,7 @@ class ZohoInventoryClient(InventoryProvider):
             return None
 
         contacts = await self.search_contacts(
-            filter_by="Status.All" if include_inactive else "Status.Active",
+            filter_by="Status.Inactive" if include_inactive else "Status.Active",
             email=email.strip(),
         )
         exact_matches = [
@@ -602,6 +608,12 @@ class ZohoInventoryClient(InventoryProvider):
             exact_matches,
             include_inactive=include_inactive,
         )
+
+    async def find_inactive_customer_by_email(
+        self, email: str
+    ) -> dict[str, Any] | None:
+        """Find an exact inactive customer by email address."""
+        return await self.find_customer_by_email(email, include_inactive=True)
 
     async def find_customer_by_name(self, name: str) -> dict[str, Any] | None:
         """Find an accessible active customer by exact normalized name.

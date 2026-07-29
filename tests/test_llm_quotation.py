@@ -949,7 +949,8 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
 
     mock_inventory = AsyncMock()
     mock_inventory.find_customer_by_phone.return_value = None
-    mock_inventory.find_customer_by_email.side_effect = [None, inactive_contact]
+    mock_inventory.find_customer_by_email.return_value = None
+    mock_inventory.find_inactive_customer_by_email.return_value = inactive_contact
     mock_inventory.create_contact.side_effect = httpx.HTTPStatusError(
         "duplicate contact",
         request=duplicate_response.request,
@@ -966,9 +967,9 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
     )
 
     assert result == "inactive-inventory-contact"
-    assert mock_inventory.find_customer_by_email.await_args_list[-1].kwargs == {
-        "include_inactive": True
-    }
+    mock_inventory.find_inactive_customer_by_email.assert_awaited_once_with(
+        "owner@example.com"
+    )
     mock_inventory.activate_contact.assert_awaited_once_with(
         "inactive-inventory-contact"
     )
