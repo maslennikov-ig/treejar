@@ -942,13 +942,13 @@ def _product_search_response_contract(
             "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
-            "After presenting the closest alternatives, you may ask at most one targeted follow-up to narrow the recommendation.",
+            "After the alternatives, ask at most one narrow follow-up; do not offer sourcing or escalation for an ordinary no-match.",
         ]
     elif match_kind == "missing":
         contract_parts = [
             "Current catalog results are too weak to establish a reliable match for this request.",
             "Do not present these results as exact options.",
-            "Ask at most one narrow clarification unless you can justify a clearly related alternative from the returned items.",
+            "Give related alternatives or ask one narrow clarification; do not offer sourcing or escalation for an ordinary no-match.",
             "Use only facts already present in tool results; do not invent specs, prices, or quantities above returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default for any catalog option you do show.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",

@@ -497,6 +497,15 @@ def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> 
     assert "I found these options" in stock
 
 
+@pytest.mark.parametrize("match_kind", ["nearby", "missing"])
+def test_product_no_match_contract_forbids_sourcing_escalation(match_kind) -> None:
+    contract = engine_module._product_search_response_contract(
+        match_kind=match_kind
+    ).casefold()
+
+    assert "do not offer sourcing or escalation" in contract
+
+
 def test_ordinal_option_from_reply_supports_more_than_two_options() -> None:
     # m-3: option lists can hold more than two entries, so ordinal parsing must
     # generalise beyond first/second.
