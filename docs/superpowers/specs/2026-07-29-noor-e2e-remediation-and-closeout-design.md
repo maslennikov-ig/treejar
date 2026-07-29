@@ -1,8 +1,8 @@
 # Noor E2E Remediation and Closeout Design
 
-**Date:** 2026-07-29  
-**Owning task:** `tj-ee5f.1` under epic `tj-ee5f`  
-**Stage level:** release  
+**Date:** 2026-07-29
+**Owning task:** `tj-ee5f.1` under epic `tj-ee5f`
+**Stage level:** release
 **Runtime:** `https://noor.starec.ai`
 
 ## Purpose
@@ -101,4 +101,3 @@ renumbered.
   state.
 - The Russian client report preserves exact redacted Q/A, tool traces,
   failures, fixes, retests, limitations, and the final verdict.
-
