@@ -8518,6 +8518,18 @@ def test_extract_missing_quantity_product_references_ignores_hyphenated_prose() 
     assert references == ()
 
 
+def test_context_purchase_selection_ignores_time_measurement() -> None:
+    selection = engine_module._extract_purchase_selection_for_context(
+        (
+            "The team sits around eight hours per day, so lumbar support matters. "
+            "Which chair-and-desk combination would you recommend?"
+        ),
+        ["assistant: Which chair and desk options would you prefer?"],
+    )
+
+    assert selection is None
+
+
 def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choice() -> (
     None
 ):

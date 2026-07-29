@@ -666,6 +666,11 @@ _SELECTION_WORD_QUANTITY_START_RE = re.compile(
     r"(?<![\w.-])(?P<quantity_word>one|two|three|four|five|six|seven|eight|nine|ten|a|an)(?=\s+)",
     re.IGNORECASE,
 )
+_SELECTION_MEASUREMENT_SUFFIX_RE = re.compile(
+    r"^\s*(?:minutes?|hours?|days?|weeks?|months?|years?|"
+    r"mm|cm|meters?|metres?|aed|dhs|usd)\b",
+    re.IGNORECASE,
+)
 _SELECTION_WORD_QUANTITY_VALUES = {
     "a": 1,
     "an": 1,
@@ -2388,6 +2393,7 @@ def _extract_purchase_selection(
         if not (
             _looks_like_model_number_quantity(text, match)
             or _looks_like_sku_numeric_component(text, match)
+            or _SELECTION_MEASUREMENT_SUFFIX_RE.match(text[match.end() :])
         )
     ]
     if not quantity_matches:
@@ -2651,6 +2657,8 @@ def _extract_word_quantity_purchase_selection(text: str) -> PurchaseSelection | 
 
     items: list[PurchaseSelectionItem] = []
     for index, match in enumerate(quantity_matches):
+        if _SELECTION_MEASUREMENT_SUFFIX_RE.match(text[match.end() :]):
+            continue
         word = match.group("quantity_word").casefold()
         quantity = _SELECTION_WORD_QUANTITY_VALUES.get(word)
         if quantity is None:
