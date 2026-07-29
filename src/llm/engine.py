@@ -18,7 +18,6 @@ import httpx
 from pydantic import SkipValidation
 from pydantic_ai import Agent, RunContext, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.tools import ToolDefinition
 from redis.asyncio import Redis
@@ -84,6 +83,8 @@ from src.llm.pii import EMAIL_PATTERN, PHONE_PATTERN, mask_pii, unmask_pii
 from src.llm.prompts import build_system_prompt
 from src.llm.safety import (
     PATH_CORE_CHAT,
+    OpenRouterTelemetryChatModel,
+    get_llm_usage_telemetry,
     model_name_for_path,
     model_settings_for_path,
     run_agent_with_safety,
@@ -9390,7 +9391,7 @@ async def _prepare_sales_tools(
 
 # Initialize model with OpenRouter provider
 CORE_CHAT_MODEL_NAME = model_name_for_path(PATH_CORE_CHAT)
-model = OpenAIChatModel(
+model = OpenRouterTelemetryChatModel(
     CORE_CHAT_MODEL_NAME,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
     settings=model_settings_for_path(PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME),
@@ -11137,6 +11138,7 @@ async def process_message(
                 response_deps.conversation.language,
             )
         usage = result.usage()
+        usage_telemetry = get_llm_usage_telemetry(result)
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
                 conv,
@@ -11152,7 +11154,7 @@ async def process_message(
             text=final_text,
             tokens_in=usage.input_tokens if usage else None,
             tokens_out=usage.output_tokens if usage else None,
-            cost=None,
+            cost=usage_telemetry.cost if usage_telemetry is not None else None,
             model=model_name,
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
@@ -11932,7 +11934,7 @@ async def process_message(
         )
         db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
 
-        dynamic_model = OpenAIChatModel(
+        dynamic_model = OpenRouterTelemetryChatModel(
             db_model_main,
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
             settings=model_settings_for_path(PATH_CORE_CHAT, model_name=db_model_main),

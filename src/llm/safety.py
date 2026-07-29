@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from html import escape
@@ -16,6 +17,7 @@ from pydantic_ai.exceptions import (
     ModelHTTPError,
     UnexpectedModelBehavior,
 )
+from pydantic_ai.models.openai import OpenAIChatModel
 
 from src.core.config import settings
 
@@ -42,6 +44,22 @@ _OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset({"deepseek/deepseek-v4-flas
 
 class LLMBudgetBlocked(RuntimeError):
     """Raised when configured budget controls block a non-core LLM path."""
+
+
+class OpenRouterTelemetryChatModel(OpenAIChatModel):
+    """Preserve OpenRouter's provider-reported cost on the model response."""
+
+    def _process_provider_details(self, response: Any) -> dict[str, Any]:
+        details = super()._process_provider_details(response)
+        cost = _usage_number(getattr(response, "usage", None), "cost", "cost_usd")
+        if (
+            cost is not None
+            and not isinstance(cost, bool)
+            and math.isfinite(float(cost))
+            and float(cost) >= 0
+        ):
+            details["usage_cost_usd"] = float(cost)
+        return details
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,6 +458,29 @@ def _first_usage_number(*values: int | float | None) -> int | float | None:
     return None
 
 
+def _provider_reported_cost(result: Any) -> float | None:
+    new_messages = getattr(result, "new_messages", None)
+    if not callable(new_messages):
+        return None
+    try:
+        messages = new_messages()
+    except Exception:
+        return None
+
+    costs: list[float] = []
+    for message in messages:
+        details = getattr(message, "provider_details", None)
+        value = details.get("usage_cost_usd") if isinstance(details, Mapping) else None
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) >= 0
+        ):
+            costs.append(float(value))
+    return sum(costs) if costs else None
+
+
 def extract_llm_usage_telemetry(
     *,
     path: str,
@@ -499,6 +540,7 @@ def extract_llm_usage_telemetry(
                 _usage_number(usage, "cost", "cost_usd"),
                 _nested_usage_number(usage, "details", "cost"),
                 _nested_usage_number(usage, "details", "cost_usd"),
+                _provider_reported_cost(result),
             )
         ),
         total_tokens=_coerce_int(_usage_number(usage, "total_tokens")),
@@ -627,16 +669,17 @@ async def run_agent_with_safety(
                 agent.run(user_prompt, **run_kwargs),
                 timeout=policy.timeout_seconds,
             )
+            usage = extract_llm_usage_telemetry(
+                path=policy.path,
+                model_name=model_name,
+                provider=provider,
+                result=result,
+            )
             logger.info(
                 "llm.safety.usage",
-                extra=extract_llm_usage_telemetry(
-                    path=policy.path,
-                    model_name=model_name,
-                    provider=provider,
-                    result=result,
-                ).as_log_extra(),
+                extra=usage.as_log_extra(),
             )
-            return result
+            return attach_llm_usage_telemetry(result, usage)
         except Exception as exc:
             last_error = exc
             can_retry = attempt_number < attempts and _is_retryable_error(exc)

@@ -215,11 +215,13 @@ class _FakeAgentResult:
         *,
         input_tokens: int = 11,
         output_tokens: int = 7,
+        cost: float | None = None,
     ) -> None:
         self.output = output
         self._usage = SimpleNamespace(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cost=cost,
         )
 
     def usage(self) -> SimpleNamespace:
@@ -2272,6 +2274,7 @@ async def test_process_message_repairs_specific_product_showroom_trial(
         unsafe_reply,
         input_tokens=37,
         output_tokens=53,
+        cost=0.00125,
     )
 
     response = await process_message(
@@ -2289,7 +2292,7 @@ async def test_process_message_repairs_specific_product_showroom_trial(
     assert response.model == "mock-model"
     assert response.tokens_in == 37
     assert response.tokens_out == 53
-    assert response.cost is None
+    assert response.cost == 0.00125
     mock_run.assert_awaited_once()
 
 

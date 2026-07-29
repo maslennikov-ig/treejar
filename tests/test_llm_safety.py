@@ -252,13 +252,73 @@ def test_usage_extraction_preserves_zero_cache_values() -> None:
     assert usage.cost == 0.0
 
 
+def test_openrouter_chat_model_preserves_provider_reported_cost() -> None:
+    from openai.types.chat import ChatCompletion
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    from src.llm.safety import OpenRouterTelemetryChatModel
+
+    model = OpenRouterTelemetryChatModel(
+        "z-ai/glm-5.2",
+        provider=OpenRouterProvider(api_key="test-key"),
+    )
+    response = ChatCompletion.model_validate(
+        {
+            "id": "generation-test",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "index": 0,
+                    "message": {"content": "ok", "role": "assistant"},
+                }
+            ],
+            "created": 1,
+            "model": "z-ai/glm-5.2",
+            "object": "chat.completion",
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "cost": 0.00125,
+            },
+        }
+    )
+
+    details = model._process_provider_details(response)
+
+    assert details["usage_cost_usd"] == 0.00125
+    result = SimpleNamespace(
+        usage=lambda: SimpleNamespace(input_tokens=10, output_tokens=5),
+        new_messages=lambda: [
+            SimpleNamespace(provider_details=details),
+            SimpleNamespace(provider_details={"usage_cost_usd": 0.0005}),
+        ],
+    )
+    from src.llm.safety import extract_llm_usage_telemetry
+
+    telemetry = extract_llm_usage_telemetry(
+        path="core_chat",
+        model_name="z-ai/glm-5.2",
+        result=result,
+    )
+    assert telemetry.cost == 0.00175
+
+
 @pytest.mark.asyncio
 async def test_run_agent_with_safety_passes_non_core_settings_and_limits() -> None:
-    from src.llm.safety import run_agent_with_safety
+    from src.llm.safety import get_llm_usage_telemetry, run_agent_with_safety
 
-    agent = SimpleNamespace(run=AsyncMock(return_value=_FakeRunResult()))
+    result = SimpleNamespace(
+        output="ok",
+        usage=lambda: SimpleNamespace(
+            input_tokens=10,
+            output_tokens=5,
+            cost=0.00125,
+        ),
+    )
+    agent = SimpleNamespace(run=AsyncMock(return_value=result))
 
-    await run_agent_with_safety(
+    returned = await run_agent_with_safety(
         agent,
         "quality_red_flags",
         "prompt",
@@ -270,6 +330,9 @@ async def test_run_agent_with_safety_passes_non_core_settings_and_limits() -> No
     assert kwargs["usage_limits"].request_limit == 1
     assert kwargs["usage_limits"].output_tokens_limit == 900
     assert kwargs["usage_limits"].total_tokens_limit == 4000
+    telemetry = get_llm_usage_telemetry(returned)
+    assert telemetry is not None
+    assert telemetry.cost == 0.00125
 
 
 @pytest.mark.asyncio
