@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
-Updated: 2026-07-29
-Status: in progress; remediation deployed, bounded S05 retest blocked by provider response
+Updated: 2026-07-30
+Status: in progress; remediation deployed, S05 retest paused by exhausted OpenRouter key limit
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -39,32 +39,32 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
   Provider-bound request/receipt, telemetry, reconciliation, identity, Mypy,
   and crash-recovery corrections closed every finding; final delta-review
   verdict is `APPROVE`.
-- The latest final release gate passed: `2559 passed`, `19 skipped`, Ruff,
+- The latest final release gate passed: `2570 passed`, `19 skipped`, Ruff,
   format, Mypy, and canonical process verification are green.
 - All eleven tracked stage artifacts validate, stage readiness passes, and the
-  current release head is `06b6087`.
+  current release head is `1da4b44`.
 - Independent review of the final quote-state delta is `APPROVE`, with no
   P0/P1. `src/llm/prompts.py` remains unchanged.
 
 ## External state
 
-`06b6087` was delivered to `main` after a fresh fetch and non-force push.
-Canonical CI/deploy run `30489291826` succeeded. Production readback confirmed
-the exact release, healthy Redis/database, all services running, and 8/8 API
-smoke.
+`1da4b44` was delivered to `main` after a fresh fetch and non-force push.
+Canonical CI/deploy run `30498481073` succeeded. Production readback confirmed
+the exact release, all five services running, and 8/8 API smoke.
 
-The affected S05 scenario was retried only within the bounded infrastructure
-allowance. Production readback proves that quote-offer prose and explicit
-no-quote no longer open quote collection:
+Production readback proves that quote-offer prose and explicit no-quote no
+longer open quote collection:
 `active_flow=product_selection`, `quote_sent=false`,
-`post_quotation_status=null`, `quotation_hold=yes`. The final answer still
-failed because OpenRouter returned `finish_reason=error`, which the current
-Pydantic AI response model rejects. No broad paid rerun followed.
+`post_quotation_status=null`, `quotation_hold=yes`. Two S05 attempts on
+`1da4b44` then stopped before any product tool ran because OpenRouter returned
+HTTP 403 `Key limit exceeded`; both recorded zero tokens and zero cost. A
+read-only key readback confirmed limit `$2`, usage above `$2`, and remaining
+allowance `$0`. No broad paid rerun followed.
 
 ## Remaining acceptance
 
-1. Handle the OpenRouter `finish_reason=error` compatibility path and rerun
-   only S05.
+1. Increase or reset the existing OpenRouter key limit, confirm positive
+   remaining allowance, and rerun only S05.
 2. Run the complete final-release text set plus EN/AR/voice provider canaries,
    reconcile all side effects, and verify quotation/PDF readbacks.
 3. Publish the accepted Russian report and inspected PDF, then run canonical

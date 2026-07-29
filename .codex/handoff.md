@@ -1,10 +1,10 @@
 # Orchestrator Handoff
 
-Updated: 2026-07-29
+Updated: 2026-07-30
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
-Current stage status: remediation deployed; S05 typed-state fix verified on
-production, but final acceptance remains blocked
+Current stage status: remediation deployed and healthy; final production
+acceptance is paused by the exhausted OpenRouter key limit
 
 ## Current truth
 
@@ -13,11 +13,10 @@ production, but final acceptance remains blocked
   release-bound production proof.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
-- The deployed production code release is
-  `06b6087844ff4e650aa0dbfe6c50b2b3c8bfa744`; later `main` changes are
-  orchestration/report documentation only.
-- Canonical CI/deploy run `30489291826` succeeded. Exact release, health,
-  Redis, database, five running services, and 8/8 API smoke were read back.
+- The deployed production release and current `main` are
+  `1da4b44138d35a297d5cc7cf7ae2f95d4638a890`.
+- Canonical CI/deploy run `30498481073` succeeded. Exact release, five running
+  services, and 8/8 API smoke were read back.
 - Unrelated and untracked user files in the primary worktree were preserved.
 - Failed and incomplete production attempts remain immutable outside Git.
 
@@ -49,7 +48,7 @@ production, but final acceptance remains blocked
 - Independent production-trust review: initial `6 P1 / 1 P2`; all findings and
   the subsequent judge crash-recovery P1 were corrected. Final delta-review:
   `APPROVE`.
-- The latest final release gate passed with `2559 passed`, `19 skipped`, Ruff,
+- The latest final release gate passed with `2570 passed`, `19 skipped`, Ruff,
   format, Mypy, and canonical process verification green.
 - Stage readiness passes. Product prompt and frozen AC-01..AC-30 snapshot are
   unchanged.
@@ -62,9 +61,12 @@ production, but final acceptance remains blocked
   `quotation_hold=yes`.
 - Name gate, catalog consultation, catalog tool traces, duration, and
   provider-reported cost were collected from production facts.
-- The final S05 answer did not complete. Bounded retries were exhausted after
-  OpenRouter returned `finish_reason=error`; the current Pydantic AI client
-  rejects that provider response as `UnexpectedModelBehavior`.
+- The final S05 answer did not complete. Two release-bound attempts on
+  `1da4b44` stopped before any product tool ran because OpenRouter returned
+  HTTP 403 `Key limit exceeded`; both attempts recorded zero tokens and zero
+  cost.
+- A read-only OpenRouter key readback on 2026-07-30 confirmed a valid key with
+  limit `$2`, usage above `$2`, and remaining allowance `$0`.
 - A complete final-release set of ten text scenarios was therefore not run.
   Provider-originated EN/AR/voice canaries and terminal outbound-effect
   readbacks are still missing.
@@ -73,9 +75,10 @@ production, but final acceptance remains blocked
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: handle the OpenRouter `finish_reason=error` compatibility
-path without prompt growth, then rerun only S05. If it completes, run the
-remaining final-release acceptance set and reconcile every side effect.
+Recommended action: increase or reset the existing production OpenRouter key
+limit without changing the model or prompt, confirm positive remaining
+allowance, then rerun only S05. If it completes, run the remaining
+final-release acceptance set and reconcile every side effect.
 Provider-originated EN/AR/voice still requires the owner's protected test
 WhatsApp. Do not close the epic if any proof is unavailable.
 
@@ -98,8 +101,8 @@ Use $orchestrator-stage with the compact prompt in
 
 - Complete production acceptance, accepted report/PDF, Beads closure, and
   canonical stage closeout remain pending.
-- OpenRouter `finish_reason=error` compatibility is a release-bound runtime
-  blocker; no more paid retries should run before it is resolved.
+- The production OpenRouter key has zero remaining allowance. Do not run more
+  model calls until a readback confirms positive remaining allowance.
 - Provider-originated EN/AR/voice canaries remain an owner-assisted gate.
 - Test-message outbound audits still need terminal readback or an explicitly
   accepted retention disposition.
