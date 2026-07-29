@@ -33,11 +33,11 @@ rewrite failed evidence or spend paid calls on broad semantic reruns. Raw
 evidence stays protected outside Git.
 
 Authority:
-Local implementation is authorized. Ask immediately before the exact
-remote/live batch: non-force push, deploy, paid calls, test-only Wazzup,
-Zoho/CRM/quotation/PDF, callback, provider canaries, and cleanup. Never touch
-real customers, secrets/access, force-push/history, destructive production
-state, or unlisted external effects.
+The owner authorizes local fixes, fresh-fetch/non-force push, canonical deploy
+and readback, paid test-only model/voice calls, protected test Wazzup,
+Zoho/CRM/quotation/PDF/callback/readbacks, and safe cleanup. This excludes real
+customers, secrets/access changes, force-push/history rewrite, destructive
+production work, and unlisted external effects.
 
 Output:
 Update Beads, scope ledger, stage summary, handoff, redacted Russian Markdown
