@@ -156,6 +156,13 @@ class ZohoCRMClient(CRMProvider):
         """Make an authenticated request to Zoho CRM API with retries."""
         # Retry mechanism (3 attempts with backoff)
         max_retries = 3
+        transport_retry_allowed = method.upper() in {
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "PUT",
+            "DELETE",
+        }
 
         for attempt in range(1, max_retries + 1):
             token = await self._ensure_token()
@@ -191,7 +198,7 @@ class ZohoCRMClient(CRMProvider):
                 raise
 
             except (httpx.TimeoutException, httpx.NetworkError):
-                if attempt < max_retries:
+                if transport_retry_allowed and attempt < max_retries:
                     await asyncio.sleep(2**attempt)
                     continue
                 raise

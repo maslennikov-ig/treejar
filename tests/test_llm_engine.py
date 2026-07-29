@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from pydantic_ai import RunContext, ToolReturn
 from pydantic_ai.messages import (
@@ -15952,6 +15953,13 @@ async def test_tools_create_deal(
     # Mocking contact exists
     zoho_crm.find_contact_by_phone.return_value = {"id": "CONTACT123"}
     zoho_crm.create_deal.return_value = {"details": {"id": "DEAL123"}}
+    zoho_crm.get_deal_status.return_value = {
+        "id": "DEAL123",
+        "Deal_Name": "Test Deal",
+        "Contact_Name": {"id": "CONTACT123"},
+        "Stage": "New Lead",
+        "Amount": 1000.0,
+    }
 
     ctx = RunContext(
         deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
@@ -15959,6 +15967,9 @@ async def test_tools_create_deal(
 
     result = await create_deal(ctx, "Test Deal", 1000.0)
     assert "DEAL123" in result
+    assert conv.zoho_contact_id == "CONTACT123"
+    assert conv.zoho_deal_id == "DEAL123"
+    assert conv.deal_status == "New Lead"
     zoho_crm.find_contact_by_phone.assert_awaited_once_with("12345")
     zoho_crm.create_deal.assert_awaited_once_with(
         {
@@ -15969,6 +15980,132 @@ async def test_tools_create_deal(
             "Amount": 1000.0,
         }
     )
+    zoho_crm.get_deal_status.assert_awaited_once_with("DEAL123")
+
+
+@pytest.mark.asyncio
+async def test_sales_opportunity_writer_reuses_only_verified_matching_deal(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = "DEAL123"
+    zoho_crm.find_contact_by_phone.return_value = {"id": "CONTACT123"}
+    zoho_crm.get_deal_status.return_value = {
+        "id": "DEAL123",
+        "Deal_Name": "Repeated Deal",
+        "Contact_Name": {"id": "CONTACT123"},
+        "Stage": "New Lead",
+        "Amount": 1000.0,
+    }
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    result = await engine_module._create_or_reuse_sales_opportunity(
+        deps,
+        title="Repeated Deal",
+        amount=1000.0,
+        allow_reuse=True,
+    )
+
+    assert result.verified
+    assert result.reused
+    assert result.deal_id == "DEAL123"
+    zoho_crm.get_deal_status.assert_awaited_once_with("DEAL123")
+    zoho_crm.find_contact_by_phone.assert_awaited_once_with("12345")
+    zoho_crm.create_contact.assert_not_awaited()
+    zoho_crm.create_deal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tools_create_deal_does_not_reuse_existing_conversation_deal(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_deal_id = "DEAL123"
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import create_deal
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await create_deal(ctx, "Another Deal", 1000.0)
+
+    assert "already linked" in result
+    zoho_crm.get_deal_status.assert_not_awaited()
+    zoho_crm.create_deal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sales_opportunity_writer_blocks_retry_after_ambiguous_post(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.zoho_contact_id = "CONTACT123"
+    zoho_crm.find_contact_by_phone.return_value = {"id": "CONTACT123"}
+
+    async def ambiguous_create(*args: object, **kwargs: object) -> None:
+        assert conv.metadata_["sales_opportunity_write"]["status"] == "pending"
+        assert db.commit.await_count == 1
+        raise httpx.ReadTimeout("response lost")
+
+    zoho_crm.create_deal.side_effect = ambiguous_create
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    first = await engine_module._create_or_reuse_sales_opportunity(
+        deps,
+        title="Stable Deal",
+        amount=1000.0,
+        allow_reuse=True,
+    )
+    second = await engine_module._create_or_reuse_sales_opportunity(
+        deps,
+        title="Stable Deal",
+        amount=1000.0,
+        allow_reuse=True,
+    )
+
+    assert not first.verified
+    assert first.error == "crm_error"
+    assert not second.verified
+    assert second.error == "deal_state_unknown"
+    assert conv.metadata_["sales_opportunity_write"]["status"] == "unknown"
+    assert db.commit.await_count == 2
+    zoho_crm.create_deal.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -16542,6 +16679,144 @@ def test_selection_confirmation_waits_for_quote_opt_in_before_requesting_details
 )
 def test_exact_quote_candidate_respects_general_quote_hold(text: str) -> None:
     assert extract_exact_quote_candidate(text) is None
+
+
+def test_sales_opportunity_request_separates_company_and_budget_fields() -> None:
+    text = (
+        "Company: Horizon QA Test LLC. Budget: AED 7,000. "
+        "Decision expected within two weeks. Record this as a sales opportunity "
+        "and tell me the next commercial step without creating a quotation."
+    )
+
+    assert engine_module._extract_quote_customer_details(text)["company"] == (
+        "Horizon QA Test LLC"
+    )
+    request = engine_module._extract_sales_opportunity_request(text)
+    assert request is not None
+    assert request.amount == 7000.0
+    assert not engine_module._is_neutral_detail_capture_update(
+        text=text,
+        customer_details={"company": "Horizon QA Test LLC"},
+        sales_memory_updates={"quotation_hold": "yes"},
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Please don't add a deal.",
+        "لا تسجل فرصة بيع",
+        "We need to add chairs. This is not a deal yet.",
+    ],
+)
+def test_sales_opportunity_request_fails_closed_for_negation(text: str) -> None:
+    assert engine_module._extract_sales_opportunity_request(text) is None
+
+
+def test_labeled_detail_parser_preserves_nested_value_labels() -> None:
+    assert (
+        engine_module._extract_quote_customer_details(
+            "Address: Office 1202; Building: Horizon Tower"
+        )["address"]
+        == "Office 1202; Building: Horizon Tower"
+    )
+    assert (
+        engine_module._extract_quote_customer_details("Company: A.B. Trading: UAE")[
+            "company"
+        ]
+        == "A.B. Trading: UAE"
+    )
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_records_explicit_sales_opportunity_without_quote(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Yusuf"
+    conv.metadata_ = {
+        "quote_customer_details": {"name": "Yusuf"},
+        "sales_memory": {
+            "latest_product_note": (
+                "We are planning to buy 20 CH 616 NEW black chairs this month "
+                "and want help moving the project forward, but no quotation yet."
+            ),
+            "quotation_hold": "yes",
+        },
+    }
+    text = (
+        "Company: Horizon QA Test LLC. Budget: AED 7,000. "
+        "Decision expected within two weeks. Record this as a sales opportunity "
+        "and tell me the next commercial step without creating a quotation."
+    )
+    mock_build_history.return_value = _active_product_planning_history(text=text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    zoho_crm.find_contact_by_phone.return_value = {
+        "id": "CONTACT123",
+        "Phone": conv.phone,
+    }
+    zoho_crm.create_deal.return_value = {
+        "code": "SUCCESS",
+        "details": {"id": "DEAL123"},
+    }
+    zoho_crm.get_deal_status.return_value = {
+        "id": "DEAL123",
+        "Deal_Name": "Horizon QA Test LLC: 20 x CH-616",
+        "Contact_Name": {"id": "CONTACT123"},
+        "Stage": "New Lead",
+        "Amount": 7000.0,
+    }
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+        crm_client=zoho_crm,
+    )
+
+    assert conv.metadata_["quote_customer_details"]["company"] == (
+        "Horizon QA Test LLC"
+    )
+    assert conv.zoho_contact_id == "CONTACT123"
+    assert conv.zoho_deal_id == "DEAL123"
+    assert conv.deal_status == "New Lead"
+    assert float(conv.deal_amount) == 7000.0
+    assert response.model == "sales-opportunity"
+    assert "recorded" in response.text.casefold()
+    assert "quotation remains on hold" in response.text.casefold()
+    zoho_crm.create_deal.assert_awaited_once_with(
+        {
+            "Deal_Name": "Horizon QA Test LLC: 20 x CH-616",
+            "Contact_Name": {"id": "CONTACT123"},
+            "Stage": "New Lead",
+            "Pipeline": "Standard (Standard)",
+            "Amount": 7000.0,
+        }
+    )
+    zoho.create_sale_order.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
 
 
 def test_delivery_availability_interruption_recognizes_catalog_recommendation(

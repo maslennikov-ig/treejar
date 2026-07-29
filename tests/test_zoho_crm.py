@@ -123,6 +123,24 @@ async def test_request_retries_after_401() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_request_does_not_retry_post_after_transport_ambiguity() -> None:
+    redis = AsyncMock()
+    redis.get.return_value = b"valid_token"
+    client = ZohoCRMClient(redis)
+
+    with (
+        patch.object(client.client, "request", new_callable=AsyncMock) as mock_request,
+        pytest.raises(httpx.ReadTimeout),
+    ):
+        mock_request.side_effect = httpx.ReadTimeout("response lost")
+        await client._request("POST", "/Deals", json={"data": []})
+
+    mock_request.assert_awaited_once()
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_find_contact_by_phone_found() -> None:
     """find_contact_by_phone returns a dict if contact is found."""
     redis = AsyncMock()

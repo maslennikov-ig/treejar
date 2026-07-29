@@ -198,6 +198,13 @@ class TestCreateDeal:
         mock_crm.create_deal.return_value = {
             "details": {"id": "deal_001"},
         }
+        mock_crm.get_deal_status.return_value = {
+            "id": "deal_001",
+            "Deal_Name": "Office Chairs x10",
+            "Contact_Name": {"id": "contact_001"},
+            "Stage": "New Lead",
+            "Amount": 5000.0,
+        }
 
         conv = _make_conversation()
         deps = _make_deps(conv, zoho_crm=mock_crm)
@@ -212,12 +219,22 @@ class TestCreateDeal:
     @pytest.mark.asyncio
     async def test_deal_creates_contact_if_missing(self) -> None:
         mock_crm = AsyncMock(spec=ZohoCRMClient)
-        mock_crm.find_contact_by_phone.return_value = None
+        mock_crm.find_contact_by_phone.side_effect = [
+            None,
+            {"id": "new_contact_001"},
+        ]
         mock_crm.create_contact.return_value = {
             "details": {"id": "new_contact_001"},
         }
         mock_crm.create_deal.return_value = {
             "details": {"id": "deal_002"},
+        }
+        mock_crm.get_deal_status.return_value = {
+            "id": "deal_002",
+            "Deal_Name": "New Deal",
+            "Contact_Name": {"id": "new_contact_001"},
+            "Stage": "New Lead",
+            "Amount": 1000.0,
         }
 
         conv = _make_conversation()

@@ -148,6 +148,7 @@ QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY = "quote_brief_confirmed_address"
 QUOTE_CUSTOMER_DETAILS_KEY = "quote_customer_details"
 QUOTE_INTENT_FRAME_KEY = "quote_intent_frame"
 SALES_MEMORY_KEY = "sales_memory"
+SALES_OPPORTUNITY_WRITE_KEY = "sales_opportunity_write"
 CUSTOMER_FACTS_METADATA_KEY = "customer_facts"
 CUSTOMER_FACTS_TRACE_LIMIT = 20
 CUSTOMER_FACTS_TRACE_FACT_LIMIT = 12
@@ -1199,6 +1200,22 @@ class ResolvedPurchaseSelectionItem:
 class PurchaseSelectionResolution:
     resolved: tuple[ResolvedPurchaseSelectionItem, ...]
     unresolved: tuple[PurchaseSelectionItem, ...]
+
+
+@dataclass(frozen=True)
+class SalesOpportunityRequest:
+    amount: float | None
+    currency: str | None
+    quote_on_hold: bool
+
+
+@dataclass(frozen=True)
+class SalesOpportunityWriteResult:
+    verified: bool
+    deal_id: str | None = None
+    stage: str | None = None
+    reused: bool = False
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -5192,16 +5209,24 @@ _QUOTE_DETAIL_LABELS: dict[str, tuple[str, ...]] = {
     "phone": ("phone", "mobile", "telephone", "телефон", "номер"),
 }
 _QUOTE_DETAIL_LABEL_SEPARATOR = r"(?::|：|=|-|\bis\b|\bare\b)"
+_QUOTE_DETAIL_BOUNDARY_LABELS = (
+    "budget",
+    "decision expected",
+    "decision date",
+    "decision timeline",
+    "purchase timeline",
+)
 
 
 def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
     label_pattern = "|".join(
         re.escape(label) for label in sorted(labels, key=len, reverse=True)
     )
-    all_label_pattern = "|".join(
+    boundary_label_pattern = "|".join(
         re.escape(label)
         for label in sorted(
-            {label for aliases in _QUOTE_DETAIL_LABELS.values() for label in aliases},
+            {label for aliases in _QUOTE_DETAIL_LABELS.values() for label in aliases}
+            | set(_QUOTE_DETAIL_BOUNDARY_LABELS),
             key=len,
             reverse=True,
         )
@@ -5211,7 +5236,7 @@ def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
         rf"(?:the\s+|my\s+|our\s+)?(?:{label_pattern})\s*"
         rf"{_QUOTE_DETAIL_LABEL_SEPARATOR}\s*(?P<value>.+?)"
         rf"(?=(?:\s*[.;,\n]\s*)?(?:the\s+|my\s+|our\s+)?"
-        rf"(?:{all_label_pattern})\s*{_QUOTE_DETAIL_LABEL_SEPARATOR}|\s*$)",
+        rf"(?:{boundary_label_pattern})\s*{_QUOTE_DETAIL_LABEL_SEPARATOR}|\s*$)",
     )
     match = pattern.search(text)
     if not match:
@@ -5549,9 +5574,9 @@ def _name_gate_pending_request_from_metadata(
 
 def _classify_name_gate_pending_intent(text: str) -> str:
     normalized = _normalize_text(_normalize_sku_homoglyphs(text))
+    if _extract_sales_opportunity_request(text) is not None:
+        return "sales_opportunity"
     if _has_explicit_quote_hold(text):
-        if any(term in normalized for term in ("opportunity", "deal", "crm")):
-            return "sales_opportunity"
         return "catalog_discovery"
     if (
         re.search(r"\b(?:compare|comparison|versus|vs\.?|difference)\b", normalized)
@@ -5744,8 +5769,8 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
         details["address"] = natural_address
 
     compact_details = _extract_compact_labeled_quote_details(text)
-    if compact_details:
-        details.update(compact_details)
+    for key, value in compact_details.items():
+        details.setdefault(key, value)
 
     normalized = _normalize_text(text)
     individual_customer_signal = re.search(
@@ -6214,6 +6239,66 @@ def _extract_sales_memory_updates(text: str) -> dict[str, str]:
         updates["quotation_hold"] = "yes"
 
     return updates
+
+
+_SALES_OPPORTUNITY_REQUEST_RE = re.compile(
+    r"(?:\b(?:record|create|log|save|register|open|add)\b\s+"
+    r"(?:(?:this|it)\s+(?:as\s+)?(?:(?:a|an|the)\s+)?|"
+    r"(?:a|an|the)\s+)?"
+    r"(?:sales\s+)?(?:opportunity|deal)\b|"
+    r"(?:سج[ّ]?ل|أنشئ|انشئ|أضف)\s+(?:هذه|هذا)?\s*(?:فرصة\s+بيع|صفقة))",
+    re.IGNORECASE,
+)
+_NEGATED_SALES_OPPORTUNITY_ACTION_RE = re.compile(
+    r"(?:\b(?:do\s+not|don['’]?t|never|without)\s+"
+    r"(?:record|create|log|save|register|open|add)\b\s+"
+    r"(?:(?:this|it)\s+(?:as\s+)?(?:(?:a|an|the)\s+)?|"
+    r"(?:a|an|the)\s+)?"
+    r"(?:sales\s+)?(?:opportunity|deal)\b|"
+    r"\b(?:not|no)\s+(?:a\s+|an\s+|the\s+)?"
+    r"(?:sales\s+)?(?:opportunity|deal)\b|"
+    r"(?:لا|لن|بدون)\s*(?:ت?سج[ّ]?ل|ت?نشئ|ت?نشيء|ت?ضف)"
+    r"\s+(?:هذه|هذا)?\s*(?:فرصة\s+بيع|صفقة))",
+    re.IGNORECASE,
+)
+_SALES_BUDGET_RE = re.compile(
+    r"\bbudget\s*[:：=-]?\s*"
+    r"(?:(?P<currency_before>AED|DHS|dirhams?)\s*)?"
+    r"(?P<amount>\d[\d,]*(?:\.\d+)?)"
+    r"(?:\s*(?P<currency_after>AED|DHS|dirhams?))?\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_sales_opportunity_request(
+    text: str,
+) -> SalesOpportunityRequest | None:
+    normalized = _strip_synthetic_test_marker(text).strip()
+    if (
+        not normalized
+        or _SALES_OPPORTUNITY_REQUEST_RE.search(normalized) is None
+        or _NEGATED_SALES_OPPORTUNITY_ACTION_RE.search(normalized) is not None
+    ):
+        return None
+
+    amount: float | None = None
+    currency: str | None = None
+    budget_match = _SALES_BUDGET_RE.search(normalized)
+    if budget_match is not None:
+        amount = float(budget_match.group("amount").replace(",", ""))
+        raw_currency = budget_match.group("currency_before") or budget_match.group(
+            "currency_after"
+        )
+        if raw_currency:
+            currency = (
+                "AED" if raw_currency.casefold() != "aed" else raw_currency.upper()
+            )
+
+    return SalesOpportunityRequest(
+        amount=amount,
+        currency=currency,
+        quote_on_hold=_has_explicit_quote_hold(normalized),
+    )
 
 
 async def _store_sales_memory_updates(
@@ -6759,6 +6844,8 @@ def _is_neutral_detail_capture_update(
     if _asks_customer_facing_question(text):
         return False
     if _has_detail_capture_handoff_blocker(text):
+        return False
+    if _extract_sales_opportunity_request(text) is not None:
         return False
     return not _has_product_or_quote_routing_signal(text)
 
@@ -9645,6 +9732,387 @@ async def lookup_customer(ctx: RunContext[SalesDeps], phone: str) -> str:
     return f"Customer FOUND in CRM.\nName: {name}\nEmail: {contact.get('Email', 'N/A')}\nSegment: {contact.get('Segment', 'N/A')}"
 
 
+def _zoho_created_record_id(response: Mapping[str, Any]) -> str:
+    details = response.get("details")
+    if not isinstance(details, Mapping):
+        return ""
+    return _string_value(details.get("id"))
+
+
+def _sales_opportunity_title(deps: SalesDeps) -> str:
+    details = _quote_context_details_from_deps(deps)
+    customer_label = (
+        _string_value(details.get("company"))
+        or _string_value(details.get("name"))
+        or _string_value(deps.conversation.customer_name)
+        or "Customer"
+    )
+    product_note = _sales_memory_from_metadata(deps.conversation).get(
+        "latest_product_note", ""
+    )
+    references = extract_catalog_references(product_note) if product_note else []
+    reference_parts: list[str] = []
+    for reference in references[:3]:
+        quantity = getattr(reference, "quantity", None)
+        catalog_ref = _string_value(getattr(reference, "normalized", None))
+        if not catalog_ref:
+            continue
+        reference_parts.append(
+            f"{quantity} x {catalog_ref}" if quantity is not None else catalog_ref
+        )
+    requirement = ", ".join(reference_parts) or "Furniture requirement"
+    return f"{customer_label}: {requirement}"[:120].rstrip(" :,-")
+
+
+def _deal_readback_matches(
+    readback: Mapping[str, Any],
+    *,
+    deal_id: str,
+    title: str | None = None,
+    contact_id: str | None = None,
+    amount: float | None = None,
+) -> bool:
+    if _string_value(readback.get("id")) != deal_id:
+        return False
+    if not _string_value(readback.get("Stage")):
+        return False
+    if title is not None and _string_value(readback.get("Deal_Name")) != title:
+        return False
+    if contact_id is not None:
+        contact = readback.get("Contact_Name")
+        if not isinstance(contact, Mapping):
+            return False
+        if _string_value(contact.get("id")) != contact_id:
+            return False
+    if amount is not None:
+        raw_amount = readback.get("Amount")
+        if not isinstance(raw_amount, (str, int, float, Decimal)):
+            return False
+        try:
+            readback_amount = float(raw_amount)
+        except (TypeError, ValueError):
+            return False
+        if not math.isclose(readback_amount, amount, rel_tol=0.0, abs_tol=0.01):
+            return False
+    return True
+
+
+def _sales_opportunity_write_fingerprint(
+    *, title: str, contact_id: str, amount: float | None
+) -> str:
+    material = f"{title}\0{contact_id}\0{amount if amount is not None else ''}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _sales_opportunity_write_state(
+    conversation: Conversation,
+) -> Mapping[str, Any] | None:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, dict) else {}
+    )
+    state = metadata.get(SALES_OPPORTUNITY_WRITE_KEY)
+    return state if isinstance(state, Mapping) else None
+
+
+def _set_sales_opportunity_write_state(
+    conversation: Conversation,
+    *,
+    fingerprint: str,
+    status: Literal["pending", "unknown", "created"],
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    metadata[SALES_OPPORTUNITY_WRITE_KEY] = {
+        "version": 1,
+        "fingerprint": fingerprint,
+        "status": status,
+    }
+    conversation.metadata_ = metadata
+
+
+async def _create_or_reuse_sales_opportunity(
+    deps: SalesDeps,
+    *,
+    title: str,
+    amount: float | None,
+    allow_reuse: bool = False,
+) -> SalesOpportunityWriteResult:
+    crm = deps.zoho_crm
+    if crm is None:
+        return SalesOpportunityWriteResult(
+            verified=False,
+            error="crm_unavailable",
+        )
+
+    conversation = deps.conversation
+    operation_fingerprint: str | None = None
+    try:
+        existing_deal_id = _string_value(conversation.zoho_deal_id)
+        if existing_deal_id:
+            if not allow_reuse:
+                return SalesOpportunityWriteResult(
+                    verified=False,
+                    deal_id=existing_deal_id,
+                    error="existing_deal_linked",
+                )
+            expected_contact_id = _string_value(conversation.zoho_contact_id)
+            if not expected_contact_id:
+                contact = await crm.find_contact_by_phone(
+                    _string_value(conversation.phone)
+                )
+                expected_contact_id = (
+                    _string_value(contact.get("id"))
+                    if isinstance(contact, Mapping)
+                    else ""
+                )
+                if not expected_contact_id:
+                    return SalesOpportunityWriteResult(
+                        verified=False,
+                        deal_id=existing_deal_id,
+                        error="existing_contact_unverified",
+                    )
+                conversation.zoho_contact_id = expected_contact_id
+            readback = await crm.get_deal_status(existing_deal_id)
+            expected_amount = (
+                amount
+                if amount is not None
+                else (
+                    float(conversation.deal_amount)
+                    if conversation.deal_amount is not None
+                    else None
+                )
+            )
+            if not isinstance(readback, Mapping) or not _deal_readback_matches(
+                readback,
+                deal_id=existing_deal_id,
+                title=title,
+                contact_id=expected_contact_id,
+                amount=expected_amount,
+            ):
+                return SalesOpportunityWriteResult(
+                    verified=False,
+                    deal_id=existing_deal_id,
+                    error="existing_deal_unverified",
+                )
+            stage = _string_value(readback.get("Stage"))
+            conversation.deal_status = stage
+            if readback.get("Amount") is not None:
+                conversation.deal_amount = float(readback["Amount"])
+            await deps.db.flush()
+            return SalesOpportunityWriteResult(
+                verified=True,
+                deal_id=existing_deal_id,
+                stage=stage,
+                reused=True,
+            )
+
+        phone = _string_value(conversation.phone)
+        contact = await crm.find_contact_by_phone(phone)
+        contact_id = (
+            _string_value(contact.get("id")) if isinstance(contact, Mapping) else ""
+        )
+        if not contact_id:
+            details = _quote_context_details_from_deps(deps)
+            contact_payload: dict[str, Any] = {
+                "Phone": phone,
+                "Last_Name": (
+                    _string_value(details.get("name"))
+                    or _string_value(conversation.customer_name)
+                    or "Unknown Client"
+                ),
+                "Lead_Source": "Chatbot",
+            }
+            email = _string_value(details.get("email"))
+            company = _string_value(details.get("company"))
+            if email:
+                contact_payload["Email"] = email
+            if company:
+                contact_payload["Description"] = f"Company: {company}"
+            source_attribution = (
+                conversation.metadata_.get("source_attribution")
+                if isinstance(conversation.metadata_, dict)
+                else None
+            )
+            contact_payload = apply_zoho_attribution_mapping(
+                contact_payload,
+                source_attribution if isinstance(source_attribution, Mapping) else None,
+            )
+            contact_response = await crm.create_contact(contact_payload)
+            contact_id = (
+                _zoho_created_record_id(contact_response)
+                if isinstance(contact_response, Mapping)
+                else ""
+            )
+            if not contact_id:
+                return SalesOpportunityWriteResult(
+                    verified=False,
+                    error="contact_create_unverified",
+                )
+            conversation.zoho_contact_id = contact_id
+            await deps.db.commit()
+            contact_readback = await crm.find_contact_by_phone(phone)
+            if (
+                not isinstance(contact_readback, Mapping)
+                or _string_value(contact_readback.get("id")) != contact_id
+            ):
+                return SalesOpportunityWriteResult(
+                    verified=False,
+                    error="contact_readback_mismatch",
+                )
+
+        known_contact_id = _string_value(conversation.zoho_contact_id)
+        if known_contact_id and known_contact_id != contact_id:
+            return SalesOpportunityWriteResult(
+                verified=False,
+                error="contact_identity_conflict",
+            )
+        conversation.zoho_contact_id = contact_id
+
+        operation_fingerprint = _sales_opportunity_write_fingerprint(
+            title=title,
+            contact_id=contact_id,
+            amount=amount,
+        )
+        existing_write_state = _sales_opportunity_write_state(conversation)
+        if existing_write_state is not None and _string_value(
+            existing_write_state.get("status")
+        ) in {"pending", "unknown"}:
+            return SalesOpportunityWriteResult(
+                verified=False,
+                error="deal_state_unknown",
+            )
+        _set_sales_opportunity_write_state(
+            conversation,
+            fingerprint=operation_fingerprint,
+            status="pending",
+        )
+        await deps.db.commit()
+
+        source_attribution = (
+            conversation.metadata_.get("source_attribution")
+            if isinstance(conversation.metadata_, dict)
+            else None
+        )
+        deal_data: dict[str, Any] = {
+            "Deal_Name": title,
+            "Contact_Name": {"id": contact_id},
+            "Stage": "New Lead",
+            "Pipeline": "Standard (Standard)",
+        }
+        if amount is not None:
+            deal_data["Amount"] = amount
+        deal_data = apply_zoho_attribution_mapping(
+            deal_data,
+            source_attribution if isinstance(source_attribution, Mapping) else None,
+        )
+        deal_response = await crm.create_deal(deal_data)
+        deal_id = (
+            _zoho_created_record_id(deal_response)
+            if isinstance(deal_response, Mapping)
+            else ""
+        )
+        if not deal_id:
+            _set_sales_opportunity_write_state(
+                conversation,
+                fingerprint=operation_fingerprint,
+                status="unknown",
+            )
+            await deps.db.commit()
+            return SalesOpportunityWriteResult(
+                verified=False,
+                error="deal_create_unverified",
+            )
+
+        conversation.zoho_deal_id = deal_id
+        conversation.deal_amount = amount
+        conversation.deal_status = "New Lead"
+        _set_sales_opportunity_write_state(
+            conversation,
+            fingerprint=operation_fingerprint,
+            status="created",
+        )
+        if conversation.sales_stage == SalesStage.GREETING.value:
+            conversation.sales_stage = SalesStage.QUALIFYING.value
+        await deps.db.commit()
+
+        readback = await crm.get_deal_status(deal_id)
+        if not isinstance(readback, Mapping) or not _deal_readback_matches(
+            readback,
+            deal_id=deal_id,
+            title=title,
+            contact_id=contact_id,
+            amount=amount,
+        ):
+            return SalesOpportunityWriteResult(
+                verified=False,
+                deal_id=deal_id,
+                error="deal_readback_mismatch",
+            )
+        stage = _string_value(readback.get("Stage"))
+        conversation.deal_status = stage
+        await deps.db.flush()
+        return SalesOpportunityWriteResult(
+            verified=True,
+            deal_id=deal_id,
+            stage=stage,
+        )
+    except Exception:
+        if operation_fingerprint and not _string_value(conversation.zoho_deal_id):
+            _set_sales_opportunity_write_state(
+                conversation,
+                fingerprint=operation_fingerprint,
+                status="unknown",
+            )
+            try:
+                await deps.db.commit()
+            except Exception:
+                logger.warning(
+                    "Failed to persist unknown CRM opportunity state for "
+                    "conversation %s",
+                    conversation.id,
+                    exc_info=True,
+                )
+        logger.warning(
+            "Failed to create or verify CRM opportunity for conversation %s",
+            conversation.id,
+            exc_info=True,
+        )
+        return SalesOpportunityWriteResult(
+            verified=False,
+            deal_id=_string_value(conversation.zoho_deal_id) or None,
+            error="crm_error",
+        )
+
+
+def _sales_opportunity_response(
+    request: SalesOpportunityRequest,
+    result: SalesOpportunityWriteResult,
+    *,
+    language: str,
+) -> str:
+    if not result.verified:
+        if is_arabic_customer_language(language):
+            return (
+                "لم أتمكن من التحقق من تسجيل فرصة البيع في نظام CRM، لذلك لن أؤكد "
+                "إنشائها. لم يتم إنشاء عرض سعر."
+            )
+        return (
+            "I could not verify the sales opportunity in CRM, so I have not claimed "
+            "that it was recorded. No quotation was created."
+        )
+
+    if is_arabic_customer_language(language):
+        hold = " وسيبقى عرض السعر معلقاً." if request.quote_on_hold else ""
+        return (
+            "تم تسجيل فرصة البيع والتحقق منها في نظام CRM. الخطوة التجارية التالية "
+            f"هي تأكيد خطة التسليم واعتماد صاحب القرار.{hold}"
+        )
+    hold = " The quotation remains on hold." if request.quote_on_hold else ""
+    return (
+        "I recorded and verified this as a CRM sales opportunity. The next commercial "
+        f"step is to confirm the delivery plan and decision-maker approval.{hold}"
+    )
+
+
 @sales_agent.tool
 async def create_deal(
     ctx: RunContext[SalesDeps], title: str, amount: float | None = None
@@ -9658,60 +10126,30 @@ async def create_deal(
     """
     logger.info(f"LLM Tool called: create_deal(title={title!r}, amount={amount})")
 
-    if not ctx.deps.zoho_crm:
-        return "CRM Client is not available in the current context."
-
-    # Look up the contact's CRM ID first, since we need to link it
-    phone = ctx.deps.conversation.phone
-    contact = await ctx.deps.zoho_crm.find_contact_by_phone(phone)
-    source_attribution = (
-        ctx.deps.conversation.metadata_.get("source_attribution")
-        if isinstance(ctx.deps.conversation.metadata_, dict)
-        else None
+    result = await _create_or_reuse_sales_opportunity(
+        ctx.deps,
+        title=title,
+        amount=amount,
     )
-
-    if not contact:
-        # We must create the contact first
-        logger.info("Contact not found, creating before deal formulation.")
-        new_contact_data = {
-            "Phone": phone,
-            "Last_Name": ctx.deps.conversation.customer_name or "Unknown Client",
-            "Lead_Source": "Chatbot",
-        }
-        new_contact_data = apply_zoho_attribution_mapping(
-            new_contact_data,
-            source_attribution if isinstance(source_attribution, Mapping) else None,
-        )
-        resp = await ctx.deps.zoho_crm.create_contact(new_contact_data)
-        if "details" not in resp or "id" not in resp["details"]:
+    if not result.verified:
+        if result.error == "crm_unavailable":
+            return "CRM Client is not available in the current context."
+        if result.error == "existing_deal_linked":
+            return (
+                "A deal is already linked to this conversation. Do not create a "
+                "duplicate."
+            )
+        if result.error and result.error.startswith("contact_"):
             return "Failed to create customer in CRM. Cannot create deal."
-        contact_id = resp["details"]["id"]
-    else:
-        contact_id = contact["id"]
-
-    # Create the deal
-    deal_data: dict[str, Any] = {
-        "Deal_Name": title,
-        "Contact_Name": {"id": contact_id},
-        "Stage": "New Lead",
-        "Pipeline": "Standard (Standard)",
-    }
-    if amount is not None:
-        deal_data["Amount"] = amount
-    deal_data = apply_zoho_attribution_mapping(
-        deal_data,
-        source_attribution if isinstance(source_attribution, Mapping) else None,
-    )
-
-    deal_resp = await ctx.deps.zoho_crm.create_deal(deal_data)
-
-    if "details" in deal_resp and "id" in deal_resp["details"]:
-        deal_id = deal_resp["details"]["id"]
         return (
-            f"Successfully created Deal in CRM. Deal ID: {deal_id}, Stage: 'New Lead'."
+            "Failed to verify the deal in CRM. Do not claim it was created and do "
+            "not retry blindly."
         )
-
-    return "Failed to create deal. CRM response pattern unexpected."
+    action = "reused" if result.reused else "created"
+    return (
+        f"Successfully {action} Deal in CRM. Deal ID: {result.deal_id}, "
+        f"Stage: {result.stage!r}."
+    )
 
 
 @sales_agent.tool
@@ -10988,6 +11426,9 @@ async def process_message(
         _quote_intent_frame_from_text(combined_text)
     )
     current_sales_memory_updates = _extract_sales_memory_updates(combined_text)
+    current_sales_opportunity_request = _extract_sales_opportunity_request(
+        combined_text
+    )
     pending_name_gate_request = _name_gate_pending_request_from_metadata(conv)
     pending_name_gate_intent = _name_gate_pending_intent_from_metadata(conv)
     resumed_name_gate_intent: str | None = None
@@ -11184,6 +11625,9 @@ async def process_message(
             current_quote_intent_frame = _quote_intent_frame_from_metadata(
                 conv
             ) or _quote_intent_frame_from_text(combined_text)
+            current_sales_opportunity_request = _extract_sales_opportunity_request(
+                combined_text
+            )
         else:
             if not _has_detail_capture_handoff_blocker(combined_text):
                 if _has_active_sales_detail_capture_context(
@@ -11208,6 +11652,28 @@ async def process_message(
                     "name-capture",
                     allow_product_media=False,
                 )
+
+    if current_sales_opportunity_request is not None:
+        opportunity_result = await _create_or_reuse_sales_opportunity(
+            deps,
+            title=_sales_opportunity_title(deps),
+            amount=current_sales_opportunity_request.amount,
+            allow_reuse=True,
+        )
+        response_model = (
+            "sales-opportunity"
+            if opportunity_result.verified
+            else "sales-opportunity-unverified"
+        )
+        return _build_static_response(
+            _sales_opportunity_response(
+                current_sales_opportunity_request,
+                opportunity_result,
+                language=str(conv.language),
+            ),
+            response_model,
+            allow_product_media=False,
+        )
 
     # Stock+price option shortcut must not hijack an active quote flow. When the
     # customer is mid-quote (pending selection or the assistant just asked for
