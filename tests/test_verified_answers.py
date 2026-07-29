@@ -476,6 +476,22 @@ def test_policy_keeps_internal_cheaper_configuration_on_product_path() -> None:
             "Show a private four-person workstation in sonoma finish.",
             "Four-person workstation with privacy panels in walnut finish.",
         ),
+        (
+            "Show a private COMP-4 four-person workstation.",
+            "COMP-5 four-person workstation with privacy panels.",
+        ),
+        (
+            "Show a private COMP-4 four-person workstation.",
+            "COMP four-person workstation with privacy panels.",
+        ),
+        (
+            "Show a private COMP-4 four-person workstation.",
+            "COMP-40 four-person workstation with privacy panels.",
+        ),
+        (
+            "Show a private Comp-4 four-person workstation.",
+            "NOVO four-person workstation with privacy panels.",
+        ),
     ],
 )
 def test_structured_workstation_match_requires_explicit_discriminators(
@@ -506,6 +522,16 @@ def test_structured_unknown_discriminators_match_when_candidate_confirms_them() 
     assert verified_answers_module._matches_structured_workstation_constraints(
         "Show a private COMP-4 four-person workstation in sonoma finish.",
         "COMP-4 four-person workstation with privacy panels in sonoma finish.",
+    )
+
+
+def test_individual_privacy_word_is_not_a_product_discriminator() -> None:
+    assert (
+        classify_product_match(
+            "Show a private four-person workstation with individual privacy panels.",
+            ["Four-person workstation with privacy panels."],
+        )
+        == "exact"
     )
 
 

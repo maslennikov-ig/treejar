@@ -17714,6 +17714,83 @@ def test_catalog_plan_starts_new_epoch_for_independent_product_intent() -> None:
     assert planning.family_totals == {}
 
 
+def test_explicit_disjoint_intent_outranks_bare_reference_word() -> None:
+    current = "Now I need a chair for this home office."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 2
+    assert planning.families == ("seating",)
+    assert planning.requested_seats is None
+    assert planning.budget_cap is None
+    assert planning.family_totals == {}
+
+
+@pytest.mark.parametrize(
+    "current",
+    [
+        "Now I need a new desk configuration for another office.",
+        "أحتاج هذا التكوين الجديد لمكاتب في مكتب آخر.",
+    ],
+)
+def test_explicit_new_intent_outranks_generic_continuation_terms(
+    current: str,
+) -> None:
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 2
+    assert planning.requested_seats is None
+    assert planning.families == ("workspace",)
+    assert planning.complete_coverage is False
+    assert planning.budget_cap is None
+    assert planning.family_totals == {}
+
+
+@pytest.mark.parametrize(
+    "current",
+    [
+        "Show another cheaper desk alternative.",
+        "Show another cheaper desk alternative for this office.",
+        "Show a different desk alternative.",
+    ],
+)
+def test_option_modifier_does_not_start_a_new_catalog_epoch(
+    current: str,
+) -> None:
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 1
+    assert planning.requested_seats == 12
+    assert planning.families == ("workspace",)
+    assert planning.budget_cap == 7000.0
+
+
 def test_catalog_plan_starts_new_epoch_for_disjoint_family_request() -> None:
     current = "Now show ergonomic chairs."
     conversation = SimpleNamespace(
@@ -17761,6 +17838,7 @@ def test_catalog_plan_keeps_epoch_for_continuation() -> None:
     "current",
     [
         "Add chairs to this configuration.",
+        "Also include chairs too.",
         "أضف كراسي إلى هذا التكوين.",
     ],
 )
@@ -17782,6 +17860,26 @@ def test_catalog_plan_adds_disjoint_family_within_continuation(
     assert planning.requested_seats == 12
     assert planning.families == ("workspace", "seating")
     assert planning.budget_cap == 7000.0
+
+
+def test_catalog_plan_replaces_family_without_starting_a_new_epoch() -> None:
+    current = "Use chairs instead of desks."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 1
+    assert planning.requested_seats == 12
+    assert planning.families == ("seating",)
+    assert planning.budget_cap == 7000.0
+    assert planning.family_totals == {}
 
 
 @pytest.mark.asyncio
@@ -17856,6 +17954,29 @@ def test_per_item_price_limit_is_not_persisted_as_total_budget(
     )
 
     assert planning.budget_cap is None
+    assert planning.per_item_cap in {500.0, 700.0}
+
+
+@pytest.mark.parametrize(
+    "customer_text",
+    [
+        "Show chairs under AED 500 each and keep the complete total under AED 7,000.",
+        "Keep the complete total under AED 7,000 and show chairs under AED 500 each.",
+    ],
+)
+def test_mixed_per_item_and_total_budgets_are_retained(
+    customer_text: str,
+) -> None:
+    conversation = SimpleNamespace(id=uuid.uuid4(), metadata_={})
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {customer_text}"],
+        customer_text,
+    )
+
+    assert planning.per_item_cap == 500.0
+    assert planning.budget_cap == 7000.0
 
 
 def test_sales_opportunity_with_horizon_proposes_timed_follow_up() -> None:

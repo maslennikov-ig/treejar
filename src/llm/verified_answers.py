@@ -1186,8 +1186,16 @@ _STRUCTURED_ATTRIBUTE_VALUE_RE = re.compile(
     r"\b(?:brand|family|line|model|series|finish|colou?r)\s*[:=-]?\s*"
     r"(?P<after>[a-z][a-z0-9-]{1,30})\b|"
     r"\b(?P<before>[a-z][a-z0-9-]{1,30})\s+(?:finish|colou?r)\b|"
-    r"\b(?:in|with)\s+(?P<modifier>[a-z][a-z0-9-]{1,30})\b",
+    r"\bin\s+(?P<modifier>[a-z][a-z0-9-]{1,30})\b",
     re.IGNORECASE,
+)
+_STRUCTURED_MODEL_IDENTIFIER_RE = re.compile(
+    r"(?<![a-z0-9])(?=[a-z0-9-]*[a-z])(?=[a-z0-9-]*\d)"
+    r"[a-z0-9]+(?:-[a-z0-9]+)+(?![a-z0-9])",
+    re.IGNORECASE,
+)
+_STRUCTURED_UPPER_IDENTIFIER_RE = re.compile(
+    r"(?<![a-z0-9])[A-Z][A-Z0-9]{2,}(?![a-z0-9-])"
 )
 _STRUCTURED_DISCRIMINATOR_EXCLUSIONS = frozenset(
     {"aed", "dhs", "sku", "stock", "privacy", "private", "panel", "panels"}
@@ -1208,15 +1216,20 @@ def _explicit_structured_discriminators(query: str) -> set[str]:
         for match in _STRUCTURED_ATTRIBUTE_VALUE_RE.finditer(query)
         if (value := next((group for group in match.groups() if group), None))
     }
-    raw_values.update(
-        token.casefold()
-        for token in re.findall(
-            r"(?<![a-z0-9])[A-Z][A-Z0-9-]{2,}(?![a-z0-9])",
-            query,
-        )
-    )
     values = {token for raw_value in raw_values for token in _tokenize(raw_value)}
     return values - _STRUCTURED_DISCRIMINATOR_EXCLUSIONS
+
+
+def _explicit_structured_identifiers(text: str) -> set[str]:
+    identifiers = {
+        match.group(0).casefold()
+        for match in _STRUCTURED_MODEL_IDENTIFIER_RE.finditer(text)
+    }
+    identifiers.update(
+        match.group(0).casefold()
+        for match in _STRUCTURED_UPPER_IDENTIFIER_RE.finditer(text)
+    )
+    return identifiers - _STRUCTURED_DISCRIMINATOR_EXCLUSIONS
 
 
 def _matches_structured_workstation_constraints(
@@ -1234,11 +1247,13 @@ def _matches_structured_workstation_constraints(
 
     candidate_tokens = _tokenize(candidate)
     discriminators = _explicit_structured_discriminators(query)
+    identifiers = _explicit_structured_identifiers(query)
     return bool(
         candidate_tokens & _WORKSTATION_MATCH_TERMS
         and candidate_tokens & _PRIVACY_MATCH_TERMS
         and _capacity_value(candidate) == requested_capacity
         and discriminators.issubset(candidate_tokens)
+        and identifiers.issubset(_explicit_structured_identifiers(candidate))
     )
 
 

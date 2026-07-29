@@ -23,9 +23,9 @@ subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: stateful sales routing and idempotent external effects require careful focused verification
 repo: treejar
-branch: codex/tj-ee5f-dialog-acceptance-review
+branch: codex/tj-ee5f-dialog-final-review
 base_branch: codex/tj-ee5f-remediation
-base_commit: acf089da2a8de9ef7e0401ac8b334b56649f4b40
+base_commit: 26e963d10d18bba52bf9b5c1263ce89b21c202bb
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-dialog-remediation
 write_zone:
   - src/llm/engine.py
@@ -52,7 +52,9 @@ success_criteria:
   - a cross-sell is returned only when the verified selected total leaves enough budget
   - unknown explicit product and finish discriminators fail closed without an allowlist
   - an independent product intent starts a new planning epoch while an explicit continuation retains state
-  - per-item price limits are not persisted as total configuration budgets
+  - new, add, and replace actions have explicit precedence without treating another option as another order
+  - per-item and total budget limits are typed and retained independently in either clause order
+  - exact product-model identifiers remain atomic across hyphens, digits, and case
   - budgeted cross-sell output cannot exceed the remainder in aggregate
   - a verified opportunity with a decision horizon proposes a concrete follow-up before that horizon
 selected_docs:
@@ -114,6 +116,9 @@ verification:
   - early-review RED for generic disjoint-family reset and explicit family addition: failed 2 of 2 as expected
   - second-review confirmation RED for a hyphenated unknown model: failed 1 of 1 as expected
   - second-review focused correction set: passed 36
+  - final-review RED for action precedence, mixed budget clauses, atomic model identifiers, and general privacy wording: failed 13 of 20 as expected
+  - final-review reviewer RED for another-option continuation and explicit disjoint intent with a bare reference: failed as expected
+  - final-review focused affected set: passed 35
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -208,6 +213,18 @@ Per-item price limits are excluded from the total-budget field. When a verified
 remainder exists, configured cross-sell candidates are reduced
 deterministically to one fitting item, so their aggregate cannot exceed it.
 
+The final review made catalog-state transitions explicit. A genuinely new
+request outranks generic reference words, while `add` keeps and unions families
+and `instead` replaces the family and discards stale family totals. Asking for
+another cheaper option stays in the current epoch. Per-item and total caps are
+parsed from every local clause, stored separately in a backward-readable
+versioned state, and retained regardless of clause order.
+
+Structured product matching now keeps model identifiers such as `COMP-4`
+atomic, including mixed case, so `COMP-5`, `COMP`, and `COMP-40` cannot satisfy
+that request. General wording such as `with individual privacy panels` is no
+longer misclassified as an explicit product discriminator.
+
 # Scope / Routing
 
 The production changes are limited to deterministic routing, typed metadata,
@@ -255,6 +272,13 @@ The second-review correction set passed 36 focused tests, including generic
 unknown line/finish mismatches, legacy-state epoch compatibility, new and
 disjoint-family resets, explicit continuation with family addition, per-item
 price caps, and cumulative cross-sell budget enforcement.
+
+The final-review affected set passed 35 tests covering action precedence,
+same-epoch option alternatives, explicit new intent despite a bare reference,
+family replacement cleanup, both mixed-budget clause orders, atomic model
+identifiers, general privacy wording, and the prior catalog/cross-sell
+contracts. Targeted Ruff lint and format checks and targeted Mypy for both
+production modules also passed.
 
 # Delivery / Cleanup
 

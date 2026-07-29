@@ -1070,6 +1070,15 @@ _PER_ITEM_PRICE_RE = re.compile(
     r"\b(?:each|apiece|per\s+[\w-]+)\b|(?:لكل|للقطعة)",
     re.IGNORECASE,
 )
+_TOTAL_BUDGET_RE = re.compile(
+    r"\b(?:total|overall|combined|complete\s+total)\b|"
+    r"(?:الإجمالي|الاجمالي)",
+    re.IGNORECASE,
+)
+_BUDGET_CLAUSE_BOUNDARY_RE = re.compile(
+    r"[.;\n،؛]|\b(?:and|but|then)\b",
+    re.IGNORECASE,
+)
 _CATALOG_COMPLETE_COVERAGE_TERMS = (
     "cheaper",
     "lowest cost",
@@ -1112,17 +1121,40 @@ _NEW_CATALOG_INTENT_RE = re.compile(
     r"are\s+looking\s+for)\b|(?:أحتاج|احتاج|نحتاج|أريد|اريد)",
     re.IGNORECASE,
 )
+_NEW_CATALOG_ACTION_RE = re.compile(
+    r"\b(?:new|another)\b|"
+    r"(?:جديد|الجديد|جديدة|الجديدة|آخر|اخر|أخرى|اخرى)",
+    re.IGNORECASE,
+)
+_NEW_CATALOG_CONTEXT_RE = re.compile(
+    r"\b(?:office|order|configuration|request|project)\b|"
+    r"(?:مكتب|التكوين|طلب|مشروع)",
+    re.IGNORECASE,
+)
+_CATALOG_OPTION_CONTEXT_RE = re.compile(
+    r"\b(?:option|alternative|variant)\b|(?:خيار|بديل)",
+    re.IGNORECASE,
+)
+_ADD_CATALOG_ACTION_RE = re.compile(
+    r"\b(?:add|also|too)\b|(?:أضف|اضف|أيضاً|أيضا|ايضاً|ايضا)",
+    re.IGNORECASE,
+)
+_REPLACE_CATALOG_ACTION_RE = re.compile(
+    r"\b(?:instead|replace|switch|swap)\b|(?:بدلا|بدلاً|استبدل)",
+    re.IGNORECASE,
+)
 
 
 class CatalogPlanningContext(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
-    version: Literal[1] = 1
+    version: Literal[1, 2] = 2
     epoch: int = Field(default=1, ge=1, le=1_000_000)
     requested_seats: int | None = Field(default=None, gt=0, le=1000)
     families: tuple[CatalogFamily, ...] = ()
     complete_coverage: bool = False
     budget_cap: float | None = Field(default=None, gt=0, le=10_000_000)
+    per_item_cap: float | None = Field(default=None, gt=0, le=10_000_000)
     family_totals: dict[CatalogFamily, CatalogAmount] = Field(default_factory=dict)
 
     @property
@@ -1134,6 +1166,12 @@ class CatalogPlanningContext(BaseModel):
             sum(self.family_totals[family] for family in required_families),
             2,
         )
+
+
+@dataclass(frozen=True)
+class CatalogBudgetConstraints:
+    total_cap: float | None = None
+    per_item_cap: float | None = None
 
 
 def _planning_count_value(raw: str) -> int:
@@ -1234,17 +1272,79 @@ def _needs_complete_catalog_coverage(text: str) -> bool:
     )
 
 
-def _catalog_budget_cap(text: str) -> float | None:
+def _budget_clause(
+    normalized: str,
+    amount_match: re.Match[str],
+) -> str:
+    boundaries = tuple(_BUDGET_CLAUSE_BOUNDARY_RE.finditer(normalized))
+    clause_start = max(
+        (
+            boundary.end()
+            for boundary in boundaries
+            if boundary.end() <= amount_match.start()
+        ),
+        default=0,
+    )
+    clause_end = min(
+        (
+            boundary.start()
+            for boundary in boundaries
+            if boundary.start() >= amount_match.end()
+        ),
+        default=len(normalized),
+    )
+    return normalized[clause_start:clause_end]
+
+
+def _catalog_budget_constraints(text: str) -> CatalogBudgetConstraints:
     normalized = _normalize_text(text)
-    match = _CATALOG_BUDGET_CAP_RE.search(normalized)
-    if match is None:
-        return None
-    nearby = normalized[max(0, match.start() - 20) : match.end() + 30]
-    if _PER_ITEM_PRICE_RE.search(nearby):
-        return None
-    raw_amount = match.group("amount_before") or match.group("amount_leading")
-    amount = float(raw_amount.replace(",", ""))
-    return amount if 0 < amount <= 10_000_000 else None
+    total_cap: float | None = None
+    per_item_cap: float | None = None
+    for match in _CATALOG_BUDGET_CAP_RE.finditer(normalized):
+        raw_amount = match.group("amount_before") or match.group("amount_leading")
+        amount = float(raw_amount.replace(",", ""))
+        if not 0 < amount <= 10_000_000:
+            continue
+        clause = _budget_clause(normalized, match)
+        if _PER_ITEM_PRICE_RE.search(clause) and not _TOTAL_BUDGET_RE.search(clause):
+            per_item_cap = amount
+        else:
+            total_cap = amount
+    return CatalogBudgetConstraints(
+        total_cap=total_cap,
+        per_item_cap=per_item_cap,
+    )
+
+
+def _catalog_budget_cap(text: str) -> float | None:
+    return _catalog_budget_constraints(text).total_cap
+
+
+def _catalog_replacement_families(
+    text: str,
+    current_families: tuple[CatalogFamily, ...],
+    previous_families: tuple[CatalogFamily, ...],
+) -> tuple[CatalogFamily, ...]:
+    normalized = _normalize_text(text)
+    target_text = normalized
+    if " instead of " in normalized:
+        target_text = normalized.split(" instead of ", maxsplit=1)[0]
+    elif " بدلا من " in normalized or " بدلاً من " in normalized:
+        marker = " بدلا من " if " بدلا من " in normalized else " بدلاً من "
+        target_text = normalized.split(marker, maxsplit=1)[0]
+    elif match := re.search(
+        r"\b(?:replace\b.+?\bwith|switch\b.+?\bto)\b(?P<target>.+)",
+        normalized,
+    ):
+        target_text = match.group("target")
+
+    target_families = _catalog_product_families(target_text)
+    if target_families:
+        return target_families
+    non_previous = tuple(
+        family for family in current_families if family not in previous_families
+    )
+    return non_previous or current_families
 
 
 def _catalog_planning_from_metadata(
@@ -1257,7 +1357,9 @@ def _catalog_planning_from_metadata(
     if not isinstance(raw, Mapping):
         return CatalogPlanningContext()
     try:
-        return CatalogPlanningContext.model_validate(raw)
+        planning = CatalogPlanningContext.model_validate(raw)
+        planning.version = 2
+        return planning
     except ValidationError:
         logger.warning(
             "Ignored invalid catalog planning state for conversation %s",
@@ -1282,20 +1384,48 @@ def _catalog_planning_for_turn(
 
     normalized_current = _normalize_text(current_text)
     current_families = _catalog_product_families(current_text)
-    is_continuation = any(
+    disjoint_family_request = bool(
+        current_families and set(current_families).isdisjoint(planning.families)
+    )
+    has_new_marker = _NEW_CATALOG_ACTION_RE.search(current_text) is not None
+    starts_new_epoch = (
+        has_new_marker
+        and _CATALOG_OPTION_CONTEXT_RE.search(current_text) is None
+        and (
+            _NEW_CATALOG_CONTEXT_RE.search(current_text) is not None
+            or (
+                disjoint_family_request
+                and _NEW_CATALOG_INTENT_RE.search(current_text) is not None
+            )
+        )
+    )
+    replaces_family = _REPLACE_CATALOG_ACTION_RE.search(current_text) is not None
+    adds_family = _ADD_CATALOG_ACTION_RE.search(current_text) is not None
+    references_existing = any(
         _contains_catalog_term(normalized_current, term)
         for term in _CATALOG_CONTINUATION_TERMS
     )
-    disjoint_family_request = bool(
-        current_families and set(current_families).isdisjoint(planning.families)
+    is_continuation = adds_family or (
+        not starts_new_epoch and not replaces_family and references_existing
     )
     starts_independent_intent = (
         bool(planning.families)
         and bool(current_families)
-        and not is_continuation
+        and not replaces_family
+        and not adds_family
         and (
-            disjoint_family_request
-            or _NEW_CATALOG_INTENT_RE.search(current_text) is not None
+            starts_new_epoch
+            or (
+                disjoint_family_request
+                and _NEW_CATALOG_INTENT_RE.search(current_text) is not None
+            )
+            or (
+                not is_continuation
+                and (
+                    disjoint_family_request
+                    or _NEW_CATALOG_INTENT_RE.search(current_text) is not None
+                )
+            )
         )
     )
     if starts_independent_intent:
@@ -1305,20 +1435,36 @@ def _catalog_planning_for_turn(
     planning.requested_seats = (
         _requested_seat_count(current_text) or planning.requested_seats
     )
-    if current_families:
+    if replaces_family and current_families:
+        replacement_families = _catalog_replacement_families(
+            current_text,
+            current_families,
+            planning.families,
+        )
+        planning.families = replacement_families
+        planning.family_totals = {
+            family: total
+            for family, total in planning.family_totals.items()
+            if family in replacement_families
+        }
+    elif current_families:
         planning.families = (
             tuple(dict.fromkeys((*planning.families, *current_families)))
             if is_continuation
             else current_families
         )
-    planning.budget_cap = _catalog_budget_cap(current_text) or planning.budget_cap
+    current_budget = _catalog_budget_constraints(current_text)
+    planning.budget_cap = current_budget.total_cap or planning.budget_cap
+    planning.per_item_cap = current_budget.per_item_cap or planning.per_item_cap
     for turn in reversed(user_turns):
         planning.requested_seats = planning.requested_seats or _requested_seat_count(
             turn
         )
         if not planning.families:
             planning.families = _catalog_product_families(turn)
-        planning.budget_cap = planning.budget_cap or _catalog_budget_cap(turn)
+        turn_budget = _catalog_budget_constraints(turn)
+        planning.budget_cap = planning.budget_cap or turn_budget.total_cap
+        planning.per_item_cap = planning.per_item_cap or turn_budget.per_item_cap
 
     planning.complete_coverage = planning.complete_coverage or any(
         _requests_complete_catalog_coverage(turn) for turn in user_turns
@@ -1337,6 +1483,7 @@ async def _store_catalog_planning(
             planning.requested_seats,
             planning.complete_coverage,
             planning.budget_cap,
+            planning.per_item_cap,
             planning.family_totals,
             metadata.get(_CATALOG_PLANNING_KEY),
         )
