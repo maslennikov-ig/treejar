@@ -4,7 +4,10 @@ import httpx
 import pytest
 
 from src.core.config import settings
-from src.integrations.messaging.wazzup import WazzupProvider
+from src.integrations.messaging.wazzup import (
+    WazzupProvider,
+    _resolve_tmpfiles_download_url,
+)
 
 
 @pytest.fixture
@@ -293,6 +296,49 @@ async def test_send_media_no_url_no_content_raises(
     """send_media without url or content raises ValueError."""
     with pytest.raises(ValueError, match="requires either url or content"):
         await wazzup_provider.send_media("123")
+
+
+@pytest.mark.asyncio
+async def test_tmpfiles_upload_resolves_and_verifies_direct_binary_url() -> None:
+    content = b"%PDF-1.7 exact quotation"
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.responses = [
+                httpx.Response(
+                    200,
+                    text='<a href="/dl/123/file.pdf">Download</a>',
+                    request=httpx.Request("GET", "https://tmpfiles.org/123/file.pdf"),
+                ),
+                httpx.Response(
+                    200,
+                    text='<a href="/download/123/file.pdf">Download file</a>',
+                    request=httpx.Request(
+                        "GET", "https://tmpfiles.org/dl/123/file.pdf"
+                    ),
+                ),
+                httpx.Response(
+                    200,
+                    content=content,
+                    headers={"content-type": "application/pdf"},
+                    request=httpx.Request(
+                        "GET", "https://tmpfiles.org/download/123/file.pdf"
+                    ),
+                ),
+            ]
+
+        async def get(self, url: str) -> httpx.Response:
+            response = self.responses.pop(0)
+            assert str(response.request.url) == url
+            return response
+
+    resolved = await _resolve_tmpfiles_download_url(
+        FakeClient(),
+        "https://tmpfiles.org/123/file.pdf",
+        content,
+    )
+
+    assert resolved == "https://tmpfiles.org/download/123/file.pdf"
 
 
 @pytest.mark.asyncio

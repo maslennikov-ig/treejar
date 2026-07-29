@@ -5219,7 +5219,7 @@ def _labeled_detail_value(text: str, labels: tuple[str, ...]) -> str:
     value = match.group("value").strip(" \t,;.")
     value = re.split(
         r"(?<=[.!?])\s+"
-        r"(?=(?:need|please|can|could|will|would|do|does|also|and|but)\b)",
+        r"(?=(?:need|please|proceed|can|could|will|would|do|does|also|and|but)\b)",
         value,
         maxsplit=1,
         flags=re.IGNORECASE,

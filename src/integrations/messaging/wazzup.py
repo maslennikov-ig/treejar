@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import mimetypes
+import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -17,6 +20,62 @@ logger = logging.getLogger(__name__)
 # Temporary file hosting for Wazzup contentUri (files expire after ~1h).
 # Wazzup v3 API requires a *public URL* for media — base64 is NOT supported.
 _TMPFILES_UPLOAD_URL = "https://tmpfiles.org/api/v1/upload"
+_TMPFILES_HOST = "tmpfiles.org"
+_TMPFILES_MAX_DOWNLOAD_HOPS = 4
+_DOWNLOAD_LINK_RE = re.compile(
+    r"<a\b(?P<attrs>[^>]*)href=[\"'](?P<href>[^\"']+)[\"']"
+    r"(?P<tail>[^>]*)>(?P<label>.*?)</a>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _validated_tmpfiles_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != _TMPFILES_HOST
+        or parsed.username
+        or parsed.password
+    ):
+        raise RuntimeError("tmpfiles.org returned an invalid download URL")
+    return value
+
+
+def _tmpfiles_download_link(page_url: str, page_html: str) -> str | None:
+    for match in _DOWNLOAD_LINK_RE.finditer(page_html):
+        label = re.sub(r"<[^>]+>", " ", html.unescape(match.group("label")))
+        attributes = f"{match.group('attrs')} {match.group('tail')}"
+        if "download" not in label.casefold() and not re.search(
+            r"\bdownload\b", attributes, re.IGNORECASE
+        ):
+            continue
+        return _validated_tmpfiles_url(
+            urljoin(page_url, html.unescape(match.group("href")))
+        )
+    return None
+
+
+async def _resolve_tmpfiles_download_url(
+    client: Any,
+    page_url: str,
+    expected_content: bytes,
+) -> str:
+    candidate = _validated_tmpfiles_url(page_url)
+    seen: set[str] = set()
+    for _ in range(_TMPFILES_MAX_DOWNLOAD_HOPS):
+        if candidate in seen:
+            break
+        seen.add(candidate)
+        response = await client.get(candidate)
+        response.raise_for_status()
+        resolved_url = _validated_tmpfiles_url(str(response.url))
+        if response.content == expected_content:
+            return resolved_url
+        next_url = _tmpfiles_download_link(resolved_url, response.text)
+        if next_url is None:
+            break
+        candidate = next_url
+    raise RuntimeError("tmpfiles.org did not expose the uploaded bytes")
 
 
 @dataclass(frozen=True)
@@ -124,10 +183,8 @@ class WazzupProvider(MessagingProvider):
         if data.get("status") != "success":
             raise RuntimeError(f"tmpfiles.org upload failed: {data}")
 
-        # tmpfiles.org URL: https://tmpfiles.org/12345/file.pdf
-        # Direct-download:  https://tmpfiles.org/dl/12345/file.pdf
         page_url: str = data["data"]["url"]
-        dl_url = page_url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+        dl_url = await _resolve_tmpfiles_download_url(http, page_url, content)
         logger.info("Uploaded %d bytes to %s", len(content), dl_url)
         return dl_url
 

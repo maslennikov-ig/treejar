@@ -16481,6 +16481,17 @@ def test_extract_quote_customer_details_splits_inline_labels() -> None:
     }
 
 
+def test_extract_quote_customer_details_stops_before_proceed_instruction() -> None:
+    text = (
+        "Delivery address: Office 42, Test Tower, Dubai, UAE. "
+        "Proceed with the requested order."
+    )
+
+    assert engine_module._extract_quote_customer_details(text)["address"] == (
+        "Office 42, Test Tower, Dubai, UAE"
+    )
+
+
 def test_name_gate_reply_accepts_natural_role_and_company() -> None:
     text = "I'm Nora, facilities lead at Northstar QA Workspace."
 
