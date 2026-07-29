@@ -61,6 +61,7 @@ success_criteria:
   - the planned customer input digest is the exact protected question digest used by semantic compilation
   - one derived semantic request permit binds the protected observation and exact dynamic OpenRouter request before network I/O
   - only typed protected semantic response receipts can terminalize paid model actions
+  - crash recovery terminalizes a durable semantic response and settles its cost exactly once without another provider request
   - server evidence fails closed when provider model, token, or cost facts are missing; deterministic static responses carry explicit zero-cost provenance
   - duplicate turn, message, or provider identities are rejected before compilation
   - unknown OpenRouter actions cannot be reconciled through Wazzup facts
@@ -121,7 +122,7 @@ docs_reviewed: updated
 docs_review_notes: stage artifact records the completed compiler boundary and remaining live acceptance gate
 verification:
   - focused RED covered exact runtime adapter modes, input digest drift, fabricated completion, request tampering, incomplete provider usage, duplicate identities, and cross-provider reconciliation
-  - affected acceptance, observation, runtime evidence, chat batching, and LLM engine tests: passed 725
+  - affected acceptance, observation, runtime evidence, chat batching, and LLM engine tests: passed 731
   - canonical src Mypy: passed for 165 source files
   - strict Mypy for compiler, journal, transport, and production collector: passed for 4 source files without import suppression
   - affected Ruff check and format: passed
@@ -171,7 +172,9 @@ before it can derive one request permit for a pre-authorized
 `model.classify` action. The permit binds the protected observation and exact
 dynamic OpenRouter request before I/O. Only a typed protected response receipt
 can complete that action and settle actual cost; generic completion cannot
-terminalize model work. Resume replays the receipt without another paid call.
+terminalize model work. If the process stops after the protected response
+receipt or after the terminal action event, resume validates the same receipt,
+finishes only the missing journal step, and never calls the provider again.
 
 Runtime authority now distinguishes exact local, live, and live-with-judge
 adapter sets and binds them to the matching transport digest. Duplicate turn,
@@ -191,8 +194,9 @@ receipt references; the compiler cannot mint them from caller JSON.
 Focused TDD covered exact adapter modes, question-digest binding, derived
 request permits, fabricated completion, request tampering, incomplete provider
 usage, duplicate identities, provider-specific reconciliation, receipt replay,
-actual cost settlement, and unchanged inventory. The affected acceptance set
-passed 725 tests. Canonical source Mypy passed 165 files; strict Mypy passed the
+crashes before completion or settlement, invalid recovery receipts, actual
+cost settlement, and unchanged inventory. The affected acceptance set passed
+731 tests. Canonical source Mypy passed 165 files; strict Mypy passed the
 four acceptance compiler/transport/collector modules without suppressing
 imports. Ruff and format checks pass. No product system prompt changed and
 captured scenario phrases remain fixtures.

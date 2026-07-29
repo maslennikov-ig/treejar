@@ -594,9 +594,10 @@ def _run_or_replay_judge(
         receipt = _read_protected_json(record.journal.run_root, receipt_ref)
     except ProductionAdapterError:
         receipt = None
-    if state == "succeeded":
-        if receipt is None:
-            raise ProductionAdapterError("semantic judge receipt is unavailable")
+    if state in {"unknown", "succeeded"} and receipt is not None:
+        reservation = record.journal._reservations.get(action_id)
+        if reservation is None:
+            raise ProductionAdapterError("semantic judge reservation is unavailable")
         try:
             typed_receipt = execution.SemanticResponseReceipt.model_validate(receipt)
         except ValidationError as exc:
@@ -616,8 +617,7 @@ def _run_or_replay_judge(
             or typed_receipt.execution_id != record.execution_id
             or typed_receipt.action_id != action_id
             or typed_receipt.authorization_digest != record.journal.authorization_digest
-            or typed_receipt.reservation_digest
-            != record.journal._reservations[action_id].reservation_digest
+            or typed_receipt.reservation_digest != reservation.reservation_digest
             or typed_receipt.judge_config_digest != scenario.judge_config_digest
             or typed_receipt.observation_sha256 != observation_sha256
             or typed_receipt.dynamic_request_sha256
@@ -629,18 +629,29 @@ def _run_or_replay_judge(
             or typed_receipt.total_tokens != total_tokens
         ):
             raise ProductionAdapterError("semantic judge receipt binding drift")
+        if state == "unknown":
+            record.journal.complete_semantic_response(
+                reservation,
+                receipt_ref=receipt_ref,
+            )
         settlement = record.journal._journal_cost_settlements.get(action_id)
+        if state == "succeeded" and settlement is None:
+            settlement = record.journal.settle_action_cost(
+                reservation,
+                actual_cost_usd=actual_cost,
+            )
         if (
             settlement is None
             or settlement.actual_cost_usd != actual_cost
-            or settlement.reservation_digest
-            != record.journal._reservations[action_id].reservation_digest
+            or settlement.reservation_digest != reservation.reservation_digest
         ):
             raise ProductionAdapterError(
                 "semantic judge action settlement binding drift"
             )
         return decision, raw_sha256, typed_receipt.judged_at
 
+    if state == "succeeded":
+        raise ProductionAdapterError("semantic judge receipt is unavailable")
     if state in {"unknown", "failed"}:
         raise ProductionAdapterError(
             "semantic judge outcome is unknown; retry is forbidden"

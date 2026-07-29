@@ -80,6 +80,64 @@ class _PassJudgeTransport:
         ).encode()
 
 
+def _prepared_semantic_judge_context(tmp_path: Path):
+    from scripts.e2e_acceptance.live_producer import (
+        IndependentExecutionProducer,
+        _LiveExecutionObservation,
+        _producer_handle_record,
+        _semantic_config,
+    )
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        issue_decisive_producer_handle,
+    )
+
+    from tests.test_e2e_acceptance_production import _prepared_executed_producer
+
+    registry, authority, journal, plan, attempt = _prepared_executed_producer(
+        tmp_path,
+        semantic_customer_text="Need four synthetic chairs.",
+    )
+    observed_at = datetime.now(UTC)
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-server-execution-observation/v1",
+            "execution_id": attempt.execution_id,
+            "observed_at": observed_at.isoformat(),
+            "transcript_facts": [_transcript_fact(attempt)],
+            "side_effect_facts": [],
+            "baseline_inventory": {"synthetic:item": {"state": "closed"}},
+            "final_inventory": {"synthetic:item": {"state": "closed"}},
+        }
+    ).encode()
+    handle = issue_decisive_producer_handle(
+        registry=registry,
+        journal=journal,
+        authority=authority,
+        sealed_plan=plan,
+    )
+    IndependentExecutionProducer(
+        collector_id="independent-readback-collector",
+        transport=FakeReadOnlySshTransport(
+            responses={f"execution:{attempt.execution_id}": raw}
+        ),
+    ).collect_next(
+        producer_handle=handle,
+        observed_at=observed_at + timedelta(seconds=1),
+    )
+    record = _producer_handle_record(handle)
+    return SimpleNamespace(
+        registry=registry,
+        authority=authority,
+        journal=journal,
+        plan=plan,
+        handle=handle,
+        observation=_LiveExecutionObservation.model_validate(json.loads(raw)),
+        observation_sha256=hashlib.sha256(raw).hexdigest(),
+        scenario=_semantic_config(record),
+    )
+
+
 def test_independent_live_producer_collects_server_facts_without_caller_evaluation(
     tmp_path: Path,
 ) -> None:
@@ -563,6 +621,179 @@ def test_semantic_judge_unknown_action_is_never_retried(tmp_path: Path) -> None:
             transport=NoWazzupRead(),
         ).materialize(journal, action_id=scenario.judge.action_id)
     assert journal._actions[scenario.judge.action_id] == "unknown"
+
+
+@pytest.mark.parametrize(
+    "crash_boundary",
+    ("after_receipt", "after_action_completed"),
+)
+def test_semantic_judge_resume_finishes_durable_response_without_provider_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    crash_boundary: str,
+) -> None:
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.live_producer import (
+        _producer_handle_record,
+        _run_or_replay_judge,
+        _semantic_config,
+    )
+    from scripts.e2e_acceptance.production import issue_decisive_producer_handle
+
+    context = _prepared_semantic_judge_context(tmp_path)
+
+    class InjectedCrash(RuntimeError):
+        pass
+
+    with monkeypatch.context() as crash:
+        if crash_boundary == "after_receipt":
+
+            def crash_before_completion(*args, **kwargs):
+                raise InjectedCrash("crash after protected semantic receipt")
+
+            crash.setattr(
+                context.journal,
+                "complete_semantic_response",
+                crash_before_completion,
+            )
+        else:
+
+            def crash_before_settlement(*args, **kwargs):
+                raise InjectedCrash("crash after semantic action completion")
+
+            crash.setattr(
+                context.journal, "settle_action_cost", crash_before_settlement
+            )
+
+        first_transport = _PassJudgeTransport()
+        with pytest.raises(InjectedCrash):
+            _run_or_replay_judge(
+                producer_handle=context.handle,
+                scenario=context.scenario,
+                observation=context.observation,
+                observation_sha256=context.observation_sha256,
+                transport=first_transport,
+            )
+        assert len(first_transport.calls) == 1
+
+    reopened = execution.ProtectedExecutionJournal.open(
+        protected_root=context.journal.protected_root,
+        run_id=context.journal.run_id,
+        authority=context.authority,
+    )
+    resumed_handle = issue_decisive_producer_handle(
+        registry=context.registry,
+        journal=reopened,
+        authority=context.authority,
+        sealed_plan=context.plan,
+    )
+    resumed_scenario = _semantic_config(_producer_handle_record(resumed_handle))
+    replacement_transport = _PassJudgeTransport()
+
+    decision, _, _ = _run_or_replay_judge(
+        producer_handle=resumed_handle,
+        scenario=resumed_scenario,
+        observation=context.observation,
+        observation_sha256=context.observation_sha256,
+        transport=replacement_transport,
+    )
+
+    action_id = resumed_scenario.judge.action_id
+    assert decision.execution_id == context.observation.execution_id
+    assert replacement_transport.calls == []
+    assert reopened._actions[action_id] == "succeeded"
+    assert reopened._journal_cost_settlements[action_id].actual_cost_usd == 0.02
+    events_before_replay = sorted((reopened.run_root / "journal").glob("*.json"))
+    event_kinds = [
+        json.loads(path.read_text(encoding="utf-8"))["kind"]
+        for path in events_before_replay
+    ]
+    assert event_kinds.count("action_completed") == 1
+    assert event_kinds.count("action_cost_settled") == 1
+
+    _run_or_replay_judge(
+        producer_handle=resumed_handle,
+        scenario=resumed_scenario,
+        observation=context.observation,
+        observation_sha256=context.observation_sha256,
+        transport=replacement_transport,
+    )
+    assert replacement_transport.calls == []
+    assert (
+        sorted((reopened.run_root / "journal").glob("*.json")) == events_before_replay
+    )
+
+
+@pytest.mark.parametrize("receipt_state", ("missing", "tampered"))
+@pytest.mark.parametrize("crash_boundary", ("after_receipt", "after_action_completed"))
+def test_semantic_judge_invalid_receipt_stays_blocked_without_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    receipt_state: str,
+    crash_boundary: str,
+) -> None:
+    from scripts.e2e_acceptance.live_producer import _run_or_replay_judge
+    from scripts.e2e_acceptance.production import ProductionAdapterError
+
+    context = _prepared_semantic_judge_context(tmp_path)
+
+    class InjectedCrash(RuntimeError):
+        pass
+
+    with monkeypatch.context() as crash:
+        if crash_boundary == "after_receipt":
+
+            def crash_before_completion(*args, **kwargs):
+                raise InjectedCrash("crash after protected semantic receipt")
+
+            crash.setattr(
+                context.journal,
+                "complete_semantic_response",
+                crash_before_completion,
+            )
+        else:
+
+            def crash_before_settlement(*args, **kwargs):
+                raise InjectedCrash("crash after semantic action completion")
+
+            crash.setattr(
+                context.journal, "settle_action_cost", crash_before_settlement
+            )
+        with pytest.raises(InjectedCrash):
+            _run_or_replay_judge(
+                producer_handle=context.handle,
+                scenario=context.scenario,
+                observation=context.observation,
+                observation_sha256=context.observation_sha256,
+                transport=_PassJudgeTransport(),
+            )
+
+    receipt_path = (
+        context.journal.run_root
+        / f"producer-receipts/judges/{context.observation.execution_id}.json"
+    )
+    if receipt_state == "missing":
+        receipt_path.unlink()
+    else:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["raw_sha256"] = "0" * 64
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    replacement_transport = _PassJudgeTransport()
+    with pytest.raises(ProductionAdapterError):
+        _run_or_replay_judge(
+            producer_handle=context.handle,
+            scenario=context.scenario,
+            observation=context.observation,
+            observation_sha256=context.observation_sha256,
+            transport=replacement_transport,
+        )
+    assert replacement_transport.calls == []
+    expected_state = "unknown" if crash_boundary == "after_receipt" else "succeeded"
+    assert context.journal._actions[context.scenario.judge.action_id] == expected_state
+    assert context.scenario.judge.action_id not in (
+        context.journal._journal_cost_settlements
+    )
 
 
 def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
