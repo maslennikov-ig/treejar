@@ -13587,6 +13587,42 @@ async def process_message(
                 if latency_trace is not None and agent_started is not None:
                     latency_trace.finish_phase("model_tools", agent_started)
 
+        def _build_verified_catalog_recovery_response(
+            recovery_text: str,
+            recovery_traces: tuple[RuntimeToolTrace, ...],
+            *,
+            run_deps: SalesDeps,
+            usage: Any,
+            cost: float | None,
+        ) -> LLMResponse:
+            final_text = unmask_pii(recovery_text, pii_map)
+            final_text = _repair_closed_questions(final_text)
+            final_text = _apply_first_turn_opening_guard(final_text)
+            record_legacy_route(
+                conv,
+                dialogue_kernel_result,
+                legacy_route=f"{db_model_main}|verified-catalog-recovery",
+            )
+            _capture_expected_answer_frames_from_assistant_response(
+                conv,
+                response_text=final_text,
+                dialogue_kernel_mode=dialogue_kernel_mode,
+            )
+            return LLMResponse(
+                text=final_text,
+                tokens_in=usage.input_tokens,
+                tokens_out=usage.output_tokens,
+                cost=cost,
+                model=f"{db_model_main}|verified-catalog-recovery",
+                usage_provenance="provider_reported",
+                deferred_product_media=_deferred_product_media_for_response(
+                    run_deps,
+                    allow_product_media=True,
+                    response_text=final_text,
+                ),
+                tool_traces=recovery_traces,
+            )
+
         if (
             not policy_decision.is_order_status
             and policy_decision.sales_fallback_intent is not None
@@ -13867,33 +13903,37 @@ async def process_message(
             if recovery_text is None:
                 raise
             await _clear_verified_policy_repair_state()
-            final_text = unmask_pii(recovery_text, pii_map)
-            final_text = _repair_closed_questions(final_text)
-            final_text = _apply_first_turn_opening_guard(final_text)
-            record_legacy_route(
-                conv,
-                dialogue_kernel_result,
-                legacy_route=f"{db_model_main}|verified-catalog-recovery",
-            )
-            _capture_expected_answer_frames_from_assistant_response(
-                conv,
-                response_text=final_text,
-                dialogue_kernel_mode=dialogue_kernel_mode,
-            )
             usage = failed_run_usage or RunUsage()
-            return LLMResponse(
-                text=final_text,
-                tokens_in=usage.input_tokens,
-                tokens_out=usage.output_tokens,
+            return _build_verified_catalog_recovery_response(
+                recovery_text,
+                recovery_traces,
+                run_deps=run_deps,
+                usage=usage,
                 cost=dynamic_model.provider_cost_snapshot(),
-                model=f"{db_model_main}|verified-catalog-recovery",
-                usage_provenance="provider_reported",
-                deferred_product_media=_deferred_product_media_for_response(
-                    run_deps,
-                    allow_product_media=True,
-                    response_text=final_text,
+            )
+        recovery_traces = tuple(run_deps.recovery_tool_traces)
+        recovery_text = _materialize_verified_catalog_recovery(
+            run_deps,
+            recovery_traces,
+            explicit_quote_hold=(
+                _has_explicit_quote_hold(masked_text)
+                or _has_explicit_quote_hold(combined_text)
+            ),
+        )
+        if recovery_text is not None:
+            await _clear_verified_policy_repair_state()
+            usage = result.usage() or RunUsage()
+            usage_telemetry = get_llm_usage_telemetry(result)
+            return _build_verified_catalog_recovery_response(
+                recovery_text,
+                recovery_traces,
+                run_deps=run_deps,
+                usage=usage,
+                cost=(
+                    usage_telemetry.cost
+                    if usage_telemetry is not None
+                    else dynamic_model.provider_cost_snapshot()
                 ),
-                tool_traces=recovery_traces,
             )
         await _clear_verified_policy_repair_state()
         return _build_llm_response(

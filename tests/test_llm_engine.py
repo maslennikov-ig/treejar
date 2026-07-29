@@ -5216,7 +5216,7 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     mock_notify.assert_not_awaited()
 
 
-@pytest.mark.parametrize("failure_kind", ["validation", "timeout"])
+@pytest.mark.parametrize("failure_kind", ["validation", "timeout", "truncated"])
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -5321,6 +5321,13 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
                     arguments={"sequence": sequence, **arguments},
                     outcome=outcome,
                 )
+            )
+        if failure_kind == "truncated":
+            return _FakeAgentResult(
+                "Viable configuration:\n| Item | Qty |\n| Task Chair |",
+                input_tokens=321,
+                output_tokens=45,
+                cost=0.0123,
             )
         if failure_kind == "timeout":
             raise TimeoutError
