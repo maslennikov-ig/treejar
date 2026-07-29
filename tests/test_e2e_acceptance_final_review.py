@@ -915,7 +915,9 @@ def _seal_materializer_acceptance_journal(
     journal.previous_event_digest = previous
 
 
-def _production_materializer_inputs(tmp_path: Path):
+def _production_materializer_inputs(
+    tmp_path: Path, *, runtime: dict[str, object] | None = None
+):
     registry, tracked, protected = _build_verified_run(tmp_path)
     policy, execution_module, trusted = _modules()
     from scripts.e2e_acceptance.coordinator import (
@@ -927,6 +929,7 @@ def _production_materializer_inputs(tmp_path: Path):
     from scripts.e2e_acceptance.production import (
         BaselineReadbackArtifact,
         BaselineReadbackProducerReceipt,
+        ProtectedRunPlan,
     )
 
     run = json.loads((tracked / "registry/run.json").read_text(encoding="utf-8"))
@@ -1059,9 +1062,10 @@ def _production_materializer_inputs(tmp_path: Path):
                 if key not in {"baseline", "final"}
             }
         )
-    plan = SimpleNamespace(
-        actions=(),
-        evaluator={
+    plan_payload: dict[str, object] = {
+        "actions": [],
+        "evaluator": {
+            "schema_version": "noor-e2e-protected-evaluator/v1",
             "publication": {
                 "schema_version": "noor-e2e-publication-metadata/v1",
                 "title": report["title"],
@@ -1069,13 +1073,21 @@ def _production_materializer_inputs(tmp_path: Path):
                 "judge": report["judge"],
                 "limitations": report["limitations"],
                 "external_gates": report["external_gates"],
-            }
+            },
+            "decisive_producers": [
+                {
+                    "producer_id": run["authorization"]["adapter_ids"][0],
+                    "producer_kind": "adapter",
+                    "capability": "outbound_text",
+                    "source_identity": run["authorization"]["adapter_ids"][0],
+                    "config_digest": "a" * 64,
+                }
+            ],
         },
-    )
-    plan.plan_digest = trusted.canonical_digest(
-        {"actions": list(plan.actions), "evaluator": plan.evaluator}
-    )
-    plan.evaluator_digest = trusted.canonical_digest(plan.evaluator)
+    }
+    if runtime is not None:
+        plan_payload["runtime"] = runtime
+    plan = ProtectedRunPlan.from_payload(plan_payload)
     sealed = {
         "schema_version": "noor-e2e-sealed-run-plan/v2",
         "plan_digest": plan.plan_digest,
@@ -1083,6 +1095,8 @@ def _production_materializer_inputs(tmp_path: Path):
         "actions": list(plan.actions),
         "evaluator": plan.evaluator,
     }
+    if plan.runtime is not None:
+        sealed["runtime"] = plan.runtime
     _write_json(protected / "run-plan/sealed.json", sealed)
     journal = SimpleNamespace(
         phase="attempt_committed",
@@ -1373,6 +1387,36 @@ def test_materialize_execution_snapshot_builds_and_loads_strict_production_v2(
     assert (
         trusted._load_protected_execution_snapshot(registry, journal.run_id) == snapshot
     )
+
+
+def test_materialize_execution_snapshot_accepts_runtime_bound_sealed_plan(
+    tmp_path: Path,
+) -> None:
+    runtime = {
+        "schema_version": "noor-e2e-live-runtime/v1",
+        "adapter_id": "wazzup-webhook-adapter",
+        "webhook_endpoint": "https://noor.starec.ai/api/v1/webhook/wazzup",
+        "target_digest": "a" * 64,
+        "collector_id": "independent-readback-collector",
+        "ssh_host_alias": "noor-production",
+        "source_commands": {
+            "baseline": ["/usr/bin/cat", "/var/lib/noor/baseline.json"],
+            "final": ["/usr/bin/cat", "/var/lib/noor/final.json"],
+        },
+    }
+    registry, _, protected, journal, plan = _production_materializer_inputs(
+        tmp_path, runtime=runtime
+    )
+    _, _, trusted = _modules()
+
+    snapshot = trusted.materialize_execution_snapshot(registry, journal, plan)
+
+    sealed = json.loads(
+        (protected / "run-plan/sealed.json").read_text(encoding="utf-8")
+    )
+    assert sealed["runtime"] == runtime
+    assert snapshot.sealed_plan["runtime"] == runtime
+    assert snapshot.sealed_plan["plan_digest"] == plan.plan_digest
 
 
 def test_materializer_uses_exact_authorized_client_exclusion(

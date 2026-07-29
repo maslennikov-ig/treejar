@@ -6,8 +6,8 @@ stream_owner: trust_remediation
 orchestration_level: integration
 scope_kind: foundation
 immediate_consumer: tj-ee5f.1
-public_facade: scripts/run_noor_e2e_acceptance.py
-bounded_acceptance: real authority-bound HTTP dispatch and SSH readback materialize protected production facts
+public_facade: scripts/run_noor_e2e_acceptance.py and trusted execution snapshot
+bounded_acceptance: runtime-bound and runtime-less sealed plans share one protected-plan validation contract
 non_goals:
   - no live HTTP, SSH, provider, customer, CRM, quotation, deploy, paid call, or Beads mutation
 evidence:
@@ -23,14 +23,14 @@ subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: production evidence integrity and external side effects require strict fail-closed contracts
 repo: treejar
-branch: codex/tj-ee5f-trust-remediation
-base_branch: main
-base_commit: 844a3946f36070ca282b9fbe921fd9225cefeddc
-worktree: /home/me/code/treejar/.worktrees/tj-ee5f-trust-remediation
+branch: codex/tj-ee5f-5-runtime-plan-compat
+base_branch: codex/tj-ee5f-remediation
+base_commit: ed8e24d0ee18109fb51654ddc33567283a6d797f
+worktree: /home/me/code/treejar/.worktrees/tj-ee5f-5-runtime-plan-compat
 write_zone:
-  - scripts/e2e_acceptance/**
-  - scripts/run_noor_e2e_acceptance.py
-  - tests/test_e2e_acceptance_*.py
+  - scripts/e2e_acceptance/coordinator.py
+  - scripts/e2e_acceptance/trusted_run.py
+  - tests/test_e2e_acceptance_final_review.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 success_criteria:
   - execute-resume uses the authority-bound one-shot HTTP adapter for sealed live plans
@@ -40,6 +40,7 @@ success_criteria:
   - live endpoint, SSH host, and exact readback commands are digest-bound to protected authority; webhook origin matches the approved runtime identity
   - reconciliation is causally bound and cannot use a snapshot from before permit consumption or dispatch
   - mixed executed and blocked runs seal one ordered transcript manifest
+  - coordinator and snapshot accept digest-bound optional runtime while preserving runtime-less v2 compatibility
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -47,14 +48,14 @@ selected_docs:
   - docs/superpowers/plans/2026-07-28-noor-task3-production-trust-repair.md
 selected_skills:
   - orchestrator-stage
-  - superpowers:systematic-debugging
   - superpowers:test-driven-development
+  - superpowers:using-git-worktrees
   - superpowers:verification-before-completion
 selected_agents:
   - none
 catalog_candidates:
   - none
-parallel_group: tj-ee5f-trust-remediation
+parallel_group: tj-ee5f-runtime-plan-compat
 depends_on_streams:
   - tj-ee5f.5-task3-live-boundary
 parallel_decision: parallel
@@ -84,30 +85,21 @@ docs_impact: behavior
 docs_reviewed: no-change-needed
 docs_review_notes: implementation contract is recorded in this stage artifact; no end-user documentation changed
 verification:
-  - focused live runtime, transport, producer, production, and report tests: passed
-  - focused authority and actual-cost reconciliation tests: passed
-  - correction RED proved endpoint, SSH host, command, causal identity, and stale-snapshot gaps
-  - correction focused live authority, runtime, transport, and producer tests: passed 44
-  - correction focused reconciliation and authority-factory tests: passed 24
-  - correction focused authority-bundle and lifecycle compatibility tests: passed 2
-  - final materialization compatibility test: passed
+  - runtime-plan RED before production change: failed with CoordinatorError sealed plan binding drift
+  - runtime-plan RED after coordinator correction: failed with TrustedRunError sealed production artifacts are incomplete
+  - runtime/no-runtime focused GREEN: passed 2
+  - coordinator/final-review/live-runtime/production acceptance: passed 152
   - focused Ruff check and format: passed
+  - artifact validator: passed
   - git diff check: passed
-  - artifact validator: blocked until the root orchestrator registers this returned artifact in the owning stage manifest
 changed_files:
-  - scripts/e2e_acceptance/execution.py
-  - scripts/e2e_acceptance/live_authority.py
-  - scripts/e2e_acceptance/live_producer.py
-  - scripts/e2e_acceptance/live_transport.py
-  - scripts/e2e_acceptance/production.py
+  - scripts/e2e_acceptance/coordinator.py
   - scripts/e2e_acceptance/trusted_run.py
-  - scripts/run_noor_e2e_acceptance.py
-  - tests/test_e2e_acceptance_live_runtime.py
-  - tests/test_e2e_acceptance_live_authority.py
-  - tests/test_e2e_acceptance_trusted_execution.py
+  - tests/test_e2e_acceptance_final_review.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 explicit_defers:
-  - root orchestrator must register this returned artifact in .codex/stages/tj-ee5f/stage-manifest.json before artifact validation can pass
+  - repository still has no canonical server-side generator for execution and reconciliation observations
+  - compatibility proof covers coordinator acceptance and terminal snapshot; a full network-free live CLI record-attempt loop needs that missing observation generator
   - production invocation and evidence remain with the root orchestrator after integration, review, deploy authority, and fresh preflight
 ---
 
@@ -124,6 +116,11 @@ The webhook origin must match the approved runtime identity, while the SSH host
 and exact readback commands are committed by digest. Unknown-action readback
 now carries the exact reservation and causal event and must be observed after
 the durable permit-consume or later action boundary.
+
+The compatibility correction removes a deterministic live-run blocker:
+coordinator and snapshot validation now reconstruct the sealed payload through
+`ProtectedRunPlan`, accept its optional digest-bound `runtime`, reject extra or
+drifted fields, and continue to accept canonical plans without `runtime`.
 
 # Scope / Routing
 
@@ -142,9 +139,8 @@ reported action cost, and mixed-run transcript ordering. The correction RED
 also reproduced arbitrary endpoint/SSH/command substitution, missing causal
 identity, and acceptance of a pre-dispatch snapshot; all focused GREEN targets
 now pass. Focused Ruff, formatting, and materialization compatibility passed.
-Artifact validation is blocked only by stage-manifest registration, which is
-outside this stream's write-zone and belongs to the root orchestrator during
-integration.
+The final targeted acceptance set passed all 152 coordinator, final-review,
+live-runtime, and production-plan tests.
 
 # Delivery / Cleanup
 
@@ -157,5 +153,6 @@ cleanup was performed.
 The production run still requires a fresh sealed runtime plan with the actual
 approved SSH command allowlist and target digest. Unknown or uncovered effects
 remain fail-closed. The root orchestrator owns integration, independent review,
-stage-manifest artifact registration, authorized deploy, production acceptance,
-and final cleanup.
+authorized deploy, production acceptance, and final cleanup. A separate
+remaining trust gap is the absence of a canonical repository-owned server-side
+generator for execution and reconciliation observation JSON.

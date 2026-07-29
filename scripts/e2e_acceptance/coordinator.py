@@ -14,11 +14,14 @@ import stat
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.policy import TrustedAcceptanceRegistry
+
+if TYPE_CHECKING:
+    from scripts.e2e_acceptance.production import ProtectedRunPlan
 
 _FRESHNESS = timedelta(minutes=15)
 _ARTIFACT_DIR = "producer-artifacts"
@@ -83,6 +86,40 @@ def _optional_json(root: Path, relative: str) -> tuple[dict[str, Any], bytes] | 
         ):
             return None
         raise
+
+
+def _validate_sealed_run_plan(sealed: dict[str, Any]) -> ProtectedRunPlan:
+    """Validate a sealed payload with the canonical protected-plan semantics."""
+
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        ProtectedRunPlan,
+    )
+
+    try:
+        plan = ProtectedRunPlan.from_payload(sealed)
+    except ProductionAdapterError as exc:
+        raise CoordinatorError("sealed plan binding drift") from exc
+    expected_fields = {
+        "schema_version",
+        "plan_digest",
+        "evaluator_digest",
+        "actions",
+        "evaluator",
+    }
+    if plan.runtime is not None:
+        expected_fields.add("runtime")
+    if (
+        set(sealed) != expected_fields
+        or sealed.get("schema_version") != "noor-e2e-sealed-run-plan/v2"
+        or sealed.get("plan_digest") != plan.plan_digest
+        or sealed.get("evaluator_digest") != plan.evaluator_digest
+        or sealed.get("actions") != list(plan.actions)
+        or sealed.get("evaluator") != plan.evaluator
+        or sealed.get("runtime") != plan.runtime
+    ):
+        raise CoordinatorError("sealed plan binding drift")
+    return plan
 
 
 def _write_or_validate_exact(root: Path, relative: str, value: object) -> str:
@@ -530,23 +567,7 @@ class ProductionRunCoordinator:
         ):
             raise CoordinatorError("coordinator authority/order binding drift")
         sealed, sealed_payload = _read_json(self.run_root, "run-plan/sealed.json")
-        if (
-            set(sealed)
-            != {
-                "schema_version",
-                "plan_digest",
-                "evaluator_digest",
-                "actions",
-                "evaluator",
-            }
-            or sealed.get("schema_version") != "noor-e2e-sealed-run-plan/v2"
-            or not isinstance(sealed.get("actions"), list)
-            or not isinstance(sealed.get("evaluator"), dict)
-            or sealed.get("plan_digest")
-            != _digest({"actions": sealed["actions"], "evaluator": sealed["evaluator"]})
-            or sealed.get("evaluator_digest") != _digest(sealed["evaluator"])
-        ):
-            raise CoordinatorError("sealed plan binding drift")
+        _validate_sealed_run_plan(sealed)
         self.sealed_plan_sha256 = _sha256(sealed_payload)
         self._initial_fold_digest = _digest(
             {

@@ -2177,6 +2177,13 @@ def materialize_execution_snapshot(
         raise TrustedRunError(
             "snapshot materialization requires a terminal attempt-committed journal"
         )
+    from scripts.e2e_acceptance.coordinator import (
+        CoordinatorError,
+        ProductionRunCoordinator,
+        ProtectedJournalAcceptancePort,
+        _validate_sealed_run_plan,
+    )
+
     run_id = journal.run_id
     try:
         sealed_payload = _read_file(
@@ -2186,33 +2193,17 @@ def materialize_execution_snapshot(
             sealed_payload,
             "sealed run plan",
         )
+        validated_plan = _validate_sealed_run_plan(sealed)
         if (
-            set(sealed)
-            != {
-                "schema_version",
-                "plan_digest",
-                "evaluator_digest",
-                "actions",
-                "evaluator",
-            }
-            or sealed.get("schema_version") != "noor-e2e-sealed-run-plan/v2"
-            or sealed.get("plan_digest") != sealed_plan.plan_digest
-            or sealed.get("evaluator_digest") != sealed_plan.evaluator_digest
-            or sealed.get("evaluator") != sealed_plan.evaluator
-            or canonical_digest(
-                {"actions": sealed.get("actions"), "evaluator": sealed.get("evaluator")}
-            )
-            != sealed_plan.plan_digest
-            or canonical_digest(sealed.get("evaluator")) != sealed_plan.evaluator_digest
+            validated_plan.plan_digest != sealed_plan.plan_digest
+            or validated_plan.evaluator_digest != sealed_plan.evaluator_digest
+            or validated_plan.actions != tuple(sealed_plan.actions)
+            or validated_plan.evaluator != sealed_plan.evaluator
+            or validated_plan.runtime != getattr(sealed_plan, "runtime", None)
         ):
             raise TrustedRunError("sealed plan/evaluator drift")
-    except (ValueError, TrustedRunError) as exc:
+    except (ValueError, CoordinatorError, TrustedRunError) as exc:
         raise TrustedRunError("sealed production artifacts are incomplete") from exc
-    from scripts.e2e_acceptance.coordinator import (
-        CoordinatorError,
-        ProductionRunCoordinator,
-        ProtectedJournalAcceptancePort,
-    )
 
     coordinator = ProductionRunCoordinator(
         registry=registry,
