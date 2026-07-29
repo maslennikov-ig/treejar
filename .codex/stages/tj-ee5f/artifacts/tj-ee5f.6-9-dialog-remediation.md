@@ -50,6 +50,10 @@ success_criteria:
   - bounded typed catalog state preserves capacity and family across EN/AR turns
   - exact structured matching also honors explicit product line and finish constraints
   - a cross-sell is returned only when the verified selected total leaves enough budget
+  - unknown explicit product and finish discriminators fail closed without an allowlist
+  - an independent product intent starts a new planning epoch while an explicit continuation retains state
+  - per-item price limits are not persisted as total configuration budgets
+  - budgeted cross-sell output cannot exceed the remainder in aggregate
   - a verified opportunity with a decision horizon proposes a concrete follow-up before that horizon
 selected_docs:
   - AGENTS.md
@@ -106,6 +110,10 @@ verification:
   - acceptance correction focused catalog and opportunity set: passed 19
   - independent-review RED for bounded planning state, exact discriminators, token boundaries, budget enforcement, and short horizons: failed 9 of 10 as expected
   - independent-review focused correction set: passed 25
+  - second-review RED for unknown discriminators, planning lifecycle, aggregate cross-sell, and per-item caps: failed 7 of 9 as expected
+  - early-review RED for generic disjoint-family reset and explicit family addition: failed 2 of 2 as expected
+  - second-review confirmation RED for a hyphenated unknown model: failed 1 of 1 as expected
+  - second-review focused correction set: passed 36
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -190,6 +198,16 @@ fails closed. One-day, same-day, and hourly decision horizons use a neutral
 contact-time question rather than claiming a follow-up occurs before the
 decision.
 
+The second independent review removed the remaining allowlist dependency from
+structured exact matching. Explicit identifiers, model/series fields, and
+finish/color modifiers are extracted generically and must be confirmed by the
+candidate. Catalog planning now has a bounded epoch: a new or disjoint product
+intent clears stale capacity, families, total budget, and selected totals,
+while referential continuation keeps the epoch and can add another family.
+Per-item price limits are excluded from the total-budget field. When a verified
+remainder exists, configured cross-sell candidates are reduced
+deterministically to one fitting item, so their aggregate cannot exceed it.
+
 # Scope / Routing
 
 The production changes are limited to deterministic routing, typed metadata,
@@ -232,6 +250,11 @@ The independent-review correction set passed 25 focused tests, covering prior
 catalog behavior plus a real multi-turn Arabic planning context, family token
 boundaries, LUMA/NOVO and finish mismatches, deterministic cross-sell budget
 rejection, and neutral one-day/today/hourly follow-up wording.
+
+The second-review correction set passed 36 focused tests, including generic
+unknown line/finish mismatches, legacy-state epoch compatibility, new and
+disjoint-family resets, explicit continuation with family addition, per-item
+price caps, and cumulative cross-sell budget enforcement.
 
 # Delivery / Cleanup
 

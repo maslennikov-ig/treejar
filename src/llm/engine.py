@@ -1066,6 +1066,10 @@ _CATALOG_BUDGET_CAP_RE = re.compile(
     r"(?:or\s+less|max(?:imum)?|cap)\b)",
     re.IGNORECASE,
 )
+_PER_ITEM_PRICE_RE = re.compile(
+    r"\b(?:each|apiece|per\s+[\w-]+)\b|(?:لكل|للقطعة)",
+    re.IGNORECASE,
+)
 _CATALOG_COMPLETE_COVERAGE_TERMS = (
     "cheaper",
     "lowest cost",
@@ -1079,12 +1083,42 @@ _CATALOG_COMPLETE_COVERAGE_TERMS = (
     "أقل تكلفة",
     "تكوين كامل",
 )
+_CATALOG_CONTINUATION_TERMS = (
+    "this",
+    "that",
+    "same",
+    "selected",
+    "configuration",
+    "cheaper",
+    "alternative",
+    "cross-sell",
+    "cross sell",
+    "remaining",
+    "continue",
+    "instead",
+    "correction",
+    "update",
+    "هذا",
+    "هذه",
+    "نفس",
+    "التكوين",
+    "المتبقي",
+    "استمر",
+    "بدلا",
+    "تحديث",
+)
+_NEW_CATALOG_INTENT_RE = re.compile(
+    r"\b(?:now\s+)?(?:i|we)\s+(?:need|want|am\s+looking\s+for|"
+    r"are\s+looking\s+for)\b|(?:أحتاج|احتاج|نحتاج|أريد|اريد)",
+    re.IGNORECASE,
+)
 
 
 class CatalogPlanningContext(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     version: Literal[1] = 1
+    epoch: int = Field(default=1, ge=1, le=1_000_000)
     requested_seats: int | None = Field(default=None, gt=0, le=1000)
     families: tuple[CatalogFamily, ...] = ()
     complete_coverage: bool = False
@@ -1201,8 +1235,12 @@ def _needs_complete_catalog_coverage(text: str) -> bool:
 
 
 def _catalog_budget_cap(text: str) -> float | None:
-    match = _CATALOG_BUDGET_CAP_RE.search(_normalize_text(text))
+    normalized = _normalize_text(text)
+    match = _CATALOG_BUDGET_CAP_RE.search(normalized)
     if match is None:
+        return None
+    nearby = normalized[max(0, match.start() - 20) : match.end() + 30]
+    if _PER_ITEM_PRICE_RE.search(nearby):
         return None
     raw_amount = match.group("amount_before") or match.group("amount_leading")
     amount = float(raw_amount.replace(",", ""))
@@ -1242,12 +1280,37 @@ def _catalog_planning_for_turn(
     if not user_turns or user_turns[-1] != current_text:
         user_turns.append(current_text)
 
+    normalized_current = _normalize_text(current_text)
+    current_families = _catalog_product_families(current_text)
+    is_continuation = any(
+        _contains_catalog_term(normalized_current, term)
+        for term in _CATALOG_CONTINUATION_TERMS
+    )
+    disjoint_family_request = bool(
+        current_families and set(current_families).isdisjoint(planning.families)
+    )
+    starts_independent_intent = (
+        bool(planning.families)
+        and bool(current_families)
+        and not is_continuation
+        and (
+            disjoint_family_request
+            or _NEW_CATALOG_INTENT_RE.search(current_text) is not None
+        )
+    )
+    if starts_independent_intent:
+        planning = CatalogPlanningContext(epoch=planning.epoch + 1)
+        user_turns = [current_text]
+
     planning.requested_seats = (
         _requested_seat_count(current_text) or planning.requested_seats
     )
-    current_families = _catalog_product_families(current_text)
     if current_families:
-        planning.families = current_families
+        planning.families = (
+            tuple(dict.fromkeys((*planning.families, *current_families)))
+            if is_continuation
+            else current_families
+        )
     planning.budget_cap = _catalog_budget_cap(current_text) or planning.budget_cap
     for turn in reversed(user_turns):
         planning.requested_seats = planning.requested_seats or _requested_seat_count(
@@ -11333,7 +11396,12 @@ async def recommend_products(
                         "budget cap."
                     ),
                 )
-            items = affordable_items
+            items = [
+                min(
+                    affordable_items,
+                    key=lambda item: (item.price, item.name.casefold()),
+                )
+            ]
         if not items:
             fallback_query = _cross_sell_catalog_fallback_query(
                 category=category,

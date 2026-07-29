@@ -468,6 +468,14 @@ def test_policy_keeps_internal_cheaper_configuration_on_product_path() -> None:
             "Show a private NOVO four-person workstation in black.",
             "NOVO four-person workstation with privacy panels in white.",
         ),
+        (
+            "Show a private COMP four-person workstation.",
+            "NOVO four-person workstation with privacy panels.",
+        ),
+        (
+            "Show a private four-person workstation in sonoma finish.",
+            "Four-person workstation with privacy panels in walnut finish.",
+        ),
     ],
 )
 def test_structured_workstation_match_requires_explicit_discriminators(
@@ -491,6 +499,13 @@ def test_structured_workstation_match_accepts_matching_brand_and_finish() -> Non
             ["LUMA black four-person workstation with privacy panels."],
         )
         == "exact"
+    )
+
+
+def test_structured_unknown_discriminators_match_when_candidate_confirms_them() -> None:
+    assert verified_answers_module._matches_structured_workstation_constraints(
+        "Show a private COMP-4 four-person workstation in sonoma finish.",
+        "COMP-4 four-person workstation with privacy panels in sonoma finish.",
     )
 
 

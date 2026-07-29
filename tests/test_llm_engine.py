@@ -17670,6 +17670,194 @@ async def test_cross_sell_enforces_remaining_budget_from_catalog_selection(
     assert "remaining budget" in result_text.casefold()
 
 
+def _stored_catalog_plan(
+    *,
+    requested_seats: int = 12,
+    families: list[str] | None = None,
+    budget_cap: float = 7000.0,
+) -> dict[str, object]:
+    selected_families = families or ["seating", "workspace"]
+    return {
+        "catalog_planning_v1": {
+            "version": 1,
+            "epoch": 1,
+            "requested_seats": requested_seats,
+            "families": selected_families,
+            "complete_coverage": True,
+            "budget_cap": budget_cap,
+            "family_totals": {family: 1000.0 for family in selected_families},
+        }
+    }
+
+
+def test_catalog_plan_starts_new_epoch_for_independent_product_intent() -> None:
+    current = "Now I need an ergonomic chair for my home office."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [
+            "user: We need a complete configuration for twelve employees.",
+            f"user: {current}",
+        ],
+        current,
+    )
+
+    assert planning.epoch == 2
+    assert planning.requested_seats is None
+    assert planning.families == ("seating",)
+    assert planning.complete_coverage is False
+    assert planning.budget_cap is None
+    assert planning.family_totals == {}
+
+
+def test_catalog_plan_starts_new_epoch_for_disjoint_family_request() -> None:
+    current = "Now show ergonomic chairs."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 2
+    assert planning.requested_seats is None
+    assert planning.families == ("seating",)
+    assert planning.budget_cap is None
+    assert planning.family_totals == {}
+
+
+def test_catalog_plan_keeps_epoch_for_continuation() -> None:
+    current = "Make that configuration cheaper and keep the same total budget."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 1
+    assert planning.requested_seats == 12
+    assert planning.families == ("seating", "workspace")
+    assert planning.budget_cap == 7000.0
+    assert planning.family_totals == {
+        "seating": 1000.0,
+        "workspace": 1000.0,
+    }
+
+
+@pytest.mark.parametrize(
+    "current",
+    [
+        "Add chairs to this configuration.",
+        "أضف كراسي إلى هذا التكوين.",
+    ],
+)
+def test_catalog_plan_adds_disjoint_family_within_continuation(
+    current: str,
+) -> None:
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(families=["workspace"]),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 1
+    assert planning.requested_seats == 12
+    assert planning.families == ("workspace", "seating")
+    assert planning.budget_cap == 7000.0
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_returns_only_one_item_when_aggregate_exceeds_remainder(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        catalog_planning=engine_module.CatalogPlanningContext(
+            requested_seats=1,
+            families=("seating",),
+            complete_coverage=True,
+            budget_cap=100.0,
+            family_totals={"seating": 0.0},
+        ),
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="cross sell",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        return_value=[
+            SimpleNamespace(name="Accessory Alpha", price=60.0, stock=3),
+            SimpleNamespace(name="Accessory Beta", price=60.0, stock=3),
+        ],
+    ):
+        result = await engine_module.recommend_products(
+            ctx,
+            category="chair",
+            recommendation_type="cross_sell",
+        )
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert result_text.count("60.00 AED") == 1
+
+
+@pytest.mark.parametrize(
+    "customer_text",
+    [
+        "Show office chairs under AED 500 each.",
+        "Find desks below AED 700 per unit.",
+    ],
+)
+def test_per_item_price_limit_is_not_persisted_as_total_budget(
+    customer_text: str,
+) -> None:
+    conversation = SimpleNamespace(id=uuid.uuid4(), metadata_={})
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {customer_text}"],
+        customer_text,
+    )
+
+    assert planning.budget_cap is None
+
+
 def test_sales_opportunity_with_horizon_proposes_timed_follow_up() -> None:
     request = engine_module._extract_sales_opportunity_request(
         "Budget: AED 8,500. Decision expected within two weeks. "

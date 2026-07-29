@@ -1182,11 +1182,15 @@ _PRIVACY_MATCH_TERMS = frozenset(
         "enclosed",
     }
 )
-_PRODUCT_LINE_MATCH_TERMS = frozenset(
-    {"imago", "luma", "novo", "skyland", "trend", "xten"}
+_STRUCTURED_ATTRIBUTE_VALUE_RE = re.compile(
+    r"\b(?:brand|family|line|model|series|finish|colou?r)\s*[:=-]?\s*"
+    r"(?P<after>[a-z][a-z0-9-]{1,30})\b|"
+    r"\b(?P<before>[a-z][a-z0-9-]{1,30})\s+(?:finish|colou?r)\b|"
+    r"\b(?:in|with)\s+(?P<modifier>[a-z][a-z0-9-]{1,30})\b",
+    re.IGNORECASE,
 )
-_FINISH_MATCH_TERMS = frozenset(
-    {"beech", "black", "gray", "grey", "oak", "walnut", "white"}
+_STRUCTURED_DISCRIMINATOR_EXCLUSIONS = frozenset(
+    {"aed", "dhs", "sku", "stock", "privacy", "private", "panel", "panels"}
 )
 
 
@@ -1196,6 +1200,23 @@ def _capacity_value(text: str) -> int | None:
         return None
     raw_count = match.group("count").casefold()
     return int(raw_count) if raw_count.isdigit() else _CAPACITY_WORD_VALUES[raw_count]
+
+
+def _explicit_structured_discriminators(query: str) -> set[str]:
+    raw_values = {
+        value.casefold()
+        for match in _STRUCTURED_ATTRIBUTE_VALUE_RE.finditer(query)
+        if (value := next((group for group in match.groups() if group), None))
+    }
+    raw_values.update(
+        token.casefold()
+        for token in re.findall(
+            r"(?<![a-z0-9])[A-Z][A-Z0-9-]{2,}(?![a-z0-9])",
+            query,
+        )
+    )
+    values = {token for raw_value in raw_values for token in _tokenize(raw_value)}
+    return values - _STRUCTURED_DISCRIMINATOR_EXCLUSIONS
 
 
 def _matches_structured_workstation_constraints(
@@ -1212,7 +1233,7 @@ def _matches_structured_workstation_constraints(
         return False
 
     candidate_tokens = _tokenize(candidate)
-    discriminators = query_tokens & (_PRODUCT_LINE_MATCH_TERMS | _FINISH_MATCH_TERMS)
+    discriminators = _explicit_structured_discriminators(query)
     return bool(
         candidate_tokens & _WORKSTATION_MATCH_TERMS
         and candidate_tokens & _PRIVACY_MATCH_TERMS
