@@ -5216,6 +5216,7 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     mock_notify.assert_not_awaited()
 
 
+@pytest.mark.parametrize("failure_kind", ["validation", "timeout"])
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -5225,7 +5226,7 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_materializes_verified_catalog_after_empty_model_output(
+async def test_process_message_materializes_verified_catalog_after_terminal_model_failure(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -5234,6 +5235,7 @@ async def test_process_message_materializes_verified_catalog_after_empty_model_o
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
+    failure_kind: str,
 ) -> None:
     from pydantic_ai import UnexpectedModelBehavior
 
@@ -5320,6 +5322,8 @@ async def test_process_message_materializes_verified_catalog_after_empty_model_o
                     outcome=outcome,
                 )
             )
+        if failure_kind == "timeout":
+            raise TimeoutError
         raise UnexpectedModelBehavior(
             "Exceeded maximum retries (2) for output validation"
         )

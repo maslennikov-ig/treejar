@@ -13580,7 +13580,7 @@ async def process_message(
                 if run_deps.inventory_confirmed:
                     deps.inventory_confirmed = True
                 return result
-            except UnexpectedModelBehavior:
+            except (UnexpectedModelBehavior, TimeoutError):
                 failed_run_usage = run_usage
                 raise
             finally:
@@ -13854,7 +13854,7 @@ async def process_message(
             )
         try:
             result = await _run_agent(run_deps)
-        except UnexpectedModelBehavior:
+        except (UnexpectedModelBehavior, TimeoutError):
             recovery_traces = tuple(run_deps.recovery_tool_traces)
             recovery_text = _materialize_verified_catalog_recovery(
                 run_deps,
