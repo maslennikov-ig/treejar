@@ -1531,6 +1531,93 @@ def _catalog_remaining_budget(planning: CatalogPlanningContext) -> float | None:
     return round(max(planning.budget_cap - selected_total, 0.0), 2)
 
 
+_LUMBAR_SUPPORT_TERMS = (
+    "lumbar",
+    "lower back",
+    "lower-back",
+    "دعم قطني",
+    "دعما قطنيا",
+    "الدعم القطني",
+    "أسفل الظهر",
+    "اسفل الظهر",
+)
+_LUMBAR_CLAUSE_BOUNDARY_RE = re.compile(
+    r"[.!?؟;؛\n]|\b(?:but|however)\b|(?:لكن|ولكن)",
+    re.IGNORECASE,
+)
+_LUMBAR_PRE_NEGATION_RE = re.compile(
+    r"(?:\bno\b|\bwithout\b|"
+    r"\b(?:do|does|did)\s+not\s+"
+    r"(?:need|require|want|include|provide|have|feature)\b|"
+    r"\b(?:don't|doesn't|didn't)\s+"
+    r"(?:need|require|want|include|provide|have|feature)\b|"
+    r"\b(?:am|are|is|was|were)\s+not\s+"
+    r"(?:(?:asking|looking)\s+for|interested\s+in)\b|"
+    r"لا\s+(?:أحتاج|احتاج|نحتاج|أريد|اريد|نريد|يريد|يتضمن|تتضمن|"
+    r"يوجد|يتوفر|تتوفر|يوفر|توفر|نبحث)|"
+    r"بدون|دون|غير\s+مطلوب)"
+    r"[^.!?؟;؛\n]{0,28}$",
+    re.IGNORECASE,
+)
+_LUMBAR_POST_NEGATION_RE = re.compile(
+    r"^\s*(?:support\s+)?(?:"
+    r"(?:is|are|was|were)\s+(?:not|unconfirmed|unstated|unavailable|"
+    r"unsupported|absent|missing)\b|"
+    r"(?:isn't|aren't|wasn't|weren't)\b|"
+    r"(?:does|do|did)\s+not\s+(?:exist|include|provide)\b|"
+    r"غير\s+(?:متوفر|متضمن|موجود|مطلوب|مؤكد|مدمج|مدعوم)|"
+    r"(?:ليس|ليست)\s+(?:متوفرا|متوفرة|متوفر|موجودا|موجودة|موجود)|"
+    r"لا\s+(?:يتوفر|تتوفر|يتضمن|تتضمن|يوجد))",
+    re.IGNORECASE,
+)
+
+
+def _lumbar_term_is_negated(
+    normalized: str,
+    *,
+    start: int,
+    end: int,
+) -> bool:
+    boundaries_before = list(_LUMBAR_CLAUSE_BOUNDARY_RE.finditer(normalized, 0, start))
+    clause_start = boundaries_before[-1].end() if boundaries_before else 0
+    boundary_after = _LUMBAR_CLAUSE_BOUNDARY_RE.search(normalized, end)
+    clause_end = boundary_after.start() if boundary_after else len(normalized)
+    prefix = normalized[clause_start:start]
+    suffix = normalized[end:clause_end]
+    return (
+        _LUMBAR_PRE_NEGATION_RE.search(prefix) is not None
+        or _LUMBAR_POST_NEGATION_RE.search(suffix) is not None
+    )
+
+
+def _has_unnegated_lumbar_term(text: str) -> bool:
+    normalized = re.sub(
+        r"[\u064b-\u065f\u0670\u06d6-\u06ed\u0640]",
+        "",
+        _normalize_text(text),
+    )
+    for term in _LUMBAR_SUPPORT_TERMS:
+        start = 0
+        while (index := normalized.find(term, start)) >= 0:
+            end = index + len(term)
+            if not _lumbar_term_is_negated(
+                normalized,
+                start=index,
+                end=end,
+            ):
+                return True
+            start = end
+    return False
+
+
+def _has_positive_lumbar_support(text: str) -> bool:
+    return _has_unnegated_lumbar_term(text)
+
+
+def _requests_confirmed_lumbar_support(text: str) -> bool:
+    return _has_unnegated_lumbar_term(text)
+
+
 def _requested_catalog_evidence_gaps(
     customer_text: str,
     product_text: str,
@@ -1555,6 +1642,10 @@ def _requested_catalog_evidence_gaps(
         )
     ):
         gaps.append("footprint_dimensions=not_stated")
+    if _requests_confirmed_lumbar_support(
+        normalized_customer
+    ) and not _has_positive_lumbar_support(product_text):
+        gaps.append("lumbar_support=not_stated")
     return tuple(gaps)
 
 

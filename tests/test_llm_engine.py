@@ -17263,6 +17263,125 @@ async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
 
 
 @pytest.mark.asyncio
+async def test_catalog_search_marks_unstated_lumbar_support_without_treating_ergonomic_as_proof(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "The team sits eight hours per day, so lumbar support must be verified."
+        ),
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="lumbar chair",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="CHAIR-ERGONOMIC",
+                    name="Ergonomic Mesh Office Chair",
+                    price=295.0,
+                    stock=43,
+                    description=(
+                        "Ergonomic design with a breathable mesh back, fabric seat, "
+                        "height adjustment and one-position lock."
+                    ),
+                ),
+                _catalog_acceptance_product(
+                    sku="CHAIR-LUMBAR",
+                    name="Lumbar Office Chair",
+                    price=320.0,
+                    stock=20,
+                    description="Built-in lumbar support for healthy posture.",
+                ),
+            ],
+            total_found=2,
+        )
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "ergonomic lumbar chairs")
+
+    assert isinstance(result, ToolReturn)
+    product_blocks = result.return_value.split("\n---\n")
+    ergonomic_block = next(
+        block for block in product_blocks if "CHAIR-ERGONOMIC" in block
+    )
+    lumbar_block = next(block for block in product_blocks if "CHAIR-LUMBAR" in block)
+    assert "lumbar_support=not_stated" in ergonomic_block
+    assert "lumbar_support=not_stated" not in lumbar_block
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Built-in lumbar support is included.", True),
+        ("Lumbar support is not included.", False),
+        ("Lumbar support isn't included.", False),
+        ("This chair does not include lumbar support.", False),
+        ("This chair does not provide lumbar support.", False),
+        ("Does not include built-in lumbar support.", False),
+        (
+            "Armrests are not adjustable; built-in lumbar support is included.",
+            True,
+        ),
+        ("الدعم القطني مدمج في الكرسي.", True),
+        ("الدعم القطني غير متوفر.", False),
+        ("لا يتضمن هذا الكرسي دعماً قطنياً.", False),
+        ("لا يوجد دعم قطني.", False),
+        ("لا يوفر هذا الكرسي دعم قطني.", False),
+        ("مسند الذراع غير قابل للتعديل؛ الدعم القطني مدمج.", True),
+    ],
+)
+def test_lumbar_feature_confirmation_handles_local_en_ar_negation(
+    text: str,
+    expected: bool,
+) -> None:
+    assert engine_module._has_positive_lumbar_support(text) is expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Lumbar support is required for the team.", True),
+        ("Lumbar support is not required for the team.", False),
+        ("We do not need lumbar support.", False),
+        ("We don't need any lower-back support.", False),
+        ("We are not asking for lumbar support.", False),
+        ("نحتاج إلى دعم قطني للفريق.", True),
+        ("لا أحتاج دعم قطني.", False),
+        ("لا نريد دعم قطني.", False),
+        ("الدعم القطني غير مطلوب.", False),
+    ],
+)
+def test_lumbar_requirement_detection_handles_local_en_ar_negation(
+    text: str,
+    expected: bool,
+) -> None:
+    assert engine_module._requests_confirmed_lumbar_support(text) is expected
+
+
+@pytest.mark.asyncio
 async def test_catalog_search_reports_complete_multi_variant_seat_coverage(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
