@@ -1,99 +1,66 @@
 # Stage tj-ee5f Summary
 
-Updated: 2026-07-28
-Status: in progress; local production trust facade accepted, live Task 3 pending
-Branch: `codex/tj-ee5f-production-adapters`
-Beads: `tj-ee5f`
+Updated: 2026-07-29
+Status: in progress; local remediation integrated, release and production proof pending
+Branch: `codex/tj-ee5f-remediation`
+Beads owner: `tj-ee5f.1`
 
 ## Boundary
 
-One acceptance boundary owns the immutable 30-criterion scope, 20 scenarios,
-9 evidence blocks, trusted local execution and report contracts, current-tree
-privacy cleanup, and the later separately authorized live acceptance proof.
-The stage remains open for exact authorization, full E2E execution,
-side-effect reconciliation, client report acceptance, and PDF delivery.
+This remains one release-level acceptance stage. It preserves the frozen
+AC-01..AC-30 snapshot and digest
+`12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
+No criterion was added, removed, or renumbered.
 
-## Integrated reviewed streams
+## Integrated remediation streams
 
-- Task 1 contracts, traceability, scenario set, and authorization manifest.
-- Generic policy-v2 compiler, registry-only execution, protected evidence
-  publication, and redacted Russian report projection.
-- Historical test-identity current-tree redaction and fail-closed explicit live
-  destination validation.
-- `tj-r1f3` deterministic customer-output enforcement, exact deployment and
-  runtime readback, preserved failed attempts, and passing 5/5 provider retest.
+- `tj-ee5f.5`: real HTTP/SSH production transport, protected runtime/readback
+  authority, derived duration/cost/tool/side-effect facts, and causal
+  reconciliation after dispatch.
+- `tj-ee5f.6-.9`: typed name-gate intent, EN/AR catalog routing, explicit quote
+  consent and interruptions, exact-SKU behavior, safe customer-field parsing,
+  typed Zoho payloads, inbound-scoped quote idempotency, and exactly-once PDF
+  delivery through outbound audit.
+- `tj-ee5f.10`: dedicated OpenRouter STT endpoint, MIME plus magic-byte format
+  validation, new/legacy config rollout, distinct-message fallback identity,
+  and bounded persisted provider usage/cost/timing trace.
 
-The three delivery histories were integrated from the shared `main` base with
-non-fast-forward merges. The contaminated returned Task 2 history was excluded.
-The privacy artifact is registered in the stage manifest.
-
-## Current state
-
-- Local implementation and independent review evidence for Task 1, policy-v2,
-  privacy cleanup, and `tj-r1f3` are preserved in their tracked artifacts.
-- The local Task 2 production trust facade is accepted at `25c643e`: exact
-  29-unit coordinator lifecycle, protected producer recovery, derived
-  materialization, criterion-scoped evidence, and fail-closed defect lineage.
-- Real network/SSH transports and production attempt, gate, reconciliation,
-  and inventory producers do not yet exist. Fake output is not production E2E
-  evidence.
-- Beads `tj-ee5f.2` and `tj-ee5f.3` are closed with the combined-tree
-  verification evidence; the epic and execution task remain open.
-- The stage manifest remains `in_progress`; no live, paid, provider, customer,
-  deploy, production, Wazzup, Zoho, CRM, quotation, order, or other external
-  action occurred during integration.
-- The two frozen Task 1 Beads-provenance checks failed closed after shared
-  Beads and runtime-truth drift. Their versioned records, source digests, and
-  closed-dependency freshness transition were refreshed without weakening
-  either validator; both now pass normally.
-- Git history still retains the protected historical identity. Rewriting it is
-  destructive and remains outside this integration scope.
+The accepted specification, plan, and compact orchestrator prompt are tracked
+under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
 
 ## Verification
 
-- Privacy derivation from the reviewed redaction history found three exact
-  protected variants; exact and separator-normalized current-tree scans both
-  found zero matches. The protected identity was not printed.
-- All three reviewed branch heads are ancestors of the delivery branch. None
-  of the six commits unique to the contaminated returned Task 2 branch is an
-  ancestor.
-- The two frozen provenance tests were first run without exclusions and failed
-  closed on the expected orchestration-contract digest drift:
-  - `test_traceability_source_digests_match_repository_content`;
-  - `test_source_section_locators_and_digests_are_real`.
-- After exact provenance refresh, the full acceptance surface passes
-  `194 passed` with no deselections; the manifest contract file passes `43`.
-- `tj-r1f3` focused suite: `612 passed`.
-- Privacy affected suite: `92 passed`.
-- Admin frontend regression after offline lockfile bootstrap: `11 passed`.
-- Full Pytest: `2072 passed, 19 skipped`.
-- Final Task 2 acceptance: `360 passed`.
-- Final Task 2 full Pytest: `2240 passed, 19 skipped`; Ruff, format over 317
-  files, Mypy over 163 source files, and process verification passed.
-- Final independent Task 2 review: `0 P0`, three corrected `P1`, one deferred
-  non-blocking `P2`.
-- Ruff passed; format reported `315 files already formatted`; Mypy passed over
-  `163` source files; process verification passed.
-- Artifact validation, stage sizing, `git diff --check`, and
-  `check_stage_ready.py tj-ee5f` passed against the corrected current-stage
-  routing.
-- Structural stage-ready checks are green; final stage closeout remains pending
-  the actual E2E run, client report acceptance, and PDF delivery.
+- Every stream recorded focused RED/GREEN proof in its validated artifact.
+- Prompt validation passes for Codex gpt-5.6 fallback.
+- Captured S01-S11 phrases were not added to production logic.
+- `src/llm/prompts.py` has no delta; net product system-prompt growth is zero.
+- Independent combined review initially found four P1 issues. Correction
+  commits closed all four; delta re-review verdict is `ACCEPT` with no P0/P1.
+- The final reviewer P2 on voice-audit bounds was also fixed through focused
+  RED/GREEN tests.
+- The combined repository release gate has not yet run. It must run once on
+  the final local tree before any delivery claim.
 
-## Closeout review
+## External state
 
-- `docs-reviewed: updated` — machine-readable current-stage routing, this
-  summary, handoff, and the project index now reflect the integrated local
-  acceptance foundation.
-- `project-index: updated` — added the trusted local acceptance harness
-  entrypoint and authorization boundary.
-- `graph-reviewed: no-change-needed` — Graphify is optional, its report is
-  absent, and this stage is not yet an accepted integration/release boundary.
+No fetch, push, deploy, paid model call, provider message, production readback,
+Zoho/CRM mutation, quotation/PDF send, callback, or cleanup was performed in
+this local remediation session.
+
+## Remaining acceptance
+
+1. Run the single canonical local release gate.
+2. Obtain current authority for the exact remote/live action batch.
+3. Fresh-fetch, non-force deliver, deploy, and verify the exact release.
+4. Run at least ten production text scenarios plus EN/AR/voice provider
+   canaries, reconcile all side effects, and verify the quotation/PDF.
+5. Publish the redacted Russian report and inspected PDF, update Beads and
+   handoff, then run canonical stage closeout only if every blocker is terminal.
 
 ## Explicit defers
 
-- `tj-ee5f.1`: implement the minimal real Task 3 transports/producers, execute
-  live acceptance, reconcile side effects, and deliver the client report.
-- Repository-history privacy cleanup requires explicit destructive-action
-  authority and coordinated history rewrite; the current tracked tree is the
-  local privacy boundary for this stage.
+- Provider-originated canaries require the owner to send protected EN, AR, and
+  voice messages when requested. If unavailable, that criterion remains
+  `BLOCKED` and the epic stays open.
+- Repository-history privacy cleanup remains a separate destructive-action
+  decision; current-tree redaction remains the local privacy boundary.
