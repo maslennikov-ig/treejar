@@ -409,51 +409,6 @@ async def test_activate_contact_uses_official_active_endpoint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_contact_uses_typed_contact_endpoint() -> None:
-    redis_mock = AsyncMock()
-    redis_mock.get.return_value = b"test_token"
-    zoho_client = ZohoInventoryClient(redis_client=redis_mock)
-    response = httpx.Response(
-        200,
-        json={
-            "contact": {
-                "contact_id": "460000000026049",
-                "contact_type": "customer",
-                "status": "active",
-            }
-        },
-        request=httpx.Request("PUT", "https://example.com/contacts/460000000026049"),
-    )
-    payload = {
-        "contact_name": "Example QA",
-        "contact_type": "customer",
-        "billing_address": {"address": "Test Tower, Dubai, UAE"},
-        "shipping_address": {"address": "Test Tower, Dubai, UAE"},
-        "contact_persons": [
-            {
-                "first_name": "Test",
-                "last_name": "Owner",
-                "phone": "+15550001111",
-                "mobile": "+15550001111",
-                "email": "owner@example.com",
-                "is_primary_contact": True,
-            }
-        ],
-    }
-
-    with patch.object(
-        zoho_client.client, "request", new_callable=AsyncMock
-    ) as mock_request:
-        mock_request.return_value = response
-        result = await zoho_client.update_contact("460000000026049", payload)
-
-    assert result["status"] == "active"
-    assert mock_request.await_args.kwargs["method"] == "PUT"
-    assert mock_request.await_args.kwargs["url"] == "/contacts/460000000026049"
-    assert mock_request.await_args.kwargs["json"] == payload
-
-
-@pytest.mark.asyncio
 async def test_find_customer_by_name_scans_pages_for_exact_match() -> None:
     redis_mock = AsyncMock()
     redis_mock.get.return_value = b"test_token"

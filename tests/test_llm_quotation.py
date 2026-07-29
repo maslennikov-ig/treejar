@@ -945,7 +945,17 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
         "company_name": "Example QA",
         "contact_type": "customer",
         "status": "inactive",
-        "contact_persons": [{"email": "owner@example.com"}],
+        "billing_address": {"address": "Test Tower, Dubai, UAE"},
+        "shipping_address": {"address": "Test Tower, Dubai, UAE"},
+        "contact_persons": [
+            {
+                "first_name": "Test",
+                "last_name": "Owner",
+                "email": "owner@example.com",
+                "phone": "+15550001111",
+                "mobile": "+15550001111",
+            }
+        ],
     }
     active_contact = {
         **inactive_contact,
@@ -990,9 +1000,6 @@ async def test_resolve_inventory_customer_id_reactivates_exact_inactive_duplicat
     mock_inventory.activate_contact.assert_awaited_once_with(
         "inactive-inventory-contact"
     )
-    update_args = mock_inventory.update_contact.await_args.args
-    assert update_args[0] == "inactive-inventory-contact"
-    assert update_args[1]["billing_address"]["address"] == ("Test Tower, Dubai, UAE")
     mock_inventory.get_contact.assert_awaited_once_with("inactive-inventory-contact")
 
 
@@ -1038,6 +1045,8 @@ async def test_resolve_inventory_customer_id_rejects_stale_reactivated_readback(
     )
 
     assert result is None
+    mock_inventory.activate_contact.assert_not_awaited()
+    mock_inventory.get_contact.assert_not_awaited()
 
 
 @pytest.mark.asyncio

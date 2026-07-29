@@ -8683,6 +8683,8 @@ def _build_inventory_contact_payload(
 def _inventory_contact_matches_payload(
     contact: Mapping[str, Any] | None,
     payload: ZohoInventoryContactPayload,
+    *,
+    expected_status: str = "active",
 ) -> bool:
     if not isinstance(contact, Mapping):
         return False
@@ -8690,7 +8692,7 @@ def _inventory_contact_matches_payload(
     def normalized(value: Any) -> str:
         return " ".join(str(value or "").split()).casefold()
 
-    if normalized(contact.get("status")) != "active":
+    if normalized(contact.get("status")) != normalized(expected_status):
         return False
     if normalized(contact.get("contact_type")) not in {"", "customer"}:
         return False
@@ -8814,15 +8816,17 @@ async def resolve_inventory_customer_id(
             exact_duplicate_status = _string_value(
                 (exact_duplicate or {}).get("status")
             ).casefold()
-            if exact_duplicate_id and exact_duplicate_status == "active":
-                return exact_duplicate_id
-            if exact_duplicate_id and exact_duplicate_status == "inactive":
+            if exact_duplicate_id and exact_duplicate_status in {"active", "inactive"}:
+                if not _inventory_contact_matches_payload(
+                    exact_duplicate,
+                    payload,
+                    expected_status=exact_duplicate_status,
+                ):
+                    return None
+                if exact_duplicate_status == "active":
+                    return exact_duplicate_id
                 try:
                     await zoho_inventory.activate_contact(exact_duplicate_id)
-                    await zoho_inventory.update_contact(
-                        exact_duplicate_id,
-                        dict(payload),
-                    )
                     reactivated = await zoho_inventory.get_contact(exact_duplicate_id)
                 except Exception:
                     logger.exception(
