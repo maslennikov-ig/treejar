@@ -252,6 +252,7 @@ async def _order_quote_route_for_turn(
     trace_enabled: bool,
     build_static_response: Callable[..., LLMResponse],
     clear_verified_policy_repair_state: Callable[[], Awaitable[None]],
+    offer_quote: bool,
     db_model_main: str | None = None,
     dynamic_model: OpenAIChatModel | None = None,
     run_agent: Callable[[SalesDeps], Awaitable[Any]] | None = None,
@@ -340,6 +341,7 @@ async def _order_quote_route_for_turn(
             clear_pending_question_frame=(
                 pending_reference_route.clear_pending_question_frame
             ),
+            offer_quote=offer_quote,
         )
         return build_static_response(
             confirmation_text,
@@ -563,6 +565,7 @@ async def _order_quote_route_for_turn(
             zoho_client=zoho_client,
             crm_context=crm_context,
             trace_enabled=trace_enabled,
+            offer_quote=offer_quote,
         )
         await _clear_quote_intent_frame(db, conversation)
         await clear_verified_policy_repair_state()
@@ -692,6 +695,7 @@ async def _order_quote_route_for_turn(
             clear_pending_question_frame=(
                 pending_reference_route.clear_pending_question_frame
             ),
+            offer_quote=offer_quote,
         )
         return build_static_response(
             confirmation_text,

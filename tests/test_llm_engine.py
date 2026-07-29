@@ -16660,6 +16660,157 @@ def test_selection_confirmation_waits_for_quote_opt_in_before_requesting_details
     assert "address" not in prompt.casefold()
 
 
+@pytest.mark.asyncio
+async def test_selection_confirmation_quote_hold_does_not_open_quote_state(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Yusuf"
+    conv.language = "en"
+    conv.metadata_ = {
+        "sales_memory": {"quotation_hold": "yes"},
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH-616", "quantity": 20}],
+        },
+    }
+    requested = engine_module.PurchaseSelectionItem(
+        quantity=20,
+        item_candidate="CH 616 black chair",
+        sku="CH-616",
+    )
+    resolution = engine_module.PurchaseSelectionResolution(
+        resolved=(
+            engine_module.ResolvedPurchaseSelectionItem(
+                requested=requested,
+                product=SimpleNamespace(
+                    id=uuid.uuid4(),
+                    sku="CH-616",
+                    name_en="Operative Chair CH 616 black",
+                ),
+                availability=43,
+                unit_price=295.0,
+                currency="AED",
+                availability_source="zoho",
+            ),
+        ),
+        unresolved=(),
+    )
+    monkeypatch.setattr(
+        engine_module,
+        "_resolve_purchase_selection",
+        AsyncMock(return_value=resolution),
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+
+    offer_quote = await engine_module._quote_offer_allowed_for_turn(
+        db,
+        conv,
+        "Use the selected chair option.",
+    )
+    _, response = await engine_module._resolve_purchase_selection_confirmation(
+        db=db,
+        conversation=conv,
+        deps=deps,
+        purchase_selection=engine_module.PurchaseSelection(items=(requested,)),
+        zoho_client=zoho,
+        crm_context=None,
+        trace_enabled=False,
+        offer_quote=offer_quote,
+    )
+
+    assert "would you like me to prepare" not in response.casefold()
+    assert "no quotation" in response.casefold()
+    assert "pending_quote_selection" not in conv.metadata_
+    assert engine_module._quote_frame_from_conversation(conv) is None
+
+
+@pytest.mark.asyncio
+async def test_explicit_quote_opt_in_clears_persisted_quote_hold(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, *_ = mock_deps
+    conv.metadata_ = {
+        "sales_memory": {
+            "quotation_hold": "yes",
+            "latest_product_note": "Two catalog chairs",
+        }
+    }
+
+    offer_quote = await engine_module._quote_offer_allowed_for_turn(
+        db,
+        conv,
+        "Please prepare a quotation for the selected chairs.",
+    )
+
+    assert offer_quote
+    assert conv.metadata_["sales_memory"] == {
+        "latest_product_note": "Two catalog chairs"
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I want a quotation.",
+        "I need a quotation.",
+        "Can I get a quotation?",
+        "أريد عرض سعر.",
+        "هل يمكنني الحصول على عرض سعر؟",
+        "Я хочу КП.",
+        "Мне нужно КП.",
+    ],
+)
+def test_natural_explicit_quote_opt_in_is_recognized(text: str) -> None:
+    assert engine_module._has_explicit_quote_opt_in(text)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Why are you offering a quotation?",
+        "Can you explain what a quotation is?",
+        "I am not asking for a quotation now.",
+        "The quotation is still on hold, right?",
+        "لا أريد عرض سعر.",
+        "Я не хочу КП.",
+        "Мне не нужно КП.",
+    ],
+)
+async def test_quote_mentions_do_not_clear_persisted_quote_hold(
+    text: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, *_ = mock_deps
+    conv.metadata_ = {"sales_memory": {"quotation_hold": "yes"}}
+
+    offer_quote = await engine_module._quote_offer_allowed_for_turn(
+        db,
+        conv,
+        text,
+    )
+
+    assert not offer_quote
+    assert conv.metadata_["sales_memory"]["quotation_hold"] == "yes"
+
+
 @pytest.mark.parametrize(
     "text",
     [

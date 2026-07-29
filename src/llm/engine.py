@@ -404,6 +404,35 @@ _QUOTE_REQUEST_TERMS = (
     "проформа",
     "инвойс",
 )
+_EXPLICIT_QUOTE_OPT_IN_RE = re.compile(
+    r"(?:"
+    r"\b(?:prepare|create|generate|issue|send|make|proceed\s+with|"
+    r"go\s+ahead\s+with)\b.{0,48}\b(?:quote|quotation|commercial\s+offer|"
+    r"commercial\s+proposal|proforma\s+invoice|pro\s+forma\s+invoice)\b|"
+    r"\b(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
+    r"proforma\s+invoice|pro\s+forma\s+invoice)\b.{0,32}\b"
+    r"(?:prepare|create|generate|issue|send|proceed)\b|"
+    r"\b(?:i|we)\s+(?:want|need|request|would\s+like)\s+"
+    r"(?:an?\s+|the\s+)?(?:formal\s+)?(?:quote|quotation|commercial\s+offer|"
+    r"commercial\s+proposal|proforma\s+invoice|pro\s+forma\s+invoice)\b|"
+    r"\b(?:can|could|may)\s+(?:i|we)\s+(?:get|have|receive)\s+"
+    r"(?:an?\s+|the\s+)?(?:formal\s+)?(?:quote|quotation|commercial\s+offer|"
+    r"commercial\s+proposal|proforma\s+invoice|pro\s+forma\s+invoice)\b|"
+    r"(?:جهز|جهزي|أعد|اعد|أنشئ|انشئ|أرسل|ارسل|تابع).{0,32}"
+    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
+    r"(?:أريد|اريد|أحتاج|احتاج)\s+"
+    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
+    r"هل\s+(?:يمكنني|يمكننا)\s+الحصول\s+على\s+"
+    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
+    r"(?:подготовьте|создайте|сформируйте|отправьте|пришлите).{0,32}"
+    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)|"
+    r"(?:я|мы)\s+(?:хочу|хотим)\s+"
+    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)|"
+    r"(?:мне|нам)\s+(?:нужно|нужен|нужна)\s+"
+    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)"
+    r")",
+    re.IGNORECASE,
+)
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
 _EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
 _CONSULTATIVE_QUOTE_BLOCKERS = (
@@ -1555,7 +1584,16 @@ def _has_exact_commitment_intent(normalized: str) -> bool:
 
 
 def _has_explicit_quote_hold(text: str) -> bool:
-    return is_quote_or_proposal_hold(_normalize_sku_homoglyphs(text))
+    return is_quote_or_proposal_hold(text)
+
+
+def _has_explicit_quote_opt_in(text: str) -> bool:
+    normalized = _normalize_text(text)
+    return bool(
+        normalized
+        and not _has_explicit_quote_hold(normalized)
+        and _EXPLICIT_QUOTE_OPT_IN_RE.search(normalized)
+    )
 
 
 def _looks_like_exact_item_candidate(candidate: str) -> bool:
@@ -2593,6 +2631,7 @@ async def _resolve_purchase_selection_confirmation(
     trace_enabled: bool,
     clear_pending_reference_quantity: bool = False,
     clear_pending_question_frame: bool = False,
+    offer_quote: bool = True,
 ) -> tuple[SalesDeps, str]:
     selection_deps = replace(
         deps,
@@ -2631,9 +2670,13 @@ async def _resolve_purchase_selection_confirmation(
                 variant_options,
                 language=str(conversation.language),
                 purpose="variant",
+                offer_quote=offer_quote,
             ),
         )
-    await _store_pending_quote_selection(db, conversation, resolution)
+    if offer_quote:
+        await _store_pending_quote_selection(db, conversation, resolution)
+    else:
+        await _suspend_quote_workflow(db, conversation)
     if clear_pending_reference_quantity:
         await _clear_pending_product_reference_quantity(db, conversation)
     if clear_pending_question_frame:
@@ -2647,6 +2690,7 @@ async def _resolve_purchase_selection_confirmation(
         resolution,
         quote_details=_quote_customer_details_from_metadata(conversation),
         customer_name=conversation.customer_name,
+        offer_quote=offer_quote,
     )
     return selection_deps, confirmation_text
 
@@ -4670,6 +4714,7 @@ def _build_purchase_selection_confirmation_text(
     *,
     quote_details: Mapping[str, str] | None = None,
     customer_name: str | None = None,
+    offer_quote: bool = True,
 ) -> str:
     lines: list[str] = []
     total = 0.0
@@ -4734,16 +4779,32 @@ def _build_purchase_selection_confirmation_text(
             "restock confirmation."
         )
     elif resolution.unresolved:
-        lines.append(
-            _purchase_selection_unresolved_items_message(resolution.unresolved)
-        )
-    elif resolution.resolved:
-        lines.append(
-            _selection_confirmation_quote_prompt(
-                quote_details=quote_details,
-                customer_name=customer_name,
+        if offer_quote:
+            lines.append(
+                _purchase_selection_unresolved_items_message(resolution.unresolved)
             )
-        )
+        else:
+            item_list = ", ".join(
+                f"{item.quantity} x {item.item_candidate or item.sku}"
+                for item in resolution.unresolved
+            )
+            lines.append(
+                "Please confirm the exact catalog item or SKU for "
+                f"{item_list} so I can verify availability and price accurately."
+            )
+    elif resolution.resolved:
+        if offer_quote:
+            lines.append(
+                _selection_confirmation_quote_prompt(
+                    quote_details=quote_details,
+                    customer_name=customer_name,
+                )
+            )
+        else:
+            lines.append(
+                "The requested quantity is available at the confirmed unit price. "
+                "No quotation will be prepared unless you ask for one."
+            )
     else:
         lines.append(
             "I have captured the selected items and will need manager verification "
@@ -6323,6 +6384,33 @@ async def _store_sales_memory_updates(
             exc_info=True,
         )
     return memory
+
+
+async def _quote_offer_allowed_for_turn(
+    db: AsyncSession,
+    conversation: Conversation,
+    text: str,
+) -> bool:
+    if _has_explicit_quote_hold(text):
+        return False
+
+    memory = _sales_memory_from_metadata(conversation)
+    if not memory.get("quotation_hold"):
+        return True
+    if not _has_explicit_quote_opt_in(text):
+        return False
+
+    metadata = dict(conversation.metadata_ or {})
+    raw_memory = metadata.get(SALES_MEMORY_KEY)
+    updated_memory = dict(raw_memory) if isinstance(raw_memory, Mapping) else {}
+    updated_memory.pop("quotation_hold", None)
+    if updated_memory:
+        metadata[SALES_MEMORY_KEY] = updated_memory
+    else:
+        metadata.pop(SALES_MEMORY_KEY, None)
+    conversation.metadata_ = metadata
+    await db.flush()
+    return True
 
 
 def _fact_value_as_text(value: Any) -> str:
@@ -11653,6 +11741,21 @@ async def process_message(
                     allow_product_media=False,
                 )
 
+    offer_quote_for_turn = await _quote_offer_allowed_for_turn(
+        db,
+        conv,
+        combined_text,
+    )
+    if (
+        current_sales_opportunity_request is not None
+        and not offer_quote_for_turn
+        and not current_sales_opportunity_request.quote_on_hold
+    ):
+        current_sales_opportunity_request = replace(
+            current_sales_opportunity_request,
+            quote_on_hold=True,
+        )
+
     if current_sales_opportunity_request is not None:
         opportunity_result = await _create_or_reuse_sales_opportunity(
             deps,
@@ -11703,7 +11806,7 @@ async def process_message(
             _stock_price_options_response(
                 stock_price_options,
                 language=str(conv.language),
-                offer_quote=not _has_explicit_quote_hold(combined_text),
+                offer_quote=offer_quote_for_turn,
             ),
             f"{db_model_main}|stock-price-options",
             allow_product_media=False,
@@ -11764,6 +11867,7 @@ async def process_message(
         trace_enabled=dialogue_kernel_trace_enabled,
         build_static_response=_build_static_response,
         clear_verified_policy_repair_state=_clear_verified_policy_repair_state,
+        offer_quote=offer_quote_for_turn,
         resumed_name_gate_intent=resumed_name_gate_intent,
     )
     if order_quote_response is not None:
@@ -11912,6 +12016,7 @@ async def process_message(
             build_llm_response=_build_llm_response,
             has_escalation=_has_escalation,
             quote_brief_confirmation_details=quote_brief_confirmation_details,
+            offer_quote=offer_quote_for_turn,
             resumed_name_gate_intent=resumed_name_gate_intent,
         )
         if order_quote_response is not None:

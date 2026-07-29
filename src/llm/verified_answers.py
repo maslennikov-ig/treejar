@@ -409,7 +409,11 @@ _QUOTE_HOLD_RE = re.compile(
     r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
     r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)(?:\s+yet)?\b|"
     r"(?:بدون|لا)\s+(?:إنشاء|اعداد|إعداد|ارسال|إرسال)?\s*"
-    r"(?:عرض\s+سعر|عرض\s+رسمي)"
+    r"(?:عرض\s+سعر|عرض\s+رسمي)|"
+    r"(?:لا|لن)\s+(?:أريد|اريد|أحتاج|احتاج)\s+"
+    r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
+    r"\b(?:не\s+хочу|не\s+нужно|не\s+надо)\s+"
+    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)"
     r")",
     re.IGNORECASE,
 )
