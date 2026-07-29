@@ -1431,9 +1431,13 @@ def _catalog_planning_for_turn(
         planning = CatalogPlanningContext(epoch=planning.epoch + 1)
         user_turns = [current_text]
 
-    planning.requested_seats = (
-        _requested_seat_count(current_text) or planning.requested_seats
-    )
+    current_requested_seats = _requested_seat_count(current_text)
+    if (
+        current_requested_seats is not None
+        and current_requested_seats != planning.requested_seats
+    ):
+        planning.family_totals = {}
+    planning.requested_seats = current_requested_seats or planning.requested_seats
     if replaces_family and current_families:
         replacement_families = _catalog_replacement_families(
             current_text,
@@ -1559,6 +1563,7 @@ def _product_search_response_contract(
     match_kind: Literal["exact", "nearby", "missing"] = "exact",
     search_budget_exhausted: bool = False,
     target_coverage_complete: bool | None = None,
+    lower_verified_family_total: tuple[CatalogFamily, float, float] | None = None,
 ) -> str:
     if match_kind == "nearby":
         contract_parts = [
@@ -1599,6 +1604,14 @@ def _product_search_response_contract(
         contract_parts.append(
             "Do not call a configuration viable unless it covers the full target; "
             "state any verified coverage gap explicitly."
+        )
+
+    if lower_verified_family_total is not None:
+        family, prior_total, current_total = lower_verified_family_total
+        contract_parts.append(
+            f"An earlier verified {family} total of {prior_total:.2f} AED is lower "
+            f"than this search's complete total of {current_total:.2f} AED; do not "
+            "call the current option cheapest or minimum."
         )
 
     if search_budget_exhausted:
@@ -1676,6 +1689,14 @@ class SalesDeps:
     inventory_confirmed: bool = False
     quotation_created: bool = False
     catalog_mismatch_alerted: bool = False
+    required_cross_sell_disclosure: str | None = None
+
+
+def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
+    disclosure = _string_value(deps.required_cross_sell_disclosure)
+    if not disclosure or _normalize_text(disclosure) in _normalize_text(text):
+        return text
+    return f"{text.rstrip()}\n\n{disclosure}"
 
 
 # Allowed transitions for the advance_stage tool
@@ -10410,6 +10431,7 @@ async def search_products(
         formatted_results.append(desc)
 
     target_coverage_complete: bool | None = None
+    lower_verified_family_total: tuple[CatalogFamily, float, float] | None = None
     if requested_seats is not None and has_capacity_evidence:
         covered_seats = min(requested_seats, available_seat_coverage)
         target_coverage_complete = covered_seats >= requested_seats
@@ -10426,14 +10448,19 @@ async def search_products(
                 coverage_variants,
                 requested_seats,
             )
-            if planned_total is None:
-                ctx.deps.catalog_planning.family_totals.pop(
-                    target_product_family,
-                    None,
-                )
-            else:
-                ctx.deps.catalog_planning.family_totals[target_product_family] = (
-                    planned_total
+            prior_total = ctx.deps.catalog_planning.family_totals.get(
+                target_product_family
+            )
+            if planned_total is not None:
+                if prior_total is not None and prior_total < planned_total:
+                    lower_verified_family_total = (
+                        target_product_family,
+                        float(prior_total),
+                        float(planned_total),
+                    )
+                ctx.deps.catalog_planning.family_totals[target_product_family] = min(
+                    planned_total,
+                    prior_total if prior_total is not None else planned_total,
                 )
             await _store_catalog_planning(
                 ctx.deps.db,
@@ -10462,6 +10489,7 @@ async def search_products(
             match_kind=product_match,
             search_budget_exhausted=search_budget_exhausted,
             target_coverage_complete=target_coverage_complete,
+            lower_verified_family_total=lower_verified_family_total,
         ),
     )
 
@@ -11466,6 +11494,24 @@ def _cross_sell_catalog_fallback_query(
     return "office storage accessory"
 
 
+def _no_verified_cross_sell_disclosure(
+    language: str,
+    *,
+    has_budget: bool = True,
+) -> str:
+    if is_arabic_customer_language(language):
+        return (
+            "لا توجد إضافة بيع متقاطع مؤكدة تناسب الميزانية المتبقية."
+            if has_budget
+            else "لم يتم العثور على إضافة بيع متقاطع مؤكدة."
+        )
+    return (
+        "No verified cross-sell fits the remaining budget."
+        if has_budget
+        else "No verified cross-sell was found."
+    )
+
+
 @sales_agent.tool
 async def recommend_products(
     ctx: RunContext[SalesDeps],
@@ -11511,11 +11557,15 @@ async def recommend_products(
         return "\n".join(lines)
 
     elif recommendation_type == "cross_sell" and category:
+        ctx.deps.required_cross_sell_disclosure = None
         remaining_budget = _catalog_remaining_budget(ctx.deps.catalog_planning)
         if (
             ctx.deps.catalog_planning.budget_cap is not None
             and remaining_budget is None
         ):
+            ctx.deps.required_cross_sell_disclosure = (
+                _no_verified_cross_sell_disclosure(str(ctx.deps.conversation.language))
+            )
             return ToolReturn(
                 return_value=(
                     "No cross-sell is verified within the remaining budget because "
@@ -11535,6 +11585,12 @@ async def recommend_products(
                 if item.stock > 0 and 0 < item.price <= remaining_budget
             ]
             if not affordable_items:
+                ctx.deps.required_cross_sell_disclosure = (
+                    _no_verified_cross_sell_disclosure(
+                        str(ctx.deps.conversation.language),
+                        has_budget=(ctx.deps.catalog_planning.budget_cap is not None),
+                    )
+                )
                 return ToolReturn(
                     return_value=(
                         "No verified cross-sell fits the remaining budget of "
@@ -11581,6 +11637,12 @@ async def recommend_products(
                 == fallback_family
             ]
             if not fallback_items:
+                ctx.deps.required_cross_sell_disclosure = (
+                    _no_verified_cross_sell_disclosure(
+                        str(ctx.deps.conversation.language),
+                        has_budget=(ctx.deps.catalog_planning.budget_cap is not None),
+                    )
+                )
                 return ToolReturn(
                     return_value=(
                         f"No cross-sell items found for category '{category}'."
@@ -12036,6 +12098,7 @@ async def process_message(
             inventory_confirmed=response_deps.inventory_confirmed,
         )
         final_text = grounding_result.text
+        final_text = _append_required_tool_disclosures(final_text, response_deps)
         if grounding_result.action is not GroundingOutputAction.UNCHANGED:
             logger.warning(
                 "Enforced model customer output: action=%s violations=%s "
@@ -13147,7 +13210,11 @@ async def process_message(
             )
         result = await _run_agent(run_deps)
         await _clear_verified_policy_repair_state()
-        return _build_llm_response(result, db_model_main)
+        return _build_llm_response(
+            result,
+            db_model_main,
+            response_deps=run_deps,
+        )
 
     except Exception:
         conv_id_str = str(conv.id) if conv else "unknown"

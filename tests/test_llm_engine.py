@@ -5180,9 +5180,16 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
-    mock_run.return_value = _FakeAgentResult(
-        "Here is a lower-cost configuration and a relevant accessory."
-    )
+
+    async def run_with_negative_cross_sell(*args: object, **kwargs: object) -> object:
+        run_deps = kwargs["deps"]
+        assert isinstance(run_deps, SalesDeps)
+        run_deps.required_cross_sell_disclosure = (
+            "No verified cross-sell fits the remaining budget."
+        )
+        return _FakeAgentResult("Here is a lower-cost configuration.")
+
+    mock_run.side_effect = run_with_negative_cross_sell
 
     response = await process_message(
         conversation_id=conv.id,
@@ -5196,6 +5203,7 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
 
     assert response.model == "mock-model"
     assert "lower-cost" in response.text
+    assert response.text.endswith("No verified cross-sell fits the remaining budget.")
     mock_run.assert_awaited_once()
     run_deps = mock_run.await_args.kwargs["deps"]
     assert any(
@@ -17328,6 +17336,145 @@ async def test_catalog_search_reports_complete_multi_variant_seat_coverage(
 
 
 @pytest.mark.asyncio
+async def test_catalog_search_keeps_lower_verified_family_total_across_alternatives(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating",),
+        complete_coverage=True,
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Find a complete chair configuration for twelve employees.",
+        catalog_planning=planning,
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="chairs",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+    search_results = [
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="CHAIR-LOWER",
+                    name="Operative Office Chair",
+                    price=290.0,
+                    stock=12,
+                    description="Individual task chair with lumbar support.",
+                )
+            ],
+            total_found=1,
+        ),
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="CHAIR-HIGHER",
+                    name="Operative Office Chair",
+                    price=297.0,
+                    stock=12,
+                    description="Individual task chair.",
+                )
+            ],
+            total_found=1,
+        ),
+    ]
+
+    with patch.object(
+        engine_module,
+        "rag_search_products",
+        new_callable=AsyncMock,
+        side_effect=search_results,
+    ):
+        await engine_module.search_products(ctx, "lumbar office chairs")
+        result = await engine_module.search_products(ctx, "cheaper office chairs")
+
+    assert isinstance(result, ToolReturn)
+    assert planning.family_totals["seating"] == 3480.0
+    assert "3480.00 AED" in result.content
+    assert "3564.00 AED" in result.content
+    assert "do not call the current option cheapest" in result.content.casefold()
+
+
+@pytest.mark.asyncio
+async def test_catalog_search_does_not_erase_prior_total_on_incomplete_alternative(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating",),
+        complete_coverage=True,
+        family_totals={"seating": 3480.0},
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Find a complete chair configuration for twelve employees.",
+        catalog_planning=planning,
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="chairs",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(
+        engine_module,
+        "rag_search_products",
+        new_callable=AsyncMock,
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="CHAIR-SHORT",
+                    name="Operative Office Chair",
+                    price=220.0,
+                    stock=3,
+                    description="Individual task chair with lumbar support.",
+                )
+            ],
+            total_found=1,
+        ),
+    ):
+        await engine_module.search_products(ctx, "another lumbar office chair")
+
+    assert planning.family_totals["seating"] == 3480.0
+
+
+@pytest.mark.asyncio
 async def test_catalog_coverage_does_not_mix_chairs_into_desk_capacity(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -17671,6 +17818,46 @@ async def test_cross_sell_enforces_remaining_budget_from_catalog_selection(
     assert "remaining budget" in result_text.casefold()
 
 
+@pytest.mark.parametrize(
+    ("language", "disclosure"),
+    [
+        ("en", "No verified cross-sell fits the remaining budget."),
+        ("ar", "لا توجد إضافة بيع متقاطع مؤكدة تناسب الميزانية المتبقية."),
+    ],
+)
+def test_required_cross_sell_disclosure_is_appended_once(
+    language: str,
+    disclosure: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.language = language
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        required_cross_sell_disclosure=disclosure,
+    )
+
+    result = engine_module._append_required_tool_disclosures(
+        "Here is the verified configuration.",
+        deps,
+    )
+
+    assert result.endswith(disclosure)
+    assert (
+        engine_module._append_required_tool_disclosures(result, deps).count(disclosure)
+        == 1
+    )
+
+
 def _stored_catalog_plan(
     *,
     requested_seats: int = 12,
@@ -17852,6 +18039,24 @@ def test_catalog_plan_keeps_epoch_for_continuation() -> None:
         "seating": 1000.0,
         "workspace": 1000.0,
     }
+
+
+def test_catalog_plan_invalidates_family_totals_when_seat_count_changes() -> None:
+    current = "Actually make that complete configuration for twelve employees."
+    conversation = SimpleNamespace(
+        id=uuid.uuid4(),
+        metadata_=_stored_catalog_plan(requested_seats=8),
+    )
+
+    planning = engine_module._catalog_planning_for_turn(
+        conversation,
+        [f"user: {current}"],
+        current,
+    )
+
+    assert planning.epoch == 1
+    assert planning.requested_seats == 12
+    assert planning.family_totals == {}
 
 
 @pytest.mark.parametrize(
