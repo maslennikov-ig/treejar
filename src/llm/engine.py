@@ -6150,18 +6150,20 @@ def _is_product_memory_note(text: str) -> bool:
     normalized = _normalize_text(_normalize_sku_homoglyphs(text))
     if not normalized:
         return False
-    has_product = (
-        any(term in normalized for term in _MIXED_PRODUCT_TERMS)
-        or any(
-            term in normalized for term in ("skyland", "novo", "xten", "trend", "imago")
-        )
-        or _SKU_SIGNAL_RE.search(normalized) is not None
+    has_named_product = any(term in normalized for term in _MIXED_PRODUCT_TERMS) or any(
+        term in normalized for term in ("skyland", "novo", "xten", "trend", "imago")
     )
-    if not has_product:
+    has_sku = _SKU_SIGNAL_RE.search(normalized) is not None
+    if not has_named_product and not has_sku:
         return False
-    return bool(_QUANTITY_SIGNAL_RE.search(normalized)) or any(
+    has_update_signal = any(
         term in normalized
         for term in (
+            "correction",
+            "correct",
+            "update",
+            "change",
+            "revise",
             "keep",
             "instead",
             "final item",
@@ -6172,6 +6174,9 @@ def _is_product_memory_note(text: str) -> bool:
             "use",
             "selected",
         )
+    )
+    return has_update_signal or (
+        has_named_product and bool(_QUANTITY_SIGNAL_RE.search(normalized))
     )
 
 
