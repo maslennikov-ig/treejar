@@ -392,6 +392,9 @@ _PROPOSAL_CONTEXT_TERMS = (
 )
 _QUOTE_HOLD_RE = re.compile(
     r"(?:"
+    r"\b(?:keep|maintain|preserve)\s+(?:the\s+)?"
+    r"(?:no[\s-]+(?:quote|quotation)|(?:quote|quotation)[\s-]+hold)"
+    r"(?:\s+(?:instruction|request))?\b|"
     r"\bno\s+(?:formal\s+)?(?:quote|quotation|commercial\s+offer|proposal)"
     r"\s+(?:yet|now)\b|"
     r"\bnot\s+ready\s+for\s+(?:an?\s+)?(?:quote|quotation|proposal)\b|"

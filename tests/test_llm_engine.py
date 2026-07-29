@@ -5201,6 +5201,68 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_requirement_correction_keeps_quote_hold(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Leila"
+    text = (
+        "Correction: update the requirement to three LUMA 9719-4 units. "
+        "Keep the no-quotation instruction."
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "LUMA 9719-4 Walnut is available at 1,883 AED per unit, "
+                        "with 30 units in stock."
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Updated to three LUMA 9719-4 units; no quotation will be prepared."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "detail-capture"
+    assert "do not create a quotation" in response.text
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    assert "pending_quote_selection" not in (conv.metadata_ or {})
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_second_benign_no_match_escalates_after_clarification(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -16451,6 +16513,10 @@ def test_selection_confirmation_waits_for_quote_opt_in_before_requesting_details
         (
             "Please record this sales opportunity and tell me the next commercial "
             "step without creating a quotation."
+        ),
+        (
+            "Correction: update the requirement to three LUMA 9719-4 units. "
+            "Keep the no-quotation instruction."
         ),
     ],
 )
