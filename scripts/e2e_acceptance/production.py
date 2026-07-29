@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from scripts.e2e_acceptance import execution
@@ -54,6 +54,9 @@ class Capability(StrEnum):
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+DecisiveArtifact = ClassifierResult | StructuredEvent | ToolResult | ReadbackResult
 
 
 class CapabilityTransport(Protocol):
@@ -656,7 +659,7 @@ class LocalFakeAttemptProducer:
                 "reason": "Local deterministic evidence passed.",
             }
             if assertion.oracle.kind == "classifier_result":
-                artifact = ClassifierResult.build(
+                classifier_artifact = ClassifierResult.build(
                     **common,
                     policy_digest=registry.compiled_policy.policy_digest,
                     evaluator_digest=registry.classifier_evaluator_digest(assertion_id),
@@ -668,30 +671,35 @@ class LocalFakeAttemptProducer:
                         structured_events=(),
                         tool_results=(),
                         readbacks=(),
-                        classifier_results=(artifact,),
+                        classifier_results=(classifier_artifact,),
                         text_supplements=(),
                     )
                 )
             elif assertion.oracle.kind == "independent_readback":
-                artifact = ReadbackResult.build(
-                    **common, collector_id="independent-readback-collector"
+                readback_artifact = cast(
+                    "ReadbackResult",
+                    ReadbackResult.build(
+                        **common, collector_id="independent-readback-collector"
+                    ),
                 )
                 evidence.append(
                     OracleEvidence(
                         assertion_id=assertion_id,
                         structured_events=(),
                         tool_results=(),
-                        readbacks=(artifact,),
+                        readbacks=(readback_artifact,),
                         classifier_results=(),
                         text_supplements=(),
                     )
                 )
             else:
-                artifact = StructuredEvent.build(**common)
+                structured_artifact = cast(
+                    "StructuredEvent", StructuredEvent.build(**common)
+                )
                 evidence.append(
                     OracleEvidence(
                         assertion_id=assertion_id,
-                        structured_events=(artifact,),
+                        structured_events=(structured_artifact,),
                         tool_results=(),
                         readbacks=(),
                         classifier_results=(),
@@ -880,7 +888,7 @@ class DecisiveProducerHandle:
     def __getstate__(self) -> object:
         raise TypeError("decisive producer handles are not serializable")
 
-    def __reduce__(self) -> object:
+    def __reduce__(self) -> str | tuple[Any, ...]:
         raise TypeError("decisive producer handles are not serializable")
 
 
@@ -1115,17 +1123,16 @@ def _observation_receipt_relative(record: _ProducerHandleRecord) -> str:
     return f"producer-receipts/observations/{record.ordinal:02d}.json"
 
 
-def _evidence_items(attempted: execution.ExecutedAttemptV2) -> tuple[object, ...]:
-    return tuple(
-        item
-        for evidence in attempted.oracle_evidence
-        for item in (
-            *evidence.structured_events,
-            *evidence.tool_results,
-            *evidence.readbacks,
-            *evidence.classifier_results,
-        )
-    )
+def _evidence_items(
+    attempted: execution.ExecutedAttemptV2,
+) -> tuple[DecisiveArtifact, ...]:
+    items: list[DecisiveArtifact] = []
+    for evidence in attempted.oracle_evidence:
+        items.extend(evidence.structured_events)
+        items.extend(evidence.tool_results)
+        items.extend(evidence.readbacks)
+        items.extend(evidence.classifier_results)
+    return tuple(items)
 
 
 def _attempt_source_identity_digest(
@@ -1438,10 +1445,8 @@ class ProtectedEvidenceResolver:
         ):
             raise ProductionAdapterError("current-run readback timing drift")
 
-    def _artifact(self, artifact: object) -> object:
-        digest = getattr(artifact, "artifact_digest", None)
-        if not isinstance(digest, str):
-            raise ProductionAdapterError("oracle artifact lacks digest")
+    def _artifact(self, artifact: DecisiveArtifact) -> DecisiveArtifact:
+        digest = artifact.artifact_digest
         try:
             envelope = _read_protected_json(
                 self.journal.run_root, f"decisive/{digest}.json"
@@ -1463,14 +1468,17 @@ class ProtectedEvidenceResolver:
             "readback_result",
         }:
             raise ProductionAdapterError("protected decisive evidence envelope drift")
-        model = {
-            "classifier_result": ClassifierResult,
-            "structured_event": StructuredEvent,
-            "tool_result": ToolResult,
-            "readback_result": ReadbackResult,
-        }[kind]
         try:
-            materialized = model.model_validate(payload)
+            if kind == "classifier_result":
+                materialized: DecisiveArtifact = ClassifierResult.model_validate(
+                    payload
+                )
+            elif kind == "structured_event":
+                materialized = StructuredEvent.model_validate(payload)
+            elif kind == "tool_result":
+                materialized = ToolResult.model_validate(payload)
+            else:
+                materialized = ReadbackResult.model_validate(payload)
         except ValueError as exc:
             raise ProductionAdapterError(
                 "protected decisive artifact is invalid"
@@ -1568,7 +1576,7 @@ class ProtectedEvidenceResolver:
         assertion = self.registry.compiled_policy.assertions.get(assertion_id)
         if assertion is None or evidence.assertion_id != assertion_id:
             raise ProductionAdapterError("oracle assertion binding drift")
-        candidates: tuple[object, ...]
+        candidates: tuple[DecisiveArtifact, ...]
         if assertion.oracle.kind == "classifier_result":
             candidates = tuple(
                 item
@@ -1581,13 +1589,13 @@ class ProtectedEvidenceResolver:
                 and item.producer in assertion.oracle.allowed_producers
             )
         else:
+            candidate_items: list[DecisiveArtifact] = []
+            candidate_items.extend(evidence.structured_events)
+            candidate_items.extend(evidence.tool_results)
+            candidate_items.extend(evidence.readbacks)
             candidates = tuple(
                 item
-                for item in (
-                    *evidence.structured_events,
-                    *evidence.tool_results,
-                    *evidence.readbacks,
-                )
+                for item in candidate_items
                 if item.assertion_id == assertion_id
                 and item.producer in assertion.oracle.allowed_producers
             )

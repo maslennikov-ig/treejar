@@ -329,12 +329,20 @@ def _is_server_observer_command(command: tuple[str, ...]) -> bool:
     if command[:prefix_length] != _SERVER_OBSERVER_PREFIX:
         return False
     suffix = command[prefix_length:]
-    if len(suffix) < 5 or suffix[0] not in {"execution", "reconciliation"}:
+    if not suffix or suffix[0] not in {"execution", "reconciliation"}:
         return False
-    identity_flag = "--execution-id" if suffix[0] == "execution" else "--action-id"
-    if suffix[1] != identity_flag or not _OBSERVER_ID_PATTERN.fullmatch(suffix[2]):
-        return False
-    turn_args = suffix[3:]
+    if suffix[0] == "execution":
+        if (
+            len(suffix) < 5
+            or suffix[1] != "--execution-id"
+            or not _OBSERVER_ID_PATTERN.fullmatch(suffix[2])
+        ):
+            return False
+        turn_args = suffix[3:]
+    else:
+        if len(suffix) < 3:
+            return False
+        turn_args = suffix[1:]
     if len(turn_args) % 2 != 0 or not turn_args:
         return False
     for flag, binding in zip(turn_args[::2], turn_args[1::2], strict=True):

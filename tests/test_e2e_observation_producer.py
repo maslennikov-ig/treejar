@@ -74,11 +74,12 @@ def _observed_rows(
         created_at=(sent_at + timedelta(seconds=1)).replace(tzinfo=None),
     )
     evidence = {
-        "schema_version": "noor-runtime-turn-evidence/v2",
+        "schema_version": "noor-runtime-turn-evidence/v3",
         "source_message_id": inbound.wazzup_message_id,
         "assistant_message_id": str(assistant_id),
         "received_at": (sent_at + timedelta(milliseconds=200)).isoformat(),
         "recorded_at": (sent_at + timedelta(seconds=1)).isoformat(),
+        "usage_provenance": "provider_reported",
         "tool_traces": [
             {
                 "call_id": "call-1",
@@ -120,6 +121,44 @@ def test_execution_fact_uses_server_rows_for_text_trace_duration_and_cost() -> N
     assert fact.provider_message_id == "provider-outbound-1"
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["model", "tokens_in", "tokens_out", "cost"],
+)
+def test_execution_fact_blocks_missing_provider_usage(field: str) -> None:
+    from src.services.e2e_observation_producer import (
+        ProductionObservationNotReady,
+        build_turn_fact,
+    )
+
+    rows = _observed_rows()
+    setattr(rows.assistant, field, None)
+
+    with pytest.raises(ProductionObservationNotReady, match="usage"):
+        build_turn_fact("turn-1", rows)
+
+
+def test_execution_fact_accepts_explicit_deterministic_zero_cost_provenance() -> None:
+    from src.services.e2e_observation_producer import build_turn_fact
+
+    rows = _observed_rows()
+    rows.runtime_evidence["usage_provenance"] = "deterministic_static"
+    rows.assistant.model = "dialogue-kernel|deterministic"
+    rows.assistant.tokens_in = 0
+    rows.assistant.tokens_out = 0
+    rows.assistant.cost = None
+    rows.inbound.model = None
+    rows.inbound.tokens_in = None
+    rows.inbound.tokens_out = None
+    rows.inbound.cost = None
+
+    fact = build_turn_fact("turn-1", rows)
+
+    assert fact.model == "dialogue-kernel|deterministic"
+    assert fact.token_count == 0
+    assert fact.cost_usd == 0
+
+
 @pytest.mark.parametrize("status", ["pending", "sent", "unknown"])
 def test_execution_fact_blocks_nonterminal_outbound_effect(status: str) -> None:
     from src.services.e2e_observation_producer import (
@@ -151,15 +190,19 @@ def test_reconciliation_observation_contains_only_server_facts() -> None:
     )
 
     observation = build_reconciliation_observation(
-        action_id="action-1",
         rows=(_observed_rows(),),
         observed_at=datetime(2026, 7, 29, 9, 0, 3, tzinfo=UTC),
     ).model_dump(mode="json")
 
-    assert observation["schema_version"] == ("noor-e2e-server-action-reconciliation/v1")
+    assert observation["schema_version"] == ("noor-e2e-wazzup-action-reconciliation/v2")
+    assert observation["adapter_id"] == "wazzup-webhook-adapter"
+    assert observation["capability"] == "webhook.inbound"
+    assert observation["source_message_ids"] == ["provider-inbound-1"]
+    assert observation["outbound_provider_message_ids"] == ["provider-outbound-1"]
     assert observation["resolved_state"] == "succeeded"
     assert observation["actual_cost_usd"] == 0.03
     assert observation["inventory"]
+    assert "action_id" not in observation
     assert "reservation_digest" not in observation
     assert "causal_event_digest" not in observation
 
@@ -228,6 +271,37 @@ def test_execution_observation_preserves_unchanged_preexisting_inventory() -> No
     assert all(
         item.artifact_id != artifact_id for item in observation.side_effect_facts
     )
+
+
+@pytest.mark.parametrize("duplicate_kind", ["turn", "message", "provider"])
+def test_execution_observation_rejects_duplicate_transcript_identities(
+    duplicate_kind: str,
+) -> None:
+    from src.services.e2e_observation_producer import (
+        ProductionObservationError,
+        build_execution_observation,
+    )
+
+    first = _observed_rows()
+    second = _observed_rows()
+    second.inbound.wazzup_message_id = "provider-inbound-2"
+    second.runtime_evidence["source_message_id"] = "provider-inbound-2"
+    second.outbound[0].details["source_message_id"] = "provider-inbound-2"
+    second.outbound[0].provider_message_id = "provider-outbound-2"
+    turn_ids = ("turn-1", "turn-2")
+    if duplicate_kind == "turn":
+        turn_ids = ("turn-1", "turn-1")
+    elif duplicate_kind == "message":
+        second.inbound.id = first.inbound.id
+    else:
+        second.outbound[0].provider_message_id = first.outbound[0].provider_message_id
+
+    with pytest.raises(ProductionObservationError, match="duplicate"):
+        build_execution_observation(
+            execution_id="SC-OPEN-EN",
+            turns=((turn_ids[0], first), (turn_ids[1], second)),
+            observed_at=datetime.now(UTC),
+        )
 
 
 def test_execution_observation_reports_active_delta_as_cleanup_pending() -> None:

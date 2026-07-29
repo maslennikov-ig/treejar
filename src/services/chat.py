@@ -1607,6 +1607,7 @@ async def _process_batch_inner(
                     assistant_message_id=str(assistant_msg.id),
                     received_at=runtime_received_at,
                     recorded_at=datetime.now(UTC),
+                    usage_provenance=llm_response.usage_provenance,
                     tool_traces=getattr(llm_response, "tool_traces", ()),
                     baseline_inventory=runtime_baseline_inventory,
                     final_inventory=snapshot_runtime_inventory(conv),

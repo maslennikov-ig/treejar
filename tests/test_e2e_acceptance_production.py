@@ -208,6 +208,7 @@ def _prepared_executed_producer(
     tmp_path: Path,
     *,
     semantic_customer_text: str | None = None,
+    planned_customer_input_digest: str | None = None,
     retention_artifact_id: str | None = None,
     judge_action_updates: dict[str, object] | None = None,
 ):
@@ -236,9 +237,14 @@ def _prepared_executed_producer(
                 criterion_id
             ].oracle_checks.values()
         )
+    semantic_input_digest = (
+        hashlib.sha256(semantic_customer_text.encode()).hexdigest()
+        if semantic_customer_text is not None
+        else "1" * 64
+    )
     planned = execution.PlannedTurnV2(
         turn_id="turn-001",
-        customer_input_digest="1" * 64,
+        customer_input_digest=planned_customer_input_digest or semantic_input_digest,
         expected_behavior_digest="2" * 64,
         criterion_ids=scenario.criterion_ids,
         assertion_ids=tuple(sorted(assertion_ids)),
@@ -246,13 +252,13 @@ def _prepared_executed_producer(
     semantic_judge = {
         "schema_version": "noor-e2e-semantic-judge/v1",
         "action_id": f"judge-{scenario_id.lower()}",
-        "adapter_id": "fake-local-adapter",
+        "adapter_id": "openrouter-judge-adapter",
         "step_id": f"{scenario_id}:semantic-judge",
         "operation_permission": "paid_model_call",
         "subsystem": "model",
         "destination_digest": execution._digest(
             {
-                "adapter_id": "fake-local-adapter",
+                "adapter_id": "openrouter-judge-adapter",
                 "model": "fixture/judge",
                 "transport": "openrouter-chat-completions",
             }
@@ -309,7 +315,7 @@ def _prepared_executed_producer(
             "step_id": semantic_judge["step_id"],
             "capability": "model.classify",
             "operation_permission": semantic_judge["operation_permission"],
-            "adapter_id": "fake-local-adapter",
+            "adapter_id": "openrouter-judge-adapter",
             "subsystem": semantic_judge["subsystem"],
             "destination_digest": semantic_judge["destination_digest"],
             "payload_digest": execution._digest(judge_request),
@@ -328,14 +334,14 @@ def _prepared_executed_producer(
             specs=(
                 execution.AuthorizedActionSpec(
                     action_id="synthetic-action",
-                    adapter_id="fake-local-adapter",
+                    adapter_id="wazzup-webhook-adapter",
                     subsystem="outbound_text",
                     quota_charge=_action_quota_charge(execution),
                     **_action_request(),
                 ),
                 execution.AuthorizedActionSpec(
                     action_id="negative",
-                    adapter_id="fake-local-adapter",
+                    adapter_id="wazzup-webhook-adapter",
                     subsystem="outbound_text",
                     quota_charge=_action_quota_charge(execution),
                     **_action_request(),
@@ -392,6 +398,7 @@ def _prepared_executed_producer(
             if semantic_customer_text is not None
             else None
         ),
+        runtime_with_judge=semantic_customer_text is not None,
     )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=root, run_id="local-run", authority=authority
@@ -486,11 +493,7 @@ def _prepared_executed_producer(
                     "planned_turns": [planned.model_dump(mode="json")],
                     "tester_config_digest": "5" * 64,
                     "judge_config_digest": judge_config_digest,
-                    "input_text_sha256": {
-                        planned.turn_id: hashlib.sha256(
-                            semantic_customer_text.encode()
-                        ).hexdigest()
-                    },
+                    "input_text_sha256": {planned.turn_id: semantic_input_digest},
                     "judge": semantic_judge,
                 }
             },

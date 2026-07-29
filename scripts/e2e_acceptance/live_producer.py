@@ -155,6 +155,13 @@ class _LiveExecutionObservation(_StrictModel):
         listed = [item.artifact_id for item in self.side_effect_facts]
         if changed != set(listed) or len(listed) != len(set(listed)):
             raise ValueError("live side effects do not cover inventory delta")
+        identity_sets = (
+            [item.turn_id for item in self.transcript_facts],
+            [item.message_id for item in self.transcript_facts],
+            [item.provider_message_id for item in self.transcript_facts],
+        )
+        if any(len(values) != len(set(values)) for values in identity_sets):
+            raise ValueError("live transcript contains duplicate identities")
         return self
 
 
@@ -279,18 +286,33 @@ class _JudgeTransport(Protocol):
     def request(self, request: Mapping[str, Any]) -> bytes: ...
 
 
-class _LiveActionReconciliation(_StrictModel):
-    schema_version: Literal["noor-e2e-server-action-reconciliation/v1"]
-    action_id: str = Field(min_length=1)
+class _LiveWazzupActionReconciliation(_StrictModel):
+    schema_version: Literal["noor-e2e-wazzup-action-reconciliation/v2"]
+    adapter_id: Literal["wazzup-webhook-adapter"]
+    capability: Literal["webhook.inbound"]
     observed_at: datetime
     resolved_state: Literal["succeeded", "failed"]
+    source_message_ids: tuple[str, ...] = Field(min_length=1)
+    audit_ids: tuple[str, ...] = Field(min_length=1)
+    outbound_provider_message_ids: tuple[str, ...]
+    outbound_statuses: tuple[str, ...] = Field(min_length=1)
     inventory: dict[str, Any]
     actual_cost_usd: float = Field(ge=0)
 
     @model_validator(mode="after")
-    def _aware_and_finite(self) -> _LiveActionReconciliation:
-        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
-            raise ValueError("live reconciliation time must be aware")
+    def _aware_and_unique(self) -> _LiveWazzupActionReconciliation:
+        identity_sets = (
+            self.source_message_ids,
+            self.audit_ids,
+            self.outbound_provider_message_ids,
+        )
+        if (
+            self.observed_at.tzinfo is None
+            or self.observed_at.utcoffset() is None
+            or not math.isfinite(self.actual_cost_usd)
+            or any(len(values) != len(set(values)) for values in identity_sets)
+        ):
+            raise ValueError("live Wazzup reconciliation receipt is invalid")
         return self
 
 
@@ -312,7 +334,11 @@ def _semantic_config(record: _ProducerHandleRecord) -> _SemanticScenarioConfig:
         record.execution_id
     ]
     if (
-        execution.scenario_input_digest(
+        any(
+            scenario.input_text_sha256[item.turn_id] != item.customer_input_digest
+            for item in scenario.planned_turns
+        )
+        or execution.scenario_input_digest(
             execution_id=record.execution_id,
             planned_turns=scenario.planned_turns,
             tester_config_digest=scenario.tester_config_digest,
@@ -559,9 +585,9 @@ def _run_or_replay_judge(
     transport: _JudgeTransport | None,
 ) -> tuple[_JudgeDecisionEnvelope, str, datetime]:
     record = _producer_handle_record(producer_handle)
-    spec, static_request, _ = _judge_action(record=record, scenario=scenario)
+    spec, _, _ = _judge_action(record=record, scenario=scenario)
     action_id = scenario.judge.action_id
-    raw_ref = f"judge-raw/{record.execution_id}.json"
+    raw_ref = f"producer-raw/judges/{record.execution_id}.json"
     receipt_ref = f"producer-receipts/judges/{record.execution_id}.json"
     state = record.journal._actions.get(action_id)
     try:
@@ -571,7 +597,11 @@ def _run_or_replay_judge(
     if state == "succeeded":
         if receipt is None:
             raise ProductionAdapterError("semantic judge receipt is unavailable")
-        raw = execution._read_protected(record.journal.run_root, raw_ref)
+        try:
+            typed_receipt = execution.SemanticResponseReceipt.model_validate(receipt)
+        except ValidationError as exc:
+            raise ProductionAdapterError("semantic judge receipt is invalid") from exc
+        raw = execution._read_protected(record.journal.run_root, typed_receipt.raw_ref)
         decision, actual_cost, total_tokens = _parse_judge_response(
             raw=raw,
             record=record,
@@ -579,19 +609,24 @@ def _run_or_replay_judge(
             observation_sha256=observation_sha256,
         )
         raw_sha256 = hashlib.sha256(raw).hexdigest()
+        permit_record = record.journal._semantic_request_permits.get(action_id)
         if (
-            receipt.get("schema_version") != "noor-e2e-semantic-judge-receipt/v1"
-            or receipt.get("run_id") != record.journal.run_id
-            or receipt.get("execution_id") != record.execution_id
-            or receipt.get("action_id") != action_id
-            or receipt.get("authorization_digest")
-            != record.journal.authorization_digest
-            or receipt.get("judge_config_digest") != scenario.judge_config_digest
-            or receipt.get("observation_sha256") != observation_sha256
-            or receipt.get("raw_ref") != raw_ref
-            or receipt.get("raw_sha256") != raw_sha256
-            or receipt.get("actual_cost_usd") != actual_cost
-            or receipt.get("total_tokens") != total_tokens
+            permit_record is None
+            or typed_receipt.run_id != record.journal.run_id
+            or typed_receipt.execution_id != record.execution_id
+            or typed_receipt.action_id != action_id
+            or typed_receipt.authorization_digest != record.journal.authorization_digest
+            or typed_receipt.reservation_digest
+            != record.journal._reservations[action_id].reservation_digest
+            or typed_receipt.judge_config_digest != scenario.judge_config_digest
+            or typed_receipt.observation_sha256 != observation_sha256
+            or typed_receipt.dynamic_request_sha256
+            != permit_record[0].dynamic_request_sha256
+            or typed_receipt.semantic_request_permit_event_digest != permit_record[1]
+            or typed_receipt.raw_ref != raw_ref
+            or typed_receipt.raw_sha256 != raw_sha256
+            or typed_receipt.actual_cost_usd != actual_cost
+            or typed_receipt.total_tokens != total_tokens
         ):
             raise ProductionAdapterError("semantic judge receipt binding drift")
         settlement = record.journal._journal_cost_settlements.get(action_id)
@@ -604,13 +639,7 @@ def _run_or_replay_judge(
             raise ProductionAdapterError(
                 "semantic judge action settlement binding drift"
             )
-        try:
-            judged_at = datetime.fromisoformat(str(receipt["judged_at"]))
-        except (KeyError, ValueError) as exc:
-            raise ProductionAdapterError(
-                "semantic judge receipt time is invalid"
-            ) from exc
-        return decision, raw_sha256, judged_at
+        return decision, raw_sha256, typed_receipt.judged_at
 
     if state in {"unknown", "failed"}:
         raise ProductionAdapterError(
@@ -644,17 +673,17 @@ def _run_or_replay_judge(
         observation=observation,
         observation_sha256=observation_sha256,
     )
-    record.journal.consume_permit(
+    dynamic_request_ref = f"semantic-requests/{action_id}.json"
+    _write_or_validate_exact(
+        record.journal.run_root,
+        dynamic_request_ref,
+        dynamic_request,
+    )
+    observation_ref = f"collector-raw/executions/{record.execution_id}.json"
+    permit = record.journal.consume_semantic_request_permit(
         reservation,
-        adapter_id=reservation.adapter_id,
-        execution_id=reservation.execution_id,
-        step_id=reservation.step_id,
-        capability=reservation.capability,
-        operation_permission=reservation.operation_permission,
-        destination_digest=reservation.destination_digest,
-        payload_digest=execution._digest(static_request),
-        idempotency_key=reservation.idempotency_key,
-        capability_units=reservation.capability_units,
+        request_ref=dynamic_request_ref,
+        observation_ref=observation_ref,
     )
     raw = transport.request(dynamic_request)
     if not isinstance(raw, bytes):
@@ -667,17 +696,21 @@ def _run_or_replay_judge(
         observation_sha256=observation_sha256,
     )
     judged_at = datetime.now(UTC)
-    receipt_digest = _write_or_validate_exact(
+    permit_event_digest = record.journal._semantic_request_permits[action_id][1]
+    _write_or_validate_exact(
         record.journal.run_root,
         receipt_ref,
         {
-            "schema_version": "noor-e2e-semantic-judge-receipt/v1",
+            "schema_version": "noor-e2e-semantic-judge-receipt/v2",
             "run_id": record.journal.run_id,
             "execution_id": record.execution_id,
             "action_id": action_id,
             "authorization_digest": record.journal.authorization_digest,
+            "reservation_digest": reservation.reservation_digest,
             "judge_config_digest": scenario.judge_config_digest,
             "observation_sha256": observation_sha256,
+            "dynamic_request_sha256": permit.dynamic_request_sha256,
+            "semantic_request_permit_event_digest": permit_event_digest,
             "raw_ref": raw_ref,
             "raw_sha256": raw_sha256,
             "actual_cost_usd": actual_cost,
@@ -685,12 +718,9 @@ def _run_or_replay_judge(
             "judged_at": judged_at.isoformat(),
         },
     )
-    record.journal.complete_action(
+    record.journal.complete_semantic_response(
         reservation,
-        state="succeeded",
-        outcome_digest=raw_sha256,
-        trusted_receipt_digest=receipt_digest,
-        actual_cost_usd=actual_cost,
+        receipt_ref=receipt_ref,
     )
     return decision, raw_sha256, judged_at
 
@@ -1261,6 +1291,38 @@ class IndependentActionReconciler:
             raise ProductionAdapterError(
                 "action reconciliation requires an unknown reservation"
             )
+        if (
+            reservation.adapter_id != "wazzup-webhook-adapter"
+            or reservation.capability != "webhook.inbound"
+        ):
+            raise ProductionAdapterError(
+                "only an exact Wazzup action supports server reconciliation"
+            )
+        request_ref = f"requests/{action_id}.json"
+        request_raw = execution._read_protected(journal.run_root, request_ref)
+        if hashlib.sha256(request_raw).hexdigest() != reservation.payload_digest:
+            raise ProductionAdapterError("Wazzup reconciliation request digest drift")
+        try:
+            request = json.loads(request_raw)
+            messages = request["messages"]
+            expected_source_ids = tuple(str(item["messageId"]) for item in messages)
+        except (
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
+            raise ProductionAdapterError(
+                "Wazzup reconciliation request is invalid"
+            ) from exc
+        if (
+            not isinstance(messages, list)
+            or len(messages) != 1
+            or not expected_source_ids[0]
+        ):
+            raise ProductionAdapterError(
+                "Wazzup reconciliation request identity is invalid"
+            )
         try:
             lower_bound, causal_event_digest = journal.action_reconciliation_boundary(
                 action_id
@@ -1272,14 +1334,16 @@ class IndependentActionReconciler:
         source = f"reconciliation:{action_id}"
         raw = self.transport.read(source)
         try:
-            observation = _LiveActionReconciliation.model_validate(json.loads(raw))
+            observation = _LiveWazzupActionReconciliation.model_validate(
+                json.loads(raw)
+            )
         except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ProductionAdapterError(
                 "live action reconciliation is invalid"
             ) from exc
         now = current_time or datetime.now(UTC)
         if (
-            observation.action_id != action_id
+            observation.source_message_ids != expected_source_ids
             or now.tzinfo is None
             or now.utcoffset() is None
             or observation.observed_at > now

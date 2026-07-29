@@ -19,8 +19,8 @@ evidence:
 task_id: tj-ee5f.5-remediation
 epic_id: tj-ee5f
 stage_id: tj-ee5f
-session_id: tj-ee5f.5-semantic-compiler
-milestone: trusted semantic compilation and exact side-effect reconciliation
+session_id: tj-ee5f.5-production-trust-correction
+milestone: exact runtime authority and provider-bound evidence
 milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
@@ -57,6 +57,13 @@ write_zone:
   - tests/test_zoho_crm.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 success_criteria:
+  - local, live, and live-with-judge modes accept only their exact adapter sets and runtime transport digest
+  - the planned customer input digest is the exact protected question digest used by semantic compilation
+  - one derived semantic request permit binds the protected observation and exact dynamic OpenRouter request before network I/O
+  - only typed protected semantic response receipts can terminalize paid model actions
+  - server evidence fails closed when provider model, token, or cost facts are missing; deterministic static responses carry explicit zero-cost provenance
+  - duplicate turn, message, or provider identities are rejected before compilation
+  - unknown OpenRouter actions cannot be reconciled through Wazzup facts
   - production transcript, model, timing, token, cost, tool, audit, media, and side-effect facts come from durable server rows and exact provider readbacks
   - Pydantic and deterministic quotation tool calls emit digest-only terminal traces
   - Wazzup pending, sent, unknown, or provider-duplicate states block terminal production evidence
@@ -113,10 +120,11 @@ docs_impact: behavior
 docs_reviewed: updated
 docs_review_notes: stage artifact records the completed compiler boundary and remaining live acceptance gate
 verification:
-  - focused RED covered exact action identity, judge replay, retention authority, timeout binding, and unchanged inventory
-  - focused semantic compiler, observation, production, trusted execution, authority, and runner tests: passed 201
-  - focused Mypy for compiler, journal, transport, and source observer: passed
-  - focused Ruff check and format: passed
+  - focused RED covered exact runtime adapter modes, input digest drift, fabricated completion, request tampering, incomplete provider usage, duplicate identities, and cross-provider reconciliation
+  - affected acceptance, observation, runtime evidence, chat batching, and LLM engine tests: passed 725
+  - canonical src Mypy: passed for 165 source files
+  - strict Mypy for compiler, journal, transport, and production collector: passed for 4 source files without import suppression
+  - affected Ruff check and format: passed
   - artifact validator: passed
   - git diff check: passed
 changed_files:
@@ -125,12 +133,16 @@ changed_files:
   - scripts/e2e_acceptance/live_transport.py
   - scripts/e2e_acceptance/production.py
   - scripts/run_noor_e2e_acceptance.py
+  - src/llm/engine.py
+  - src/services/chat.py
   - src/services/e2e_observation_producer.py
+  - src/services/runtime_execution_evidence.py
   - tests/test_e2e_acceptance_live_authority.py
   - tests/test_e2e_acceptance_live_runtime.py
   - tests/test_e2e_acceptance_production.py
   - tests/test_e2e_acceptance_trusted_execution.py
   - tests/test_e2e_observation_producer.py
+  - tests/test_runtime_execution_evidence.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 explicit_defers:
   - production execution remains with the root orchestrator after integration and review; it includes deploy/preflight, materializing sealed run authority and evidence specifications, paid/provider canaries, readback, and cleanup
@@ -140,9 +152,11 @@ explicit_defers:
 
 The application now records bounded versioned evidence for each inbound turn:
 assistant identity, received/recorded times, digest-only tool call/return traces,
-and pre/post business inventory. Deterministic quotation creation emits the
-same typed trace as Pydantic tool calls. Outbound text, product media, and quote
-PDF audits retain their exact inbound source binding across Wazzup callbacks.
+explicit provider-reported or deterministic-static usage provenance, and
+pre/post business inventory. Missing provider model, token, or cost data is a
+hard evidence failure. Deterministic quotation creation emits the same typed
+trace as Pydantic tool calls. Outbound text, product media, and quote PDF audits
+retain their exact inbound source binding across Wazzup callbacks.
 
 The installed `noor-e2e-observe` command reads the production database and
 exact Zoho identities to build transcript, duration, token/cost, tool, audit,
@@ -151,14 +165,19 @@ Wazzup states and terminal side-effect readbacks. Unknown, active, missing, or
 unlisted effects stop evidence materialization.
 
 `IndependentExecutionProducer` no longer reads `evaluation:<execution_id>` or
-any caller-shaped attempt JSON. Its sealed semantic compiler checks planned
-turn hashes, deterministic evidence, readbacks, and side effects before it can
-spend one pre-authorized `model.classify` action. The action identity binds the
-compiler source, judge configuration, destination, payload, idempotency key,
-capability units, quota, and bounded cost. The one-shot OpenRouter transport
-has a configurable 15-180 second timeout, never retries after dispatch, stores
-the protected response and receipt, and settles actual journal cost. Resume
-replays that receipt without another paid call.
+any caller-shaped attempt JSON. Its sealed semantic compiler checks the exact
+protected question digest, deterministic evidence, readbacks, and side effects
+before it can derive one request permit for a pre-authorized
+`model.classify` action. The permit binds the protected observation and exact
+dynamic OpenRouter request before I/O. Only a typed protected response receipt
+can complete that action and settle actual cost; generic completion cannot
+terminalize model work. Resume replays the receipt without another paid call.
+
+Runtime authority now distinguishes exact local, live, and live-with-judge
+adapter sets and binds them to the matching transport digest. Duplicate turn,
+message, and provider identities fail closed. Wazzup reconciliation requires
+the exact protected outbound request and provider receipt; it cannot infer or
+complete an unknown OpenRouter action.
 
 Active test effects are accepted as `retained` only when an unexpired protected
 retention specification matches the exact entity and state. Otherwise they
@@ -169,13 +188,14 @@ receipt references; the compiler cannot mint them from caller JSON.
 
 # Verification
 
-Focused TDD covered compiler publication, all exact action-identity fields,
-unknown-action non-retry, journal receipt replay, actual cost settlement,
-retention authorization, timeout binding, transport failure semantics, and
-unchanged inventory. The focused acceptance set passed 201 tests across live
-runtime, observation producer, production materialization, trusted execution,
-live authority, and the CLI runner. Focused Ruff and Mypy checks pass. No
-product system prompt changed and captured scenario phrases remain fixtures.
+Focused TDD covered exact adapter modes, question-digest binding, derived
+request permits, fabricated completion, request tampering, incomplete provider
+usage, duplicate identities, provider-specific reconciliation, receipt replay,
+actual cost settlement, and unchanged inventory. The affected acceptance set
+passed 725 tests. Canonical source Mypy passed 165 files; strict Mypy passed the
+four acceptance compiler/transport/collector modules without suppressing
+imports. Ruff and format checks pass. No product system prompt changed and
+captured scenario phrases remain fixtures.
 
 # Delivery / Cleanup
 

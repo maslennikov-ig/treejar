@@ -79,6 +79,7 @@ def test_runtime_turn_evidence_is_versioned_replaced_and_bounded() -> None:
             assistant_message_id=f"assistant-{index}",
             received_at=now,
             recorded_at=now,
+            usage_provenance="provider_reported",
             tool_traces=(trace,),
         )
     record_runtime_turn_evidence(
@@ -87,12 +88,13 @@ def test_runtime_turn_evidence_is_versioned_replaced_and_bounded() -> None:
         assistant_message_id="assistant-replaced",
         received_at=now,
         recorded_at=now,
+        usage_provenance="deterministic_static",
         tool_traces=(),
     )
 
     evidence = conversation.metadata_[RUNTIME_EXECUTION_EVIDENCE_KEY]
     assert conversation.metadata_["unrelated"] == {"kept": True}
-    assert evidence["schema_version"] == "noor-runtime-execution-evidence/v2"
+    assert evidence["schema_version"] == "noor-runtime-execution-evidence/v3"
     assert len(evidence["turns"]) == 20
     assert evidence["turns"][-1]["assistant_message_id"] == "assistant-replaced"
     assert [item["source_message_id"] for item in evidence["turns"]].count(

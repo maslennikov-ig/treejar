@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal, NoReturn, cast
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from scripts.e2e_acceptance.evidence import (
     redact_payload,
     validate_redacted_payload,
@@ -38,6 +38,8 @@ from scripts.e2e_acceptance.schemas import (
 COMPILER_ID = "treejar.acceptance-policy-compiler.v2"
 LOCAL_ADAPTER_IDS = ("fake-local-adapter",)
 LIVE_ADAPTER_IDS = ("wazzup-webhook-adapter", "openrouter-judge-adapter")
+LIVE_RUNTIME_ADAPTER_IDS = ("wazzup-webhook-adapter",)
+LIVE_JUDGE_RUNTIME_ADAPTER_IDS = LIVE_ADAPTER_IDS
 EXECUTABLE_ADAPTER_IDS = frozenset((*LOCAL_ADAPTER_IDS, *LIVE_ADAPTER_IDS))
 _MAX_PREFLIGHT_AGE = timedelta(minutes=15)
 _MAX_FINAL_READBACK_AGE = timedelta(minutes=5)
@@ -958,6 +960,7 @@ def issue_execution_authorization_handle(
         plan=registry.compiled_plan,
         registry_id=registry.registry_id,
         current_time=now,
+        runtime_transport=runtime_transport,
     )
     return _register_authority_handle(
         ExecutionAuthorizationHandle(
@@ -1076,6 +1079,7 @@ def commit_execution_authority_bundle(
         plan=registry.compiled_plan,
         registry_id=registry.registry_id,
         current_time=receipt_issued_at,
+        runtime_transport=runtime_transport,
     )
     payload_models: dict[str, BaseModel] = {
         "authorization_manifest": authorization,
@@ -1314,18 +1318,24 @@ def build_execution_authorization_from_v1(
         raise ExecutionValidationError(
             "approved adapter and collector IDs are required"
         )
-    if runtime_transport is not None and (
-        tuple(adapter_ids)
-        != (
+    expected_runtime_adapters = (
+        (
             (runtime_transport.adapter_id, runtime_transport.judge_adapter_id)
             if runtime_transport.judge_adapter_id is not None
             else (runtime_transport.adapter_id,)
         )
-        or runtime_transport.collector_id not in collector_ids
-        or runtime_transport.target_digest
-        != _digest(authorization.targets.model_dump(mode="json"))
-        or _https_origin(runtime_transport.webhook_endpoint)
-        != _https_origin(authorization.expected_identity.endpoint)
+        if runtime_transport is not None
+        else LOCAL_ADAPTER_IDS
+    )
+    if tuple(adapter_ids) != expected_runtime_adapters or (
+        runtime_transport is not None
+        and (
+            runtime_transport.collector_id not in collector_ids
+            or runtime_transport.target_digest
+            != _digest(authorization.targets.model_dump(mode="json"))
+            or _https_origin(runtime_transport.webhook_endpoint)
+            != _https_origin(authorization.expected_identity.endpoint)
+        )
     ):
         raise ExecutionValidationError("approved runtime transport binding drift")
     quotas = ProtectedQuotas(**authorization.quotas.model_dump(mode="json"))
@@ -1428,6 +1438,7 @@ def validate_execution_authorization(
     plan: CompiledExecutionPlan,
     registry_id: str,
     current_time: datetime | None = None,
+    runtime_transport: RuntimeTransportConfig | None = None,
 ) -> ExecutionAuthorizationV2:
     if not isinstance(authorization, ExecutionAuthorizationV2):
         schema = getattr(authorization, "schema_version", "")
@@ -1450,6 +1461,31 @@ def validate_execution_authorization(
         or not set(authorization.adapter_ids) <= EXECUTABLE_ADAPTER_IDS
     ):
         raise ExecutionValidationError("authorization adapter is not allowed")
+    adapter_ids = tuple(authorization.adapter_ids)
+    runtime_digest = authorization.live_binding.runtime_transport_digest
+    if runtime_transport is not None:
+        expected_adapters = (
+            (runtime_transport.adapter_id, runtime_transport.judge_adapter_id)
+            if runtime_transport.judge_adapter_id is not None
+            else (runtime_transport.adapter_id,)
+        )
+        if (
+            adapter_ids != expected_adapters
+            or runtime_digest != runtime_transport_digest(runtime_transport)
+        ):
+            raise ExecutionValidationError(
+                "authorization runtime transport adapter binding drift"
+            )
+    elif (
+        runtime_digest is None
+        and adapter_ids != LOCAL_ADAPTER_IDS
+        or runtime_digest is not None
+        and adapter_ids
+        not in {LIVE_RUNTIME_ADAPTER_IDS, LIVE_JUDGE_RUNTIME_ADAPTER_IDS}
+    ):
+        raise ExecutionValidationError(
+            "authorization adapter set does not match runtime mode"
+        )
     if authorization.live_binding.adapter_ids_digest != _digest(
         authorization.adapter_ids
     ) or authorization.live_binding.collector_ids_digest != _digest(
@@ -1582,6 +1618,55 @@ class ActionReservation(_StrictModel):
             raise ValueError("reservation permit window is invalid")
         if any(value <= 0 for value in self.capability_units.values()):
             raise ValueError("reservation capability units must be positive")
+        return self
+
+
+class SemanticRequestPermit(_StrictModel):
+    schema_version: Literal["noor-e2e-semantic-request-permit/v1"]
+    run_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    action_id: str = Field(min_length=1)
+    reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_id: str = Field(min_length=1)
+    adapter_id: Literal["openrouter-judge-adapter"]
+    request_ref: str = Field(min_length=1)
+    dynamic_request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observation_ref: str = Field(min_length=1)
+    observation_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    consumed_at: datetime
+
+    @model_validator(mode="after")
+    def _aware_consumption(self) -> SemanticRequestPermit:
+        if self.consumed_at.tzinfo is None or self.consumed_at.utcoffset() is None:
+            raise ValueError("semantic request permit time must be aware")
+        return self
+
+
+class SemanticResponseReceipt(_StrictModel):
+    schema_version: Literal["noor-e2e-semantic-judge-receipt/v2"]
+    run_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    action_id: str = Field(min_length=1)
+    authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    judge_config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observation_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dynamic_request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_request_permit_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    raw_ref: str = Field(min_length=1)
+    raw_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    actual_cost_usd: float = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    judged_at: datetime
+
+    @model_validator(mode="after")
+    def _finite_aware_response(self) -> SemanticResponseReceipt:
+        if (
+            not math.isfinite(self.actual_cost_usd)
+            or self.judged_at.tzinfo is None
+            or self.judged_at.utcoffset() is None
+        ):
+            raise ValueError("semantic response receipt is invalid")
         return self
 
 
@@ -2751,6 +2836,9 @@ class ProtectedExecutionJournal:
         self.quota_usage = QuotaUsage()
         self._actions: dict[str, ActionState] = {}
         self._reservations: dict[str, ActionReservation] = {}
+        self._semantic_request_permits: dict[
+            str, tuple[SemanticRequestPermit, str]
+        ] = {}
         self._reconciliations: dict[str, UnknownActionReconciliationReceipt] = {}
         self._action_reconciliation_boundaries: dict[str, tuple[datetime, str]] = {}
         self._recorded_gates: dict[str, GateAttemptV2] = {}
@@ -3005,24 +3093,55 @@ class ProtectedExecutionJournal:
             ):
                 raise ExecutionValidationError("coordinator acceptance binding drift")
             self._coordinator_acceptance_events[ordinal] = dict(data)
+        elif kind == "semantic_request_permit_consumed":
+            try:
+                permit = SemanticRequestPermit.model_validate(data["permit"])
+            except (KeyError, ValidationError) as exc:
+                raise ExecutionValidationError(
+                    "semantic request permit event is invalid"
+                ) from exc
+            semantic_reservation = self._reservations.get(permit.action_id)
+            if (
+                semantic_reservation is None
+                or self._actions.get(permit.action_id) != "reserved"
+                or permit.action_id in self._semantic_request_permits
+            ):
+                raise ExecutionValidationError(
+                    "semantic request permit replay state drift"
+                )
+            self._validate_semantic_request_permit(permit, semantic_reservation)
+            self._semantic_request_permits[permit.action_id] = (
+                permit,
+                event_digest,
+            )
+            self._action_reconciliation_boundaries[permit.action_id] = (
+                permit.consumed_at,
+                event_digest,
+            )
+            self._actions[permit.action_id] = "unknown"
         elif kind == "action_completed":
             action_id = str(data["action_id"])
             state = str(data["state"])
             completed_reservation = self._reservations.get(action_id)
             if completed_reservation is None:
                 raise ExecutionValidationError("action completion lacks reservation")
-            if state == "succeeded" and (
-                completed_reservation.capability != "model.classify"
-                or completed_reservation.model_calls != 1
-                or completed_reservation.messages != 0
-                or not _is_sha256(str(data.get("trusted_receipt_digest", "")))
-                or not isinstance(data.get("actual_cost_usd"), int | float)
-                or not math.isfinite(float(data["actual_cost_usd"]))
-                or not 0
-                <= float(data["actual_cost_usd"])
-                <= completed_reservation.cost_usd
-            ):
-                raise ExecutionValidationError("terminal response action binding drift")
+            if state == "succeeded":
+                try:
+                    self._require_semantic_reservation(completed_reservation)
+                    self._validated_semantic_response_receipt(
+                        completed_reservation,
+                        receipt_ref=str(data["receipt_ref"]),
+                        trusted_receipt_digest=str(data["trusted_receipt_digest"]),
+                        outcome_digest=str(data["outcome_digest"]),
+                        actual_cost_usd=float(data["actual_cost_usd"]),
+                        permit_event_digest=str(
+                            data["semantic_request_permit_event_digest"]
+                        ),
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ExecutionValidationError(
+                        "terminal semantic response action binding drift"
+                    ) from exc
             if state not in {"succeeded", "unknown"}:
                 raise ExecutionValidationError("action completion state is invalid")
             self._actions[action_id] = state  # type: ignore[assignment]
@@ -3721,6 +3840,132 @@ class ProtectedExecutionJournal:
         self._authorization_reservation_runs[action_id] = reservation.run_id
         return reservation
 
+    def _require_semantic_reservation(
+        self,
+        reservation: ActionReservation,
+    ) -> None:
+        matching_specs = [
+            item
+            for item in self.authorization.action_specs
+            if item.action_id == reservation.action_id
+        ]
+        if (
+            len(matching_specs) != 1
+            or reservation.adapter_id != "openrouter-judge-adapter"
+            or reservation.subsystem != "model"
+            or reservation.capability != "model.classify"
+            or reservation.operation_permission != "paid_model_call"
+            or reservation.model_calls != 1
+            or reservation.messages != 0
+            or reservation.capability_units != {"model": 1}
+            or matching_specs[0].quota_charge.cost_settlement != "bounded_actual"
+        ):
+            raise ExecutionValidationError(
+                "semantic response requires exact OpenRouter reservation"
+            )
+
+    def _validate_semantic_request_permit(
+        self,
+        permit: SemanticRequestPermit,
+        reservation: ActionReservation,
+    ) -> None:
+        self._require_semantic_reservation(reservation)
+        expected_request_ref = f"semantic-requests/{reservation.action_id}.json"
+        expected_observation_ref = (
+            f"collector-raw/executions/{reservation.execution_id}.json"
+        )
+        descriptor_ref = f"requests/{reservation.action_id}.json"
+        descriptor_raw = _read_protected(self.run_root, descriptor_ref)
+        request_raw = _read_protected(self.run_root, permit.request_ref)
+        observation_raw = _read_protected(self.run_root, permit.observation_ref)
+        try:
+            descriptor = json.loads(descriptor_raw)
+            dynamic_request = json.loads(request_raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ExecutionValidationError(
+                "semantic request protected payload is invalid"
+            ) from exc
+        if (
+            permit.run_id != self.run_id
+            or permit.authorization_digest != self.authorization_digest
+            or permit.action_id != reservation.action_id
+            or permit.reservation_digest != reservation.reservation_digest
+            or permit.execution_id != reservation.execution_id
+            or permit.adapter_id != reservation.adapter_id
+            or permit.request_ref != expected_request_ref
+            or permit.observation_ref != expected_observation_ref
+            or permit.dynamic_request_sha256 != hashlib.sha256(request_raw).hexdigest()
+            or permit.observation_sha256 != hashlib.sha256(observation_raw).hexdigest()
+            or permit.consumed_at < reservation.issued_at
+            or permit.consumed_at >= reservation.expires_at
+            or hashlib.sha256(descriptor_raw).hexdigest() != reservation.payload_digest
+            or not isinstance(dynamic_request, dict)
+            or not isinstance(descriptor, dict)
+            or set(descriptor)
+            != {
+                "schema_version",
+                "execution_id",
+                "source_ref",
+                "judge_config_digest",
+            }
+            or descriptor.get("schema_version") != "noor-e2e-semantic-judge-action/v1"
+            or descriptor.get("execution_id") != reservation.execution_id
+            or descriptor.get("source_ref") != expected_observation_ref
+        ):
+            raise ExecutionValidationError(
+                "semantic request permit protected binding drift"
+            )
+
+    def consume_semantic_request_permit(
+        self,
+        reservation: ActionReservation,
+        *,
+        request_ref: str,
+        observation_ref: str,
+    ) -> SemanticRequestPermit:
+        consumed_at = datetime.now(UTC)
+        if (
+            self.phase != "executing"
+            or self._actions.get(reservation.action_id) != "reserved"
+            or self._reservations.get(reservation.action_id) != reservation
+            or reservation.action_id in self._semantic_request_permits
+        ):
+            raise ExecutionValidationError(
+                "semantic request lacks a fresh protected reservation"
+            )
+        request_raw = _read_protected(self.run_root, request_ref)
+        observation_raw = _read_protected(self.run_root, observation_ref)
+        permit = SemanticRequestPermit(
+            schema_version="noor-e2e-semantic-request-permit/v1",
+            run_id=self.run_id,
+            authorization_digest=self.authorization_digest,
+            action_id=reservation.action_id,
+            reservation_digest=reservation.reservation_digest,
+            execution_id=reservation.execution_id,
+            adapter_id="openrouter-judge-adapter",
+            request_ref=request_ref,
+            dynamic_request_sha256=hashlib.sha256(request_raw).hexdigest(),
+            observation_ref=observation_ref,
+            observation_sha256=hashlib.sha256(observation_raw).hexdigest(),
+            consumed_at=consumed_at,
+        )
+        self._validate_semantic_request_permit(permit, reservation)
+        event_digest = self._append_event(
+            phase="executing",
+            kind="semantic_request_permit_consumed",
+            data={"permit": permit.model_dump(mode="json")},
+        )
+        self._semantic_request_permits[reservation.action_id] = (
+            permit,
+            event_digest,
+        )
+        self._action_reconciliation_boundaries[reservation.action_id] = (
+            consumed_at,
+            event_digest,
+        )
+        self._actions[reservation.action_id] = "unknown"
+        return permit
+
     def consume_permit(
         self,
         reservation: ActionReservation,
@@ -3737,6 +3982,13 @@ class ProtectedExecutionJournal:
     ) -> None:
         """Atomically validate and consume the one-use protected permit."""
 
+        if (
+            reservation.capability == "model.classify"
+            or reservation.adapter_id == "openrouter-judge-adapter"
+        ):
+            raise ExecutionValidationError(
+                "semantic OpenRouter action requires typed request permit"
+            )
         consumed_at = datetime.now(UTC)
         if (
             self.phase != "executing"
@@ -3797,26 +4049,14 @@ class ProtectedExecutionJournal:
             raise ExecutionValidationError("action reservation identity drift")
         if not _is_sha256(outcome_digest):
             raise ExecutionValidationError("action outcome digest must be SHA-256")
-        terminal_from_response = (
-            state == "succeeded"
-            and reservation.capability == "model.classify"
-            and reservation.model_calls == 1
-            and reservation.messages == 0
-            and trusted_receipt_digest is not None
-            and _is_sha256(trusted_receipt_digest)
-            and actual_cost_usd is not None
-            and math.isfinite(actual_cost_usd)
-            and 0 <= actual_cost_usd <= reservation.cost_usd
-        )
-        if state == "unknown":
-            if trusted_receipt_digest is not None or actual_cost_usd is not None:
-                raise ExecutionValidationError(
-                    "unknown action cannot carry terminal response evidence"
-                )
-        elif not terminal_from_response:
+        if (
+            state != "unknown"
+            or trusted_receipt_digest is not None
+            or actual_cost_usd is not None
+        ):
             raise ExecutionValidationError(
-                "dispatch result cannot terminalize an uncertain action; "
-                "independent reconciliation is required"
+                "generic completion can only preserve an unknown action; "
+                "typed semantic response or independent reconciliation is required"
             )
         completed_at = datetime.now(UTC)
         event_digest = self._append_event(
@@ -3837,12 +4077,121 @@ class ProtectedExecutionJournal:
             event_digest,
         )
         self._actions[reservation.action_id] = state
-        if terminal_from_response:
-            return self.settle_action_cost(
-                reservation,
-                actual_cost_usd=float(cast("float", actual_cost_usd)),
-            )
         return None
+
+    def _validated_semantic_response_receipt(
+        self,
+        reservation: ActionReservation,
+        *,
+        receipt_ref: str,
+        trusted_receipt_digest: str,
+        outcome_digest: str,
+        actual_cost_usd: float,
+        permit_event_digest: str,
+    ) -> SemanticResponseReceipt:
+        permit_record = self._semantic_request_permits.get(reservation.action_id)
+        if (
+            permit_record is None
+            or receipt_ref
+            != f"producer-receipts/judges/{reservation.execution_id}.json"
+            or not _is_sha256(trusted_receipt_digest)
+            or not _is_sha256(outcome_digest)
+            or not math.isfinite(actual_cost_usd)
+        ):
+            raise ExecutionValidationError(
+                "semantic response lacks its exact protected request permit"
+            )
+        permit, committed_permit_event_digest = permit_record
+        receipt_raw = _read_protected(self.run_root, receipt_ref)
+        try:
+            receipt = SemanticResponseReceipt.model_validate(json.loads(receipt_raw))
+        except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ExecutionValidationError(
+                "protected semantic response receipt is invalid"
+            ) from exc
+        raw = _read_protected(self.run_root, receipt.raw_ref)
+        if (
+            trusted_receipt_digest != hashlib.sha256(receipt_raw).hexdigest()
+            or receipt.run_id != self.run_id
+            or receipt.execution_id != reservation.execution_id
+            or receipt.action_id != reservation.action_id
+            or receipt.authorization_digest != self.authorization_digest
+            or receipt.reservation_digest != reservation.reservation_digest
+            or receipt.observation_sha256 != permit.observation_sha256
+            or receipt.dynamic_request_sha256 != permit.dynamic_request_sha256
+            or receipt.semantic_request_permit_event_digest
+            != committed_permit_event_digest
+            or permit_event_digest != committed_permit_event_digest
+            or receipt.raw_ref != f"producer-raw/judges/{reservation.execution_id}.json"
+            or receipt.raw_sha256 != hashlib.sha256(raw).hexdigest()
+            or outcome_digest != receipt.raw_sha256
+            or actual_cost_usd != receipt.actual_cost_usd
+            or receipt.actual_cost_usd > reservation.cost_usd
+            or receipt.judged_at < permit.consumed_at
+        ):
+            raise ExecutionValidationError(
+                "protected semantic response receipt binding drift"
+            )
+        return receipt
+
+    def complete_semantic_response(
+        self,
+        reservation: ActionReservation,
+        *,
+        receipt_ref: str,
+    ) -> ActionCostSettlement:
+        self._require_semantic_reservation(reservation)
+        permit_record = self._semantic_request_permits.get(reservation.action_id)
+        if (
+            self._actions.get(reservation.action_id) != "unknown"
+            or self._reservations.get(reservation.action_id) != reservation
+            or permit_record is None
+        ):
+            raise ExecutionValidationError(
+                "semantic response lacks its exact protected request permit"
+            )
+        _, permit_event_digest = permit_record
+        receipt_raw = _read_protected(self.run_root, receipt_ref)
+        try:
+            receipt = SemanticResponseReceipt.model_validate(json.loads(receipt_raw))
+        except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ExecutionValidationError(
+                "protected semantic response receipt is invalid"
+            ) from exc
+        receipt_digest = hashlib.sha256(receipt_raw).hexdigest()
+        self._validated_semantic_response_receipt(
+            reservation,
+            receipt_ref=receipt_ref,
+            trusted_receipt_digest=receipt_digest,
+            outcome_digest=receipt.raw_sha256,
+            actual_cost_usd=receipt.actual_cost_usd,
+            permit_event_digest=permit_event_digest,
+        )
+        completed_at = datetime.now(UTC)
+        completion_event_digest = self._append_event(
+            phase="executing",
+            kind="action_completed",
+            data={
+                "action_id": reservation.action_id,
+                "reservation_digest": reservation.reservation_digest,
+                "state": "succeeded",
+                "outcome_digest": receipt.raw_sha256,
+                "trusted_receipt_digest": receipt_digest,
+                "receipt_ref": receipt_ref,
+                "semantic_request_permit_event_digest": permit_event_digest,
+                "actual_cost_usd": receipt.actual_cost_usd,
+                "completed_at": completed_at.isoformat(),
+            },
+        )
+        self._action_reconciliation_boundaries[reservation.action_id] = (
+            completed_at,
+            completion_event_digest,
+        )
+        self._actions[reservation.action_id] = "succeeded"
+        return self.settle_action_cost(
+            reservation,
+            actual_cost_usd=receipt.actual_cost_usd,
+        )
 
     def action_reconciliation_boundary(self, action_id: str) -> tuple[datetime, str]:
         """Return the latest durable lower bound and causal event for an action."""

@@ -1698,6 +1698,9 @@ class LLMResponse:
     tokens_out: int | None
     cost: float | None
     model: str
+    usage_provenance: Literal["provider_reported", "deterministic_static"] = (
+        "provider_reported"
+    )
     deferred_product_media: tuple[ProductMediaPayload, ...] = ()
     tool_traces: tuple[RuntimeToolTrace, ...] = ()
 
@@ -12061,6 +12064,7 @@ async def process_message(
             tokens_out=usage.output_tokens if usage else None,
             cost=usage_telemetry.cost if usage_telemetry is not None else None,
             model=model_name,
+            usage_provenance="provider_reported",
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
@@ -12097,6 +12101,7 @@ async def process_message(
             tokens_out=0,
             cost=None,
             model=model_name,
+            usage_provenance="deterministic_static",
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
@@ -12125,6 +12130,7 @@ async def process_message(
             tokens_out=0,
             cost=None,
             model=f"{model_name}|verified-policy",
+            usage_provenance="deterministic_static",
             deferred_product_media=_deferred_product_media_for_response(
                 deps,
                 allow_product_media=False,
@@ -13159,4 +13165,5 @@ async def process_message(
             tokens_out=0,
             cost=0.0,
             model=f"{db_model_label}|error",
+            usage_provenance="deterministic_static",
         )

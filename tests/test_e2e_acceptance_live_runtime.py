@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -255,6 +256,69 @@ def test_live_semantic_compiler_uses_sealed_plan_observation_and_one_judge_call(
     assert (
         journal.run_root / f"producer-receipts/judges/{execution_id}.json"
     ).is_file()
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((journal.run_root / "journal").glob("*.json"))
+    ]
+    permit_events = [
+        event for event in events if event["kind"] == "semantic_request_permit_consumed"
+    ]
+    assert len(permit_events) == 1
+    assert permit_events[0]["data"]["permit"]["dynamic_request_sha256"] == (
+        hashlib.sha256(
+            (
+                json.dumps(
+                    judge.calls[0],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            ).encode()
+        ).hexdigest()
+    )
+    request_path = journal.run_root / f"semantic-requests/{action_id}.json"
+    request_payload = json.loads(request_path.read_text(encoding="utf-8"))
+    request_payload["model"] = "tampered/model"
+    request_path.write_text(json.dumps(request_payload), encoding="utf-8")
+    from scripts.e2e_acceptance import execution
+
+    with pytest.raises(
+        execution.ExecutionValidationError,
+        match="semantic request|digest",
+    ):
+        execution.ProtectedExecutionJournal.open(
+            protected_root=journal.protected_root,
+            run_id=journal.run_id,
+            authority=authority,
+        )
+
+
+def test_live_semantic_compiler_rejects_question_hash_not_bound_to_planned_turn(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_producer import _semantic_config
+    from scripts.e2e_acceptance.production import (
+        _producer_handle_record,
+        issue_decisive_producer_handle,
+    )
+
+    from tests.test_e2e_acceptance_production import _prepared_executed_producer
+
+    registry, authority, journal, plan, _ = _prepared_executed_producer(
+        tmp_path,
+        semantic_customer_text="Need four synthetic chairs.",
+        planned_customer_input_digest="1" * 64,
+    )
+    handle = issue_decisive_producer_handle(
+        registry=registry,
+        journal=journal,
+        authority=authority,
+        sealed_plan=plan,
+    )
+
+    with pytest.raises(Exception, match="input binding"):
+        _semantic_config(_producer_handle_record(handle))
 
 
 @pytest.mark.parametrize("preauthorized", [False, True])
@@ -484,6 +548,22 @@ def test_semantic_judge_unknown_action_is_never_retried(tmp_path: Path) -> None:
         )
     assert replacement.calls == []
 
+    from scripts.e2e_acceptance.live_producer import IndependentActionReconciler
+
+    class NoWazzupRead:
+        def read(self, source: str) -> bytes:
+            raise AssertionError(f"unexpected Wazzup read: {source}")
+
+    with pytest.raises(
+        ProductionAdapterError,
+        match="Wazzup action",
+    ):
+        IndependentActionReconciler(
+            collector_id="independent-readback-collector",
+            transport=NoWazzupRead(),
+        ).materialize(journal, action_id=scenario.judge.action_id)
+    assert journal._actions[scenario.judge.action_id] == "unknown"
+
 
 def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
     from scripts.e2e_acceptance import execution
@@ -673,7 +753,20 @@ def test_live_runtime_rejects_transport_identity_drift(field: str) -> None:
         )
 
 
-def test_execution_authority_accepts_only_named_real_webhook_adapter() -> None:
+@pytest.mark.parametrize(
+    ("judge_enabled", "adapter_ids"),
+    [
+        (False, ("wazzup-webhook-adapter",)),
+        (
+            True,
+            ("wazzup-webhook-adapter", "openrouter-judge-adapter"),
+        ),
+    ],
+)
+def test_execution_authority_accepts_only_exact_runtime_adapter_set(
+    judge_enabled: bool,
+    adapter_ids: tuple[str, ...],
+) -> None:
     from scripts.e2e_acceptance import execution
 
     from tests.e2e_acceptance_backend import build_canonical_test_registry
@@ -681,7 +774,22 @@ def test_execution_authority_accepts_only_named_real_webhook_adapter() -> None:
 
     registry = build_canonical_test_registry()
     base = _authorization(registry, trusted=False)
-    adapter_ids = ("wazzup-webhook-adapter",)
+    runtime = execution.RuntimeTransportConfig(
+        schema_version="noor-e2e-live-runtime/v1",
+        adapter_id="wazzup-webhook-adapter",
+        webhook_endpoint="https://noor.starec.ai/api/v1/webhook/wazzup",
+        target_digest=base.live_binding.target_digest,
+        collector_id="independent-readback-collector",
+        ssh_host_alias="noor-production",
+        source_commands={
+            "baseline": ("/usr/bin/cat", "/var/lib/noor/baseline.json"),
+            "final": ("/usr/bin/cat", "/var/lib/noor/final.json"),
+        },
+        judge_endpoint=(
+            "https://openrouter.ai/api/v1/chat/completions" if judge_enabled else None
+        ),
+        judge_adapter_id=("openrouter-judge-adapter" if judge_enabled else None),
+    )
     action_specs = tuple(
         item.model_copy(update={"adapter_id": adapter_ids[0]})
         for item in base.action_specs
@@ -691,13 +799,74 @@ def test_execution_authority_accepts_only_named_real_webhook_adapter() -> None:
             "adapter_ids": adapter_ids,
             "action_specs": action_specs,
             "live_binding": base.live_binding.model_copy(
-                update={"adapter_ids_digest": execution._digest(adapter_ids)}
+                update={
+                    "adapter_ids_digest": execution._digest(adapter_ids),
+                    "runtime_transport_digest": execution.runtime_transport_digest(
+                        runtime
+                    ),
+                }
             ),
         }
     )
 
-    registry._load_execution_authorization(candidate)
-    registry.validate_execution_authorization(candidate)
+    execution.validate_execution_authorization(
+        candidate,
+        policy=registry.compiled_policy,
+        plan=registry.compiled_plan,
+        registry_id=registry.registry_id,
+        runtime_transport=runtime,
+    )
+
+
+@pytest.mark.parametrize(
+    "adapter_ids",
+    [
+        ("openrouter-judge-adapter",),
+        ("fake-local-adapter", "wazzup-webhook-adapter"),
+        ("wazzup-webhook-adapter", "fake-local-adapter"),
+        (
+            "fake-local-adapter",
+            "wazzup-webhook-adapter",
+            "openrouter-judge-adapter",
+        ),
+    ],
+)
+def test_execution_authority_rejects_mixed_or_partial_adapter_sets(
+    adapter_ids: tuple[str, ...],
+) -> None:
+    from scripts.e2e_acceptance import execution
+
+    from tests.e2e_acceptance_backend import build_canonical_test_registry
+    from tests.test_e2e_acceptance_trusted_execution import _authorization
+
+    registry = build_canonical_test_registry()
+    base = _authorization(registry, trusted=False)
+    candidate = base.model_copy(
+        update={
+            "adapter_ids": adapter_ids,
+            "action_specs": tuple(
+                item.model_copy(update={"adapter_id": adapter_ids[0]})
+                for item in base.action_specs
+            ),
+            "live_binding": base.live_binding.model_copy(
+                update={
+                    "adapter_ids_digest": execution._digest(adapter_ids),
+                    "runtime_transport_digest": "f" * 64,
+                }
+            ),
+        }
+    )
+
+    with pytest.raises(
+        execution.ExecutionValidationError,
+        match="adapter|runtime transport",
+    ):
+        execution.validate_execution_authorization(
+            candidate,
+            policy=registry.compiled_policy,
+            plan=registry.compiled_plan,
+            registry_id=registry.registry_id,
+        )
 
 
 def test_independent_reconciliation_settles_collector_reported_actual_cost(
@@ -788,13 +957,58 @@ def test_independent_reconciliation_settles_collector_reported_actual_cost(
 
 def _prepared_unknown_action(tmp_path: Path, *, run_id: str):
     from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.production import _write_or_validate_exact
 
     from tests.e2e_acceptance_backend import build_canonical_test_registry
-    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+    from tests.test_e2e_acceptance_trusted_execution import (
+        _action_quota_charge,
+        _issued_authority,
+    )
 
     registry = build_canonical_test_registry()
     root = tmp_path / "protected"
-    authority = _issued_authority(registry, protected_root=root, run_id=run_id)
+    payload = {
+        "messages": [
+            {
+                "messageId": "synthetic-message",
+                "chatId": "synthetic-chat",
+                "chatType": "whatsapp",
+                "authorType": "client",
+                "channelId": "synthetic-channel",
+                "text": "synthetic text",
+                "dateTime": "2026-07-29T09:00:00Z",
+                "type": "text",
+                "status": "inbound",
+            }
+        ]
+    }
+    request = {
+        "execution_id": "SC-OPEN-EN",
+        "step_id": "fixture-step-001",
+        "capability": "webhook.inbound",
+        "operation_permission": "fixture:execute",
+        "destination_digest": "a" * 64,
+        "payload_digest": execution._digest(payload),
+        "idempotency_key": "fixture-idempotency-001",
+        "capability_units": {"outbound_text": 1},
+    }
+    spec = execution.AuthorizedActionSpec(
+        action_id="synthetic-action",
+        adapter_id="wazzup-webhook-adapter",
+        subsystem="outbound_text",
+        quota_charge=_action_quota_charge(execution),
+        **request,
+    )
+    authority = _issued_authority(
+        registry,
+        protected_root=root,
+        run_id=run_id,
+        action_specs=execution.AuthorizedActionSpecs(
+            schema_version="noor-e2e-authorized-action-specs/v2",
+            specs=(spec,),
+        ),
+        runtime_wazzup=True,
+    )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=root,
         run_id=run_id,
@@ -814,7 +1028,6 @@ def _prepared_unknown_action(tmp_path: Path, *, run_id: str):
         )
     )
     journal.begin_execution()
-    spec = journal.authorization.action_specs[0]
     charge = spec.quota_charge
     request = spec.model_dump(mode="python", exclude={"quota_charge"})
     action_id = request.pop("action_id")
@@ -829,8 +1042,29 @@ def _prepared_unknown_action(tmp_path: Path, *, run_id: str):
         cost_usd=charge.max_cost_usd,
         **request,
     )
+    _write_or_validate_exact(
+        journal.run_root,
+        f"requests/{action_id}.json",
+        payload,
+    )
     journal.consume_permit(reservation, adapter_id=adapter_id, **request)
     return registry, journal, reservation
+
+
+def _wazzup_reconciliation_payload(observed_at: datetime) -> dict[str, object]:
+    return {
+        "schema_version": "noor-e2e-wazzup-action-reconciliation/v2",
+        "adapter_id": "wazzup-webhook-adapter",
+        "capability": "webhook.inbound",
+        "observed_at": observed_at.isoformat(),
+        "resolved_state": "succeeded",
+        "source_message_ids": ["synthetic-message"],
+        "audit_ids": ["synthetic-audit"],
+        "outbound_provider_message_ids": ["synthetic-provider-message"],
+        "outbound_statuses": ["delivered"],
+        "inventory": {"synthetic:item": {"state": "present"}},
+        "actual_cost_usd": 0.10,
+    }
 
 
 def test_live_reconciliation_requires_current_action_causal_identity(
@@ -844,16 +1078,7 @@ def test_live_reconciliation_requires_current_action_causal_identity(
         tmp_path, run_id="live-causal-reconciliation"
     )
     observed_at = datetime.now(UTC)
-    raw = json.dumps(
-        {
-            "schema_version": "noor-e2e-server-action-reconciliation/v1",
-            "action_id": reservation.action_id,
-            "observed_at": observed_at.isoformat(),
-            "resolved_state": "succeeded",
-            "inventory": {"synthetic:item": {"state": "present"}},
-            "actual_cost_usd": 0.10,
-        }
-    ).encode()
+    raw = json.dumps(_wazzup_reconciliation_payload(observed_at)).encode()
 
     digest = IndependentActionReconciler(
         collector_id="independent-readback-collector",
@@ -892,16 +1117,9 @@ def test_live_reconciler_rejects_pre_dispatch_stale_snapshot(
     )
     now = datetime.now(UTC)
     raw = json.dumps(
-        {
-            "schema_version": "noor-e2e-server-action-reconciliation/v1",
-            "action_id": reservation.action_id,
-            "observed_at": (
-                reservation.issued_at - timedelta(microseconds=1)
-            ).isoformat(),
-            "resolved_state": "succeeded",
-            "inventory": {"synthetic:item": {"state": "present"}},
-            "actual_cost_usd": 0.10,
-        }
+        _wazzup_reconciliation_payload(
+            reservation.issued_at - timedelta(microseconds=1)
+        )
     ).encode()
 
     with pytest.raises(ProductionAdapterError, match="binding|lower bound|stale"):
@@ -930,17 +1148,9 @@ def test_live_reconciler_rejects_server_supplied_journal_binding(
         tmp_path, run_id="live-causal-drift"
     )
     now = datetime.now(UTC)
-    raw = json.dumps(
-        {
-            "schema_version": "noor-e2e-server-action-reconciliation/v1",
-            "action_id": reservation.action_id,
-            "causal_event_digest": "b" * 64,
-            "observed_at": now.isoformat(),
-            "resolved_state": "succeeded",
-            "inventory": {"synthetic:item": {"state": "present"}},
-            "actual_cost_usd": 0.10,
-        }
-    ).encode()
+    payload = _wazzup_reconciliation_payload(now)
+    payload["causal_event_digest"] = "b" * 64
+    raw = json.dumps(payload).encode()
 
     with pytest.raises(ProductionAdapterError, match="invalid"):
         IndependentActionReconciler(
@@ -1126,14 +1336,7 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
             if source_file.endswith("baseline.json"):
                 payload = {"inventory": {"synthetic:item": {"state": "absent"}}}
             elif source_file.endswith("reconciliation.json"):
-                payload = {
-                    "schema_version": "noor-e2e-server-action-reconciliation/v1",
-                    "action_id": "synthetic-action",
-                    "observed_at": datetime.now(UTC).isoformat(),
-                    "resolved_state": "succeeded",
-                    "inventory": {"synthetic:item": {"state": "present"}},
-                    "actual_cost_usd": 0.10,
-                }
+                payload = _wazzup_reconciliation_payload(datetime.now(UTC))
             else:
                 payload = {"inventory": {"synthetic:item": {"state": "closed"}}}
             return subprocess.CompletedProcess(

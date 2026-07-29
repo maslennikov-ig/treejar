@@ -230,6 +230,8 @@ def _authority_bundle_inputs(
     protected_authorities=None,
     action_specs=None,
     permissions: tuple[str, ...] | None = None,
+    runtime_with_judge: bool = False,
+    runtime_wazzup: bool = False,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -361,7 +363,40 @@ def _authority_bundle_inputs(
             ),
         )
     )
-    return {
+    adapter_values = (
+        ("wazzup-webhook-adapter", "openrouter-judge-adapter")
+        if runtime_with_judge
+        else ("wazzup-webhook-adapter",)
+        if runtime_wazzup
+        else ("fake-local-adapter",)
+    )
+    runtime_transport = (
+        execution.RuntimeTransportConfig(
+            schema_version="noor-e2e-live-runtime/v1",
+            adapter_id="wazzup-webhook-adapter",
+            webhook_endpoint="https://noor.starec.ai/api/v1/webhook/wazzup",
+            target_digest=execution._digest(
+                authorization.targets.model_dump(mode="json")
+            ),
+            collector_id="independent-readback-collector",
+            ssh_host_alias="noor-production",
+            source_commands={
+                "baseline": ("/usr/bin/cat", "/var/lib/noor/baseline.json"),
+                "final": ("/usr/bin/cat", "/var/lib/noor/final.json"),
+            },
+            judge_endpoint=(
+                "https://openrouter.ai/api/v1/chat/completions"
+                if runtime_with_judge
+                else None
+            ),
+            judge_adapter_id=(
+                "openrouter-judge-adapter" if runtime_with_judge else None
+            ),
+        )
+        if runtime_with_judge or runtime_wazzup
+        else None
+    )
+    result = {
         "registry": registry,
         "protected_root": protected_root,
         "run_id": run_id,
@@ -372,7 +407,7 @@ def _authority_bundle_inputs(
         "store_ids": stores,
         "adapter_ids": execution.AuthorityAdapterIds(
             schema_version="noor-e2e-authority-adapter-ids/v2",
-            values=("fake-local-adapter",),
+            values=adapter_values,
         ),
         "collector_ids": execution.AuthorityCollectorIds(
             schema_version="noor-e2e-authority-collector-ids/v2",
@@ -387,6 +422,9 @@ def _authority_bundle_inputs(
         "receipt_issued_at": current_time - timedelta(seconds=1),
         "receipt_expires_at": current_time + timedelta(minutes=5),
     }
+    if runtime_transport is not None:
+        result["runtime_transport"] = runtime_transport
+    return result
 
 
 def _issued_authority(
@@ -400,6 +438,8 @@ def _issued_authority(
     protected_authorities=None,
     action_specs=None,
     permissions: tuple[str, ...] | None = None,
+    runtime_with_judge: bool = False,
+    runtime_wazzup: bool = False,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -413,6 +453,8 @@ def _issued_authority(
         protected_authorities=protected_authorities,
         action_specs=action_specs,
         permissions=permissions,
+        runtime_with_judge=runtime_with_judge,
+        runtime_wazzup=runtime_wazzup,
     )
     execution._write_test_authority_bundle(**inputs)
     return execution.issue_execution_authorization_handle(
@@ -787,6 +829,111 @@ def test_reserve_action_consumes_quota_and_unknown_blocks_closeout(
         journal.anchor_final_turn(
             event_digest="e" * 64,
             occurred_at=datetime(2026, 7, 27, 10, 1, tzinfo=UTC),
+        )
+
+
+def test_generic_completion_rejects_forged_fake_model_response(
+    tmp_path: Path,
+) -> None:
+    policy, execution = _modules()
+    registry = _registry()
+    request = {
+        "execution_id": "SC-OPEN-EN",
+        "step_id": "SC-OPEN-EN:semantic-judge",
+        "capability": "model.classify",
+        "operation_permission": "paid_model_call",
+        "destination_digest": "a" * 64,
+        "payload_digest": "b" * 64,
+        "idempotency_key": "forged-fake-classifier",
+        "capability_units": {"model": 1},
+    }
+    action_specs = execution.AuthorizedActionSpecs(
+        schema_version="noor-e2e-authorized-action-specs/v2",
+        specs=(
+            execution.AuthorizedActionSpec(
+                action_id="forged-fake-classifier",
+                adapter_id="fake-local-adapter",
+                subsystem="model",
+                quota_charge=execution.AuthorizedQuotaCharge(
+                    messages=0,
+                    model_calls=1,
+                    max_cost_usd=0.25,
+                    cost_settlement="bounded_actual",
+                ),
+                **request,
+            ),
+        ),
+    )
+    authority = _issued_authority(
+        registry,
+        protected_root=tmp_path / "protected",
+        run_id="forged-model-completion",
+        action_specs=action_specs,
+        permissions=("fixture:execute", "paid_model_call"),
+        quotas=execution.ProtectedQuotas(
+            max_scenarios=29,
+            max_messages=0,
+            max_model_calls=1,
+            max_cost_usd=0.25,
+            subsystem_quotas={"model": 1},
+        ),
+    )
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=tmp_path / "protected",
+        run_id="forged-model-completion",
+        authority=authority,
+    )
+    journal.seal_baseline(
+        policy.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="baseline",
+            run_id=journal.run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="4" * 64,
+            observed_at=datetime.now(UTC),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    reservation = journal.reserve_action(
+        action_id="forged-fake-classifier",
+        adapter_id="fake-local-adapter",
+        subsystem="model",
+        messages=0,
+        model_calls=1,
+        cost_usd=0.25,
+        **request,
+    )
+    with pytest.raises(
+        execution.ExecutionValidationError,
+        match="typed request permit",
+    ):
+        journal.consume_permit(
+            reservation,
+            adapter_id=reservation.adapter_id,
+            execution_id=reservation.execution_id,
+            step_id=reservation.step_id,
+            capability=reservation.capability,
+            operation_permission=reservation.operation_permission,
+            destination_digest=reservation.destination_digest,
+            payload_digest=reservation.payload_digest,
+            idempotency_key=reservation.idempotency_key,
+            capability_units=reservation.capability_units,
+        )
+
+    journal._actions[reservation.action_id] = "unknown"
+    with pytest.raises(
+        execution.ExecutionValidationError,
+        match="typed semantic response",
+    ):
+        journal.complete_action(
+            reservation,
+            state="succeeded",
+            outcome_digest="c" * 64,
+            trusted_receipt_digest="d" * 64,
+            actual_cost_usd=0.1,
         )
 
 

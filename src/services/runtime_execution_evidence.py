@@ -47,14 +47,24 @@ class RuntimeTurnEvidence(BaseModel):
     schema_version: Literal[
         "noor-runtime-turn-evidence/v1",
         "noor-runtime-turn-evidence/v2",
+        "noor-runtime-turn-evidence/v3",
     ]
     source_message_id: str = Field(min_length=1)
     assistant_message_id: str = Field(min_length=1)
     received_at: datetime
     recorded_at: datetime
+    usage_provenance: Literal["provider_reported", "deterministic_static"] | None = None
     tool_traces: tuple[RuntimeToolTrace, ...]
     baseline_inventory: dict[str, dict[str, Any]] = Field(default_factory=dict)
     final_inventory: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _versioned_usage_provenance(self) -> RuntimeTurnEvidence:
+        if (self.schema_version == "noor-runtime-turn-evidence/v3") != (
+            self.usage_provenance is not None
+        ):
+            raise ValueError("runtime usage provenance/version binding drift")
+        return self
 
 
 _TOOL_TRACE_ADAPTER = TypeAdapter(tuple[RuntimeToolTrace, ...])
@@ -144,6 +154,7 @@ def record_runtime_turn_evidence(
     assistant_message_id: str,
     received_at: datetime,
     recorded_at: datetime,
+    usage_provenance: Literal["provider_reported", "deterministic_static"],
     tool_traces: tuple[RuntimeToolTrace, ...],
     baseline_inventory: dict[str, dict[str, Any]] | None = None,
     final_inventory: dict[str, dict[str, Any]] | None = None,
@@ -153,11 +164,12 @@ def record_runtime_turn_evidence(
     if not source_message_id:
         return
     evidence = RuntimeTurnEvidence(
-        schema_version="noor-runtime-turn-evidence/v2",
+        schema_version="noor-runtime-turn-evidence/v3",
         source_message_id=source_message_id,
         assistant_message_id=assistant_message_id,
         received_at=received_at,
         recorded_at=recorded_at,
+        usage_provenance=usage_provenance,
         tool_traces=tool_traces,
         baseline_inventory=baseline_inventory or {},
         final_inventory=final_inventory or {},
@@ -171,6 +183,7 @@ def record_runtime_turn_evidence(
         in {
             "noor-runtime-execution-evidence/v1",
             "noor-runtime-execution-evidence/v2",
+            "noor-runtime-execution-evidence/v3",
         }
         and isinstance(current.get("turns"), list)
         else []
@@ -182,7 +195,7 @@ def record_runtime_turn_evidence(
     ]
     turns.append(evidence.model_dump(mode="json"))
     metadata[RUNTIME_EXECUTION_EVIDENCE_KEY] = {
-        "schema_version": "noor-runtime-execution-evidence/v2",
+        "schema_version": "noor-runtime-execution-evidence/v3",
         "turns": turns[-_RUNTIME_TURN_LIMIT:],
     }
     conversation.metadata_ = metadata

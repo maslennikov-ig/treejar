@@ -10,7 +10,6 @@ import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -127,21 +126,56 @@ class ServerExecutionObservation(_StrictModel):
             for item in self.side_effect_facts
         ):
             raise ValueError("server side-effect readback differs from inventory")
+        identity_sets = (
+            [item.turn_id for item in self.transcript_facts],
+            [item.message_id for item in self.transcript_facts],
+            [item.provider_message_id for item in self.transcript_facts],
+        )
+        if any(len(values) != len(set(values)) for values in identity_sets):
+            raise ValueError("server transcript contains duplicate identities")
         return self
 
 
-class ServerActionReconciliation(_StrictModel):
-    schema_version: Literal["noor-e2e-server-action-reconciliation/v1"]
-    action_id: str = Field(min_length=1)
+class ServerWazzupActionReconciliation(_StrictModel):
+    schema_version: Literal["noor-e2e-wazzup-action-reconciliation/v2"]
+    adapter_id: Literal["wazzup-webhook-adapter"]
+    capability: Literal["webhook.inbound"]
     observed_at: datetime
     resolved_state: Literal["succeeded", "failed"]
+    source_message_ids: tuple[str, ...] = Field(min_length=1)
+    audit_ids: tuple[str, ...] = Field(min_length=1)
+    outbound_provider_message_ids: tuple[str, ...]
+    outbound_statuses: tuple[str, ...] = Field(min_length=1)
     inventory: dict[str, dict[str, Any]] = Field(min_length=1)
     actual_cost_usd: float = Field(ge=0)
 
     @model_validator(mode="after")
-    def _finite_cost(self) -> ServerActionReconciliation:
-        if not math.isfinite(self.actual_cost_usd):
-            raise ValueError("server reconciliation cost must be finite")
+    def _provider_receipt(self) -> ServerWazzupActionReconciliation:
+        identity_sets = (
+            self.source_message_ids,
+            self.audit_ids,
+            self.outbound_provider_message_ids,
+        )
+        if (
+            not math.isfinite(self.actual_cost_usd)
+            or any(len(values) != len(set(values)) for values in identity_sets)
+            or (
+                self.resolved_state == "succeeded"
+                and (
+                    not self.outbound_provider_message_ids
+                    or not all(
+                        status in _SUCCESS_STATUSES for status in self.outbound_statuses
+                    )
+                )
+            )
+            or (
+                self.resolved_state == "failed"
+                and not any(
+                    status in _FAILED_STATUSES for status in self.outbound_statuses
+                )
+            )
+        ):
+            raise ValueError("server Wazzup reconciliation receipt is invalid")
         return self
 
 
@@ -163,16 +197,61 @@ def _aware_utc(value: datetime | None, *, label: str) -> datetime:
     return value.astimezone(UTC)
 
 
-def _numeric(value: int | float | Decimal | None) -> float:
-    return float(value or 0)
+def _message_usage(
+    message: Message,
+    *,
+    required: bool,
+    label: str,
+) -> tuple[int, float]:
+    tokens_in = message.tokens_in
+    tokens_out = message.tokens_out
+    cost = message.cost
+    values = (tokens_in, tokens_out, cost)
+    if not required and all(value is None for value in values) and not message.model:
+        return 0, 0.0
+    if (
+        not message.model
+        or any(value is None for value in values)
+        or not all(
+            math.isfinite(float(value)) and float(value) >= 0
+            for value in values
+            if value is not None
+        )
+    ):
+        raise ProductionObservationNotReady(f"{label} usage is unavailable")
+    assert tokens_in is not None and tokens_out is not None and cost is not None
+    return int(tokens_in) + int(tokens_out), float(cost)
 
 
-def _token_count(*messages: Message) -> int:
-    return sum(
-        int(value or 0)
-        for message in messages
-        for value in (message.tokens_in, message.tokens_out)
+def _turn_usage(
+    rows: ObservedTurnRows,
+    evidence: RuntimeTurnEvidence,
+) -> tuple[int, float]:
+    if evidence.usage_provenance == "provider_reported":
+        assistant_tokens, assistant_cost = _message_usage(
+            rows.assistant,
+            required=True,
+            label="assistant provider",
+        )
+    elif evidence.usage_provenance == "deterministic_static":
+        if (
+            not rows.assistant.model
+            or rows.assistant.tokens_in != 0
+            or rows.assistant.tokens_out != 0
+            or (rows.assistant.cost is not None and float(rows.assistant.cost) != 0)
+        ):
+            raise ProductionObservationNotReady(
+                "deterministic static usage provenance is invalid"
+            )
+        assistant_tokens, assistant_cost = 0, 0.0
+    else:
+        raise ProductionObservationNotReady("runtime usage provenance is unavailable")
+    inbound_tokens, inbound_cost = _message_usage(
+        rows.inbound,
+        required=bool(rows.inbound.audio_url),
+        label="inbound media provider",
     )
+    return inbound_tokens + assistant_tokens, inbound_cost + assistant_cost
 
 
 def _runtime_evidence(rows: ObservedTurnRows) -> RuntimeTurnEvidence:
@@ -231,7 +310,7 @@ def build_turn_fact(turn_id: str, rows: ObservedTurnRows) -> ServerTranscriptFac
     if not provider_ids:
         provider_ids = [f"failed:{audits[0].id}"]
     media_refs = (f"message-audio:{rows.inbound.id}",) if rows.inbound.audio_url else ()
-    cost_usd = _numeric(rows.inbound.cost) + _numeric(rows.assistant.cost)
+    token_count, cost_usd = _turn_usage(rows, evidence)
     return ServerTranscriptFact(
         turn_id=turn_id,
         question=rows.inbound.content,
@@ -245,7 +324,7 @@ def build_turn_fact(turn_id: str, rows: ObservedTurnRows) -> ServerTranscriptFac
         conversation_id=str(rows.conversation.id),
         message_id=str(rows.inbound.id),
         provider_message_id=provider_ids[0],
-        model=rows.assistant.model or "unknown",
+        model=str(rows.assistant.model),
         tool_traces=tuple(
             ServerToolTraceFact(
                 call_id=item.call_id,
@@ -260,7 +339,7 @@ def build_turn_fact(turn_id: str, rows: ObservedTurnRows) -> ServerTranscriptFac
         tool_outcomes=tuple(item.state for item in evidence.tool_traces),
         audit_ids=tuple(str(item.id) for item in audits),
         media_refs=media_refs,
-        token_count=_token_count(rows.inbound, rows.assistant),
+        token_count=token_count,
         cost_usd=round(cost_usd, 6),
         deviation=None,
         evaluator_reasoning="Observed from durable production records.",
@@ -432,49 +511,72 @@ def build_execution_observation(
         tuple(_runtime_evidence(rows).baseline_inventory for _, rows in turns)
     )
     final_inventory = _merge_inventory(tuple(_inventory(rows) for _, rows in turns))
-    return ServerExecutionObservation(
-        schema_version="noor-e2e-server-execution-observation/v1",
-        execution_id=execution_id,
-        observed_at=observed_at,
-        transcript_facts=tuple(
-            build_turn_fact(turn_id, rows) for turn_id, rows in turns
-        ),
-        side_effect_facts=tuple(facts_by_id.values()),
-        baseline_inventory=baseline_inventory,
-        final_inventory=final_inventory,
-    )
+    try:
+        return ServerExecutionObservation(
+            schema_version="noor-e2e-server-execution-observation/v1",
+            execution_id=execution_id,
+            observed_at=observed_at,
+            transcript_facts=tuple(
+                build_turn_fact(turn_id, rows) for turn_id, rows in turns
+            ),
+            side_effect_facts=tuple(facts_by_id.values()),
+            baseline_inventory=baseline_inventory,
+            final_inventory=final_inventory,
+        )
+    except ValidationError as exc:
+        raise ProductionObservationError(
+            "server execution observation contains duplicate or invalid identities"
+        ) from exc
 
 
 def build_reconciliation_observation(
     *,
-    action_id: str,
     rows: tuple[ObservedTurnRows, ...],
     observed_at: datetime,
-) -> ServerActionReconciliation:
+) -> ServerWazzupActionReconciliation:
     inventory = {
         artifact_id: state
         for item in rows
         for artifact_id, state in _inventory(item).items()
     }
-    statuses = [audit.status for item in rows for audit in item.outbound]
-    return ServerActionReconciliation(
-        schema_version="noor-e2e-server-action-reconciliation/v1",
-        action_id=action_id,
-        observed_at=observed_at,
-        resolved_state=(
-            "succeeded"
-            if statuses and all(status in _SUCCESS_STATUSES for status in statuses)
-            else "failed"
-        ),
-        inventory=inventory,
-        actual_cost_usd=round(
-            sum(
-                _numeric(item.inbound.cost) + _numeric(item.assistant.cost)
-                for item in rows
-            ),
-            6,
-        ),
+    audits = tuple(audit for item in rows for audit in _terminal_audits(item.outbound))
+    statuses = tuple(audit.status for audit in audits)
+    source_message_ids = tuple(
+        str(item.inbound.wazzup_message_id or "") for item in rows
     )
+    if any(not identity for identity in source_message_ids):
+        raise ProductionObservationNotReady(
+            "Wazzup reconciliation source identity is unavailable"
+        )
+    try:
+        return ServerWazzupActionReconciliation(
+            schema_version="noor-e2e-wazzup-action-reconciliation/v2",
+            adapter_id="wazzup-webhook-adapter",
+            capability="webhook.inbound",
+            observed_at=observed_at,
+            resolved_state=(
+                "succeeded"
+                if statuses and all(status in _SUCCESS_STATUSES for status in statuses)
+                else "failed"
+            ),
+            source_message_ids=source_message_ids,
+            audit_ids=tuple(str(audit.id) for audit in audits),
+            outbound_provider_message_ids=tuple(
+                str(audit.provider_message_id)
+                for audit in audits
+                if audit.provider_message_id
+            ),
+            outbound_statuses=statuses,
+            inventory=inventory,
+            actual_cost_usd=round(
+                sum(_turn_usage(item, _runtime_evidence(item))[1] for item in rows),
+                6,
+            ),
+        )
+    except ValidationError as exc:
+        raise ProductionObservationError(
+            "server Wazzup reconciliation contains duplicate or invalid identities"
+        ) from exc
 
 
 def _turn_evidence(
@@ -490,6 +592,7 @@ def _turn_evidence(
         not in {
             "noor-runtime-execution-evidence/v1",
             "noor-runtime-execution-evidence/v2",
+            "noor-runtime-execution-evidence/v3",
         }
         or not isinstance(container.get("turns"), list)
     ):
@@ -689,7 +792,6 @@ def _parser() -> argparse.ArgumentParser:
     execution.add_argument("--execution-id", required=True)
     execution.add_argument("--turn", action="append", type=_parse_turn, required=True)
     reconciliation = subparsers.add_parser("reconciliation")
-    reconciliation.add_argument("--action-id", required=True)
     reconciliation.add_argument(
         "--turn", action="append", type=_parse_turn, required=True
     )
@@ -730,7 +832,6 @@ async def _run(args: argparse.Namespace) -> BaseModel:
             observed_at=now,
         )
     return build_reconciliation_observation(
-        action_id=str(args.action_id),
         rows=tuple(item for _, item in rows),
         observed_at=now,
     )
