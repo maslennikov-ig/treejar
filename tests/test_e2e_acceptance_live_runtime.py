@@ -29,6 +29,16 @@ def _transcript_fact(attempt) -> dict[str, object]:
         "message_id": "synthetic-message",
         "provider_message_id": "synthetic-provider-message",
         "model": actual.model_id,
+        "tool_traces": [
+            {
+                "call_id": f"call-{index}",
+                "tool_name": tool_name,
+                "arguments_digest": "a" * 64,
+                "outcome_digest": "b" * 64,
+                "state": "returned",
+            }
+            for index, tool_name in enumerate(actual.tool_refs)
+        ],
         "tools": list(actual.tool_refs),
         "tool_outcomes": [],
         "audit_ids": list(actual.audit_refs),
@@ -40,16 +50,13 @@ def _transcript_fact(attempt) -> dict[str, object]:
     }
 
 
-def test_independent_live_producer_materializes_timing_cost_and_side_effects(
+def test_independent_live_producer_collects_server_facts_without_caller_evaluation(
     tmp_path: Path,
 ) -> None:
-    from scripts.e2e_acceptance.coordinator import (
-        ProductionRunCoordinator,
-        ProtectedJournalAcceptancePort,
-    )
     from scripts.e2e_acceptance.live_producer import IndependentExecutionProducer
     from scripts.e2e_acceptance.production import (
         FakeReadOnlySshTransport,
+        ProductionAdapterError,
         issue_decisive_producer_handle,
     )
 
@@ -62,8 +69,10 @@ def test_independent_live_producer_materializes_timing_cost_and_side_effects(
         "scenario_id": execution_id,
         "subsystem": "outbound_text",
         "artifact_type": "synthetic_conversation",
+        "baseline_readback": {"state": "absent"},
         "expected_effect": {"state": "closed"},
-        "disposition": "cleaned",
+        "final_readback": {"state": "closed"},
+        "disposition": "resolved",
         "owner": journal.authorization.side_effect_authority.cleanup_owner,
         "cleanup_authority": (
             journal.authorization.side_effect_authority.cleanup_authority
@@ -73,12 +82,30 @@ def test_independent_live_producer_materializes_timing_cost_and_side_effects(
     }
     raw = json.dumps(
         {
-            "schema_version": "noor-e2e-live-execution-observation/v1",
+            "schema_version": "noor-e2e-server-execution-observation/v1",
             "execution_id": execution_id,
             "observed_at": datetime.now(UTC).isoformat(),
-            "attempt": attempt.model_dump(mode="json"),
             "transcript_facts": [_transcript_fact(attempt)],
-            "side_effect_dispositions": [disposition],
+            "side_effect_facts": [
+                {
+                    key: value
+                    for key, value in disposition.items()
+                    if key
+                    in {
+                        "artifact_id",
+                        "subsystem",
+                        "artifact_type",
+                        "baseline_readback",
+                        "expected_effect",
+                        "final_readback",
+                        "disposition",
+                        "follow_up_suppressed",
+                        "checksum_refs",
+                    }
+                }
+            ],
+            "baseline_inventory": {},
+            "final_inventory": {"synthetic:item": {"state": "closed"}},
         }
     ).encode()
     producer = IndependentExecutionProducer(
@@ -94,33 +121,21 @@ def test_independent_live_producer_materializes_timing_cost_and_side_effects(
         sealed_plan=plan,
     )
 
-    source_ref = producer.materialize_next(
+    source_ref = producer.collect_next(
         producer_handle=handle,
         observed_at=datetime.now(UTC),
     )
-    artifact = ProductionRunCoordinator(
-        registry=registry,
-        authorization=authority._authorization,
-        protected_root=journal.protected_root,
-        run_id=journal.run_id,
-        journal=ProtectedJournalAcceptancePort(journal=journal),
-        current_time=datetime.now(UTC),
-    ).publish_next_from_decisive_producer(handle, source_ref)
-
-    assert artifact.outcome == "PASS"
-    assert artifact.source["turns"][0]["duration_ms"] == 2
-    assert artifact.source["turns"][0]["cost_usd"] == 0
-    assert artifact.source["side_effect_dispositions"][0] == {
-        **disposition,
-        "retention_pre_authorized": None,
-        "retention_owner": None,
-        "retention_authority_digest": None,
-        "retention_expires_at": None,
-        "final_disposition_date": None,
-    }
+    assert source_ref == f"collector-raw/executions/{execution_id}.json"
     assert (
         journal.run_root / f"collector-raw/executions/{execution_id}.json"
     ).read_bytes() == raw
+    assert not (journal.run_root / "collector-raw/evaluations").exists()
+
+    with pytest.raises(ProductionAdapterError, match="trusted semantic compiler"):
+        producer.materialize_next(
+            producer_handle=handle,
+            observed_at=datetime.now(UTC),
+        )
 
 
 def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
@@ -428,10 +443,8 @@ def test_live_reconciliation_requires_current_action_causal_identity(
     observed_at = datetime.now(UTC)
     raw = json.dumps(
         {
-            "schema_version": "noor-e2e-live-action-reconciliation/v2",
+            "schema_version": "noor-e2e-server-action-reconciliation/v1",
             "action_id": reservation.action_id,
-            "reservation_digest": reservation.reservation_digest,
-            "causal_event_digest": journal.previous_event_digest,
             "observed_at": observed_at.isoformat(),
             "resolved_state": "succeeded",
             "inventory": {"synthetic:item": {"state": "present"}},
@@ -477,10 +490,8 @@ def test_live_reconciler_rejects_pre_dispatch_stale_snapshot(
     now = datetime.now(UTC)
     raw = json.dumps(
         {
-            "schema_version": "noor-e2e-live-action-reconciliation/v2",
+            "schema_version": "noor-e2e-server-action-reconciliation/v1",
             "action_id": reservation.action_id,
-            "reservation_digest": reservation.reservation_digest,
-            "causal_event_digest": journal.previous_event_digest,
             "observed_at": (
                 reservation.issued_at - timedelta(microseconds=1)
             ).isoformat(),
@@ -503,7 +514,7 @@ def test_live_reconciler_rejects_pre_dispatch_stale_snapshot(
         )
 
 
-def test_live_reconciler_rejects_other_causal_event(
+def test_live_reconciler_rejects_server_supplied_journal_binding(
     tmp_path: Path,
 ) -> None:
     from scripts.e2e_acceptance.live_producer import IndependentActionReconciler
@@ -518,9 +529,8 @@ def test_live_reconciler_rejects_other_causal_event(
     now = datetime.now(UTC)
     raw = json.dumps(
         {
-            "schema_version": "noor-e2e-live-action-reconciliation/v2",
+            "schema_version": "noor-e2e-server-action-reconciliation/v1",
             "action_id": reservation.action_id,
-            "reservation_digest": reservation.reservation_digest,
             "causal_event_digest": "b" * 64,
             "observed_at": now.isoformat(),
             "resolved_state": "succeeded",
@@ -529,7 +539,7 @@ def test_live_reconciler_rejects_other_causal_event(
         }
     ).encode()
 
-    with pytest.raises(ProductionAdapterError, match="binding"):
+    with pytest.raises(ProductionAdapterError, match="invalid"):
         IndependentActionReconciler(
             collector_id="independent-readback-collector",
             transport=FakeReadOnlySshTransport(
@@ -706,7 +716,6 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
     class SshRunner:
         def __init__(self) -> None:
             self.calls: list[list[str]] = []
-            self.reconciliation_binding: dict[str, str] = {}
 
         def run(self, args: list[str], **kwargs: object):
             self.calls.append(args)
@@ -715,9 +724,8 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
                 payload = {"inventory": {"synthetic:item": {"state": "absent"}}}
             elif source_file.endswith("reconciliation.json"):
                 payload = {
-                    "schema_version": "noor-e2e-live-action-reconciliation/v2",
+                    "schema_version": "noor-e2e-server-action-reconciliation/v1",
                     "action_id": "synthetic-action",
-                    **self.reconciliation_binding,
                     "observed_at": datetime.now(UTC).isoformat(),
                     "resolved_state": "succeeded",
                     "inventory": {"synthetic:item": {"state": "present"}},
@@ -756,16 +764,6 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
     dispatched = cli._lifecycle_result(
         SimpleNamespace(command="execute-resume", **vars(args))
     )
-    _, dispatched_journal = cli._authority_and_journal(
-        registry, root, run_id, create=False
-    )
-    dispatched_reservation = dispatched_journal._reservations["synthetic-action"]
-    ssh_runner.reconciliation_binding = {
-        "reservation_digest": dispatched_reservation.reservation_digest,
-        "causal_event_digest": (
-            dispatched_journal.action_reconciliation_boundary("synthetic-action")[1]
-        ),
-    }
     reconciled = cli._lifecycle_result(
         SimpleNamespace(
             command="reconcile-action",

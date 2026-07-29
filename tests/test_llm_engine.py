@@ -14494,6 +14494,10 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
     _assert_first_turn_opening(response.text, "Your Treejar quotation: SO-123")
     assert response.deferred_product_media == ()
     assert response.model == "mock-model|sales-order-quote"
+    assert [trace.tool_name for trace in response.tool_traces] == ["create_quotation"]
+    assert response.tool_traces[0].state == "returned"
+    assert response.tool_traces[0].arguments_digest
+    assert response.tool_traces[0].outcome_digest
     assert mock_resolve.await_count == 3
     mock_create_quotation.assert_awaited_once()
     _, quote_items = mock_create_quotation.await_args.args

@@ -221,6 +221,17 @@ class ZohoCRMClient(CRMProvider):
 
         return None
 
+    async def get_contact(self, contact_id: str) -> dict[str, Any] | None:
+        """Read one CRM contact by its exact durable identity."""
+        response = await self._request("GET", f"/Contacts/{contact_id}")
+        if response.status_code == 204:
+            return None
+        data = response.json()
+        records = data.get("data")
+        if isinstance(records, list) and records and isinstance(records[0], dict):
+            return dict(records[0])
+        return None
+
     async def create_contact(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new contact."""
         # Zoho expects data in the 'data' array payload

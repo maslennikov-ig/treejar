@@ -80,6 +80,64 @@ async def test_send_wazzup_text_with_audit_creates_row_and_uses_crm_message_id()
 
 
 @pytest.mark.asyncio
+async def test_outbound_audit_preserves_source_binding_across_status_callback() -> None:
+    from src.models.outbound_message import OutboundMessageAudit
+    from src.services.outbound_audit import (
+        send_wazzup_text_with_audit,
+        update_wazzup_statuses,
+    )
+
+    db = AsyncMock()
+    db.execute.side_effect = [_ScalarResult(None)]
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    provider = MagicMock()
+    provider.outbound_chat_id.return_value = "971501234567"
+    provider.send_text = AsyncMock(return_value="wz-msg-bound")
+
+    await send_wazzup_text_with_audit(
+        db,
+        provider=provider,
+        conversation_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        chat_id="+971501234567",
+        text="Hello",
+        source="bot_reply",
+        crm_message_id="bot:conv-1:msg-bound",
+        audit_details={
+            "source_message_id": "provider-inbound-bound",
+            "follow_up_suppressed": True,
+        },
+    )
+    audit = db.add.call_args.args[0]
+    assert isinstance(audit, OutboundMessageAudit)
+    assert audit.details == {
+        "source_message_id": "provider-inbound-bound",
+        "follow_up_suppressed": True,
+    }
+
+    db.execute.side_effect = [_ScalarResult(audit)]
+    updated = await update_wazzup_statuses(
+        db,
+        [
+            {
+                "messageId": "wz-msg-bound",
+                "timestamp": "2026-04-26T12:00:00.000Z",
+                "status": "delivered",
+            }
+        ],
+    )
+
+    assert updated == 1
+    assert audit.details == {
+        "source_message_id": "provider-inbound-bound",
+        "follow_up_suppressed": True,
+        "messageId": "wz-msg-bound",
+        "timestamp": "2026-04-26T12:00:00.000Z",
+        "status": "delivered",
+    }
+
+
+@pytest.mark.asyncio
 async def test_send_wazzup_text_with_audit_does_not_return_unknown_message_id() -> None:
     from src.models.outbound_message import OutboundMessageAudit
     from src.services.outbound_audit import send_wazzup_text_with_audit

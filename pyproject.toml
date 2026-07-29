@@ -46,6 +46,9 @@ dependencies = [
     "langgraph>=1.0,<2.0",
 ]
 
+[project.scripts]
+noor-e2e-observe = "src.services.e2e_observation_producer:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3,<9.0",

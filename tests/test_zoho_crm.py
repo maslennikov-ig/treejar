@@ -178,6 +178,47 @@ async def test_find_contact_by_phone_not_found_204() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_get_contact_reads_exact_identity() -> None:
+    redis = AsyncMock()
+    redis.get.return_value = b"valid_token"
+    client = ZohoCRMClient(redis)
+    response_200 = _make_response(
+        200,
+        {"data": [{"id": "CONTACT001", "status": "active"}]},
+    )
+
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = response_200
+        result = await client.get_contact("CONTACT001")
+
+    assert result == {"id": "CONTACT001", "status": "active"}
+    mock_request.assert_awaited_once_with(
+        method="GET",
+        url="/Contacts/CONTACT001",
+        params=None,
+        json=None,
+        headers={"Authorization": "Zoho-oauthtoken valid_token"},
+    )
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_get_contact_returns_none_for_204() -> None:
+    redis = AsyncMock()
+    redis.get.return_value = b"valid_token"
+    client = ZohoCRMClient(redis)
+
+    with patch.object(client.client, "request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = _make_response(204)
+        result = await client.get_contact("CONTACT-MISSING")
+
+    assert result is None
+    await client.close()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_create_contact() -> None:
     """create_contact payload packaging."""
     redis = AsyncMock()

@@ -15,7 +15,6 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from scripts.e2e_acceptance import execution
-from scripts.e2e_acceptance.coordinator import SideEffectDispositionSource
 from scripts.e2e_acceptance.production import (
     DecisiveProducerHandle,
     ProductionAdapterError,
@@ -37,6 +36,14 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class _ServerToolTraceFact(_StrictModel):
+    call_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    arguments_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    state: Literal["returned"]
+
+
 class _TranscriptFact(_StrictModel):
     turn_id: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -51,6 +58,7 @@ class _TranscriptFact(_StrictModel):
     message_id: str = Field(min_length=1)
     provider_message_id: str = Field(min_length=1)
     model: str = Field(min_length=1)
+    tool_traces: tuple[_ServerToolTraceFact, ...]
     tools: tuple[str, ...]
     tool_outcomes: tuple[str, ...]
     audit_ids: tuple[str, ...]
@@ -88,29 +96,51 @@ class _TranscriptFact(_StrictModel):
             raise ValueError("live transcript duration differs from timestamps")
         if len(self.tools) != len(self.tool_outcomes):
             raise ValueError("live transcript tool outcomes are incomplete")
+        if self.tools != tuple(item.tool_name for item in self.tool_traces):
+            raise ValueError("live transcript tool trace names drift")
         return self
 
 
+class _ServerSideEffectFact(_StrictModel):
+    artifact_id: str = Field(min_length=1)
+    subsystem: str = Field(min_length=1)
+    artifact_type: str = Field(min_length=1)
+    baseline_readback: dict[str, Any]
+    expected_effect: dict[str, Any]
+    final_readback: dict[str, Any]
+    disposition: Literal["voided", "closed", "resolved", "retained_as_test_evidence"]
+    follow_up_suppressed: bool
+    checksum_refs: tuple[str, ...] = Field(min_length=1)
+
+
 class _LiveExecutionObservation(_StrictModel):
-    schema_version: Literal["noor-e2e-live-execution-observation/v1"]
+    schema_version: Literal["noor-e2e-server-execution-observation/v1"]
     execution_id: str = Field(min_length=1)
     observed_at: datetime
-    attempt: dict[str, Any]
     transcript_facts: tuple[_TranscriptFact, ...]
-    side_effect_dispositions: tuple[SideEffectDispositionSource, ...]
+    side_effect_facts: tuple[_ServerSideEffectFact, ...]
+    baseline_inventory: dict[str, dict[str, Any]]
+    final_inventory: dict[str, dict[str, Any]]
 
     @model_validator(mode="after")
     def _aware_observation(self) -> _LiveExecutionObservation:
         if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
             raise ValueError("live execution observation time must be aware")
+        changed = {
+            identity
+            for identity in set(self.baseline_inventory) | set(self.final_inventory)
+            if self.baseline_inventory.get(identity)
+            != self.final_inventory.get(identity)
+        }
+        listed = [item.artifact_id for item in self.side_effect_facts]
+        if changed != set(listed) or len(listed) != len(set(listed)):
+            raise ValueError("live side effects do not cover inventory delta")
         return self
 
 
 class _LiveActionReconciliation(_StrictModel):
-    schema_version: Literal["noor-e2e-live-action-reconciliation/v2"]
+    schema_version: Literal["noor-e2e-server-action-reconciliation/v1"]
     action_id: str = Field(min_length=1)
-    reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     observed_at: datetime
     resolved_state: Literal["succeeded", "failed"]
     inventory: dict[str, Any]
@@ -127,92 +157,6 @@ class _ReadOnlyTransport(Protocol):
     def read(self, source: str) -> bytes: ...
 
 
-def _typed_attempt(
-    observation: _LiveExecutionObservation,
-) -> execution.ExecutedAttemptV2:
-    schema = observation.attempt.get("schema_version")
-    try:
-        if schema == "noor-e2e-scenario-attempt/v2":
-            return execution.ScenarioAttemptV2.model_validate(observation.attempt)
-        if schema == "noor-e2e-evidence-block-attempt/v2":
-            return execution.EvidenceBlockAttemptV2.model_validate(observation.attempt)
-    except ValueError as exc:
-        raise ProductionAdapterError("live execution attempt is invalid") from exc
-    raise ProductionAdapterError("live execution attempt schema is invalid")
-
-
-def _validate_observed_facts(
-    *,
-    record: _ProducerHandleRecord,
-    observation: _LiveExecutionObservation,
-    attempted: execution.ExecutedAttemptV2,
-) -> None:
-    authorized_input_digest = (
-        execution.scenario_input_digest(
-            execution_id=attempted.execution_id,
-            planned_turns=attempted.planned_turns,
-            tester_config_digest=attempted.tester_config_digest,
-            judge_config_digest=attempted.judge_config_digest,
-        )
-        if isinstance(attempted, execution.ScenarioAttemptV2)
-        else execution.evidence_block_input_digest(attempted)
-    )
-    if (
-        observation.execution_id != record.execution_id
-        or attempted.execution_id != record.execution_id
-        or authorized_input_digest
-        != record.journal.authorization.execution_input_digests[record.execution_id]
-    ):
-        raise ProductionAdapterError("live execution observation binding drift")
-    if isinstance(attempted, execution.ScenarioAttemptV2):
-        if len(observation.transcript_facts) != len(attempted.actual_turns):
-            raise ProductionAdapterError("live transcript cardinality drift")
-        for actual, fact in zip(
-            attempted.actual_turns, observation.transcript_facts, strict=True
-        ):
-            if (
-                fact.turn_id != actual.actual_turn_id
-                or fact.sent_at != actual.timeline.sent_at
-                or fact.first_visible_at != actual.timeline.first_visible_at
-                or fact.final_visible_at != actual.timeline.final_visible_at
-                or fact.delivered_at != actual.timeline.delivered_at
-                or fact.model != actual.model_id
-                or fact.tools != actual.tool_refs
-                or fact.audit_ids != actual.audit_refs
-                or fact.token_count != actual.token_count
-                or fact.cost_usd != actual.cost_usd
-            ):
-                raise ProductionAdapterError("live transcript differs from attempt")
-        changed = {
-            identity
-            for identity in set(attempted.baseline.inventory)
-            | set(attempted.final.inventory)
-            if attempted.baseline.inventory.get(identity)
-            != attempted.final.inventory.get(identity)
-        }
-        dispositions = {
-            item.artifact_id for item in observation.side_effect_dispositions
-        }
-        if changed != dispositions or len(dispositions) != len(
-            observation.side_effect_dispositions
-        ):
-            raise ProductionAdapterError(
-                "live side-effect dispositions do not cover inventory delta"
-            )
-        authority = record.journal.authorization.side_effect_authority
-        if any(
-            item.scenario_id != record.execution_id
-            or item.owner != authority.cleanup_owner
-            or item.cleanup_authority != authority.cleanup_authority
-            for item in observation.side_effect_dispositions
-        ):
-            raise ProductionAdapterError("live side-effect authority drift")
-    elif observation.transcript_facts or observation.side_effect_dispositions:
-        raise ProductionAdapterError(
-            "live evidence block cannot publish transcript or side effects"
-        )
-
-
 @dataclass(frozen=True)
 class IndependentExecutionProducer:
     """Materialize the next attempt only from an allowlisted read-only source."""
@@ -220,7 +164,7 @@ class IndependentExecutionProducer:
     collector_id: str
     transport: _ReadOnlyTransport
 
-    def materialize_next(
+    def collect_next(
         self,
         *,
         producer_handle: DecisiveProducerHandle,
@@ -237,13 +181,10 @@ class IndependentExecutionProducer:
             raise ProductionAdapterError(
                 "live execution observation is invalid"
             ) from exc
-        attempted = _typed_attempt(observation)
-        _validate_observed_facts(
-            record=record, observation=observation, attempted=attempted
-        )
         now = observed_at or datetime.now(UTC)
         if (
-            now.tzinfo is None
+            observation.execution_id != record.execution_id
+            or now.tzinfo is None
             or now.utcoffset() is None
             or observation.observed_at > now
         ):
@@ -258,7 +199,7 @@ class IndependentExecutionProducer:
             record.journal.run_root,
             f"producer-receipts/live-executions/{record.execution_id}.json",
             {
-                "schema_version": "noor-e2e-live-execution-producer-receipt/v1",
+                "schema_version": "noor-e2e-live-execution-collector-receipt/v2",
                 "registry_id": record.registry.registry_id,
                 "run_id": record.journal.run_id,
                 "authorization_digest": record.journal.authorization_digest,
@@ -270,16 +211,20 @@ class IndependentExecutionProducer:
                 "observed_at": observation.observed_at.isoformat(),
             },
         )
-        return _write_producer_observation(
+        return raw_ref
+
+    def materialize_next(
+        self,
+        *,
+        producer_handle: DecisiveProducerHandle,
+        observed_at: datetime | None = None,
+    ) -> str:
+        self.collect_next(
             producer_handle=producer_handle,
-            attempted=attempted,
-            transcript_facts=[
-                item.model_dump(mode="json") for item in observation.transcript_facts
-            ],
-            side_effect_dispositions=[
-                item.model_dump(mode="json")
-                for item in observation.side_effect_dispositions
-            ],
+            observed_at=observed_at,
+        )
+        raise ProductionAdapterError(
+            "trusted semantic compiler is unavailable; caller evaluation is forbidden"
         )
 
 
@@ -323,8 +268,6 @@ class IndependentActionReconciler:
         now = current_time or datetime.now(UTC)
         if (
             observation.action_id != action_id
-            or observation.reservation_digest != reservation.reservation_digest
-            or observation.causal_event_digest != causal_event_digest
             or now.tzinfo is None
             or now.utcoffset() is None
             or observation.observed_at > now
@@ -343,7 +286,7 @@ class IndependentActionReconciler:
             reservation_digest=reservation.reservation_digest,
             collector_id=self.collector_id,
             producer="independent-readback-collector",
-            causal_event_digest=observation.causal_event_digest,
+            causal_event_digest=causal_event_digest,
             observed_at=observation.observed_at,
             expires_at=min(
                 observation.observed_at + timedelta(minutes=5),

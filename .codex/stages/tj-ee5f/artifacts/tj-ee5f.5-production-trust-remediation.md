@@ -6,17 +6,19 @@ stream_owner: trust-remediation
 orchestration_level: integration
 scope_kind: foundation
 immediate_consumer: tj-ee5f.1
-public_facade: scripts/run_noor_e2e_acceptance.py and trusted execution snapshot
-bounded_acceptance: runtime-bound and runtime-less sealed plans share one protected-plan validation contract
+public_facade: noor-e2e-observe and IndependentExecutionProducer
+bounded_acceptance: server-owned observations only; semantic publication fails closed without a trusted compiler
 non_goals:
   - no live HTTP, SSH, provider, customer, CRM, quotation, deploy, paid call, or Beads mutation
 evidence:
-  - none
+  - runtime_evidence
+  - server_observation
+  - live_runtime
 task_id: tj-ee5f.5-remediation
 epic_id: tj-ee5f
 stage_id: tj-ee5f
-session_id: tj-ee5f.5
-milestone: trusted production transport and evidence materialization
+session_id: tj-ee5f.5-server-observation
+milestone: canonical server observation and fail-closed production collection
 milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
@@ -25,29 +27,43 @@ model_reasoning_rationale: production evidence integrity and external side effec
 repo: treejar
 branch: codex/tj-ee5f-5-runtime-plan-compat
 base_branch: codex/tj-ee5f-remediation
-base_commit: ed8e24d0ee18109fb51654ddc33567283a6d797f
+base_commit: 475dcb02bb75aa2028f061dc6cd31bfd50e63ceb
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-5-runtime-plan-compat
 write_zone:
-  - scripts/e2e_acceptance/coordinator.py
-  - scripts/e2e_acceptance/trusted_run.py
-  - tests/test_e2e_acceptance_final_review.py
+  - pyproject.toml
+  - scripts/e2e_acceptance/live_producer.py
+  - scripts/e2e_acceptance/live_transport.py
+  - src/integrations/crm/zoho_crm.py
+  - src/llm/engine.py
+  - src/llm/order_quote_routes.py
+  - src/services/chat.py
+  - src/services/e2e_observation_producer.py
+  - src/services/outbound_audit.py
+  - src/services/runtime_execution_evidence.py
+  - tests/test_e2e_acceptance_live_runtime.py
+  - tests/test_e2e_observation_producer.py
+  - tests/test_llm_engine.py
+  - tests/test_outbound_audit.py
+  - tests/test_runtime_execution_evidence.py
+  - tests/test_services_chat_batch.py
+  - tests/test_zoho_crm.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 success_criteria:
-  - execute-resume uses the authority-bound one-shot HTTP adapter for sealed live plans
-  - preflight, action reconciliation, execution evidence, and final readback come from fixed read-only SSH sources
-  - protected evidence records exact raw bytes, duration, usage cost, and side-effect dispositions
-  - unknown action effects block progress until independent reconciliation and settle the observed bounded cost
-  - live endpoint, SSH host, and exact readback commands are digest-bound to protected authority; webhook origin matches the approved runtime identity
-  - reconciliation is causally bound and cannot use a snapshot from before permit consumption or dispatch
-  - mixed executed and blocked runs seal one ordered transcript manifest
-  - coordinator and snapshot accept digest-bound optional runtime while preserving runtime-less v2 compatibility
+  - production transcript, model, timing, token, cost, tool, audit, media, and side-effect facts come from durable server rows and exact provider readbacks
+  - Pydantic and deterministic quotation tool calls emit digest-only terminal traces
+  - Wazzup pending, sent, unknown, or provider-duplicate states block terminal production evidence
+  - CRM contact, CRM deal, sale order, PDF audit, and escalation deltas have exact baseline, expected, and final readback coverage
+  - unknown, active, unlisted, or missing side effects block materialization
+  - caller-authored execution attempts and evaluation JSON are not accepted by the production collector
+  - SSH permits only the exact installed noor-e2e-observe command shape
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
   - .codex/handoff.md
-  - docs/superpowers/plans/2026-07-28-noor-task3-production-trust-repair.md
+  - docs/superpowers/plans/2026-07-29-noor-e2e-remediation-and-closeout.md
 selected_skills:
   - orchestrator-stage
+  - superpowers:systematic-debugging
   - superpowers:test-driven-development
   - superpowers:using-git-worktrees
   - superpowers:verification-before-completion
@@ -55,10 +71,10 @@ selected_agents:
   - none
 catalog_candidates:
   - none
-parallel_group: tj-ee5f-runtime-plan-compat
+parallel_group: tj-ee5f-runtime-observation
 depends_on_streams:
-  - tj-ee5f.5-task3-live-boundary
-parallel_decision: parallel
+  - tj-ee5f.5-runtime-plan-compat
+parallel_decision: local
 status: returned
 delivery_method: cherry-pick
 accepted_by_orchestrator: no
@@ -82,65 +98,68 @@ invariants:
   - rollback
   - test-matrix
 docs_impact: behavior
-docs_reviewed: no-change-needed
-docs_review_notes: implementation contract is recorded in this stage artifact; no end-user documentation changed
+docs_reviewed: updated
+docs_review_notes: stage artifact records the remaining trusted semantic compiler boundary
 verification:
-  - runtime-plan RED before production change: failed with CoordinatorError sealed plan binding drift
-  - runtime-plan RED after coordinator correction: failed with TrustedRunError sealed production artifacts are incomplete
-  - runtime/no-runtime focused GREEN: passed 2
-  - coordinator/final-review/live-runtime/production acceptance: passed 152
+  - focused RED: 5 expected failures for missing source binding, business delta coverage, terminal readback, and caller-independent collection
+  - focused observation and transport GREEN: passed 42
+  - impacted chat, LLM, quotation, outbound audit, observation, live runtime, and exact CRM readback tests: passed 583
+  - focused Mypy for eight changed source modules: passed
   - focused Ruff check and format: passed
   - artifact validator: passed
   - git diff check: passed
 changed_files:
-  - scripts/e2e_acceptance/coordinator.py
-  - scripts/e2e_acceptance/trusted_run.py
-  - tests/test_e2e_acceptance_final_review.py
+  - pyproject.toml
+  - scripts/e2e_acceptance/live_producer.py
+  - scripts/e2e_acceptance/live_transport.py
+  - src/integrations/crm/zoho_crm.py
+  - src/llm/engine.py
+  - src/llm/order_quote_routes.py
+  - src/services/chat.py
+  - src/services/e2e_observation_producer.py
+  - src/services/outbound_audit.py
+  - src/services/runtime_execution_evidence.py
+  - tests/test_e2e_acceptance_live_runtime.py
+  - tests/test_e2e_observation_producer.py
+  - tests/test_llm_engine.py
+  - tests/test_outbound_audit.py
+  - tests/test_runtime_execution_evidence.py
+  - tests/test_services_chat_batch.py
+  - tests/test_zoho_crm.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 explicit_defers:
-  - repository still has no canonical server-side generator for execution and reconciliation observations
-  - compatibility proof covers coordinator acceptance and terminal snapshot; a full network-free live CLI record-attempt loop needs that missing observation generator
-  - production invocation and evidence remain with the root orchestrator after integration, review, deploy authority, and fresh preflight
+  - a permit-bound semantic compiler is still required to construct ScenarioAttemptV2 from sealed planned turns, server observations, and one bounded judge receipt
+  - evaluators.py cannot fill that boundary because it only combines caller-provided mappings and has no production call site
+  - pre-authorized retention of still-active test entities needs the semantic compiler to bind protected retention authority; without it the server producer requires cleanup to a terminal provider state
+  - production invocation remains with the root orchestrator after integration, review, deploy authority, and fresh preflight
 ---
 
 # Summary
 
-The lifecycle CLI now selects sealed, authority-bound production components
-instead of constructing a fake transport for a live plan. Fixed read-only SSH
-sources materialize baseline, final inventory, action reconciliation, and each
-execution observation. The producer preserves exact raw bytes and publishes
-typed transcript timing, token/cost, tool trace, and side-effect disposition
-facts into the protected evidence chain. The correction wave adds a protected
-v3 authority receipt covering the canonical runtime transport configuration.
-The webhook origin must match the approved runtime identity, while the SSH host
-and exact readback commands are committed by digest. Unknown-action readback
-now carries the exact reservation and causal event and must be observed after
-the durable permit-consume or later action boundary.
+The application now records bounded versioned evidence for each inbound turn:
+assistant identity, received/recorded times, digest-only tool call/return traces,
+and pre/post business inventory. Deterministic quotation creation emits the
+same typed trace as Pydantic tool calls. Outbound text, product media, and quote
+PDF audits retain their exact inbound source binding across Wazzup callbacks.
 
-The compatibility correction removes a deterministic live-run blocker:
-coordinator and snapshot validation now reconstruct the sealed payload through
-`ProtectedRunPlan`, accept its optional digest-bound `runtime`, reject extra or
-drifted fields, and continue to accept canonical plans without `runtime`.
+The installed `noor-e2e-observe` command reads the production database and
+exact Zoho identities to build transcript, duration, token/cost, tool, audit,
+media, CRM, sale-order, and escalation facts. It accepts only provider-terminal
+Wazzup states and terminal side-effect readbacks. Unknown, active, missing, or
+unlisted effects stop evidence materialization.
 
-# Scope / Routing
-
-This stream changes only the E2E trust boundary and its focused tests. Existing
-runtime-less fixture plans keep the local fake path for test compatibility.
-Live plans bind the webhook target, collector, SSH host alias, and allowlisted
-commands inside both the protected authority receipt and sealed run-plan
-digest. Runtime-less v2 fixture authority remains supported; attempting to use
-it for a live runtime fails closed because it has no runtime transport digest.
+`IndependentExecutionProducer` no longer reads `evaluation:<execution_id>` or
+any caller-shaped attempt JSON. It stores the exact server observation and then
+fails closed until a separate trusted semantic compiler is present.
 
 # Verification
 
-Focused red-green tests cover live plan binding, real CLI dispatch/readback,
-duration and cost materialization, exact side-effect coverage, independently
-reported action cost, and mixed-run transcript ordering. The correction RED
-also reproduced arbitrary endpoint/SSH/command substitution, missing causal
-identity, and acceptance of a pre-dispatch snapshot; all focused GREEN targets
-now pass. Focused Ruff, formatting, and materialization compatibility passed.
-The final targeted acceptance set passed all 152 coordinator, final-review,
-live-runtime, and production-plan tests.
+The focused RED reproduced five missing-trust failures before implementation.
+The focused observation/transport set then passed 42 tests. The affected
+integration set passed 583 tests across chat batching, LLM routes, quotations,
+outbound audit, server observation, runtime evidence, live runtime, and exact
+CRM readback.
+Focused Ruff and Mypy checks pass. No product system prompt changed.
 
 # Delivery / Cleanup
 
@@ -150,9 +169,12 @@ cleanup was performed.
 
 # Risks / Follow-ups / Explicit Defers
 
-The production run still requires a fresh sealed runtime plan with the actual
-approved SSH command allowlist and target digest. Unknown or uncovered effects
-remain fail-closed. The root orchestrator owns integration, independent review,
-authorized deploy, production acceptance, and final cleanup. A separate
-remaining trust gap is the absence of a canonical repository-owned server-side
-generator for execution and reconciliation observation JSON.
+The repository still has no implementation of the allowlisted
+`production-policy-classifier`. `scripts/e2e_acceptance/evaluators.py` only
+combines already supplied deterministic and judge mappings and is unused by
+production code, so treating it as a compiler would reintroduce caller trust.
+The remaining component must build `ScenarioAttemptV2` from sealed planned
+turns plus the stored server observation and a permit-bound, one-call bounded
+judge receipt. It must also bind any explicit retention to the protected
+retention authority. Until then publication is fail-closed; cleaned terminal
+provider facts remain collectable and immutable.

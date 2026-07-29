@@ -899,7 +899,11 @@ async def test_process_incoming_batch_sends_deferred_product_media_after_bot_rep
     assert len(caption_audits) == 1
     assert caption_audits[0].content == "Operative table — 179.00 AED"
     assert caption_audits[0].provider_message_id is None
-    assert caption_audits[0].details == {"customer_visible": False}
+    assert caption_audits[0].details == {
+        "customer_visible": False,
+        "source_message_id": "msg-1",
+        "follow_up_suppressed": False,
+    }
 
 
 @pytest.mark.asyncio

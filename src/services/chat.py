@@ -65,6 +65,10 @@ from src.services.outbound_audit import (
 )
 from src.services.proposal_followup import record_customer_reply
 from src.services.public_media import build_signed_product_image_url
+from src.services.runtime_execution_evidence import (
+    record_runtime_turn_evidence,
+    snapshot_runtime_inventory,
+)
 from src.services.runtime_monitoring import (
     INBOUND_BATCH_FAILURES_KEY,
     ZOHO_OAUTH_FAILURES_KEY,
@@ -690,6 +694,8 @@ async def _send_deferred_product_media(
     provider: Any,
     conversation_id: Any,
     chat_id: str,
+    source_message_id: str | None,
+    follow_up_suppressed: bool,
     media_items: Sequence[ProductMediaPayload],
 ) -> None:
     """Send queued product images after the customer-facing text reply."""
@@ -726,6 +732,10 @@ async def _send_deferred_product_media(
                 content=None,
                 content_type=None,
                 send_caption=False,
+                audit_details={
+                    "source_message_id": source_message_id,
+                    "follow_up_suppressed": follow_up_suppressed,
+                },
             )
             await db.commit()
         except Exception as exc:
@@ -1516,6 +1526,8 @@ async def _process_batch_inner(
                 )
                 await _ensure_side_effect_guard()
                 llm_started = latency_trace.start_phase()
+                runtime_received_at = datetime.now(UTC)
+                runtime_baseline_inventory = snapshot_runtime_inventory(conv)
                 try:
                     typing_task = _start_typing_refresh(wazzup_provider, chat_id)
                     await asyncio.sleep(0)
@@ -1589,6 +1601,16 @@ async def _process_batch_inner(
                 )
                 db.add(assistant_msg)
                 await db.flush()
+                record_runtime_turn_evidence(
+                    conv,
+                    source_message_id=source_message_id,
+                    assistant_message_id=str(assistant_msg.id),
+                    received_at=runtime_received_at,
+                    recorded_at=datetime.now(UTC),
+                    tool_traces=getattr(llm_response, "tool_traces", ()),
+                    baseline_inventory=runtime_baseline_inventory,
+                    final_inventory=snapshot_runtime_inventory(conv),
+                )
                 await db.commit()
                 latency_trace.finish_phase("persist_response", persist_started)
 
@@ -1598,6 +1620,11 @@ async def _process_batch_inner(
                 bot_reply_sent = False
                 outbound_started = latency_trace.start_phase()
                 try:
+                    runtime_follow_up_suppressed = (
+                        isinstance(conv.metadata_, dict)
+                        and conv.metadata_.get("runtime_e2e_follow_up_suppressed")
+                        is True
+                    )
                     await send_wazzup_text_with_audit(
                         db,
                         provider=wazzup_provider,
@@ -1610,6 +1637,10 @@ async def _process_batch_inner(
                             source_message_id=source_message_id,
                             combined_text=combined_text,
                         ),
+                        audit_details={
+                            "source_message_id": source_message_id,
+                            "follow_up_suppressed": runtime_follow_up_suppressed,
+                        },
                     )
                 except (httpx.HTTPError, RuntimeError):
                     logger.warning(
@@ -1641,6 +1672,8 @@ async def _process_batch_inner(
                             provider=wazzup_provider,
                             conversation_id=conv.id,
                             chat_id=chat_id,
+                            source_message_id=source_message_id,
+                            follow_up_suppressed=runtime_follow_up_suppressed,
                             media_items=llm_response.deferred_product_media,
                         )
                     finally:

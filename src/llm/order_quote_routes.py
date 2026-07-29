@@ -14,6 +14,7 @@ from src.core.config import settings
 from src.llm.order_handoff import is_high_confidence_first_turn_order
 from src.llm.safety import PATH_CORE_CHAT, model_name_for_path
 from src.llm.verified_answers import is_quote_or_proposal_request
+from src.services.runtime_execution_evidence import build_runtime_tool_trace
 
 if TYPE_CHECKING:
     from pydantic_ai.models.openai import OpenAIChatModel
@@ -193,11 +194,26 @@ async def _execute_order_quote_side_effect(
         if plan.clear_quote_intent_frame_on_created:
             await _clear_quote_intent_frame(db, conversation)
     await plan.clear_verified_policy_repair_state()
-    return plan.build_response(
+    response = plan.build_response(
         quote_text,
         f"{db_model_main}|{plan.model_suffix}",
         response_deps=plan.response_deps,
         allow_product_media=False,
+    )
+    return replace(
+        response,
+        tool_traces=(
+            *response.tool_traces,
+            build_runtime_tool_trace(
+                tool_name="create_quotation",
+                arguments=[
+                    {"sku": item.sku, "quantity": item.quantity} for item in plan.items
+                ],
+                outcome={
+                    "quotation_created": plan.response_deps.quotation_created,
+                },
+            ),
+        ),
     )
 
 

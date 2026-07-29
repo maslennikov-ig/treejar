@@ -137,6 +137,7 @@ async def send_wazzup_text_with_audit(
     source: str,
     crm_message_id: str | None,
     message_type: str = "text",
+    audit_details: dict[str, Any] | None = None,
 ) -> AuditedSendResult:
     existing = await _find_by_crm_message_id(db, crm_message_id)
     if existing is not None and _is_active(existing):
@@ -156,7 +157,7 @@ async def send_wazzup_text_with_audit(
         audit.source = source
         audit.provider_message_id = None
         audit.error_details = None
-        audit.details = None
+        audit.details = dict(audit_details or {})
         audit.status = "pending"
         audit.status_updated_at = _now()
     else:
@@ -169,6 +170,7 @@ async def send_wazzup_text_with_audit(
             content=text,
             source=source,
             crm_message_id=crm_message_id,
+            details=dict(audit_details or {}),
             status="pending",
             status_updated_at=_now(),
         )
@@ -298,7 +300,12 @@ async def send_wazzup_media_with_audit(
     caption_crm_message_id: str | None = None,
     file_name: str | None = None,
     send_caption: bool = True,
+    audit_details: dict[str, Any] | None = None,
 ) -> AuditedMediaSendResult:
+    base_details = dict(audit_details or {})
+    caption_details = dict(base_details)
+    if not send_caption:
+        caption_details["customer_visible"] = False
     existing = await _find_by_crm_message_id(db, crm_message_id)
     if existing is not None and _is_active(existing):
         media_result = AuditedSendResult(
@@ -329,9 +336,7 @@ async def send_wazzup_media_with_audit(
                     retry_caption_audit.source = source
                     retry_caption_audit.provider_message_id = None
                     retry_caption_audit.error_details = None
-                    retry_caption_audit.details = (
-                        None if send_caption else {"customer_visible": False}
-                    )
+                    retry_caption_audit.details = dict(caption_details)
                     retry_caption_audit.status = "pending"
                     retry_caption_audit.status_updated_at = _now()
                 else:
@@ -345,7 +350,7 @@ async def send_wazzup_media_with_audit(
                         caption=caption,
                         source=source,
                         crm_message_id=caption_crm_message_id,
-                        details=None if send_caption else {"customer_visible": False},
+                        details=dict(caption_details),
                         status="pending",
                         status_updated_at=_now(),
                     )
@@ -427,7 +432,7 @@ async def send_wazzup_media_with_audit(
         media_audit.source = source
         media_audit.provider_message_id = None
         media_audit.error_details = None
-        media_audit.details = None
+        media_audit.details = dict(base_details)
         media_audit.status = "pending"
         media_audit.status_updated_at = _now()
     else:
@@ -443,6 +448,7 @@ async def send_wazzup_media_with_audit(
             file_size=len(content) if content is not None else None,
             source=source,
             crm_message_id=crm_message_id,
+            details=dict(base_details),
             status="pending",
             status_updated_at=_now(),
         )
@@ -462,9 +468,7 @@ async def send_wazzup_media_with_audit(
             caption_audit.source = source
             caption_audit.provider_message_id = None
             caption_audit.error_details = None
-            caption_audit.details = (
-                None if send_caption else {"customer_visible": False}
-            )
+            caption_audit.details = dict(caption_details)
             caption_audit.status = "pending"
             caption_audit.status_updated_at = _now()
         else:
@@ -478,7 +482,7 @@ async def send_wazzup_media_with_audit(
                 caption=caption,
                 source=source,
                 crm_message_id=caption_crm_message_id,
-                details=None if send_caption else {"customer_visible": False},
+                details=dict(caption_details),
                 status="pending",
                 status_updated_at=_now(),
             )
@@ -615,7 +619,10 @@ async def update_wazzup_statuses(
         )
         error = status_payload.get("error")
         audit.error_details = error if isinstance(error, dict) else None
-        audit.details = dict(status_payload)
+        audit.details = {
+            **(audit.details if isinstance(audit.details, dict) else {}),
+            **status_payload,
+        }
         updated += 1
 
     if updated:

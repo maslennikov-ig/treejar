@@ -136,6 +136,10 @@ from src.services.customer_memory import (
 from src.services.escalation_state import is_active_human_handoff
 from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
+from src.services.runtime_execution_evidence import (
+    RuntimeToolTrace,
+    extract_runtime_tool_traces,
+)
 
 # Preserve the established patch/import seam while using the telemetry model.
 OpenAIChatModel = OpenRouterTelemetryChatModel
@@ -1238,6 +1242,7 @@ class LLMResponse:
     cost: float | None
     model: str
     deferred_product_media: tuple[ProductMediaPayload, ...] = ()
+    tool_traces: tuple[RuntimeToolTrace, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -9800,6 +9805,16 @@ async def search_products(
                 caption=caption,
                 content=None,
                 content_type=None,
+                audit_details={
+                    "source_message_id": ctx.deps.source_message_id,
+                    "follow_up_suppressed": (
+                        isinstance(ctx.deps.conversation.metadata_, dict)
+                        and ctx.deps.conversation.metadata_.get(
+                            "runtime_e2e_follow_up_suppressed"
+                        )
+                        is True
+                    ),
+                },
             )
             await ctx.deps.db.commit()
         except Exception as e:
@@ -10683,6 +10698,7 @@ async def create_quotation(
                     "operation_scope": (
                         "inbound_message" if source_message_id else "direct_fallback"
                     ),
+                    "source_message_id": source_message_id,
                     "customer_id": customer_id,
                     "sale_order_id": sale_order_id,
                     "sale_order_number": quote_number,
@@ -10799,6 +10815,7 @@ async def create_quotation(
                 "operation_scope": (
                     "inbound_message" if source_message_id else "direct_fallback"
                 ),
+                "source_message_id": source_message_id,
                 "customer_id": customer_id,
                 "sale_order_id": sale_order_id,
                 "sale_order_number": quote_number,
@@ -10823,6 +10840,16 @@ async def create_quotation(
                 content_type="application/pdf",
                 caption=pdf_caption,
                 file_name=pdf_filename,
+                audit_details={
+                    "source_message_id": source_message_id,
+                    "follow_up_suppressed": (
+                        isinstance(ctx.deps.conversation.metadata_, dict)
+                        and ctx.deps.conversation.metadata_.get(
+                            "runtime_e2e_follow_up_suppressed"
+                        )
+                        is True
+                    ),
+                },
             )
 
         try:
@@ -10852,6 +10879,7 @@ async def create_quotation(
             "operation_scope": (
                 "inbound_message" if source_message_id else "direct_fallback"
             ),
+            "source_message_id": source_message_id,
             "customer_id": customer_id,
             "sale_order_id": sale_order_id,
             "sale_order_number": quote_number,
@@ -11457,6 +11485,7 @@ async def process_message(
                 allow_product_media=allow_product_media,
                 response_text=final_text,
             ),
+            tool_traces=extract_runtime_tool_traces(result),
         )
 
     def _build_static_response(

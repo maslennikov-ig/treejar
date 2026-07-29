@@ -31,6 +31,19 @@ from scripts.e2e_acceptance.production import (
 _WEBHOOK_PATH = "/api/v1/webhook/wazzup"
 _TRANSPORT_TIMEOUT_SECONDS = 10.0
 _HOST_ALIAS_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_OBSERVER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,239}$")
+_SERVER_OBSERVER_PREFIX = (
+    "/usr/bin/docker",
+    "compose",
+    "--project-directory",
+    "/opt/noor",
+    "--project-name",
+    "noor",
+    "exec",
+    "-T",
+    "app",
+    "/app/.venv/bin/noor-e2e-observe",
+)
 _READ_ONLY_EXECUTABLES = frozenset(
     {"cat", "grep", "head", "jq", "sha256sum", "stat", "tail"}
 )
@@ -219,6 +232,9 @@ def _validate_read_only_command(command: Sequence[str]) -> tuple[str, ...]:
     ):
         raise ProductionAdapterError("read-only command contains shell syntax")
 
+    if _is_server_observer_command(normalized):
+        return normalized
+
     executable = Path(normalized[0]).name
     if executable not in _READ_ONLY_EXECUTABLES or any(
         Path(token).name in _MUTATING_COMMAND_TOKENS
@@ -229,6 +245,33 @@ def _validate_read_only_command(command: Sequence[str]) -> tuple[str, ...]:
             "read-only command rejects mutation-capable vocabulary"
         )
     return normalized
+
+
+def _is_server_observer_command(command: tuple[str, ...]) -> bool:
+    """Allow one code-owned read-only DB observer inside the fixed app container."""
+
+    prefix_length = len(_SERVER_OBSERVER_PREFIX)
+    if command[:prefix_length] != _SERVER_OBSERVER_PREFIX:
+        return False
+    suffix = command[prefix_length:]
+    if len(suffix) < 5 or suffix[0] not in {"execution", "reconciliation"}:
+        return False
+    identity_flag = "--execution-id" if suffix[0] == "execution" else "--action-id"
+    if suffix[1] != identity_flag or not _OBSERVER_ID_PATTERN.fullmatch(suffix[2]):
+        return False
+    turn_args = suffix[3:]
+    if len(turn_args) % 2 != 0 or not turn_args:
+        return False
+    for flag, binding in zip(turn_args[::2], turn_args[1::2], strict=True):
+        turn_id, separator, message_id = binding.partition("=")
+        if (
+            flag != "--turn"
+            or separator != "="
+            or not _OBSERVER_ID_PATTERN.fullmatch(turn_id)
+            or not _OBSERVER_ID_PATTERN.fullmatch(message_id)
+        ):
+            return False
+    return True
 
 
 @dataclass(frozen=True)
