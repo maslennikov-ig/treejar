@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 
 MAX_AUDIO_SIZE = 25 * 1024 * 1024
 
-_SUPPORTED_FORMATS = frozenset(
-    {"aac", "flac", "m4a", "mp3", "ogg", "wav", "webm"}
-)
+_SUPPORTED_FORMATS = frozenset({"aac", "flac", "m4a", "mp3", "ogg", "wav", "webm"})
 _MIME_FORMATS = {
     "audio/aac": "aac",
     "audio/flac": "flac",
@@ -169,7 +167,7 @@ async def transcribe_audio_with_metadata(
 
     if client is not None and callable(getattr(client, "post", None)):
         return await _transcribe_with_client(
-            cast(httpx.AsyncClient, client),
+            cast("httpx.AsyncClient", client),
             audio_bytes=audio_bytes,
             audio_format=normalized_format,
         )
@@ -215,9 +213,7 @@ async def _transcribe_with_client(
 
     usage = payload.get("usage")
     tokens_in = _coerce_int(_usage_number(usage, "input_tokens", "prompt_tokens"))
-    tokens_out = _coerce_int(
-        _usage_number(usage, "output_tokens", "completion_tokens")
-    )
+    tokens_out = _coerce_int(_usage_number(usage, "output_tokens", "completion_tokens"))
     total_tokens = _coerce_int(_usage_number(usage, "total_tokens"))
     cost = _coerce_float(_usage_number(usage, "cost", "cost_usd"))
     duration_seconds = _coerce_float(_usage_number(usage, "seconds", "duration"))

@@ -389,7 +389,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     mock_conv.phone = chat_id
     mock_conv.escalation_status = "none"
     mock_conv.language = "en"
-    mock_conv.metadata_ = {}
+    mock_conv.metadata_ = {"existing": "preserved"}
     mock_db.execute.side_effect = [
         MockResult(None),  # bot_enabled config lookup
         MockResult(mock_conv),  # conversation lookup
@@ -430,7 +430,10 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
         tokens_out=8,
         total_tokens=128,
         cost=0.00042,
-        model="openai/gpt-audio-mini",
+        model="openai/gpt-4o-mini-transcribe",
+        duration_seconds=9.2,
+        request_duration_seconds=0.75,
+        generation_id="gen-voice-001",
     )
     transcribe_with_metadata = AsyncMock(return_value=transcription)
     legacy_transcribe = AsyncMock(
@@ -451,10 +454,7 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
 
     legacy_transcribe.assert_not_awaited()
     transcribe_with_metadata.assert_awaited_once()
-    assert (
-        transcribe_with_metadata.await_args.kwargs["audio_format"]
-        == "flac"
-    )
+    assert transcribe_with_metadata.await_args.kwargs["audio_format"] == "flac"
     mock_process_message.assert_awaited_once()
     assert (
         mock_process_message.await_args.kwargs["combined_text"]
@@ -473,7 +473,24 @@ async def test_audio_transcription_metadata_is_persisted_for_user_message(
     assert user_message.tokens_in == 120
     assert user_message.tokens_out == 8
     assert user_message.cost == 0.00042
-    assert user_message.model == "openai/gpt-audio-mini"
+    assert user_message.model == "openai/gpt-4o-mini-transcribe"
+    assert mock_conv.metadata_["existing"] == "preserved"
+    assert mock_conv.metadata_["voice_transcription_audit"] == {
+        "schema_version": 1,
+        "records": [
+            {
+                "message_id": "audio-001",
+                "model": "openai/gpt-4o-mini-transcribe",
+                "generation_id": "gen-voice-001",
+                "tokens_in": 120,
+                "tokens_out": 8,
+                "total_tokens": 128,
+                "cost": 0.00042,
+                "duration_seconds": 9.2,
+                "request_duration_seconds": 0.75,
+            }
+        ],
+    }
     assert chat_id not in caplog.text
     assert audio_url not in caplog.text
     assert transcription.text not in caplog.text

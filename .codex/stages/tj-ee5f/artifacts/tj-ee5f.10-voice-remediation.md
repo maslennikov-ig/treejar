@@ -29,6 +29,7 @@ base_branch: main
 base_commit: 844a3946f36070ca282b9fbe921fd9225cefeddc
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-voice-remediation
 write_zone:
+  - .env.example
   - src/core/config.py
   - src/integrations/voice
   - src/services/chat.py
@@ -36,9 +37,11 @@ write_zone:
   - this artifact
 success_criteria:
   - dedicated STT endpoint receives audio without a transcription prompt
+  - effective config cannot route the known legacy chat model to STT
   - MIME and magic-byte detection rejects unknown or conflicting formats
   - provider usage, cost, audio duration, and request duration remain available
   - provider generation identity remains available in the transcription result
+  - complete provider trace has a bounded persistent metadata readback
   - fallback dedupe is stable per distinct inbound message set
 selected_docs:
   - https://openrouter.ai/docs/guides/overview/multimodal/stt
@@ -71,15 +74,19 @@ invariants:
   - idempotency
   - test-matrix
 docs_impact: ops-deploy
-docs_reviewed: no-change-needed
-docs_review_notes: parent stage plan owns environment rollout and live acceptance
+docs_reviewed: updated
+docs_review_notes: tracked environment example now uses the dedicated STT variable
 verification:
   - focused RED reproduced old chat endpoint, mp3 fallback, missing config, and content-hash dedupe
   - correction RED reproduced the missing Python config alias and generation identity
+  - final correction RED reproduced the incompatible copied env and missing persistent trace
   - uv run --extra dev python -m pytest tests/test_voxtral.py tests/test_webhook_audio.py tests/test_services_chat.py -q --tb=short: passed
+  - targeted ruff check for changed Python files: passed
+  - targeted ruff format check for changed Python files: passed
   - git diff --check: passed
   - artifact validation: blocked until the parent registers this delegated artifact in the stage manifest
 changed_files:
+  - .env.example
   - src/core/config.py
   - src/integrations/voice/voxtral.py
   - src/services/chat.py
@@ -97,7 +104,9 @@ Voice transcription now calls OpenRouter's dedicated speech-to-text endpoint
 without a text prompt. The adapter detects the real audio format, keeps provider
 usage, timing, and generation metadata, and keys safe fallback sends by inbound
 message IDs. Legacy Python callsites can read `settings.voxtral_model` as a
-read-only alias of the new setting.
+read-only alias of the new setting. A copied env containing the known chat-era
+model is translated to the STT default, while the tracked example publishes the
+new variable.
 
 # Scope / Routing
 
@@ -109,10 +118,11 @@ acceptance infrastructure, task truth, manifests, deployment, or live systems.
 
 Focused RED proved all four reported failure sources in the previous
 implementation. A correction RED also proved both review findings before their
-fixes. The final focused target passed 41 tests, and `git diff --check` passed.
-No authenticated or paid provider call, deployment, or production mutation was
-performed; the initial RED reached only the provider's unauthenticated 401
-boundary before the corrected test isolation.
+fixes. The final correction RED proved the effective rollout and trace gaps.
+The final focused target passed 42 tests; targeted Ruff, format, and
+`git diff --check` passed. No authenticated or paid provider call, deployment,
+or production mutation was performed; the initial RED reached only the
+provider's unauthenticated 401 boundary before the corrected test isolation.
 
 # Delivery / Cleanup
 
@@ -122,7 +132,9 @@ Keep the worktree until the parent records acceptance.
 # Risks / Follow-ups / Explicit Defers
 
 Deployment must set `VOICE_TRANSCRIPTION_MODEL` to an active STT model.
-`VOXTRAL_MODEL` remains a temporary lower-priority environment alias. A
+`VOXTRAL_MODEL` remains a temporary lower-priority environment alias. The
+latest successful voice batch retains a versioned provider trace in existing
+conversation metadata; overwriting older batches keeps this audit bounded. A
 provider-originated OGG/Opus and FLAC canary is still required before closing
 `tj-ee5f.10`; that live proof was outside this stream's authority. The parent
 must also register this v3 artifact in the stage manifest before validation.

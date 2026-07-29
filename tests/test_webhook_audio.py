@@ -14,9 +14,7 @@ from src.schemas.webhook import WazzupIncomingMessage, WazzupMedia
 
 class TestVoxtralConfig:
     def test_voice_transcription_model_has_stt_default(self) -> None:
-        assert settings.voice_transcription_model == (
-            "openai/gpt-4o-mini-transcribe"
-        )
+        assert settings.voice_transcription_model == ("openai/gpt-4o-mini-transcribe")
 
     def test_legacy_voxtral_model_env_is_temporary_alias(
         self,
@@ -27,10 +25,21 @@ class TestVoxtralConfig:
 
         legacy = Settings(_env_file=None)
 
-        assert (
-            legacy.voice_transcription_model
-            == "mistralai/voxtral-mini-transcribe"
+        assert legacy.voice_transcription_model == "mistralai/voxtral-mini-transcribe"
+
+    def test_legacy_chat_model_env_migrates_to_stt_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("VOICE_TRANSCRIPTION_MODEL", raising=False)
+        monkeypatch.setenv(
+            "VOXTRAL_MODEL",
+            "mistralai/voxtral-small-24b-2507",
         )
+
+        migrated = Settings(_env_file=None)
+
+        assert migrated.voice_transcription_model == "openai/gpt-4o-mini-transcribe"
 
     def test_new_voice_model_env_takes_precedence_over_legacy_alias(
         self,
@@ -44,10 +53,7 @@ class TestVoxtralConfig:
 
         configured = Settings(_env_file=None)
 
-        assert (
-            configured.voice_transcription_model
-            == "openai/gpt-4o-mini-transcribe"
-        )
+        assert configured.voice_transcription_model == "openai/gpt-4o-mini-transcribe"
 
     def test_legacy_python_attribute_reads_new_voice_model(self) -> None:
         configured = Settings(

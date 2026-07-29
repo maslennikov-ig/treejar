@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_VOICE_TRANSCRIPTION_MODEL = "openai/gpt-4o-mini-transcribe"
+_LEGACY_VOICE_CHAT_MODEL = "mistralai/voxtral-small-24b-2507"
 
 
 class Settings(BaseSettings):
@@ -36,7 +42,7 @@ class Settings(BaseSettings):
     openrouter_model_main: str = "z-ai/glm-5.2"
     llm_non_core_budget_blocked: bool = False
     voice_transcription_model: str = Field(
-        default="openai/gpt-4o-mini-transcribe",
+        default=DEFAULT_VOICE_TRANSCRIPTION_MODEL,
         validation_alias=AliasChoices(
             "VOICE_TRANSCRIPTION_MODEL",
             "VOXTRAL_MODEL",
@@ -134,6 +140,17 @@ class Settings(BaseSettings):
     def migration_database_url(self) -> str:
         """URL for Alembic migrations (direct connection, no pooler)."""
         return self.database_url_direct or self.database_url
+
+    @field_validator("voice_transcription_model")
+    @classmethod
+    def migrate_legacy_voice_chat_model(cls, value: str) -> str:
+        if value == _LEGACY_VOICE_CHAT_MODEL:
+            logger.warning(
+                "VOXTRAL_MODEL selects a chat-era model; using the dedicated "
+                "STT default instead"
+            )
+            return DEFAULT_VOICE_TRANSCRIPTION_MODEL
+        return value
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> Settings:

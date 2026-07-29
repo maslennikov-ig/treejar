@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import secrets
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -126,8 +126,10 @@ class _AudioProcessingResult:
     tokens_out: int | None = None
     cost: float | None = None
     model: str | None = None
+    total_tokens: int | None = None
     duration_seconds: float | None = None
     request_duration_seconds: float | None = None
+    generation_id: str | None = None
 
 
 class InboundBatchTerminalError(RuntimeError):
@@ -152,6 +154,35 @@ def _voice_fallback_crm_message_id(
         conversation_id,
         *(stable_ids or ["missing-source"]),
     )
+
+
+def _record_voice_transcription_audit(
+    conversation: Any,
+    audio_results: Mapping[str, _AudioProcessingResult],
+) -> None:
+    records = [
+        {
+            "message_id": message_id,
+            "model": result.model,
+            "generation_id": result.generation_id,
+            "tokens_in": result.tokens_in,
+            "tokens_out": result.tokens_out,
+            "total_tokens": result.total_tokens,
+            "cost": result.cost,
+            "duration_seconds": result.duration_seconds,
+            "request_duration_seconds": result.request_duration_seconds,
+        }
+        for message_id, result in sorted(audio_results.items())
+        if not result.failed
+    ]
+    if not records:
+        return
+    metadata = dict(getattr(conversation, "metadata_", None) or {})
+    metadata["voice_transcription_audit"] = {
+        "schema_version": 1,
+        "records": records,
+    }
+    conversation.metadata_ = metadata
 
 
 def _inbound_batch_id(raw_messages: Sequence[str]) -> str:
@@ -1117,6 +1148,11 @@ async def _process_batch_inner(
                             tokens_out=transcription.tokens_out,
                             cost=transcription.cost,
                             model=transcription.model,
+                            total_tokens=getattr(
+                                transcription,
+                                "total_tokens",
+                                None,
+                            ),
                             duration_seconds=getattr(
                                 transcription,
                                 "duration_seconds",
@@ -1125,6 +1161,11 @@ async def _process_batch_inner(
                             request_duration_seconds=getattr(
                                 transcription,
                                 "request_duration_seconds",
+                                None,
+                            ),
+                            generation_id=getattr(
+                                transcription,
+                                "generation_id",
                                 None,
                             ),
                         ),
@@ -1359,6 +1400,8 @@ async def _process_batch_inner(
                     existing_ids.add(m.messageId)
                     if role == "user":
                         latest_customer_reply_at = created_at
+
+            _record_voice_transcription_audit(conv, audio_results)
 
             if latest_customer_reply_at is not None:
                 record_customer_reply(
