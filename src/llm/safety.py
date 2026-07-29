@@ -8,16 +8,23 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from html import escape
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, overload
 
 import httpx
+from openai import AsyncStream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from pydantic_ai import ModelSettings, UsageLimits
 from pydantic_ai.exceptions import (
     ModelAPIError,
     ModelHTTPError,
     UnexpectedModelBehavior,
 )
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.openai import (
+    OpenAIChatModel,
+    OpenAIChatModelSettings,
+)
 
 from src.core.config import settings
 
@@ -40,25 +47,130 @@ OPENROUTER_PROVIDER_NAME = "openrouter"
 LLM_USAGE_TELEMETRY_ATTR = "__treejar_llm_usage_telemetry__"
 _OPENROUTER_CACHE_CONTROL_SUPPORTED_MODEL_PREFIXES = ("anthropic/",)
 _OPENROUTER_REASONING_DISABLED_MODEL_IDS = frozenset({"deepseek/deepseek-v4-flash"})
+_OPENROUTER_RETRYABLE_ERROR_TYPES = frozenset(
+    {
+        "rate_limit_exceeded",
+        "provider_overloaded",
+        "provider_unavailable",
+        "timeout",
+        "server",
+    }
+)
+_OPENROUTER_RETRY_COUNT_ATTR = "treejar_openrouter_error_retries"
+_OPENROUTER_RETRY_COST_ATTR = "treejar_openrouter_retry_cost_usd"
+_OPENROUTER_RETRY_TYPE_ATTR = "treejar_openrouter_error_type"
 
 
 class LLMBudgetBlocked(RuntimeError):
     """Raised when configured budget controls block a non-core LLM path."""
 
 
+class OpenRouterCompletionError(ModelAPIError):
+    """Terminal in-band OpenRouter error after provider-boundary handling."""
+
+
 class OpenRouterTelemetryChatModel(OpenAIChatModel):
     """Preserve OpenRouter's provider-reported cost on the model response."""
+
+    @overload
+    async def _completions_create(
+        self,
+        messages: list[ModelMessage],
+        stream: Literal[True],
+        model_settings: OpenAIChatModelSettings,
+        model_request_parameters: ModelRequestParameters,
+    ) -> AsyncStream[ChatCompletionChunk]: ...
+
+    @overload
+    async def _completions_create(
+        self,
+        messages: list[ModelMessage],
+        stream: Literal[False],
+        model_settings: OpenAIChatModelSettings,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ChatCompletion: ...
+
+    async def _completions_create(
+        self,
+        messages: list[ModelMessage],
+        stream: bool,
+        model_settings: OpenAIChatModelSettings,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ChatCompletion | AsyncStream[ChatCompletionChunk]:
+        if stream:
+            return await super()._completions_create(
+                messages,
+                True,
+                model_settings,
+                model_request_parameters,
+            )
+
+        response = await super()._completions_create(
+            messages,
+            False,
+            model_settings,
+            model_request_parameters,
+        )
+        if not _openrouter_completion_failed(response):
+            return response
+
+        error_type = _openrouter_completion_error_type(response)
+        retrying = error_type in _OPENROUTER_RETRYABLE_ERROR_TYPES
+        logger.warning(
+            "openrouter.finish_reason_error",
+            extra={
+                "model": self.model_name,
+                "error_type": error_type or "unknown",
+                "retrying": retrying,
+            },
+        )
+        if not retrying:
+            raise _openrouter_completion_error(self.model_name, error_type)
+
+        retry_response = await super()._completions_create(
+            messages,
+            False,
+            model_settings,
+            model_request_parameters,
+        )
+        if _openrouter_completion_failed(retry_response):
+            retry_error_type = _openrouter_completion_error_type(retry_response)
+            raise _openrouter_completion_error(self.model_name, retry_error_type)
+
+        setattr(retry_response, _OPENROUTER_RETRY_COUNT_ATTR, 1)
+        setattr(retry_response, _OPENROUTER_RETRY_TYPE_ATTR, error_type)
+        retry_cost = _usage_number(
+            getattr(response, "usage", None),
+            "cost",
+            "cost_usd",
+        )
+        valid_retry_cost = _valid_cost(retry_cost)
+        if valid_retry_cost is not None:
+            setattr(
+                retry_response,
+                _OPENROUTER_RETRY_COST_ATTR,
+                valid_retry_cost,
+            )
+        return retry_response
 
     def _process_provider_details(self, response: Any) -> dict[str, Any]:
         details = super()._process_provider_details(response)
         cost = _usage_number(getattr(response, "usage", None), "cost", "cost_usd")
-        if (
-            cost is not None
-            and not isinstance(cost, bool)
-            and math.isfinite(float(cost))
-            and float(cost) >= 0
-        ):
-            details["usage_cost_usd"] = float(cost)
+        retry_cost = _usage_number(response, _OPENROUTER_RETRY_COST_ATTR)
+        valid_costs = [
+            valid
+            for value in (cost, retry_cost)
+            if (valid := _valid_cost(value)) is not None
+        ]
+        if valid_costs:
+            details["usage_cost_usd"] = sum(valid_costs)
+
+        retry_count = _usage_number(response, _OPENROUTER_RETRY_COUNT_ATTR)
+        if isinstance(retry_count, int) and retry_count > 0:
+            details["openrouter_error_retries"] = retry_count
+            error_type = getattr(response, _OPENROUTER_RETRY_TYPE_ATTR, None)
+            if isinstance(error_type, str) and error_type:
+                details["openrouter_error_type"] = error_type
         return details
 
 
@@ -432,6 +544,45 @@ def _usage_number(container: Any, *keys: str) -> int | float | None:
     return None
 
 
+def _valid_cost(value: int | float | None) -> float | None:
+    if (
+        value is None
+        or isinstance(value, bool)
+        or not math.isfinite(float(value))
+        or float(value) < 0
+    ):
+        return None
+    return float(value)
+
+
+def _openrouter_completion_failed(response: Any) -> bool:
+    choices = getattr(response, "choices", None)
+    if not isinstance(choices, list) or not choices:
+        return False
+    return str(getattr(choices[0], "finish_reason", "")) == "error"
+
+
+def _openrouter_completion_error_type(response: Any) -> str | None:
+    choices = getattr(response, "choices", None)
+    if not isinstance(choices, list) or not choices:
+        return None
+    error = _usage_value(choices[0], "error")
+    metadata = _usage_value(error, "metadata")
+    error_type = _usage_value(metadata, "error_type")
+    return error_type if isinstance(error_type, str) and error_type else None
+
+
+def _openrouter_completion_error(
+    model_name: str,
+    error_type: str | None,
+) -> OpenRouterCompletionError:
+    normalized = error_type or "unknown"
+    return OpenRouterCompletionError(
+        model_name=model_name,
+        message=f"OpenRouter completion failed ({normalized})",
+    )
+
+
 def _nested_usage_number(container: Any, *path: str) -> int | float | None:
     current = container
     for key in path:
@@ -613,7 +764,10 @@ async def _notify_safely(
 
 
 def _is_retryable_error(error: BaseException) -> bool:
-    return isinstance(error, _RETRYABLE_ERRORS)
+    return not isinstance(error, OpenRouterCompletionError) and isinstance(
+        error,
+        _RETRYABLE_ERRORS,
+    )
 
 
 async def run_agent_with_safety(

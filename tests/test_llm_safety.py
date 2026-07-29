@@ -305,6 +305,184 @@ def test_openrouter_chat_model_preserves_provider_reported_cost() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openrouter_chat_model_retries_temporary_finish_error_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openai.types.chat import ChatCompletion
+    from openai.types.chat.chat_completion import Choice
+    from openai.types.chat.chat_completion_message import ChatCompletionMessage
+    from openai.types.completion_usage import CompletionUsage
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    from src.llm.safety import OpenRouterTelemetryChatModel
+
+    error_choice = Choice.model_construct(
+        finish_reason="error",
+        index=0,
+        message=ChatCompletionMessage.model_construct(
+            role="assistant",
+            content="",
+        ),
+    )
+    error_choice.__pydantic_extra__ = {
+        "error": {
+            "code": 503,
+            "message": "provider overloaded",
+            "metadata": {"error_type": "provider_overloaded"},
+        }
+    }
+    error_response = ChatCompletion.model_construct(
+        id="generation-error",
+        choices=[error_choice],
+        created=1,
+        model="z-ai/glm-5.2",
+        object="chat.completion",
+        usage=CompletionUsage.model_validate(
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 0,
+                "total_tokens": 10,
+                "cost": 0.001,
+            }
+        ),
+    )
+    success_response = ChatCompletion.model_validate(
+        {
+            "id": "generation-success",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "index": 0,
+                    "message": {"content": "ok", "role": "assistant"},
+                }
+            ],
+            "created": 2,
+            "model": "z-ai/glm-5.2",
+            "object": "chat.completion",
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 2,
+                "total_tokens": 12,
+                "cost": 0.002,
+            },
+        }
+    )
+    responses = iter((error_response, success_response))
+    calls = 0
+
+    async def fake_create(*args: object, **kwargs: object) -> ChatCompletion:
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr(OpenAIChatModel, "_completions_create", fake_create)
+    model = OpenRouterTelemetryChatModel(
+        "z-ai/glm-5.2",
+        provider=OpenRouterProvider(api_key="test-key"),
+    )
+
+    response = await model._completions_create(
+        [],
+        False,
+        {},
+        ModelRequestParameters(),
+    )
+
+    assert response is success_response
+    assert calls == 2
+    details = model._process_provider_details(response)
+    assert details["openrouter_error_retries"] == 1
+    assert details["openrouter_error_type"] == "provider_overloaded"
+    assert details["usage_cost_usd"] == pytest.approx(0.003)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_type",
+    ["invalid_request", "provider_unavailable"],
+)
+async def test_openrouter_chat_model_never_hides_unrecoverable_finish_error(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: str,
+) -> None:
+    from openai.types.chat import ChatCompletion
+    from openai.types.chat.chat_completion import Choice
+    from openai.types.chat.chat_completion_message import ChatCompletionMessage
+    from pydantic_ai.exceptions import ModelAPIError
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    from src.llm.safety import (
+        OpenRouterTelemetryChatModel,
+        run_agent_with_safety,
+    )
+
+    choice = Choice.model_construct(
+        finish_reason="error",
+        index=0,
+        message=ChatCompletionMessage.model_construct(
+            role="assistant",
+            content="",
+        ),
+    )
+    choice.__pydantic_extra__ = {
+        "error": {
+            "code": 502,
+            "message": "provider failure",
+            "metadata": {"error_type": error_type},
+        }
+    }
+    error_response = ChatCompletion.model_construct(
+        id="generation-error",
+        choices=[choice],
+        created=1,
+        model="z-ai/glm-5.2",
+        object="chat.completion",
+    )
+    calls = 0
+
+    async def fake_create(*args: object, **kwargs: object) -> ChatCompletion:
+        nonlocal calls
+        calls += 1
+        return error_response
+
+    monkeypatch.setattr(OpenAIChatModel, "_completions_create", fake_create)
+    model = OpenRouterTelemetryChatModel(
+        "z-ai/glm-5.2",
+        provider=OpenRouterProvider(api_key="test-key"),
+    )
+    agent_calls = 0
+
+    class FailingAgent:
+        async def run(self, user_prompt: object, **kwargs: object) -> object:
+            nonlocal agent_calls
+            del user_prompt, kwargs
+            agent_calls += 1
+            return await model._completions_create(
+                [],
+                False,
+                {},
+                ModelRequestParameters(),
+            )
+
+    with pytest.raises(ModelAPIError, match=error_type):
+        await run_agent_with_safety(
+            FailingAgent(),
+            "response_adapter",
+            "test prompt",
+            model_name="z-ai/glm-5.2",
+            notify_on_failure_override=False,
+        )
+
+    expected_calls = 1 if error_type == "invalid_request" else 2
+    assert calls == expected_calls
+    assert agent_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_run_agent_with_safety_passes_non_core_settings_and_limits() -> None:
     from src.llm.safety import get_llm_usage_telemetry, run_agent_with_safety
 
