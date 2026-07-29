@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -124,6 +124,7 @@ def test_independent_live_producer_materializes_timing_cost_and_side_effects(
 
 
 def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
+    from scripts.e2e_acceptance import execution
     from scripts.e2e_acceptance.live_transport import (
         LiveRuntimeConfig,
         build_live_runtime_components,
@@ -169,7 +170,10 @@ def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
     authority = SimpleNamespace(
         adapter_ids=("wazzup-webhook-adapter",),
         collector_ids=("independent-readback-collector",),
-        live_binding=SimpleNamespace(target_digest="a" * 64),
+        live_binding=SimpleNamespace(
+            target_digest="a" * 64,
+            runtime_transport_digest=execution._digest(runtime),
+        ),
     )
 
     class HttpClient:
@@ -199,6 +203,55 @@ def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
             ),
             http_client=HttpClient(),
             ssh_runner=SshRunner(),
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["webhook_endpoint", "ssh_host_alias", "source_commands"],
+)
+def test_live_runtime_rejects_transport_identity_drift(field: str) -> None:
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.live_transport import (
+        LiveRuntimeConfig,
+        build_live_runtime_components,
+    )
+    from scripts.e2e_acceptance.production import ProductionAdapterError
+
+    runtime = {
+        "schema_version": "noor-e2e-live-runtime/v1",
+        "adapter_id": "wazzup-webhook-adapter",
+        "webhook_endpoint": "https://noor.starec.ai/api/v1/webhook/wazzup",
+        "target_digest": "a" * 64,
+        "collector_id": "independent-readback-collector",
+        "ssh_host_alias": "noor-production",
+        "source_commands": {
+            "baseline": ["/usr/bin/cat", "/var/lib/noor/baseline.json"],
+            "final": ["/usr/bin/cat", "/var/lib/noor/final.json"],
+        },
+    }
+    changed = json.loads(json.dumps(runtime))
+    if field == "webhook_endpoint":
+        changed[field] = "https://drift.invalid/api/v1/webhook/wazzup"
+    elif field == "ssh_host_alias":
+        changed[field] = "drift-production"
+    else:
+        changed[field]["final"] = ["/usr/bin/cat", "/var/lib/noor/drift.json"]
+    authority = SimpleNamespace(
+        adapter_ids=("wazzup-webhook-adapter",),
+        collector_ids=("independent-readback-collector",),
+        live_binding=SimpleNamespace(
+            target_digest="a" * 64,
+            runtime_transport_digest=execution._digest(runtime),
+        ),
+    )
+
+    with pytest.raises(ProductionAdapterError, match="runtime transport"):
+        build_live_runtime_components(
+            config=LiveRuntimeConfig.model_validate(changed),
+            authorization=authority,
+            http_client=SimpleNamespace(),
+            ssh_runner=SimpleNamespace(),
         )
 
 
@@ -282,6 +335,7 @@ def test_independent_reconciliation_settles_collector_reported_actual_cost(
         adapter_id=adapter_id,
         **request,
     )
+    reconciliation_observed_at = datetime.now(UTC)
     receipt = execution.UnknownActionReconciliationReceipt(
         schema_version="noor-e2e-unknown-action-reconciliation/v2",
         registry_id=registry.registry_id,
@@ -292,8 +346,10 @@ def test_independent_reconciliation_settles_collector_reported_actual_cost(
         collector_id="independent-readback-collector",
         producer="independent-readback-collector",
         causal_event_digest=journal.previous_event_digest,
-        observed_at=now,
-        expires_at=now.replace(year=now.year + 1),
+        observed_at=reconciliation_observed_at,
+        expires_at=reconciliation_observed_at.replace(
+            year=reconciliation_observed_at.year + 1
+        ),
         resolved_state="succeeded",
         inventory_digest="d" * 64,
         actual_cost_usd=0.10,
@@ -310,6 +366,220 @@ def test_independent_reconciliation_settles_collector_reported_actual_cost(
     )
 
     assert settlement.actual_cost_usd == 0.10
+
+
+def _prepared_unknown_action(tmp_path: Path, *, run_id: str):
+    from scripts.e2e_acceptance import execution
+
+    from tests.e2e_acceptance_backend import build_canonical_test_registry
+    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+
+    registry = build_canonical_test_registry()
+    root = tmp_path / "protected"
+    authority = _issued_authority(registry, protected_root=root, run_id=run_id)
+    journal = execution.ProtectedExecutionJournal.create(
+        protected_root=root,
+        run_id=run_id,
+        authority=authority,
+    )
+    journal.seal_baseline(
+        execution.ReadbackObservation.build(
+            phase="baseline",
+            collector_id="independent-readback-collector",
+            source_id="baseline",
+            run_id=journal.run_id,
+            preflight_digest=journal.authorization.preflight_digest,
+            collector_artifact_digest=journal.authorization.readback_collector_digest,
+            causal_event_digest="a" * 64,
+            observed_at=datetime.now(UTC) - timedelta(seconds=1),
+            inventory={"synthetic:item": {"state": "absent"}},
+        )
+    )
+    journal.begin_execution()
+    spec = journal.authorization.action_specs[0]
+    charge = spec.quota_charge
+    request = spec.model_dump(mode="python", exclude={"quota_charge"})
+    action_id = request.pop("action_id")
+    adapter_id = request.pop("adapter_id")
+    subsystem = request.pop("subsystem")
+    reservation = journal.reserve_action(
+        action_id=action_id,
+        adapter_id=adapter_id,
+        subsystem=subsystem,
+        messages=charge.messages,
+        model_calls=charge.model_calls,
+        cost_usd=charge.max_cost_usd,
+        **request,
+    )
+    journal.consume_permit(reservation, adapter_id=adapter_id, **request)
+    return registry, journal, reservation
+
+
+def test_live_reconciliation_requires_current_action_causal_identity(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.live_producer import IndependentActionReconciler
+    from scripts.e2e_acceptance.production import FakeReadOnlySshTransport
+
+    _, journal, reservation = _prepared_unknown_action(
+        tmp_path, run_id="live-causal-reconciliation"
+    )
+    observed_at = datetime.now(UTC)
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-live-action-reconciliation/v2",
+            "action_id": reservation.action_id,
+            "reservation_digest": reservation.reservation_digest,
+            "causal_event_digest": journal.previous_event_digest,
+            "observed_at": observed_at.isoformat(),
+            "resolved_state": "succeeded",
+            "inventory": {"synthetic:item": {"state": "present"}},
+            "actual_cost_usd": 0.10,
+        }
+    ).encode()
+
+    digest = IndependentActionReconciler(
+        collector_id="independent-readback-collector",
+        transport=FakeReadOnlySshTransport(
+            responses={f"reconciliation:{reservation.action_id}": raw}
+        ),
+    ).materialize(
+        journal,
+        action_id=reservation.action_id,
+        current_time=observed_at + timedelta(seconds=1),
+    )
+
+    receipt = execution.UnknownActionReconciliationReceipt.model_validate(
+        json.loads(
+            execution._read_protected(
+                journal.run_root,
+                f"independent-reconciliation/{reservation.action_id}.json",
+            )
+        )
+    )
+    assert len(digest) == 64
+    assert receipt.causal_event_digest == journal.previous_event_digest
+
+
+def test_live_reconciler_rejects_pre_dispatch_stale_snapshot(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_producer import IndependentActionReconciler
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        ProductionAdapterError,
+    )
+
+    _, journal, reservation = _prepared_unknown_action(
+        tmp_path, run_id="live-stale-reconciliation"
+    )
+    now = datetime.now(UTC)
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-live-action-reconciliation/v2",
+            "action_id": reservation.action_id,
+            "reservation_digest": reservation.reservation_digest,
+            "causal_event_digest": journal.previous_event_digest,
+            "observed_at": (
+                reservation.issued_at - timedelta(microseconds=1)
+            ).isoformat(),
+            "resolved_state": "succeeded",
+            "inventory": {"synthetic:item": {"state": "present"}},
+            "actual_cost_usd": 0.10,
+        }
+    ).encode()
+
+    with pytest.raises(ProductionAdapterError, match="binding|lower bound|stale"):
+        IndependentActionReconciler(
+            collector_id="independent-readback-collector",
+            transport=FakeReadOnlySshTransport(
+                responses={f"reconciliation:{reservation.action_id}": raw}
+            ),
+        ).materialize(
+            journal,
+            action_id=reservation.action_id,
+            current_time=now,
+        )
+
+
+def test_live_reconciler_rejects_other_causal_event(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_producer import IndependentActionReconciler
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        ProductionAdapterError,
+    )
+
+    _, journal, reservation = _prepared_unknown_action(
+        tmp_path, run_id="live-causal-drift"
+    )
+    now = datetime.now(UTC)
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-live-action-reconciliation/v2",
+            "action_id": reservation.action_id,
+            "reservation_digest": reservation.reservation_digest,
+            "causal_event_digest": "b" * 64,
+            "observed_at": now.isoformat(),
+            "resolved_state": "succeeded",
+            "inventory": {"synthetic:item": {"state": "present"}},
+            "actual_cost_usd": 0.10,
+        }
+    ).encode()
+
+    with pytest.raises(ProductionAdapterError, match="binding"):
+        IndependentActionReconciler(
+            collector_id="independent-readback-collector",
+            transport=FakeReadOnlySshTransport(
+                responses={f"reconciliation:{reservation.action_id}": raw}
+            ),
+        ).materialize(
+            journal,
+            action_id=reservation.action_id,
+            current_time=now + timedelta(seconds=1),
+        )
+
+
+def test_journal_rejects_reconciliation_observed_before_permit_consumption(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance import execution
+
+    registry, journal, reservation = _prepared_unknown_action(
+        tmp_path, run_id="stale-reconciliation"
+    )
+    now = datetime.now(UTC)
+    receipt = execution.UnknownActionReconciliationReceipt(
+        schema_version="noor-e2e-unknown-action-reconciliation/v2",
+        registry_id=registry.registry_id,
+        run_id=journal.run_id,
+        authorization_digest=journal.authorization_digest,
+        action_id=reservation.action_id,
+        reservation_digest=reservation.reservation_digest,
+        collector_id="independent-readback-collector",
+        producer="independent-readback-collector",
+        causal_event_digest=journal.previous_event_digest,
+        observed_at=reservation.issued_at - timedelta(microseconds=1),
+        expires_at=now + timedelta(minutes=1),
+        resolved_state="succeeded",
+        inventory_digest="d" * 64,
+        actual_cost_usd=0.10,
+    )
+    receipt_digest = execution._write_exclusive(
+        journal.run_root,
+        f"independent-reconciliation/{reservation.action_id}.json",
+        receipt.model_dump(mode="json"),
+    )
+
+    with pytest.raises(
+        execution.ExecutionValidationError, match="fresh independent reconciliation"
+    ):
+        journal.reconcile_unknown_action(
+            action_id=reservation.action_id,
+            receipt_digest=receipt_digest,
+        )
 
 
 def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
@@ -372,8 +642,6 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
         schema_version="noor-e2e-authority-adapter-ids/v2",
         values=("wazzup-webhook-adapter",),
     )
-    execution._write_test_authority_bundle(**inputs)
-
     runtime = {
         "schema_version": "noor-e2e-live-runtime/v1",
         "adapter_id": "wazzup-webhook-adapter",
@@ -392,6 +660,10 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
             ],
         },
     }
+    execution._write_test_authority_bundle(
+        **inputs,
+        runtime_transport=execution.RuntimeTransportConfig.model_validate(runtime),
+    )
     plan_payload = {
         "actions": [
             {
@@ -434,6 +706,7 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
     class SshRunner:
         def __init__(self) -> None:
             self.calls: list[list[str]] = []
+            self.reconciliation_binding: dict[str, str] = {}
 
         def run(self, args: list[str], **kwargs: object):
             self.calls.append(args)
@@ -442,8 +715,9 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
                 payload = {"inventory": {"synthetic:item": {"state": "absent"}}}
             elif source_file.endswith("reconciliation.json"):
                 payload = {
-                    "schema_version": "noor-e2e-live-action-reconciliation/v1",
+                    "schema_version": "noor-e2e-live-action-reconciliation/v2",
                     "action_id": "synthetic-action",
+                    **self.reconciliation_binding,
                     "observed_at": datetime.now(UTC).isoformat(),
                     "resolved_state": "succeeded",
                     "inventory": {"synthetic:item": {"state": "present"}},
@@ -482,6 +756,16 @@ def test_cli_live_plan_collects_preflight_dispatches_and_reconciles(
     dispatched = cli._lifecycle_result(
         SimpleNamespace(command="execute-resume", **vars(args))
     )
+    _, dispatched_journal = cli._authority_and_journal(
+        registry, root, run_id, create=False
+    )
+    dispatched_reservation = dispatched_journal._reservations["synthetic-action"]
+    ssh_runner.reconciliation_binding = {
+        "reservation_digest": dispatched_reservation.reservation_digest,
+        "causal_event_digest": (
+            dispatched_journal.action_reconciliation_boundary("synthetic-action")[1]
+        ),
+    }
     reconciled = cli._lifecycle_result(
         SimpleNamespace(
             command="reconcile-action",

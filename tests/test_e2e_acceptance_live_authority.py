@@ -15,17 +15,29 @@ from scripts.e2e_acceptance import execution
 def _authority_inputs(registry, *, root: Path, run_id: str, now: datetime):
     from tests.test_e2e_acceptance_trusted_execution import _authority_bundle_inputs
 
-    return _authority_bundle_inputs(
+    inputs = _authority_bundle_inputs(
         registry,
         protected_root=root,
         run_id=run_id,
         now=now,
     )
+    inputs["adapter_ids"] = execution.AuthorityAdapterIds(
+        schema_version="noor-e2e-authority-adapter-ids/v2",
+        values=("wazzup-webhook-adapter",),
+    )
+    action_specs = inputs["action_specs"]
+    inputs["action_specs"] = action_specs.model_copy(
+        update={
+            "specs": tuple(
+                item.model_copy(update={"adapter_id": "wazzup-webhook-adapter"})
+                for item in action_specs.specs
+            )
+        }
+    )
+    return inputs
 
 
 def _write_live_inputs(root: Path, run_id: str, inputs: dict[str, object]) -> None:
-    from scripts.e2e_acceptance.live_authority import INPUT_REFS
-
     directory = root / "live-authority-inputs" / run_id
     directory.mkdir(parents=True)
     os.chmod(root, 0o700)
@@ -40,15 +52,38 @@ def _write_live_inputs(root: Path, run_id: str, inputs: dict[str, object]) -> No
         "adapter-ids.json": inputs["adapter_ids"],
         "collector-ids.json": inputs["collector_ids"],
         "execution-authorities.json": inputs["execution_authorities"],
+        "runtime-transport.json": inputs.get(
+            "runtime_transport", _runtime_transport(inputs)
+        ),
     }
-    assert tuple(values) == tuple(Path(reference).name for reference in INPUT_REFS)
     for filename, value in values.items():
         path = directory / filename
+        payload = (
+            value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+        )
         path.write_text(
-            json.dumps(value.model_dump(mode="json"), sort_keys=True),
+            json.dumps(payload, sort_keys=True),
             encoding="utf-8",
         )
         os.chmod(path, 0o600)
+
+
+def _runtime_transport(inputs: dict[str, object]) -> dict[str, object]:
+    authorization = inputs["authorization"]
+    return {
+        "schema_version": "noor-e2e-live-runtime/v1",
+        "adapter_id": "wazzup-webhook-adapter",
+        "webhook_endpoint": "https://noor.starec.ai/api/v1/webhook/wazzup",
+        "target_digest": execution._digest(
+            authorization.targets.model_dump(mode="json")
+        ),
+        "collector_id": "independent-readback-collector",
+        "ssh_host_alias": "noor-production",
+        "source_commands": {
+            "baseline": ["/usr/bin/cat", "/var/lib/noor/baseline.json"],
+            "final": ["/usr/bin/cat", "/var/lib/noor/final.json"],
+        },
+    }
 
 
 def _bind_expected_stores(registry, run_id: str, inputs: dict[str, object]) -> None:
@@ -91,7 +126,7 @@ def test_build_live_authority_bundle_commits_only_fixed_redacted_receipt(
     )
 
     assert result.receipt.run_id == run_id
-    assert len(result.input_digests) == 8
+    assert len(result.input_digests) == 9
     assert (
         result.receipt_digest
         == hashlib.sha256(
@@ -105,6 +140,70 @@ def test_build_live_authority_bundle_commits_only_fixed_redacted_receipt(
         "synthetic-telegram-target",
     ):
         assert raw_value not in rendered
+
+
+def test_live_authority_binds_protected_runtime_transport_config(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_authority import build_live_authority_bundle
+
+    now = datetime.now(UTC)
+    registry = _registry()
+    root = tmp_path / "protected"
+    root.mkdir(mode=0o700)
+    run_id = "live-runtime-binding"
+    inputs = _authority_inputs(registry, root=root, run_id=run_id, now=now)
+    _bind_expected_stores(registry, run_id, inputs)
+    runtime = _runtime_transport(inputs)
+    inputs["runtime_transport"] = runtime
+    _write_live_inputs(root, run_id, inputs)
+
+    build_live_authority_bundle(
+        registry=registry,
+        protected_root=root,
+        run_id=run_id,
+        current_time=now,
+    )
+    handle = execution.issue_execution_authorization_handle(
+        registry=registry,
+        protected_root=root,
+        run_id=run_id,
+        current_time=now,
+    )
+
+    assert (
+        handle._authorization.live_binding.runtime_transport_digest
+        == execution._digest(runtime)
+    )
+
+
+def test_live_authority_rejects_webhook_origin_outside_approved_runtime(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_authority import (
+        LiveAuthorityValidationError,
+        build_live_authority_bundle,
+    )
+
+    now = datetime.now(UTC)
+    registry = _registry()
+    root = tmp_path / "protected"
+    root.mkdir(mode=0o700)
+    run_id = "live-runtime-origin-drift"
+    inputs = _authority_inputs(registry, root=root, run_id=run_id, now=now)
+    _bind_expected_stores(registry, run_id, inputs)
+    runtime = _runtime_transport(inputs)
+    runtime["webhook_endpoint"] = "https://drift.invalid/api/v1/webhook/wazzup"
+    inputs["runtime_transport"] = runtime
+    _write_live_inputs(root, run_id, inputs)
+
+    with pytest.raises(LiveAuthorityValidationError, match="runtime|binding"):
+        build_live_authority_bundle(
+            registry=registry,
+            protected_root=root,
+            run_id=run_id,
+            current_time=now,
+        )
 
 
 def test_build_live_authority_bundle_accepts_gate_only_zero_action_authority(

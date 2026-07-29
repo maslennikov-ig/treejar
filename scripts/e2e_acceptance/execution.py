@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, NoReturn, cast
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from scripts.e2e_acceptance.evidence import (
@@ -214,6 +215,44 @@ class ProtectedQuotas(_StrictModel):
         return self
 
 
+class RuntimeTransportConfig(_StrictModel):
+    """Exact protected transport and readback identities for one live run."""
+
+    schema_version: Literal["noor-e2e-live-runtime/v1"]
+    adapter_id: Literal["wazzup-webhook-adapter"]
+    webhook_endpoint: str = Field(min_length=1)
+    target_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    collector_id: str = Field(min_length=1)
+    ssh_host_alias: str = Field(min_length=1)
+    source_commands: dict[str, tuple[str, ...]] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _fixed_sources(self) -> RuntimeTransportConfig:
+        if not {"baseline", "final"} <= set(self.source_commands):
+            raise ValueError("live runtime requires baseline and final sources")
+        return self
+
+
+def runtime_transport_digest(config: RuntimeTransportConfig) -> str:
+    return _digest(config.model_dump(mode="json"))
+
+
+def _https_origin(value: str) -> tuple[str, int]:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port or 443
+    except ValueError as exc:
+        raise ExecutionValidationError("runtime endpoint origin is invalid") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ExecutionValidationError("runtime endpoint origin is invalid")
+    return parsed.hostname.lower(), port
+
+
 class ExactLiveAuthorizationBinding(_StrictModel):
     """Digest-only bridge from one approved v1 manifest and fresh preflight."""
 
@@ -229,6 +268,9 @@ class ExactLiveAuthorizationBinding(_StrictModel):
     collector_ids_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     stores_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     preflight_observed_at: datetime
+    runtime_transport_digest: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
 
     @model_validator(mode="after")
     def _aware_preflight_time(self) -> ExactLiveAuthorizationBinding:
@@ -464,7 +506,7 @@ class Task1AuthorityBindings(_StrictModel):
         return self
 
 
-_AUTHORITY_PAYLOAD_PATHS = {
+_AUTHORITY_PAYLOAD_PATHS_V2 = {
     "authorization_manifest": "authorization-v1.json",
     "preflight_request": "preflight-request.json",
     "preflight_observation": "preflight-observation.json",
@@ -475,22 +517,34 @@ _AUTHORITY_PAYLOAD_PATHS = {
     "task1_bindings": "task1-bindings.json",
     "execution_authorities": "execution-authorities.json",
 }
+_AUTHORITY_PAYLOAD_PATHS_V3 = {
+    **_AUTHORITY_PAYLOAD_PATHS_V2,
+    "runtime_transport": "runtime-transport.json",
+}
 _AUTHORITY_STORE_ROOT_KEYS = frozenset({"raw", "tracked", "anchor"})
+
+
+def _authority_payload_paths(schema_version: str) -> dict[str, str]:
+    if schema_version == "noor-e2e-authority-bundle-receipt/v2":
+        return _AUTHORITY_PAYLOAD_PATHS_V2
+    if schema_version == "noor-e2e-authority-bundle-receipt/v3":
+        return _AUTHORITY_PAYLOAD_PATHS_V3
+    raise ExecutionValidationError("authority bundle receipt schema is invalid")
 
 
 class AuthorityBundleReceipt(_StrictModel):
     """Persistent registry-issued binding for one run and protected journal root."""
 
-    schema_version: Literal["noor-e2e-authority-bundle-receipt/v2"]
+    schema_version: Literal[
+        "noor-e2e-authority-bundle-receipt/v2",
+        "noor-e2e-authority-bundle-receipt/v3",
+    ]
     registry_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     protected_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     run_root_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     store_root_digests: dict[str, str] = Field(min_length=3, max_length=3)
-    payload_digests: dict[str, str] = Field(
-        min_length=len(_AUTHORITY_PAYLOAD_PATHS),
-        max_length=len(_AUTHORITY_PAYLOAD_PATHS),
-    )
+    payload_digests: dict[str, str] = Field(min_length=9, max_length=10)
     issued_at: datetime
     expires_at: datetime
 
@@ -504,8 +558,9 @@ class AuthorityBundleReceipt(_StrictModel):
             or self.expires_at <= self.issued_at
         ):
             raise ValueError("authority bundle receipt window is invalid")
+        expected_payloads = _authority_payload_paths(self.schema_version)
         if (
-            set(self.payload_digests) != set(_AUTHORITY_PAYLOAD_PATHS)
+            set(self.payload_digests) != set(expected_payloads)
             or set(self.store_root_digests) != _AUTHORITY_STORE_ROOT_KEYS
         ):
             raise ValueError("authority bundle receipt coverage is incomplete")
@@ -758,7 +813,8 @@ def issue_execution_authorization_handle(
         raise ExecutionValidationError("protected authority bundle receipt drift")
 
     payloads: dict[str, bytes] = {}
-    for identity, filename in _AUTHORITY_PAYLOAD_PATHS.items():
+    payload_paths = _authority_payload_paths(receipt.schema_version)
+    for identity, filename in payload_paths.items():
         payload = _read_protected(root, _authority_bundle_relative(run_id, filename))
         if hashlib.sha256(payload).hexdigest() != receipt.payload_digests[identity]:
             raise ExecutionValidationError(
@@ -838,6 +894,18 @@ def issue_execution_authorization_handle(
             label="execution authorities",
         ),
     )
+    runtime_transport = (
+        cast(
+            "RuntimeTransportConfig",
+            _parse_authority_payload(
+                payloads["runtime_transport"],
+                RuntimeTransportConfig,
+                label="runtime transport",
+            ),
+        )
+        if "runtime_transport" in payloads
+        else None
+    )
     if (
         stores.raw_root_digest != receipt.store_root_digests["raw"]
         or stores.tracked_root_digest != receipt.store_root_digests["tracked"]
@@ -877,6 +945,7 @@ def issue_execution_authorization_handle(
         execution_authorities=execution_authorities,
         store_ids=stores,
         current_time=now,
+        runtime_transport=runtime_transport,
     )
     validate_execution_authorization(
         authorization,
@@ -934,6 +1003,7 @@ def commit_execution_authority_bundle(
     execution_authorities: ProtectedExecutionAuthorities,
     receipt_issued_at: datetime,
     receipt_expires_at: datetime,
+    runtime_transport: RuntimeTransportConfig | None = None,
 ) -> AuthorityBundleReceipt:
     """Validate and atomically commit one typed upstream authority bundle."""
 
@@ -993,6 +1063,7 @@ def commit_execution_authority_bundle(
         execution_authorities=execution_authorities,
         store_ids=store_ids,
         current_time=receipt_issued_at,
+        runtime_transport=runtime_transport,
     )
     validate_execution_authorization(
         derived,
@@ -1012,16 +1083,24 @@ def commit_execution_authority_bundle(
         "task1_bindings": task1_bindings,
         "execution_authorities": execution_authorities,
     }
+    if runtime_transport is not None:
+        payload_models["runtime_transport"] = runtime_transport
+    receipt_schema = (
+        "noor-e2e-authority-bundle-receipt/v3"
+        if runtime_transport is not None
+        else "noor-e2e-authority-bundle-receipt/v2"
+    )
+    payload_paths = _authority_payload_paths(receipt_schema)
     root = _validated_protected_root(root, create=True)
     payload_digests = {
         identity: _write_or_validate_authority_payload(
             root,
-            _authority_bundle_relative(run_id, _AUTHORITY_PAYLOAD_PATHS[identity]),
+            _authority_bundle_relative(run_id, payload_paths[identity]),
             model.model_dump(mode="json"),
         )
         for identity, model in payload_models.items()
     }
-    expected_names = set(_AUTHORITY_PAYLOAD_PATHS.values())
+    expected_names = set(payload_paths.values())
     bundle_fd = _open_absolute_chain(root / "authority-bundles" / run_id, create=False)
     try:
         actual_names = set(os.listdir(bundle_fd))
@@ -1036,7 +1115,7 @@ def commit_execution_authority_bundle(
     finally:
         os.close(bundle_fd)
     receipt = AuthorityBundleReceipt(
-        schema_version="noor-e2e-authority-bundle-receipt/v2",
+        schema_version=receipt_schema,
         registry_id=registry.registry_id,
         run_id=run_id,
         protected_root_digest=store_root_digest(root),
@@ -1070,6 +1149,7 @@ def _write_test_authority_bundle(
     execution_authorities: ProtectedExecutionAuthorities,
     receipt_issued_at: datetime,
     receipt_expires_at: datetime,
+    runtime_transport: RuntimeTransportConfig | None = None,
 ) -> AuthorityBundleReceipt:
     """Fixture-only writer that preserves deliberately invalid test inputs."""
 
@@ -1088,16 +1168,24 @@ def _write_test_authority_bundle(
         "task1_bindings": task1_bindings,
         "execution_authorities": execution_authorities,
     }
+    if runtime_transport is not None:
+        payload_models["runtime_transport"] = runtime_transport
+    receipt_schema = (
+        "noor-e2e-authority-bundle-receipt/v3"
+        if runtime_transport is not None
+        else "noor-e2e-authority-bundle-receipt/v2"
+    )
+    payload_paths = _authority_payload_paths(receipt_schema)
     payload_digests = {
         identity: _write_exclusive(
             root,
-            _authority_bundle_relative(run_id, _AUTHORITY_PAYLOAD_PATHS[identity]),
+            _authority_bundle_relative(run_id, payload_paths[identity]),
             model.model_dump(mode="json"),
         )
         for identity, model in payload_models.items()
     }
     receipt = AuthorityBundleReceipt(
-        schema_version="noor-e2e-authority-bundle-receipt/v2",
+        schema_version=receipt_schema,
         registry_id=registry.registry_id,
         run_id=run_id,
         protected_root_digest=store_root_digest(root),
@@ -1186,6 +1274,7 @@ def build_execution_authorization_from_v1(
     execution_authorities: ProtectedExecutionAuthorities,
     store_ids: StoreIdentities,
     current_time: datetime,
+    runtime_transport: RuntimeTransportConfig | None = None,
 ) -> ExecutionAuthorizationV2:
     """Build executable authority solely from an approved v1/preflight pair.
 
@@ -1220,6 +1309,15 @@ def build_execution_authorization_from_v1(
         raise ExecutionValidationError(
             "approved adapter and collector IDs are required"
         )
+    if runtime_transport is not None and (
+        tuple(adapter_ids) != (runtime_transport.adapter_id,)
+        or runtime_transport.collector_id not in collector_ids
+        or runtime_transport.target_digest
+        != _digest(authorization.targets.model_dump(mode="json"))
+        or _https_origin(runtime_transport.webhook_endpoint)
+        != _https_origin(authorization.expected_identity.endpoint)
+    ):
+        raise ExecutionValidationError("approved runtime transport binding drift")
     quotas = ProtectedQuotas(**authorization.quotas.model_dump(mode="json"))
     side_effect_authority = execution_authorities.side_effect_authority
     client_exclusion_grants = execution_authorities.client_exclusions
@@ -1256,6 +1354,11 @@ def build_execution_authorization_from_v1(
         collector_ids_digest=_digest(collector_ids),
         stores_digest=_digest(store_ids.model_dump(mode="json")),
         preflight_observed_at=readback.observed_at,
+        runtime_transport_digest=(
+            runtime_transport_digest(runtime_transport)
+            if runtime_transport is not None
+            else None
+        ),
     )
     return ExecutionAuthorizationV2(
         schema_version="noor-e2e-authorization/v2",
@@ -2638,6 +2741,7 @@ class ProtectedExecutionJournal:
         self._actions: dict[str, ActionState] = {}
         self._reservations: dict[str, ActionReservation] = {}
         self._reconciliations: dict[str, UnknownActionReconciliationReceipt] = {}
+        self._action_reconciliation_boundaries: dict[str, tuple[datetime, str]] = {}
         self._recorded_gates: dict[str, GateAttemptV2] = {}
         self._recorded_gate_records: dict[str, dict[str, Any]] = {}
         self._attempted_executions: list[str] = []
@@ -2891,17 +2995,73 @@ class ProtectedExecutionJournal:
                 raise ExecutionValidationError("coordinator acceptance binding drift")
             self._coordinator_acceptance_events[ordinal] = dict(data)
         elif kind == "action_completed":
-            self._actions[str(data["action_id"])] = str(data["state"])  # type: ignore[assignment]
+            action_id = str(data["action_id"])
+            state = str(data["state"])
+            self._actions[action_id] = state  # type: ignore[assignment]
+            if state == "unknown":
+                prior = self._action_reconciliation_boundaries.get(action_id)
+                if prior is None:
+                    raise ExecutionValidationError(
+                        "action completion lacks permit-consume boundary"
+                    )
+                completed_at_raw = data.get("completed_at")
+                if completed_at_raw is None:
+                    completed_at = prior[0]
+                else:
+                    completed_at = datetime.fromisoformat(str(completed_at_raw))
+                    if (
+                        completed_at.tzinfo is None
+                        or completed_at.utcoffset() is None
+                        or completed_at < prior[0]
+                    ):
+                        raise ExecutionValidationError(
+                            "action completion lower bound is invalid"
+                        )
+                self._action_reconciliation_boundaries[action_id] = (
+                    completed_at,
+                    event_digest,
+                )
         elif kind == "unknown_action_reconciled":
             receipt = UnknownActionReconciliationReceipt.model_validate(data)
-            if receipt.action_id in self._reconciliations:
+            reservation = self._reservations.get(receipt.action_id)
+            boundary = self._action_reconciliation_boundaries.get(receipt.action_id)
+            if (
+                receipt.action_id in self._reconciliations
+                or reservation is None
+                or boundary is None
+                or receipt.reservation_digest != reservation.reservation_digest
+                or receipt.observed_at < boundary[0]
+                or receipt.causal_event_digest != boundary[1]
+            ):
                 raise ExecutionValidationError(
-                    "unknown action reconciliation duplicate"
+                    "unknown action reconciliation replay drift"
                 )
             self._reconciliations[receipt.action_id] = receipt
             self._actions[receipt.action_id] = receipt.resolved_state
         elif kind == "permit_consumed":
-            self._actions[str(data["action_id"])] = "unknown"
+            action_id = str(data["action_id"])
+            reservation = self._reservations.get(action_id)
+            consumed_at_raw = data.get("consumed_at")
+            if (
+                reservation is None
+                or data.get("reservation_digest") != reservation.reservation_digest
+            ):
+                raise ExecutionValidationError("permit-consume replay binding drift")
+            if consumed_at_raw is not None:
+                consumed_at = datetime.fromisoformat(str(consumed_at_raw))
+                if (
+                    consumed_at.tzinfo is None
+                    or consumed_at.utcoffset() is None
+                    or consumed_at < reservation.issued_at
+                ):
+                    raise ExecutionValidationError(
+                        "permit-consume replay lower bound is invalid"
+                    )
+                self._action_reconciliation_boundaries[action_id] = (
+                    consumed_at,
+                    event_digest,
+                )
+            self._actions[action_id] = "unknown"
         elif kind == "action_cost_settlement_intent":
             settlement = ActionCostSettlement.model_validate(data["settlement"])
             if (
@@ -3547,6 +3707,7 @@ class ProtectedExecutionJournal:
     ) -> None:
         """Atomically validate and consume the one-use protected permit."""
 
+        consumed_at = datetime.now(UTC)
         if (
             self.phase != "executing"
             or adapter_id != reservation.adapter_id
@@ -3560,14 +3721,14 @@ class ProtectedExecutionJournal:
             or payload_digest != reservation.payload_digest
             or idempotency_key != reservation.idempotency_key
             or capability_units != reservation.capability_units
-            or not reservation.issued_at <= datetime.now(UTC) < reservation.expires_at
+            or not reservation.issued_at <= consumed_at < reservation.expires_at
             or self._actions.get(reservation.action_id) != "reserved"
             or self._reservations.get(reservation.action_id) != reservation
         ):
             raise ExecutionValidationError(
                 "forged, reused, or missing protected reservation"
             )
-        self._append_event(
+        event_digest = self._append_event(
             phase="executing",
             kind="permit_consumed",
             data={
@@ -3582,7 +3743,12 @@ class ProtectedExecutionJournal:
                 "payload_digest": payload_digest,
                 "idempotency_key": idempotency_key,
                 "capability_units": capability_units,
+                "consumed_at": consumed_at.isoformat(),
             },
+        )
+        self._action_reconciliation_boundaries[reservation.action_id] = (
+            consumed_at,
+            event_digest,
         )
         self._actions[reservation.action_id] = "unknown"
 
@@ -3604,7 +3770,8 @@ class ProtectedExecutionJournal:
                 "dispatch result cannot terminalize an uncertain action; "
                 "independent reconciliation is required"
             )
-        self._append_event(
+        completed_at = datetime.now(UTC)
+        event_digest = self._append_event(
             phase="executing",
             kind="action_completed",
             data={
@@ -3612,9 +3779,31 @@ class ProtectedExecutionJournal:
                 "reservation_digest": reservation.reservation_digest,
                 "state": state,
                 "outcome_digest": outcome_digest,
+                "completed_at": completed_at.isoformat(),
             },
         )
+        self._action_reconciliation_boundaries[reservation.action_id] = (
+            completed_at,
+            event_digest,
+        )
         self._actions[reservation.action_id] = state
+
+    def action_reconciliation_boundary(self, action_id: str) -> tuple[datetime, str]:
+        """Return the latest durable lower bound and causal event for an action."""
+
+        reservation = self._reservations.get(action_id)
+        boundary = self._action_reconciliation_boundaries.get(action_id)
+        if (
+            reservation is None
+            or self._actions.get(action_id) != "unknown"
+            or boundary is None
+            or boundary[0] < reservation.issued_at
+            or not _is_sha256(boundary[1])
+        ):
+            raise ExecutionValidationError(
+                "action reconciliation boundary is unavailable"
+            )
+        return boundary
 
     def settle_action_cost(
         self,
@@ -3764,9 +3953,11 @@ class ProtectedExecutionJournal:
                 "unknown action needs a protected independent reconciliation receipt"
             ) from exc
         reservation = self._reservations.get(action_id)
+        boundary = self._action_reconciliation_boundaries.get(action_id)
         if (
             reservation is None
             or self._actions.get(action_id) != "unknown"
+            or boundary is None
             or receipt.registry_id != self.authorization.registry_id
             or receipt.run_id != self.run_id
             or receipt.authorization_digest != self.authorization_digest
@@ -3775,7 +3966,8 @@ class ProtectedExecutionJournal:
             or receipt.collector_id not in self.authorization.collector_ids
             or receipt.producer != "independent-readback-collector"
             or hashlib.sha256(payload).hexdigest() != receipt_digest
-            or receipt.causal_event_digest != self.previous_event_digest
+            or receipt.causal_event_digest != boundary[1]
+            or receipt.observed_at < boundary[0]
             or not receipt.observed_at <= datetime.now(UTC) < receipt.expires_at
         ):
             raise ExecutionValidationError(

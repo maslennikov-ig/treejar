@@ -442,7 +442,7 @@ def _reconciled_action_journal(
         run_id=run_id,
         authority=authority,
     )
-    now = datetime.now(UTC)
+    baseline_now = datetime.now(UTC)
     journal.seal_baseline(
         policy.ReadbackObservation.build(
             phase="baseline",
@@ -452,7 +452,7 @@ def _reconciled_action_journal(
             preflight_digest=journal.authorization.preflight_digest,
             collector_artifact_digest=(journal.authorization.readback_collector_digest),
             causal_event_digest="4" * 64,
-            observed_at=now - timedelta(seconds=1),
+            observed_at=baseline_now - timedelta(seconds=1),
             inventory={"synthetic:item": {"state": "absent"}},
         )
     )
@@ -476,6 +476,7 @@ def _reconciled_action_journal(
         state="unknown",
         outcome_digest="d" * 64,
     )
+    now = datetime.now(UTC)
     receipt = execution.UnknownActionReconciliationReceipt(
         schema_version="noor-e2e-unknown-action-reconciliation/v2",
         registry_id=registry.registry_id,
@@ -804,7 +805,7 @@ def test_unknown_dispatch_requires_protected_independent_reconciliation(
         authority=authority,
     )
     authorization = journal.authorization
-    now = datetime.now(UTC)
+    baseline_now = datetime.now(UTC)
     journal.seal_baseline(
         policy.ReadbackObservation.build(
             phase="baseline",
@@ -814,7 +815,7 @@ def test_unknown_dispatch_requires_protected_independent_reconciliation(
             preflight_digest=authorization.preflight_digest,
             collector_artifact_digest=authorization.readback_collector_digest,
             causal_event_digest="4" * 64,
-            observed_at=now - timedelta(seconds=1),
+            observed_at=baseline_now - timedelta(seconds=1),
             inventory={"synthetic:item": {"state": "absent"}},
         )
     )
@@ -837,6 +838,7 @@ def test_unknown_dispatch_requires_protected_independent_reconciliation(
             state="failed",
             outcome_digest="d" * 64,
         )
+    now = datetime.now(UTC)
     receipt = execution.UnknownActionReconciliationReceipt(
         schema_version="noor-e2e-unknown-action-reconciliation/v2",
         registry_id=registry.registry_id,

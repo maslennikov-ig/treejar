@@ -40,6 +40,7 @@ INPUT_REFS = (
     "adapter-ids.json",
     "collector-ids.json",
     "execution-authorities.json",
+    "runtime-transport.json",
 )
 
 
@@ -217,6 +218,12 @@ def build_live_authority_bundle(
         execution.ProtectedExecutionAuthorities,
         label="execution authorities",
     )
+    runtime_transport, runtime_transport_digest = _read_model(
+        protected_root,
+        _input_ref(run_id, "runtime-transport.json"),
+        execution.RuntimeTransportConfig,
+        label="runtime transport",
+    )
     try:
         validate_preflight(authorization, observation, request, now=now)
         exact_ids = tuple(
@@ -254,6 +261,7 @@ def build_live_authority_bundle(
             execution_authorities=authorities,
             receipt_issued_at=issued_at,
             receipt_expires_at=expires_at,
+            runtime_transport=runtime_transport,
         )
     except ManifestValidationError as exc:
         raise LiveAuthorityValidationError("live preflight validation drift") from exc
@@ -269,6 +277,7 @@ def build_live_authority_bundle(
         (INPUT_REFS[5], adapters_digest),
         (INPUT_REFS[6], collectors_digest),
         (INPUT_REFS[7], authorities_digest),
+        (INPUT_REFS[8], runtime_transport_digest),
     )
     return LiveAuthorityBundle(
         receipt=receipt,

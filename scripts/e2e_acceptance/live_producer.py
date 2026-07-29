@@ -107,8 +107,10 @@ class _LiveExecutionObservation(_StrictModel):
 
 
 class _LiveActionReconciliation(_StrictModel):
-    schema_version: Literal["noor-e2e-live-action-reconciliation/v1"]
+    schema_version: Literal["noor-e2e-live-action-reconciliation/v2"]
     action_id: str = Field(min_length=1)
+    reservation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    causal_event_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     observed_at: datetime
     resolved_state: Literal["succeeded", "failed"]
     inventory: dict[str, Any]
@@ -302,6 +304,14 @@ class IndependentActionReconciler:
             raise ProductionAdapterError(
                 "action reconciliation requires an unknown reservation"
             )
+        try:
+            lower_bound, causal_event_digest = journal.action_reconciliation_boundary(
+                action_id
+            )
+        except execution.ExecutionValidationError as exc:
+            raise ProductionAdapterError(
+                "live action reconciliation lower bound is unavailable"
+            ) from exc
         source = f"reconciliation:{action_id}"
         raw = self.transport.read(source)
         try:
@@ -313,9 +323,12 @@ class IndependentActionReconciler:
         now = current_time or datetime.now(UTC)
         if (
             observation.action_id != action_id
+            or observation.reservation_digest != reservation.reservation_digest
+            or observation.causal_event_digest != causal_event_digest
             or now.tzinfo is None
             or now.utcoffset() is None
             or observation.observed_at > now
+            or observation.observed_at < lower_bound
             or observation.actual_cost_usd > reservation.cost_usd
         ):
             raise ProductionAdapterError("live action reconciliation binding drift")
@@ -330,7 +343,7 @@ class IndependentActionReconciler:
             reservation_digest=reservation.reservation_digest,
             collector_id=self.collector_id,
             producer="independent-readback-collector",
-            causal_event_digest=journal.previous_event_digest,
+            causal_event_digest=observation.causal_event_digest,
             observed_at=observation.observed_at,
             expires_at=min(
                 observation.observed_at + timedelta(minutes=5),

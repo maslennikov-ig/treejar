@@ -18,7 +18,8 @@ from types import MappingProxyType
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from scripts.e2e_acceptance import execution
 from scripts.e2e_acceptance.production import (
     Capability,
     CapabilityDispatcher,
@@ -94,24 +95,7 @@ class _WazzupInboundPayload(BaseModel):
     messages: list[_WazzupMessage] = Field(min_length=1, max_length=1)
 
 
-class LiveRuntimeConfig(BaseModel):
-    """Protected, sealed transport identities for one authorized live run."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    schema_version: Literal["noor-e2e-live-runtime/v1"]
-    adapter_id: Literal["wazzup-webhook-adapter"]
-    webhook_endpoint: str = Field(min_length=1)
-    target_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    collector_id: str = Field(min_length=1)
-    ssh_host_alias: str = Field(min_length=1)
-    source_commands: dict[str, tuple[str, ...]] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _fixed_sources(self) -> LiveRuntimeConfig:
-        if not {"baseline", "final"} <= set(self.source_commands):
-            raise ValueError("live runtime requires baseline and final sources")
-        return self
+LiveRuntimeConfig = execution.RuntimeTransportConfig
 
 
 class _HttpResponse(Protocol):
@@ -348,6 +332,12 @@ def build_live_runtime_components(
         raise ProductionAdapterError("live runtime adapter/collector authority drift")
     if authorization.live_binding.target_digest != config.target_digest:
         raise ProductionAdapterError("live runtime target authority drift")
+    if (
+        authorization.live_binding.runtime_transport_digest is None
+        or authorization.live_binding.runtime_transport_digest
+        != execution.runtime_transport_digest(config)
+    ):
+        raise ProductionAdapterError("live runtime transport authority drift")
     ssh = ReadOnlySshTransport(
         host_alias=config.ssh_host_alias,
         source_commands=config.source_commands,
