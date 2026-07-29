@@ -180,11 +180,11 @@ class WazzupProvider(MessagingProvider):
             resp.raise_for_status()
             data = resp.json()
 
-        if data.get("status") != "success":
-            raise RuntimeError(f"tmpfiles.org upload failed: {data}")
+            if data.get("status") != "success":
+                raise RuntimeError(f"tmpfiles.org upload failed: {data}")
 
-        page_url: str = data["data"]["url"]
-        dl_url = await _resolve_tmpfiles_download_url(http, page_url, content)
+            page_url: str = data["data"]["url"]
+            dl_url = await _resolve_tmpfiles_download_url(http, page_url, content)
         logger.info("Uploaded %d bytes to %s", len(content), dl_url)
         return dl_url
 

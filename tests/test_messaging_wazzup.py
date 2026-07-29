@@ -342,6 +342,61 @@ async def test_tmpfiles_upload_resolves_and_verifies_direct_binary_url() -> None
 
 
 @pytest.mark.asyncio
+async def test_tmpfiles_upload_keeps_client_open_through_download_resolution() -> None:
+    content = b"%PDF-1.7 quotation"
+
+    class FakeClient:
+        def __init__(self, **_: object) -> None:
+            self.closed = False
+            self.downloads = [
+                httpx.Response(
+                    200,
+                    text='<a href="/download/123/file.pdf">Download</a>',
+                    request=httpx.Request("GET", "https://tmpfiles.org/123/file.pdf"),
+                ),
+                httpx.Response(
+                    200,
+                    content=content,
+                    request=httpx.Request(
+                        "GET", "https://tmpfiles.org/download/123/file.pdf"
+                    ),
+                ),
+            ]
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            self.closed = True
+
+        async def post(self, *_: object, **__: object) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "status": "success",
+                    "data": {"url": "https://tmpfiles.org/123/file.pdf"},
+                },
+                request=httpx.Request("POST", "https://tmpfiles.org/api/v1/upload"),
+            )
+
+        async def get(self, _: str) -> httpx.Response:
+            if self.closed:
+                raise RuntimeError("fake client closed")
+            return self.downloads.pop(0)
+
+    with patch(
+        "src.integrations.messaging.wazzup.httpx.AsyncClient",
+        FakeClient,
+    ):
+        resolved = await WazzupProvider._upload_to_tmpfiles(
+            content,
+            "application/pdf",
+        )
+
+    assert resolved == "https://tmpfiles.org/download/123/file.pdf"
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.messaging.wazzup.httpx.AsyncClient.request",
     new_callable=AsyncMock,
