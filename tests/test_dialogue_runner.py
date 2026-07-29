@@ -753,6 +753,45 @@ async def test_dialogue_kernel_quote_offer_does_not_mark_quote_sent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_quote_offer_prose_does_not_open_quote_details() -> None:
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Samir")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 1,
+                "active_flow": "product_selection",
+                "slots": {
+                    "customer_name": "Samir",
+                    "selected_items": [],
+                },
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="No quotation yet. Please show a cheaper configuration.",
+        recent_history=[
+            (
+                "assistant: This option addresses long-shift comfort. Once you "
+                "confirm the layout, I can prepare a quotation."
+            ),
+            "user: No quotation yet. Please show a cheaper configuration.",
+        ],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("quote_details",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.flow == "legacy_fallback"
+    assert result.state.active_flow == "product_selection"
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_post_quotation_hold_loads_legacy_quote_metadata() -> (
     None
 ):

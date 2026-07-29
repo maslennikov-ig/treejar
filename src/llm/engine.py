@@ -9219,6 +9219,40 @@ async def _suspend_quote_workflow(
     metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
     metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
     metadata = quote_frame_cleared_metadata(metadata)
+    dialogue_state = DialogueState.load(metadata)
+    quote_details_frames = [
+        frame.model_copy(update={"status": "interrupted"}, deep=True)
+        if frame.flow == "quote_details" and frame.status == "active"
+        else frame
+        for frame in dialogue_state.expected_answer_frames
+    ]
+    if (
+        dialogue_state.active_flow == "quote_details"
+        or dialogue_state.slots.selected_items
+        or quote_details_frames != dialogue_state.expected_answer_frames
+    ):
+        dialogue_state = dialogue_state.model_copy(
+            update={
+                "active_flow": (
+                    "product_selection"
+                    if dialogue_state.active_flow in {None, "quote_details"}
+                    else dialogue_state.active_flow
+                ),
+                "slots": dialogue_state.slots.model_copy(
+                    update={"selected_items": []},
+                    deep=True,
+                ),
+                "last_question": (
+                    None
+                    if dialogue_state.last_question is not None
+                    and dialogue_state.last_question.flow == "quote_details"
+                    else dialogue_state.last_question
+                ),
+                "expected_answer_frames": quote_details_frames,
+            },
+            deep=True,
+        )
+        metadata = dialogue_state.to_metadata(metadata)
     conversation.metadata_ = metadata
     try:
         await db.flush()

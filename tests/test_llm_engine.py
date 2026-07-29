@@ -17140,6 +17140,62 @@ async def test_quote_mentions_do_not_clear_persisted_quote_hold(
     assert conv.metadata_["sales_memory"]["quotation_hold"] == "yes"
 
 
+@pytest.mark.asyncio
+async def test_explicit_quote_hold_suspends_typed_quote_details_state(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, *_ = mock_deps
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH-616", "quantity": 12}],
+        },
+        "dialogue_kernel": {
+            "state": {
+                "version": 1,
+                "active_flow": "quote_details",
+                "slots": {
+                    "customer_name": "Samir",
+                    "selected_items": [{"sku": "CH-616", "quantity": 12}],
+                },
+                "expected_answer_frames": [
+                    {
+                        "frame_id": "quote-details:test",
+                        "flow": "quote_details",
+                        "question_kind": "quote_details",
+                        "status": "active",
+                    },
+                    {
+                        "frame_id": "product-selection:test",
+                        "flow": "product_selection",
+                        "question_kind": "product_preference",
+                        "status": "active",
+                    },
+                ],
+            }
+        },
+    }
+
+    await engine_module._suspend_quote_workflow(db, conv)
+
+    state = DialogueState.from_conversation(conv)
+    assert state.active_flow == "product_selection"
+    assert state.slots.selected_items == []
+    assert [
+        frame.status
+        for frame in state.expected_answer_frames
+        if frame.flow == "quote_details"
+    ] == ["interrupted"]
+    assert [
+        frame.status
+        for frame in state.expected_answer_frames
+        if frame.flow == "product_selection"
+    ] == ["active"]
+    assert "pending_quote_selection" not in conv.metadata_
+
+
 @pytest.mark.parametrize(
     "text",
     [

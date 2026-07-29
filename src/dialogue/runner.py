@@ -306,7 +306,7 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
             "after_state": after_state,
         }
 
-    if _is_quote_details_context(dialogue_state, state["recent_history"]):
+    if _is_quote_details_context(dialogue_state):
         details = _extract_quote_details(text)
         after_state = apply_extracted_details(dialogue_state, details)
         missing = _missing_quote_details(after_state)
@@ -418,24 +418,11 @@ def _is_post_quotation_context(
 
 def _is_quote_details_context(
     state: DialogueState,
-    recent_history: list[str],
 ) -> bool:
     if state.slots.selected_items:
         return True
-    if state.active_flow == "quote_details" and _has_active_flow_frame(
+    return state.active_flow == "quote_details" and _has_active_flow_frame(
         state, "quote_details"
-    ):
-        return True
-    last_assistant = next(
-        (
-            item.removeprefix("assistant: ").casefold()
-            for item in reversed(recent_history)
-            if item.startswith("assistant: ")
-        ),
-        "",
-    )
-    return "quotation" in last_assistant and (
-        "company" in last_assistant or "address" in last_assistant
     )
 
 
