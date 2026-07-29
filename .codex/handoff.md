@@ -13,8 +13,9 @@ production, but final acceptance remains blocked
   release-bound production proof.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
-- `origin/main`, the remediation worktree, and production are on
-  `06b6087844ff4e650aa0dbfe6c50b2b3c8bfa744`.
+- The deployed production code release is
+  `06b6087844ff4e650aa0dbfe6c50b2b3c8bfa744`; later `main` changes are
+  orchestration/report documentation only.
 - Canonical CI/deploy run `30489291826` succeeded. Exact release, health,
   Redis, database, five running services, and 8/8 API smoke were read back.
 - Unrelated and untracked user files in the primary worktree were preserved.
