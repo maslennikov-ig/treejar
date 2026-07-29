@@ -2293,6 +2293,24 @@ def is_exact_quote_request(text: str) -> bool:
     return extract_exact_quote_candidate(text) is not None
 
 
+def _is_explicit_alpha_hyphen_sku_candidate(
+    text: str,
+    match: re.Match[str],
+) -> bool:
+    candidate = match.group(0)
+    if "-" not in candidate or any(char.isdigit() for char in candidate):
+        return True
+    explicit_prefix = text[max(0, match.start() - 12) : match.start()]
+    return candidate.isupper() or (
+        re.search(
+            r"\bsku\s*[:#-]?\s*$",
+            explicit_prefix,
+            re.IGNORECASE,
+        )
+        is not None
+    )
+
+
 def _best_selection_sku(fragment: str) -> str | None:
     fragment = _normalize_sku_homoglyphs(fragment)
     excluded_spans = [
@@ -2310,6 +2328,8 @@ def _best_selection_sku(fragment: str) -> str | None:
             if _looks_like_price_phrase_sku_match(fragment, match):
                 continue
             if _looks_like_named_model_sku(candidate):
+                continue
+            if not _is_explicit_alpha_hyphen_sku_candidate(fragment, match):
                 continue
             if any(char.isalpha() for char in candidate) or "-" in candidate:
                 candidates.append(candidate)
@@ -3048,20 +3068,8 @@ def _has_product_reference_sku_signal(segment: str) -> bool:
         candidate = match.group(0)
         if _GENERIC_HYPHENATED_CAPACITY_RE.fullmatch(candidate):
             continue
-        if "-" in candidate and not any(char.isdigit() for char in candidate):
-            explicit_prefix = normalized_segment[
-                max(0, match.start() - 12) : match.start()
-            ]
-            if (
-                not candidate.isupper()
-                and re.search(
-                    r"\bsku\s*[:#-]?\s*$",
-                    explicit_prefix,
-                    re.IGNORECASE,
-                )
-                is None
-            ):
-                continue
+        if not _is_explicit_alpha_hyphen_sku_candidate(normalized_segment, match):
+            continue
         if _looks_like_price_phrase_sku_match(normalized_segment, match):
             continue
         raw = " ".join(match.group(0).split()).strip().upper()

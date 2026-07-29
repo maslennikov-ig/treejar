@@ -8530,6 +8530,18 @@ def test_context_purchase_selection_ignores_time_measurement() -> None:
     assert selection is None
 
 
+def test_context_purchase_selection_ignores_cross_sell_count() -> None:
+    selection = engine_module._extract_purchase_selection_for_context(
+        (
+            "Give me a cheaper configuration and one relevant cross-sell while "
+            "keeping the total under AED 7,000."
+        ),
+        ["assistant: Which chair and desk options would you prefer?"],
+    )
+
+    assert selection is None
+
+
 def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choice() -> (
     None
 ):
