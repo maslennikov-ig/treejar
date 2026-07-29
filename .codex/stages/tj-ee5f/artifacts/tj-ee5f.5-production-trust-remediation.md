@@ -2,7 +2,7 @@
 schema_version: orchestration-artifact/v3
 artifact_type: delegated-stream
 stage_manifest: .codex/stages/tj-ee5f/stage-manifest.json
-stream_owner: trust_remediation
+stream_owner: trust-remediation
 orchestration_level: integration
 scope_kind: foundation
 immediate_consumer: tj-ee5f.1
@@ -12,7 +12,7 @@ non_goals:
   - no live HTTP, SSH, provider, customer, CRM, quotation, deploy, paid call, or Beads mutation
 evidence:
   - none
-task_id: tj-ee5f.5
+task_id: tj-ee5f.5-remediation
 epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f.5

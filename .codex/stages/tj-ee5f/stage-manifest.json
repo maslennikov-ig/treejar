@@ -257,13 +257,13 @@
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.5-task3-live-boundary.md"
     },
     {
-      "task_id": "tj-ee5f.5",
-      "stream_owner": "trust_remediation",
+      "task_id": "tj-ee5f.5-remediation",
+      "stream_owner": "trust-remediation",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md"
     },
     {
       "task_id": "tj-ee5f.10",
-      "stream_owner": "/root/voice_remediation",
+      "stream_owner": "voice-remediation",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.10-voice-remediation.md"
     },
     {
