@@ -46,7 +46,7 @@ def test_cli_validates_exact_contracts_without_network_path() -> None:
     assert "fake-local-adapter" in completed.stdout
 
 
-def test_cli_has_no_live_or_provider_switch() -> None:
+def test_cli_has_no_unscoped_live_or_provider_switch() -> None:
     help_result = subprocess.run(
         [sys.executable, str(CLI), "--help"],
         cwd=PROJECT_ROOT,
@@ -59,7 +59,9 @@ def test_cli_has_no_live_or_provider_switch() -> None:
     assert help_result.returncode == 0
     assert "--live" not in help_result.stdout
     assert "--provider" not in help_result.stdout
-    for forbidden in ("requests", "httpx", "Wazzup", "Zoho", "CRM"):
+    assert "authorize-live" in help_result.stdout
+    assert "_http_client_factory = httpx.Client" in source
+    for forbidden in ("requests", "Wazzup", "Zoho", "CRM"):
         assert forbidden not in source
 
 

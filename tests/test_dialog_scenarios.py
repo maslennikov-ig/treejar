@@ -13,6 +13,7 @@ Scenarios:
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -57,7 +58,7 @@ def _mock_conversation(
     conv.escalation_status = "none"
     conv.zoho_contact_id = None
     conv.zoho_deal_id = None
-    conv.id = "test-conv-id"
+    conv.id = uuid.uuid4()
     return conv
 
 

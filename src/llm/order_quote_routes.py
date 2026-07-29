@@ -265,7 +265,6 @@ async def _order_quote_route_for_turn(
     pending_reference_selection = pending_reference_route.selection
     consultative_name_gate_resume = resumed_name_gate_intent in {
         "catalog_comparison",
-        "catalog_discovery",
         "sales_opportunity",
     }
 

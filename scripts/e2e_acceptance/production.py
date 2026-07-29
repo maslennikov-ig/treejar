@@ -1330,6 +1330,15 @@ def _write_local_fake_producer_observation(
                     "media_refs": [],
                     "token_count": actual.token_count,
                     "cost_usd": actual.cost_usd,
+                    "duration_ms": max(
+                        int(
+                            (
+                                timeline.final_visible_at - timeline.sent_at
+                            ).total_seconds()
+                            * 1000
+                        ),
+                        0,
+                    ),
                     "deviation": None,
                     "evaluator_reasoning": "Protected deterministic checks passed.",
                 }

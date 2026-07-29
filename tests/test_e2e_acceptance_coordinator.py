@@ -893,6 +893,7 @@ def test_cli_records_fixed_29_pairs_then_closes_with_recoverable_final_boundary(
                 "protected_root": root,
                 "run_id": run_id,
                 "baseline": "collector-artifacts/baseline-readback.json",
+                "run_plan": "input-plan.json",
             },
         )()
     )

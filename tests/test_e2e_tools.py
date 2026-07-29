@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -48,6 +49,7 @@ def _make_conversation(
     conv.language = "en"
     conv.customer_name = customer_name
     conv.escalation_status = "none"
+    conv.id = uuid.uuid4()
     conv.metadata_ = {
         "quote_customer_details": {
             "name": customer_name or "Ahmed",
