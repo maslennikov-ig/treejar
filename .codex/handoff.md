@@ -43,7 +43,12 @@ combined release gate, delivery, deploy, and production retest remain pending
   bounds was fixed with focused RED/GREEN proof.
 - The one combined release gate has not yet run.
 
-## Next action
+## Next recommended
+
+Next stage id: `tj-ee5f.1`
+
+Recommended action: complete the single local release gate, then obtain current
+authority for the exact remote/live delivery and production-acceptance batch.
 
 Run exactly once:
 
@@ -60,6 +65,11 @@ models, protected Wazzup/WhatsApp, test-only Zoho quotation/PDF and cleanup.
 At provider-canary time, pause once and ask the owner to send EN, AR, and voice
 from the protected test WhatsApp. Do not close the epic if that proof is
 unavailable.
+
+## Starter prompt for next orchestrator
+
+Use $orchestrator-stage with the compact prompt in
+`.codex/stages/tj-ee5f/remediation-orchestrator-prompt.md`.
 
 ## Approval gates
 
