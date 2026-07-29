@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-29
-Status: in progress; local remediation integrated, release and production proof pending
+Status: in progress; local remediation accepted, remote delivery and production proof pending
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -38,8 +38,13 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
   commits closed all four; delta re-review verdict is `ACCEPT` with no P0/P1.
 - The final reviewer P2 on voice-audit bounds was also fixed through focused
   RED/GREEN tests.
-- The combined repository release gate has not yet run. It must run once on
-  the final local tree before any delivery claim.
+- The one full repository test run completed with `2295 passed`, `19 skipped`,
+  and `18 failed`. The failures were isolated to missing offline frontend
+  dependencies plus six affected contracts; each failed node and its adjacent
+  risk tests now passes after focused correction. Per the release policy, the
+  broad suite was not repeated.
+- Full Ruff, format, and Mypy gates pass. Canonical process verification passes
+  on the final orchestration files.
 
 ## External state
 
@@ -49,12 +54,11 @@ this local remediation session.
 
 ## Remaining acceptance
 
-1. Run the single canonical local release gate.
-2. Obtain current authority for the exact remote/live action batch.
-3. Fresh-fetch, non-force deliver, deploy, and verify the exact release.
-4. Run at least ten production text scenarios plus EN/AR/voice provider
+1. Obtain current authority for the exact remote/live action batch.
+2. Fresh-fetch, non-force deliver, deploy, and verify the exact release.
+3. Run at least ten production text scenarios plus EN/AR/voice provider
    canaries, reconcile all side effects, and verify the quotation/PDF.
-5. Publish the redacted Russian report and inspected PDF, update Beads and
+4. Publish the redacted Russian report and inspected PDF, update Beads and
    handoff, then run canonical stage closeout only if every blocker is terminal.
 
 ## Explicit defers

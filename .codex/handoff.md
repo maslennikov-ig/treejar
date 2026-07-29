@@ -4,7 +4,7 @@ Updated: 2026-07-29
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
 Current stage status: local remediation integrated and independently accepted;
-combined release gate, delivery, deploy, and production retest remain pending
+remote delivery, deploy, and production retest remain pending
 
 ## Current truth
 
@@ -15,6 +15,7 @@ combined release gate, delivery, deploy, and production retest remain pending
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - Local remediation branch is based on `main@844a394`; unrelated and untracked
   user files in the primary worktree were preserved.
+- Final local remediation commit is `fc1e7f8`.
 - The last known production identity in repository evidence is release
   `0dd9615`; it has not been refreshed in this local-only session.
 
@@ -41,24 +42,19 @@ combined release gate, delivery, deploy, and production retest remain pending
 - Independent combined review: initial `0 P0 / 4 P1`; all four corrected.
 - Independent delta re-review: `ACCEPT`, no P0/P1. Its final P2 on voice trace
   bounds was fixed with focused RED/GREEN proof.
-- The one combined release gate has not yet run.
+- Full Ruff, format, and Mypy gates pass.
+- The one full test run produced `2295 passed`, `19 skipped`, and `18 failed`.
+  Those failures were traced to the isolated worktree's absent offline frontend
+  dependencies and six affected contracts. Every failed node plus adjacent
+  trust/runtime coverage now passes after focused fixes; the broad suite was
+  not repeated, as required by the paid/release rerun policy.
+- Canonical process verification passes on the final orchestration state.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: complete the single local release gate, then obtain current
-authority for the exact remote/live delivery and production-acceptance batch.
-
-Run exactly once:
-
-- `uv run ruff check src/ tests/`
-- `uv run ruff format --check src/ tests/`
-- `uv run mypy src/`
-- `uv run pytest tests/ -v --tb=short`
-- `scripts/orchestration/run_process_verification.sh`
-
-If green, ask the owner for current authority for the exact remote/live batch:
+Recommended action: obtain current authority for the exact remote/live batch:
 fresh fetch, safe non-force delivery, canonical deploy/readback, paid test-only
 models, protected Wazzup/WhatsApp, test-only Zoho quotation/PDF and cleanup.
 
