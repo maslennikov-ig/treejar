@@ -287,6 +287,21 @@ NATURAL_NAME_PATTERNS = (
         re.I | re.S,
     ),
 )
+NATURAL_COMPANY_PATTERNS = (
+    re.compile(
+        r"\b(?:facilit(?:y|ies)|office|procurement|operations|project|workspace)"
+        r"\s+(?:manager|lead|director|coordinator|buyer)\s+"
+        r"(?:at|for|with)\s+(?P<value>.+?)(?=$|[\n\[]|[.!?;,]\s?)",
+        re.I | re.S,
+    ),
+    re.compile(
+        r"(?:وأنا\s+)?(?:مدير(?:ة)?|مسؤول(?:ة)?)\s+"
+        r"(?:المرافق|المكتب|المشتريات|العمليات|المشروع)\s+"
+        r"(?:في|لدى)\s+(?:شركة\s+)?"
+        r"(?P<value>.+?)(?=$|[\n\[]|[.!?;,،؛؟]\s?)",
+        re.S,
+    ),
+)
 TREEJAR_MAPS_URL = (
     "https://www.google.com/maps/place/Treejar+Trading/@24.9871463,55.1135981,17z"
 )
@@ -5266,6 +5281,18 @@ def _extract_natural_customer_name(text: str) -> str:
     return ""
 
 
+def _extract_natural_company(text: str) -> str:
+    stripped = _strip_synthetic_test_marker(text)
+    for pattern in NATURAL_COMPANY_PATTERNS:
+        match = pattern.search(stripped)
+        if not match:
+            continue
+        company = " ".join(match.group("value").strip(" \t\r\n.,;:!?-").split())
+        if company and len(company) <= 120:
+            return company
+    return ""
+
+
 def _extract_bare_name_gate_reply(text: str) -> str:
     stripped = _strip_synthetic_test_marker(text)
     stripped = " ".join(stripped.strip(" \t\r\n.,;:!?").split())
@@ -5647,6 +5674,10 @@ def _extract_quote_customer_details(text: str) -> dict[str, str]:
     natural_name = _extract_natural_customer_name(text)
     if natural_name:
         details["name"] = natural_name
+
+    natural_company = _extract_natural_company(text)
+    if natural_company:
+        details["company"] = natural_company
 
     company = _labeled_detail_value(
         text,

@@ -16172,6 +16172,22 @@ def test_extract_quote_customer_details_splits_inline_labels() -> None:
     }
 
 
+def test_name_gate_reply_accepts_natural_role_and_company() -> None:
+    text = "I'm Nora, facilities lead at Northstar QA Workspace."
+
+    details = engine_module._extract_quote_customer_details(text)
+
+    assert details == {
+        "name": "Nora",
+        "company": "Northstar QA Workspace",
+    }
+    assert engine_module._is_name_gate_completion_reply(
+        text,
+        details,
+        pending_request_exists=True,
+    )
+
+
 def test_selection_confirmation_waits_for_quote_opt_in_before_requesting_details() -> (
     None
 ):
