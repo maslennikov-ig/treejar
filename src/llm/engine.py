@@ -137,6 +137,9 @@ from src.services.escalation_state import is_active_human_handoff
 from src.services.proposal_followup import record_proposal_sent
 from src.services.public_media import build_signed_product_image_url
 
+# Preserve the established patch/import seam while using the telemetry model.
+OpenAIChatModel = OpenRouterTelemetryChatModel
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["ProductMediaPayload", "rag_search_products"]
@@ -9391,7 +9394,7 @@ async def _prepare_sales_tools(
 
 # Initialize model with OpenRouter provider
 CORE_CHAT_MODEL_NAME = model_name_for_path(PATH_CORE_CHAT)
-model = OpenRouterTelemetryChatModel(
+model = OpenAIChatModel(
     CORE_CHAT_MODEL_NAME,
     provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
     settings=model_settings_for_path(PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME),
@@ -11934,7 +11937,7 @@ async def process_message(
         )
         db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
 
-        dynamic_model = OpenRouterTelemetryChatModel(
+        dynamic_model = OpenAIChatModel(
             db_model_main,
             provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
             settings=model_settings_for_path(PATH_CORE_CHAT, model_name=db_model_main),
