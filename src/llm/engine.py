@@ -3037,8 +3037,23 @@ def _segment_starts_with_explicit_quantity(segment: str) -> bool:
 def _has_product_reference_sku_signal(segment: str) -> bool:
     normalized_segment = _normalize_sku_homoglyphs(segment)
     for match in _SKU_SIGNAL_RE.finditer(normalized_segment):
-        if _GENERIC_HYPHENATED_CAPACITY_RE.fullmatch(match.group(0)):
+        candidate = match.group(0)
+        if _GENERIC_HYPHENATED_CAPACITY_RE.fullmatch(candidate):
             continue
+        if "-" in candidate and not any(char.isdigit() for char in candidate):
+            explicit_prefix = normalized_segment[
+                max(0, match.start() - 12) : match.start()
+            ]
+            if (
+                not candidate.isupper()
+                and re.search(
+                    r"\bsku\s*[:#-]?\s*$",
+                    explicit_prefix,
+                    re.IGNORECASE,
+                )
+                is None
+            ):
+                continue
         if _looks_like_price_phrase_sku_match(normalized_segment, match):
             continue
         raw = " ".join(match.group(0).split()).strip().upper()

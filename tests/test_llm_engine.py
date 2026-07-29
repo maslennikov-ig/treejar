@@ -8505,6 +8505,17 @@ def test_extract_missing_quantity_product_references_ignores_diagnostic_marker()
     )
 
     assert references == ()
+    assert engine_module._has_product_reference_sku_signal("SKU: ergo-pro")
+    assert engine_module._has_product_reference_sku_signal("ERGO-PRO")
+
+
+def test_extract_missing_quantity_product_references_ignores_hyphenated_prose() -> None:
+    references = engine_module._extract_missing_quantity_product_references(
+        "We need chairs for twelve call-center staff below AED 400 each, "
+        "plus compact desks. Please help us choose."
+    )
+
+    assert references == ()
 
 
 def test_context_purchase_selection_accepts_bare_quantity_sku_after_product_choice() -> (
