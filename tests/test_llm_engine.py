@@ -4253,6 +4253,16 @@ async def test_process_message_product_quantity_update_stays_with_agent(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        (
+            "What details have you saved about my company, delivery address, "
+            "products, quantities, delivery timing, and assembly?"
+        ),
+        "Summarize the updated requirement and tell me the best next step.",
+    ],
+)
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
@@ -4267,6 +4277,7 @@ async def test_process_message_saved_context_summary_does_not_handoff(
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
     mock_notify: AsyncMock,
+    text: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -4289,10 +4300,6 @@ async def test_process_message_saved_context_summary_does_not_handoff(
             "quotation_hold": "yes",
         },
     }
-    text = (
-        "What details have you saved about my company, delivery address, "
-        "products, quantities, delivery timing, and assembly?"
-    )
     mock_build_history.return_value = _active_product_planning_history(text=text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
@@ -4315,6 +4322,7 @@ async def test_process_message_saved_context_summary_does_not_handoff(
     assert "2 workstations" in response.text
     assert "2-3 days" in response.text
     assert "Assembly: required" in response.text
+    assert "Next step:" in response.text
     assert "manager" not in response.text.lower()
     assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()

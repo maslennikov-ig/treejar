@@ -6880,6 +6880,7 @@ def _is_saved_sales_context_summary_request(text: str) -> bool:
         "summarize the details",
         "recap the details",
         "my request",
+        "requirement",
     )
     if not any(term in normalized for term in summary_terms):
         return False
@@ -6893,6 +6894,7 @@ def _is_saved_sales_context_summary_request(text: str) -> bool:
         "quantity",
         "assembly",
         "request",
+        "requirement",
     )
     return any(term in normalized for term in context_terms)
 
@@ -6922,9 +6924,20 @@ def _saved_sales_context_summary(deps: SalesDeps) -> str:
             "I do not have saved request details yet. Please share the products, "
             "quantities, company, and delivery address you want me to keep."
         )
-    return "Here are the details I have saved:\n" + "\n".join(
+    summary = "Here are the details I have saved:\n" + "\n".join(
         f"- {line}" for line in lines
     )
+    if memory.get("latest_product_note"):
+        quotation_note = (
+            "the quotation remains on hold."
+            if memory.get("quotation_hold")
+            else "then confirm the next commercial step."
+        )
+        return (
+            f"{summary}\nNext step: verify the saved product quantities against "
+            f"current stock and budget; {quotation_note}"
+        )
+    return summary
 
 
 def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
