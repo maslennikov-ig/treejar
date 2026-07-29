@@ -173,7 +173,9 @@ def test_live_authority_binds_protected_runtime_transport_config(
 
     assert (
         handle._authorization.live_binding.runtime_transport_digest
-        == execution._digest(runtime)
+        == execution.runtime_transport_digest(
+            execution.RuntimeTransportConfig.model_validate(runtime)
+        )
     )
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
@@ -112,6 +113,9 @@ LiveRuntimeConfig = execution.RuntimeTransportConfig
 
 
 class _HttpResponse(Protocol):
+    @property
+    def content(self) -> bytes: ...
+
     def raise_for_status(self) -> None: ...
 
     def json(self) -> object: ...
@@ -123,6 +127,7 @@ class _HttpClient(Protocol):
         url: str,
         *,
         json: Mapping[str, Any],
+        headers: Mapping[str, str] | None = None,
         timeout: float,
         follow_redirects: bool,
     ) -> _HttpResponse: ...
@@ -207,6 +212,76 @@ class OneShotWazzupWebhookTransport:
         except Exception:
             raise DispatchUncertainError(
                 "webhook response or dispatch outcome is uncertain"
+            ) from None
+
+
+def _validate_judge_endpoint(endpoint: str) -> str:
+    parsed = urlsplit(endpoint)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "openrouter.ai"
+        or (parsed.port or 443) != 443
+        or parsed.path != "/api/v1/chat/completions"
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ProductionAdapterError(
+            "semantic judge endpoint must be the fixed OpenRouter HTTPS endpoint"
+        )
+    return endpoint
+
+
+@dataclass(frozen=True)
+class OneShotOpenRouterJudgeTransport:
+    """One-attempt OpenRouter JSON transport; permits stay in the compiler."""
+
+    endpoint: str
+    api_key: str
+    client: _HttpClient
+    timeout_seconds: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "endpoint", _validate_judge_endpoint(self.endpoint))
+        if (
+            not self.api_key
+            or not math.isfinite(self.timeout_seconds)
+            or not 15 <= self.timeout_seconds <= 180
+        ):
+            raise ProductionAdapterError("OpenRouter judge transport config is invalid")
+
+    def request(self, request: Mapping[str, Any]) -> bytes:
+        if (
+            request.get("temperature") != 0
+            or not isinstance(request.get("model"), str)
+            or not request["model"]
+            or not isinstance(request.get("messages"), list)
+            or not isinstance(request.get("response_format"), Mapping)
+        ):
+            raise ProductionAdapterError("semantic judge request is invalid")
+        try:
+            response = self.client.post(
+                self.endpoint,
+                json=dict(request),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            raw = bytes(response.content)
+            if not raw:
+                raise ValueError("empty OpenRouter response")
+            parsed = json.loads(raw)
+            if not isinstance(parsed, Mapping):
+                raise TypeError("OpenRouter response is not a JSON object")
+            return raw
+        except Exception:
+            raise DispatchUncertainError(
+                "semantic judge response or dispatch outcome is uncertain"
             ) from None
 
 
@@ -358,7 +433,7 @@ def build_live_runtime_components(
     *,
     config: LiveRuntimeConfig,
     authorization: Any,
-    http_client: _HttpClient,
+    http_client: Any,
     ssh_runner: _SshRunner = subprocess,
 ) -> LiveRuntimeComponents:
     """Build only transports whose identities match the protected authority."""
@@ -368,8 +443,15 @@ def build_live_runtime_components(
         IndependentExecutionProducer,
     )
 
+    from src.core.config import settings
+
+    expected_adapters = (
+        (config.adapter_id, config.judge_adapter_id)
+        if config.judge_adapter_id is not None
+        else (config.adapter_id,)
+    )
     if (
-        tuple(authorization.adapter_ids) != (config.adapter_id,)
+        tuple(authorization.adapter_ids) != expected_adapters
         or config.collector_id not in authorization.collector_ids
     ):
         raise ProductionAdapterError("live runtime adapter/collector authority drift")
@@ -403,6 +485,16 @@ def build_live_runtime_components(
         producer=IndependentExecutionProducer(
             collector_id=config.collector_id,
             transport=ssh,
+            judge_transport=(
+                OneShotOpenRouterJudgeTransport(
+                    endpoint=config.judge_endpoint,
+                    api_key=settings.openrouter_api_key,
+                    client=http_client,
+                    timeout_seconds=config.judge_timeout_seconds,
+                )
+                if config.judge_endpoint is not None
+                else None
+            ),
         ),
         reconciler=IndependentActionReconciler(
             collector_id=config.collector_id,
@@ -414,6 +506,7 @@ def build_live_runtime_components(
 __all__ = [
     "LiveRuntimeComponents",
     "LiveRuntimeConfig",
+    "OneShotOpenRouterJudgeTransport",
     "OneShotWazzupWebhookTransport",
     "ReadOnlySshTransport",
     "build_live_runtime_components",

@@ -50,6 +50,35 @@ def _transcript_fact(attempt) -> dict[str, object]:
     }
 
 
+class _PassJudgeTransport:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def request(self, request) -> bytes:
+        self.calls.append(dict(request))
+        facts = json.loads(request["messages"][1]["content"])
+        result = {
+            "schema_version": "noor-e2e-semantic-judge-result/v1",
+            "execution_id": facts["execution_id"],
+            "observation_sha256": facts["observation_sha256"],
+            "verdicts": [
+                {
+                    "assertion_id": item["assertion_id"],
+                    "passed": True,
+                    "reason": "The protected production facts satisfy this check.",
+                }
+                for item in facts["assertions"]
+            ],
+        }
+        return json.dumps(
+            {
+                "model": request["model"],
+                "choices": [{"message": {"content": json.dumps(result)}}],
+                "usage": {"total_tokens": 123, "cost": 0.02},
+            }
+        ).encode()
+
+
 def test_independent_live_producer_collects_server_facts_without_caller_evaluation(
     tmp_path: Path,
 ) -> None:
@@ -131,11 +160,329 @@ def test_independent_live_producer_collects_server_facts_without_caller_evaluati
     ).read_bytes() == raw
     assert not (journal.run_root / "collector-raw/evaluations").exists()
 
-    with pytest.raises(ProductionAdapterError, match="trusted semantic compiler"):
+    with pytest.raises(ProductionAdapterError, match="semantic compiler"):
         producer.materialize_next(
             producer_handle=handle,
             observed_at=datetime.now(UTC),
         )
+
+
+def test_live_semantic_compiler_uses_sealed_plan_observation_and_one_judge_call(
+    tmp_path: Path,
+) -> None:
+    from scripts.e2e_acceptance.live_producer import IndependentExecutionProducer
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        _write_or_validate_exact,
+        issue_decisive_producer_handle,
+        produce_validated_execution_attempt,
+    )
+
+    from tests.test_e2e_acceptance_production import _prepared_executed_producer
+
+    question = "Need four synthetic chairs."
+    registry, authority, journal, plan, attempt = _prepared_executed_producer(
+        tmp_path,
+        semantic_customer_text=question,
+    )
+    execution_id = attempt.execution_id
+    observed_at = datetime.now(UTC)
+    disposition = {
+        "artifact_id": "synthetic:item",
+        "subsystem": "outbound_text",
+        "artifact_type": "synthetic_conversation",
+        "baseline_readback": {"state": "absent"},
+        "expected_effect": {"state": "closed"},
+        "final_readback": {"state": "closed"},
+        "disposition": "resolved",
+        "follow_up_suppressed": True,
+        "checksum_refs": ["collector:synthetic-item"],
+    }
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-server-execution-observation/v1",
+            "execution_id": execution_id,
+            "observed_at": observed_at.isoformat(),
+            "transcript_facts": [_transcript_fact(attempt)],
+            "side_effect_facts": [disposition],
+            "baseline_inventory": {"synthetic:item": {"state": "absent"}},
+            "final_inventory": {"synthetic:item": {"state": "closed"}},
+        }
+    ).encode()
+    _write_or_validate_exact(
+        journal.run_root,
+        "collector-artifacts/baseline-readback.json",
+        {"observation": attempt.baseline.model_dump(mode="json")},
+    )
+
+    judge = _PassJudgeTransport()
+    producer = IndependentExecutionProducer(
+        collector_id="independent-readback-collector",
+        transport=FakeReadOnlySshTransport(
+            responses={f"execution:{execution_id}": raw}
+        ),
+        judge_transport=judge,
+    )
+    handle = issue_decisive_producer_handle(
+        registry=registry,
+        journal=journal,
+        authority=authority,
+        sealed_plan=plan,
+    )
+
+    source_ref = producer.materialize_next(
+        producer_handle=handle,
+        observed_at=observed_at + timedelta(seconds=1),
+    )
+    assert (
+        producer.materialize_next(
+            producer_handle=handle,
+            observed_at=observed_at + timedelta(seconds=1),
+        )
+        == source_ref
+    )
+    produced = produce_validated_execution_attempt(
+        producer_handle=handle,
+        source_output_ref=source_ref,
+    )
+
+    assert produced.artifact["outcome"] == "PASS"
+    assert len(judge.calls) == 1
+    assert judge.calls[0]["temperature"] == 0
+    action_id = f"judge-{execution_id.lower()}"
+    assert journal._actions[action_id] == "succeeded"
+    assert journal._journal_cost_settlements[action_id].actual_cost_usd == 0.02
+    assert (
+        journal.run_root / f"producer-receipts/judges/{execution_id}.json"
+    ).is_file()
+
+
+@pytest.mark.parametrize("preauthorized", [False, True])
+def test_live_semantic_compiler_requires_exact_retention_for_active_effect(
+    tmp_path: Path,
+    preauthorized: bool,
+) -> None:
+    from scripts.e2e_acceptance import execution
+    from scripts.e2e_acceptance.live_producer import IndependentExecutionProducer
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        ProductionAdapterError,
+        _write_or_validate_exact,
+        issue_decisive_producer_handle,
+    )
+
+    from tests.test_e2e_acceptance_production import _prepared_executed_producer
+
+    artifact_id = "crm:contact:contact-test"
+    question = "Need four synthetic chairs."
+    registry, authority, journal, plan, attempt = _prepared_executed_producer(
+        tmp_path,
+        semantic_customer_text=question,
+        retention_artifact_id=artifact_id if preauthorized else None,
+    )
+    observed_at = datetime.now(UTC)
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-server-execution-observation/v1",
+            "execution_id": attempt.execution_id,
+            "observed_at": observed_at.isoformat(),
+            "transcript_facts": [_transcript_fact(attempt)],
+            "side_effect_facts": [
+                {
+                    "artifact_id": artifact_id,
+                    "subsystem": "crm",
+                    "artifact_type": "crm_contact",
+                    "baseline_readback": {"state": "absent"},
+                    "expected_effect": {"state": "active"},
+                    "final_readback": {"state": "active", "status": "customer"},
+                    "disposition": "cleanup_pending",
+                    "follow_up_suppressed": True,
+                    "checksum_refs": ["collector:contact-test"],
+                }
+            ],
+            "baseline_inventory": {artifact_id: {"state": "absent"}},
+            "final_inventory": {artifact_id: {"state": "active", "status": "customer"}},
+        }
+    ).encode()
+    _write_or_validate_exact(
+        journal.run_root,
+        "collector-artifacts/baseline-readback.json",
+        {"observation": attempt.baseline.model_dump(mode="json")},
+    )
+    judge = _PassJudgeTransport()
+    producer = IndependentExecutionProducer(
+        collector_id="independent-readback-collector",
+        transport=FakeReadOnlySshTransport(
+            responses={f"execution:{attempt.execution_id}": raw}
+        ),
+        judge_transport=judge,
+    )
+    handle = issue_decisive_producer_handle(
+        registry=registry,
+        journal=journal,
+        authority=authority,
+        sealed_plan=plan,
+    )
+
+    if not preauthorized:
+        with pytest.raises(ProductionAdapterError, match="retention"):
+            producer.materialize_next(
+                producer_handle=handle,
+                observed_at=observed_at + timedelta(seconds=1),
+            )
+        assert judge.calls == []
+        return
+
+    source_ref = producer.materialize_next(
+        producer_handle=handle,
+        observed_at=observed_at + timedelta(seconds=1),
+    )
+    source = json.loads(execution._read_protected(journal.run_root, source_ref))
+    final = source["attempt"]["final"]["inventory"][artifact_id]
+    disposition = source["side_effect_dispositions"][0]
+    retention = journal.authorization.side_effect_authority.retention_authorities[0]
+
+    assert final["state"] == "retained"
+    assert disposition["disposition"] == "retained_as_test_evidence"
+    assert disposition["retention_pre_authorized"] is True
+    assert disposition["retention_owner"] == retention.retention_owner
+    assert disposition["retention_authority_digest"] == execution._digest(
+        retention.model_dump(mode="json")
+    )
+    assert len(judge.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("step_id", "different-step"),
+        ("capability", "outbound_text"),
+        ("operation_permission", "fixture:execute"),
+        ("subsystem", "outbound_text"),
+        ("destination_digest", "e" * 64),
+        ("payload_digest", "f" * 64),
+        ("idempotency_key", "different-idempotency"),
+        ("capability_units", {"model": 2}),
+    ],
+)
+def test_semantic_compiler_rejects_authorized_judge_action_identity_drift(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    from scripts.e2e_acceptance.live_producer import (
+        _judge_action,
+        _semantic_config,
+    )
+    from scripts.e2e_acceptance.production import (
+        ProductionAdapterError,
+        _producer_handle_record,
+        issue_decisive_producer_handle,
+    )
+
+    from tests.test_e2e_acceptance_production import _prepared_executed_producer
+
+    registry, authority, journal, plan, _ = _prepared_executed_producer(
+        tmp_path,
+        semantic_customer_text="Need four synthetic chairs.",
+        judge_action_updates={field: value},
+    )
+    handle = issue_decisive_producer_handle(
+        registry=registry,
+        journal=journal,
+        authority=authority,
+        sealed_plan=plan,
+    )
+    record = _producer_handle_record(handle)
+
+    with pytest.raises(ProductionAdapterError, match="action binding"):
+        _judge_action(record=record, scenario=_semantic_config(record))
+
+
+def test_semantic_judge_unknown_action_is_never_retried(tmp_path: Path) -> None:
+    import hashlib
+
+    from scripts.e2e_acceptance.live_producer import (
+        IndependentExecutionProducer,
+        _LiveExecutionObservation,
+        _run_or_replay_judge,
+        _semantic_config,
+    )
+    from scripts.e2e_acceptance.production import (
+        FakeReadOnlySshTransport,
+        ProductionAdapterError,
+        _producer_handle_record,
+        issue_decisive_producer_handle,
+    )
+
+    from tests.test_e2e_acceptance_production import _prepared_executed_producer
+
+    registry, authority, journal, plan, attempt = _prepared_executed_producer(
+        tmp_path,
+        semantic_customer_text="Need four synthetic chairs.",
+    )
+    observed_at = datetime.now(UTC)
+    raw = json.dumps(
+        {
+            "schema_version": "noor-e2e-server-execution-observation/v1",
+            "execution_id": attempt.execution_id,
+            "observed_at": observed_at.isoformat(),
+            "transcript_facts": [_transcript_fact(attempt)],
+            "side_effect_facts": [],
+            "baseline_inventory": {"synthetic:item": {"state": "closed"}},
+            "final_inventory": {"synthetic:item": {"state": "closed"}},
+        }
+    ).encode()
+    producer = IndependentExecutionProducer(
+        collector_id="independent-readback-collector",
+        transport=FakeReadOnlySshTransport(
+            responses={f"execution:{attempt.execution_id}": raw}
+        ),
+    )
+    handle = issue_decisive_producer_handle(
+        registry=registry,
+        journal=journal,
+        authority=authority,
+        sealed_plan=plan,
+    )
+    producer.collect_next(
+        producer_handle=handle,
+        observed_at=observed_at + timedelta(seconds=1),
+    )
+    record = _producer_handle_record(handle)
+    scenario = _semantic_config(record)
+    observation = _LiveExecutionObservation.model_validate(json.loads(raw))
+
+    class UncertainJudge:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def request(self, request) -> bytes:
+            self.calls += 1
+            raise RuntimeError("outcome uncertain after dispatch")
+
+    uncertain = UncertainJudge()
+    with pytest.raises(RuntimeError, match="uncertain"):
+        _run_or_replay_judge(
+            producer_handle=handle,
+            scenario=scenario,
+            observation=observation,
+            observation_sha256=hashlib.sha256(raw).hexdigest(),
+            transport=uncertain,
+        )
+    assert uncertain.calls == 1
+    assert journal._actions[scenario.judge.action_id] == "unknown"
+
+    replacement = _PassJudgeTransport()
+    with pytest.raises(ProductionAdapterError, match="retry is forbidden"):
+        _run_or_replay_judge(
+            producer_handle=handle,
+            scenario=scenario,
+            observation=observation,
+            observation_sha256=hashlib.sha256(raw).hexdigest(),
+            transport=replacement,
+        )
+    assert replacement.calls == []
 
 
 def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
@@ -160,6 +507,9 @@ def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
             "baseline": ["/usr/bin/cat", "/var/lib/noor/baseline.json"],
             "final": ["/usr/bin/cat", "/var/lib/noor/final.json"],
         },
+        "judge_endpoint": "https://openrouter.ai/api/v1/chat/completions",
+        "judge_adapter_id": "openrouter-judge-adapter",
+        "judge_timeout_seconds": 75,
     }
     evaluator = {
         "schema_version": "noor-e2e-protected-evaluator/v1",
@@ -183,11 +533,11 @@ def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
 
     config = LiveRuntimeConfig.model_validate(live.runtime)
     authority = SimpleNamespace(
-        adapter_ids=("wazzup-webhook-adapter",),
+        adapter_ids=("wazzup-webhook-adapter", "openrouter-judge-adapter"),
         collector_ids=("independent-readback-collector",),
         live_binding=SimpleNamespace(
             target_digest="a" * 64,
-            runtime_transport_digest=execution._digest(runtime),
+            runtime_transport_digest=execution.runtime_transport_digest(config),
         ),
     )
 
@@ -206,6 +556,7 @@ def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
     )
     assert components.collector.collector_id == "independent-readback-collector"
     assert components.producer.collector_id == "independent-readback-collector"
+    assert components.producer.judge_transport.timeout_seconds == 75
 
     with pytest.raises(ProductionAdapterError, match="target"):
         build_live_runtime_components(
@@ -221,9 +572,58 @@ def test_live_runtime_is_sealed_in_plan_and_bound_to_authority() -> None:
         )
 
 
+def test_openrouter_judge_transport_uses_bound_timeout_without_retry() -> None:
+    from scripts.e2e_acceptance.live_transport import (
+        OneShotOpenRouterJudgeTransport,
+    )
+
+    class Response:
+        content = b'{"ok":true}'
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class Client:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return Response()
+
+    client = Client()
+    transport = OneShotOpenRouterJudgeTransport(
+        endpoint="https://openrouter.ai/api/v1/chat/completions",
+        api_key="protected-key",
+        client=client,
+        timeout_seconds=75,
+    )
+
+    raw = transport.request(
+        {
+            "model": "fixture/judge",
+            "temperature": 0,
+            "messages": [{"role": "user", "content": "{}"}],
+            "response_format": {"type": "json_schema"},
+        }
+    )
+
+    assert raw == Response.content
+    assert len(client.calls) == 1
+    _, kwargs = client.calls[0]
+    assert kwargs["timeout"] == 75
+    assert kwargs["follow_redirects"] is False
+    assert kwargs["headers"]["Authorization"] == "Bearer protected-key"
+
+
 @pytest.mark.parametrize(
     "field",
-    ["webhook_endpoint", "ssh_host_alias", "source_commands"],
+    [
+        "webhook_endpoint",
+        "ssh_host_alias",
+        "source_commands",
+        "judge_timeout_seconds",
+    ],
 )
 def test_live_runtime_rejects_transport_identity_drift(field: str) -> None:
     from scripts.e2e_acceptance import execution
@@ -250,14 +650,17 @@ def test_live_runtime_rejects_transport_identity_drift(field: str) -> None:
         changed[field] = "https://drift.invalid/api/v1/webhook/wazzup"
     elif field == "ssh_host_alias":
         changed[field] = "drift-production"
+    elif field == "judge_timeout_seconds":
+        changed[field] = 75
     else:
         changed[field]["final"] = ["/usr/bin/cat", "/var/lib/noor/drift.json"]
+    base_config = LiveRuntimeConfig.model_validate(runtime)
     authority = SimpleNamespace(
         adapter_ids=("wazzup-webhook-adapter",),
         collector_ids=("independent-readback-collector",),
         live_binding=SimpleNamespace(
             target_digest="a" * 64,
-            runtime_transport_digest=execution._digest(runtime),
+            runtime_transport_digest=execution.runtime_transport_digest(base_config),
         ),
     )
 

@@ -132,7 +132,9 @@ def _prepared_gate_producer(tmp_path: Path):
     from scripts.e2e_acceptance.production import ProtectedRunPlan, seal_run_plan
 
     from tests.e2e_acceptance_backend import build_canonical_test_registry
-    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+    from tests.test_e2e_acceptance_trusted_execution import (
+        _issued_authority,
+    )
 
     registry = build_canonical_test_registry()
     root = tmp_path / "protected"
@@ -202,12 +204,22 @@ def _prepared_gate_producer(tmp_path: Path):
     return registry, authority, journal, plan, attempt
 
 
-def _prepared_executed_producer(tmp_path: Path):
+def _prepared_executed_producer(
+    tmp_path: Path,
+    *,
+    semantic_customer_text: str | None = None,
+    retention_artifact_id: str | None = None,
+    judge_action_updates: dict[str, object] | None = None,
+):
     from scripts.e2e_acceptance import execution, policy
     from scripts.e2e_acceptance.production import ProtectedRunPlan, seal_run_plan
 
     from tests.e2e_acceptance_backend import build_canonical_test_registry
-    from tests.test_e2e_acceptance_trusted_execution import _issued_authority
+    from tests.test_e2e_acceptance_trusted_execution import (
+        _action_quota_charge,
+        _action_request,
+        _issued_authority,
+    )
 
     registry = build_canonical_test_registry()
     scenario_id = registry.compiled_plan.execution_ids[0]
@@ -231,26 +243,165 @@ def _prepared_executed_producer(tmp_path: Path):
         criterion_ids=scenario.criterion_ids,
         assertion_ids=tuple(sorted(assertion_ids)),
     )
+    semantic_judge = {
+        "schema_version": "noor-e2e-semantic-judge/v1",
+        "action_id": f"judge-{scenario_id.lower()}",
+        "adapter_id": "fake-local-adapter",
+        "step_id": f"{scenario_id}:semantic-judge",
+        "operation_permission": "paid_model_call",
+        "subsystem": "model",
+        "destination_digest": execution._digest(
+            {
+                "adapter_id": "fake-local-adapter",
+                "model": "fixture/judge",
+                "transport": "openrouter-chat-completions",
+            }
+        ),
+        "idempotency_key": f"judge-{scenario_id.lower()}:{scenario_id}",
+        "capability_units": {"model": 1},
+        "model": "fixture/judge",
+        "temperature": 0,
+        "max_calls": 1,
+        "max_cost_usd": 0.5,
+        "rubric_digest": execution._digest(
+            tuple(
+                {
+                    "assertion_id": assertion_id,
+                    "canonical_text": registry.compiled_policy.assertions[
+                        assertion_id
+                    ].canonical_text,
+                    "oracle_kind": registry.compiled_policy.assertions[
+                        assertion_id
+                    ].oracle.kind,
+                }
+                for assertion_id in sorted(assertion_ids)
+            )
+        ),
+    }
+    judge_config_digest = (
+        execution._digest(semantic_judge)
+        if semantic_customer_text is not None
+        else "6" * 64
+    )
     input_digest = execution.scenario_input_digest(
         execution_id=scenario_id,
         planned_turns=(planned,),
         tester_config_digest="5" * 64,
-        judge_config_digest="6" * 64,
+        judge_config_digest=judge_config_digest,
     )
     root = tmp_path / "protected"
     input_digests = {
         identity: "0" * 64 for identity in registry.compiled_plan.execution_ids
     }
     input_digests[scenario_id] = input_digest
+    action_specs = None
+    judge_request = None
+    if semantic_customer_text is not None:
+        judge_request = {
+            "schema_version": "noor-e2e-semantic-judge-action/v1",
+            "execution_id": scenario_id,
+            "source_ref": f"collector-raw/executions/{scenario_id}.json",
+            "judge_config_digest": judge_config_digest,
+        }
+        judge_action_values = {
+            "action_id": semantic_judge["action_id"],
+            "execution_id": scenario_id,
+            "step_id": semantic_judge["step_id"],
+            "capability": "model.classify",
+            "operation_permission": semantic_judge["operation_permission"],
+            "adapter_id": "fake-local-adapter",
+            "subsystem": semantic_judge["subsystem"],
+            "destination_digest": semantic_judge["destination_digest"],
+            "payload_digest": execution._digest(judge_request),
+            "idempotency_key": semantic_judge["idempotency_key"],
+            "capability_units": semantic_judge["capability_units"],
+            "quota_charge": execution.AuthorizedQuotaCharge(
+                messages=0,
+                model_calls=1,
+                max_cost_usd=semantic_judge["max_cost_usd"],
+                cost_settlement="bounded_actual",
+            ),
+        }
+        judge_action_values.update(judge_action_updates or {})
+        action_specs = execution.AuthorizedActionSpecs(
+            schema_version="noor-e2e-authorized-action-specs/v2",
+            specs=(
+                execution.AuthorizedActionSpec(
+                    action_id="synthetic-action",
+                    adapter_id="fake-local-adapter",
+                    subsystem="outbound_text",
+                    quota_charge=_action_quota_charge(execution),
+                    **_action_request(),
+                ),
+                execution.AuthorizedActionSpec(
+                    action_id="negative",
+                    adapter_id="fake-local-adapter",
+                    subsystem="outbound_text",
+                    quota_charge=_action_quota_charge(execution),
+                    **_action_request(),
+                ),
+                execution.AuthorizedActionSpec(**judge_action_values),
+            ),
+        )
+    protected_authorities = None
+    if retention_artifact_id is not None:
+        authority_now = datetime.now(UTC)
+        protected_authorities = execution.ProtectedExecutionAuthorities(
+            schema_version="noor-e2e-protected-execution-authorities/v2",
+            client_exclusions=(),
+            side_effect_authority=execution.SideEffectAuthority(
+                issuer="protected-side-effect-authority",
+                cleanup_owner="synthetic-local-executor",
+                cleanup_authority="synthetic-cleanup",
+                retention_authorities=(
+                    execution.AuthorizedRetentionSpec(
+                        authority_id=f"retain-{scenario_id.lower()}",
+                        issuer="client-retention-authority",
+                        artifact_id=retention_artifact_id,
+                        execution_id=scenario_id,
+                        criterion_ids=scenario.criterion_ids,
+                        cleanup_owner="synthetic-local-executor",
+                        cleanup_authority="synthetic-cleanup",
+                        retention_owner="synthetic-retention-owner",
+                        issued_at=authority_now - timedelta(minutes=1),
+                        expires_at=authority_now + timedelta(minutes=30),
+                    ),
+                ),
+            ),
+        )
     authority = _issued_authority(
         registry,
         protected_root=root,
         run_id="local-run",
         execution_input_digests=input_digests,
+        protected_authorities=protected_authorities,
+        action_specs=action_specs,
+        permissions=(
+            ("fixture:execute", "paid_model_call")
+            if semantic_customer_text is not None
+            else None
+        ),
+        quotas=(
+            execution.ProtectedQuotas(
+                max_scenarios=29,
+                max_messages=2,
+                max_model_calls=2,
+                max_cost_usd=1.0,
+                subsystem_quotas={"outbound_text": 2, "model": 1},
+            )
+            if semantic_customer_text is not None
+            else None
+        ),
     )
     journal = execution.ProtectedExecutionJournal.create(
         protected_root=root, run_id="local-run", authority=authority
     )
+    if judge_request is not None:
+        execution._write_exclusive(
+            journal.run_root,
+            f"requests/{semantic_judge['action_id']}.json",
+            judge_request,
+        )
     bindings: dict[str, dict[str, str]] = {}
     oracle_evidence = []
     now = datetime.now(UTC)
@@ -324,6 +475,26 @@ def _prepared_executed_producer(tmp_path: Path):
                     text_supplements=(),
                 )
             )
+    publication: dict[str, object] = {"seed": 1}
+    if semantic_customer_text is not None:
+        publication["semantic_compiler"] = {
+            "schema_version": "noor-e2e-semantic-compiler/v1",
+            "compiler_id": "treejar.live-semantic-compiler.v1",
+            "scenarios": {
+                scenario_id: {
+                    "execution_id": scenario_id,
+                    "planned_turns": [planned.model_dump(mode="json")],
+                    "tester_config_digest": "5" * 64,
+                    "judge_config_digest": judge_config_digest,
+                    "input_text_sha256": {
+                        planned.turn_id: hashlib.sha256(
+                            semantic_customer_text.encode()
+                        ).hexdigest()
+                    },
+                    "judge": semantic_judge,
+                }
+            },
+        }
     plan = ProtectedRunPlan.from_payload(
         {
             "actions": [
@@ -335,14 +506,18 @@ def _prepared_executed_producer(tmp_path: Path):
             ],
             "evaluator": {
                 "schema_version": "noor-e2e-protected-evaluator/v1",
-                "publication": {"seed": 1},
+                "publication": publication,
                 "decisive_producers": [
                     {
                         "producer_id": producer,
                         "producer_kind": binding["producer_kind"],
                         "capability": "outbound_text",
                         "source_identity": binding["source_identity"],
-                        "config_digest": "a" * 64,
+                        "config_digest": (
+                            judge_config_digest
+                            if binding["producer_kind"] == "classifier"
+                            else "a" * 64
+                        ),
                     }
                     for producer, binding in sorted(bindings.items())
                 ],
@@ -408,7 +583,7 @@ def _prepared_executed_producer(tmp_path: Path):
         final=final,
         action_at=(now + timedelta(milliseconds=2),),
         tester_config_digest="5" * 64,
-        judge_config_digest="6" * 64,
+        judge_config_digest=judge_config_digest,
     )
     return registry, authority, journal, plan, attempt
 

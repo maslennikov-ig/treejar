@@ -229,6 +229,7 @@ def _authority_bundle_inputs(
     execution_input_digests: dict[str, str] | None = None,
     protected_authorities=None,
     action_specs=None,
+    permissions: tuple[str, ...] | None = None,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -285,7 +286,7 @@ def _authority_bundle_inputs(
                 }
             ),
             "quotas": v1_quotas,
-            "permissions": ["fixture:execute"],
+            "permissions": list(permissions or ("fixture:execute",)),
             "callback_types": ["synthetic-callback"],
             "test_data_identities": ["synthetic-test-identity"],
             "cleanup_method": "synthetic-cleanup",
@@ -398,6 +399,7 @@ def _issued_authority(
     execution_input_digests: dict[str, str] | None = None,
     protected_authorities=None,
     action_specs=None,
+    permissions: tuple[str, ...] | None = None,
 ):
     _, execution = _modules()
     current_time = now or datetime.now(UTC)
@@ -410,6 +412,7 @@ def _issued_authority(
         execution_input_digests=execution_input_digests,
         protected_authorities=protected_authorities,
         action_specs=action_specs,
+        permissions=permissions,
     )
     execution._write_test_authority_bundle(**inputs)
     return execution.issue_execution_authorization_handle(

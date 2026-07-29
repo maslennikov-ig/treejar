@@ -89,7 +89,13 @@ class ServerSideEffectFact(_StrictModel):
     baseline_readback: dict[str, Any]
     expected_effect: dict[str, Any]
     final_readback: dict[str, Any]
-    disposition: Literal["voided", "closed", "resolved", "retained_as_test_evidence"]
+    disposition: Literal[
+        "voided",
+        "closed",
+        "resolved",
+        "retained_as_test_evidence",
+        "cleanup_pending",
+    ]
     follow_up_suppressed: bool
     checksum_refs: tuple[str, ...] = Field(min_length=1)
 
@@ -275,7 +281,12 @@ def _audit_inventory(rows: ObservedTurnRows) -> dict[str, dict[str, Any]]:
 
 
 def _inventory(rows: ObservedTurnRows) -> dict[str, dict[str, Any]]:
-    return {**rows.final_readback_inventory, **_audit_inventory(rows)}
+    evidence = _runtime_evidence(rows)
+    return {
+        **evidence.final_inventory,
+        **rows.final_readback_inventory,
+        **_audit_inventory(rows),
+    }
 
 
 def _artifact_kind(artifact_id: str) -> tuple[str, str]:
@@ -306,6 +317,7 @@ def _terminal_disposition(artifact_id: str, final_readback: dict[str, Any]) -> s
         "closed": "closed",
         "resolved": "resolved",
         "retained": "retained_as_test_evidence",
+        "active": "cleanup_pending",
     }
     if state not in dispositions:
         raise ProductionObservationNotReady(

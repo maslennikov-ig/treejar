@@ -64,6 +64,11 @@ class CapabilityTransport(Protocol):
         """Execute the capability request once."""
 
 
+class ReadOnlyTransport(Protocol):
+    def read(self, source: str) -> bytes:
+        """Read one exact allowlisted source without mutation."""
+
+
 @dataclass
 class FakeHttpTransport:
     """Deterministic local HTTP stand-in; it never opens a socket."""
@@ -2374,7 +2379,7 @@ class IndependentReadOnlyCollector:
     """Read-only collector; it owns no mutation-capable adapter or dispatcher."""
 
     collector_id: str
-    transport: FakeReadOnlySshTransport
+    transport: ReadOnlyTransport
     source_name: str = "inventory"
     source_names: Mapping[str, str] | None = None
 

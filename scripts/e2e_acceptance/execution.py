@@ -37,7 +37,7 @@ from scripts.e2e_acceptance.schemas import (
 
 COMPILER_ID = "treejar.acceptance-policy-compiler.v2"
 LOCAL_ADAPTER_IDS = ("fake-local-adapter",)
-LIVE_ADAPTER_IDS = ("wazzup-webhook-adapter",)
+LIVE_ADAPTER_IDS = ("wazzup-webhook-adapter", "openrouter-judge-adapter")
 EXECUTABLE_ADAPTER_IDS = frozenset((*LOCAL_ADAPTER_IDS, *LIVE_ADAPTER_IDS))
 _MAX_PREFLIGHT_AGE = timedelta(minutes=15)
 _MAX_FINAL_READBACK_AGE = timedelta(minutes=5)
@@ -225,10 +225,15 @@ class RuntimeTransportConfig(_StrictModel):
     collector_id: str = Field(min_length=1)
     ssh_host_alias: str = Field(min_length=1)
     source_commands: dict[str, tuple[str, ...]] = Field(min_length=1)
+    judge_endpoint: str | None = None
+    judge_adapter_id: Literal["openrouter-judge-adapter"] | None = None
+    judge_timeout_seconds: float = Field(default=60.0, ge=15.0, le=180.0)
 
     @model_validator(mode="after")
     def _fixed_sources(self) -> RuntimeTransportConfig:
-        if not {"baseline", "final"} <= set(self.source_commands):
+        if not {"baseline", "final"} <= set(self.source_commands) or (
+            self.judge_endpoint is None
+        ) != (self.judge_adapter_id is None):
             raise ValueError("live runtime requires baseline and final sources")
         return self
 
@@ -1310,7 +1315,12 @@ def build_execution_authorization_from_v1(
             "approved adapter and collector IDs are required"
         )
     if runtime_transport is not None and (
-        tuple(adapter_ids) != (runtime_transport.adapter_id,)
+        tuple(adapter_ids)
+        != (
+            (runtime_transport.adapter_id, runtime_transport.judge_adapter_id)
+            if runtime_transport.judge_adapter_id is not None
+            else (runtime_transport.adapter_id,)
+        )
         or runtime_transport.collector_id not in collector_ids
         or runtime_transport.target_digest
         != _digest(authorization.targets.model_dump(mode="json"))
@@ -1435,8 +1445,9 @@ def validate_execution_authorization(
             "authorization execution drift: exact canonical 29 required"
         )
     if (
-        len(authorization.adapter_ids) != 1
-        or authorization.adapter_ids[0] not in EXECUTABLE_ADAPTER_IDS
+        not authorization.adapter_ids
+        or len(authorization.adapter_ids) != len(set(authorization.adapter_ids))
+        or not set(authorization.adapter_ids) <= EXECUTABLE_ADAPTER_IDS
     ):
         raise ExecutionValidationError("authorization adapter is not allowed")
     if authorization.live_binding.adapter_ids_digest != _digest(
@@ -2997,6 +3008,23 @@ class ProtectedExecutionJournal:
         elif kind == "action_completed":
             action_id = str(data["action_id"])
             state = str(data["state"])
+            completed_reservation = self._reservations.get(action_id)
+            if completed_reservation is None:
+                raise ExecutionValidationError("action completion lacks reservation")
+            if state == "succeeded" and (
+                completed_reservation.capability != "model.classify"
+                or completed_reservation.model_calls != 1
+                or completed_reservation.messages != 0
+                or not _is_sha256(str(data.get("trusted_receipt_digest", "")))
+                or not isinstance(data.get("actual_cost_usd"), int | float)
+                or not math.isfinite(float(data["actual_cost_usd"]))
+                or not 0
+                <= float(data["actual_cost_usd"])
+                <= completed_reservation.cost_usd
+            ):
+                raise ExecutionValidationError("terminal response action binding drift")
+            if state not in {"succeeded", "unknown"}:
+                raise ExecutionValidationError("action completion state is invalid")
             self._actions[action_id] = state  # type: ignore[assignment]
             if state == "unknown":
                 prior = self._action_reconciliation_boundaries.get(action_id)
@@ -3023,13 +3051,14 @@ class ProtectedExecutionJournal:
                 )
         elif kind == "unknown_action_reconciled":
             receipt = UnknownActionReconciliationReceipt.model_validate(data)
-            reservation = self._reservations.get(receipt.action_id)
+            reconciled_reservation = self._reservations.get(receipt.action_id)
             boundary = self._action_reconciliation_boundaries.get(receipt.action_id)
             if (
                 receipt.action_id in self._reconciliations
-                or reservation is None
+                or reconciled_reservation is None
                 or boundary is None
-                or receipt.reservation_digest != reservation.reservation_digest
+                or receipt.reservation_digest
+                != reconciled_reservation.reservation_digest
                 or receipt.observed_at < boundary[0]
                 or receipt.causal_event_digest != boundary[1]
             ):
@@ -3040,11 +3069,12 @@ class ProtectedExecutionJournal:
             self._actions[receipt.action_id] = receipt.resolved_state
         elif kind == "permit_consumed":
             action_id = str(data["action_id"])
-            reservation = self._reservations.get(action_id)
+            consumed_reservation = self._reservations.get(action_id)
             consumed_at_raw = data.get("consumed_at")
             if (
-                reservation is None
-                or data.get("reservation_digest") != reservation.reservation_digest
+                consumed_reservation is None
+                or data.get("reservation_digest")
+                != consumed_reservation.reservation_digest
             ):
                 raise ExecutionValidationError("permit-consume replay binding drift")
             if consumed_at_raw is not None:
@@ -3052,7 +3082,7 @@ class ProtectedExecutionJournal:
                 if (
                     consumed_at.tzinfo is None
                     or consumed_at.utcoffset() is None
-                    or consumed_at < reservation.issued_at
+                    or consumed_at < consumed_reservation.issued_at
                 ):
                     raise ExecutionValidationError(
                         "permit-consume replay lower bound is invalid"
@@ -3758,14 +3788,32 @@ class ProtectedExecutionJournal:
         *,
         state: Literal["succeeded", "failed", "unknown"],
         outcome_digest: str,
-    ) -> None:
+        trusted_receipt_digest: str | None = None,
+        actual_cost_usd: float | None = None,
+    ) -> ActionCostSettlement | None:
         if self._actions.get(reservation.action_id) != "unknown":
             raise ExecutionValidationError("action completion lacks active reservation")
         if self._reservations.get(reservation.action_id) != reservation:
             raise ExecutionValidationError("action reservation identity drift")
-        if len(outcome_digest) != 64:
+        if not _is_sha256(outcome_digest):
             raise ExecutionValidationError("action outcome digest must be SHA-256")
-        if state != "unknown":
+        terminal_from_response = (
+            state == "succeeded"
+            and reservation.capability == "model.classify"
+            and reservation.model_calls == 1
+            and reservation.messages == 0
+            and trusted_receipt_digest is not None
+            and _is_sha256(trusted_receipt_digest)
+            and actual_cost_usd is not None
+            and math.isfinite(actual_cost_usd)
+            and 0 <= actual_cost_usd <= reservation.cost_usd
+        )
+        if state == "unknown":
+            if trusted_receipt_digest is not None or actual_cost_usd is not None:
+                raise ExecutionValidationError(
+                    "unknown action cannot carry terminal response evidence"
+                )
+        elif not terminal_from_response:
             raise ExecutionValidationError(
                 "dispatch result cannot terminalize an uncertain action; "
                 "independent reconciliation is required"
@@ -3779,6 +3827,8 @@ class ProtectedExecutionJournal:
                 "reservation_digest": reservation.reservation_digest,
                 "state": state,
                 "outcome_digest": outcome_digest,
+                "trusted_receipt_digest": trusted_receipt_digest,
+                "actual_cost_usd": actual_cost_usd,
                 "completed_at": completed_at.isoformat(),
             },
         )
@@ -3787,6 +3837,12 @@ class ProtectedExecutionJournal:
             event_digest,
         )
         self._actions[reservation.action_id] = state
+        if terminal_from_response:
+            return self.settle_action_cost(
+                reservation,
+                actual_cost_usd=float(cast("float", actual_cost_usd)),
+            )
+        return None
 
     def action_reconciliation_boundary(self, action_id: str) -> tuple[datetime, str]:
         """Return the latest durable lower bound and causal event for an action."""
@@ -4008,8 +4064,8 @@ class ProtectedExecutionJournal:
                 or self._actions.get(action_id) != receipt.resolved_state
             ):
                 raise ExecutionValidationError("reconciliation replay differs")
-        receipt = self._reconciliations.get(action_id)
-        if receipt is None:
+        committed_receipt = self._reconciliations.get(action_id)
+        if committed_receipt is None:
             raise ExecutionValidationError("reconciliation receipt is missing")
         reservation = self._reservations.get(action_id)
         if reservation is None:
@@ -4022,8 +4078,8 @@ class ProtectedExecutionJournal:
         return self.settle_action_cost(
             reservation,
             actual_cost_usd=(
-                receipt.actual_cost_usd
-                if receipt.actual_cost_usd is not None
+                committed_receipt.actual_cost_usd
+                if committed_receipt.actual_cost_usd is not None
                 else reservation.cost_usd
             ),
         )

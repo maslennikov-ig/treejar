@@ -7,18 +7,20 @@ orchestration_level: integration
 scope_kind: foundation
 immediate_consumer: tj-ee5f.1
 public_facade: noor-e2e-observe and IndependentExecutionProducer
-bounded_acceptance: server-owned observations only; semantic publication fails closed without a trusted compiler
+bounded_acceptance: trusted local compilation from sealed plans, server observations, and one permit-bound judge action
 non_goals:
   - no live HTTP, SSH, provider, customer, CRM, quotation, deploy, paid call, or Beads mutation
 evidence:
   - runtime_evidence
   - server_observation
   - live_runtime
+  - trusted_execution
+  - semantic_compiler
 task_id: tj-ee5f.5-remediation
 epic_id: tj-ee5f
 stage_id: tj-ee5f
-session_id: tj-ee5f.5-server-observation
-milestone: canonical server observation and fail-closed production collection
+session_id: tj-ee5f.5-semantic-compiler
+milestone: trusted semantic compilation and exact side-effect reconciliation
 milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
@@ -33,6 +35,9 @@ write_zone:
   - pyproject.toml
   - scripts/e2e_acceptance/live_producer.py
   - scripts/e2e_acceptance/live_transport.py
+  - scripts/e2e_acceptance/execution.py
+  - scripts/e2e_acceptance/production.py
+  - scripts/run_noor_e2e_acceptance.py
   - src/integrations/crm/zoho_crm.py
   - src/llm/engine.py
   - src/llm/order_quote_routes.py
@@ -41,6 +46,9 @@ write_zone:
   - src/services/outbound_audit.py
   - src/services/runtime_execution_evidence.py
   - tests/test_e2e_acceptance_live_runtime.py
+  - tests/test_e2e_acceptance_live_authority.py
+  - tests/test_e2e_acceptance_production.py
+  - tests/test_e2e_acceptance_trusted_execution.py
   - tests/test_e2e_observation_producer.py
   - tests/test_llm_engine.py
   - tests/test_outbound_audit.py
@@ -55,6 +63,10 @@ success_criteria:
   - CRM contact, CRM deal, sale order, PDF audit, and escalation deltas have exact baseline, expected, and final readback coverage
   - unknown, active, unlisted, or missing side effects block materialization
   - caller-authored execution attempts and evaluation JSON are not accepted by the production collector
+  - every paid judge call consumes one exact pre-authorized journal action and settles actual cost
+  - judge replay uses the protected receipt and never dispatches a second request
+  - active effects are retained only under an exact current pre-authorized retention specification
+  - unchanged pre-existing inventory remains visible without becoming a false business delta
   - SSH permits only the exact installed noor-e2e-observe command shape
 selected_docs:
   - AGENTS.md
@@ -99,39 +111,29 @@ invariants:
   - test-matrix
 docs_impact: behavior
 docs_reviewed: updated
-docs_review_notes: stage artifact records the remaining trusted semantic compiler boundary
+docs_review_notes: stage artifact records the completed compiler boundary and remaining live acceptance gate
 verification:
-  - focused RED: 5 expected failures for missing source binding, business delta coverage, terminal readback, and caller-independent collection
-  - focused observation and transport GREEN: passed 42
-  - impacted chat, LLM, quotation, outbound audit, observation, live runtime, and exact CRM readback tests: passed 583
-  - focused Mypy for eight changed source modules: passed
+  - focused RED covered exact action identity, judge replay, retention authority, timeout binding, and unchanged inventory
+  - focused semantic compiler, observation, production, trusted execution, authority, and runner tests: passed 201
+  - focused Mypy for compiler, journal, transport, and source observer: passed
   - focused Ruff check and format: passed
   - artifact validator: passed
   - git diff check: passed
 changed_files:
-  - pyproject.toml
+  - scripts/e2e_acceptance/execution.py
   - scripts/e2e_acceptance/live_producer.py
   - scripts/e2e_acceptance/live_transport.py
-  - src/integrations/crm/zoho_crm.py
-  - src/llm/engine.py
-  - src/llm/order_quote_routes.py
-  - src/services/chat.py
+  - scripts/e2e_acceptance/production.py
+  - scripts/run_noor_e2e_acceptance.py
   - src/services/e2e_observation_producer.py
-  - src/services/outbound_audit.py
-  - src/services/runtime_execution_evidence.py
+  - tests/test_e2e_acceptance_live_authority.py
   - tests/test_e2e_acceptance_live_runtime.py
+  - tests/test_e2e_acceptance_production.py
+  - tests/test_e2e_acceptance_trusted_execution.py
   - tests/test_e2e_observation_producer.py
-  - tests/test_llm_engine.py
-  - tests/test_outbound_audit.py
-  - tests/test_runtime_execution_evidence.py
-  - tests/test_services_chat_batch.py
-  - tests/test_zoho_crm.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.5-production-trust-remediation.md
 explicit_defers:
-  - a permit-bound semantic compiler is still required to construct ScenarioAttemptV2 from sealed planned turns, server observations, and one bounded judge receipt
-  - evaluators.py cannot fill that boundary because it only combines caller-provided mappings and has no production call site
-  - pre-authorized retention of still-active test entities needs the semantic compiler to bind protected retention authority; without it the server producer requires cleanup to a terminal provider state
-  - production invocation remains with the root orchestrator after integration, review, deploy authority, and fresh preflight
+  - production execution remains with the root orchestrator after integration and review; it includes deploy/preflight, materializing sealed run authority and evidence specifications, paid/provider canaries, readback, and cleanup
 ---
 
 # Summary
@@ -149,17 +151,31 @@ Wazzup states and terminal side-effect readbacks. Unknown, active, missing, or
 unlisted effects stop evidence materialization.
 
 `IndependentExecutionProducer` no longer reads `evaluation:<execution_id>` or
-any caller-shaped attempt JSON. It stores the exact server observation and then
-fails closed until a separate trusted semantic compiler is present.
+any caller-shaped attempt JSON. Its sealed semantic compiler checks planned
+turn hashes, deterministic evidence, readbacks, and side effects before it can
+spend one pre-authorized `model.classify` action. The action identity binds the
+compiler source, judge configuration, destination, payload, idempotency key,
+capability units, quota, and bounded cost. The one-shot OpenRouter transport
+has a configurable 15-180 second timeout, never retries after dispatch, stores
+the protected response and receipt, and settles actual journal cost. Resume
+replays that receipt without another paid call.
+
+Active test effects are accepted as `retained` only when an unexpired protected
+retention specification matches the exact entity and state. Otherwise they
+remain cleanup blockers. Unchanged pre-existing inventory is preserved in the
+final inventory and is not misreported as a newly created effect. Assertions
+that depend on external or reused evidence require exact sealed artifact and
+receipt references; the compiler cannot mint them from caller JSON.
 
 # Verification
 
-The focused RED reproduced five missing-trust failures before implementation.
-The focused observation/transport set then passed 42 tests. The affected
-integration set passed 583 tests across chat batching, LLM routes, quotations,
-outbound audit, server observation, runtime evidence, live runtime, and exact
-CRM readback.
-Focused Ruff and Mypy checks pass. No product system prompt changed.
+Focused TDD covered compiler publication, all exact action-identity fields,
+unknown-action non-retry, journal receipt replay, actual cost settlement,
+retention authorization, timeout binding, transport failure semantics, and
+unchanged inventory. The focused acceptance set passed 201 tests across live
+runtime, observation producer, production materialization, trusted execution,
+live authority, and the CLI runner. Focused Ruff and Mypy checks pass. No
+product system prompt changed and captured scenario phrases remain fixtures.
 
 # Delivery / Cleanup
 
@@ -169,12 +185,10 @@ cleanup was performed.
 
 # Risks / Follow-ups / Explicit Defers
 
-The repository still has no implementation of the allowlisted
-`production-policy-classifier`. `scripts/e2e_acceptance/evaluators.py` only
-combines already supplied deterministic and judge mappings and is unused by
-production code, so treating it as a compiler would reintroduce caller trust.
-The remaining component must build `ScenarioAttemptV2` from sealed planned
-turns plus the stored server observation and a permit-bound, one-call bounded
-judge receipt. It must also bind any explicit retention to the protected
-retention authority. Until then publication is fail-closed; cleaned terminal
-provider facts remain collectable and immutable.
+No production request or paid judge call was made in this stream. The root
+orchestrator still needs to integrate and review the commit, deploy under the
+repository authority gate, and materialize the live sealed compiler
+configuration plus exact journal actions. Any assertion that uses external or
+reused evidence needs its protected artifact and receipt published before the
+run. Production acceptance and terminal cleanup/readback remain the final
+proof; this artifact does not claim them.

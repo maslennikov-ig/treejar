@@ -374,6 +374,8 @@ def _lifecycle_result(args: argparse.Namespace) -> dict[str, object]:
             dispatcher = components.dispatcher
         for item in plan.actions:
             spec = dict(item["spec"])
+            if spec.get("capability") == "model.classify":
+                continue
             charge = dict(spec.pop("quota_charge"))
             action_id = str(spec.pop("action_id"))
             adapter_id = str(spec.pop("adapter_id"))

@@ -207,6 +207,58 @@ def test_execution_observation_covers_business_inventory_delta() -> None:
     assert business_fact.disposition == "resolved"
 
 
+def test_execution_observation_preserves_unchanged_preexisting_inventory() -> None:
+    from src.services.e2e_observation_producer import build_execution_observation
+
+    artifact_id = "crm:contact:contact-existing"
+    unchanged = {"state": "active", "status": "customer"}
+    rows = _observed_rows(
+        baseline_inventory={artifact_id: unchanged},
+        final_inventory={artifact_id: unchanged},
+    )
+
+    observation = build_execution_observation(
+        execution_id="SC-CRM",
+        turns=(("turn-1", rows),),
+        observed_at=datetime(2026, 7, 29, 9, 0, 3, tzinfo=UTC),
+    )
+
+    assert observation.baseline_inventory[artifact_id] == unchanged
+    assert observation.final_inventory[artifact_id] == unchanged
+    assert all(
+        item.artifact_id != artifact_id for item in observation.side_effect_facts
+    )
+
+
+def test_execution_observation_reports_active_delta_as_cleanup_pending() -> None:
+    from src.services.e2e_observation_producer import build_execution_observation
+
+    artifact_id = "crm:contact:contact-test"
+    rows = _observed_rows(
+        final_inventory={artifact_id: {"state": "active"}},
+        final_readback_inventory={
+            artifact_id: {"state": "active", "status": "customer"}
+        },
+    )
+
+    observation = build_execution_observation(
+        execution_id="SC-CRM",
+        turns=(("turn-1", rows),),
+        observed_at=datetime(2026, 7, 29, 9, 0, 3, tzinfo=UTC),
+    )
+    fact = next(
+        item
+        for item in observation.side_effect_facts
+        if item.artifact_id == artifact_id
+    )
+
+    assert fact.disposition == "cleanup_pending"
+    assert observation.final_inventory[artifact_id] == {
+        "state": "active",
+        "status": "customer",
+    }
+
+
 def test_execution_observation_blocks_unlisted_business_effect() -> None:
     from src.services.e2e_observation_producer import (
         ProductionObservationNotReady,
