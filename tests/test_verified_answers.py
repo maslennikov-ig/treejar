@@ -535,6 +535,13 @@ def test_individual_privacy_word_is_not_a_product_discriminator() -> None:
     )
 
 
+def test_product_match_binds_generic_accessory_to_storage_family() -> None:
+    candidate = "Mobile Storage Pedestal. Compact office storage cabinet."
+
+    assert classify_product_match("office accessories", [candidate]) == "nearby"
+    assert classify_product_match("office lighting add-on", [candidate]) == "missing"
+
+
 def test_policy_routes_retention_dropoff_to_sales_fallback() -> None:
     decision = evaluate_verified_answer_policy(
         query="Actually I don't think we need this anymore.",

@@ -18621,6 +18621,32 @@ async def test_cross_sell_enforces_remaining_budget_from_catalog_selection(
     assert "remaining budget" in result_text.casefold()
 
 
+def test_product_search_limit_keeps_one_complementary_slot_per_plan() -> None:
+    one_family_deps = SimpleNamespace(
+        user_query="Find a complete seating configuration with one cross-sell.",
+        catalog_planning=engine_module.CatalogPlanningContext(
+            families=("seating",),
+            complete_coverage=True,
+        ),
+    )
+    two_family_deps = SimpleNamespace(
+        user_query="Find a complete seating and workspace configuration with one cross-sell.",
+        catalog_planning=engine_module.CatalogPlanningContext(
+            families=("seating", "workspace"),
+            complete_coverage=True,
+        ),
+    )
+
+    assert (
+        engine_module._product_search_call_limit(one_family_deps)
+        == engine_module.MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
+    )
+    assert (
+        engine_module._product_search_call_limit(two_family_deps)
+        == engine_module.MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE + 1
+    )
+
+
 @pytest.mark.asyncio
 async def test_catalog_recovery_uses_complete_current_turn_selection(
     mock_deps: tuple[
@@ -18637,7 +18663,7 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
         families=("seating", "workspace"),
         complete_coverage=True,
         budget_cap=7000.0,
-        family_totals={"workspace": 1500.0},
+        family_totals={"seating": 5000.0, "workspace": 1500.0},
     )
     deps = SalesDeps(
         db=db,
@@ -18663,6 +18689,18 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
         usage=RunUsage(),
     )
     search_results = [
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="STORAGE-CURRENT",
+                    name="Mobile Storage Pedestal",
+                    price=600.0,
+                    stock=5,
+                    description="Compact office storage cabinet.",
+                )
+            ],
+            total_found=1,
+        ),
         ProductSearchResult(
             products=[
                 _catalog_acceptance_product(
@@ -18695,27 +18733,9 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
         new_callable=AsyncMock,
         side_effect=search_results,
     ):
+        await engine_module.search_products(ctx, "office accessories")
         await engine_module.search_products(ctx, "office chairs")
         await engine_module.search_products(ctx, "office desks")
-
-    with patch(
-        "src.services.recommendations.get_cross_sell",
-        new_callable=AsyncMock,
-        return_value=[
-            SimpleNamespace(
-                name="Storage Cabinet",
-                sku="STORAGE-HIGH",
-                price=2500.0,
-                currency="AED",
-                stock=5,
-            )
-        ],
-    ):
-        await engine_module.recommend_products(
-            ctx,
-            category="desk",
-            recommendation_type="cross_sell",
-        )
 
     response = engine_module._materialize_verified_catalog_recovery(
         deps,
@@ -18728,7 +18748,32 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
     assert "budget-fit" in response.casefold()
     assert "CHAIR-CURRENT" in response
     assert "DESK-CURRENT" in response
+    assert "STORAGE-CURRENT" in response
     assert "AED 4992.00" in response
+    assert "AED 5592.00" in response
+
+    deps.verified_cross_sell = None
+    deps.product_search_calls = 2
+    with patch.object(
+        engine_module,
+        "rag_search_products",
+        new_callable=AsyncMock,
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="STORAGE-UNRELATED",
+                    name="Mobile Storage Pedestal",
+                    price=100.0,
+                    stock=5,
+                    description="Compact office storage cabinet.",
+                )
+            ],
+            total_found=1,
+        ),
+    ):
+        await engine_module.search_products(ctx, "office lighting add-on")
+
+    assert deps.verified_cross_sell is None
 
 
 @pytest.mark.asyncio

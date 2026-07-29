@@ -1098,6 +1098,8 @@ _CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
             "storage",
             "shelf",
             "shelves",
+            "accessory",
+            "accessories",
             "خزانة",
             "خزائن",
             "تخزين",
@@ -1949,6 +1951,16 @@ class SalesDeps:
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
 
 
+def _product_search_call_limit(deps: SalesDeps) -> int:
+    if (
+        deps.catalog_planning.complete_coverage
+        and len(set(deps.catalog_planning.families)) >= 2
+        and _CROSS_SELL_REQUEST_RE.search(deps.user_query)
+    ):
+        return MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE + 1
+    return MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
+
+
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
     disclosure = _string_value(deps.required_cross_sell_disclosure)
     if not disclosure or _normalize_text(disclosure) in _normalize_text(text):
@@ -2015,6 +2027,10 @@ def _materialize_verified_catalog_recovery(
     selected_by_family = current_selections or deps.verified_catalog_selections
     uses_current_selections = bool(current_selections)
     trace_names = tuple(trace.tool_name for trace in tool_traces)
+    has_cross_sell_evidence = "recommend_products" in trace_names or (
+        deps.verified_cross_sell is not None
+        and trace_names.count("search_products") > len(required_families)
+    )
     allowed_tools = {"search_products", "recommend_products"}
     if (
         not explicit_quote_hold
@@ -2029,7 +2045,7 @@ def _materialize_verified_catalog_recovery(
         or not set(trace_names).issubset(allowed_tools)
         or tuple(deps.executed_tool_names) != trace_names
         or trace_names.count("search_products") < len(required_families)
-        or "recommend_products" not in trace_names
+        or not has_cross_sell_evidence
     ):
         return None
 
@@ -10611,7 +10627,7 @@ async def _prepare_sales_tools(
             if tool_def.name in EXACT_QUOTE_ALLOWED_TOOLS
         ]
 
-    if ctx.deps.product_search_calls < MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
+    if ctx.deps.product_search_calls < _product_search_call_limit(ctx.deps):
         return tool_defs
 
     filtered_tool_defs = [
@@ -10740,7 +10756,8 @@ async def search_products(
         max_price,
         ctx.deps.product_search_calls,
     )
-    if ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
+    search_call_limit = _product_search_call_limit(ctx.deps)
+    if ctx.deps.product_search_calls >= search_call_limit:
         logger.info(
             "Blocked search_products after reaching per-message cap for conversation %s",
             ctx.deps.conversation.id,
@@ -10753,10 +10770,11 @@ async def search_products(
         )
 
     ctx.deps.product_search_calls += 1
+    search_call_number = ctx.deps.product_search_calls
     logger.info(
         "Executing real search_products call %d/%d for query=%r",
-        ctx.deps.product_search_calls,
-        MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE,
+        search_call_number,
+        search_call_limit,
         query,
     )
     effective_query = _catalog_search_query_with_constraints(
@@ -10785,7 +10803,7 @@ async def search_products(
     )
 
     if not results.products:
-        if ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE:
+        if search_call_number >= search_call_limit:
             return ToolReturn(
                 return_value=_search_products_limit_message(include_no_results=True),
                 content=_search_budget_fallback_contract(
@@ -10803,6 +10821,13 @@ async def search_products(
     )
 
     formatted_results = []
+    cross_sell_candidates: list[VerifiedCrossSell] = []
+    target_product_family = _catalog_product_family(effective_query)
+    complementary_search = bool(
+        _CROSS_SELL_REQUEST_RE.search(ctx.deps.user_query)
+        and target_product_family is not None
+        and target_product_family not in ctx.deps.catalog_planning.families
+    )
 
     def _product_match_text(product: Any) -> str:
         return (
@@ -10896,7 +10921,6 @@ async def search_products(
         ctx.deps.catalog_planning.requested_seats
         or _requested_seat_count(ctx.deps.user_query)
     )
-    target_product_family = _catalog_product_family(effective_query)
     available_seat_coverage = 0
     has_capacity_evidence = False
     coverage_candidates: list[_CatalogCoverageCandidate] = []
@@ -10929,13 +10953,33 @@ async def search_products(
         product_text = _product_match_text(r)
         product_capacity = _catalog_product_capacity(product_text)
         product_family = _catalog_product_family(product_text)
+        product_stock = max(int(r.stock or 0), 0)
+        if (
+            complementary_search
+            and product_family is not None
+            and product_family == target_product_family
+            and product_family not in ctx.deps.catalog_planning.families
+            and product_match != "missing"
+            and classify_product_match(effective_query, [product_text]) != "missing"
+            and discounted_price is not None
+            and discounted_price > 0
+            and product_stock > 0
+        ):
+            cross_sell_candidates.append(
+                VerifiedCrossSell(
+                    name=str(r.name_en),
+                    sku=str(r.sku),
+                    price=float(discounted_price),
+                    currency=str(r.currency),
+                    stock=product_stock,
+                )
+            )
         if (
             product_capacity is not None
             and target_product_family is not None
             and product_family == target_product_family
         ):
             has_capacity_evidence = True
-            product_stock = max(int(r.stock or 0), 0)
             available_seat_coverage += product_stock * product_capacity
             if discounted_price is not None and discounted_price > 0:
                 coverage_candidates.append(
@@ -10996,6 +11040,20 @@ async def search_products(
             )
 
         formatted_results.append(desc)
+
+    if cross_sell_candidates:
+        candidate_cap = ctx.deps.catalog_planning.budget_cap
+        affordable_candidates = [
+            candidate
+            for candidate in cross_sell_candidates
+            if candidate_cap is None or candidate.price <= candidate_cap
+        ]
+        if affordable_candidates:
+            ctx.deps.verified_cross_sell = min(
+                affordable_candidates,
+                key=lambda candidate: (candidate.price, candidate.name.casefold()),
+            )
+            ctx.deps.required_cross_sell_disclosure = None
 
     target_coverage_complete: bool | None = None
     lower_verified_family_total: tuple[CatalogFamily, float, float] | None = None
@@ -11059,9 +11117,7 @@ async def search_products(
         )
 
     ctx.deps.product_results_seen = True
-    search_budget_exhausted = (
-        ctx.deps.product_search_calls >= MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
-    )
+    search_budget_exhausted = ctx.deps.product_search_calls >= search_call_limit
     return _record_recovery_tool_result(
         ctx.deps,
         tool_name="search_products",

@@ -547,6 +547,8 @@ _HIGH_RISK_TOPICS = frozenset(
     {"delivery", "installation", "warranty", "returns", "payment"}
 )
 _NEARBY_EQUIVALENTS = {
+    "accessory": {"cabinet", "pedestal", "storage"},
+    "accessories": {"cabinet", "pedestal", "storage"},
     "pod": {"booth"},
     "pods": {"booth", "booths"},
     "booth": {"pod", "pods"},
