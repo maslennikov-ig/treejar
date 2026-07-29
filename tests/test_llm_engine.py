@@ -16156,6 +16156,83 @@ async def test_name_gate_resume_preserves_comparison_intent(
     mock_notify.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_name_gate_resume_preserves_catalog_discovery_intent(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = (
+        "We're preparing a ten-person office in Dubai. We need desks and "
+        "supportive chairs and want to keep the total near AED 14,000. "
+        "What combination should we consider?"
+    )
+    conv.metadata_ = {
+        "name_gate_pending_request": {
+            "version": 2,
+            "text": pending_text,
+            "source": "first_turn_name_gate",
+            "intent": "catalog_discovery",
+            "language": "en",
+            "identity": {},
+        }
+    }
+    name_reply = "I'm Nora, facilities manager at Northstar Workspace."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Hello, I'm Noor from Treejar. May I know your name "
+                        "so I can address you properly?"
+                    )
+                )
+            ]
+        ),
+        ModelRequest(parts=[UserPromptPart(content=name_reply)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Thank you, Nora. I recommend starting with matching desk and chair options."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=name_reply,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert response.model == "mock-model"
+    assert "recommend" in response.text.casefold()
+    assert "confirm the quantity" not in response.text.casefold()
+    assert conv.customer_name == "Nora"
+    assert "name_gate_pending_request" not in conv.metadata_
+    mock_run.assert_awaited_once()
+    mock_notify.assert_not_awaited()
+
+
 def test_extract_quote_customer_details_splits_inline_labels() -> None:
     text = (
         "Name: Fatima Noor Test. Company: Cedarline E2E 20260728. "

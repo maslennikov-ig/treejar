@@ -642,6 +642,11 @@ _PRODUCT_REFERENCE_SPLIT_RE = re.compile(
     r"\s+(?:and|plus|with)\s+|[,;\n]+",
     re.IGNORECASE,
 )
+_GENERIC_HYPHENATED_CAPACITY_RE = re.compile(
+    r"^(?:one|two|three|four|five|six|seven|eight|nine|ten)-"
+    r"(?:person|people|seat|seater|position|station|workstation)$",
+    re.IGNORECASE,
+)
 _PRODUCT_REFERENCE_REQUEST_PREFIX_RE = re.compile(
     r"^\s*(?:please\s+|kindly\s+)?(?:(?:i|we)\s+)?"
     r"(?:need|want|would\s+like|like|require|am\s+looking\s+for|looking\s+for)\s+",
@@ -3017,6 +3022,8 @@ def _segment_starts_with_explicit_quantity(segment: str) -> bool:
 def _has_product_reference_sku_signal(segment: str) -> bool:
     normalized_segment = _normalize_sku_homoglyphs(segment)
     for match in _SKU_SIGNAL_RE.finditer(normalized_segment):
+        if _GENERIC_HYPHENATED_CAPACITY_RE.fullmatch(match.group(0)):
+            continue
         if _looks_like_price_phrase_sku_match(normalized_segment, match):
             continue
         raw = " ".join(match.group(0).split()).strip().upper()

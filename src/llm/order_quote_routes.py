@@ -263,10 +263,32 @@ async def _order_quote_route_for_turn(
     _bind_engine_globals()
 
     pending_reference_selection = pending_reference_route.selection
+    resumed_catalog_selection = None
+    resumed_catalog_references: tuple[str, ...] = ()
+    if resumed_name_gate_intent == "catalog_discovery":
+        resumed_catalog_selection = _first_selection_over_texts(
+            lambda text: _extract_purchase_selection_for_context(
+                text,
+                deps.recent_history,
+            ),
+            masked_text,
+            combined_text,
+        )
+        resumed_catalog_references = _extract_missing_quantity_product_references(
+            masked_text
+        ) or _extract_missing_quantity_product_references(combined_text)
     consultative_name_gate_resume = resumed_name_gate_intent in {
         "catalog_comparison",
         "sales_opportunity",
-    }
+    } or (
+        resumed_name_gate_intent == "catalog_discovery"
+        and pending_reference_selection is None
+        and resumed_catalog_selection is None
+        and not resumed_catalog_references
+        and current_quote_intent_frame is None
+        and not is_quote_or_proposal_request(masked_text)
+        and not is_quote_or_proposal_request(combined_text)
+    )
 
     if phase == "pre_policy":
         if consultative_name_gate_resume:
