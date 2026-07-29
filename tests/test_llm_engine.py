@@ -16535,6 +16535,14 @@ async def test_active_quote_does_not_hijack_delivery_interruption(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "quote_hold",
+    [
+        "Do not prepare a quotation yet.",
+        "I do not want a quotation.",
+        "Please do not offer a quotation.",
+    ],
+)
 @patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
@@ -16544,6 +16552,7 @@ async def test_exact_sku_stock_request_returns_only_requested_variant(
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
+    quote_hold: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -16552,7 +16561,7 @@ async def test_exact_sku_stock_request_returns_only_requested_variant(
     conv.customer_name = "Aisha"
     text = (
         "Please confirm from live inventory whether 12 units of CH 616 NEW "
-        "black are available and the exact unit price. Do not prepare a quotation yet."
+        f"black are available and the exact unit price. {quote_hold}"
     )
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
