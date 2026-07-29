@@ -3539,9 +3539,19 @@ async def test_process_message_arabic_name_reply_resumes_pending_request(
     db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
     conv.customer_name = None
     conv.language = "ar"
-    pending_text = "أبحث عن كرسي مكتب مريح من كتالوج تريجار."
-    conv.metadata_ = {"name_gate_pending_request": {"text": pending_text}}
-    text = "اسمي فيكتور."
+    pending_text = (
+        "نجهز مكتباً لستة موظفين ونحتاج محطات عمل خاصة وكراسي مريحة "
+        "ضمن ميزانية محددة. ما الخيارات المناسبة؟"
+    )
+    conv.metadata_ = {
+        "name_gate_pending_request": {
+            "version": 2,
+            "text": pending_text,
+            "intent": "catalog_discovery",
+            "language": "ar",
+        }
+    }
+    text = "اسمي ليان، وأنا مديرة المرافق في شركة Cedarline QA Offices."
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelRequest(parts=[UserPromptPart(content=pending_text)]),
@@ -3563,7 +3573,7 @@ async def test_process_message_arabic_name_reply_resumes_pending_request(
     async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
         deps = kwargs["deps"]
         if deps.user_query == pending_text:
-            return _FakeAgentResult("شكرًا فيكتور. سأقترح خيارات من الكتالوج.")
+            return _FakeAgentResult("شكرًا ليان. سأقترح خيارات من الكتالوج.")
         deps.conversation.escalation_status = "pending"
         return _FakeAgentResult("سيتواصل معك مديرنا لتأكيد هذه المعلومة.")
 
@@ -3579,7 +3589,10 @@ async def test_process_message_arabic_name_reply_resumes_pending_request(
         messaging_client=messaging,
     )
 
-    assert conv.customer_name == "فيكتور"
+    assert conv.customer_name == "ليان"
+    assert conv.metadata_["quote_customer_details"]["company"] == (
+        "Cedarline QA Offices"
+    )
     assert conv.escalation_status == "none"
     assert "name_gate_pending_request" not in (conv.metadata_ or {})
     assert response.model == "mock-model"

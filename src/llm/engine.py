@@ -848,6 +848,16 @@ _MIXED_PRODUCT_TERMS = (
     "booth",
     "booths",
     "furniture",
+    "محطة عمل",
+    "محطات عمل",
+    "مكتب",
+    "مكاتب",
+    "كرسي",
+    "كراسي",
+    "طاولة",
+    "طاولات",
+    "أثاث",
+    "اثاث",
 )
 _SKU_HOMOGLYPH_TRANSLATION = str.maketrans(
     {
@@ -6660,7 +6670,7 @@ def _has_product_or_quote_routing_signal(text: str) -> bool:
 
 def _asks_customer_facing_question(text: str) -> bool:
     normalized = _normalize_text(text)
-    return "?" in text or bool(
+    return any(mark in text for mark in ("?", "؟")) or bool(
         re.search(
             r"\b(?:can\s+you|could\s+you|will\s+you|would\s+you|"
             r"do\s+you|do\s+we|does\s+treejar|what|when|where|how)\b",
