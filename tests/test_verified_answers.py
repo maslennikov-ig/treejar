@@ -440,7 +440,8 @@ def test_policy_keeps_internal_cheaper_configuration_on_product_path() -> None:
     decision = evaluate_verified_answer_policy(
         query=(
             "That configuration is too expensive. Give me a cheaper option and "
-            "one relevant cross-sell while keeping the total under AED 7,000."
+            "one relevant cross-sell while keeping the total under AED 7,000. "
+            "Do not prepare a quotation."
         ),
         faq_context=[],
     )
@@ -448,6 +449,9 @@ def test_policy_keeps_internal_cheaper_configuration_on_product_path() -> None:
     assert decision.question_class == "product"
     assert decision.policy_action == "allow"
     assert decision.sales_fallback_intent is None
+    assert not is_quote_or_proposal_request(
+        "Give me a cheaper option, but do not prepare a quotation."
+    )
 
 
 def test_policy_routes_retention_dropoff_to_sales_fallback() -> None:

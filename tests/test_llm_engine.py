@@ -5176,6 +5176,10 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     assert response.model == "mock-model"
     assert "lower-cost" in response.text
     mock_run.assert_awaited_once()
+    run_deps = mock_run.await_args.kwargs["deps"]
+    assert any(
+        "recommend_products" in directive for directive in run_deps.runtime_directives
+    )
     mock_notify.assert_not_awaited()
 
 
@@ -6353,6 +6357,55 @@ async def test_tools_get_stock_catalog_price_remains_customer_truth_when_zoho_ra
     assert "treejar catalog price remains" in result.content.lower()
     assert "catalog_zoho_mismatches" not in (conv.metadata_ or {})
     mock_notify_mismatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.services.recommendations.get_cross_sell", new_callable=AsyncMock)
+async def test_recommend_products_cross_sell_returns_grounding_contract(
+    mock_get_cross_sell: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    mock_get_cross_sell.return_value = [
+        SimpleNamespace(
+            name="Desk Screen Divider",
+            price=70.8,
+            stock=10,
+        )
+    ]
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    from src.llm.engine import recommend_products
+
+    ctx = RunContext(
+        deps=deps, retry=0, messages=[], prompt="", model=TestModel(), usage=RunUsage()
+    )
+
+    result = await recommend_products(
+        ctx,
+        category="desk",
+        recommendation_type="cross_sell",
+    )
+
+    assert isinstance(result, ToolReturn)
+    assert "Desk Screen Divider" in result.return_value
+    assert "70.80 AED" in result.return_value
+    assert "in stock: 10" in result.return_value
+    assert "do not invent another cross-sell" in result.content.casefold()
+    mock_get_cross_sell.assert_awaited_once_with(db, "desk", limit=3)
 
 
 @pytest.mark.asyncio

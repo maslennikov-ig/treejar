@@ -332,34 +332,47 @@ async def test_get_cross_sell_no_rules() -> None:
 
 @pytest.mark.asyncio
 async def test_get_cross_sell_with_rules() -> None:
-    """get_cross_sell should find products in target categories."""
+    """get_cross_sell should resolve configured families to live categories."""
     from src.services.recommendations import get_cross_sell
 
-    # Mock SystemConfig with rules
     mock_config = MagicMock()
-    mock_config.value = {"desk": ["chair", "monitor_arm"], "chair": ["cushion"]}
+    mock_config.value = {
+        "desk": ["chair", "monitor_arm", "cable_management"],
+        "chair": ["cushion"],
+    }
 
     mock_config_result = MagicMock()
     mock_config_result.scalar_one_or_none.return_value = mock_config
 
-    # Mock products found
-    mock_product = MagicMock()
-    mock_product.id = uuid4()
-    mock_product.name_en = "Office Chair"
-    mock_product.price = 299.0
-    mock_product.stock = 15
-    mock_product.category = "chair"
+    chair = MagicMock()
+    chair.id = uuid4()
+    chair.name_en = "Office Chair"
+    chair.price = 299.0
+    chair.stock = 15
+    chair.category = "Chairs"
 
-    mock_products_result = MagicMock()
-    mock_products_result.scalars.return_value.all.return_value = [mock_product]
+    accessory = MagicMock()
+    accessory.id = uuid4()
+    accessory.name_en = "Desk Screen Divider"
+    accessory.price = 70.8
+    accessory.stock = 10
+    accessory.category = "Accessories"
+
+    chair_result = MagicMock()
+    chair_result.scalars.return_value.all.return_value = [chair]
+    accessory_result = MagicMock()
+    accessory_result.scalars.return_value.all.return_value = [accessory]
 
     mock_db = AsyncMock()
     mock_db.execute.side_effect = [
-        mock_config_result,  # SystemConfig query
-        mock_products_result,  # Products query
+        mock_config_result,
+        chair_result,
+        accessory_result,
     ]
 
     result = await get_cross_sell(mock_db, "desk")
-    assert len(result) == 1
+    assert len(result) == 2
     assert result[0].name == "Office Chair"
+    assert result[1].name == "Desk Screen Divider"
     assert result[0].recommendation_type == "cross_sell"
+    assert mock_db.execute.await_count == 3

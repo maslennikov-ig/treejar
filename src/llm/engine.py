@@ -97,6 +97,7 @@ from src.llm.verified_answers import (
     build_service_runtime_directives,
     classify_product_match,
     evaluate_verified_answer_policy,
+    is_quote_or_proposal_hold,
     is_quote_or_proposal_request,
 )
 from src.models.conversation import Conversation
@@ -362,6 +363,10 @@ PRODUCT_PREFERENCE_ANSWER_DIRECTIVES = (
     "continue the product discovery or quotation path and ask only the next missing product or quantity detail",
     "do not hand off to manager unless the customer explicitly requests a human or asks a high-risk commercial or service commitment",
 )
+CROSS_SELL_VERIFICATION_DIRECTIVES = (
+    "recheck the budget configuration with search_products and the cross-sell with recommend_products(cross_sell); use only returned price and stock, never exceed stock, and say when no cross-sell is verified",
+)
+_CROSS_SELL_REQUEST_RE = re.compile(r"\bcross(?:-|\s)?sell\b", re.IGNORECASE)
 PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"
 PRODUCT_PREFERENCE_FRAME_TTL_MINUTES = 30
 SKU_QUANTITY_PROMPT_KEY = "product_reference_quantity"
@@ -397,35 +402,6 @@ _QUOTE_REQUEST_TERMS = (
     "счёт",
     "проформа",
     "инвойс",
-)
-_EXACT_QUOTE_NEGATION_RE = re.compile(
-    r"\b(?:"
-    r"(?:do\s+not|don't|dont)\s+"
-    r"(?:create|prepare|make|issue|generate|send)|"
-    r"without\s+(?:creating|preparing|making|issuing|generating|sending)"
-    r")\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
-    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
-    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b",
-    re.IGNORECASE,
-)
-_QUOTE_HOLD_RE = re.compile(
-    r"(?:"
-    r"\bno\s+(?:formal\s+)?(?:quote|quotation|commercial\s+offer|proposal)"
-    r"\s+(?:yet|now)\b|"
-    r"\bnot\s+ready\s+for\s+(?:an?\s+)?(?:quote|quotation|proposal)\b|"
-    r"\bwithout\s+(?:creating|preparing|making|issuing|generating|sending)"
-    r"\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
-    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
-    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b|"
-    r"\b(?:do\s+not|don't|dont)\s+"
-    r"(?:create|prepare|make|issue|generate|send)\s+"
-    r"(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
-    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
-    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)(?:\s+yet)?\b|"
-    r"(?:بدون|لا)\s+(?:إنشاء|اعداد|إعداد|ارسال|إرسال)?\s*"
-    r"(?:عرض\s+سعر|عرض\s+رسمي)"
-    r")",
-    re.IGNORECASE,
 )
 _EXACT_COMMITMENT_QUALIFIERS = ("exact", "current")
 _EXACT_COMMITMENT_TARGETS = ("price", "availability", "stock", "available")
@@ -963,7 +939,7 @@ def _product_search_response_contract(
             "Lead with up to 3 closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
             "Say honestly that the exact requested item is not confirmed from the catalog results.",
             "Do not claim that these are the exact item requested.",
-            "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
+            "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "After presenting the closest alternatives, you may ask at most one targeted follow-up to narrow the recommendation.",
@@ -973,7 +949,7 @@ def _product_search_response_contract(
             "Current catalog results are too weak to establish a reliable match for this request.",
             "Do not present these results as exact options.",
             "Ask at most one narrow clarification unless you can justify a clearly related alternative from the returned items.",
-            "Use only facts already present in tool results and do not invent specs or prices.",
+            "Use only facts already present in tool results; do not invent specs, prices, or quantities above returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default for any catalog option you do show.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
         ]
@@ -981,7 +957,7 @@ def _product_search_response_contract(
         contract_parts = [
             "Relevant catalog results were found for this customer message.",
             "In your next reply, lead with up to 3 concrete options or closest alternatives from these results before any generic qualifying questions, but respect an explicit smaller maximum in the customer's request.",
-            "Use only facts already present in tool results, such as catalog price or catalog stock, and do not invent specs.",
+            "Use only facts already present in tool results; do not invent specs or allocate more units than returned catalog stock.",
             "Treejar Catalog price is the customer-facing commercial truth by default.",
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "If the returned items are only nearby alternatives, say that honestly and position them as the closest fit.",
@@ -1562,14 +1538,7 @@ def _has_exact_commitment_intent(normalized: str) -> bool:
 
 
 def _has_explicit_quote_hold(text: str) -> bool:
-    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
-    return bool(
-        normalized
-        and (
-            _EXACT_QUOTE_NEGATION_RE.search(normalized)
-            or _QUOTE_HOLD_RE.search(normalized)
-        )
-    )
+    return is_quote_or_proposal_hold(_normalize_sku_homoglyphs(text))
 
 
 def _looks_like_exact_item_candidate(candidate: str) -> bool:
@@ -6693,6 +6662,8 @@ def _has_product_or_quote_routing_signal(text: str) -> bool:
         return False
     if _is_product_memory_note(text):
         return True
+    if _CROSS_SELL_REQUEST_RE.search(normalized):
+        return True
     if any(term in normalized for term in _MIXED_PRODUCT_TERMS):
         return True
     if extract_exact_quote_candidate(text) is not None:
@@ -10019,7 +9990,7 @@ async def recommend_products(
     product_id: str | None = None,
     category: str | None = None,
     recommendation_type: str = "similar",
-) -> str:
+) -> str | ToolReturn:
     """Get product recommendations for the customer.
     Use 'similar' type when a customer is looking at a specific product.
     Use 'cross_sell' type to suggest complementary items based on category.
@@ -10060,14 +10031,26 @@ async def recommend_products(
     elif recommendation_type == "cross_sell" and category:
         items = await get_cross_sell(ctx.deps.db, category, limit=3)
         if not items:
-            return f"No cross-sell items found for category '{category}'."
+            return ToolReturn(
+                return_value=(f"No cross-sell items found for category '{category}'."),
+                content=(
+                    "No verified catalog cross-sell was found. Say that honestly "
+                    "and do not invent an item, price, or availability."
+                ),
+            )
 
         lines = ["You might also need:"]
         for item in items:
             lines.append(
                 f"- {item.name}: {item.price:.2f} AED (in stock: {item.stock})"
             )
-        return "\n".join(lines)
+        return ToolReturn(
+            return_value="\n".join(lines),
+            content=(
+                "Use only these verified cross-sell items and their returned "
+                "price and stock. Do not invent another cross-sell."
+            ),
+        )
 
     return (
         "Please specify either product_id (for similar) or category (for cross_sell)."
@@ -11520,7 +11503,18 @@ async def process_message(
             await _clear_verified_policy_repair_state()
             return _build_llm_response(result, db_model_main)
 
-        result = await _run_agent(deps)
+        run_deps = deps
+        if _CROSS_SELL_REQUEST_RE.search(combined_text) or (
+            masked_text != combined_text and _CROSS_SELL_REQUEST_RE.search(masked_text)
+        ):
+            run_deps = replace(
+                deps,
+                runtime_directives=(
+                    *deps.runtime_directives,
+                    *CROSS_SELL_VERIFICATION_DIRECTIVES,
+                ),
+            )
+        result = await _run_agent(run_deps)
         await _clear_verified_policy_repair_state()
         return _build_llm_response(result, db_model_main)
 

@@ -11,13 +11,30 @@ import logging
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.product import Product
 from src.models.system_config import SystemConfig
 
 logger = logging.getLogger(__name__)
+
+_CROSS_SELL_CATEGORY_FAMILIES: dict[str, tuple[str, ...]] = {
+    "chair": ("chairs",),
+    "monitor_arm": ("accessories",),
+    "cable_management": ("accessories",),
+    "cushion": ("accessories",),
+    "footrest": ("accessories",),
+    "armrest": ("accessories",),
+    "shelf": ("storage",),
+    "filing_cabinet": ("storage",),
+    "organizer": ("accessories", "storage"),
+    "coffee_table": ("desks & tables",),
+    "side_table": ("desks & tables",),
+    "lighting": ("accessories",),
+    "acoustic_panel": ("accessories",),
+    "planter": ("accessories",),
+}
 
 
 class RecommendationItem(BaseModel):
@@ -112,23 +129,45 @@ async def get_cross_sell(
         return []
 
     rules: dict[str, list[str]] = config.value
-    target_categories = rules.get(category.lower(), [])
+    target_categories = rules.get(category.casefold(), [])
 
     if not target_categories:
         return []
 
-    # Find products in target categories
-    prod_stmt = (
-        select(Product)
-        .where(
-            Product.is_active.is_(True),
-            Product.category.in_(target_categories),
+    catalog_categories: list[str] = []
+    for target in target_categories:
+        normalized_target = str(target).strip().casefold()
+        aliases = _CROSS_SELL_CATEGORY_FAMILIES.get(
+            normalized_target,
+            (normalized_target.replace("_", " "),),
         )
-        .order_by(Product.stock.desc())
-        .limit(limit)
-    )
-    prod_result = await db.execute(prod_stmt)
-    products = prod_result.scalars().all()
+        for alias in aliases:
+            if alias and alias not in catalog_categories:
+                catalog_categories.append(alias)
+
+    products: list[Product] = []
+    seen_ids: set[UUID] = set()
+    for catalog_category in catalog_categories:
+        if len(products) >= limit:
+            break
+        prod_stmt = (
+            select(Product)
+            .where(
+                Product.is_active.is_(True),
+                func.lower(Product.category) == catalog_category,
+                Product.stock > 0,
+                Product.price > 0,
+            )
+            .order_by(Product.stock.desc(), Product.price.asc())
+            .limit(1)
+        )
+        prod_result = await db.execute(prod_stmt)
+        for product in prod_result.scalars().all():
+            if product.id in seen_ids:
+                continue
+            seen_ids.add(product.id)
+            products.append(product)
+            break
 
     return [
         RecommendationItem(

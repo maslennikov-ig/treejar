@@ -390,6 +390,25 @@ _PROPOSAL_CONTEXT_TERMS = (
     "quote",
     "for me",
 )
+_QUOTE_HOLD_RE = re.compile(
+    r"(?:"
+    r"\bno\s+(?:formal\s+)?(?:quote|quotation|commercial\s+offer|proposal)"
+    r"\s+(?:yet|now)\b|"
+    r"\bnot\s+ready\s+for\s+(?:an?\s+)?(?:quote|quotation|proposal)\b|"
+    r"\bwithout\s+(?:creating|preparing|making|issuing|generating|sending)"
+    r"\s+(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
+    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
+    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)\b|"
+    r"\b(?:do\s+not|don't|dont)\s+"
+    r"(?:create|prepare|make|issue|generate|send)\s+"
+    r"(?:an?\s+|any\s+|the\s+)?(?:formal\s+)?"
+    r"(?:quote|quotation|commercial\s+offer|commercial\s+proposal|"
+    r"proforma\s+invoice|pro\s+forma\s+invoice|invoice)(?:\s+yet)?\b|"
+    r"(?:بدون|لا)\s+(?:إنشاء|اعداد|إعداد|ارسال|إرسال)?\s*"
+    r"(?:عرض\s+سعر|عرض\s+رسمي)"
+    r")",
+    re.IGNORECASE,
+)
 _PRICE_OBJECTION_TERMS = (
     "too expensive",
     "price is high",
@@ -782,6 +801,8 @@ def _has_commercial_terms_risk(query: str) -> bool:
 
 def is_quote_or_proposal_request(query: str) -> bool:
     normalized = _normalize(query).casefold()
+    if is_quote_or_proposal_hold(normalized):
+        return False
     if any(phrase in normalized for phrase in _QUOTE_PROPOSAL_PHRASES):
         return True
     if "quotation" in normalized or "quote" in normalized:
@@ -791,6 +812,11 @@ def is_quote_or_proposal_request(query: str) -> bool:
     return "proposal" in normalized and any(
         term in normalized for term in _PROPOSAL_CONTEXT_TERMS
     )
+
+
+def is_quote_or_proposal_hold(query: str) -> bool:
+    normalized = _normalize(query).casefold()
+    return bool(normalized and _QUOTE_HOLD_RE.search(normalized))
 
 
 def detect_sales_fallback_intent(query: str) -> SalesFallbackIntent | None:
