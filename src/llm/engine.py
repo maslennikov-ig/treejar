@@ -1661,8 +1661,28 @@ def _minimum_catalog_coverage_selection(
     return lines or None
 
 
-def _catalog_remaining_budget(planning: CatalogPlanningContext) -> float | None:
-    selected_total = planning.selected_total
+def _catalog_selection_total(
+    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
+    families: Sequence[CatalogFamily],
+) -> float | None:
+    required_families = set(families)
+    if not required_families or not required_families.issubset(selections):
+        return None
+    return round(
+        sum(line.total for family in required_families for line in selections[family]),
+        2,
+    )
+
+
+def _catalog_remaining_budget(
+    planning: CatalogPlanningContext,
+    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]] | None = None,
+) -> float | None:
+    selected_total = (
+        planning.selected_total
+        if selections is None
+        else _catalog_selection_total(selections, planning.families)
+    )
     if planning.budget_cap is None or selected_total is None:
         return None
     return round(max(planning.budget_cap - selected_total, 0.0), 2)
@@ -1921,6 +1941,9 @@ class SalesDeps:
     verified_catalog_selections: dict[
         CatalogFamily, tuple[VerifiedCatalogLine, ...]
     ] = field(default_factory=dict)
+    current_catalog_selections: dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] = (
+        field(default_factory=dict)
+    )
     verified_cross_sell: VerifiedCrossSell | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
@@ -1988,6 +2011,9 @@ def _materialize_verified_catalog_recovery(
 ) -> str | None:
     planning = deps.catalog_planning
     required_families = tuple(dict.fromkeys(planning.families))
+    current_selections = deps.current_catalog_selections
+    selected_by_family = current_selections or deps.verified_catalog_selections
+    uses_current_selections = bool(current_selections)
     trace_names = tuple(trace.tool_name for trace in tool_traces)
     allowed_tools = {"search_products", "recommend_products"}
     if (
@@ -1997,7 +2023,6 @@ def _materialize_verified_catalog_recovery(
         or not planning.complete_coverage
         or planning.requested_seats is None
         or planning.budget_cap is None
-        or planning.selected_total is None
         or not required_families
         or not tool_traces
         or any(trace.state != "returned" for trace in tool_traces)
@@ -2010,7 +2035,7 @@ def _materialize_verified_catalog_recovery(
 
     selected_lines: list[VerifiedCatalogLine] = []
     for family in required_families:
-        family_lines = deps.verified_catalog_selections.get(family)
+        family_lines = selected_by_family.get(family)
         if not family_lines:
             return None
         family_total = 0.0
@@ -2031,15 +2056,15 @@ def _materialize_verified_catalog_recovery(
             family_coverage += line.quantity * line.capacity
         if family_coverage < planning.requested_seats:
             return None
-        if abs(family_total - planning.family_totals.get(family, -1.0)) > 0.01:
+        if (
+            not uses_current_selections
+            and abs(family_total - planning.family_totals.get(family, -1.0)) > 0.01
+        ):
             return None
         selected_lines.extend(family_lines)
 
     selected_total = round(sum(line.total for line in selected_lines), 2)
-    if (
-        abs(selected_total - planning.selected_total) > 0.01
-        or selected_total > planning.budget_cap
-    ):
+    if selected_total > planning.budget_cap:
         return None
 
     cross_sell = deps.verified_cross_sell
@@ -2066,7 +2091,7 @@ def _materialize_verified_catalog_recovery(
     remaining = round(planning.budget_cap - final_total, 2)
     language = str(deps.conversation.language)
     if language == "ar":
-        lines = [f"تكوين مؤكد أقل تكلفة لـ {planning.requested_seats} مقعداً:"]
+        lines = [f"تكوين مؤكد ضمن الميزانية لـ {planning.requested_seats} مقعداً:"]
         lines.extend(
             (
                 f"- {line.name} (SKU {line.sku}): {line.quantity} × "
@@ -2091,7 +2116,7 @@ def _materialize_verified_catalog_recovery(
         response_text = "\n".join(lines)
         return response_text if len(response_text) <= 900 else None
 
-    lines = [f"Verified lower-cost configuration for {planning.requested_seats} seats:"]
+    lines = [f"Verified budget-fit configuration for {planning.requested_seats} seats:"]
     lines.extend(
         (
             f"- {line.name} (SKU {line.sku}): {line.quantity} × "
@@ -10999,6 +11024,9 @@ async def search_products(
                 target_product_family
             )
             if planned_total is not None:
+                ctx.deps.current_catalog_selections[target_product_family] = (
+                    planned_selection or ()
+                )
                 if prior_total is not None and prior_total < planned_total:
                     lower_verified_family_total = (
                         target_product_family,
@@ -12139,14 +12167,18 @@ async def recommend_products(
                 result=result,
             )
 
-        remaining_budget = _catalog_remaining_budget(ctx.deps.catalog_planning)
+        remaining_budget = _catalog_remaining_budget(
+            ctx.deps.catalog_planning,
+            (
+                ctx.deps.current_catalog_selections
+                if ctx.deps.current_catalog_selections
+                else None
+            ),
+        )
         if (
             ctx.deps.catalog_planning.budget_cap is not None
             and remaining_budget is None
         ):
-            ctx.deps.required_cross_sell_disclosure = (
-                _no_verified_cross_sell_disclosure(str(ctx.deps.conversation.language))
-            )
             return _finish_cross_sell(
                 ToolReturn(
                     return_value=(

@@ -18621,6 +18621,214 @@ async def test_cross_sell_enforces_remaining_budget_from_catalog_selection(
     assert "remaining budget" in result_text.casefold()
 
 
+@pytest.mark.asyncio
+async def test_catalog_recovery_uses_complete_current_turn_selection(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=7000.0,
+        family_totals={"workspace": 1500.0},
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Find a complete chair and desk configuration under AED 7,000 "
+            "with one cross-sell. Do not prepare a quotation."
+        ),
+        catalog_planning=planning,
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="configuration",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+    search_results = [
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="CHAIR-CURRENT",
+                    name="Operative Office Chair",
+                    price=250.0,
+                    stock=12,
+                    description="Individual task chair.",
+                )
+            ],
+            total_found=1,
+        ),
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="DESK-CURRENT",
+                    name="Compact Computer Desk",
+                    price=166.0,
+                    stock=12,
+                    description="Individual office desk.",
+                )
+            ],
+            total_found=1,
+        ),
+    ]
+
+    with patch.object(
+        engine_module,
+        "rag_search_products",
+        new_callable=AsyncMock,
+        side_effect=search_results,
+    ):
+        await engine_module.search_products(ctx, "office chairs")
+        await engine_module.search_products(ctx, "office desks")
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        return_value=[
+            SimpleNamespace(
+                name="Storage Cabinet",
+                sku="STORAGE-HIGH",
+                price=2500.0,
+                currency="AED",
+                stock=5,
+            )
+        ],
+    ):
+        await engine_module.recommend_products(
+            ctx,
+            category="desk",
+            recommendation_type="cross_sell",
+        )
+
+    response = engine_module._materialize_verified_catalog_recovery(
+        deps,
+        tuple(deps.recovery_tool_traces),
+        explicit_quote_hold=True,
+    )
+
+    assert planning.family_totals == {"seating": 3000.0, "workspace": 1500.0}
+    assert response is not None
+    assert "budget-fit" in response.casefold()
+    assert "CHAIR-CURRENT" in response
+    assert "DESK-CURRENT" in response
+    assert "AED 4992.00" in response
+
+
+@pytest.mark.asyncio
+async def test_catalog_recovery_rejects_no_fit_from_partial_selection(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=7000.0,
+        family_totals={"seating": 3000.0, "workspace": 1992.0},
+    )
+    chair = engine_module.VerifiedCatalogLine(
+        family="seating",
+        name="Operative Office Chair",
+        sku="CHAIR-CURRENT",
+        quantity=12,
+        unit_price=250.0,
+        total=3000.0,
+        currency="AED",
+        stock=12,
+        capacity=1,
+    )
+    desk = engine_module.VerifiedCatalogLine(
+        family="workspace",
+        name="Compact Computer Desk",
+        sku="DESK-CURRENT",
+        quantity=12,
+        unit_price=166.0,
+        total=1992.0,
+        currency="AED",
+        stock=12,
+        capacity=1,
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        catalog_planning=planning,
+        current_catalog_selections={"seating": (chair,)},
+    )
+    deps.executed_tool_names.append("search_products")
+    deps.recovery_tool_traces.append(
+        engine_module.build_runtime_tool_trace(
+            tool_name="search_products",
+            arguments={"sequence": 1},
+            outcome="verified chairs",
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="cross sell",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+    ) as mock_get_cross_sell:
+        await engine_module.recommend_products(
+            ctx,
+            category="desk",
+            recommendation_type="cross_sell",
+        )
+
+    mock_get_cross_sell.assert_not_awaited()
+    deps.current_catalog_selections["workspace"] = (desk,)
+    deps.executed_tool_names.append("search_products")
+    deps.recovery_tool_traces.append(
+        engine_module.build_runtime_tool_trace(
+            tool_name="search_products",
+            arguments={"sequence": 3},
+            outcome="verified desks",
+        )
+    )
+
+    assert (
+        engine_module._materialize_verified_catalog_recovery(
+            deps,
+            tuple(deps.recovery_tool_traces),
+            explicit_quote_hold=True,
+        )
+        is None
+    )
+
+
 @pytest.mark.parametrize(
     ("language", "disclosure"),
     [
