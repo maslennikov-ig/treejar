@@ -80,7 +80,9 @@ verification:
   - focused RED reproduced old chat endpoint, mp3 fallback, missing config, and content-hash dedupe
   - correction RED reproduced the missing Python config alias and generation identity
   - final correction RED reproduced the incompatible copied env and missing persistent trace
+  - parent delta RED reproduced unbounded trace records and provider strings
   - uv run --extra dev python -m pytest tests/test_voxtral.py tests/test_webhook_audio.py tests/test_services_chat.py -q --tb=short: passed
+  - parent delta focused voice audit tests: 2 passed
   - targeted ruff check for changed Python files: passed
   - targeted ruff format check for changed Python files: passed
   - git diff --check: passed
@@ -120,9 +122,12 @@ Focused RED proved all four reported failure sources in the previous
 implementation. A correction RED also proved both review findings before their
 fixes. The final correction RED proved the effective rollout and trace gaps.
 The final focused target passed 42 tests; targeted Ruff, format, and
-`git diff --check` passed. No authenticated or paid provider call, deployment,
-or production mutation was performed; the initial RED reached only the
-provider's unauthenticated 401 boundary before the corrected test isolation.
+`git diff --check` passed. The parent delta then bounded the stored audit to
+16 records and bounded provider-supplied IDs/model names with stable digest
+suffixes; its two focused tests and targeted Ruff/format checks passed. No
+authenticated or paid provider call, deployment, or production mutation was
+performed; the initial RED reached only the provider's unauthenticated 401
+boundary before the corrected test isolation.
 
 # Delivery / Cleanup
 
@@ -134,7 +139,7 @@ Keep the worktree until the parent records acceptance.
 Deployment must set `VOICE_TRANSCRIPTION_MODEL` to an active STT model.
 `VOXTRAL_MODEL` remains a temporary lower-priority environment alias. The
 latest successful voice batch retains a versioned provider trace in existing
-conversation metadata; overwriting older batches keeps this audit bounded. A
-provider-originated OGG/Opus and FLAC canary is still required before closing
-`tj-ee5f.10`; that live proof was outside this stream's authority. The parent
-must also register this v3 artifact in the stage manifest before validation.
+conversation metadata; overwriting older batches plus explicit record/string
+limits keep this audit bounded. A provider-originated OGG/Opus and FLAC canary
+is still required before closing `tj-ee5f.10`; that live proof was outside this
+stream's authority.
