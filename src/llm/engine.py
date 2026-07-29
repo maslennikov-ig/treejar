@@ -457,6 +457,51 @@ _CONSULTATIVE_QUOTE_BLOCKERS = (
     "bulk pricing",
     "wholesale pricing",
 )
+_QUOTE_RESUME_PRICE_OBJECTION_RE = re.compile(
+    r"\b(?:too\s+expensive|price\s+is\s+(?:too\s+)?high|"
+    r"cost\s+is\s+(?:too\s+)?high|cheaper|lower\s+price)\b|"
+    r"(?:غالي|أرخص|ارخص|سعر\s+أقل|سعر\s+اقل)|"
+    r"(?:(?:السعر|سعر|التكلفة|تكلفة).{0,16}(?:مرتفع|عالي)|"
+    r"(?:مرتفع|عالي).{0,16}(?:السعر|سعر|التكلفة|تكلفة))|"
+    r"(?:дорого|дешевле|низкая\s+цена)",
+    re.IGNORECASE,
+)
+_QUOTE_RESUME_CLAUSE_SPLIT_RE = re.compile(
+    r"[,.;!?،؛؟]+|\bbut\b|(?:لكن)",
+    re.IGNORECASE,
+)
+_QUOTE_RESUME_DETAIL_REVISION_RE = re.compile(
+    r"\b(?:change|update|replace|switch)\s+(?:only\s+)?(?:the\s+)?"
+    r"(?:delivery\s+)?(?:address|email|phone|company|name)\b|"
+    r"(?:غيّر|غير|بدل|استبدل)\s+(?:فقط\s+)?"
+    r"(?:عنوان(?:\s+التسليم)?|البريد|الهاتف|الشركة|الاسم)|"
+    r"(?:изменить|сменить|заменить)\s+(?:только\s+)?"
+    r"(?:адрес|почту|телефон|компанию|имя)",
+    re.IGNORECASE,
+)
+_QUOTE_RESUME_PRODUCT_REVISION_ACTION_RE = re.compile(
+    r"\b(?:show|recommend|suggest|find|replace|switch|swap)\b|"
+    r"(?:اعرض|اقترح|رشح|استبدل|بدل|غيّر|غير)|"
+    r"(?:покажи|посоветуй|предложи|найди|замени)",
+    re.IGNORECASE,
+)
+_QUOTE_RESUME_PRODUCT_REVISION_MODIFIER_RE = re.compile(
+    r"\b(?:another|different|alternative|instead)\b|"
+    r"(?:بديل|خيار\s+آخر|خيار\s+اخر|آخر|اخر|أخرى|اخرى|مختلف)|"
+    r"(?:другой|альтернатив|вместо)",
+    re.IGNORECASE,
+)
+_QUOTE_RESUME_PRODUCT_REFUSAL_RE = re.compile(
+    r"\b(?:not\s+this|not\s+suitable|do\s+not\s+want|"
+    r"don['’]?t\s+want|dont\s+want|no\s+longer\s+want)\b|"
+    r"(?:ليس|غير\s+مناسب|لا\s+أريد|لا\s+اريد)|"
+    r"(?:не\s+этот|не\s+подходит|не\s+хочу)",
+    re.IGNORECASE,
+)
+_QUOTE_RESUME_ANAPHORIC_PRODUCT_RE = re.compile(
+    r"\b(?:this|that)(?:\s+one)?\b|\bit\b|(?:هذا|هذه|ذلك|تلك)",
+    re.IGNORECASE,
+)
 _EXACT_QUOTE_HIGH_RISK_BLOCKERS = (
     "net 30",
     "net30",
@@ -8987,12 +9032,48 @@ def _exact_quote_followup_candidates(
     return ()
 
 
-def _has_affirmative_quote_resume_intent(text: str) -> bool:
-    normalized = _normalize_text(text)
+def _has_quote_resume_consultative_priority(text: str) -> bool:
+    normalized = _normalize_text(_normalize_sku_homoglyphs(text))
     if not normalized:
         return False
+    if _has_explicit_quote_hold(normalized):
+        return True
+
+    for raw_clause in _QUOTE_RESUME_CLAUSE_SPLIT_RE.split(normalized):
+        clause = _QUOTE_RESUME_DETAIL_REVISION_RE.sub(" ", raw_clause).strip()
+        if not clause:
+            continue
+        if _QUOTE_RESUME_PRICE_OBJECTION_RE.search(clause):
+            return True
+        has_product_target = bool(
+            any(_contains_catalog_term(clause, term) for term in _MIXED_PRODUCT_TERMS)
+            or _SKU_SIGNAL_RE.search(clause)
+            or _CATALOG_OPTION_CONTEXT_RE.search(clause)
+        )
+        has_product_refusal = _QUOTE_RESUME_PRODUCT_REFUSAL_RE.search(clause)
+        if has_product_refusal and (
+            has_product_target or _QUOTE_RESUME_ANAPHORIC_PRODUCT_RE.search(clause)
+        ):
+            return True
+        if has_product_target and (
+            _QUOTE_RESUME_PRODUCT_REVISION_ACTION_RE.search(clause)
+            or _QUOTE_RESUME_PRODUCT_REVISION_MODIFIER_RE.search(clause)
+        ):
+            return True
+    return False
+
+
+def _has_affirmative_quote_resume_intent(text: str) -> bool:
+    normalized = _normalize_text(text)
+    if not normalized or _has_quote_resume_consultative_priority(normalized):
+        return False
     return any(
-        phrase in normalized
+        re.search(
+            rf"(?<!\w){re.escape(phrase)}(?!\w)",
+            normalized,
+            flags=re.UNICODE,
+        )
+        is not None
         for phrase in (
             "yes",
             "ok",
@@ -9012,6 +9093,13 @@ def _has_affirmative_quote_resume_intent(text: str) -> bool:
             "вышлите",
             "подготовьте",
             "сделайте",
+            "نعم",
+            "حسنا",
+            "حسنًا",
+            "موافق",
+            "تابع",
+            "أرسلها",
+            "ارسلها",
         )
     )
 
@@ -12618,8 +12706,19 @@ async def process_message(
     assistant_offered_quote_selection = _last_assistant_offered_quote_for_selection(
         recent_history
     )
-    assistant_supports_quote_resume = (
-        assistant_asked_quote_details or assistant_offered_quote_selection
+    quote_offer_reply_has_consultative_priority = (
+        _has_quote_resume_consultative_priority(combined_text)
+        or _has_quote_resume_consultative_priority(masked_text)
+    )
+    assistant_supports_quote_resume = assistant_asked_quote_details or (
+        assistant_offered_quote_selection
+        and not quote_offer_reply_has_consultative_priority
+        and (
+            _has_explicit_quote_opt_in(combined_text)
+            or _has_explicit_quote_opt_in(masked_text)
+            or _has_affirmative_quote_resume_intent(combined_text)
+            or _has_affirmative_quote_resume_intent(masked_text)
+        )
     )
     quote_detail_context_active = (
         assistant_supports_quote_resume or has_pending_quote_selection
@@ -12997,6 +13096,18 @@ async def process_message(
     policy_decision = evaluate_verified_answer_policy(
         masked_text, deps.faq_context or []
     )
+    if (
+        assistant_offered_quote_selection
+        and quote_offer_reply_has_consultative_priority
+        and not _has_detail_capture_handoff_blocker(combined_text)
+    ):
+        policy_decision = replace(
+            policy_decision,
+            question_class="product",
+            policy_action="allow",
+            requires_manager_handoff=False,
+            sales_fallback_intent=None,
+        )
     product_preference_frame_match = _dialogue_kernel_product_preference_match(
         dialogue_kernel_result
     )

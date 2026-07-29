@@ -12469,6 +12469,99 @@ async def test_process_message_terse_details_blocks_llm_selection_table_recovery
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "customer_text",
+    [
+        (
+            "Employees use these seats for nine hours daily, so posture support "
+            "matters. Which chair and desk pair is best?"
+        ),
+        "Okay, that chair is too expensive. Show me a cheaper alternative.",
+        "Yes, recommend another chair instead.",
+        "Yes, prepare the quotation, but use a cheaper alternative first.",
+        "نعم، هذا الكرسي غالي. اعرض بديلاً أرخص.",
+        "نعم، جهز عرض سعر لكن اعرض بديلاً أرخص أولاً.",
+        "Okay, not this chair.",
+        "Yes, this chair is not suitable.",
+        "نعم، ليس كرسي CH 140.",
+        "نعم، لا أريد كرسي CH 140.",
+        "Okay, not this one.",
+        "Yes, I don't want this one.",
+        "نعم، ليس هذا.",
+        "نعم، لا أريد هذا.",
+    ],
+)
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_recommendation_after_quote_offer_stays_consultative(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    customer_text: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Nadia"
+    conv.language = "en"
+    conv.metadata_ = {"quote_customer_details": {"name": "Nadia"}}
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelResponse(
+            parts=[
+                TextPart(
+                    content=(
+                        "Perfect — confirmed availability:\n\n"
+                        "**Mesh Task Chair CH 140 Black**\n"
+                        "- **Price:** 450 AED each\n"
+                        "- **Stock:** 12 units confirmed in stock\n"
+                        "- Features: mesh back and adjustable armrests\n\n"
+                        "**Your order:** 4 chairs = **1,800 AED total**\n\n"
+                        "Would you like me to send you a formal quotation for "
+                        "these 4 chairs?"
+                    )
+                )
+            ]
+        ),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "For long workdays, I would first verify lumbar support, then compare desks."
+    )
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=customer_text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert "quote-frame" not in response.model
+    assert "quote-resume" not in response.model
+    assert "saved quote frame" not in response.text.casefold()
+    assert "pending_quote_selection" not in conv.metadata_
+    order_runtime = conv.metadata_.get("order_runtime")
+    assert not isinstance(order_runtime, dict) or "quote_frame" not in order_runtime
+    mock_create_quotation.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
@@ -12741,6 +12834,36 @@ def test_quote_candidates_ignore_alternative_price_table_and_use_quote_offer() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "customer_text",
+    [
+        "Yes, prepare quotation. Lil / individual purchase / 2 street",
+        (
+            "Yes, prepare the quotation for the recommended option. "
+            "Full name: Lil; Company: LLD; Delivery address: 2 street"
+        ),
+        (
+            "Yes, send the quotation; all details are unchanged. "
+            "Full name: Lil; Company: LLD; Delivery address: 2 street"
+        ),
+        (
+            "Yes, prepare the quotation, but change only the delivery address. "
+            "Full name: Lil; Company: LLD; Delivery address: 2 street"
+        ),
+        (
+            "نعم، جهز عرض سعر، غير عنوان التسليم فقط. "
+            "Full name: Lil; Company: LLD; Delivery address: 2 street"
+        ),
+        (
+            "نعم، جهز عرض سعر للكرسي CH 140، غير عنوان التسليم فقط. "
+            "Full name: Lil; Company: LLD; Delivery address: 2 street"
+        ),
+        (
+            "نعم، جهز عرض سعر للكرسي CH 140 ذي الظهر المرتفع. "
+            "Full name: Lil; Company: LLD; Delivery address: 2 street"
+        ),
+    ],
+)
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
     new_callable=AsyncMock,
@@ -12762,6 +12885,7 @@ async def test_process_message_quote_details_blocks_proceed_with_units_recovery(
     mock_search_knowledge: AsyncMock,
     mock_resolve_sku: AsyncMock,
     mock_notify: AsyncMock,
+    customer_text: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -12799,7 +12923,7 @@ async def test_process_message_quote_details_blocks_proceed_with_units_recovery(
 
     response = await process_message(
         conversation_id=conv.id,
-        combined_text="Yes, prepare quotation. Lil / individual purchase / 2 street",
+        combined_text=customer_text,
         db=db,
         redis=redis,
         embedding_engine=embedding,
@@ -12832,7 +12956,7 @@ async def test_process_message_quote_details_blocks_proceed_with_units_recovery(
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_quote_offer_details_blocks_assistant_prose_recovery(
+async def test_process_message_quote_offer_details_do_not_start_quote_without_opt_in(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -12884,9 +13008,9 @@ async def test_process_message_quote_offer_details_blocks_assistant_prose_recove
         messaging_client=messaging,
     )
 
-    assert response.model == "mock-model|quote-frame-repair-missing-items"
-    assert "saved quote frame" in response.text.lower()
-    assert "confirm the products and quantities" in response.text.lower()
+    assert response.model == "detail-capture"
+    assert "saved quote frame" not in response.text.lower()
+    assert "quotation" not in response.text.lower()
     assert "pending_quote_selection" not in conv.metadata_
     assert "order_runtime" not in conv.metadata_
     mock_run.assert_not_awaited()
@@ -16796,6 +16920,44 @@ async def test_explicit_quote_opt_in_clears_persisted_quote_hold(
 )
 def test_natural_explicit_quote_opt_in_is_recognized(text: str) -> None:
     assert engine_module._has_explicit_quote_opt_in(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Yes, please.", True),
+        ("نعم", True),
+        ("Yes, prepare the quotation for the recommended option.", True),
+        (
+            "Yes, prepare the quotation for the selected chair to use in our office.",
+            True,
+        ),
+        ("Yes, send the quotation; all details are unchanged.", True),
+        ("Yes, prepare the quotation, but change only the delivery address.", True),
+        ("نعم، جهز عرض سعر، غير عنوان التسليم فقط.", True),
+        ("نعم، جهز عرض سعر للكرسي CH 140، غير عنوان التسليم فقط.", True),
+        ("نعم، جهز عرض سعر للكرسي CH 140 ذي الظهر المرتفع.", True),
+        ("Yesterday's options were expensive.", False),
+        ("Okay, do not prepare a quotation.", False),
+        ("Okay, that chair is too expensive. Show me a cheaper alternative.", False),
+        ("Yes, prepare the quotation, but use a cheaper alternative first.", False),
+        ("نعم، هذا الكرسي غالي. اعرض بديلاً أرخص.", False),
+        ("نعم، جهز عرض سعر لكن اعرض بديلاً أرخص أولاً.", False),
+        ("Okay, not this chair.", False),
+        ("Yes, this chair is not suitable.", False),
+        ("نعم، ليس كرسي CH 140.", False),
+        ("نعم، لا أريد كرسي CH 140.", False),
+        ("Okay, not this one.", False),
+        ("Yes, I don't want this one.", False),
+        ("نعم، ليس هذا.", False),
+        ("نعم، لا أريد هذا.", False),
+    ],
+)
+def test_affirmative_quote_resume_requires_a_standalone_unblocked_signal(
+    text: str,
+    expected: bool,
+) -> None:
+    assert engine_module._has_affirmative_quote_resume_intent(text) is expected
 
 
 @pytest.mark.asyncio
