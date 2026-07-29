@@ -1180,8 +1180,13 @@ _PRIVACY_MATCH_TERMS = frozenset(
         "screen",
         "screens",
         "enclosed",
-        "dedicated",
     }
+)
+_PRODUCT_LINE_MATCH_TERMS = frozenset(
+    {"imago", "luma", "novo", "skyland", "trend", "xten"}
+)
+_FINISH_MATCH_TERMS = frozenset(
+    {"beech", "black", "gray", "grey", "oak", "walnut", "white"}
 )
 
 
@@ -1207,10 +1212,12 @@ def _matches_structured_workstation_constraints(
         return False
 
     candidate_tokens = _tokenize(candidate)
+    discriminators = query_tokens & (_PRODUCT_LINE_MATCH_TERMS | _FINISH_MATCH_TERMS)
     return bool(
         candidate_tokens & _WORKSTATION_MATCH_TERMS
         and candidate_tokens & _PRIVACY_MATCH_TERMS
         and _capacity_value(candidate) == requested_capacity
+        and discriminators.issubset(candidate_tokens)
     )
 
 
@@ -1218,13 +1225,13 @@ def classify_product_match(query: str, candidates: Sequence[str]) -> ProductMatc
     if not candidates:
         return "missing"
 
-    normalized_query = _normalize(query)
     if any(
-        _matches_structured_workstation_constraints(normalized_query, candidate)
+        _matches_structured_workstation_constraints(query, candidate)
         for candidate in candidates
     ):
         return "exact"
 
+    normalized_query = _normalize(query)
     candidate_tokens = [_tokenize(candidate) for candidate in candidates]
     query_tokens = {
         token

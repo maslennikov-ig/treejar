@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+from src.llm import verified_answers as verified_answers_module
 from src.llm.verified_answers import (
     build_clarification_response,
     build_sales_fallback_response,
@@ -451,6 +454,43 @@ def test_policy_keeps_internal_cheaper_configuration_on_product_path() -> None:
     assert decision.sales_fallback_intent is None
     assert not is_quote_or_proposal_request(
         "Give me a cheaper option, but do not prepare a quotation."
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "candidate"),
+    [
+        (
+            "Show a private LUMA four-person workstation.",
+            "NOVO four-person workstation with privacy panels.",
+        ),
+        (
+            "Show a private NOVO four-person workstation in black.",
+            "NOVO four-person workstation with privacy panels in white.",
+        ),
+    ],
+)
+def test_structured_workstation_match_requires_explicit_discriminators(
+    query: str,
+    candidate: str,
+) -> None:
+    assert classify_product_match(query, [candidate]) != "exact"
+
+
+def test_dedicated_alone_is_not_a_structured_privacy_constraint() -> None:
+    assert not verified_answers_module._matches_structured_workstation_constraints(
+        "dedicated four-person workstation",
+        "dedicated four-person workstation",
+    )
+
+
+def test_structured_workstation_match_accepts_matching_brand_and_finish() -> None:
+    assert (
+        classify_product_match(
+            "Show a private LUMA four-person workstation in black.",
+            ["LUMA black four-person workstation with privacy panels."],
+        )
+        == "exact"
     )
 
 

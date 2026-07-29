@@ -17518,6 +17518,158 @@ async def test_cross_sell_falls_back_to_verified_catalog_product(
     assert "No cross-sell items found" not in result_text
 
 
+def test_catalog_family_matching_uses_token_boundaries() -> None:
+    assert engine_module._catalog_product_family("adjustable height base") is None
+    assert (
+        engine_module._catalog_product_family("adjustable office table") == "workspace"
+    )
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_preserves_arabic_catalog_capacity_across_turns(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Nadia"
+    conv.language = "ar"
+    initial_request = "نحتاج مكاتب وكراسي لاثني عشر موظفاً."
+    current_request = "أريد الآن تكوين الأثاث الأرخص."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=initial_request)]),
+        ModelResponse(parts=[TextPart(content="سأقارن خيارات مناسبة من الكتالوج.")]),
+        ModelRequest(parts=[UserPromptPart(content=current_request)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("سأعرض تكويناً كاملاً بسعر أقل.")
+
+    await process_message(
+        conversation_id=conv.id,
+        combined_text=current_request,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    planning = conv.metadata_["catalog_planning_v1"]
+    assert planning["requested_seats"] == 12
+    assert planning["families"] == ["seating", "workspace"]
+    assert planning["complete_coverage"] is True
+    run_deps = mock_run.await_args.kwargs["deps"]
+    assert run_deps.catalog_planning.requested_seats == 12
+    assert run_deps.catalog_planning.families == ("seating", "workspace")
+    mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cross_sell_enforces_remaining_budget_from_catalog_selection(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=7000.0,
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Find the lowest-cost complete configuration under AED 7,000.",
+        catalog_planning=planning,
+    )
+    search_results = [
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="CHAIR-A",
+                    name="Operative Office Chair",
+                    price=250.0,
+                    stock=12,
+                    description="Individual task chair.",
+                )
+            ],
+            total_found=1,
+        ),
+        ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="DESK-A",
+                    name="Compact Computer Desk",
+                    price=300.0,
+                    stock=12,
+                    description="Individual office desk.",
+                )
+            ],
+            total_found=1,
+        ),
+    ]
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="configuration",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(
+        engine_module,
+        "rag_search_products",
+        new_callable=AsyncMock,
+        side_effect=search_results,
+    ):
+        await engine_module.search_products(ctx, "office chairs")
+        await engine_module.search_products(ctx, "office desks")
+
+    assert planning.selected_total == 6600.0
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        return_value=[SimpleNamespace(name="Mobile Pedestal", price=450.0, stock=5)],
+    ):
+        result = await engine_module.recommend_products(
+            ctx,
+            category="desk",
+            recommendation_type="cross_sell",
+        )
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "Mobile Pedestal" not in result_text
+    assert "remaining budget" in result_text.casefold()
+
+
 def test_sales_opportunity_with_horizon_proposes_timed_follow_up() -> None:
     request = engine_module._extract_sales_opportunity_request(
         "Budget: AED 8,500. Decision expected within two weeks. "
@@ -17535,3 +17687,31 @@ def test_sales_opportunity_with_horizon_proposes_timed_follow_up() -> None:
     )
 
     assert "follow-up in one week" in response.casefold()
+
+
+@pytest.mark.parametrize(
+    "horizon",
+    [
+        "Decision expected within one day.",
+        "Decision expected within 8 hours.",
+        "Decision expected today.",
+    ],
+)
+def test_short_decision_horizon_uses_neutral_follow_up(horizon: str) -> None:
+    request = engine_module._extract_sales_opportunity_request(
+        f"{horizon} Record this opportunity without preparing a quotation."
+    )
+
+    assert request is not None
+    response = engine_module._sales_opportunity_response(
+        request,
+        engine_module.SalesOpportunityWriteResult(
+            verified=True,
+            deal_id="verified-deal",
+        ),
+        language="en",
+    )
+
+    assert "ahead of your decision" not in response.casefold()
+    assert "in 1 day" not in response.casefold()
+    assert "decision window" in response.casefold()

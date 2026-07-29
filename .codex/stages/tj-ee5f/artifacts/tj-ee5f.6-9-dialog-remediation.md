@@ -23,9 +23,9 @@ subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
 model_reasoning_rationale: stateful sales routing and idempotent external effects require careful focused verification
 repo: treejar
-branch: codex/tj-ee5f-dialog-acceptance
+branch: codex/tj-ee5f-dialog-acceptance-review
 base_branch: codex/tj-ee5f-remediation
-base_commit: 9234909
+base_commit: acf089da2a8de9ef7e0401ac8b334b56649f4b40
 worktree: /home/me/code/treejar/.worktrees/tj-ee5f-dialog-remediation
 write_zone:
   - src/llm/engine.py
@@ -47,6 +47,9 @@ success_criteria:
   - verified capacity and privacy constraints prevent false exact-match denial
   - comparison claims expose missing acoustic and footprint evidence and keep multi-seat prices at the SKU-unit basis
   - catalog configurations cannot claim full coverage across mixed or under-stocked product families
+  - bounded typed catalog state preserves capacity and family across EN/AR turns
+  - exact structured matching also honors explicit product line and finish constraints
+  - a cross-sell is returned only when the verified selected total leaves enough budget
   - a verified opportunity with a decision horizon proposes a concrete follow-up before that horizon
 selected_docs:
   - AGENTS.md
@@ -101,6 +104,8 @@ verification:
   - correction focused quotation retry and compatibility set: passed 7
   - acceptance correction RED for catalog match, evidence, coverage, cross-sell, and timed follow-up: failed as expected
   - acceptance correction focused catalog and opportunity set: passed 19
+  - independent-review RED for bounded planning state, exact discriminators, token boundaries, budget enforcement, and short horizons: failed 9 of 10 as expected
+  - independent-review focused correction set: passed 25
   - targeted Ruff check: passed
   - targeted Ruff format check: passed
   - targeted Mypy for engine and Zoho Inventory client: passed
@@ -171,6 +176,20 @@ complementary in-stock catalog item may be selected through the existing catalog
 search, with no invented product or price. A verified CRM opportunity with a
 known decision horizon now asks to agree a specific earlier follow-up.
 
+Independent review found five remaining acceptance gaps. A bounded, versioned
+catalog-planning state now carries requested capacity, product families,
+complete-coverage intent, budget cap, and verified per-family totals across
+turns, including Arabic requests. Family detection uses token/phrase boundaries,
+so unrelated words cannot match `table`. Structured exact matching requires
+explicit product-line and finish discriminators to agree and no longer treats
+`dedicated` as privacy evidence.
+
+Cross-sell eligibility is now calculated from catalog-backed selection totals
+and enforced before an item is returned; an unknown or insufficient remainder
+fails closed. One-day, same-day, and hourly decision horizons use a neutral
+contact-time question rather than claiming a follow-up occurs before the
+decision.
+
 # Scope / Routing
 
 The production changes are limited to deterministic routing, typed metadata,
@@ -209,11 +228,16 @@ evidence limits, SKU-unit pricing, per-family stock coverage, mixed-family
 fail-closed behavior, verified cross-sell fallback, and a one-week follow-up for
 a two-week decision horizon.
 
+The independent-review correction set passed 25 focused tests, covering prior
+catalog behavior plus a real multi-turn Arabic planning context, family token
+boundaries, LUMA/NOVO and finish mismatches, deterministic cross-sell budget
+rejection, and neutral one-day/today/hourly follow-up wording.
+
 # Delivery / Cleanup
 
 Returned to the parent orchestrator as a single correction commit on
-`codex/tj-ee5f-dialog-acceptance`. No push, deploy, production mutation, paid
-call, or external message was performed.
+`codex/tj-ee5f-dialog-acceptance-review`. No push, deploy, production mutation,
+paid call, or external message was performed.
 
 # Risks / Follow-ups / Explicit Defers
 

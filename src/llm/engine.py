@@ -6,16 +6,16 @@ import inspect
 import logging
 import math
 import re
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from html import escape
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from uuid import UUID
 
 import httpx
-from pydantic import SkipValidation
+from pydantic import BaseModel, ConfigDict, Field, SkipValidation, ValidationError
 from pydantic_ai import Agent, RunContext, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -979,11 +979,35 @@ _PLANNING_COUNT_VALUES = {
     "ten": 10,
     "eleven": 11,
     "twelve": 12,
+    "واحد": 1,
+    "واحدة": 1,
+    "اثنان": 2,
+    "اثنين": 2,
+    "ثلاثة": 3,
+    "أربعة": 4,
+    "اربعة": 4,
+    "خمسة": 5,
+    "ستة": 6,
+    "سبعة": 7,
+    "ثمانية": 8,
+    "تسعة": 9,
+    "عشرة": 10,
+    "أحد عشر": 11,
+    "احد عشر": 11,
+    "اثنا عشر": 12,
+    "اثني عشر": 12,
 }
 _PLANNING_CAPACITY_RE = re.compile(
     r"\b(?P<count>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|"
     r"eleven|twelve)(?:[\s-]+)(?:(?:[a-z][\w-]*)\s+){0,2}"
     r"(?:person|people|staff|employees?|users?|designers?|seats?)\b",
+    re.IGNORECASE,
+)
+_AR_PLANNING_CAPACITY_RE = re.compile(
+    r"(?<!\w)ل?(?P<count>\d{1,3}|واحد(?:ة)?|اثنان|اثنين|ثلاثة|أربعة|اربعة|خمسة|"
+    r"ستة|سبعة|ثمانية|تسعة|عشرة|أحد عشر|احد عشر|اثنا عشر|اثني عشر)\s+"
+    r"(?:موظف(?:ين|ا?[ًٌٍَُِّْٰ]*)|مستخدم(?:ين|ا?[ًٌٍَُِّْٰ]*)|"
+    r"مصمم(?:ين|ا?[ًٌٍَُِّْٰ]*)|مقعد(?:ا?[ًٌٍَُِّْٰ]*)|مقاعد)(?!\w)",
     re.IGNORECASE,
 )
 _CATALOG_CAPACITY_RE = re.compile(
@@ -996,12 +1020,86 @@ _CATALOG_UNIT_PRODUCT_TERMS = (
     "desk",
     "stool",
 )
-_CATALOG_PRODUCT_FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("seating", ("chair", "stool", "seat")),
-    ("workspace", ("desk", "table", "workstation", "bench")),
-    ("storage", ("pedestal", "cabinet", "locker", "storage", "shelf")),
-    ("privacy", ("pod", "booth")),
+CatalogFamily = Literal["seating", "workspace", "storage", "privacy"]
+CatalogAmount = Annotated[float, Field(ge=0, le=10_000_000)]
+_CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
+    ("seating", ("chair", "stool", "seat", "كرسي", "كراسي")),
+    (
+        "workspace",
+        (
+            "desk",
+            "table",
+            "workstation",
+            "bench",
+            "مكتب",
+            "مكاتب",
+            "طاولة",
+            "طاولات",
+            "محطة عمل",
+            "محطات عمل",
+        ),
+    ),
+    (
+        "storage",
+        (
+            "pedestal",
+            "cabinet",
+            "locker",
+            "storage",
+            "shelf",
+            "shelves",
+            "خزانة",
+            "خزائن",
+            "تخزين",
+        ),
+    ),
+    ("privacy", ("pod", "booth", "كبسولة", "مقصورة")),
 )
+_CATALOG_PLANNING_KEY = "catalog_planning_v1"
+_CATALOG_BUDGET_CAP_RE = re.compile(
+    r"(?:\b(?:under|below|within|up\s+to|maximum|max(?:imum)?\s+of)\s+"
+    r"(?:(?P<currency_before>AED|DHS|dirhams?)\s*)?"
+    r"(?P<amount_before>\d[\d,]*(?:\.\d+)?)"
+    r"(?:\s*(?P<currency_after>AED|DHS|dirhams?))?\b|"
+    r"\b(?P<currency_leading>AED|DHS|dirhams?)\s*"
+    r"(?P<amount_leading>\d[\d,]*(?:\.\d+)?)\s+"
+    r"(?:or\s+less|max(?:imum)?|cap)\b)",
+    re.IGNORECASE,
+)
+_CATALOG_COMPLETE_COVERAGE_TERMS = (
+    "cheaper",
+    "lowest cost",
+    "complete configuration",
+    "full configuration",
+    "cover all",
+    "all seats",
+    "all staff",
+    "الأرخص",
+    "اقل تكلفة",
+    "أقل تكلفة",
+    "تكوين كامل",
+)
+
+
+class CatalogPlanningContext(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+
+    version: Literal[1] = 1
+    requested_seats: int | None = Field(default=None, gt=0, le=1000)
+    families: tuple[CatalogFamily, ...] = ()
+    complete_coverage: bool = False
+    budget_cap: float | None = Field(default=None, gt=0, le=10_000_000)
+    family_totals: dict[CatalogFamily, CatalogAmount] = Field(default_factory=dict)
+
+    @property
+    def selected_total(self) -> float | None:
+        required_families = set(self.families)
+        if not required_families or not required_families.issubset(self.family_totals):
+            return None
+        return round(
+            sum(self.family_totals[family] for family in required_families),
+            2,
+        )
 
 
 def _planning_count_value(raw: str) -> int:
@@ -1012,7 +1110,10 @@ def _planning_count_value(raw: str) -> int:
 
 
 def _requested_seat_count(text: str) -> int | None:
-    match = _PLANNING_CAPACITY_RE.search(_normalize_text(text))
+    normalized = _normalize_text(text)
+    match = _PLANNING_CAPACITY_RE.search(normalized)
+    if match is None:
+        match = _AR_PLANNING_CAPACITY_RE.search(normalized)
     return _planning_count_value(match.group("count")) if match else None
 
 
@@ -1021,23 +1122,51 @@ def _catalog_product_capacity(product_text: str) -> int | None:
     match = _CATALOG_CAPACITY_RE.search(normalized)
     if match:
         return _planning_count_value(match.group("count"))
-    if any(term in normalized for term in _CATALOG_UNIT_PRODUCT_TERMS):
+    if any(
+        _contains_catalog_term(normalized, term) for term in _CATALOG_UNIT_PRODUCT_TERMS
+    ):
         return 1
     return None
 
 
-def _catalog_product_family(text: str) -> str | None:
+def _contains_catalog_term(normalized: str, term: str) -> bool:
+    arabic = re.search(r"[\u0600-\u06ff]", term) is not None
+    prefix = "(?:و)?" if arabic else ""
+    suffix = "" if arabic else "(?:s|es)?"
+    return (
+        re.search(
+            rf"(?<!\w){prefix}{re.escape(term.casefold())}{suffix}(?!\w)",
+            normalized,
+            flags=re.UNICODE,
+        )
+        is not None
+    )
+
+
+def _catalog_product_families(text: str) -> tuple[CatalogFamily, ...]:
     normalized = _normalize_text(text)
-    matched = [
+    return tuple(
         family
         for family, terms in _CATALOG_PRODUCT_FAMILIES
-        if any(term in normalized for term in terms)
-    ]
+        if any(_contains_catalog_term(normalized, term) for term in terms)
+    )
+
+
+def _catalog_product_family(text: str) -> CatalogFamily | None:
+    matched = _catalog_product_families(text)
     return matched[0] if len(matched) == 1 else None
 
 
-def _catalog_search_query_with_constraints(query: str, customer_text: str) -> str:
-    requested_seats = _requested_seat_count(customer_text)
+def _catalog_search_query_with_constraints(
+    query: str,
+    customer_text: str,
+    planning: CatalogPlanningContext | None = None,
+) -> str:
+    requested_seats = (
+        planning.requested_seats
+        if planning is not None and planning.requested_seats is not None
+        else _requested_seat_count(customer_text)
+    )
     enriched = " ".join(query.split())
     if requested_seats is not None and _requested_seat_count(enriched) is None:
         enriched = f"{enriched} {requested_seats} person"
@@ -1057,20 +1186,136 @@ def _catalog_search_query_with_constraints(query: str, customer_text: str) -> st
     return enriched
 
 
-def _needs_complete_catalog_coverage(text: str) -> bool:
+def _requests_complete_catalog_coverage(text: str) -> bool:
     normalized = _normalize_text(text)
-    return _requested_seat_count(text) is not None and any(
-        term in normalized
-        for term in (
-            "cheaper",
-            "lowest cost",
-            "complete configuration",
-            "full configuration",
-            "cover all",
-            "all seats",
-            "all staff",
-        )
+    return any(
+        _contains_catalog_term(normalized, term)
+        for term in _CATALOG_COMPLETE_COVERAGE_TERMS
     )
+
+
+def _needs_complete_catalog_coverage(text: str) -> bool:
+    return _requested_seat_count(text) is not None and (
+        _requests_complete_catalog_coverage(text)
+    )
+
+
+def _catalog_budget_cap(text: str) -> float | None:
+    match = _CATALOG_BUDGET_CAP_RE.search(_normalize_text(text))
+    if match is None:
+        return None
+    raw_amount = match.group("amount_before") or match.group("amount_leading")
+    amount = float(raw_amount.replace(",", ""))
+    return amount if 0 < amount <= 10_000_000 else None
+
+
+def _catalog_planning_from_metadata(
+    conversation: Conversation,
+) -> CatalogPlanningContext:
+    metadata = (
+        conversation.metadata_ if isinstance(conversation.metadata_, Mapping) else {}
+    )
+    raw = metadata.get(_CATALOG_PLANNING_KEY)
+    if not isinstance(raw, Mapping):
+        return CatalogPlanningContext()
+    try:
+        return CatalogPlanningContext.model_validate(raw)
+    except ValidationError:
+        logger.warning(
+            "Ignored invalid catalog planning state for conversation %s",
+            conversation.id,
+        )
+        return CatalogPlanningContext()
+
+
+def _catalog_planning_for_turn(
+    conversation: Conversation,
+    recent_history: Sequence[str],
+    current_text: str,
+) -> CatalogPlanningContext:
+    planning = _catalog_planning_from_metadata(conversation)
+    user_turns = [
+        entry.removeprefix("user:").strip()
+        for entry in recent_history[-5:]
+        if entry.startswith("user:")
+    ]
+    if not user_turns or user_turns[-1] != current_text:
+        user_turns.append(current_text)
+
+    planning.requested_seats = (
+        _requested_seat_count(current_text) or planning.requested_seats
+    )
+    current_families = _catalog_product_families(current_text)
+    if current_families:
+        planning.families = current_families
+    planning.budget_cap = _catalog_budget_cap(current_text) or planning.budget_cap
+    for turn in reversed(user_turns):
+        planning.requested_seats = planning.requested_seats or _requested_seat_count(
+            turn
+        )
+        if not planning.families:
+            planning.families = _catalog_product_families(turn)
+        planning.budget_cap = planning.budget_cap or _catalog_budget_cap(turn)
+
+    planning.complete_coverage = planning.complete_coverage or any(
+        _requests_complete_catalog_coverage(turn) for turn in user_turns
+    )
+    return planning
+
+
+async def _store_catalog_planning(
+    db: AsyncSession,
+    conversation: Conversation,
+    planning: CatalogPlanningContext,
+) -> None:
+    metadata = dict(conversation.metadata_ or {})
+    if not any(
+        (
+            planning.requested_seats,
+            planning.complete_coverage,
+            planning.budget_cap,
+            planning.family_totals,
+            metadata.get(_CATALOG_PLANNING_KEY),
+        )
+    ):
+        return
+    payload = planning.model_dump(mode="json")
+    if metadata.get(_CATALOG_PLANNING_KEY) == payload:
+        return
+    metadata[_CATALOG_PLANNING_KEY] = payload
+    conversation.metadata_ = metadata
+    await db.flush()
+
+
+def _minimum_catalog_coverage_total(
+    variants: Sequence[tuple[int, int, float]],
+    requested_seats: int,
+) -> float | None:
+    if requested_seats <= 0:
+        return None
+    costs: dict[int, float] = {0: 0.0}
+    for capacity, stock, unit_price in variants:
+        if capacity <= 0 or stock <= 0 or unit_price <= 0:
+            continue
+        max_units = min(stock, (requested_seats + capacity - 1) // capacity)
+        updated = dict(costs)
+        for covered, cost in costs.items():
+            for quantity in range(1, max_units + 1):
+                new_covered = min(requested_seats, covered + quantity * capacity)
+                new_cost = cost + quantity * unit_price
+                previous = updated.get(new_covered)
+                if previous is None or new_cost < previous:
+                    updated[new_covered] = new_cost
+        costs = updated
+    total = costs.get(requested_seats)
+    return round(total, 2) if total is not None else None
+
+
+def _catalog_remaining_budget(planning: CatalogPlanningContext) -> float | None:
+    selected_total = planning.selected_total
+    if planning.budget_cap is None or selected_total is None:
+        return None
+    return round(max(planning.budget_cap - selected_total, 0.0), 2)
 
 
 def _requested_catalog_evidence_gaps(
@@ -1216,6 +1461,9 @@ class SalesDeps:
     runtime_directives: tuple[str, ...] = ()
     customer_facts_context: str | None = None
     source_message_id: str | None = None
+    catalog_planning: CatalogPlanningContext = field(
+        default_factory=CatalogPlanningContext
+    )
     inventory_confirmed: bool = False
     quotation_created: bool = False
     catalog_mismatch_alerted: bool = False
@@ -1390,6 +1638,7 @@ class SalesOpportunityRequest:
     currency: str | None
     quote_on_hold: bool
     decision_horizon_days: int | None = None
+    decision_horizon_hours: int | None = None
 
 
 @dataclass(frozen=True)
@@ -6486,12 +6735,18 @@ _SALES_BUDGET_RE = re.compile(
 _DECISION_HORIZON_RE = re.compile(
     r"\b(?:decision|approval)(?:\s+(?:is\s+)?expected)?\s+(?:within|in)\s+"
     r"(?P<count>\d{1,2}|one|two|three|four)\s+"
-    r"(?P<unit>days?|weeks?|months?)\b",
+    r"(?P<unit>hours?|days?|weeks?|months?)\b",
+    re.IGNORECASE,
+)
+_DECISION_TODAY_RE = re.compile(
+    r"\b(?:decision|approval)(?:\s+(?:is\s+)?expected)?\s+today\b",
     re.IGNORECASE,
 )
 
 
-def _decision_horizon_days(text: str) -> int | None:
+def _decision_horizon_hours(text: str) -> int | None:
+    if _DECISION_TODAY_RE.search(text):
+        return 0
     match = _DECISION_HORIZON_RE.search(text)
     if match is None:
         return None
@@ -6502,8 +6757,23 @@ def _decision_horizon_days(text: str) -> int | None:
         else {"one": 1, "two": 2, "three": 3, "four": 4}[raw_count]
     )
     unit = match.group("unit").casefold()
-    multiplier = 1 if unit.startswith("day") else 7 if unit.startswith("week") else 30
+    multiplier = (
+        1
+        if unit.startswith("hour")
+        else 24
+        if unit.startswith("day")
+        else 24 * 7
+        if unit.startswith("week")
+        else 24 * 30
+    )
     return count * multiplier
+
+
+def _decision_horizon_days(text: str) -> int | None:
+    hours = _decision_horizon_hours(text)
+    if hours is None:
+        return None
+    return hours // 24
 
 
 def _extract_sales_opportunity_request(
@@ -6530,11 +6800,15 @@ def _extract_sales_opportunity_request(
                 "AED" if raw_currency.casefold() != "aed" else raw_currency.upper()
             )
 
+    decision_horizon_hours = _decision_horizon_hours(normalized)
     return SalesOpportunityRequest(
         amount=amount,
         currency=currency,
         quote_on_hold=_has_explicit_quote_hold(normalized),
-        decision_horizon_days=_decision_horizon_days(normalized),
+        decision_horizon_days=(
+            decision_horizon_hours // 24 if decision_horizon_hours is not None else None
+        ),
+        decision_horizon_hours=decision_horizon_hours,
     )
 
 
@@ -9696,12 +9970,18 @@ async def search_products(
     effective_query = _catalog_search_query_with_constraints(
         query,
         ctx.deps.user_query,
+        ctx.deps.catalog_planning,
     )
     explicit_option_cap = _explicit_product_option_cap(ctx.deps.user_query)
     search_query = ProductSearchQuery(
         query=effective_query,
         limit=explicit_option_cap
-        or (5 if _needs_complete_catalog_coverage(ctx.deps.user_query) else 3),
+        or (
+            5
+            if ctx.deps.catalog_planning.complete_coverage
+            or _needs_complete_catalog_coverage(ctx.deps.user_query)
+            else 3
+        ),
         min_price=min_price,
         max_price=max_price,
     )
@@ -9820,12 +10100,17 @@ async def search_products(
         except Exception as e:
             logger.warning("Failed to send product image: %s", e, exc_info=True)
 
-    requested_seats = _requested_seat_count(ctx.deps.user_query)
+    requested_seats = (
+        ctx.deps.catalog_planning.requested_seats
+        or _requested_seat_count(ctx.deps.user_query)
+    )
     target_product_family = _catalog_product_family(effective_query)
     available_seat_coverage = 0
     has_capacity_evidence = False
+    coverage_variants: list[tuple[int, int, float]] = []
     for r in results.products:
         catalog_price = _valid_catalog_price(r)
+        discounted_price: float | None = None
         if catalog_price is not None:
             discounted_price = apply_discount(catalog_price, segment)
             if discounted_price > 0:
@@ -9858,7 +10143,12 @@ async def search_products(
             and product_family == target_product_family
         ):
             has_capacity_evidence = True
-            available_seat_coverage += max(int(r.stock or 0), 0) * product_capacity
+            product_stock = max(int(r.stock or 0), 0)
+            available_seat_coverage += product_stock * product_capacity
+            if discounted_price is not None and discounted_price > 0:
+                coverage_variants.append(
+                    (product_capacity, product_stock, discounted_price)
+                )
         if product_capacity is not None and product_capacity > 1:
             desc += (
                 f"\nCatalog price basis: full {product_capacity}-seat SKU unit "
@@ -9916,6 +10206,28 @@ async def search_products(
             f"Target coverage: {covered_seats} of {requested_seats} seats across "
             "the returned in-stock variants.",
         )
+        if (
+            target_product_family is not None
+            and ctx.deps.catalog_planning.complete_coverage
+        ):
+            planned_total = _minimum_catalog_coverage_total(
+                coverage_variants,
+                requested_seats,
+            )
+            if planned_total is None:
+                ctx.deps.catalog_planning.family_totals.pop(
+                    target_product_family,
+                    None,
+                )
+            else:
+                ctx.deps.catalog_planning.family_totals[target_product_family] = (
+                    planned_total
+                )
+            await _store_catalog_planning(
+                ctx.deps.db,
+                ctx.deps.conversation,
+                ctx.deps.catalog_planning,
+            )
 
     if product_match == "nearby":
         formatted_results.insert(
@@ -10418,24 +10730,35 @@ def _sales_opportunity_response(
             "that it was recorded. No quotation was created."
         )
 
+    horizon_hours = request.decision_horizon_hours
+    if horizon_hours is None and request.decision_horizon_days is not None:
+        horizon_hours = request.decision_horizon_days * 24
+    short_horizon = horizon_hours is not None and horizon_hours <= 24
     follow_up_days = (
-        max(1, request.decision_horizon_days // 2)
-        if request.decision_horizon_days is not None
+        max(1, horizon_hours // 48)
+        if horizon_hours is not None and not short_horizon
         else None
     )
     if is_arabic_customer_language(language):
         hold = " وسيبقى عرض السعر معلقاً." if request.quote_on_hold else ""
-        follow_up = (
-            f" هل نتفق على متابعة خلال {follow_up_days} أيام قبل موعد القرار؟"
-            if follow_up_days is not None
-            else ""
-        )
+        if short_horizon:
+            follow_up = " هل نتفق الآن على موعد التواصل ضمن نافذة القرار؟"
+        elif follow_up_days is not None:
+            follow_up = (
+                f" هل نتفق على متابعة خلال {follow_up_days} أيام قبل موعد القرار؟"
+            )
+        else:
+            follow_up = ""
         return (
             "تم تسجيل فرصة البيع والتحقق منها في نظام CRM. الخطوة التجارية التالية "
             f"هي تأكيد خطة التسليم واعتماد صاحب القرار.{hold}{follow_up}"
         )
     hold = " The quotation remains on hold." if request.quote_on_hold else ""
-    if follow_up_days == 7:
+    if short_horizon:
+        follow_up = (
+            " Can we agree the next contact time now, within your decision window?"
+        )
+    elif follow_up_days == 7:
         follow_up = " Can we schedule a follow-up in one week, ahead of your decision?"
     elif follow_up_days is not None:
         follow_up = (
@@ -10976,7 +11299,41 @@ async def recommend_products(
         return "\n".join(lines)
 
     elif recommendation_type == "cross_sell" and category:
+        remaining_budget = _catalog_remaining_budget(ctx.deps.catalog_planning)
+        if (
+            ctx.deps.catalog_planning.budget_cap is not None
+            and remaining_budget is None
+        ):
+            return ToolReturn(
+                return_value=(
+                    "No cross-sell is verified within the remaining budget because "
+                    "the selected configuration total is incomplete."
+                ),
+                content=(
+                    "Do not add a cross-sell until the selected catalog configuration "
+                    "has a verified total."
+                ),
+            )
+
         items = await get_cross_sell(ctx.deps.db, category, limit=3)
+        if remaining_budget is not None and items:
+            affordable_items = [
+                item
+                for item in items
+                if item.stock > 0 and 0 < item.price <= remaining_budget
+            ]
+            if not affordable_items:
+                return ToolReturn(
+                    return_value=(
+                        "No verified cross-sell fits the remaining budget of "
+                        f"{remaining_budget:.2f} AED."
+                    ),
+                    content=(
+                        "Do not add a cross-sell or exceed the customer's stated "
+                        "budget cap."
+                    ),
+                )
+            items = affordable_items
         if not items:
             fallback_query = _cross_sell_catalog_fallback_query(
                 category=category,
@@ -10996,6 +11353,10 @@ async def recommend_products(
                 for product in fallback_results.products
                 if int(product.stock or 0) > 0
                 and _valid_catalog_price(product) is not None
+                and (
+                    remaining_budget is None
+                    or float(_valid_catalog_price(product) or 0) <= remaining_budget
+                )
                 and _catalog_product_family(
                     f"{product.name_en} {product.description_en or ''} "
                     f"{product.category or ''}"
@@ -11009,7 +11370,7 @@ async def recommend_products(
                     ),
                     content=(
                         "No verified catalog cross-sell was found. Say that honestly "
-                        "and do not invent an item, price, or availability."
+                        "and do not invent an item, price, availability, or budget fit."
                     ),
                 )
             product = min(
@@ -11025,7 +11386,8 @@ async def recommend_products(
                 ),
                 content=(
                     "Use this one verified complementary item only; include it only "
-                    "if the combined total stays within the customer's stated cap."
+                    "with the verified selected total and remaining budget shown "
+                    "by this tool."
                 ),
             )
 
@@ -11039,6 +11401,11 @@ async def recommend_products(
             content=(
                 "Use only these verified cross-sell items and their returned "
                 "price and stock. Do not invent another cross-sell."
+                + (
+                    f" The verified remaining budget is {remaining_budget:.2f} AED."
+                    if remaining_budget is not None
+                    else ""
+                )
             ),
         )
 
@@ -11605,6 +11972,12 @@ async def process_message(
     current_user_entry = f"user: {masked_text}"
     if not recent_history or recent_history[-1] != current_user_entry:
         recent_history.append(current_user_entry)
+    catalog_planning = _catalog_planning_for_turn(
+        conv,
+        recent_history,
+        masked_text,
+    )
+    await _store_catalog_planning(db, conv, catalog_planning)
 
     deps = SalesDeps(
         db=db,
@@ -11620,6 +11993,7 @@ async def process_message(
         recent_history=recent_history,
         defer_product_media=True,
         source_message_id=source_message_id,
+        catalog_planning=catalog_planning,
     )
 
     from src.core.config import get_system_config
