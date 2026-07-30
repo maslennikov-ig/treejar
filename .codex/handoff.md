@@ -13,8 +13,9 @@ only on terminal Wazzup delivery/read evidence
   release-bound production proof.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
-- The deployed production release and current `main` are
-  `a2f245cde301457ef19abda221732368986d7f9d`.
+- The last deployed, production-tested product release is
+  `a2f245cde301457ef19abda221732368986d7f9d`; later documentation-only commits
+  do not change the runtime.
 - Canonical CI/deploy run `30540774784` succeeded. Exact release, five running
   services, healthy Redis/database, and 8/8 API smoke were read back.
 - Unrelated and untracked user files in the primary worktree were preserved.

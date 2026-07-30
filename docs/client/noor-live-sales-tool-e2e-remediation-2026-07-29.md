@@ -4,7 +4,7 @@
 **Status**: ⚠️ BLOCKED — функциональные исправления приняты, Wazzup delivery/read не подтверждён
 **Version**: 0.4
 **Environment**: production, `https://noor.starec.ai`  
-**Release**: `a2f245c`, CI/deploy `30540774784`
+**Tested release**: `a2f245c`, CI/deploy `30540774784`
 **Verdict**: epic не закрыт
 
 ---
@@ -76,7 +76,7 @@ S05 ниже 20 и применимый ноль по следующему ко�
 
 ## Что подтверждено после исправлений
 
-- `main` и production работают на точном SHA `a2f245c`.
+- Проверенный product release на production имеет точный SHA `a2f245c`.
 - CI/deploy `30540774784` завершился успешно.
 - Health, Redis, база данных и все runtime-сервисы работают.
 - API smoke: 8 из 8 проверок пройдены.
