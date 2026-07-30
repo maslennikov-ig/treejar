@@ -78,7 +78,10 @@ from src.llm.fact_extractor import (
     ExtractedCustomerFact,
     extract_customer_facts,
 )
-from src.llm.grounding_output import GroundingOutputAction, enforce_grounding_output
+from src.llm.grounding_output import (
+    GroundingOutputAction,
+    enforce_grounding_output,
+)
 from src.llm.opening_guard import apply_opening_guard
 from src.llm.order_quote_routes import QuotationItem, _order_quote_route_for_turn
 from src.llm.order_status import format_order_status
@@ -93,6 +96,7 @@ from src.llm.safety import (
     run_agent_with_safety,
 )
 from src.llm.verified_answers import (
+    VerifiedAnswerDecision,
     build_clarification_response,
     build_quote_or_proposal_clarification_response,
     build_sales_fallback_response,
@@ -1075,7 +1079,10 @@ _CATALOG_UNIT_PRODUCT_TERMS = (
     "stool",
 )
 CatalogFamily = Literal["seating", "workspace", "storage", "privacy"]
+CatalogFactDomain = Literal["acoustic", "footprint"]
 CatalogAmount = Annotated[float, Field(ge=0, le=10_000_000)]
+_ACOUSTIC_FACT_GAP = "acoustic_performance=not_stated"
+_FOOTPRINT_FACT_GAP = "footprint_dimensions=not_stated"
 _CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
     ("seating", ("chair", "stool", "seat", "كرسي", "كراسي")),
     (
@@ -1258,6 +1265,20 @@ class VerifiedCrossSell:
     price: float
     currency: str
     stock: int
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedCatalogFactProduct:
+    name: str
+    sku: str
+    price: float | None
+    currency: str
+    stock: int
+    description: str
+    capacity: int | None
+    fact_gaps: tuple[str, ...]
+    search_call: int = 0
+    result_rank: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1907,30 +1928,293 @@ def _requests_confirmed_lumbar_support(text: str) -> bool:
     return _has_unnegated_lumbar_term(text)
 
 
+_ACOUSTIC_MEASUREMENT_RE = re.compile(
+    r"\b(?:NRC|STC)\s*:?\s*\d+(?:\.\d+)?\b"
+    r"|\b(?:acoustic|sound|noise)\s+"
+    r"(?:attenuation|reduction|isolation|separation|blocking|dampening)"
+    r"(?:\s+(?:rating|performance))?\s*(?::|of)?\s*"
+    r"(?:up\s+to\s+)?\d+(?:\.\d+)?\s*dB\b"
+    r"|\b(?:rated\s+at\s+)?\d+(?:\.\d+)?\s*dB\s+"
+    r"(?:acoustic|sound|noise)\s+"
+    r"(?:attenuation|reduction|isolation|separation|blocking|dampening)\b",
+    re.IGNORECASE,
+)
+_ACOUSTIC_PERFORMANCE_FACT_RE = re.compile(
+    r"\b(?:absorbs?|dampens?|attenuates?|reduces?|blocks?)\s+"
+    r"(?:the\s+)?(?:sound|noise)\b"
+    r"|\b(?:sound|noise)[-\s]+"
+    r"(?:absorbing|dampening|attenuating|reducing|blocking)\b",
+    re.IGNORECASE,
+)
+_ACOUSTIC_QUERY_RE = re.compile(
+    r"\bacoustic\b|\bnoise\b"
+    r"|\bsound\s+(?:attenuation|reduction|isolation|separation|control|"
+    r"proofing|privacy|absorbing|dampening)\b"
+    r"|\b(?:absorbs?|dampens?|attenuates?|reduces?|blocks?)\s+"
+    r"(?:the\s+)?sound\b"
+    r"|(?:العزل\s+الصوتي|الأداء\s+الصوتي|اداء\s+صوتي|صوت|ضوضاء|ضجيج)",
+    re.IGNORECASE,
+)
+_FOOTPRINT_QUERY_RE = re.compile(
+    r"\b(?:footprint|dimensions?|space[-\s]?saving)\b"
+    r"|\bfloor\s+(?:space|area)\b"
+    r"|\b(?:occup(?:y|ies|ied)|requires?|uses?|takes?)\s+"
+    r"(?:up\s+)?(?:(?:less|more)\s+)?(?:floor\s+)?(?:space|area)\b"
+    r"|\b(?:physical|overall|product)\s+size\b"
+    r"|(?:المساحة|مساحة|الأبعاد|ابعاد|الحجم)",
+    re.IGNORECASE,
+)
+_COMPACT_PRODUCT_QUERY_RE = re.compile(
+    r"\bcompact\s+(?:product|model|option|chair|desk|table|workstation|pod|booth)\b"
+    r"|\b(?:product|model|option|chair|desk|table|workstation|pod|booth)s?\b"
+    r"(?:\W+\w+){0,4}\W+(?:more\s+)?compact\b",
+    re.IGNORECASE,
+)
+_COMPACT_NON_PRODUCT_RE = re.compile(
+    r"\bcompact\s+(?:team|company|business|staff|workforce|office)\b",
+    re.IGNORECASE,
+)
+_CATALOG_PRODUCT_SUBJECT = (
+    r"(?:product|model|option|chair|desk|table|workstation|pod|booth)s?"
+)
+_ACOUSTIC_PRODUCT_QUERY_RE = re.compile(
+    rf"\b{_CATALOG_PRODUCT_SUBJECT}\b(?:\W+\w+){{0,5}}\W+"
+    r"(?:quiet(?:er|est)?|(?:less|least)\s+echo|chatter)\b"
+    rf"|\b(?:quiet(?:er|est)?|(?:less|least)\s+echo|chatter)\b"
+    rf"(?:\W+\w+){{0,5}}\W+{_CATALOG_PRODUCT_SUBJECT}\b",
+    re.IGNORECASE,
+)
+_FOOTPRINT_PRODUCT_QUERY_RE = re.compile(
+    rf"\b{_CATALOG_PRODUCT_SUBJECT}\b(?:\W+\w+){{0,6}}\W+"
+    r"(?:(?:smallest|least)\s+(?:space|room)|"
+    r"(?:fits?|needs?|requires?)\s+(?:the\s+)?(?:smallest|least)\s+"
+    r"(?:space|room))\b",
+    re.IGNORECASE,
+)
+_CATALOG_FACT_COMPARISON_CONTEXT_RE = re.compile(
+    r"\b(?:compare|comparison|option|which|recommend|product|model|sku)\b"
+    r"|(?:قارن|مقارنة|الخيار|الخيارات|أي\s+خيار|منتج|طراز)",
+    re.IGNORECASE,
+)
+_DIMENSION_UNIT = r"(?:mm|cm|m|in(?:ches?)?|ft|feet)"
+_DIMENSION_PAIR_RE = re.compile(
+    rf"\b\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?\s*(?:x|×|by)\s*"
+    rf"\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?"
+    rf"(?:\s*(?:x|×|by)\s*\d+(?:\.\d+)?\s*(?:{_DIMENSION_UNIT})?)?",
+    re.IGNORECASE,
+)
+_DIMENSION_AXIS_RE = re.compile(
+    r"(?P<axis>width|depth|length|height|العرض|العمق|الطول|الارتفاع)\s*:?\s*"
+    r"\d+(?:\.\d+)?\s*(?:mm|cm|m|in(?:ches?)?|ft|feet|مم|سم|متر)\b",
+    re.IGNORECASE,
+)
+_FOOTPRINT_AREA_RE = re.compile(
+    r"\b(?:footprint|floor\s+area)\s*:?\s*\d+(?:\.\d+)?\s*"
+    r"(?:m2|m²|sqm|sq\.?\s*ft)\b"
+    r"|(?:المساحة)\s*:?\s*\d+(?:\.\d+)?\s*(?:م2|م²|متر\s+مربع)",
+    re.IGNORECASE,
+)
+_NON_FOOTPRINT_COMPONENT_RE = re.compile(
+    r"(?:cable\s+tray|mounting\s+plate|screen|panel|seat|armrest|cutout|opening)"
+    r"(?:\s+\w+){0,2}\s*:?\s*$",
+    re.IGNORECASE,
+)
+_FOOTPRINT_PAIR_CONTEXT_RE = re.compile(
+    r"(?:^|[.;؛\n])\s*(?:(?:overall|product|footprint)\s+)?"
+    r"dimensions?\s*"
+    r"(?:(?:\(\s*)?(?:W\s*(?:x|×)\s*D|L\s*(?:x|×)\s*W)"
+    r"(?:\s*(?:x|×)\s*H)?(?:\s*\))?\s*)?"
+    r"(?::\s*|(?:are|is)\s*)$"
+    r"|(?:^|[.;؛\n])\s*الأبعاد\s*(?::\s*|هي\s*)$",
+    re.IGNORECASE,
+)
+_FOOTPRINT_AXIS_CONTEXT_RE = re.compile(
+    r"(?:^|[.;؛\n])\s*(?:(?:overall|product|footprint)\s+)?dimensions?\s*:\s*"
+    r"|(?:^|[.;؛\n])\s*الأبعاد\s*:\s*",
+    re.IGNORECASE,
+)
+
+
+def _catalog_fact_match_is_negated(
+    text: str,
+    *,
+    start: int,
+    end: int,
+) -> bool:
+    before = text[max(0, start - 80) : start]
+    before_clause = re.split(r"[.;؛\n]", before)[-1]
+    after = text[end : end + 50]
+    negative_prefix = re.search(
+        r"\b(?:no|not|never|cannot|can['’]?t|doesn['’]?t|do\s+not|"
+        r"unable(?:\s+to)?|fails?(?:\s+to)?|without|unrated|unknown|"
+        r"unspecified|unconfirmed|"
+        r"unavailable|absent|pending|tbd|awaiting)\b"
+        r"(?:\W+\w+){0,5}\W*$"
+        r"|(?:غير\s+(?:مؤكد|مذكور|محدد|متاح)|لا\s+يوجد|لا\s+توجد|بدون)"
+        r"(?:\W+\w+){0,5}\W*$",
+        before_clause,
+        flags=re.IGNORECASE,
+    )
+    negative_suffix = re.match(
+        r"^\W*(?:(?:is|are|remains?)\W+)?"
+        r"(?:not|unrated|unknown|unspecified|unconfirmed|unavailable|"
+        r"absent|pending|tbd|n\s*/\s*a)\b"
+        r"|^\W*(?:awaiting\s+confirmation|to\s+be\s+"
+        r"(?:confirmed|provided|tested))\b"
+        r"|^\W*(?:غير\s+(?:مؤكد|مذكور|محدد|متاح))",
+        after,
+        flags=re.IGNORECASE,
+    )
+    return negative_prefix is not None or negative_suffix is not None
+
+
+def _has_acoustic_performance_evidence(product_text: str) -> bool:
+    for clause in re.split(r"[.;؛\n]+", product_text):
+        matches = (
+            *_ACOUSTIC_MEASUREMENT_RE.finditer(clause),
+            *_ACOUSTIC_PERFORMANCE_FACT_RE.finditer(clause),
+        )
+        for match in matches:
+            if not _catalog_fact_match_is_negated(
+                clause,
+                start=match.start(),
+                end=match.end(),
+            ):
+                return True
+    return False
+
+
+def _requested_catalog_fact_domains(
+    customer_text: str,
+) -> tuple[CatalogFactDomain, ...]:
+    normalized = _normalize_text(customer_text)
+    domains: list[CatalogFactDomain] = []
+    if _ACOUSTIC_QUERY_RE.search(normalized) or _ACOUSTIC_PRODUCT_QUERY_RE.search(
+        normalized
+    ):
+        domains.append("acoustic")
+    compact_product_request = bool(
+        _COMPACT_PRODUCT_QUERY_RE.search(normalized)
+        and not _COMPACT_NON_PRODUCT_RE.search(normalized)
+    )
+    if (
+        _FOOTPRINT_QUERY_RE.search(normalized)
+        or compact_product_request
+        or _FOOTPRINT_PRODUCT_QUERY_RE.search(normalized)
+    ):
+        domains.append("footprint")
+    return tuple(domains)
+
+
+def _is_catalog_fact_comparison_query(customer_text: str) -> bool:
+    return bool(
+        _requested_catalog_fact_domains(customer_text)
+        and (
+            _catalog_product_families(customer_text)
+            or _CATALOG_FACT_COMPARISON_CONTEXT_RE.search(customer_text)
+        )
+    )
+
+
+def _should_override_policy_for_catalog_fact_query(
+    customer_text: str,
+    decision: VerifiedAnswerDecision,
+) -> bool:
+    return bool(
+        _is_catalog_fact_comparison_query(customer_text)
+        and not decision.is_order_status
+        and decision.question_class != "service_high_risk"
+        and not decision.matched_topics
+        and not decision.asks_for_specific_commitment
+    )
+
+
+def _has_footprint_dimension_evidence(product_text: str) -> bool:
+    for match in _DIMENSION_PAIR_RE.finditer(product_text):
+        prefix = product_text[max(0, match.start() - 60) : match.start()]
+        has_unit = re.search(_DIMENSION_UNIT, match.group(), re.IGNORECASE) is not None
+        if (
+            has_unit
+            and _FOOTPRINT_PAIR_CONTEXT_RE.search(prefix)
+            and not _NON_FOOTPRINT_COMPONENT_RE.search(prefix)
+            and not _catalog_fact_match_is_negated(
+                product_text,
+                start=match.start(),
+                end=match.end(),
+            )
+        ):
+            return True
+
+    area_match = _FOOTPRINT_AREA_RE.search(product_text)
+    if area_match is not None and not _catalog_fact_match_is_negated(
+        product_text,
+        start=area_match.start(),
+        end=area_match.end(),
+    ):
+        return True
+
+    axis_groups = {
+        "width": "width",
+        "العرض": "width",
+        "depth": "depth",
+        "العمق": "depth",
+        "length": "length",
+        "الطول": "length",
+        "height": "",
+        "الارتفاع": "",
+    }
+    for context_match in _FOOTPRINT_AXIS_CONTEXT_RE.finditer(product_text):
+        fragment_end_match = re.search(
+            r"[.\n]",
+            product_text[context_match.end() :],
+        )
+        fragment_end = (
+            context_match.end() + fragment_end_match.start()
+            if fragment_end_match is not None
+            else len(product_text)
+        )
+        fragment = product_text[context_match.end() : fragment_end]
+        planar_axes: set[str] = set()
+        for segment in re.split(r"[,;؛]", fragment):
+            normalized_segment = segment.strip()
+            axis_match = _DIMENSION_AXIS_RE.match(normalized_segment)
+            if axis_match is None:
+                break
+            if _catalog_fact_match_is_negated(
+                normalized_segment,
+                start=axis_match.start(),
+                end=axis_match.end(),
+            ):
+                continue
+            planar_axis = axis_groups[axis_match.group("axis").casefold()]
+            if planar_axis:
+                planar_axes.add(planar_axis)
+        if len(planar_axes) >= 2:
+            return True
+    return False
+
+
 def _requested_catalog_evidence_gaps(
     customer_text: str,
     product_text: str,
+    *,
+    required_facts: tuple[CatalogFactDomain, ...] | None = None,
 ) -> tuple[str, ...]:
     normalized_customer = _normalize_text(customer_text)
-    normalized_product = _normalize_text(product_text)
+    requested_facts = (
+        _requested_catalog_fact_domains(normalized_customer)
+        if required_facts is None
+        else required_facts
+    )
     gaps: list[str] = []
-    if any(
-        term in normalized_customer for term in ("acoustic", "sound", "noise")
-    ) and not any(
-        term in normalized_product
-        for term in ("acoustic", "sound", "noise", "decibel", " db ")
+    if "acoustic" in requested_facts and not _has_acoustic_performance_evidence(
+        product_text
     ):
-        gaps.append("acoustic_performance=not_stated")
-    if any(
-        term in normalized_customer for term in ("footprint", "dimensions", "size")
-    ) and not (
-        "dimension" in normalized_product
-        or re.search(
-            r"\b\d{2,4}\s*(?:x|×)\s*\d{2,4}(?:\s*(?:x|×)\s*\d{2,4})?\b",
-            normalized_product,
-        )
+        gaps.append(_ACOUSTIC_FACT_GAP)
+    if "footprint" in requested_facts and not _has_footprint_dimension_evidence(
+        product_text
     ):
-        gaps.append("footprint_dimensions=not_stated")
+        gaps.append(_FOOTPRINT_FACT_GAP)
     if _requests_confirmed_lumbar_support(
         normalized_customer
     ) and not _has_positive_lumbar_support(product_text):
@@ -2070,6 +2354,10 @@ class SalesDeps:
     quotation_created: bool = False
     catalog_mismatch_alerted: bool = False
     required_cross_sell_disclosure: str | None = None
+    unsupported_catalog_facts: set[str] = field(default_factory=set)
+    catalog_fact_products: dict[str, VerifiedCatalogFactProduct] = field(
+        default_factory=dict
+    )
     verified_catalog_selections: dict[
         CatalogFamily, tuple[VerifiedCatalogLine, ...]
     ] = field(default_factory=dict)
@@ -2079,6 +2367,97 @@ class SalesDeps:
     verified_cross_sell: VerifiedCrossSell | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
+
+
+def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
+    guarded_facts = deps.unsupported_catalog_facts.intersection(
+        {
+            _ACOUSTIC_FACT_GAP,
+            _FOOTPRINT_FACT_GAP,
+        }
+    )
+    products = tuple(
+        sorted(
+            deps.catalog_fact_products.values(),
+            key=lambda product: (
+                not bool(set(product.fact_gaps).intersection(guarded_facts)),
+                -product.search_call,
+                product.result_rank,
+            ),
+        )[:5]
+    )
+    if not guarded_facts or not products:
+        return None
+
+    arabic = is_arabic_customer_language(str(deps.conversation.language))
+    lines = [
+        (
+            "إليك مقارنة تعتمد فقط على بيانات الكتالوج المؤكدة:"
+            if arabic
+            else "Here is a comparison using only verified catalog data:"
+        )
+    ]
+    for product in products:
+        lines.append(f"\n- {product.name} (SKU: {product.sku})")
+        if product.price is not None:
+            price = f"{product.price:.2f} {product.currency}"
+        else:
+            price = "يتطلب التحقق" if arabic else "requires verification"
+        lines.append(f"  - {'السعر' if arabic else 'Price'}: {price}")
+        lines.append(f"  - {'المخزون' if arabic else 'Stock'}: {product.stock}")
+        if product.capacity is not None and product.capacity > 1:
+            basis = (
+                f"وحدة كاملة لـ {product.capacity} مقاعد"
+                if arabic
+                else f"full {product.capacity}-seat SKU unit"
+            )
+            lines.append(f"  - {'أساس السعر' if arabic else 'Price basis'}: {basis}")
+        description = " ".join(product.description.split())[:500]
+        if description:
+            lines.append(
+                f"  - {'وصف الكتالوج' if arabic else 'Catalog description'}: "
+                f"{description}"
+            )
+        product_gaps = set(product.fact_gaps)
+        if _ACOUSTIC_FACT_GAP in product_gaps:
+            lines.append(
+                "  - الأداء الصوتي: غير مذكور في الكتالوج"
+                if arabic
+                else "  - Acoustic performance: not stated in the catalog"
+            )
+        if _FOOTPRINT_FACT_GAP in product_gaps:
+            lines.append(
+                "  - أبعاد المساحة: غير مذكورة في الكتالوج"
+                if arabic
+                else "  - Footprint dimensions: not stated in the catalog"
+            )
+
+    missing_acoustic = _ACOUSTIC_FACT_GAP in guarded_facts
+    missing_footprint = _FOOTPRINT_FACT_GAP in guarded_facts
+    if arabic:
+        if missing_acoustic and missing_footprint:
+            unavailable_facts = "بيانات صوتية أو أبعاد غير مؤكدة"
+        elif missing_acoustic:
+            unavailable_facts = "بيانات صوتية غير مؤكدة"
+        else:
+            unavailable_facts = "أبعاد غير مؤكدة"
+        footer = (
+            f"\nلن أرتب هذه الخيارات بناءً على {unavailable_facts}. "
+            "ما عامل الكتالوج المؤكد الذي تريد اعتماده؟"
+        )
+    else:
+        if missing_acoustic and missing_footprint:
+            unavailable_facts = "unconfirmed acoustic or footprint claims"
+        elif missing_acoustic:
+            unavailable_facts = "unconfirmed acoustic claims"
+        else:
+            unavailable_facts = "unconfirmed footprint claims"
+        footer = (
+            f"\nI will not rank these options using {unavailable_facts}. "
+            "Which confirmed catalog fact should drive the choice?"
+        )
+    lines.append(footer)
+    return "\n".join(lines)
 
 
 def _product_search_call_limit(deps: SalesDeps) -> int:
@@ -11392,8 +11771,17 @@ async def search_products(
     formatted_results = []
     cross_sell_candidates: list[VerifiedCrossSell] = []
     target_product_family = _catalog_product_family(effective_query)
+    required_catalog_facts = _requested_catalog_fact_domains(ctx.deps.user_query)
+    lumbar_fact_requested = _requests_confirmed_lumbar_support(ctx.deps.user_query)
+    cross_sell_marker = _CROSS_SELL_REQUEST_RE.search(ctx.deps.user_query)
+    fact_scope_text = (
+        ctx.deps.user_query[: cross_sell_marker.start()]
+        if cross_sell_marker is not None
+        else ctx.deps.user_query
+    )
+    fact_scope_families = set(_catalog_product_families(fact_scope_text))
     complementary_search = bool(
-        _CROSS_SELL_REQUEST_RE.search(ctx.deps.user_query)
+        cross_sell_marker
         and target_product_family is not None
         and target_product_family not in ctx.deps.catalog_planning.families
     )
@@ -11493,7 +11881,7 @@ async def search_products(
     available_seat_coverage = 0
     has_capacity_evidence = False
     coverage_candidates: list[_CatalogCoverageCandidate] = []
-    for r in results.products:
+    for result_rank, r in enumerate(results.products):
         catalog_price = _valid_catalog_price(r)
         discounted_price: float | None = None
         if catalog_price is not None:
@@ -11567,10 +11955,52 @@ async def search_products(
                 f"\nCatalog price basis: full {product_capacity}-seat SKU unit "
                 "(not per seat)."
             )
-        evidence_gaps = _requested_catalog_evidence_gaps(
-            ctx.deps.user_query,
-            product_text,
+        scoped_product_family = product_family or target_product_family
+        fact_scope_matches = not fact_scope_families or (
+            scoped_product_family in fact_scope_families
         )
+        fact_assessment_active = bool(
+            (required_catalog_facts or lumbar_fact_requested)
+            and not complementary_search
+            and fact_scope_matches
+        )
+        evidence_gaps = (
+            _requested_catalog_evidence_gaps(
+                ctx.deps.user_query,
+                product_text,
+                required_facts=required_catalog_facts,
+            )
+            if fact_assessment_active
+            else ()
+        )
+        if fact_assessment_active:
+            gap_set = set(evidence_gaps)
+            ctx.deps.unsupported_catalog_facts.update(gap_set)
+            use_arabic_catalog = is_arabic_customer_language(
+                str(ctx.deps.conversation.language)
+            )
+            localized_name = (
+                str(r.name_ar).strip()
+                if use_arabic_catalog and getattr(r, "name_ar", None)
+                else str(r.name_en)
+            )
+            localized_description = str(r.description_en or "")
+            ctx.deps.catalog_fact_products[str(r.sku)] = VerifiedCatalogFactProduct(
+                name=localized_name,
+                sku=str(r.sku),
+                price=(
+                    float(discounted_price)
+                    if discounted_price is not None and discounted_price > 0
+                    else None
+                ),
+                currency=str(r.currency),
+                stock=product_stock,
+                description=localized_description,
+                capacity=product_capacity,
+                fact_gaps=evidence_gaps,
+                search_call=search_call_number,
+                result_rank=result_rank,
+            )
         if evidence_gaps:
             desc += "\nRequested fact status: " + "; ".join(evidence_gaps)
 
@@ -13357,7 +13787,12 @@ async def process_message(
         allow_product_media: bool = True,
     ) -> LLMResponse:
         response_deps = response_deps or deps
-        final_text = unmask_pii(result.output, pii_map)
+        verified_catalog_text = _materialize_verified_catalog_facts(response_deps)
+        if verified_catalog_text is not None:
+            final_text = verified_catalog_text
+            model_name = f"{model_name}|verified-catalog-facts"
+        else:
+            final_text = unmask_pii(result.output, pii_map)
         final_text = _repair_closed_questions(final_text)
         final_text = _guard_premature_quote_detail_collection(
             final_text,
@@ -14198,6 +14633,17 @@ async def process_message(
     policy_decision = evaluate_verified_answer_policy(
         masked_text, deps.faq_context or []
     )
+    if _should_override_policy_for_catalog_fact_query(
+        combined_text,
+        policy_decision,
+    ):
+        policy_decision = replace(
+            policy_decision,
+            question_class="product",
+            policy_action="allow",
+            requires_manager_handoff=False,
+            sales_fallback_intent=None,
+        )
     if (
         assistant_offered_quote_selection
         and quote_offer_reply_has_consultative_priority

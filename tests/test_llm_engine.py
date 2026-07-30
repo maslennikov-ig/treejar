@@ -18545,6 +18545,258 @@ def _catalog_acceptance_product(
     )
 
 
+def test_catalog_acoustic_keyword_is_not_performance_evidence() -> None:
+    query = "Compare acoustic separation and noise reduction."
+
+    taxonomy_only = engine_module._requested_catalog_evidence_gaps(
+        query,
+        "Acoustic Screen with fabric divider panels.",
+    )
+    rated = engine_module._requested_catalog_evidence_gaps(
+        query,
+        "Verified sound attenuation rating: 25 dB.",
+    )
+
+    assert "acoustic_performance=not_stated" in taxonomy_only
+    assert "acoustic_performance=not_stated" not in rated
+
+
+@pytest.mark.parametrize(
+    "product_text",
+    [
+        "Acoustic performance is not rated.",
+        "Sound reduction is not specified.",
+        "No published acoustic attenuation rating is available.",
+        "Acoustic rating pending.",
+        "Sound attenuation rating TBD.",
+        "Noise reduction rating N/A.",
+        "Acoustic test result awaiting confirmation.",
+        "Verified dimensions and acoustic screen with fabric panels.",
+        "Certified materials for an acoustic screen.",
+        "Acoustic rating:",
+        "Acoustic rating: -",
+        "Acoustic rating: —",
+        "Acoustic rating: ?",
+        "Acoustic rating: N.A.",
+        "Acoustic rating: T.B.D.",
+        "Acoustic rating: None",
+        "Acoustic rating: null",
+        "Ventilation fan noise: 35 dB.",
+        "Alarm volume: 80 dB.",
+        "Sound attenuation: 25 dB, to be confirmed.",
+        "Sound attenuation: 25 dB awaiting confirmation.",
+        "Reduces glare and includes a sound privacy screen.",
+        "Blocks visual distractions near the sound privacy panel.",
+        "The panel cannot absorb sound.",
+        "Fails to block noise.",
+        "The screen never dampens sound.",
+        "The panel doesn't reduce noise.",
+        "The panel is unable to reduce sound.",
+        "Unable to block noise.",
+    ],
+)
+def test_catalog_negative_acoustic_text_is_not_performance_evidence(
+    product_text: str,
+) -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "Compare acoustic separation.",
+        product_text,
+    )
+
+    assert "acoustic_performance=not_stated" in gaps
+
+
+@pytest.mark.parametrize(
+    "product_text",
+    [
+        "Sound reduction: up to 25 dB.",
+        "Rated at 25 dB sound attenuation.",
+        "Acoustic isolation of 30 dB.",
+        "The panels reduce sound.",
+    ],
+)
+def test_catalog_acoustic_performance_formats_are_evidence(
+    product_text: str,
+) -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "Compare acoustic separation.",
+        product_text,
+    )
+
+    assert "acoustic_performance=not_stated" not in gaps
+
+
+def test_catalog_unrelated_negation_does_not_hide_acoustic_measurement() -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "Compare acoustic separation.",
+        "Verified sound attenuation: 25 dB, without cable tray.",
+    )
+
+    assert "acoustic_performance=not_stated" not in gaps
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Which option occupies less floor space?",
+        "Which option is more compact?",
+        "Compare the product footprint.",
+        "قارن هذه الخيارات حسب العزل الصوتي والمساحة",
+    ],
+)
+def test_catalog_footprint_queries_require_dimension_evidence(query: str) -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        query,
+        "Fabric divider panels.",
+    )
+
+    assert "footprint_dimensions=not_stated" in gaps
+
+
+@pytest.mark.parametrize(
+    "product_text",
+    [
+        "Dimensions unavailable.",
+        "No dimensions are provided.",
+        "Footprint dimensions pending.",
+        "Dimensionally stable frame.",
+        "Cable tray opening: 50 x 100 mm.",
+        "Mounting plate: 100 x 80 mm.",
+        "Package dimensions: 1200 x 600 mm.",
+        "Shipping carton: 1300 x 700 mm.",
+        "Drawer dimensions: 500 x 400 mm.",
+        "Keyboard tray: 600 x 300 mm.",
+        "1200 x 600 mm.",
+        "Drawer width: 500 mm; drawer depth: 400 mm.",
+        "Package width: 1200 mm; package depth: 600 mm.",
+        "Keyboard tray width: 600 mm; keyboard tray depth: 300 mm.",
+        "Shipping carton length: 1300 mm; width: 700 mm.",
+        "Dimensions: Width 120 cm; Cable tray depth: 60 cm.",
+        "Dimensions: Width 120 cm; package depth: 60 cm.",
+        "Dimensions: Width 120 cm; Drawer depth: 60 cm.",
+        "Dimensions: Width 120 cm; Depth 60 cm not confirmed.",
+        "Dimensions: Width 120 cm; Depth 60 cm awaiting confirmation.",
+        "Dimensions: Width 120 cm unconfirmed; Depth 60 cm unconfirmed.",
+        "الأبعاد: العرض 120 سم؛ العمق 60 سم غير مؤكد.",
+    ],
+)
+def test_catalog_footprint_placeholders_are_not_dimension_evidence(
+    product_text: str,
+) -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "Which option has the smaller footprint?",
+        product_text,
+    )
+
+    assert "footprint_dimensions=not_stated" in gaps
+
+
+@pytest.mark.parametrize(
+    "product_text",
+    [
+        "Overall dimensions: 1200 x 600 x 750 mm.",
+        "Overall dimensions: 1200 mm x 600 mm x 750 mm.",
+        "Overall dimensions: 1200mm × 600mm.",
+        "Dimensions (W x D x H): 1200 x 600 x 750 mm.",
+        "Dimensions W×D×H: 1200 × 600 × 750 mm.",
+        "Product dimensions: Width 120 cm; depth 60 cm.",
+        "الأبعاد: العرض 120 سم؛ العمق 60 سم.",
+        "Footprint: 0.72 m².",
+        "No wheels. Overall dimensions: 1200 x 600 mm.",
+        "Without drawers; Product dimensions: 1200 x 600 mm.",
+        "No cable tray. Product dimensions: Width 120 cm; depth 60 cm.",
+        "No armrests. Footprint: 0.72 m².",
+        "Finish: Oak; Product dimensions: Width 120 cm; depth 60 cm.",
+        "Finish: Oak؛ الأبعاد: العرض 120 سم؛ العمق 60 سم.",
+        "Dimensions: Width 120 cm; Height 75 cm; Depth 60 cm.",
+        "Product dimensions: Length 140 cm; Height 75 cm; Width 70 cm.",
+        "الأبعاد: العرض 120 سم؛ الارتفاع 75 سم؛ العمق 60 سم.",
+    ],
+)
+def test_catalog_numeric_dimensions_are_footprint_evidence(product_text: str) -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "Which option has the smaller footprint?",
+        product_text,
+    )
+
+    assert "footprint_dimensions=not_stated" not in gaps
+
+
+@pytest.mark.parametrize(
+    "product_text",
+    [
+        "Seat height: 450 mm.",
+        "Cable length: 2 m.",
+        "Screen height 120 cm.",
+    ],
+)
+def test_catalog_single_component_measurement_is_not_footprint_evidence(
+    product_text: str,
+) -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "Which option has the smaller footprint?",
+        product_text,
+    )
+
+    assert "footprint_dimensions=not_stated" in gaps
+
+
+def test_company_size_does_not_request_product_footprint() -> None:
+    gaps = engine_module._requested_catalog_evidence_gaps(
+        "We are a company size of 50; recommend chairs.",
+        "Task chair with mesh back.",
+    )
+
+    assert "footprint_dimensions=not_stated" not in gaps
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Which chair is a sound choice for long hours?",
+        "Which model is a sound investment for the office?",
+        "Recommend desks for our compact team.",
+    ],
+)
+def test_catalog_fact_domain_ignores_non_product_adjectives(query: str) -> None:
+    assert engine_module._requested_catalog_fact_domains(query) == ()
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_domain"),
+    [
+        ("Which pod is quieter?", "acoustic"),
+        ("Which workstation has less echo?", "acoustic"),
+        ("Which desk fits the smallest space?", "footprint"),
+        ("Which desk needs the least room?", "footprint"),
+    ],
+)
+def test_catalog_fact_domain_detects_product_scoped_semantics(
+    query: str,
+    expected_domain: str,
+) -> None:
+    assert expected_domain in engine_module._requested_catalog_fact_domains(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Does the Acoustic Pod have a five-year warranty?",
+        "What are the delivery terms for this compact desk?",
+        "Compare chair footprint and guarantee delivery tomorrow.",
+    ],
+)
+def test_catalog_fact_query_does_not_override_high_risk_policy(query: str) -> None:
+    decision = engine_module.evaluate_verified_answer_policy(query, [])
+
+    assert decision.question_class == "service_high_risk"
+    assert decision.policy_action == "handoff"
+    assert not engine_module._should_override_policy_for_catalog_fact_query(
+        query,
+        decision,
+    )
+
+
 @pytest.mark.asyncio
 async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
     mock_deps: tuple[
@@ -18604,8 +18856,521 @@ async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
     assert "full 4-seat sku unit" in result.return_value.casefold()
     assert "acoustic_performance=not_stated" in result.return_value.casefold()
     assert "footprint_dimensions=not_stated" in result.return_value.casefold()
+    assert deps.unsupported_catalog_facts == {
+        "acoustic_performance=not_stated",
+        "footprint_dimensions=not_stated",
+    }
+    assert deps.catalog_fact_products["WORK-4"] == (
+        engine_module.VerifiedCatalogFactProduct(
+            name="LUMA Four Person Workstation",
+            sku="WORK-4",
+            price=1883.0,
+            currency="AED",
+            stock=30,
+            description=("Screen dividers for each user and four mobile pedestals."),
+            capacity=4,
+            fact_gaps=(
+                "acoustic_performance=not_stated",
+                "footprint_dimensions=not_stated",
+            ),
+            search_call=1,
+            result_rank=0,
+        )
+    )
+    materialized = engine_module._materialize_verified_catalog_facts(deps)
+    assert materialized is not None
+    assert "LUMA Four Person Workstation (SKU: WORK-4)" in materialized
+    assert "Price: 1883.00 AED" in materialized
+    assert "Stock: 30" in materialized
+    assert "Price basis: full 4-seat SKU unit" in materialized
+    assert (
+        "Catalog description: Screen dividers for each user and four mobile pedestals."
+    ) in materialized
+    assert "Acoustic performance: not stated in the catalog" in materialized
+    assert "Footprint dimensions: not stated in the catalog" in materialized
+    assert "will not rank these options" in materialized
     assert "stated need" in result.content.casefold()
     assert "next action" in result.content.casefold()
+
+
+@pytest.mark.asyncio
+async def test_catalog_search_preserves_per_product_fact_gaps_across_calls(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Compare acoustic separation for two workstations.",
+    )
+    mock_search = AsyncMock(
+        side_effect=[
+            ProductSearchResult(
+                products=[
+                    _catalog_acceptance_product(
+                        sku="LUMA-4",
+                        name="LUMA 9719-4 Workstation",
+                        price=1883.0,
+                        stock=30,
+                        description="Fabric divider panels.",
+                    )
+                ],
+                total_found=1,
+            ),
+            ProductSearchResult(
+                products=[
+                    _catalog_acceptance_product(
+                        sku="NOVO-4",
+                        name="NOVO 2400 Workstation",
+                        price=1813.0,
+                        stock=31,
+                        description="Verified sound attenuation rating: 25 dB.",
+                    )
+                ],
+                total_found=1,
+            ),
+        ]
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="workstation comparison",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        await engine_module.search_products(ctx, "LUMA 9719-4 workstation")
+        await engine_module.search_products(ctx, "NOVO 2400 workstation")
+
+    assert deps.unsupported_catalog_facts == {"acoustic_performance=not_stated"}
+    assert deps.catalog_fact_products["LUMA-4"].fact_gaps == (
+        "acoustic_performance=not_stated",
+    )
+    assert deps.catalog_fact_products["NOVO-4"].fact_gaps == ()
+    materialized = engine_module._materialize_verified_catalog_facts(deps)
+    assert materialized is not None
+    assert "LUMA 9719-4 Workstation (SKU: LUMA-4)" in materialized
+    assert "Acoustic performance: not stated in the catalog" in materialized
+    assert "NOVO 2400 Workstation (SKU: NOVO-4)" in materialized
+    assert (
+        "Catalog description: Verified sound attenuation rating: 25 dB." in materialized
+    )
+    assert "unconfirmed acoustic claims" in materialized
+    assert "unconfirmed acoustic or footprint claims" not in materialized
+
+
+@pytest.mark.asyncio
+async def test_catalog_fact_scope_excludes_cross_sell_search_results(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Compare acoustic separation for workstations and add one cross-sell."
+        ),
+        catalog_planning=engine_module.CatalogPlanningContext(families=("workspace",)),
+    )
+    mock_search = AsyncMock(
+        side_effect=[
+            ProductSearchResult(
+                products=[
+                    _catalog_acceptance_product(
+                        sku="WORK-4",
+                        name="LUMA Four Person Workstation",
+                        price=1883.0,
+                        stock=30,
+                        description="Fabric divider panels.",
+                    )
+                ],
+                total_found=1,
+            ),
+            ProductSearchResult(
+                products=[
+                    _catalog_acceptance_product(
+                        sku="PED-1",
+                        name="Mobile Pedestal",
+                        price=350.0,
+                        stock=20,
+                        description="Steel storage pedestal.",
+                    )
+                ],
+                total_found=1,
+            ),
+        ]
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="comparison",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        await engine_module.search_products(ctx, "workstation")
+        await engine_module.search_products(ctx, "pedestal")
+
+    assert deps.unsupported_catalog_facts == {"acoustic_performance=not_stated"}
+    assert set(deps.catalog_fact_products) == {"WORK-4"}
+
+
+@pytest.mark.asyncio
+async def test_catalog_fact_materializer_prioritizes_gap_from_later_search_call(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Compare acoustic performance for workstations.",
+    )
+    supported_products = [
+        _catalog_acceptance_product(
+            sku=f"SUPPORTED-{rank}",
+            name=f"Supported Workstation {rank}",
+            price=1000.0 + rank,
+            stock=10,
+            description="Verified sound attenuation rating: 25 dB.",
+        )
+        for rank in range(5)
+    ]
+    mock_search = AsyncMock(
+        side_effect=[
+            ProductSearchResult(products=supported_products, total_found=5),
+            ProductSearchResult(
+                products=[
+                    _catalog_acceptance_product(
+                        sku="LATE-GAP",
+                        name="Late Relevant Workstation",
+                        price=900.0,
+                        stock=4,
+                        description="Fabric divider panels.",
+                    )
+                ],
+                total_found=1,
+            ),
+        ]
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="comparison",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        await engine_module.search_products(ctx, "first workstation options")
+        await engine_module.search_products(ctx, "late workstation option")
+
+    materialized = engine_module._materialize_verified_catalog_facts(deps)
+
+    assert materialized is not None
+    assert "Late Relevant Workstation (SKU: LATE-GAP)" in materialized
+    assert "Acoustic performance: not stated in the catalog" in materialized
+    assert "Supported Workstation 4 (SKU: SUPPORTED-4)" not in materialized
+
+
+def test_verified_catalog_fact_materializer_ignores_unguarded_queries(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    deps.catalog_fact_products["WORK-4"] = engine_module.VerifiedCatalogFactProduct(
+        name="LUMA Four Person Workstation",
+        sku="WORK-4",
+        price=1883.0,
+        currency="AED",
+        stock=30,
+        description="Screen dividers.",
+        capacity=4,
+        fact_gaps=(),
+    )
+
+    assert engine_module._materialize_verified_catalog_facts(deps) is None
+
+
+def test_verified_catalog_fact_materializer_prioritizes_late_gap_product(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        unsupported_catalog_facts={"footprint_dimensions=not_stated"},
+    )
+    for rank in range(5):
+        sku = f"SUPPORTED-{rank}"
+        deps.catalog_fact_products[sku] = engine_module.VerifiedCatalogFactProduct(
+            name=f"Supported {rank}",
+            sku=sku,
+            price=1000.0 + rank,
+            currency="AED",
+            stock=10,
+            description="Dimensions: 1200 x 600 mm.",
+            capacity=4,
+            fact_gaps=(),
+            search_call=1,
+            result_rank=rank,
+        )
+    deps.catalog_fact_products["LATE-GAP"] = engine_module.VerifiedCatalogFactProduct(
+        name="Late relevant result",
+        sku="LATE-GAP",
+        price=900.0,
+        currency="AED",
+        stock=4,
+        description="Dimensions unavailable.",
+        capacity=4,
+        fact_gaps=("footprint_dimensions=not_stated",),
+        search_call=2,
+        result_rank=0,
+    )
+
+    materialized = engine_module._materialize_verified_catalog_facts(deps)
+
+    assert materialized is not None
+    assert "Late relevant result (SKU: LATE-GAP)" in materialized
+    assert "Footprint dimensions: not stated in the catalog" in materialized
+    assert "unconfirmed footprint claims" in materialized
+    assert "unconfirmed acoustic" not in materialized
+    assert "Supported 4 (SKU: SUPPORTED-4)" not in materialized
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_replaces_unsupported_catalog_inference_with_verified_facts(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    text = (
+        "Compare these workstations by acoustic separation, footprint, "
+        "current price, and stock."
+    )
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        deps.unsupported_catalog_facts.update(
+            {
+                "acoustic_performance=not_stated",
+                "footprint_dimensions=not_stated",
+            }
+        )
+        deps.catalog_fact_products["WORK-4"] = engine_module.VerifiedCatalogFactProduct(
+            name="LUMA Four Person Workstation",
+            sku="WORK-4",
+            price=1883.0,
+            currency="AED",
+            stock=30,
+            description="Screen dividers for each user.",
+            capacity=4,
+            fact_gaps=(
+                "acoustic_performance=not_stated",
+                "footprint_dimensions=not_stated",
+            ),
+        )
+        return _FakeAgentResult(
+            "The divider dampens sound, so I recommend LUMA for acoustics."
+        )
+
+    mock_run.side_effect = run_side_effect
+
+    with patch.object(
+        engine_module,
+        "_try_verified_catalog_plan",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert response.model == "mock-model|verified-catalog-facts"
+    assert "dampens sound" not in response.text.casefold()
+    assert "recommend luma" not in response.text.casefold()
+    assert "LUMA Four Person Workstation (SKU: WORK-4)" in response.text
+    assert "Price: 1883.00 AED" in response.text
+    assert "Stock: 30" in response.text
+    assert "Acoustic performance: not stated in the catalog" in response.text
+    assert "Footprint dimensions: not stated in the catalog" in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("text", "language", "expected_gap"),
+    [
+        (
+            "قارن هذه الخيارات حسب العزل الصوتي والمساحة",
+            "ar",
+            "الأداء الصوتي: غير مذكور في الكتالوج",
+        ),
+        (
+            "Which workstation is more compact?",
+            "en",
+            "Footprint dimensions: not stated in the catalog",
+        ),
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_detects_catalog_fact_gap_and_replaces_model_output(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    text: str,
+    language: str,
+    expected_gap: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Test User"
+    conv.language = language
+    mock_build_history.return_value = _non_first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    catalog_result = ProductSearchResult(
+        products=[
+            _catalog_acceptance_product(
+                sku="WORK-4",
+                name="LUMA Four Person Workstation",
+                price=1883.0,
+                stock=30,
+                description="Fabric divider panels.",
+            )
+        ],
+        total_found=1,
+    )
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        deps = kwargs["deps"]
+        ctx = RunContext(
+            deps=deps,
+            retry=0,
+            messages=[],
+            prompt="workstation comparison",
+            model=TestModel(),
+            usage=RunUsage(),
+        )
+        await engine_module.search_products(ctx, "workstation")
+        return _FakeAgentResult("This product is compact and its panels dampen sound.")
+
+    mock_run.side_effect = run_side_effect
+
+    with (
+        patch.object(
+            engine_module,
+            "_try_verified_catalog_plan",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch.object(
+            engine_module,
+            "rag_search_products",
+            new_callable=AsyncMock,
+            return_value=catalog_result,
+        ),
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert response.model == "mock-model|verified-catalog-facts"
+    assert "compact and its panels dampen sound" not in response.text.casefold()
+    assert expected_gap in response.text
 
 
 @pytest.mark.asyncio
