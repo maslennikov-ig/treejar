@@ -9,8 +9,8 @@ only on terminal Wazzup delivery/read evidence
 ## Current truth
 
 - Canonical runtime: `https://noor.starec.ai`.
-- Owning task: `tj-ee5f.1`; blocking defects `tj-ee5f.5-.10` remain open until
-  release-bound production proof.
+- Owning task: `tj-ee5f.1`; only blocking defect `tj-ee5f.5` remains open for
+  terminal side-effect reconciliation.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The last deployed, production-tested product release is
@@ -76,14 +76,18 @@ only on terminal Wazzup delivery/read evidence
   name gate resumed the saved intent, and Noor returned only `CH 616 NEW black`
   with live Zoho price AED 295 and stock 41. No quantity, alternatives, quote,
   or escalation path was entered.
-- Beads `tj-ee5f.6`, `.8`, and `.10` are closed. `.5` and `.9` remain open only
-  for trusted terminal delivery/PDF reconciliation.
+- Beads `tj-ee5f.6-.10` are closed. `.5` remains open only for trusted terminal
+  reconciliation of the other historical outbound effects.
 
 ## Production proof and blocker
 
 - Functional production retests S01-S10 pass the remediated behaviors.
 - Exact S09 Zoho contact/order/PDF fields and S10 CRM opportunity fields have
   protected readbacks; the test order/deal were terminally cleaned up.
+- The owner supplied the S09 PDF received in the protected WhatsApp around
+  12:00 Europe/Moscow. Normalized text and pixel rendering match the protected
+  S09 PDF exactly. This proves quotation delivery for `f283a22`; it is not
+  attributed to the later no-quotation canary on `a2f245c`.
 - Combined server facts contain 29 turns, 14 provider-reported model turns,
   88,329 tokens, USD 0.10085, 28 tool calls, and 48 outbound audits.
 - Every outbound audit is still `sent`. A narrow smoke on exact release
@@ -116,11 +120,11 @@ only on terminal Wazzup delivery/read evidence
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: keep the accepted release unchanged and obtain a genuine
-Wazzup `delivered/read` callback for the existing protected outbound messages
-and quotation PDF. Do not change the working audit fan-out or reinterpret
-`sent` as delivery. After terminal reconciliation, render/inspect the Russian
-report PDF and run canonical stage closeout.
+Recommended action: keep the accepted release unchanged and obtain terminal
+provider or exact recipient readback for the remaining historical outbound
+messages. Do not change the working audit fan-out or reinterpret `sent` as
+delivery. After terminal reconciliation, render/inspect the Russian report PDF
+and run canonical stage closeout.
 
 ## Starter prompt for next orchestrator
 
@@ -139,10 +143,11 @@ Use $orchestrator-stage with the compact prompt in
 
 ## Explicit defers
 
-- Terminal production acceptance, accepted report PDF, Beads `.5/.9/.1` and
-  epic closure, and canonical stage closeout remain pending.
-- Test-message outbound audits still need terminal readback; `sent` is not a
-  delivery proof.
+- Terminal production acceptance, accepted report PDF, Beads `.5/.1` and epic
+  closure, and canonical stage closeout remain pending.
+- Historical test-message outbound audits not covered by the accepted
+  recipient evidence still need terminal readback; `sent` is not a delivery
+  proof.
 - Repository-history privacy cleanup remains a separate destructive action.
 - Existing unrelated backlog remains separate: `tj-qy7y`, `tj-n8p6`,
   `tj-b93r`, `tj-final27.6`, `tj-gh21`, `tj-2pkk`, `tj-g3f`, `tj-9q0`,

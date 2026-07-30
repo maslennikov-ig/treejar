@@ -60,6 +60,10 @@ catalog, quote-state, exact-SKU, no-match, memory, Zoho quotation/PDF, and CRM
 opportunity behaviors. The combined server snapshot contains 29 turns,
 14 provider-reported model turns, 88,329 tokens, USD 0.10085, and 28 tool
 calls. S09 and S10 readbacks and safe cleanup are protected outside Git.
+The owner later supplied the S09 PDF received in the protected WhatsApp around
+12:00 Europe/Moscow. Its normalized text and rendered page match the protected
+S09 quotation exactly, so quotation delivery is independently accepted even
+though its provider audit still says `sent`.
 
 The trusted final observation remains incomplete because all 48 outbound
 audits are `sent`, not terminal. A narrow smoke on `3954857` reproduced the
@@ -106,21 +110,25 @@ returned live Zoho price AED 295 and stock 41. It did not ask for quantity,
 offer alternatives or quotation, or escalate. Wazzup accepted both responses,
 but both audits remain `sent`.
 
-Beads `tj-ee5f.6`, `.8`, and `.10` are closed on release-bound proof. `.5` and
-`.9` remain open because trusted finalization and PDF acceptance require a
-terminal provider delivery/read status.
+Beads `tj-ee5f.6-.10` are closed on release-bound proof. The received S09 PDF
+belongs to the earlier `f283a22` quotation run, not to the final `a2f245c`
+voice/name canary; that final request explicitly declined a quotation. `.5`
+remains open because the other historical outbound effects still lack
+terminal provider or recipient readback.
 
 ## Remaining acceptance
 
-1. Obtain a real Wazzup `delivered/read` callback for the test-only outbound
-   messages and quotation PDF; do not reinterpret `sent` as delivery.
+1. Obtain terminal provider or exact recipient readback for the remaining
+   historical test-only outbound messages; do not reinterpret `sent` as
+   delivery.
 2. Keep the intentional `audit.starec.ai` callback/fan-out unchanged.
 3. Render and inspect the final Russian report PDF and run canonical closeout
    only after terminal reconciliation succeeds.
 
 ## Explicit defers
 
-- Test-message outbound effects still need terminal readback; `sent` is not
-  accepted as delivery.
+- Historical test-message outbound effects not covered by the accepted S09 PDF
+  and final-response recipient evidence still need terminal readback; `sent`
+  is not accepted as delivery.
 - Repository-history privacy cleanup remains a separate destructive-action
   decision; current-tree redaction remains the local privacy boundary.

@@ -1,7 +1,7 @@
 # Production E2E Remediation Report: 2026-07-29
 
 **Generated**: 2026-07-30
-**Status**: ⚠️ BLOCKED — функциональные исправления приняты, Wazzup delivery/read не подтверждён
+**Status**: ⚠️ BLOCKED — исправления приняты, часть Wazzup delivery/read не подтверждена
 **Version**: 0.4
 **Environment**: production, `https://noor.starec.ai`  
 **Tested release**: `a2f245c`, CI/deploy `30540774784`
@@ -152,8 +152,9 @@ regression fixtures; product prompt не менялся.
   общий итог совпадают.
 - PDF скачан как `application/pdf`; в нём подтверждены SKU, количество, цена,
   subtotal, VAT, grand total, клиент, компания и полный адрес.
-- В защищённый тестовый чат отправлен ровно один PDF; провайдер принял отправку
-  и вернул идентификатор. Terminal `delivered/read` callback в Noor не получен.
+- В защищённый тестовый чат отправлен ровно один PDF. Владелец получил его
+  около 12:00 по Москве; текст и отрисованная страница полностью совпадают с
+  защищённой S09-копией. Provider-аудит при этом остался в состоянии `sent`.
 - После проверки sales order аннулирован, тестовый contact деактивирован,
   диалог и PDF оставлены только как защищённое evidence.
 
@@ -178,6 +179,9 @@ Server-owned metrics для завершённых S01–S10 содержат:
 Все 48 исходящих аудитов остались в состоянии `sent`. Последующие provider
 canary, включая финальный русский voice/name retest на `a2f245c`, также получили
 provider IDs и Wazzup `201 Created`, но не перешли в `delivered/read`.
+Независимый recipient-readback отдельно подтвердил получение S09 PDF и
+видимость финального ответа `a2f245c`; он не подтверждает каждый другой
+исторический outbound-аудит.
 Read-only проверка Wazzup показала:
 
 - webhook URI: `https://audit.starec.ai/webhook`;
@@ -215,15 +219,15 @@ envelope дошли через неё до Noor. Переключать callback
 на точном SHA `a2f245c` успешны.
 
 **Overall**: ⚠️ BLOCKED — все найденные функциональные дефекты исправлены и
-проверены на production; terminal Wazzup `delivered/read` status всё ещё не
-получен.
+проверены на production; для остальных исторических outbound-сообщений всё ещё
+нет terminal Wazzup или точного recipient-readback.
 
 ## Next Steps / Следующие шаги
 
-Остаётся получить от Wazzup terminal `delivered/read` callback для уже
-отправленных test-only сообщений и PDF, затем завершить reconciliation,
-отрендерить финальный PDF отчёта и выполнить stage closeout. Рабочий
-`audit.starec.ai` fan-out менять не нужно.
+Остаётся получить terminal Wazzup или точный recipient-readback для остальных
+исторических test-only сообщений, затем завершить reconciliation, отрендерить
+финальный PDF отчёта и выполнить stage closeout. Рабочий `audit.starec.ai`
+fan-out менять не нужно.
 
 Если provider-originated сообщения недоступны или их terminal readback не
 подтверждён, соответствующий критерий остаётся `BLOCKED`, а epic не закрывается.
