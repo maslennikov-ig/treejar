@@ -3,8 +3,8 @@
 Updated: 2026-07-30
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
-Current stage status: remediation deployed and healthy; final production
-acceptance awaits delivery of one voice-only correction and terminal status
+Current stage status: remediation deployed and healthy; a second
+Russian voice/name resume correction is accepted for delivery
 
 ## Current truth
 
@@ -14,8 +14,8 @@ acceptance awaits delivery of one voice-only correction and terminal status
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The deployed production release and current `main` are
-  `39548577d6e70356cd65c57f964ca4de0b798781`.
-- Canonical CI/deploy run `30533112670` succeeded. Exact release, five running
+  `ebc629f0d3a676b5aa51ed3ccabb062a564665ff`.
+- Canonical CI/deploy run `30537621859` succeeded. Exact release, five running
   services, and 8/8 API smoke were read back.
 - Unrelated and untracked user files in the primary worktree were preserved.
 - Failed and incomplete production attempts remain immutable outside Git.
@@ -41,6 +41,11 @@ acceptance awaits delivery of one voice-only correction and terminal status
   a price/stock inquiry containing an exact SKU was treated as an order
   selection and asked for quantity. The local correction routes non-order
   inquiries through the catalog path before product-selection handling.
+- After that correction reached production, a Russian voice/name resume
+  exposed the same fallback later in the flow. The second local correction
+  applies the shared order guard to the legacy fallback, supports Russian
+  price/stock morphology and noun-first quote refusal, and routes the saved
+  request through exact catalog plus Zoho readback.
 
 ## Local proof
 
@@ -60,6 +65,11 @@ acceptance awaits delivery of one voice-only correction and terminal status
   unchanged.
 - The exact-SKU voice correction has focused RED/GREEN proof and independent
   delta-review verdict `APPROVE`; no product-prompt change was made.
+- The second Russian resume correction has focused RED/GREEN proof. Release
+  verification passed with `2690 passed`, `19 skipped`, Ruff, format, Mypy, and
+  process verification green. Post-review affected tests and static checks pass;
+  final independent verdict is `APPROVE` with no P0-P2. Product-prompt growth
+  remains zero.
 
 ## Production proof and blocker
 
@@ -84,19 +94,23 @@ acceptance awaits delivery of one voice-only correction and terminal status
   `openai/gpt-4o-mini-transcribe`: 158 input and 21 output tokens,
   USD 0.0003025, 1.184 s. Its assistant response reproduced the exact-SKU
   quantity-gate defect described above.
-- All nine canary outbound audits remain `sent`; the immutable capture is
+- The first correction was deployed as `ebc629f`. A Russian voice retest was
+  transcribed exactly with 137 input and 28 output tokens at USD 0.000311. Noor
+  correctly asked for the name, then misclassified the saved request after the
+  owner replied and asked for quantity again.
+- All canary outbound audits remain `sent`; both immutable failed captures are
   protected outside Git.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: deliver the reviewed exact-SKU inquiry correction, verify
-the canonical deploy, then rerun only the owner-originated voice canary. Capture
-the STT trace, catalog-backed answer, and outbound status. If the answer arrives
-but remains `sent`, retain the exact evidence as a Wazzup provider blocker; do
-not change the working audit fan-out. Do not close the epic if any required
-proof is unavailable.
+Recommended action: deliver the accepted second correction after a fresh fetch,
+verify the canonical deploy, then rerun only the owner-originated Russian voice
+plus name resume. Capture the STT trace, catalog/Zoho-backed answer, and outbound
+status. If the answer arrives but remains `sent`, retain the exact evidence as a
+Wazzup provider blocker; do not change the working audit fan-out. Do not close
+the epic if any required proof is unavailable.
 
 ## Starter prompt for next orchestrator
 
@@ -117,8 +131,8 @@ Use $orchestrator-stage with the compact prompt in
 
 - Complete production acceptance, accepted report/PDF, Beads closure, and
   canonical stage closeout remain pending.
-- The affected provider-originated voice canary needs one owner-assisted retest
-  after the correction is deployed.
+- The affected provider-originated Russian voice/name canary needs one
+  owner-assisted retest after the correction is deployed.
 - Test-message outbound audits still need terminal readback; `sent` is not a
   delivery proof.
 - Repository-history privacy cleanup remains a separate destructive action.

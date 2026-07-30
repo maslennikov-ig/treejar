@@ -3413,6 +3413,133 @@ async def test_process_message_first_turn_unknown_name_blocks_exact_sku_side_eff
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consultative(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = None
+    pending_text = (
+        "Проверь, пожалуйста, точную цену наличия модели CH616 New Black. "
+        "Коммерческое предложение мне не нужно."
+    )
+    name_reply = "Меня зовут Алекс"
+    mock_build_history.side_effect = [
+        _first_turn_history(pending_text),
+        [
+            ModelRequest(parts=[SystemPromptPart(content="summary")]),
+            ModelRequest(parts=[UserPromptPart(content=pending_text)]),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content=(
+                            "Hello, I'm Noor from Treejar. "
+                            "May I know your name so I can address you properly?"
+                        )
+                    )
+                ]
+            ),
+            ModelRequest(parts=[UserPromptPart(content=name_reply)]),
+        ],
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    requested = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 NEW black",
+        zoho_item_id="zoho-ch-616-new-black",
+        name_en="Skyland Operative Chair CH 616 NEW black",
+        price=295.0,
+        currency="AED",
+        stock=43,
+        attributes={},
+        is_active=True,
+    )
+    sibling = SimpleNamespace(
+        id=uuid.uuid4(),
+        sku="CH 616 black",
+        zoho_item_id="zoho-ch-616-black",
+        name_en="Skyland Operative Chair CH 616 black",
+        price=220.0,
+        currency="AED",
+        stock=3,
+        attributes={},
+        is_active=True,
+    )
+    execute_result = MagicMock()
+    execute_result.scalars.return_value.all.return_value = [sibling, requested]
+    db.execute.return_value = execute_result
+    zoho.get_item.return_value = {
+        "sku": requested.sku,
+        "stock_on_hand": 43,
+        "rate": 295.0,
+        "currency_code": "AED",
+    }
+
+    first_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=pending_text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+    first_metadata = conv.metadata_ or {}
+    pending = first_metadata["name_gate_pending_request"]
+
+    assert first_response.model == "name-gate"
+    assert pending["version"] == 2
+    assert pending["text"] == pending_text
+    assert pending["intent"] == "catalog_discovery"
+    assert "order_runtime" not in first_metadata
+    assert "pending_quote_selection" not in first_metadata
+    assert "quote_intent_frame" not in first_metadata
+
+    second_response = await process_message(
+        conversation_id=conv.id,
+        combined_text=name_reply,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert second_response.model == "mock-model|stock-price-options"
+    assert requested.name_en in second_response.text
+    assert sibling.name_en not in second_response.text
+    assert "295.00 AED" in second_response.text
+    assert "43 available" in second_response.text
+    assert "quotation" not in second_response.text.casefold()
+    assert "confirm the quantity" not in second_response.text.casefold()
+    assert "name_gate_pending_request" not in conv.metadata_
+    assert "order_runtime" not in conv.metadata_
+    assert "pending_quote_selection" not in conv.metadata_
+    assert "quote_intent_frame" not in conv.metadata_
+    assert conv.metadata_["sales_memory"]["quotation_hold"] == "yes"
+    zoho.get_item.assert_awaited_once_with(requested.zoho_item_id)
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    messaging.send_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
 async def test_process_message_repairs_quote_detail_questions_when_details_are_known(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
@@ -18191,6 +18318,51 @@ async def test_explicit_quote_hold_suspends_typed_quote_details_state(
 )
 def test_exact_quote_candidate_respects_general_quote_hold(text: str) -> None:
     assert extract_exact_quote_candidate(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "КП мне не нужно согласовывать, отправьте его сейчас.",
+        "Коммерческое предложение я не хочу обсуждать, сразу подготовьте его.",
+    ],
+)
+def test_russian_quote_action_is_not_misread_as_quote_hold(text: str) -> None:
+    assert not engine_module.is_quote_or_proposal_hold(text)
+    assert engine_module.is_quote_or_proposal_request(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Коммерческого предложения мне не нужно.",
+        "Мне не нужно коммерческого предложения.",
+        "Коммерческие предложения нам не нужны.",
+    ],
+)
+def test_russian_quote_hold_supports_common_noun_morphology(text: str) -> None:
+    assert engine_module.is_quote_or_proposal_hold(text)
+    assert not engine_module.is_quote_or_proposal_request(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Мне не нужно КП сейчас.",
+        "КП мне не нужно сейчас.",
+        "Коммерческое предложение нам не нужно пока.",
+        "КП мне не нужно: только цена.",
+    ],
+)
+def test_russian_quote_hold_supports_bounded_modifiers(text: str) -> None:
+    assert engine_module.is_quote_or_proposal_hold(text)
+    assert not engine_module.is_quote_or_proposal_request(text)
+
+
+def test_russian_availability_request_does_not_infer_price_from_evaluate_verb() -> None:
+    assert not engine_module._is_stock_price_catalog_inquiry(
+        "Оцените доступность модели CH616."
+    )
 
 
 def test_sales_opportunity_request_separates_company_and_budget_fields() -> None:

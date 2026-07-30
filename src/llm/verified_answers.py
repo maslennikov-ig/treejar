@@ -390,8 +390,34 @@ _PROPOSAL_CONTEXT_TERMS = (
     "quote",
     "for me",
 )
-_QUOTE_HOLD_RE = re.compile(
+_RU_QUOTE_NOUN_PATTERN = (
     r"(?:"
+    r"коммерческ(?:ое|ого|ому|им|ом|ие|их|ими)\s+"
+    r"предложени(?:е|я|ю|ем|и|й|ям|ями|ях)|"
+    r"кп|"
+    r"сч[её]т(?:а|у|ом|е|ы|ов|ам|ами|ах)?|"
+    r"инвойс(?:а|у|ом|е|ы|ов|ам|ами|ах)?"
+    r")"
+)
+_RU_QUOTE_HOLD_END = (
+    r"(?:\s+(?:сейчас|пока|ещ[её]|на\s+данном\s+этапе))?"
+    r"(?=\s*(?:[.!?;,:—–]|-{1,2}|$))"
+)
+_RU_QUOTE_PREFIX_HOLD_PATTERN = (
+    r"\b(?:(?:я\s+не\s+хочу|мы\s+не\s+хотим)|"
+    r"(?:(?:мне|нам)\s+)?не\s+"
+    r"(?:хочу|хотим|нужно|надо|нужен|нужна|нужны))\s+"
+    rf"{_RU_QUOTE_NOUN_PATTERN}{_RU_QUOTE_HOLD_END}"
+)
+_RU_QUOTE_NOUN_FIRST_HOLD_PATTERN = (
+    rf"\b{_RU_QUOTE_NOUN_PATTERN}\s+"
+    r"(?:(?:я\s+не\s+хочу|мы\s+не\s+хотим)|"
+    r"(?:(?:мне|нам)\s+)?не\s+"
+    r"(?:хочу|хотим|нужно|надо|нужен|нужна|нужны))"
+    rf"{_RU_QUOTE_HOLD_END}"
+)
+_QUOTE_HOLD_RE = re.compile(
+    rf"(?:"
     r"\b(?:keep|maintain|preserve)\s+(?:the\s+)?"
     r"(?:no[\s-]+(?:quote|quotation)|(?:quote|quotation)[\s-]+hold)"
     r"(?:\s+(?:instruction|request))?\b|"
@@ -412,8 +438,8 @@ _QUOTE_HOLD_RE = re.compile(
     r"(?:عرض\s+سعر|عرض\s+رسمي)|"
     r"(?:لا|لن)\s+(?:أريد|اريد|أحتاج|احتاج)\s+"
     r"(?:عرض\s+سعر|عرض\s+رسمي|فاتورة\s+مبدئية)|"
-    r"\b(?:не\s+хочу|не\s+нужно|не\s+надо)\s+"
-    r"(?:коммерческое\s+предложение|кп|сч[её]т|инвойс)"
+    rf"{_RU_QUOTE_PREFIX_HOLD_PATTERN}|"
+    rf"{_RU_QUOTE_NOUN_FIRST_HOLD_PATTERN}"
     r")",
     re.IGNORECASE,
 )

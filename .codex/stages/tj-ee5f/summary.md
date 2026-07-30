@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-30
-Status: in progress; provider canaries captured, voice correction pending deploy
+Status: in progress; Russian voice/name resume correction accepted for delivery
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -50,8 +50,8 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
 
 ## External state
 
-`3954857` was delivered to `main` after a fresh fetch and non-force push.
-Canonical CI/deploy run `30533112670` succeeded. Production readback confirmed
+`ebc629f` was delivered to `main` after a fresh fetch and non-force push.
+Canonical CI/deploy run `30537621859` succeeded. Production readback confirmed
 the exact release, all five services running, and 8/8 API smoke.
 
 Functional production retests S01-S10 now pass the remediated name-gate,
@@ -77,15 +77,31 @@ was transcribed exactly by `openai/gpt-4o-mini-transcribe` with 158 input and
 remaining semantic defect: an exact-SKU price/stock inquiry with an explicit
 quote refusal was interpreted as order selection and prompted for quantity.
 
-The local correction gives non-order price/stock inquiries priority over the
-product-selection quantity gate. Focused RED/GREEN proof and an independent
-delta-review both pass. The product prompt remains unchanged.
+That first correction was deployed as `ebc629f`. A Russian owner-originated
+voice retest was then transcribed exactly with 137 input and 28 output tokens
+at USD 0.000311. The first response correctly asked for the customer's name,
+but the saved request was misclassified after the owner replied with the name:
+Noor again asked for quantity instead of reading exact catalog price and stock.
+The immutable failed capture is protected outside Git.
+
+The second local correction makes the shared order guard recognize Russian
+price/stock morphology, recognizes quote refusal when the quote noun precedes
+the negation, applies the shared guard to the legacy missing-quantity fallback,
+and routes the saved Russian request through catalog plus Zoho readback.
+Focused RED reproduced `product-quantity-clarify`; focused GREEN returns the
+exact catalog variant, price, and stock without quantity or quote collection.
+The one full release gate passed with `2690 passed`, `19 skipped`, Ruff,
+format, Mypy, and process verification green. Independent review then found
+Russian morphology, clause-boundary, and false-positive gaps; the bounded
+correction wave passed its affected tests and static gates. Final independent
+verdict is `APPROVE` with no remaining P0-P2. The product prompt remains
+unchanged.
 
 ## Remaining acceptance
 
-1. Deliver and deploy the reviewed exact-SKU inquiry correction.
-2. Ask the owner to repeat only the voice canary, then capture its STT,
-   catalog-backed answer, and terminal status.
+1. Deliver and deploy the accepted correction after a fresh fetch.
+2. Ask the owner to repeat the Russian voice plus name resume, then capture its
+   STT, catalog/Zoho-backed answer, and terminal status.
 3. If status remains `sent`, record the exact Wazzup blocker without changing
    the working audit fan-out.
 4. Publish the accepted Russian report and inspected PDF, then run canonical
@@ -93,9 +109,9 @@ delta-review both pass. The product prompt remains unchanged.
 
 ## Explicit defers
 
-- The affected provider-originated voice canary requires one owner-assisted
-  retest after deploy. If unavailable, that criterion remains `BLOCKED` and the
-  epic stays open.
+- The affected provider-originated Russian voice/name canary requires one
+  owner-assisted retest after deploy. If unavailable, that criterion remains
+  `BLOCKED` and the epic stays open.
 - Test-message outbound effects still need terminal readback; `sent` is not
   accepted as delivery.
 - Repository-history privacy cleanup remains a separate destructive-action

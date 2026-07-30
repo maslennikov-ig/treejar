@@ -5130,6 +5130,8 @@ def _is_missing_quantity_product_reference(segment: str) -> bool:
 
 def _extract_missing_quantity_product_references(text: str) -> tuple[str, ...]:
     text = _strip_synthetic_test_marker(text)
+    if is_order_selection_blocked(text):
+        return ()
     normalized = _normalize_text(_normalize_sku_homoglyphs(text))
     if not normalized:
         return ()
@@ -6355,27 +6357,44 @@ def _product_display_name(product: Any) -> str:
     return str(sku or "Selected item")
 
 
+_RU_STOCK_INQUIRY_RE = re.compile(
+    r"\b(?:налич(?:ие|ия|ии|ию|ием)|доступн[а-яё]*)\b",
+    re.IGNORECASE,
+)
+_RU_PRICE_INQUIRY_RE = re.compile(
+    r"\b(?:цен(?:а|ы|е|у|ой|ам|ами|ах)|"
+    r"стоимост(?:ь|и|ью|ей|ям|ями|ях))\b",
+    re.IGNORECASE,
+)
+
+
 def _is_stock_price_catalog_inquiry(text: str) -> bool:
     normalized = _normalize_text(_strip_synthetic_test_marker(text))
     if not normalized:
         return False
-    has_stock = any(
-        term in normalized
-        for term in (
-            "stock",
-            "availability",
-            "available",
-            "in stock",
+    has_stock = (
+        any(
+            term in normalized
+            for term in (
+                "stock",
+                "availability",
+                "available",
+                "in stock",
+            )
         )
+        or _RU_STOCK_INQUIRY_RE.search(normalized) is not None
     )
-    has_price = any(
-        term in normalized
-        for term in (
-            "price",
-            "how much",
-            "cost",
-            "rate",
+    has_price = (
+        any(
+            term in normalized
+            for term in (
+                "price",
+                "how much",
+                "cost",
+                "rate",
+            )
         )
+        or _RU_PRICE_INQUIRY_RE.search(normalized) is not None
     )
     return has_stock and has_price
 

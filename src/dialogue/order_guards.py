@@ -34,7 +34,8 @@ _EN_PRICE_STOCK_QUESTION_RE = re.compile(
     re.IGNORECASE,
 )
 _RU_INQUIRY_RE = re.compile(
-    r"(?:сколько\s+стоит|какая\s+цена|цена|есть\s+ли|в\s+наличии|наличие|доступн)",
+    r"(?:сколько\s+стоит|какая\s+цена|цен(?:а|ы|е|у|ой)|есть\s+ли|"
+    r"в\s+наличии|налич(?:ие|ия|ии|ию|ием)|доступн)",
     re.IGNORECASE,
 )
 _AR_INQUIRY_RE = re.compile(
