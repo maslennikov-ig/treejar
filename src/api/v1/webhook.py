@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import time
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from fastapi import APIRouter, Request
@@ -20,6 +21,7 @@ from src.services.proposal_followup import apply_proposal_read_statuses
 logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter()
+_OUTBOUND_MESSAGE_STATUSES = frozenset({"sent", "delivered", "read", "error", "edited"})
 
 
 @lru_cache(maxsize=1)
@@ -58,6 +60,94 @@ def _verify_webhook_origin(request: Request) -> bool:
         return False
 
     return any(client_ip in network for network in networks)
+
+
+def _is_outbound_status_message(message: object) -> bool:
+    if not isinstance(message, dict):
+        return False
+    status = message.get("status")
+    return isinstance(status, str) and status in _OUTBOUND_MESSAGE_STATUSES
+
+
+def _status_updates_from_messages(messages: object) -> list[dict[str, object]]:
+    if not isinstance(messages, list):
+        return []
+
+    updates: list[dict[str, object]] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        message_id = message.get("messageId")
+        status = message.get("status")
+        if (
+            not isinstance(message_id, str)
+            or not message_id
+            or not _is_outbound_status_message(message)
+        ):
+            continue
+        update: dict[str, object] = {
+            "messageId": message_id,
+            "status": status,
+        }
+        timestamp = message.get("dateTime") or message.get("timestamp")
+        if timestamp is not None:
+            update["timestamp"] = timestamp
+        error = message.get("error")
+        if isinstance(error, dict):
+            update["error"] = error
+        updates.append(update)
+    return updates
+
+
+def _deduplicate_status_updates(
+    statuses: list[object],
+) -> list[dict[str, object]]:
+    unique: list[dict[str, object]] = []
+    seen: set[tuple[object, object, object]] = set()
+    for status in statuses:
+        if not isinstance(status, dict):
+            continue
+        message_id = status.get("messageId")
+        status_value = status.get("status")
+        if (
+            not isinstance(message_id, str)
+            or not message_id
+            or not isinstance(status_value, str)
+            or status_value not in _OUTBOUND_MESSAGE_STATUSES
+        ):
+            continue
+        timestamp = status.get("timestamp")
+        normalized = dict(status)
+        if timestamp is not None:
+            if isinstance(timestamp, bool):
+                continue
+            if isinstance(timestamp, (int, float)):
+                try:
+                    timestamp = datetime.fromtimestamp(timestamp, UTC).isoformat()
+                except (OSError, OverflowError, ValueError):
+                    continue
+                normalized["timestamp"] = timestamp
+            elif isinstance(timestamp, str) and timestamp.strip():
+                try:
+                    datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+            else:
+                continue
+        identity = (
+            message_id,
+            status_value,
+            timestamp,
+        )
+        try:
+            is_duplicate = identity in seen
+        except TypeError:
+            continue
+        if is_duplicate:
+            continue
+        seen.add(identity)
+        unique.append(normalized)
+    return unique
 
 
 @router.post("/wazzup")
@@ -105,8 +195,13 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
         logger.info("Wazzup test ping — responding OK")
         return JSONResponse({"ok": True}, status_code=200)
 
-    statuses = raw_body.get("statuses", [])
-    if isinstance(statuses, list) and statuses:
+    raw_statuses = raw_body.get("statuses", [])
+    status_candidates: list[object] = (
+        list(raw_statuses) if isinstance(raw_statuses, list) else []
+    )
+    status_candidates.extend(_status_updates_from_messages(raw_body.get("messages")))
+    statuses = _deduplicate_status_updates(status_candidates)
+    if statuses:
         try:
             async with async_session_factory() as db:
                 updated_rows = await update_wazzup_statuses(db, statuses)
@@ -124,13 +219,22 @@ async def handle_wazzup_webhook(request: Request) -> JSONResponse:
             logger.exception("Wazzup webhook: failed to persist status updates")
 
     # Parse and process messages
-    messages = raw_body.get("messages", [])
+    raw_messages = raw_body.get("messages", [])
+    messages = (
+        [
+            message
+            for message in raw_messages
+            if not _is_outbound_status_message(message)
+        ]
+        if isinstance(raw_messages, list)
+        else []
+    )
     if not messages:
         logger.info("Wazzup webhook: no messages (status update or empty payload)")
         return JSONResponse({"ok": True}, status_code=200)
 
     try:
-        payload = WazzupWebhookPayload(**raw_body)
+        payload = WazzupWebhookPayload(**{**raw_body, "messages": messages})
     except ValidationError as exc:
         logger.error(
             "Wazzup payload validation failed: validation_errors=%d",

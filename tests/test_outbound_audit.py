@@ -110,6 +110,9 @@ async def test_outbound_audit_preserves_source_binding_across_status_callback() 
     )
     audit = db.add.call_args.args[0]
     assert isinstance(audit, OutboundMessageAudit)
+    audit.status_updated_at = datetime(2026, 4, 26, 11, 59, tzinfo=UTC).replace(
+        tzinfo=None
+    )
     assert audit.details == {
         "source_message_id": "provider-inbound-bound",
         "follow_up_suppressed": True,
@@ -720,3 +723,87 @@ async def test_update_wazzup_statuses_updates_matching_audit_and_ignores_unknown
         2026, 4, 26, 12, 0, tzinfo=UTC
     ).replace(tzinfo=None)
     assert matching.error_details is None
+
+
+@pytest.mark.asyncio
+async def test_update_wazzup_statuses_does_not_regress_terminal_success() -> None:
+    from src.models.outbound_message import OutboundMessageAudit
+    from src.services.outbound_audit import update_wazzup_statuses
+
+    read_at = datetime(2026, 7, 30, 10, 1, tzinfo=UTC).replace(tzinfo=None)
+    matching = OutboundMessageAudit(
+        provider="wazzup",
+        conversation_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        chat_id="+971501234567",
+        message_type="text",
+        source="bot_reply",
+        provider_message_id="known-msg",
+        status="read",
+        status_updated_at=read_at,
+        details={"status": "read"},
+    )
+    db = AsyncMock()
+    db.execute.side_effect = [_ScalarResult(matching), _ScalarResult(matching)]
+
+    updated = await update_wazzup_statuses(
+        db,
+        [
+            {
+                "messageId": "known-msg",
+                "timestamp": "2026-07-30T10:00:00.000Z",
+                "status": "delivered",
+            },
+            {
+                "messageId": "known-msg",
+                "timestamp": "2026-07-30T10:02:00.000Z",
+                "status": "sent",
+            },
+        ],
+    )
+
+    assert updated == 0
+    assert matching.status == "read"
+    assert matching.status_updated_at == read_at
+    assert matching.details == {"status": "read"}
+    db.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_wazzup_statuses_skips_bad_timestamp_and_keeps_batch() -> None:
+    from src.models.outbound_message import OutboundMessageAudit
+    from src.services.outbound_audit import update_wazzup_statuses
+
+    matching = OutboundMessageAudit(
+        provider="wazzup",
+        conversation_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        chat_id="+971501234567",
+        message_type="text",
+        source="bot_reply",
+        provider_message_id="valid-msg",
+        status="sent",
+    )
+    db = AsyncMock()
+    db.execute.return_value = _ScalarResult(matching)
+
+    updated = await update_wazzup_statuses(
+        db,
+        [
+            {
+                "messageId": "invalid-msg",
+                "timestamp": "not-a-datetime",
+                "status": "delivered",
+            },
+            {
+                "messageId": "valid-msg",
+                "timestamp": "2026-07-30T10:02:00.000Z",
+                "status": "delivered",
+            },
+        ],
+    )
+
+    assert updated == 1
+    assert matching.status == "delivered"
+    assert matching.status_updated_at == datetime(
+        2026, 7, 30, 10, 2, tzinfo=UTC
+    ).replace(tzinfo=None)
+    db.flush.assert_awaited_once()

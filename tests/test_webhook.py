@@ -187,6 +187,273 @@ def test_wazzup_webhook_status_only_updates_outbound_audit(mock_networks: Any) -
 
 
 @patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_outbound_message_updates_delivery_audit(
+    mock_networks: Any,
+) -> None:
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+    status_updater = AsyncMock(return_value=1)
+    proposal_updater = AsyncMock(return_value=0)
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch(
+            "src.api.v1.webhook.apply_proposal_read_statuses",
+            proposal_updater,
+        ),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "provider-msg-1",
+                        "channelId": EXPECTED_CHANNEL_ID,
+                        "chatId": "79991234567",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Delivered reply",
+                        "dateTime": "2026-07-30T09:30:00.000Z",
+                        "status": "delivered",
+                        "isEcho": True,
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    expected = [
+        {
+            "messageId": "provider-msg-1",
+            "timestamp": "2026-07-30T09:30:00.000Z",
+            "status": "delivered",
+        }
+    ]
+    status_updater.assert_awaited_once_with(db, expected)
+    proposal_updater.assert_awaited_once_with(db, expected)
+    db.commit.assert_awaited_once()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_ignores_malformed_message_status(
+    mock_networks: Any,
+) -> None:
+    status_updater = AsyncMock(return_value=0)
+    with patch("src.api.v1.webhook.update_wazzup_statuses", status_updater):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "provider-msg-1",
+                        "status": {"unexpected": True},
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    status_updater.assert_not_awaited()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_mixed_envelope_preserves_inbound_message(
+    mock_networks: Any,
+) -> None:
+    app.state.redis = AsyncMock()
+    app.state.arq_pool = AsyncMock()
+    status_updater = AsyncMock(return_value=1)
+    proposal_updater = AsyncMock(return_value=1)
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch(
+            "src.api.v1.webhook.apply_proposal_read_statuses",
+            proposal_updater,
+        ),
+        patch("src.api.v1.webhook.settings.wazzup_channel_id", EXPECTED_CHANNEL_ID),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "inbound-msg-1",
+                        "channelId": EXPECTED_CHANNEL_ID,
+                        "chatId": "79991234567",
+                        "chatType": "whatsapp",
+                        "type": "text",
+                        "text": "Need four chairs",
+                        "dateTime": "2026-07-30T09:31:00.000Z",
+                        "status": "inbound",
+                    },
+                    {
+                        "messageId": "outbound-msg-1",
+                        "dateTime": "2026-07-30T09:30:00.000Z",
+                        "status": "read",
+                    },
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    status_updater.assert_awaited_once()
+    proposal_updater.assert_awaited_once()
+    app.state.redis.rpush.assert_awaited_once()
+    app.state.arq_pool.enqueue_job.assert_awaited_once()
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_deduplicates_identical_status_envelopes(
+    mock_networks: Any,
+) -> None:
+    status_updater = AsyncMock(return_value=1)
+    proposal_updater = AsyncMock(return_value=0)
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+    status = {
+        "messageId": "provider-msg-1",
+        "timestamp": "2026-07-30T09:30:00.000Z",
+        "status": "delivered",
+    }
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch(
+            "src.api.v1.webhook.apply_proposal_read_statuses",
+            proposal_updater,
+        ),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "statuses": [status],
+                "messages": [
+                    {
+                        "messageId": status["messageId"],
+                        "dateTime": status["timestamp"],
+                        "status": status["status"],
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    status_updater.assert_awaited_once_with(db, [status])
+    proposal_updater.assert_awaited_once_with(db, [status])
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_invalid_read_timestamp_does_not_mark_proposal_read(
+    mock_networks: Any,
+) -> None:
+    conv = Conversation(
+        id=uuid.uuid4(),
+        phone="+971501234567",
+        status="active",
+        deal_status="pending",
+        metadata_={},
+    )
+    record_proposal_sent(
+        conv,
+        sent_at=_dt("2026-07-30T08:00:00Z"),
+        kp_message_id="kp-provider-1",
+    )
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _ScalarResult(None),
+        _ScalarsResult([conv]),
+    ]
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch(
+            "src.api.v1.webhook.update_wazzup_statuses",
+            AsyncMock(return_value=0),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "kp-provider-1",
+                        "dateTime": "not-a-datetime",
+                        "status": "read",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    state = conv.metadata_["proposal_followup"]
+    assert state["kp_read"] is False
+    assert state["kp_read_at"] is None
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
+def test_wazzup_webhook_normalizes_numeric_message_timestamp(
+    mock_networks: Any,
+) -> None:
+    status_updater = AsyncMock(return_value=1)
+    proposal_updater = AsyncMock(return_value=1)
+    db = AsyncMock()
+    db_cm = AsyncMock()
+    db_cm.__aenter__.return_value = db
+    db_cm.__aexit__.return_value = False
+
+    with (
+        patch("src.api.v1.webhook.async_session_factory", return_value=db_cm),
+        patch("src.api.v1.webhook.update_wazzup_statuses", status_updater),
+        patch(
+            "src.api.v1.webhook.apply_proposal_read_statuses",
+            proposal_updater,
+        ),
+    ):
+        response = client.post(
+            "/api/v1/webhook/wazzup",
+            json={
+                "messages": [
+                    {
+                        "messageId": "provider-msg-1",
+                        "timestamp": 946684800,
+                        "status": "read",
+                    }
+                ]
+            },
+        )
+
+    expected = [
+        {
+            "messageId": "provider-msg-1",
+            "timestamp": "2000-01-01T00:00:00+00:00",
+            "status": "read",
+        }
+    ]
+    assert response.status_code == 200
+    status_updater.assert_awaited_once_with(db, expected)
+    proposal_updater.assert_awaited_once_with(db, expected)
+
+
+@patch("src.api.v1.webhook._parse_allowed_networks", return_value=[])
 def test_wazzup_webhook_read_status_records_proposal_read_without_reschedule(
     mock_networks: Any,
 ) -> None:

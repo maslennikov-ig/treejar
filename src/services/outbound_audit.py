@@ -21,6 +21,15 @@ _ACTIVE_AUDIT_STATUSES = {
     "edited",
     "provider_duplicate",
 }
+_PROVIDER_STATUS_PRECEDENCE = {
+    "pending": 0,
+    "provider_duplicate": 0,
+    "sent": 1,
+    "delivered": 2,
+    "read": 3,
+    "edited": 4,
+}
+_PROVIDER_STATUS_VALUES = frozenset({*_PROVIDER_STATUS_PRECEDENCE, "error"})
 _PROVIDER = "wazzup"
 
 
@@ -66,6 +75,16 @@ def _provider_message_id(value: str | None) -> str | None:
     if not value or value == "unknown":
         return None
     return value
+
+
+def _status_can_advance(current: str, candidate: str) -> bool:
+    if current == "error":
+        return candidate == "error"
+    if candidate == "error":
+        return current in {"pending", "provider_duplicate", "sent"}
+    return _PROVIDER_STATUS_PRECEDENCE.get(
+        candidate, -1
+    ) >= _PROVIDER_STATUS_PRECEDENCE.get(current, -1)
 
 
 def _outbound_chat_id(provider: Any, chat_id: str) -> str:
@@ -600,6 +619,13 @@ async def update_wazzup_statuses(
         provider_message_id = status_payload.get("messageId")
         if not isinstance(provider_message_id, str) or not provider_message_id:
             continue
+        status = status_payload.get("status")
+        if not isinstance(status, str) or status not in _PROVIDER_STATUS_VALUES:
+            continue
+        try:
+            status_updated_at = _parse_status_timestamp(status_payload.get("timestamp"))
+        except (TypeError, ValueError):
+            continue
 
         result = await db.execute(
             select(OutboundMessageAudit).where(
@@ -610,13 +636,16 @@ async def update_wazzup_statuses(
         audit = result.scalar_one_or_none()
         if not isinstance(audit, OutboundMessageAudit):
             continue
+        if (
+            audit.status_updated_at is not None
+            and status_updated_at < audit.status_updated_at
+        ):
+            continue
+        if not _status_can_advance(str(audit.status), status):
+            continue
 
-        status = status_payload.get("status")
-        if isinstance(status, str) and status:
-            audit.status = status
-        audit.status_updated_at = _parse_status_timestamp(
-            status_payload.get("timestamp")
-        )
+        audit.status = status
+        audit.status_updated_at = status_updated_at
         error = status_payload.get("error")
         audit.error_details = error if isinstance(error, dict) else None
         audit.details = {
