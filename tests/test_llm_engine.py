@@ -6582,9 +6582,11 @@ async def test_tools_search_products_second_successful_search_adds_catalog_fallb
 
         first = await engine_module.search_products(ctx, "acoustic pods")
         second = await engine_module.search_products(ctx, "meeting booth")
+        third = await engine_module.search_products(ctx, "another office pod")
 
         assert isinstance(first, ToolReturn)
         assert isinstance(second, ToolReturn)
+        assert isinstance(third, ToolReturn)
         assert isinstance(second.content, str)
         assert (
             "search budget for this customer message is exhausted"
@@ -6593,6 +6595,11 @@ async def test_tools_search_products_second_successful_search_adds_catalog_fallb
         assert "do not say that you lack catalog access" in second.content.lower()
         assert "closest alternatives" in second.content.lower()
         assert mock_search.await_count == 2
+        assert deps.executed_tool_names == ["search_products"] * 3
+        assert [trace.tool_name for trace in deps.recovery_tool_traces] == [
+            "search_products"
+        ] * 3
+        assert all(trace.state == "returned" for trace in deps.recovery_tool_traces)
     finally:
         if orig_search:
             engine_module.rag_search_products = orig_search

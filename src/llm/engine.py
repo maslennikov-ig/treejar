@@ -10853,10 +10853,19 @@ async def search_products(
             "Blocked search_products after reaching per-message cap for conversation %s",
             ctx.deps.conversation.id,
         )
-        return ToolReturn(
-            return_value=_search_products_limit_message(),
-            content=_search_budget_fallback_contract(
-                prior_results_seen=ctx.deps.product_results_seen
+        return _record_recovery_tool_result(
+            ctx.deps,
+            tool_name="search_products",
+            arguments={
+                "query": query,
+                "max_price": max_price,
+                "min_price": min_price,
+            },
+            result=ToolReturn(
+                return_value=_search_products_limit_message(),
+                content=_search_budget_fallback_contract(
+                    prior_results_seen=ctx.deps.product_results_seen
+                ),
             ),
         )
 
