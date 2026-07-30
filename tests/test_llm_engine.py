@@ -5216,7 +5216,10 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     mock_notify.assert_not_awaited()
 
 
-@pytest.mark.parametrize("failure_kind", ["validation", "timeout", "truncated"])
+@pytest.mark.parametrize(
+    "failure_kind",
+    ["validation", "timeout", "timeout_without_cross_sell", "truncated"],
+)
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -5260,7 +5263,7 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
             budget_cap=7000.0,
             family_totals={"seating": 2400.0, "workspace": 3600.0},
         )
-        run_deps.verified_catalog_selections = {
+        catalog_selections = {
             "seating": (
                 engine_module.VerifiedCatalogLine(
                     family="seating",
@@ -5288,32 +5291,39 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
                 ),
             ),
         }
-        run_deps.verified_cross_sell = engine_module.VerifiedCrossSell(
-            name="Mobile Pedestal",
-            sku="STORAGE-A",
-            price=250.0,
-            currency="AED",
-            stock=8,
-        )
+        run_deps.verified_catalog_selections = catalog_selections
+        if failure_kind == "timeout_without_cross_sell":
+            run_deps.current_catalog_selections = catalog_selections
+        else:
+            run_deps.verified_cross_sell = engine_module.VerifiedCrossSell(
+                name="Mobile Pedestal",
+                sku="STORAGE-A",
+                price=250.0,
+                currency="AED",
+                stock=8,
+            )
         usage = kwargs["usage"]
         usage.input_tokens = 321
         usage.output_tokens = 45
         model = kwargs["model"]
         model._treejar_provider_cost_usd = 0.0123
-        run_deps.executed_tool_names.extend(
-            ("search_products", "search_products", "recommend_products")
-        )
-        for sequence, (tool_name, arguments, outcome) in enumerate(
-            (
-                ("search_products", {"query": "task chairs"}, "verified chairs"),
-                ("search_products", {"query": "compact desks"}, "verified desks"),
+        tool_results = [
+            ("search_products", {"query": "task chairs"}, "verified chairs"),
+            ("search_products", {"query": "compact desks"}, "verified desks"),
+        ]
+        if failure_kind != "timeout_without_cross_sell":
+            tool_results.append(
                 (
                     "recommend_products",
                     {"category": "desk", "recommendation_type": "cross_sell"},
                     "verified pedestal",
-                ),
-            ),
-            start=1,
+                )
+            )
+        run_deps.executed_tool_names.extend(
+            tool_name for tool_name, _arguments, _outcome in tool_results
+        )
+        for sequence, (tool_name, arguments, outcome) in enumerate(
+            tool_results, start=1
         ):
             run_deps.recovery_tool_traces.append(
                 engine_module.build_runtime_tool_trace(
@@ -5329,7 +5339,7 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
                 output_tokens=45,
                 cost=0.0123,
             )
-        if failure_kind == "timeout":
+        if failure_kind in {"timeout", "timeout_without_cross_sell"}:
             raise TimeoutError
         raise UnexpectedModelBehavior(
             "Exceeded maximum retries (2) for output validation"
@@ -5337,15 +5347,20 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
 
     mock_run.side_effect = run_with_empty_output
 
-    response = await process_message(
-        conversation_id=conv.id,
-        combined_text=text,
-        db=db,
-        redis=redis,
-        embedding_engine=engine,
-        zoho_client=zoho,
-        messaging_client=messaging,
-    )
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        return_value=[SimpleNamespace(name="Mobile Pedestal", price=250.0, stock=8)],
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=engine,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
 
     assert response.model == "mock-model|verified-catalog-recovery"
     assert response.tokens_in == 321

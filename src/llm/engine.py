@@ -2158,6 +2158,52 @@ def _materialize_verified_catalog_recovery(
     return response_text if len(response_text) <= 900 else None
 
 
+async def _complete_verified_cross_sell_for_recovery(
+    ctx: RunContext[SalesDeps],
+    *,
+    explicit_quote_hold: bool,
+) -> None:
+    deps = ctx.deps
+    planning = deps.catalog_planning
+    required_families = tuple(dict.fromkeys(planning.families))
+    trace_names = tuple(trace.tool_name for trace in deps.recovery_tool_traces)
+    if (
+        not explicit_quote_hold
+        or not _CROSS_SELL_REQUEST_RE.search(deps.user_query)
+        or not planning.complete_coverage
+        or not required_families
+        or deps.verified_cross_sell is not None
+        or deps.required_cross_sell_disclosure is not None
+        or any(trace.state != "returned" for trace in deps.recovery_tool_traces)
+        or set(trace_names) != {"search_products"}
+        or tuple(deps.executed_tool_names) != trace_names
+        or trace_names.count("search_products") < len(required_families)
+        or not all(
+            deps.current_catalog_selections.get(family) for family in required_families
+        )
+    ):
+        return
+
+    primary_terms = {family: terms[0] for family, terms in _CATALOG_PRODUCT_FAMILIES}
+    category = " ".join(
+        primary_terms[family] for family in required_families if family in primary_terms
+    )
+    if not category:
+        return
+
+    try:
+        await recommend_products(
+            ctx,
+            category=category,
+            recommendation_type="cross_sell",
+        )
+    except Exception:
+        logger.warning(
+            "Verified catalog cross-sell recovery could not complete",
+            exc_info=True,
+        )
+
+
 # Allowed transitions for the advance_stage tool
 ALLOWED_TRANSITIONS = {
     SalesStage.GREETING: [SalesStage.QUALIFYING],
@@ -13979,14 +14025,25 @@ async def process_message(
         try:
             result = await _run_agent(run_deps)
         except (UnexpectedModelBehavior, TimeoutError):
+            explicit_quote_hold = _has_explicit_quote_hold(
+                masked_text
+            ) or _has_explicit_quote_hold(combined_text)
+            await _complete_verified_cross_sell_for_recovery(
+                RunContext(
+                    deps=run_deps,
+                    retry=0,
+                    messages=history,
+                    prompt=masked_text,
+                    model=dynamic_model,
+                    usage=failed_run_usage or RunUsage(),
+                ),
+                explicit_quote_hold=explicit_quote_hold,
+            )
             recovery_traces = tuple(run_deps.recovery_tool_traces)
             recovery_text = _materialize_verified_catalog_recovery(
                 run_deps,
                 recovery_traces,
-                explicit_quote_hold=(
-                    _has_explicit_quote_hold(masked_text)
-                    or _has_explicit_quote_hold(combined_text)
-                ),
+                explicit_quote_hold=explicit_quote_hold,
             )
             if recovery_text is None:
                 raise
