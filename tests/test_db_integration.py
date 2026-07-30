@@ -347,14 +347,18 @@ async def test_get_cross_sell_with_rules() -> None:
     chair = MagicMock()
     chair.id = uuid4()
     chair.name_en = "Office Chair"
+    chair.sku = "CHAIR-1"
     chair.price = 299.0
+    chair.currency = "AED"
     chair.stock = 15
     chair.category = "Chairs"
 
     accessory = MagicMock()
     accessory.id = uuid4()
     accessory.name_en = "Desk Screen Divider"
+    accessory.sku = "SCREEN-1"
     accessory.price = 70.8
+    accessory.currency = "AED"
     accessory.stock = 10
     accessory.category = "Accessories"
 
@@ -373,6 +377,8 @@ async def test_get_cross_sell_with_rules() -> None:
     result = await get_cross_sell(mock_db, "desk")
     assert len(result) == 2
     assert result[0].name == "Office Chair"
+    assert result[0].sku == "CHAIR-1"
+    assert result[0].currency == "AED"
     assert result[1].name == "Desk Screen Divider"
     assert result[0].recommendation_type == "cross_sell"
     assert mock_db.execute.await_count == 3

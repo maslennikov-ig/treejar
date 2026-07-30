@@ -42,7 +42,9 @@ class RecommendationItem(BaseModel):
 
     id: UUID
     name: str
+    sku: str | None = None
     price: float
+    currency: str = "AED"
     stock: int
     similarity_score: float | None = None
     recommendation_type: str = "similar"  # similar | cross_sell
@@ -173,7 +175,9 @@ async def get_cross_sell(
         RecommendationItem(
             id=p.id,
             name=p.name_en,
+            sku=p.sku,
             price=float(p.price),
+            currency=p.currency,
             stock=p.stock,
             recommendation_type="cross_sell",
         )

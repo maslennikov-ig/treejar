@@ -25,6 +25,7 @@ from pydantic_ai.usage import RunUsage
 from redis.asyncio import Redis
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
@@ -104,6 +105,7 @@ from src.llm.verified_answers import (
     is_quote_or_proposal_request,
 )
 from src.models.conversation import Conversation
+from src.models.product import Product
 from src.rag.embeddings import EmbeddingEngine
 from src.rag.pipeline import search_products as rag_search_products
 from src.schemas.common import Language, SalesStage
@@ -1110,6 +1112,14 @@ _CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
     ("privacy", ("pod", "booth", "كبسولة", "مقصورة")),
 )
 _CATALOG_PLANNING_KEY = "catalog_planning_v1"
+_VERIFIED_CATALOG_PLAN_KEY = "verified_catalog_plan_v1"
+_CATALOG_BUDGET_CURRENCY = "AED"
+_CATALOG_CROSS_SELL_SOURCE: dict[CatalogFamily, str] = {
+    "seating": "chair",
+    "workspace": "desk",
+    "storage": "filing_cabinet",
+    "privacy": "acoustic_panel",
+}
 _CATALOG_BUDGET_CAP_RE = re.compile(
     r"(?:\b(?:under|below|within|up\s+to|maximum|max(?:imum)?\s+of)\s+"
     r"(?:(?P<currency_before>AED|DHS|dirhams?)\s*)?"
@@ -1665,6 +1675,124 @@ def _minimum_catalog_coverage_selection(
     return lines or None
 
 
+def _catalog_product_text(product: Any) -> str:
+    return " ".join(
+        str(value).strip()
+        for value in (
+            getattr(product, "name_en", None),
+            getattr(product, "name_ar", None),
+            getattr(product, "description_en", None),
+            getattr(product, "description_ar", None),
+            getattr(product, "category", None),
+            getattr(product, "subcategory", None),
+        )
+        if value
+    )
+
+
+def _solve_verified_catalog_selections(
+    planning: CatalogPlanningContext,
+    products: Sequence[Any],
+    *,
+    customer_context: str,
+    segment: str,
+) -> dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] | None:
+    requested_seats = planning.requested_seats
+    required_families = tuple(dict.fromkeys(planning.families))
+    if (
+        requested_seats is None
+        or requested_seats <= 0
+        or not required_families
+        or not planning.complete_coverage
+    ):
+        return None
+
+    from src.core.discounts import apply_discount
+
+    needs_lumbar = _requests_confirmed_lumbar_support(customer_context)
+    candidates: dict[CatalogFamily, list[_CatalogCoverageCandidate]] = {
+        family: [] for family in required_families
+    }
+    for product in products:
+        product_text = _catalog_product_text(product)
+        family = _catalog_product_family(product_text)
+        if family not in candidates:
+            continue
+        if (
+            family == "seating"
+            and needs_lumbar
+            and not _has_positive_lumbar_support(product_text)
+        ):
+            continue
+        sku = str(getattr(product, "sku", "") or "").strip()
+        name = str(getattr(product, "name_en", "") or "").strip()
+        currency = str(getattr(product, "currency", "") or "").strip().upper()
+        stock = max(int(getattr(product, "stock", 0) or 0), 0)
+        capacity = _catalog_product_capacity(product_text)
+        raw_price = _valid_catalog_price(product)
+        if (
+            not sku
+            or not name
+            or len(sku) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
+            or len(name) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
+            or currency != _CATALOG_BUDGET_CURRENCY
+            or stock <= 0
+            or capacity is None
+            or capacity <= 0
+            or raw_price is None
+        ):
+            continue
+        unit_price = round(float(apply_discount(raw_price, segment)), 2)
+        if unit_price <= 0 or (
+            planning.per_item_cap is not None and unit_price > planning.per_item_cap
+        ):
+            continue
+        candidates[family].append(
+            _CatalogCoverageCandidate(
+                family=family,
+                name=name,
+                sku=sku,
+                capacity=capacity,
+                stock=stock,
+                unit_price=unit_price,
+                currency=currency,
+            )
+        )
+
+    selections: dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] = {}
+    for family in required_families:
+        family_candidates = sorted(
+            candidates[family],
+            key=lambda item: (
+                item.unit_price / item.capacity,
+                item.unit_price,
+                item.name.casefold(),
+                item.sku,
+            ),
+        )
+        selection = _minimum_catalog_coverage_selection(
+            family_candidates,
+            requested_seats,
+        )
+        if selection is None:
+            return None
+        selections[family] = selection
+
+    currencies = {
+        line.currency.strip().upper()
+        for family_lines in selections.values()
+        for line in family_lines
+    }
+    selected_total = _catalog_selection_total(selections, required_families)
+    if (
+        len(currencies) != 1
+        or selected_total is None
+        or (planning.budget_cap is not None and selected_total > planning.budget_cap)
+    ):
+        return None
+    return selections
+
+
 def _catalog_selection_total(
     selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
     families: Sequence[CatalogFamily],
@@ -2029,11 +2157,19 @@ def _materialize_verified_catalog_recovery(
     selected_by_family = current_selections or deps.verified_catalog_selections
     uses_current_selections = bool(current_selections)
     trace_names = tuple(trace.tool_name for trace in tool_traces)
-    has_cross_sell_evidence = "recommend_products" in trace_names or (
-        deps.verified_cross_sell is not None
-        and trace_names.count("search_products") > len(required_families)
+    deterministic_plan_trace = trace_names == ("plan_catalog_configuration",)
+    has_cross_sell_evidence = deterministic_plan_trace or (
+        "recommend_products" in trace_names
+        or (
+            deps.verified_cross_sell is not None
+            and trace_names.count("search_products") > len(required_families)
+        )
     )
-    allowed_tools = {"search_products", "recommend_products"}
+    allowed_tools = {
+        "search_products",
+        "recommend_products",
+        "plan_catalog_configuration",
+    }
     if (
         not explicit_quote_hold
         or deps.quotation_created
@@ -2046,7 +2182,10 @@ def _materialize_verified_catalog_recovery(
         or any(trace.state != "returned" for trace in tool_traces)
         or not set(trace_names).issubset(allowed_tools)
         or tuple(deps.executed_tool_names) != trace_names
-        or trace_names.count("search_products") < len(required_families)
+        or (
+            not deterministic_plan_trace
+            and trace_names.count("search_products") < len(required_families)
+        )
         or not has_cross_sell_evidence
     ):
         return None
@@ -2247,6 +2386,295 @@ async def _complete_verified_cross_sell_for_recovery(
             "Verified catalog cross-sell recovery could not complete",
             exc_info=True,
         )
+
+
+def _verified_catalog_plan_payload(
+    deps: SalesDeps,
+    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
+    *,
+    cross_sell_status: Literal["verified", "not_found", "over_budget"],
+) -> dict[str, object]:
+    selected_total = _catalog_selection_total(
+        selections,
+        deps.catalog_planning.families,
+    )
+    cross_sell = deps.verified_cross_sell
+    final_total = (
+        round(selected_total + cross_sell.price, 2)
+        if selected_total is not None and cross_sell is not None
+        else selected_total
+    )
+    remaining_budget = (
+        round(deps.catalog_planning.budget_cap - final_total, 2)
+        if deps.catalog_planning.budget_cap is not None and final_total is not None
+        else None
+    )
+    return {
+        "version": 1,
+        "epoch": deps.catalog_planning.epoch,
+        "requested_seats": deps.catalog_planning.requested_seats,
+        "families": list(deps.catalog_planning.families),
+        "budget_cap": deps.catalog_planning.budget_cap,
+        "currency": _CATALOG_BUDGET_CURRENCY,
+        "selected_total": selected_total,
+        "final_total": final_total,
+        "remaining_budget": remaining_budget,
+        "lines": [
+            {
+                "family": line.family,
+                "name": line.name,
+                "sku": line.sku,
+                "quantity": line.quantity,
+                "unit_price": line.unit_price,
+                "total": line.total,
+                "currency": line.currency,
+                "stock": line.stock,
+                "capacity": line.capacity,
+            }
+            for family in deps.catalog_planning.families
+            for line in selections[family]
+        ],
+        "cross_sell": (
+            {
+                "name": cross_sell.name,
+                "sku": cross_sell.sku,
+                "price": cross_sell.price,
+                "currency": cross_sell.currency,
+                "stock": cross_sell.stock,
+            }
+            if cross_sell is not None
+            else None
+        ),
+        "cross_sell_status": cross_sell_status,
+        "quotation_created": False,
+    }
+
+
+async def _store_verified_catalog_plan(
+    deps: SalesDeps,
+    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
+    *,
+    cross_sell_status: Literal["verified", "not_found", "over_budget"],
+) -> dict[str, object]:
+    payload = _verified_catalog_plan_payload(
+        deps,
+        selections,
+        cross_sell_status=cross_sell_status,
+    )
+    metadata = dict(deps.conversation.metadata_ or {})
+    metadata[_VERIFIED_CATALOG_PLAN_KEY] = payload
+    deps.conversation.metadata_ = metadata
+    await deps.db.flush()
+    return payload
+
+
+async def _try_verified_catalog_plan(
+    deps: SalesDeps,
+) -> tuple[str, tuple[RuntimeToolTrace, ...]] | None:
+    planning = deps.catalog_planning
+    if (
+        not _has_explicit_quote_hold(deps.user_query)
+        or not _CROSS_SELL_REQUEST_RE.search(deps.user_query)
+        or not planning.complete_coverage
+        or planning.requested_seats is None
+        or planning.budget_cap is None
+        or not planning.families
+        or is_active_human_handoff(deps.conversation.escalation_status)
+    ):
+        return None
+
+    stmt = (
+        select(Product)
+        .options(
+            load_only(
+                Product.sku,
+                Product.name_en,
+                Product.name_ar,
+                Product.description_en,
+                Product.description_ar,
+                Product.category,
+                Product.subcategory,
+                Product.price,
+                Product.currency,
+                Product.stock,
+            )
+        )
+        .where(
+            Product.is_active.is_(True),
+            Product.stock > 0,
+            Product.price > 0,
+        )
+    )
+    result = await deps.db.execute(stmt)
+    products = tuple(result.scalars().all())
+    customer_context = "\n".join(
+        entry.removeprefix("user:").strip()
+        for entry in (*(deps.recent_history or ()), f"user: {deps.user_query}")
+        if entry.startswith("user:")
+    )
+    segment = (
+        str(
+            (deps.crm_context or {}).get("Segment")
+            or (deps.crm_context or {}).get("segment")
+            or "Unknown"
+        )
+        if isinstance(deps.crm_context, Mapping)
+        else "Unknown"
+    )
+    selections = _solve_verified_catalog_selections(
+        planning,
+        products,
+        customer_context=customer_context,
+        segment=segment,
+    )
+    if selections is None:
+        return None
+
+    selected_total = _catalog_selection_total(selections, planning.families)
+    if selected_total is None:
+        return None
+    remaining_budget = round(planning.budget_cap - selected_total, 2)
+    selected_names = {
+        line.name.casefold()
+        for family_lines in selections.values()
+        for line in family_lines
+    }
+    cross_sell_candidates: list[VerifiedCrossSell] = []
+    cross_sell_over_budget = False
+    try:
+        from src.services.recommendations import get_cross_sell
+
+        seen_names: set[str] = set()
+        for family in dict.fromkeys(planning.families):
+            source_category = _CATALOG_CROSS_SELL_SOURCE.get(family)
+            if source_category is None:
+                continue
+            for item in await get_cross_sell(
+                deps.db,
+                source_category,
+                limit=3,
+            ):
+                normalized_name = str(item.name).strip().casefold()
+                price = round(float(item.price), 2)
+                stock = int(item.stock)
+                currency = (
+                    str(getattr(item, "currency", _CATALOG_BUDGET_CURRENCY) or "")
+                    .strip()
+                    .upper()
+                )
+                sku = _string_value(getattr(item, "sku", None))
+                if (
+                    not normalized_name
+                    or normalized_name in seen_names
+                    or normalized_name in selected_names
+                    or len(str(item.name).strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
+                    or price <= 0
+                    or stock <= 0
+                    or currency != _CATALOG_BUDGET_CURRENCY
+                ):
+                    continue
+                seen_names.add(normalized_name)
+                if price > remaining_budget:
+                    cross_sell_over_budget = True
+                    continue
+                cross_sell_candidates.append(
+                    VerifiedCrossSell(
+                        name=str(item.name).strip(),
+                        sku=sku,
+                        price=price,
+                        currency=currency,
+                        stock=stock,
+                    )
+                )
+    except Exception:
+        logger.warning(
+            "Configured cross-sell lookup failed during deterministic catalog plan",
+            exc_info=True,
+        )
+        return None
+
+    verified_cross_sell = (
+        min(
+            cross_sell_candidates,
+            key=lambda item: (item.price, item.name.casefold()),
+        )
+        if cross_sell_candidates
+        else None
+    )
+    cross_sell_status: Literal["verified", "not_found", "over_budget"] = (
+        "verified"
+        if verified_cross_sell is not None
+        else ("over_budget" if cross_sell_over_budget else "not_found")
+    )
+    cross_sell_disclosure = (
+        None
+        if verified_cross_sell is not None
+        else _no_verified_cross_sell_disclosure(
+            str(deps.conversation.language),
+            has_budget=cross_sell_status == "over_budget",
+        )
+    )
+    resolved_planning = planning.model_copy(deep=True)
+    resolved_planning.family_totals = {
+        family: round(sum(line.total for line in selections[family]), 2)
+        for family in resolved_planning.families
+    }
+    resolved_deps = replace(
+        deps,
+        catalog_planning=resolved_planning,
+        current_catalog_selections=dict(selections),
+        verified_catalog_selections=dict(selections),
+        verified_cross_sell=verified_cross_sell,
+        required_cross_sell_disclosure=cross_sell_disclosure,
+        executed_tool_names=[],
+        recovery_tool_traces=[],
+    )
+    payload = _verified_catalog_plan_payload(
+        resolved_deps,
+        selections,
+        cross_sell_status=cross_sell_status,
+    )
+    trace = build_runtime_tool_trace(
+        tool_name="plan_catalog_configuration",
+        arguments={
+            "epoch": resolved_planning.epoch,
+            "requested_seats": resolved_planning.requested_seats,
+            "families": list(resolved_planning.families),
+            "budget_cap": resolved_planning.budget_cap,
+            "budget_currency": _CATALOG_BUDGET_CURRENCY,
+            "per_item_cap": resolved_planning.per_item_cap,
+        },
+        outcome=payload,
+    )
+    resolved_deps.executed_tool_names = [trace.tool_name]
+    resolved_deps.recovery_tool_traces = [trace]
+    response = _materialize_verified_catalog_recovery(
+        resolved_deps,
+        (trace,),
+        explicit_quote_hold=True,
+    )
+    if response is None:
+        logger.error("Verified deterministic catalog plan failed materialization")
+        return None
+
+    await _store_catalog_planning(
+        resolved_deps.db,
+        resolved_deps.conversation,
+        resolved_planning,
+    )
+    await _store_verified_catalog_plan(
+        resolved_deps,
+        selections,
+        cross_sell_status=cross_sell_status,
+    )
+    deps.catalog_planning = resolved_planning
+    deps.current_catalog_selections = dict(selections)
+    deps.verified_catalog_selections = dict(selections)
+    deps.verified_cross_sell = verified_cross_sell
+    deps.required_cross_sell_disclosure = cross_sell_disclosure
+    deps.executed_tool_names = [trace.tool_name]
+    deps.recovery_tool_traces = [trace]
+    return response, (trace,)
 
 
 # Allowed transitions for the advance_stage tool
@@ -8249,7 +8677,8 @@ def _last_assistant_asked_quote_customer_details(
     )
     english_field_value = (
         rf"(?:(?:your|the)\s+)?{english_field}"
-        r"(?=\s*(?:[(),;:/?!.]|$|\band\b|\bor\b|\bfor\b|\bto\b|\bbefore\b|\bso\b))"
+        r"(?=\s*(?:[(),;:/?!.]|\d{1,2}[.)]|$|\band\b|\bor\b|\bfor\b|"
+        r"\bto\b|\bbefore\b|\bso\b))"
     )
     english_field_prefix = r"\s*(?:[:,-]\s*)?(?:\d{1,2}[.)]\s*)?"
     english_requests = (
@@ -8261,7 +8690,8 @@ def _last_assistant_asked_quote_customer_details(
         rf"\bwhat(?:'s|\s+is)\s+(?:your|the)\s+{english_field_value}",
         rf"\bplease\s+let\s+me\s+know\s+{english_field_value}",
         rf"\b(?:please\s+)?confirm\s+{english_field_value}",
-        rf"\b(?:i|we)\s+need\s+{english_field_value}",
+        rf"\b(?:i|we)(?:'ll)?\s+(?:just\s+)?need{english_field_prefix}"
+        rf"{english_field_value}",
         r"\b(?:please\s+)?confirm\s+you\s+are\s+buying\s+as\s+an\s+individual\b",
     )
     if any(re.search(pattern, last_assistant) for pattern in english_requests):
@@ -8284,6 +8714,45 @@ def _last_assistant_asked_quote_customer_details(
             last_assistant,
         )
     )
+
+
+def _guard_premature_quote_detail_collection(
+    text: str,
+    *,
+    conversation: Conversation,
+    customer_text: str,
+) -> str:
+    if (
+        _has_explicit_quote_opt_in(customer_text)
+        or quote_frame_is_active(_quote_frame_from_conversation(conversation))
+        or not _last_assistant_asked_quote_customer_details(
+            [f"assistant: {text}"],
+            quote_context_active=False,
+        )
+    ):
+        return text
+
+    quote_match = re.search(
+        r"\b(?:quote|quotation|commercial\s+(?:offer|proposal))\b|"
+        r"(?:عرض\s+السعر|عرض\s+أسعار|عرض\s+تجاري)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if quote_match is None:
+        return text
+    sentence_starts = (
+        text.rfind("\n", 0, quote_match.start()) + 1,
+        text.rfind(". ", 0, quote_match.start()) + 2,
+        text.rfind("? ", 0, quote_match.start()) + 2,
+        text.rfind("! ", 0, quote_match.start()) + 2,
+    )
+    prefix = text[: max(sentence_starts)].rstrip()
+    offer = (
+        "هل ترغب أن أجهز عرض سعر رسمي؟"
+        if is_arabic_customer_language(conversation.language)
+        else "Would you like me to prepare a formal quotation?"
+    )
+    return f"{prefix}\n\n{offer}" if prefix else offer
 
 
 def _detail_capture_acknowledgement(
@@ -12890,6 +13359,11 @@ async def process_message(
         response_deps = response_deps or deps
         final_text = unmask_pii(result.output, pii_map)
         final_text = _repair_closed_questions(final_text)
+        final_text = _guard_premature_quote_detail_collection(
+            final_text,
+            conversation=response_deps.conversation,
+            customer_text=combined_text,
+        )
         final_text = _apply_first_turn_opening_guard(final_text)
         grounding_result = enforce_grounding_output(
             final_text,
@@ -12941,10 +13415,16 @@ async def process_message(
         *,
         response_deps: SalesDeps | None = None,
         allow_product_media: bool = True,
+        tool_traces: tuple[RuntimeToolTrace, ...] = (),
     ) -> LLMResponse:
         response_deps = response_deps or deps
         final_text = unmask_pii(text, pii_map)
         final_text = _repair_closed_questions(final_text)
+        final_text = _guard_premature_quote_detail_collection(
+            final_text,
+            conversation=response_deps.conversation,
+            customer_text=combined_text,
+        )
         final_text = _apply_first_turn_opening_guard(final_text)
         if conv is not None and not model_name.startswith("dialogue-kernel|"):
             record_legacy_route(
@@ -12969,6 +13449,7 @@ async def process_message(
                 allow_product_media=allow_product_media,
                 response_text=final_text,
             ),
+            tool_traces=tool_traces,
         )
 
     async def _build_policy_handoff_response(
@@ -14064,6 +14545,18 @@ async def process_message(
             )
             await _clear_verified_policy_repair_state()
             return _build_llm_response(result, db_model_main)
+
+        verified_catalog_plan = await _try_verified_catalog_plan(deps)
+        if verified_catalog_plan is not None:
+            plan_text, plan_traces = verified_catalog_plan
+            await _clear_verified_policy_repair_state()
+            return _build_static_response(
+                plan_text,
+                f"{db_model_main}|verified-catalog-plan",
+                response_deps=deps,
+                allow_product_media=False,
+                tool_traces=plan_traces,
+            )
 
         run_deps = deps
         if _CROSS_SELL_REQUEST_RE.search(combined_text) or (

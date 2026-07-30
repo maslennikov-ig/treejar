@@ -34,3 +34,5 @@ def test_recommendation_item_defaults() -> None:
     item = RecommendationItem(id=uuid4(), name="Chair", price=500.0, stock=5)
     assert item.recommendation_type == "similar"
     assert item.similarity_score is None
+    assert item.sku is None
+    assert item.currency == "AED"

@@ -5357,6 +5357,491 @@ def test_materialize_verified_catalog_recovery_compacts_many_catalog_lines(
     assert response.endswith("No quotation was created.")
 
 
+def test_catalog_solver_builds_complete_minimum_plan_from_full_catalog(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    conv.language = "en"
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=7000.0,
+        per_item_cap=400.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-LUMBAR",
+            name_en="Lumbar Task Chair",
+            name_ar=None,
+            description_en="Adjustable lumbar support, one-person chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=262.0,
+            currency="AED",
+            stock=23,
+        ),
+        SimpleNamespace(
+            sku="CHAIR-CHEAP-NO-LUMBAR",
+            name_en="Basic Task Chair",
+            name_ar=None,
+            description_en="One-person chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=100.0,
+            currency="AED",
+            stock=30,
+        ),
+        SimpleNamespace(
+            sku="DESK-A",
+            name_en="Compact Computer Desk",
+            name_ar=None,
+            description_en="Individual office desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=58.48,
+            currency="AED",
+            stock=4,
+        ),
+        SimpleNamespace(
+            sku="DESK-B",
+            name_en="Compact Work Desk",
+            name_ar=None,
+            description_en="Individual office desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=99.28,
+            currency="AED",
+            stock=8,
+        ),
+    ]
+
+    selections = engine_module._solve_verified_catalog_selections(
+        planning,
+        products,
+        customer_context=(
+            "The team sits eight hours per day, so lumbar support matters. "
+            "Give me a complete cheaper chair-and-desk configuration."
+        ),
+        segment="Unknown",
+    )
+
+    assert selections is not None
+    assert [line.sku for line in selections["seating"]] == ["CHAIR-LUMBAR"]
+    assert sum(line.quantity * line.capacity for line in selections["seating"]) >= 12
+    assert sum(line.quantity * line.capacity for line in selections["workspace"]) >= 12
+    assert engine_module._catalog_selection_total(
+        selections,
+        planning.families,
+    ) == pytest.approx(4172.16)
+
+
+def test_catalog_solver_uses_aed_budget_currency_not_cheaper_foreign_currency(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, _conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=2,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=1000.0,
+        per_item_cap=400.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-USD",
+            name_en="Task Chair USD",
+            name_ar=None,
+            description_en="Individual chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=10.0,
+            currency="USD",
+            stock=2,
+        ),
+        SimpleNamespace(
+            sku="CHAIR-AED",
+            name_en="Task Chair AED",
+            name_ar=None,
+            description_en="Individual chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=200.0,
+            currency="AED",
+            stock=2,
+        ),
+        SimpleNamespace(
+            sku="DESK-AED",
+            name_en="Computer Desk AED",
+            name_ar=None,
+            description_en="Individual desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=250.0,
+            currency="AED",
+            stock=2,
+        ),
+    ]
+
+    selections = engine_module._solve_verified_catalog_selections(
+        planning,
+        products,
+        customer_context="Complete chair and desk configuration.",
+        segment="Unknown",
+    )
+
+    assert selections is not None
+    assert [line.sku for line in selections["seating"]] == ["CHAIR-AED"]
+    assert {
+        line.currency for family_lines in selections.values() for line in family_lines
+    } == {"AED"}
+
+
+@pytest.mark.asyncio
+async def test_verified_catalog_plan_persists_exact_lines_and_trace(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=7000.0,
+        per_item_cap=400.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-LUMBAR",
+            name_en="Lumbar Task Chair",
+            name_ar=None,
+            description_en="Adjustable lumbar support, one-person chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=262.0,
+            currency="AED",
+            stock=23,
+        ),
+        SimpleNamespace(
+            sku="DESK-A",
+            name_en="Compact Computer Desk",
+            name_ar=None,
+            description_en="Individual office desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=58.48,
+            currency="AED",
+            stock=12,
+        ),
+    ]
+    db.execute.return_value.scalars.return_value.all.return_value = products
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Give me a cheaper option and one cross-sell under AED 7,000. "
+            "Do not prepare a quotation."
+        ),
+        recent_history=[
+            "user: We need chairs and compact desks for twelve staff.",
+            "user: Lumbar support matters.",
+        ],
+        catalog_planning=planning,
+    )
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        return_value=[
+            SimpleNamespace(
+                name="Mobile Pedestal",
+                price=250.0,
+                stock=8,
+            )
+        ],
+    ):
+        resolved = await engine_module._try_verified_catalog_plan(deps)
+
+    assert resolved is not None
+    text, traces = resolved
+    assert "CHAIR-LUMBAR" in text
+    assert "DESK-A" in text
+    assert "Total with cross-sell: AED 4095.76." in text
+    assert text.endswith("No quotation was created.")
+    assert [trace.tool_name for trace in traces] == ["plan_catalog_configuration"]
+    stored = conv.metadata_["verified_catalog_plan_v1"]
+    assert stored["version"] == 1
+    assert stored["selected_total"] == pytest.approx(3845.76)
+    assert stored["final_total"] == pytest.approx(4095.76)
+    assert stored["quotation_created"] is False
+    assert {(line["sku"], line["quantity"]) for line in stored["lines"]} == {
+        ("CHAIR-LUMBAR", 12),
+        ("DESK-A", 12),
+    }
+    assert planning.family_totals == {}
+    assert deps.catalog_planning.family_totals == {
+        "seating": 3144.0,
+        "workspace": 701.76,
+    }
+
+
+@pytest.mark.asyncio
+async def test_verified_catalog_plan_lookup_failure_does_not_persist_false_no_fit(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {"sentinel": "keep"}
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=2,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=1000.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-AED",
+            name_en="Task Chair",
+            name_ar=None,
+            description_en="Individual chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=200.0,
+            currency="AED",
+            stock=2,
+        ),
+        SimpleNamespace(
+            sku="DESK-AED",
+            name_en="Computer Desk",
+            name_ar=None,
+            description_en="Individual desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=250.0,
+            currency="AED",
+            stock=2,
+        ),
+    ]
+    db.execute.return_value.scalars.return_value.all.return_value = products
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Give me a complete option and one cross-sell under AED 1,000. "
+            "Do not prepare a quotation."
+        ),
+        recent_history=["user: We need chairs and desks for two staff."],
+        catalog_planning=planning,
+    )
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("lookup unavailable"),
+    ):
+        resolved = await engine_module._try_verified_catalog_plan(deps)
+
+    assert resolved is None
+    assert conv.metadata_ == {"sentinel": "keep"}
+    assert planning.family_totals == {}
+    assert deps.current_catalog_selections == {}
+    assert deps.verified_catalog_selections == {}
+    assert deps.verified_cross_sell is None
+    assert deps.required_cross_sell_disclosure is None
+    assert deps.executed_tool_names == []
+    assert deps.recovery_tool_traces == []
+
+
+@pytest.mark.asyncio
+async def test_verified_catalog_plan_materializer_failure_leaves_no_verified_state(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {"sentinel": "keep"}
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=2,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=1000.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-AED",
+            name_en="Task Chair",
+            name_ar=None,
+            description_en="Individual chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=200.0,
+            currency="AED",
+            stock=2,
+        ),
+        SimpleNamespace(
+            sku="DESK-AED",
+            name_en="Computer Desk",
+            name_ar=None,
+            description_en="Individual desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=250.0,
+            currency="AED",
+            stock=2,
+        ),
+    ]
+    db.execute.return_value.scalars.return_value.all.return_value = products
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Give me a complete option and one cross-sell under AED 1,000. "
+            "Do not prepare a quotation."
+        ),
+        recent_history=["user: We need chairs and desks for two staff."],
+        catalog_planning=planning,
+    )
+
+    with (
+        patch(
+            "src.services.recommendations.get_cross_sell",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch.object(
+            engine_module,
+            "_materialize_verified_catalog_recovery",
+            return_value=None,
+        ),
+    ):
+        resolved = await engine_module._try_verified_catalog_plan(deps)
+
+    assert resolved is None
+    assert conv.metadata_ == {"sentinel": "keep"}
+    assert planning.family_totals == {}
+    assert deps.current_catalog_selections == {}
+    assert deps.verified_catalog_selections == {}
+    assert deps.verified_cross_sell is None
+    assert deps.required_cross_sell_disclosure is None
+    assert deps.executed_tool_names == []
+    assert deps.recovery_tool_traces == []
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_uses_verified_catalog_plan_without_chat_model(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Samir"
+    text = (
+        "That configuration is still too expensive. Give me a cheaper option "
+        "and one relevant cross-sell while keeping the total under AED 7,000. "
+        "Do not prepare a quotation."
+    )
+    mock_build_history.return_value = [
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    content=(
+                        "We need chairs and compact desks for twelve staff below "
+                        "AED 400 each."
+                    )
+                )
+            ]
+        ),
+        ModelResponse(parts=[TextPart(content="Here are catalog options.")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+    trace = engine_module.build_runtime_tool_trace(
+        tool_name="plan_catalog_configuration",
+        arguments={"requested_seats": 12, "budget_cap": 7000.0},
+        outcome={"status": "verified"},
+    )
+
+    with patch.object(
+        engine_module,
+        "_try_verified_catalog_plan",
+        new_callable=AsyncMock,
+        return_value=("Verified complete plan.\nNo quotation was created.", (trace,)),
+    ) as mock_plan:
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    mock_plan.assert_awaited_once()
+    mock_run.assert_not_awaited()
+    mock_notify.assert_not_awaited()
+    assert response.model == "mock-model|verified-catalog-plan"
+    assert response.usage_provenance == "deterministic_static"
+    assert response.tokens_in == 0
+    assert response.tokens_out == 0
+    assert response.cost is None
+    assert [item.tool_name for item in response.tool_traces] == [
+        "plan_catalog_configuration"
+    ]
+    assert response.text.endswith("No quotation was created.")
+
+
 @pytest.mark.parametrize(
     "failure_kind",
     ["validation", "timeout", "timeout_without_cross_sell", "truncated"],
@@ -13099,6 +13584,11 @@ async def test_product_preference_question_does_not_start_quote_detail_capture(
             "To prepare the quotation, I need your company name and delivery address.",
             True,
         ),
+        (
+            "Would you like me to prepare a formal quotation? I'll just need: "
+            "1. Your company name 2. Delivery address 3. Confirmation of quantities.",
+            True,
+        ),
         ("For the quote, we need your delivery address and email.", True),
         ("What is your company name and delivery address for the quotation?", True),
         ("Please let me know your company name before I prepare the quote.", True),
@@ -13166,6 +13656,33 @@ def test_quote_detail_context_requires_request_for_a_customer_field(
     assert (
         engine_module._last_assistant_asked_quote_customer_details(history) is expected
     )
+
+
+def test_quote_offer_guard_removes_detail_collection_before_opt_in(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    text = (
+        "Recommended package: 12 chairs and 6 desks.\n\n"
+        "Would you like me to prepare a formal quotation? I'll just need:\n"
+        "1. Your company name\n"
+        "2. Delivery address\n"
+        "3. Confirmation of quantities"
+    )
+
+    guarded = engine_module._guard_premature_quote_detail_collection(
+        text,
+        conversation=conv,
+        customer_text="Which chair-and-desk combination would you recommend?",
+    )
+
+    assert guarded.startswith("Recommended package: 12 chairs and 6 desks.")
+    assert guarded.endswith("Would you like me to prepare a formal quotation?")
+    assert "company name" not in guarded.casefold()
+    assert "delivery address" not in guarded.casefold()
+    assert "confirmation of quantities" not in guarded.casefold()
 
 
 @pytest.mark.asyncio
