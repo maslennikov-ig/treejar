@@ -64,6 +64,10 @@ only on terminal Wazzup delivery/read evidence
   and canonical process verification are green.
 - Stage readiness passes. Product prompt and frozen AC-01..AC-30 snapshot are
   unchanged.
+- The redacted Russian report has a protected five-page blocked-draft PDF.
+  Full-page visual inspection confirmed clean Cyrillic rendering, tables,
+  wrapping, page numbering, and section transitions. It remains a draft until
+  terminal Wazzup reconciliation is available.
 - The exact-SKU voice correction has focused RED/GREEN proof and independent
   delta-review verdict `APPROVE`; no product-prompt change was made.
 - The second Russian resume correction has focused RED/GREEN proof. Release

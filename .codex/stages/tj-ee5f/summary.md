@@ -45,6 +45,11 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
   and canonical process verification are green.
 - All eleven tracked stage artifacts validate, stage readiness passes, and the
   remediation artifacts remain accepted.
+- The redacted Russian client report was rendered as a five-page blocked draft
+  PDF and visually inspected at full-page resolution. Cyrillic text, tables,
+  page numbering, wrapping, and section transitions are clean. The PDF remains
+  protected outside Git and is not the accepted final report while terminal
+  Wazzup reconciliation is missing.
 - Independent review of the final quote-state delta is `APPROVE`, with no
   P0/P1. `src/llm/prompts.py` remains unchanged.
 
