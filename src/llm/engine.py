@@ -380,6 +380,8 @@ CROSS_SELL_VERIFICATION_DIRECTIVES = (
     "give the cheapest verified complete plan, total, remaining budget, and one "
     "verified cross-sell or none; omit tables",
 )
+_VERIFIED_CATALOG_RECOVERY_MAX_CHARS = 900
+_VERIFIED_CATALOG_FIELD_MAX_CHARS = 256
 _CROSS_SELL_REQUEST_RE = re.compile(r"\bcross(?:-|\s)?sell\b", re.IGNORECASE)
 PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"
 PRODUCT_PREFERENCE_FRAME_TTL_MINUTES = 30
@@ -2061,6 +2063,8 @@ def _materialize_verified_catalog_recovery(
                 line.family != family
                 or not line.name.strip()
                 or not line.sku.strip()
+                or len(line.name.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
+                or len(line.sku.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
                 or line.quantity <= 0
                 or line.unit_price <= 0
                 or line.stock < line.quantity
@@ -2095,6 +2099,11 @@ def _materialize_verified_catalog_recovery(
     if cross_sell is not None:
         if (
             not cross_sell.name.strip()
+            or len(cross_sell.name.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
+            or (
+                cross_sell.sku is not None
+                and len(cross_sell.sku.strip()) > _VERIFIED_CATALOG_FIELD_MAX_CHARS
+            )
             or cross_sell.price <= 0
             or cross_sell.stock <= 0
             or cross_sell.currency.strip().upper() != currency
@@ -2130,7 +2139,25 @@ def _materialize_verified_catalog_recovery(
             lines.append(disclosure)
         lines.append("لم يتم إنشاء عرض سعر.")
         response_text = "\n".join(lines)
-        return response_text if len(response_text) <= 900 else None
+        if len(response_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS:
+            return response_text
+        compact_lines = [
+            f"تكوين مؤكد ضمن الميزانية لـ {planning.requested_seats} مقعداً:"
+        ]
+        compact_lines.extend(
+            (
+                f"- {line.family} SKU {line.sku}: {line.quantity} × "
+                f"{line.unit_price:.2f} {currency} = {line.total:.2f} {currency}"
+            )
+            for line in selected_lines
+        )
+        compact_lines.extend(lines[1 + len(selected_lines) :])
+        compact_text = "\n".join(compact_lines)
+        return (
+            compact_text
+            if len(compact_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS
+            else None
+        )
 
     lines = [f"Verified budget-fit configuration for {planning.requested_seats} seats:"]
     lines.extend(
@@ -2155,7 +2182,25 @@ def _materialize_verified_catalog_recovery(
         lines.append(disclosure)
     lines.append("No quotation was created.")
     response_text = "\n".join(lines)
-    return response_text if len(response_text) <= 900 else None
+    if len(response_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS:
+        return response_text
+    compact_lines = [
+        f"Verified budget-fit configuration for {planning.requested_seats} seats:"
+    ]
+    compact_lines.extend(
+        (
+            f"- {line.family} SKU {line.sku}: {line.quantity} × "
+            f"{currency} {line.unit_price:.2f} = {currency} {line.total:.2f}"
+        )
+        for line in selected_lines
+    )
+    compact_lines.extend(lines[1 + len(selected_lines) :])
+    compact_text = "\n".join(compact_lines)
+    return (
+        compact_text
+        if len(compact_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS
+        else None
+    )
 
 
 async def _complete_verified_cross_sell_for_recovery(

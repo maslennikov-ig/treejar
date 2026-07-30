@@ -5216,6 +5216,147 @@ async def test_process_message_quote_hold_skips_proposal_clarification(
     mock_notify.assert_not_awaited()
 
 
+def test_materialize_verified_catalog_recovery_compacts_many_catalog_lines(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    selections = {
+        "seating": (
+            engine_module.VerifiedCatalogLine(
+                family="seating",
+                name="Operative Office Chair Model A with breathable mesh back",
+                sku="CHAIR-A-BLACK-PACK",
+                quantity=2,
+                unit_price=139.0,
+                total=278.0,
+                currency="AED",
+                stock=2,
+                capacity=1,
+            ),
+            engine_module.VerifiedCatalogLine(
+                family="seating",
+                name="Operative Office Chair Model B with fixed armrests",
+                sku="CHAIR-B-BLACK",
+                quantity=10,
+                unit_price=95.0,
+                total=950.0,
+                currency="AED",
+                stock=11,
+                capacity=1,
+            ),
+        ),
+        "workspace": (
+            engine_module.VerifiedCatalogLine(
+                family="workspace",
+                name="Compact Computer Desk Model A in dark wood finish",
+                sku="DESK-A-DARK",
+                quantity=2,
+                unit_price=194.48,
+                total=388.96,
+                currency="AED",
+                stock=2,
+                capacity=1,
+            ),
+            engine_module.VerifiedCatalogLine(
+                family="workspace",
+                name="Compact Computer Desk Model B in white finish",
+                sku="DESK-B-WHITE",
+                quantity=3,
+                unit_price=123.08,
+                total=369.24,
+                currency="AED",
+                stock=3,
+                capacity=1,
+            ),
+            engine_module.VerifiedCatalogLine(
+                family="workspace",
+                name="Compact Computer Desk Model B in dark wood finish",
+                sku="DESK-B-DARK",
+                quantity=1,
+                unit_price=123.08,
+                total=123.08,
+                currency="AED",
+                stock=1,
+                capacity=1,
+            ),
+            engine_module.VerifiedCatalogLine(
+                family="workspace",
+                name="Compact Computer Desk Model C in white finish",
+                sku="DESK-C-WHITE",
+                quantity=4,
+                unit_price=99.28,
+                total=397.12,
+                currency="AED",
+                stock=4,
+                capacity=1,
+            ),
+            engine_module.VerifiedCatalogLine(
+                family="workspace",
+                name="Compact Computer Desk Model D in white finish",
+                sku="DESK-D-WHITE",
+                quantity=2,
+                unit_price=114.92,
+                total=229.84,
+                currency="AED",
+                stock=2,
+                capacity=1,
+            ),
+        ),
+    }
+    trace_names = ("search_products", "search_products", "recommend_products")
+    deps = engine_module.SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        user_query="Find a lower-cost setup and one cross-sell under the total cap.",
+        catalog_planning=engine_module.CatalogPlanningContext(
+            requested_seats=12,
+            families=("seating", "workspace"),
+            complete_coverage=True,
+            budget_cap=7000.0,
+            family_totals={"seating": 1228.0, "workspace": 1508.24},
+        ),
+        current_catalog_selections=selections,
+        verified_cross_sell=engine_module.VerifiedCrossSell(
+            name="Mobile office pedestal with locking drawers",
+            sku="STORAGE-A",
+            price=250.0,
+            currency="AED",
+            stock=8,
+        ),
+        executed_tool_names=list(trace_names),
+        recovery_tool_traces=[
+            engine_module.build_runtime_tool_trace(
+                tool_name=tool_name,
+                arguments={"sequence": sequence},
+                outcome="returned",
+            )
+            for sequence, tool_name in enumerate(trace_names, start=1)
+        ],
+    )
+
+    response = engine_module._materialize_verified_catalog_recovery(
+        deps,
+        tuple(deps.recovery_tool_traces),
+        explicit_quote_hold=True,
+    )
+
+    assert response is not None
+    assert len(response) <= 900
+    assert all(line.sku in response for lines in selections.values() for line in lines)
+    assert "Configuration total: AED 2736.24." in response
+    assert "Total with cross-sell: AED 2986.24." in response
+    assert "Remaining budget: AED 4013.76." in response
+    assert response.endswith("No quotation was created.")
+
+
 @pytest.mark.parametrize(
     "failure_kind",
     ["validation", "timeout", "timeout_without_cross_sell", "truncated"],
