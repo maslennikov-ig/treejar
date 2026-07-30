@@ -10,6 +10,7 @@ from typing import Any, Literal, TypedDict, cast
 from langgraph.graph import StateGraph
 
 from src.dialogue.catalog_refs import CatalogParsedRef, extract_catalog_references
+from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.reducer import (
     append_trace_bounded,
     apply_extracted_details,
@@ -330,6 +331,16 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
             }
 
     refs = _extract_product_selection_refs(text)
+    if refs and is_order_selection_blocked(text):
+        return {
+            **state,
+            "decision": DialogueDecision(
+                action="fallback_legacy",
+                flow="legacy_fallback",
+                handled=False,
+            ),
+            "after_state": dialogue_state,
+        }
     if refs:
         refs_payload = [
             {

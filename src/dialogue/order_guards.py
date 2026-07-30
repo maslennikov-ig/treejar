@@ -23,7 +23,8 @@ _COMMERCIAL_POLICY_RE = re.compile(
     re.IGNORECASE,
 )
 _EN_INQUIRY_RE = re.compile(
-    r"\b(?:how\s+much|check\s+(?:the\s+)?(?:price|stock|availability)|"
+    r"\b(?:how\s+much|check\s+(?:the\s+)?"
+    r"(?:(?:exact|current|live)\s+)?(?:price|stock|availability)|"
     r"what(?:'s|\s+is)?\s+(?:the\s+)?(?:price|stock|availability)|"
     r"do\s+you\s+have|is\s+.+\bavailable|are\s+.+\bavailable)\b",
     re.IGNORECASE,

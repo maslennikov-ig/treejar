@@ -4,7 +4,7 @@ Updated: 2026-07-30
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
 Current stage status: remediation deployed and healthy; final production
-acceptance is paused by the exhausted OpenRouter key limit
+acceptance awaits delivery of one voice-only correction and terminal status
 
 ## Current truth
 
@@ -14,8 +14,8 @@ acceptance is paused by the exhausted OpenRouter key limit
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The deployed production release and current `main` are
-  `1da4b44138d35a297d5cc7cf7ae2f95d4638a890`.
-- Canonical CI/deploy run `30498481073` succeeded. Exact release, five running
+  `39548577d6e70356cd65c57f964ca4de0b798781`.
+- Canonical CI/deploy run `30533112670` succeeded. Exact release, five running
   services, and 8/8 API smoke were read back.
 - Unrelated and untracked user files in the primary worktree were preserved.
 - Failed and incomplete production attempts remain immutable outside Git.
@@ -37,6 +37,10 @@ acceptance is paused by the exhausted OpenRouter key limit
 - Quote routing no longer infers sent/detail state from assistant prose.
   Explicit no-quote instructions interrupt typed quote-detail collection and
   return the conversation to product selection.
+- The owner-originated voice canary exposed one remaining routing defect:
+  a price/stock inquiry containing an exact SKU was treated as an order
+  selection and asked for quantity. The local correction routes non-order
+  inquiries through the catalog path before product-selection handling.
 
 ## Local proof
 
@@ -48,39 +52,51 @@ acceptance is paused by the exhausted OpenRouter key limit
 - Independent production-trust review: initial `6 P1 / 1 P2`; all findings and
   the subsequent judge crash-recovery P1 were corrected. Final delta-review:
   `APPROVE`.
-- The latest final release gate passed with `2570 passed`, `19 skipped`, Ruff,
-  format, Mypy, and canonical process verification green.
+- The voice delta ran one full release suite: `2686 passed`, `19 skipped`; the
+  three failures were only the expected handoff-digest drift. After refreshing
+  that controlled digest, all three affected tests passed. Ruff, format, Mypy,
+  and canonical process verification are green.
 - Stage readiness passes. Product prompt and frozen AC-01..AC-30 snapshot are
   unchanged.
+- The exact-SKU voice correction has focused RED/GREEN proof and independent
+  delta-review verdict `APPROVE`; no product-prompt change was made.
 
 ## Production proof and blocker
 
-- S05 no longer enters quote collection after a quote offer or an explicit
-  refusal. Production readback shows `active_flow=product_selection`,
-  `quote_sent=false`, `post_quotation_status=null`, and
-  `quotation_hold=yes`.
-- Name gate, catalog consultation, catalog tool traces, duration, and
-  provider-reported cost were collected from production facts.
-- The final S05 answer did not complete. Two release-bound attempts on
-  `1da4b44` stopped before any product tool ran because OpenRouter returned
-  HTTP 403 `Key limit exceeded`; both attempts recorded zero tokens and zero
-  cost.
-- A read-only OpenRouter key readback on 2026-07-30 confirmed a valid key with
-  limit `$2`, usage above `$2`, and remaining allowance `$0`.
-- A complete final-release set of ten text scenarios was therefore not run.
-  Provider-originated EN/AR/voice canaries and terminal outbound-effect
-  readbacks are still missing.
+- Functional production retests S01-S10 pass the remediated behaviors.
+- Exact S09 Zoho contact/order/PDF fields and S10 CRM opportunity fields have
+  protected readbacks; the test order/deal were terminally cleaned up.
+- Combined server facts contain 29 turns, 14 provider-reported model turns,
+  88,329 tokens, USD 0.10085, 28 tool calls, and 48 outbound audits.
+- Every outbound audit is still `sent`. A narrow smoke on exact release
+  `3954857` also stayed `sent` despite a provider message identity.
+- The configured Wazzup channel is `active`; `messagesAndStatuses=true` and
+  `channelsUpdates=true`.
+- `https://audit.starec.ai/webhook` is the intentional single callback and
+  fan-out service. Its test ping and safe dual-envelope status probe both
+  reached Noor, so the callback URI must not be redirected.
+- Across the latest two-day audit window, 639 of 641 outbound rows remain
+  `sent`, two are `error`, and none reached `delivered/read`. The remaining
+  issue is provider-side terminal status generation/delivery, not Noor routing.
+- Owner-originated EN and AR canaries reached Noor and returned catalog-backed
+  answers in the requested language without quote collection or escalation.
+- The real Wazzup audio canary reached Noor and was transcribed exactly by
+  `openai/gpt-4o-mini-transcribe`: 158 input and 21 output tokens,
+  USD 0.0003025, 1.184 s. Its assistant response reproduced the exact-SKU
+  quantity-gate defect described above.
+- All nine canary outbound audits remain `sent`; the immutable capture is
+  protected outside Git.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: increase or reset the existing production OpenRouter key
-limit without changing the model or prompt, confirm positive remaining
-allowance, then rerun only S05. If it completes, run the remaining
-final-release acceptance set and reconcile every side effect.
-Provider-originated EN/AR/voice still requires the owner's protected test
-WhatsApp. Do not close the epic if any proof is unavailable.
+Recommended action: deliver the reviewed exact-SKU inquiry correction, verify
+the canonical deploy, then rerun only the owner-originated voice canary. Capture
+the STT trace, catalog-backed answer, and outbound status. If the answer arrives
+but remains `sent`, retain the exact evidence as a Wazzup provider blocker; do
+not change the working audit fan-out. Do not close the epic if any required
+proof is unavailable.
 
 ## Starter prompt for next orchestrator
 
@@ -101,11 +117,10 @@ Use $orchestrator-stage with the compact prompt in
 
 - Complete production acceptance, accepted report/PDF, Beads closure, and
   canonical stage closeout remain pending.
-- The production OpenRouter key has zero remaining allowance. Do not run more
-  model calls until a readback confirms positive remaining allowance.
-- Provider-originated EN/AR/voice canaries remain an owner-assisted gate.
-- Test-message outbound audits still need terminal readback or an explicitly
-  accepted retention disposition.
+- The affected provider-originated voice canary needs one owner-assisted retest
+  after the correction is deployed.
+- Test-message outbound audits still need terminal readback; `sent` is not a
+  delivery proof.
 - Repository-history privacy cleanup remains a separate destructive action.
 - Existing unrelated backlog remains separate: `tj-qy7y`, `tj-n8p6`,
   `tj-b93r`, `tj-final27.6`, `tj-gh21`, `tj-2pkk`, `tj-g3f`, `tj-9q0`,

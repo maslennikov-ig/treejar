@@ -190,6 +190,33 @@ async def test_dialogue_kernel_does_not_reask_quantity_for_units_of_sku() -> Non
 
 
 @pytest.mark.asyncio
+async def test_dialogue_kernel_does_not_request_quantity_for_sku_stock_price_inquiry() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Alex")
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text=(
+            "Please check the exact price and stock for CH616 New Black. "
+            "I don't want a quotation."
+        ),
+        recent_history=[],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("product_selection",),
+        trace_enabled=True,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.action == "fallback_legacy"
+    assert result.decision.handled is False
+    assert result.state.slots.pending_product_refs == []
+
+
+@pytest.mark.asyncio
 async def test_dialogue_kernel_shadow_records_bounded_trace_without_handling() -> None:
     from src.dialogue.runner import record_legacy_route, run_dialogue_kernel
 
