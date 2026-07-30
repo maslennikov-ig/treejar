@@ -1,10 +1,10 @@
 # Production E2E Remediation Report: 2026-07-29
 
 **Generated**: 2026-07-30
-**Status**: ⚠️ Draft — provider canary получены, voice-коррекция ещё не развернута
-**Version**: 0.3
+**Status**: ⚠️ BLOCKED — функциональные исправления приняты, Wazzup delivery/read не подтверждён
+**Version**: 0.4
 **Environment**: production, `https://noor.starec.ai`  
-**Release**: `3954857`, CI/deploy `30533112670`
+**Release**: `a2f245c`, CI/deploy `30540774784`
 **Verdict**: epic не закрыт
 
 ---
@@ -76,8 +76,8 @@ S05 ниже 20 и применимый ноль по следующему ко�
 
 ## Что подтверждено после исправлений
 
-- `main` и production работают на точном SHA `3954857`.
-- CI/deploy `30533112670` завершился успешно.
+- `main` и production работают на точном SHA `a2f245c`.
+- CI/deploy `30540774784` завершился успешно.
 - Health, Redis, база данных и все runtime-сервисы работают.
 - API smoke: 8 из 8 проверок пройдены.
 - Функциональные production-ретесты S01–S10 завершились без исходных дефектов.
@@ -118,16 +118,29 @@ S05 ниже 20 и применимый ноль по следующему ко�
   `openai/gpt-4o-mini-transcribe` использовала 158 входных и 21 выходной токен,
   стоимость `USD 0.0003025`, request duration 1,184 с.
 
-Voice выявил отдельный функциональный FAIL: dialogue kernel ответил:
+Первая voice-попытка выявила отдельный функциональный FAIL: dialogue kernel ответил:
 “I have the product reference. Please confirm the quantity for each item so I
 can continue accurately.” То есть запрос цены и наличия был ошибочно принят за
 выбор товара для заказа.
 
 Причина найдена в приоритете маршрутизации: наличие SKU запускало quantity gate
-раньше общей проверки «это только вопрос о цене/остатке». Исправление использует
-общий order guard до ветки выбора товара и расширяет его общей модификацией
-`exact/current/live`. Конкретная фраза находится только в regression fixture;
-product prompt не менялся. Focused RED/GREEN и независимый review пройдены.
+раньше общей проверки «это только вопрос о цене/остатке». После первого
+исправления русский retest обнаружил тот же обход после name gate. Финальная
+коррекция применяет общий order guard и к сохранённому запросу, поддерживает
+русские формы цены/наличия и отказа от КП. Конкретные фразы находятся только в
+regression fixtures; product prompt не менялся.
+
+На точном release `a2f245c` владелец повторил русский voice/name flow:
+
+- STT дословно распознал запрос про цену и наличие `CH 616 NEW black` и отказ
+  от КП: 163 входных, 28 выходных, 191 токен, `USD 0.00034375`,
+  request duration 1,043 с;
+- после имени Noor продолжил именно сохранённый запрос;
+- выбран только точный SKU `CH 616 NEW black`, цена `295 AED`, остаток `41`;
+- цена и остаток подтверждены live Zoho Inventory GET;
+- запроса количества, альтернатив, КП и эскалации не было.
+
+Функциональный voice/name retest принят.
 
 ## Подтверждённые коммерческие side effects
 
@@ -162,8 +175,9 @@ Server-owned metrics для завершённых S01–S10 содержат:
 - 28 tool calls;
 - 48 исходящих аудитов.
 
-Все 48 исходящих аудитов остались в состоянии `sent`. Узкий smoke уже на
-`3954857` также получил provider ID, но не перешёл в `delivered/read`.
+Все 48 исходящих аудитов остались в состоянии `sent`. Последующие provider
+canary, включая финальный русский voice/name retest на `a2f245c`, также получили
+provider IDs и Wazzup `201 Created`, но не перешли в `delivered/read`.
 Read-only проверка Wazzup показала:
 
 - webhook URI: `https://audit.starec.ai/webhook`;
@@ -194,25 +208,22 @@ envelope дошли через неё до Noor. Переключать callback
 - терминальные или заранее разрешённые retained side effects;
 - один release gate и независимый review.
 
-Для voice-коррекции один полный release suite дал `2686 passed`, `19 skipped`;
-три падения относились только к ожидаемому drift digest после обновления
-handoff. Digest обновлён, все три затронутых теста прошли. Ruff, format, Mypy,
-process verification и независимый review зелёные. CI на текущем production
-SHA также прошёл; новый delta ещё не развернут.
+Для финальной voice/name-коррекции один полный release suite дал
+`2690 passed`, `19 skipped`. Ruff, format, Mypy, process verification и
+независимый review зелёные. Последующие reviewer-driven проверки затронутых
+русских форм и ложных совпадений также прошли. CI/deploy и production readback
+на точном SHA `a2f245c` успешны.
 
-**Overall**: ⚠️ BLOCKED — нужна production-проверка voice-коррекции; terminal
-status всё ещё не получен.
+**Overall**: ⚠️ BLOCKED — все найденные функциональные дефекты исправлены и
+проверены на production; terminal Wazzup `delivered/read` status всё ещё не
+получен.
 
 ## Next Steps / Следующие шаги
 
-Остаётся:
-
-- развернуть узкое исправление exact-SKU inquiry;
-- повторить только voice canary и подтвердить точные цену/остаток через
-  catalog tool trace без запроса количества и предложения КП;
-- если audit снова останется `sent`, оформить точный внешний blocker Wazzup,
-  не меняя рабочий fan-out;
-- завершить terminal reconciliation, отчёт/PDF и closeout.
+Остаётся получить от Wazzup terminal `delivered/read` callback для уже
+отправленных test-only сообщений и PDF, затем завершить reconciliation,
+отрендерить финальный PDF отчёта и выполнить stage closeout. Рабочий
+`audit.starec.ai` fan-out менять не нужно.
 
 Если provider-originated сообщения недоступны или их terminal readback не
 подтверждён, соответствующий критерий остаётся `BLOCKED`, а epic не закрывается.

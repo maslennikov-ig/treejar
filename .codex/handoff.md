@@ -3,8 +3,8 @@
 Updated: 2026-07-30
 Current branch: `codex/tj-ee5f-remediation`
 Current stage id: `tj-ee5f`
-Current stage status: remediation deployed and healthy; a second
-Russian voice/name resume correction is accepted for delivery
+Current stage status: functional remediation accepted on production; blocked
+only on terminal Wazzup delivery/read evidence
 
 ## Current truth
 
@@ -14,9 +14,9 @@ Russian voice/name resume correction is accepted for delivery
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The deployed production release and current `main` are
-  `ebc629f0d3a676b5aa51ed3ccabb062a564665ff`.
-- Canonical CI/deploy run `30537621859` succeeded. Exact release, five running
-  services, and 8/8 API smoke were read back.
+  `a2f245cde301457ef19abda221732368986d7f9d`.
+- Canonical CI/deploy run `30540774784` succeeded. Exact release, five running
+  services, healthy Redis/database, and 8/8 API smoke were read back.
 - Unrelated and untracked user files in the primary worktree were preserved.
 - Failed and incomplete production attempts remain immutable outside Git.
 
@@ -70,6 +70,13 @@ Russian voice/name resume correction is accepted for delivery
   process verification green. Post-review affected tests and static checks pass;
   final independent verdict is `APPROVE` with no P0-P2. Product-prompt growth
   remains zero.
+- The exact-release owner retest passed: dedicated STT transcribed the Russian
+  voice request exactly (163 input, 28 output tokens, USD 0.00034375, 1.043 s),
+  name gate resumed the saved intent, and Noor returned only `CH 616 NEW black`
+  with live Zoho price AED 295 and stock 41. No quantity, alternatives, quote,
+  or escalation path was entered.
+- Beads `tj-ee5f.6`, `.8`, and `.10` are closed. `.5` and `.9` remain open only
+  for trusted terminal delivery/PDF reconciliation.
 
 ## Production proof and blocker
 
@@ -98,19 +105,21 @@ Russian voice/name resume correction is accepted for delivery
   transcribed exactly with 137 input and 28 output tokens at USD 0.000311. Noor
   correctly asked for the name, then misclassified the saved request after the
   owner replied and asked for quantity again.
-- All canary outbound audits remain `sent`; both immutable failed captures are
-  protected outside Git.
+- The corrected owner retest on `a2f245c` passed functionally with exact STT,
+  saved-intent resume and catalog/Zoho answer. Wazzup returned `201 Created` and
+  provider identities for both replies, but both new audits remain `sent`.
+- All canary outbound audits remain `sent`; failed and successful raw captures
+  are protected outside Git.
 
 ## Next recommended
 
 Next stage id: `tj-ee5f.1`
 
-Recommended action: deliver the accepted second correction after a fresh fetch,
-verify the canonical deploy, then rerun only the owner-originated Russian voice
-plus name resume. Capture the STT trace, catalog/Zoho-backed answer, and outbound
-status. If the answer arrives but remains `sent`, retain the exact evidence as a
-Wazzup provider blocker; do not change the working audit fan-out. Do not close
-the epic if any required proof is unavailable.
+Recommended action: keep the accepted release unchanged and obtain a genuine
+Wazzup `delivered/read` callback for the existing protected outbound messages
+and quotation PDF. Do not change the working audit fan-out or reinterpret
+`sent` as delivery. After terminal reconciliation, render/inspect the Russian
+report PDF and run canonical stage closeout.
 
 ## Starter prompt for next orchestrator
 
@@ -129,10 +138,8 @@ Use $orchestrator-stage with the compact prompt in
 
 ## Explicit defers
 
-- Complete production acceptance, accepted report/PDF, Beads closure, and
-  canonical stage closeout remain pending.
-- The affected provider-originated Russian voice/name canary needs one
-  owner-assisted retest after the correction is deployed.
+- Terminal production acceptance, accepted report PDF, Beads `.5/.9/.1` and
+  epic closure, and canonical stage closeout remain pending.
 - Test-message outbound audits still need terminal readback; `sent` is not a
   delivery proof.
 - Repository-history privacy cleanup remains a separate destructive action.

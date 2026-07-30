@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-07-30
-Status: in progress; Russian voice/name resume correction accepted for delivery
+Status: blocked; functional remediation accepted, Wazzup terminal status missing
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -50,9 +50,10 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
 
 ## External state
 
-`ebc629f` was delivered to `main` after a fresh fetch and non-force push.
-Canonical CI/deploy run `30537621859` succeeded. Production readback confirmed
-the exact release, all five services running, and 8/8 API smoke.
+`a2f245c` was delivered to `main` after a fresh fetch and non-force push.
+Canonical CI/deploy run `30540774784` succeeded. Production readback confirmed
+the exact release, all five services running, healthy Redis/database, and 8/8
+API smoke.
 
 Functional production retests S01-S10 now pass the remediated name-gate,
 catalog, quote-state, exact-SKU, no-match, memory, Zoho quotation/PDF, and CRM
@@ -84,7 +85,7 @@ but the saved request was misclassified after the owner replied with the name:
 Noor again asked for quantity instead of reading exact catalog price and stock.
 The immutable failed capture is protected outside Git.
 
-The second local correction makes the shared order guard recognize Russian
+The second correction makes the shared order guard recognize Russian
 price/stock morphology, recognizes quote refusal when the quote noun precedes
 the negation, applies the shared guard to the legacy missing-quantity fallback,
 and routes the saved Russian request through catalog plus Zoho readback.
@@ -97,21 +98,28 @@ correction wave passed its affected tests and static gates. Final independent
 verdict is `APPROVE` with no remaining P0-P2. The product prompt remains
 unchanged.
 
+The clean owner-originated Russian voice/name retest on `a2f245c` is accepted:
+the dedicated STT transcribed the request exactly with 163 input and 28 output
+tokens, USD 0.00034375, and 1.043 s request duration. After the owner supplied
+the name, Noor resumed the saved intent, selected only `CH 616 NEW black`, and
+returned live Zoho price AED 295 and stock 41. It did not ask for quantity,
+offer alternatives or quotation, or escalate. Wazzup accepted both responses,
+but both audits remain `sent`.
+
+Beads `tj-ee5f.6`, `.8`, and `.10` are closed on release-bound proof. `.5` and
+`.9` remain open because trusted finalization and PDF acceptance require a
+terminal provider delivery/read status.
+
 ## Remaining acceptance
 
-1. Deliver and deploy the accepted correction after a fresh fetch.
-2. Ask the owner to repeat the Russian voice plus name resume, then capture its
-   STT, catalog/Zoho-backed answer, and terminal status.
-3. If status remains `sent`, record the exact Wazzup blocker without changing
-   the working audit fan-out.
-4. Publish the accepted Russian report and inspected PDF, then run canonical
-   stage closeout only if every blocker is terminal.
+1. Obtain a real Wazzup `delivered/read` callback for the test-only outbound
+   messages and quotation PDF; do not reinterpret `sent` as delivery.
+2. Keep the intentional `audit.starec.ai` callback/fan-out unchanged.
+3. Render and inspect the final Russian report PDF and run canonical closeout
+   only after terminal reconciliation succeeds.
 
 ## Explicit defers
 
-- The affected provider-originated Russian voice/name canary requires one
-  owner-assisted retest after deploy. If unavailable, that criterion remains
-  `BLOCKED` and the epic stays open.
 - Test-message outbound effects still need terminal readback; `sent` is not
   accepted as delivery.
 - Repository-history privacy cleanup remains a separate destructive-action
