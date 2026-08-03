@@ -2,6 +2,19 @@
   "schema_version": "scope-preservation-ledger/v1",
   "goal_id": "tj-ee5f",
   "source_snapshot_digest": "12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732",
+  "current_replan": {
+    "sequence": 2,
+    "level": "integration",
+    "spec_id": "docs/superpowers/specs/2026-08-03-noor-e2e-remediation-and-model-comparison-spec.md",
+    "routes": [
+      {"target":"tj-ee5f.7","criteria":["AC-05","AC-06","AC-07","AC-10","AC-20","AC-27","AC-28","AC-29"]},
+      {"target":"tj-ee5f.8","criteria":["AC-02","AC-03","AC-06","AC-09","AC-11","AC-12","AC-13","AC-14","AC-15"]},
+      {"target":"tj-ee5f.12","criteria":["AC-17","AC-19"]},
+      {"target":"tj-ee5f.13","criteria":["AC-06","AC-07","AC-17","AC-19","AC-20","AC-23","AC-28"]},
+      {"target":"tj-ee5f.1","criteria":["AC-01","AC-02","AC-03","AC-04","AC-05","AC-06","AC-07","AC-08","AC-09","AC-10","AC-11","AC-12","AC-13","AC-14","AC-15","AC-17","AC-20","AC-23","AC-29","AC-30"]},
+      {"target":"tj-ee5f.5","criteria":["AC-01","AC-23","AC-30"],"boundary":"provider-confirmed Wazzup status bug"}
+    ]
+  },
   "criteria": [
     {"criterion_id":"AC-01","criterion_text_digest":"f893c1da547c0e52dd3aba2c237e606721768082bd4330f23feabac099fbbb4f","disposition":"gate","target":"tj-ee5f.3","boundary_reason":"unresolved_public_ownership_or_public_contract","boundary_id":"noor-agent-driven-e2e-acceptance","gate_kind":"unresolved_public_ownership_or_public_contract","evidence_path":".codex/stages/tj-ee5f/artifacts/tj-ee5f.3-policy-v2.md","evidence_digest":"280fe8ef3774ea5547ad649835a861ef0221a51b568f100d4d6804a97339912b"},
     {"criterion_id":"AC-02","criterion_text_digest":"521543bc66ef3f05c68d028135d4c2211e69abc7ee76e3b7bed6bda10dd80db4","disposition":"gate","target":"tj-ee5f.3","boundary_reason":"unresolved_public_ownership_or_public_contract","boundary_id":"noor-agent-driven-e2e-acceptance","gate_kind":"unresolved_public_ownership_or_public_contract","evidence_path":".codex/stages/tj-ee5f/artifacts/tj-ee5f.3-policy-v2.md","evidence_digest":"280fe8ef3774ea5547ad649835a861ef0221a51b568f100d4d6804a97339912b"},

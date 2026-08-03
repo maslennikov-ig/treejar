@@ -3,8 +3,8 @@
   "stage_id": "tj-ee5f",
   "goal_id": "tj-ee5f",
   "profile_at_creation": "balanced-v2.19",
-  "status": "accepted",
-  "sequence": 1,
+  "status": "in_progress",
+  "sequence": 2,
   "acceptance_boundary_id": "noor-agent-driven-e2e-acceptance",
   "acceptance_owner": "root-orchestrator",
   "stage_shape": "material_boundary_override",
@@ -18,6 +18,7 @@
       "quotation-and-crm",
       "manager-and-lifecycle",
       "admin-quality-and-reporting",
+      "isolated-model-selection",
       "nonfunctional-evidence"
     ],
     "risk_models": [
@@ -27,10 +28,13 @@
       "privacy",
       "state-transition",
       "provider-ingress",
-      "evidence-integrity"
+      "evidence-integrity",
+      "evaluation-integrity",
+      "cost-control"
     ],
     "test_environments": [
       "local-contract-tests",
+      "isolated-model-battle",
       "authorized-application-native-production",
       "authorized-provider-canary",
       "authorized-readback-and-nonfunctional-blocks"
@@ -42,6 +46,8 @@
       "exact-redacted-conversation-evidence",
       "external-side-effect-terminal-ledger",
       "fresh-release-bound-scenario-results",
+      "normalized-quality-evidence",
+      "sealed-model-selection",
       "client-report-rollups"
     ]
   },
@@ -283,6 +289,25 @@
     "provider": "Wazzup",
     "condition": "delivered/read webhooks are not emitted because of a provider-confirmed bug with no current workaround",
     "disposition": "functional production acceptance closes; sent remains nonterminal; tj-ee5f.5 remains blocked for one bounded retest after provider notification"
+  },
+  "current_replan": {
+    "recorded_at": "2026-08-03",
+    "reason": "fresh scored production acceptance failed at 18.4/30",
+    "spec_id": "docs/superpowers/specs/2026-08-03-noor-e2e-remediation-and-model-comparison-spec.md",
+    "plan_id": "docs/superpowers/plans/2026-08-03-noor-e2e-remediation-and-model-comparison.md",
+    "level": "integration",
+    "streams": [
+      "tj-ee5f.7",
+      "tj-ee5f.8",
+      "tj-ee5f.12",
+      "tj-ee5f.13",
+      "tj-ee5f.1"
+    ],
+    "external_gates": [
+      "paid-model-battle-authority",
+      "push-deploy-production-authority",
+      "tj-ee5f.5-provider-fix"
+    ]
   },
   "scope_provenance": {
     "path": ".codex/goals/tj-ee5f/scope-source-provenance.json",
