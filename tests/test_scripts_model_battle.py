@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import scripts.model_battle as model_battle
 from scripts.model_battle import (
     BACKGROUND_HARD_PROFILE,
     CORE_HARD_PROFILE,
@@ -139,6 +140,16 @@ def test_hard_profiles_pin_exact_candidates_and_fixtures() -> None:
     }
     assert all(case.conversation for case in CORE_HARD_CASES)
     assert len(BACKGROUND_HARD_CASES) == 6
+    by_id = {case.case_id: case for case in CORE_HARD_CASES}
+    assert by_id["S01"].category == "catalog_coverage"
+    assert by_id["S02"].expected_language == "ar"
+    assert by_id["S03"].category == "stock_conflict"
+    assert by_id["S04"].category == "quote_consent_gate"
+    assert by_id["S05"].category == "twelve_seat_configuration"
+    assert all(
+        set(case.critical_required_phrases) < set(case.required_phrases)
+        for case in CORE_HARD_CASES
+    )
     assert (
         len(
             _build_jobs(
@@ -181,6 +192,7 @@ def test_hard_profile_payload_is_first_party_and_parameter_minimal() -> None:
             "require_parameters": True,
         },
         "reasoning": {"enabled": False},
+        "usage": {"include": True},
     }
     assert (
         not {
@@ -296,6 +308,38 @@ def test_core_hard_tie_keeps_glm_baseline() -> None:
 
     assert decision.outcome == "practical_tie"
     assert decision.winner == "z-ai/glm-5.2"
+
+
+def test_core_hard_selection_uses_blind_judge_score_to_choose_challenger() -> None:
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": case.case_id,
+            "model": model,
+            "repetition": repetition,
+            "status": "COMPLETED",
+            "latency_ms": 500,
+            "accounting": {"cost_usd": 0.01},
+            "objective": {
+                "hard_gate_passed": True,
+                "score_out_of_30": 27.0,
+                "selection_score_out_of_30": selection_score,
+                "tool_sequence_ok": True,
+                "tool_arguments_ok": True,
+            },
+        }
+        for case in CORE_HARD_CASES
+        for repetition in (1, 2, 3)
+        for model, selection_score in (
+            ("z-ai/glm-5.2", 25.0),
+            ("openai/gpt-5.6-luna", 27.0),
+        )
+    ]
+
+    decision = select_hard_profile_winner(CORE_HARD_PROFILE, rows)
+
+    assert decision.outcome == "winner"
+    assert decision.winner == "openai/gpt-5.6-luna"
 
 
 def test_background_hard_tie_keeps_current_fast_baseline() -> None:
@@ -480,6 +524,37 @@ def test_catalog_preflight_accepts_extended_profile_capabilities() -> None:
     )
 
 
+def test_capability_artifact_marks_missing_and_incompatible_models_unsupported() -> (
+    None
+):
+    catalog = {
+        "z-ai/glm-5.2": {
+            "supported_parameters": [
+                "tools",
+                "tool_choice",
+                "max_tokens",
+                "reasoning",
+            ]
+        },
+        "openai/gpt-5.6-luna": {"supported_parameters": ["max_tokens", "reasoning"]},
+    }
+
+    statuses = model_battle.catalog_capability_statuses(
+        catalog,
+        ("sales",),
+        profile=CORE_HARD_PROFILE,
+    )
+
+    assert statuses["z-ai/glm-5.2"]["status"] == "SUPPORTED"
+    assert statuses["openai/gpt-5.6-luna"]["status"] == "UNSUPPORTED"
+    assert "tools" in statuses["openai/gpt-5.6-luna"]["missing_parameters"]
+    assert statuses["xiaomi/mimo-v2.5-pro"] == {
+        "status": "UNSUPPORTED",
+        "reason": "missing_from_catalog",
+        "missing_parameters": [],
+    }
+
+
 def test_pinned_catalog_rejects_model_without_first_party_endpoint() -> None:
     with pytest.raises(RuntimeError, match="first-party endpoint"):
         build_pinned_catalog_entry(
@@ -658,7 +733,21 @@ def test_attempt_accounting_includes_every_retry_and_provider_resolution() -> No
     }
 
 
-def test_cost_cap_is_125_percent_of_estimate_capped_at_one_dollar() -> None:
+def test_successful_paid_response_without_actual_cost_fails_closed() -> None:
+    attempt = model_battle.ProviderAttempt(
+        attempt=1,
+        ok=True,
+        status_code=200,
+        elapsed_ms=10,
+        response={"choices": [{"message": {"content": "ok"}}], "usage": {}},
+        error=None,
+    )
+
+    with pytest.raises(RuntimeError, match="usage.cost"):
+        model_battle._provider_attempt_cost(0.2, attempt)
+
+
+def test_actual_cost_uses_a_one_dollar_per_model_hard_cap() -> None:
     rows = [
         {"model": "cheap", "accounting": {"cost_usd": 0.5}},
         {"model": "cheap", "accounting": {"cost_usd": 0.2}},
@@ -669,7 +758,7 @@ def test_cost_cap_is_125_percent_of_estimate_capped_at_one_dollar() -> None:
 
     with pytest.raises(RuntimeError, match="cheap"):
         enforce_model_cost_caps(
-            rows + [{"model": "cheap", "accounting": {"cost_usd": 0.06}}],
+            rows + [{"model": "cheap", "accounting": {"cost_usd": 0.31}}],
             {"cheap": 0.6, "expensive": 0.9},
         )
     with pytest.raises(RuntimeError, match="expensive"):
@@ -689,6 +778,59 @@ def test_request_cost_budget_blocks_before_the_next_provider_attempt() -> None:
     assert budget.reserve_request("candidate", payload) == pytest.approx(0.06)
     with pytest.raises(RuntimeError, match="before provider request"):
         budget.reserve_request("candidate", payload)
+
+
+def test_request_budget_reconciles_actual_cost_and_carries_unused_allowance() -> None:
+    budget = RequestCostBudget(
+        catalog={
+            "cheap": {"pricing": {"prompt": "0", "completion": "0.01"}},
+            "next": {"pricing": {"prompt": "0", "completion": "0.01"}},
+        },
+        estimated_costs={"cheap": 0.08, "next": 0.08},
+    )
+    cheap_payload = {"messages": [], "max_tokens": 6}
+    next_payload = {"messages": [], "max_tokens": 15}
+
+    reservation = budget.reserve_request("cheap", cheap_payload)
+    budget.reconcile_request("cheap", reservation, actual_cost=0.01)
+
+    assert budget.reserve_request("next", next_payload) == pytest.approx(0.15)
+    budget.reconcile_request("next", 0.15, actual_cost=0.04)
+    assert budget.actual_spend == {"cheap": 0.01, "next": 0.04}
+
+
+def test_cost_preflight_keeps_large_estimate_as_reservation_not_hard_block() -> None:
+    preflight = model_battle.build_cost_preflight({"expensive": 1.2, "cheap": 0.2})
+
+    assert preflight["batch_allowances_usd"] == {
+        "expensive": 1.0,
+        "cheap": 0.25,
+    }
+    assert preflight["per_model_caps_usd"] == {"expensive": 1.0, "cheap": 1.0}
+    assert preflight["execution_order"] == ["cheap", "expensive"]
+
+
+def test_jobs_run_each_candidate_in_cheapest_first_order() -> None:
+    jobs = _build_jobs(
+        suite="sales",
+        repetitions=1,
+        seed=27072026,
+        profile=CORE_HARD_PROFILE,
+        estimated_costs={
+            "z-ai/glm-5.2": 0.9,
+            "deepseek/deepseek-v4-flash-0731": 0.2,
+            "openai/gpt-5.6-luna": 0.6,
+            "xiaomi/mimo-v2.5-pro": 0.4,
+        },
+    )
+
+    ordered_models = list(dict.fromkeys(model for model, _case, _rep in jobs))
+    assert ordered_models == [
+        "deepseek/deepseek-v4-flash-0731",
+        "xiaomi/mimo-v2.5-pro",
+        "openai/gpt-5.6-luna",
+        "z-ai/glm-5.2",
+    ]
 
 
 def test_combines_core_and_background_decisions_into_one_sealed_artifact(
@@ -779,6 +921,42 @@ def test_blind_audit_disagreement_blocks_on_score_or_applicability() -> None:
         ("model-b", "applicability"),
     }
     assert {item["status"] for item in disagreements} == {"EVAL_DISAGREEMENT"}
+
+
+def test_blind_audit_score_is_mapped_into_each_objective_before_ranking() -> None:
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": "S01",
+            "repetition": 1,
+            "model": "challenger",
+            "objective": {"score_out_of_30": 24.0},
+        }
+    ]
+    audits = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "scores": {
+                "A": {
+                    "score_out_of_30": 28.0,
+                    "applicable_rules": ["language"],
+                }
+            },
+        }
+    ]
+    key = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "reveal": {"A": "challenger"},
+        }
+    ]
+
+    mapped = model_battle.apply_blind_audit_scores(rows, audits, key)
+
+    assert mapped[0]["objective"]["judge_score_out_of_30"] == 28.0
+    assert mapped[0]["objective"]["selection_score_out_of_30"] == 26.0
 
 
 def test_blind_scores_must_match_pre_reveal_seal() -> None:
@@ -994,6 +1172,39 @@ def test_sales_scoring_blocks_ungrounded_numbers_and_wrong_language() -> None:
     assert russian["language_ok"] is True
 
 
+def test_numbered_list_markers_are_not_treated_as_commercial_facts() -> None:
+    score = score_sales_response(
+        content="1. Delivery timing needs verification.\n2. I can check the next step.",
+        required_phrases=("delivery", "verification"),
+        forbidden_phrases=(),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="en",
+        allowed_numbers=set(),
+    )
+
+    assert score["ungrounded_numbers"] == []
+    assert score["hard_gate_passed"] is True
+
+
+def test_live_and_rescore_paths_share_one_grounding_builder() -> None:
+    case = CORE_HARD_CASES[0]
+
+    numbers = model_battle.build_sales_grounding_numbers(case)
+
+    assert numbers == extract_numeric_tokens(
+        json.dumps(
+            {
+                "system_prompt": case.system_prompt,
+                "conversation": case.conversation,
+                "user_prompt": case.user_prompt,
+                "tool_results": case.tool_results,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def test_missing_critical_required_phrase_fails_the_hard_gate() -> None:
     score = score_sales_response(
         content="The requested quantity is available.",
@@ -1009,6 +1220,23 @@ def test_missing_critical_required_phrase_fails_the_hard_gate() -> None:
     assert score["required_phrases"] == {"AX-E1": False, "12": False}
     assert score["critical_required_phrases_passed"] is False
     assert score["hard_gate_passed"] is False
+
+
+def test_missing_noncritical_quality_phrase_lowers_score_without_elimination() -> None:
+    score = score_sales_response(
+        content="AX-E1 is the verified option.",
+        required_phrases=("AX-E1", "helpful comparison"),
+        critical_required_phrases=("AX-E1",),
+        forbidden_phrases=(),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="en",
+        allowed_numbers=set(),
+    )
+
+    assert score["hard_gate_passed"] is True
+    assert score["passed"] is False
+    assert score["score_out_of_30"] < 30
 
 
 def test_sales_scoring_does_not_treat_negated_claim_as_asserted() -> None:
@@ -1047,6 +1275,106 @@ def test_sales_scoring_detects_assertion_after_negated_prior_clause() -> None:
 def test_tool_rounds_do_not_count_as_provider_retries() -> None:
     assert retry_was_used([1, 1, 1]) is False
     assert retry_was_used([1, 2]) is True
+
+
+@pytest.mark.asyncio
+async def test_length_finish_reason_is_truncated_and_not_quality_scored(
+    monkeypatch,
+) -> None:
+    async def fake_request(*_args, **_kwargs):
+        return [
+            model_battle.ProviderAttempt(
+                attempt=1,
+                ok=True,
+                status_code=200,
+                elapsed_ms=5.0,
+                response={
+                    "choices": [
+                        {
+                            "finish_reason": "length",
+                            "message": {"content": "partial response 12"},
+                        }
+                    ],
+                    "usage": {"cost": 0.01},
+                },
+                error=None,
+            )
+        ]
+
+    monkeypatch.setattr(model_battle, "_request_with_retry", fake_request)
+
+    row = await model_battle._run_sales_case(
+        object(),
+        model="candidate",
+        case=CORE_HARD_CASES[-1],
+        repetition=1,
+    )
+
+    assert row["status"] == "TRUNCATED"
+    assert row["finish_reason"] == "length"
+    assert row["objective"] == {"scored": False, "reason": "TRUNCATED"}
+
+
+def test_truncated_candidate_is_excluded_from_blind_evaluator_comparison() -> None:
+    rows = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "model": "completed",
+            "status": "COMPLETED",
+            "objective": {
+                "score_out_of_30": 25,
+                "applicable_rules": ["language"],
+            },
+        },
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "model": "truncated",
+            "status": "TRUNCATED",
+            "objective": {"scored": False, "reason": "TRUNCATED"},
+        },
+    ]
+    blind_key = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "reveal": {"A": "completed"},
+        }
+    ]
+
+    evaluator_rows = model_battle.build_blind_evaluator_rows(rows, blind_key)
+
+    assert evaluator_rows == [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "model": "completed",
+            "score_out_of_30": 25,
+            "applicable_rules": ["language"],
+        }
+    ]
+
+
+def test_aggregate_reports_truncation_without_converting_it_to_quality_score() -> None:
+    aggregate = aggregate_rows(
+        [
+            {
+                "suite": "sales",
+                "case_id": "S01",
+                "model": "candidate",
+                "status": "TRUNCATED",
+                "first_pass_success": True,
+                "retry_used": False,
+                "latency_ms": 100,
+                "objective": {"scored": False, "reason": "TRUNCATED"},
+            }
+        ]
+    )
+
+    assert aggregate["candidate"]["statuses"] == {"TRUNCATED": 1}
+    assert aggregate["candidate"]["objective_correctness"] is None
+    assert aggregate["candidate"]["case_pass_rate"] is None
 
 
 def test_aggregate_does_not_count_recovered_schema_as_first_pass() -> None:
@@ -1150,9 +1478,7 @@ def test_four_way_blinding_is_counterbalanced_across_groups() -> None:
         "three": "Answer three",
         "four": "Answer four",
     }
-    counts = {
-        model: {label: 0 for label in ("A", "B", "C", "D")} for model in candidates
-    }
+    permutations = []
 
     for assignment_index in range(8):
         blind = build_blind_pair(
@@ -1162,13 +1488,53 @@ def test_four_way_blinding_is_counterbalanced_across_groups() -> None:
             seed=27072026,
             assignment_index=assignment_index,
         )
-        for label, model in blind["reveal"].items():
-            counts[model][label] += 1
+        permutations.append(tuple(blind["reveal"].values()))
 
-    assert all(
-        label_counts == {"A": 2, "B": 2, "C": 2, "D": 2}
-        for label_counts in counts.values()
+    first = permutations[0]
+    rotations = {first[index:] + first[:index] for index in range(len(first))}
+    assert any(permutation not in rotations for permutation in permutations[1:])
+
+
+def test_blind_fixture_includes_rule_labels_tool_results_and_tool_evidence() -> None:
+    case = next(case for case in CORE_HARD_CASES if case.tools)
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": case.case_id,
+            "model": model,
+            "repetition": 1,
+            "final_content": f"answer from anonymous candidate {index}",
+            "observed_tools": list(case.expected_tools),
+            "tool_arguments": [],
+        }
+        for index, model in enumerate(models_for_profile(CORE_HARD_PROFILE, "sales"))
+    ]
+
+    blind_rows, _key = model_battle._build_blind_files(
+        rows,
+        seed=27072026,
+        profile=CORE_HARD_PROFILE,
     )
+
+    scenario = blind_rows[0]["scenario"]
+    assert scenario["tool_results"] == case.tool_results
+    assert scenario["rubric"]["applicable_rule_labels"]
+    assert all(
+        set(answer) == {"response", "observed_tools", "tool_arguments"}
+        for answer in blind_rows[0]["answers"].values()
+    )
+
+
+def test_plaintext_results_are_stored_outside_the_blind_output_directory(
+    tmp_path,
+) -> None:
+    blind_dir = tmp_path / "blind"
+
+    plaintext_dir = model_battle.plaintext_results_dir(blind_dir)
+
+    assert plaintext_dir.parent == blind_dir.parent
+    assert plaintext_dir != blind_dir
+    assert blind_dir not in plaintext_dir.parents
 
 
 def test_blind_review_scores_map_back_to_models_only_after_review() -> None:

@@ -381,125 +381,114 @@ quantity or preferred color.
 CORE_HARD_CASES: tuple[SalesCase, ...] = (
     SalesCase(
         case_id="S01",
-        category="name_gate_resume",
+        category="catalog_coverage",
         system_prompt=_SALES_BASE
         + """
-The saved customer request is for the exact SKU CH 616 NEW black. After the
-customer supplies a name, resume that request without asking for quantity or
-offering alternatives. First call get_inventory_rate and then check_stock with
-that exact SKU. Use only the returned synthetic facts.
+The customer needs a coherent twenty-person open-office package covering task
+chairs, shared desks, and storage within AED 30,000. Call search_catalog once
+with query exactly "twenty-person open office chairs desks storage" and limit
+6. Recommend a complete set from the synthetic catalog facts, explain the
+coverage and total, and ask one useful product question. Do not replace the
+recommendation with a bare fact dump.
 """,
         conversation=(
             {
                 "role": "user",
-                "content": "Сколько стоит CH 616 NEW black и есть ли он в наличии?",
+                "content": "We are furnishing a twenty-person open office.",
             },
-            {"role": "assistant", "content": "Как я могу к вам обращаться?"},
-        ),
-        user_prompt="Игорь",
-        tools=(INVENTORY_RATE_TOOL, STOCK_TOOL),
-        tool_results={
-            "get_inventory_rate": {
-                "sku": "CH 616 NEW black",
-                "currency": "AED",
-                "rate": 295,
+            {
+                "role": "assistant",
+                "content": "Which furniture families and budget should I cover?",
             },
-            "check_stock": {
-                "sku": "CH 616 NEW black",
-                "available_quantity": 41,
-                "as_of": "2026-08-03T10:00:00Z",
-            },
-        },
-        expected_tools=("get_inventory_rate", "check_stock"),
-        expected_tool_arguments={
-            "get_inventory_rate": {"sku": "CH 616 NEW black"},
-            "check_stock": {"sku": "CH 616 NEW black"},
-        },
-        required_phrases=("CH 616 NEW black", "295", "41"),
-        critical_required_phrases=("CH 616 NEW black", "295", "41"),
-        forbidden_phrases=(
-            "quantity",
-            "similar option",
-            "quotation",
-            "количество",
-            "аналоги",
-            "коммерческое предложение",
         ),
-        expected_language="ru",
-    ),
-    SalesCase(
-        case_id="S02",
-        category="complete_configuration",
-        system_prompt=_SALES_BASE
-        + """
-The fixed evidence contains a complete six-person set: six AX-E1 chairs at AED
-1,000 and one DK-4 desk at AED 4,000, total AED 10,000. The budget is AED
-12,000. Cover both requested families and do not replace either with a cheaper
-irrelevant item. Call search_catalog once with query exactly "six-person chair
-and desk set" and limit 4.
-""",
-        conversation=(
-            {"role": "user", "content": "We need seating and a desk for six people."},
-            {"role": "assistant", "content": "What total budget should I use?"},
-        ),
-        user_prompt="AED 12,000 total.",
+        user_prompt="Task chairs, shared desks, and storage; AED 30,000 total.",
         tools=(COMPLETE_CATALOG_SEARCH_TOOL,),
         tool_results={
             "search_catalog": {
                 "products": [
-                    {"sku": "AX-E1", "family": "chair", "price_aed": 1000},
-                    {"sku": "DK-4", "family": "desk", "price_aed": 4000},
-                ]
+                    {
+                        "sku": "AX-E1",
+                        "family": "task chair",
+                        "price_aed": 800,
+                        "quantity": 20,
+                    },
+                    {
+                        "sku": "DK-4",
+                        "family": "shared desk",
+                        "price_aed": 4000,
+                        "quantity": 2,
+                    },
+                    {
+                        "sku": "ST-2",
+                        "family": "storage",
+                        "price_aed": 1500,
+                        "quantity": 2,
+                    },
+                ],
+                "total_aed": 27000,
             }
         },
         expected_tools=("search_catalog",),
         expected_tool_arguments={
-            "search_catalog": {"query": "six-person chair and desk set", "limit": 4}
+            "search_catalog": {
+                "query": "twenty-person open office chairs desks storage",
+                "limit": 6,
+            }
         },
-        required_phrases=("AX-E1", "DK-4", "10,000"),
-        critical_required_phrases=("AX-E1", "DK-4", "10,000"),
-        forbidden_phrases=("over budget", "chair only"),
+        required_phrases=("AX-E1", "DK-4", "ST-2", "27,000", "coverage"),
+        critical_required_phrases=("AX-E1", "DK-4", "ST-2"),
+        forbidden_phrases=("chair only", "over budget", "quotation created"),
         expected_language="en",
     ),
     SalesCase(
-        case_id="S03",
-        category="arabic_no_match",
+        case_id="S02",
+        category="arabic_configuration",
         system_prompt=_SALES_BASE
         + """
-No fixed catalog item matches a 120x120 cm acoustic pod. State the numerical
-gap honestly in Arabic and ask one useful closing question. Do not escalate.
-Call search_catalog with query exactly "acoustic pod 120x120" and limit 2.
+Reply only in Arabic. The fixed evidence contains a meeting-room set: twelve
+NV-T2 chairs at AED 500 each and one MT-12 table at AED 6,000, total AED
+12,000. The budget is AED 15,000. Cover both families. Call search_catalog once
+with query exactly "Arabic meeting room for twelve" and limit 4.
 """,
         conversation=(
-            {"role": "user", "content": "أحتاج كابينة عازلة للصوت."},
-            {"role": "assistant", "content": "ما المقاس المطلوب؟"},
+            {"role": "user", "content": "أحتاج أثاث غرفة اجتماعات لاثني عشر شخصاً."},
+            {"role": "assistant", "content": "ما الميزانية الإجمالية؟"},
         ),
-        user_prompt="المقاس 120x120 سم بالضبط.",
+        user_prompt="الميزانية 15,000 درهم، وأجب بالعربية.",
         tools=(COMPLETE_CATALOG_SEARCH_TOOL,),
-        tool_results={"search_catalog": {"products": []}},
+        tool_results={
+            "search_catalog": {
+                "products": [
+                    {"sku": "NV-T2", "family": "chair", "price_aed": 500},
+                    {"sku": "MT-12", "family": "table", "price_aed": 6000},
+                ],
+                "total_aed": 12000,
+            }
+        },
         expected_tools=("search_catalog",),
         expected_tool_arguments={
-            "search_catalog": {"query": "acoustic pod 120x120", "limit": 2}
+            "search_catalog": {"query": "Arabic meeting room for twelve", "limit": 4}
         },
-        required_phrases=("120x120",),
-        critical_required_phrases=("120x120",),
-        forbidden_phrases=("perfect match", "manager"),
+        required_phrases=("NV-T2", "MT-12", "12,000", "درهم"),
+        critical_required_phrases=("NV-T2", "MT-12"),
+        forbidden_phrases=("over budget", "English only"),
         expected_language="ar",
     ),
     SalesCase(
-        case_id="S04",
-        category="stock_consistency",
+        case_id="S03",
+        category="stock_conflict",
         system_prompt=_SALES_BASE
         + """
-For SKU AX-E1 the only authoritative stock snapshot is 7 units in Dubai as of
-2026-08-03T10:00:00Z. Call check_stock once with AX-E1. Never show a second
-stock quantity in the same answer.
+Catalog copy contains a stale quantity of 22 for AX-E1. The only authoritative
+current snapshot is the check_stock result. Call check_stock once for AX-E1,
+state one current stock number, its warehouse and timestamp, and do not repeat
+the stale catalog quantity.
 """,
         conversation=(
-            {"role": "user", "content": "I need the current AX-E1 stock."},
-            {"role": "assistant", "content": "I will verify the live snapshot."},
+            {"role": "user", "content": "The catalog page says 22 AX-E1 chairs."},
+            {"role": "assistant", "content": "I will check the current snapshot."},
         ),
-        user_prompt="Please give me the verified quantity only.",
+        user_prompt="What is the verified stock now?",
         tools=(STOCK_TOOL,),
         tool_results={
             "check_stock": {
@@ -511,28 +500,88 @@ stock quantity in the same answer.
         },
         expected_tools=("check_stock",),
         expected_tool_arguments={"check_stock": {"sku": "AX-E1"}},
-        required_phrases=("AX-E1", "7", "Dubai"),
-        critical_required_phrases=("AX-E1", "7", "Dubai"),
-        forbidden_phrases=("8 units", "catalog stock"),
+        required_phrases=("AX-E1", "7", "Dubai", "verified"),
+        critical_required_phrases=("AX-E1", "7"),
+        forbidden_phrases=("22 chairs", "catalog stock"),
+        expected_language="en",
+    ),
+    SalesCase(
+        case_id="S04",
+        category="quote_consent_gate",
+        system_prompt=_SALES_BASE
+        + """
+The customer is comparing AX-E1 after receiving verified catalog facts, but
+has explicitly refused a quotation. Use the facts to give a concise model-owned
+recommendation and answer the comparison question. Do not prepare a quote,
+collect customer details, or replace the answer with a bare list of facts.
+""",
+        conversation=(
+            {"role": "user", "content": "AX-E1 looks suitable. Would you quote it?"},
+            {"role": "assistant", "content": "I can prepare a quotation if you want."},
+        ),
+        user_prompt="No quotation. Just explain why AX-E1 fits long workdays.",
+        tools=(QUOTE_DRAFT_TOOL,),
+        tool_results={
+            "prepare_quote_draft": {"status": "forbidden_without_explicit_consent"}
+        },
+        required_phrases=("AX-E1", "long workdays", "next"),
+        critical_required_phrases=("AX-E1",),
+        forbidden_phrases=(
+            "quotation is on hold",
+            "company name",
+            "phone",
+            "email",
+            "address",
+        ),
         expected_language="en",
     ),
     SalesCase(
         case_id="S05",
-        category="quote_decline",
+        category="twelve_seat_configuration",
         system_prompt=_SALES_BASE
         + """
-The customer declined a quotation after selecting exact SKU NV-T2. Respect the
-decline. Answer the delivery question without collecting company, phone, email,
-or address. Delivery timing is not verified in this fixture.
+The customer needs a complete twelve-seat workstation configuration within AED
+20,000. The fixed evidence contains twelve AX-E1 chairs at AED 1,000 each and
+three DK-4 four-person desks at AED 2,000 each, total AED 18,000. Call
+search_catalog once with query exactly "twelve-seat workstation configuration"
+and limit 4. Cover all twelve seats and both furniture families.
 """,
         conversation=(
-            {"role": "user", "content": "NV-T2 is the exact chair I want."},
-            {"role": "assistant", "content": "Would you like a quotation?"},
+            {"role": "user", "content": "We need workstations for twelve people."},
+            {"role": "assistant", "content": "What is the total budget?"},
         ),
-        user_prompt="No quotation. How does delivery work?",
-        required_phrases=("delivery", "verify"),
-        critical_required_phrases=("delivery", "verify"),
-        forbidden_phrases=("company name", "phone", "email", "address"),
+        user_prompt="AED 20,000 for the complete twelve-seat setup.",
+        tools=(COMPLETE_CATALOG_SEARCH_TOOL,),
+        tool_results={
+            "search_catalog": {
+                "products": [
+                    {
+                        "sku": "AX-E1",
+                        "family": "chair",
+                        "quantity": 12,
+                        "unit_price_aed": 1000,
+                    },
+                    {
+                        "sku": "DK-4",
+                        "family": "four-person desk",
+                        "quantity": 3,
+                        "unit_price_aed": 2000,
+                    },
+                ],
+                "covered_seats": 12,
+                "total_aed": 18000,
+            }
+        },
+        expected_tools=("search_catalog",),
+        expected_tool_arguments={
+            "search_catalog": {
+                "query": "twelve-seat workstation configuration",
+                "limit": 4,
+            }
+        },
+        required_phrases=("AX-E1", "DK-4", "12", "18,000", "within budget"),
+        critical_required_phrases=("AX-E1", "DK-4", "12"),
+        forbidden_phrases=("partial", "over budget", "chair only"),
         expected_language="en",
     ),
     SalesCase(
@@ -548,7 +597,7 @@ Use quantity 12, keep SKU AX-E1, and ask only one product-relevant next question
             {"role": "assistant", "content": "Shall I prepare a quotation for 20?"},
         ),
         user_prompt="Make that 12. Do not prepare a quotation yet.",
-        required_phrases=("12", "AX-E1"),
+        required_phrases=("12", "AX-E1", "next"),
         critical_required_phrases=("12", "AX-E1"),
         forbidden_phrases=("20 chairs", "company name", "address"),
         expected_language="en",
