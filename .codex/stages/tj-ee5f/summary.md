@@ -1,7 +1,7 @@
 # Stage tj-ee5f Summary
 
-Updated: 2026-07-30
-Status: blocked; functional remediation accepted, Wazzup terminal status missing
+Updated: 2026-08-03
+Status: accepted with a known external Wazzup limitation
 Branch: `codex/tj-ee5f-remediation`
 Beads owner: `tj-ee5f.1`
 
@@ -48,8 +48,9 @@ under `docs/superpowers/` and `.codex/stages/tj-ee5f/`.
 - The redacted Russian client report was rendered as a five-page blocked draft
   PDF and visually inspected at full-page resolution. Cyrillic text, tables,
   page numbering, wrapping, and section transitions are clean. The PDF remains
-  protected outside Git and is not the accepted final report while terminal
-  Wazzup reconciliation is missing.
+  protected outside Git. The final report is accepted after the owner approved
+  the provider limitation; the current closeout renders and inspects the final
+  PDF without changing production evidence.
 - Independent review of the final quote-state delta is `APPROVE`, with no
   P0/P1. `src/llm/prompts.py` remains unchanged.
 
@@ -70,10 +71,9 @@ The owner later supplied the S09 PDF received in the protected WhatsApp around
 S09 quotation exactly, so quotation delivery is independently accepted even
 though its provider audit still says `sent`.
 
-The trusted final observation remains incomplete because all 48 outbound
-audits are `sent`, not terminal. A narrow smoke on `3954857` reproduced the
-same state despite a provider message identity. The configured Wazzup channel
-is active and subscribed to message/status callbacks.
+All 48 outbound audits remain `sent`, not terminal. A narrow smoke on `3954857`
+reproduced the same state despite a provider message identity. The configured
+Wazzup channel is active and subscribed to message/status callbacks.
 `https://audit.starec.ai/webhook` is the intentional single callback/fan-out:
 its test ping and a safe probe containing both supported status envelopes
 reached Noor. No callback change is needed. In the latest two-day audit window,
@@ -118,22 +118,59 @@ but both audits remain `sent`.
 Beads `tj-ee5f.6-.10` are closed on release-bound proof. The received S09 PDF
 belongs to the earlier `f283a22` quotation run, not to the final `a2f245c`
 voice/name canary; that final request explicitly declined a quotation. `.5`
-remains open because the other historical outbound effects still lack
+remains blocked because the other historical outbound effects still lack
 terminal provider or recipient readback.
 
-## Remaining acceptance
+Beads `tj-ee5f.1` and epic `tj-ee5f` are closed under the owner-approved
+known-limitation disposition. Detached follow-up `tj-ee5f.5` remains
+`BLOCKED` and is the only task to resume after Wazzup announces its fix.
 
-1. Obtain terminal provider or exact recipient readback for the remaining
-   historical test-only outbound messages; do not reinterpret `sent` as
-   delivery.
-2. Keep the intentional `audit.starec.ai` callback/fan-out unchanged.
-3. Render and inspect the final Russian report PDF and run canonical closeout
-   only after terminal reconciliation succeeds.
+## Accepted limitation and closeout decision
+
+On 2026-08-03 the owner relayed Wazzup support's conclusion: the missing
+`delivered/read` callbacks are a provider bug, there is no current workaround,
+and Wazzup will notify the customer after its fix is developed. The owner
+accepted the functional production result with this known limitation.
+
+The stage therefore closes its functional E2E boundary without claiming
+terminal status that was not observed. `sent` remains nonterminal, the working
+`audit.starec.ai` callback/fan-out remains unchanged, and `tj-ee5f.5` is split
+into an independent blocked follow-up. After provider notification it requires
+one protected test message and exact `sent -> delivered -> read` webhook/audit
+readback; broad commercial scenario reruns are unnecessary.
+
+The historical 23.9/30 table remains the immutable pre-correction score. A new
+aggregate score is not invented: final acceptance combines the release-bound
+S01-S10 defect retests, provider EN/AR/voice canaries, exact Zoho/PDF/CRM
+readbacks and cleanup, the 2690-test release gate, and independent `APPROVE`.
+The owner explicitly accepts the absent post-correction aggregate as part of
+the same provider-limited closeout.
+
+The final Russian report is rendered at
+`output/pdf/noor-live-sales-tool-e2e-remediation-2026-07-29.pdf`: six A4 pages,
+clean Cyrillic, tables, wrapping, page numbers, and section transitions. Visual
+inspection found no clipping or overlap. SHA256:
+`d2e10f99e9da467617790dd00ac7cdeb91ab499833fb54b2b0eb670df92b751d`.
+
+docs-reviewed: updated - client report, stage summary, handoff, and Beads truth
+now record the owner-approved provider limitation and exact retest trigger.
+
+project-index: reviewed-no-change - no stable repository entrypoint changed.
+
+graph-reviewed: no-change-needed - Graphify is not configured and this is a
+docs-only closeout decision.
+
+Canonical stage closeout passed at release level using the risk-selected
+`targeted_commands` group. The unchanged exact product evidence reuses the
+accepted 2690-test release gate and independent review; the docs-only decision
+was freshly checked by artifact validation, `git diff --check`, stage readiness,
+and process verification.
 
 ## Explicit defers
 
-- Historical test-message outbound effects not covered by the accepted S09 PDF
-  and final-response recipient evidence still need terminal readback; `sent`
-  is not accepted as delivery.
+- `tj-ee5f.5`: Wazzup support must first ship the callback fix; then one bounded
+  protected-message retest must prove terminal webhook/audit transitions.
+- Historical test-message outbound effects remain `sent`; they are not
+  reclassified as delivered or read.
 - Repository-history privacy cleanup remains a separate destructive-action
   decision; current-tree redaction remains the local privacy boundary.

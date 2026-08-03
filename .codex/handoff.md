@@ -1,16 +1,16 @@
 # Orchestrator Handoff
 
-Updated: 2026-07-30
+Updated: 2026-08-03
 Current branch: `codex/tj-ee5f-remediation`
-Current stage id: `tj-ee5f`
-Current stage status: functional remediation accepted on production; blocked
-only on terminal Wazzup delivery/read evidence
+Accepted stage id: `tj-ee5f`
+Current stage status: functional production E2E and client report accepted with
+a known external Wazzup status limitation; `tj-ee5f.1` and epic are closed
 
 ## Current truth
 
 - Canonical runtime: `https://noor.starec.ai`.
-- Owning task: `tj-ee5f.1`; only blocking defect `tj-ee5f.5` remains open for
-  terminal side-effect reconciliation.
+- Owning task `tj-ee5f.1` and epic `tj-ee5f` are closed. `tj-ee5f.5` remains an
+  independent blocked follow-up for terminal Wazzup status proof.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The last deployed, production-tested product release is
@@ -64,10 +64,14 @@ only on terminal Wazzup delivery/read evidence
   and canonical process verification are green.
 - Stage readiness passes. Product prompt and frozen AC-01..AC-30 snapshot are
   unchanged.
-- The redacted Russian report has a protected five-page blocked-draft PDF.
-  Full-page visual inspection confirmed clean Cyrillic rendering, tables,
-  wrapping, page numbering, and section transitions. It remains a draft until
-  terminal Wazzup reconciliation is available.
+- The redacted Russian report records the functional PASS and the provider bug
+  without relabeling `sent` as delivery. The final six-page PDF was rendered
+  and visually inspected: Cyrillic, tables, wrapping, page numbering, and
+  section transitions are clean; SHA256 is
+  `d2e10f99e9da467617790dd00ac7cdeb91ab499833fb54b2b0eb670df92b751d`.
+- Canonical release-level stage closeout passed with artifact validation,
+  stage readiness, `git diff --check`, and process verification. Matching
+  product evidence reuses the accepted 2690-test gate and independent review.
 - The exact-SKU voice correction has focused RED/GREEN proof and independent
   delta-review verdict `APPROVE`; no product-prompt change was made.
 - The second Russian resume correction has focused RED/GREEN proof. Release
@@ -80,8 +84,8 @@ only on terminal Wazzup delivery/read evidence
   name gate resumed the saved intent, and Noor returned only `CH 616 NEW black`
   with live Zoho price AED 295 and stock 41. No quantity, alternatives, quote,
   or escalation path was entered.
-- Beads `tj-ee5f.6-.10` are closed. `.5` remains open only for trusted terminal
-  reconciliation of the other historical outbound effects.
+- Beads `tj-ee5f.6-.10` are closed. `.5` remains blocked only for one bounded
+  terminal-status retest after Wazzup announces its provider fix.
 
 ## Production proof and blocker
 
@@ -120,38 +124,48 @@ only on terminal Wazzup delivery/read evidence
 - All canary outbound audits remain `sent`; failed and successful raw captures
   are protected outside Git.
 
+## Accepted external limitation
+
+- On 2026-08-03 the owner relayed Wazzup support's answer: missing
+  `delivered/read` callbacks are a provider bug, no workaround currently
+  exists, and support will notify the customer after the fix is developed.
+- The owner accepted the functional production E2E with this known limitation.
+  The evidence remains truthful: existing audits stay `sent`, and the working
+  `audit.starec.ai` fan-out is unchanged.
+- Broad scenario reruns are not useful while the bug exists because they only
+  create additional nonterminal rows.
+
 ## Next recommended
 
-Next stage id: `tj-ee5f.1`
+Next stage id: `tj-ee5f.5`
 
-Recommended action: keep the accepted release unchanged and obtain terminal
-provider or exact recipient readback for the remaining historical outbound
-messages. Do not change the working audit fan-out or reinterpret `sent` as
-delivery. After terminal reconciliation, render/inspect the Russian report PDF
-and run canonical stage closeout.
+Recommended action: wait for Wazzup support's fix notification. Then send one
+message through the protected test identity and verify exact
+`sent -> delivered -> read` callbacks through the existing audit fan-out and
+Noor audit. Do not rerun the full sales suite or change the callback URI.
 
 ## Starter prompt for next orchestrator
 
-Use $orchestrator-stage with the compact prompt in
-`.codex/stages/tj-ee5f/remediation-orchestrator-prompt.md`.
+Use $orchestrator-stage only after Wazzup announces the fix. Resume the bounded
+follow-up `tj-ee5f.5`; the accepted sales-remediation scope must not be reopened.
 
 ## Approval gates
 
 - Reversible local edits, tests, orchestration docs, and Beads truth updates are
   authorized.
-- Current owner authority covers fresh fetch, safe non-force push, canonical
-  deploy/readback, paid test-only model/voice calls, protected test Wazzup,
-  test-only Zoho/CRM/quotation/PDF/callback/readbacks, and safe cleanup.
+- No production, paid, Wazzup, Zoho, CRM, callback, or deploy action is needed
+  for this documentation closeout.
+- A future `tj-ee5f.5` live retest requires fresh exact authority after the
+  provider announces its fix.
 - Force push, history rewrite, real customers, secrets/access changes,
   destructive production work, and unlisted external effects remain excluded.
 
 ## Explicit defers
 
-- Terminal production acceptance, accepted report PDF, Beads `.5/.1` and epic
-  closure, and canonical stage closeout remain pending.
-- Historical test-message outbound audits not covered by the accepted
-  recipient evidence still need terminal readback; `sent` is not a delivery
-  proof.
+- `tj-ee5f.5` remains blocked on the external Wazzup fix and one future bounded
+  terminal-status retest. This is not a functional Noor acceptance blocker.
+- Historical test-message outbound audits remain `sent`; they are not delivery
+  proof and will not be rewritten.
 - Repository-history privacy cleanup remains a separate destructive action.
 - Existing unrelated backlog remains separate: `tj-qy7y`, `tj-n8p6`,
   `tj-b93r`, `tj-final27.6`, `tj-gh21`, `tj-2pkk`, `tj-g3f`, `tj-9q0`,

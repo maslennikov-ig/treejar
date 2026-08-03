@@ -63,10 +63,10 @@ depends_on_streams:
   - accepted tj-ee5f design review
 parallel_decision: sequential
 status: accepted
-delivery_method: n/a
+delivery_method: manual integration
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: dedicated worktree retained for orchestrator review; no external or runtime state was created
+cleanup_status: blocked
+cleanup_notes: legacy dedicated worktree is retained; destructive cleanup was not requested
 risk_level: high
 verification_tier: slice_acceptance
 risk_tags:

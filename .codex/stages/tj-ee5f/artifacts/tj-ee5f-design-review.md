@@ -50,10 +50,10 @@ depends_on_streams:
   - none
 parallel_decision: parallel
 status: returned
-delivery_method: n/a
+delivery_method: manual integration
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: read-only review; no runtime or workspace cleanup was authorized
+cleanup_status: cleaned
+cleanup_notes: read-only review created no runtime state or dedicated workspace
 risk_level: medium
 verification_tier: delta
 risk_tags:

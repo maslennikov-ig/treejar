@@ -65,8 +65,8 @@ parallel_decision: local
 status: accepted
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: dedicated worktree retained until tj-ee5f stage closeout
+cleanup_status: blocked
+cleanup_notes: accepted content is integrated; legacy worktree remains because destructive cleanup was not requested
 risk_level: high
 verification_tier: integration
 risk_tags:

@@ -62,8 +62,8 @@ parallel_decision: parallel
 status: accepted
 delivery_method: merge
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: external execution has not started
+cleanup_status: blocked
+cleanup_notes: external execution created no retained state; legacy worktree remains because destructive cleanup was not requested
 risk_level: high
 verification_tier: integration
 risk_tags:

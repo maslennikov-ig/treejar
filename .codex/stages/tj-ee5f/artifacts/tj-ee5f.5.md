@@ -61,8 +61,8 @@ parallel_decision: local
 status: accepted
 delivery_method: cherry-pick
 accepted_by_orchestrator: yes
-cleanup_status: not_applicable
-cleanup_notes: no external state was created
+cleanup_status: blocked
+cleanup_notes: accepted content is integrated; legacy worktree remains because destructive cleanup was not requested
 risk_level: high
 verification_tier: integration
 risk_tags:

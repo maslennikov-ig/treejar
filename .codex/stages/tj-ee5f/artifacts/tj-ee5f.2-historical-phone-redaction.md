@@ -57,10 +57,10 @@ depends_on_streams:
   - tj-ee5f-task-1
 parallel_decision: sequential
 status: accepted
-delivery_method: n/a
+delivery_method: manual integration
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: dedicated worktree and branch retained for root-orchestrator review and integration
+cleanup_status: blocked
+cleanup_notes: accepted content is integrated; legacy worktree and branch remain because destructive cleanup was not requested
 risk_level: high
 verification_tier: release
 risk_tags:

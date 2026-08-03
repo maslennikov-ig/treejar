@@ -3,7 +3,7 @@
   "stage_id": "tj-ee5f",
   "goal_id": "tj-ee5f",
   "profile_at_creation": "balanced-v2.19",
-  "status": "in_progress",
+  "status": "accepted",
   "sequence": 1,
   "acceptance_boundary_id": "noor-agent-driven-e2e-acceptance",
   "acceptance_owner": "root-orchestrator",
@@ -270,8 +270,20 @@
       "task_id": "tj-ee5f.6-.9",
       "stream_owner": "tj-ee5f-dialog-remediation",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.6-9-dialog-remediation.md"
+    },
+    {
+      "task_id": "tj-ee5f-provider-status-defer",
+      "stream_owner": "provider-status-closeout-owner",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-provider-status-defer.md"
     }
   ],
+  "accepted_external_limitation": {
+    "recorded_at": "2026-08-03",
+    "decision_owner": "project-owner",
+    "provider": "Wazzup",
+    "condition": "delivered/read webhooks are not emitted because of a provider-confirmed bug with no current workaround",
+    "disposition": "functional production acceptance closes; sent remains nonterminal; tj-ee5f.5 remains blocked for one bounded retest after provider notification"
+  },
   "scope_provenance": {
     "path": ".codex/goals/tj-ee5f/scope-source-provenance.json",
     "digest": "aed530e3360091d9640fb0e14c6a1a9bd527092c6cf27bd10e79b7295163c896",
