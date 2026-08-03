@@ -75,10 +75,12 @@ docs_impact: behavior
 docs_reviewed: updated
 docs_review_notes: this artifact records the isolated harness behavior and paid-run boundary
 verification:
-  - uv run pytest tests/test_scripts_model_battle.py -q --tb=short (72 tests): passed
+  - uv run pytest tests/test_scripts_model_battle.py -q --tb=short (75 tests): passed
   - uv run ruff check scripts/model_battle.py scripts/model_battle_cases.py tests/test_scripts_model_battle.py: passed
   - uv run ruff format --check scripts/model_battle.py scripts/model_battle_cases.py tests/test_scripts_model_battle.py: passed
   - git diff --check: passed
+  - background exact-provider metadata and cost preflight: passed without model calls
+  - core exact-provider metadata preflight: endpoints passed; GLM-5.2 conservative estimate USD 1.121494 exceeds the accepted USD 1 cap
 changed_files:
   - scripts/model_battle.py
   - scripts/model_battle_cases.py
@@ -101,6 +103,12 @@ conservative all-round/all-retry cost before each provider request; and adds a
 non-overwriting combine step that seals both independent route decisions and
 their source digests into one handoff.
 
+The final integration pass binds capability and pricing checks to the exact
+first-party provider instead of model-wide metadata. A separate
+`--preflight-only` mode writes endpoint and cost evidence before any completion
+request. Hard background fixtures use portable JSON mode and retain strict
+local schema validation, avoiding unsupported provider parameters.
+
 # Scope / Routing
 
 Only the assigned harness, fixtures, focused tests, and this artifact changed.
@@ -112,8 +120,8 @@ data, not product logic or the product prompt.
 Focused RED first failed during import because the new profiles did not exist.
 Correction RED then failed on the absent critical assertion gate, pre-request
 budget, and combined seal. The final 72-test focused suite passes. Scoped Ruff,
-formatting, and whitespace checks pass. No model or external service call was
-made.
+formatting, and whitespace checks pass. The 75-test final focused suite passes.
+Free metadata calls were made; no model completion or paid request was made.
 
 # Delivery / Cleanup
 
@@ -122,5 +130,6 @@ Returned as one isolated commit for orchestrator review and integration.
 # Risks / Follow-ups / Explicit Defers
 
 The paid run remains intentionally blocked. Immediately before it, the
-orchestrator must use the free metadata preflight, inspect the calculated caps,
-and obtain current authority for paid OpenRouter calls.
+orchestrator must resolve the GLM core budget conflict, repeat the free metadata
+preflight, inspect the calculated caps, and obtain current authority for paid
+OpenRouter calls.

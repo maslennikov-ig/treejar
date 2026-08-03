@@ -22,7 +22,10 @@ transcription worked. Failed raw evidence stays protected outside Git.
 The isolated model-battle harness is also ready. It seals separate main-chat
 and background-model decisions, pins first-party providers, fails on missing
 critical facts, reserves worst-case cost before calls, and cannot access Noor,
-Zoho, Wazzup, or production storage. No paid comparison has been run yet.
+Zoho, Wazzup, or production storage. Exact-provider free metadata preflight
+passed for the background profile. Core endpoint capabilities passed, but the
+conservative GLM-5.2 estimate is USD 1.121494 versus the accepted USD 1 cap, so
+the paid comparison has not been run.
 
 ## Boundary
 
@@ -91,9 +94,10 @@ authority. The stage cannot close while `.5` lacks terminal provider proof.
 
 ## Next stage
 
-Remain in `tj-ee5f`. Request paid-model-battle authority and run the sealed
-isolated comparison. Production acceptance follows only after a winner decision
-and separate push/deploy/live authority.
+Remain in `tj-ee5f`. Resolve the core GLM budget boundary, repeat free preflight,
+then request paid-model-battle authority and run the sealed isolated comparison.
+Production acceptance follows only after a winner decision and separate
+push/deploy/live authority.
 
 ## Explicit defers
 

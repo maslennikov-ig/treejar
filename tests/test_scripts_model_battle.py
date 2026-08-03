@@ -7,6 +7,7 @@ from scripts.model_battle import (
     BACKGROUND_HARD_PROFILE,
     CORE_HARD_PROFILE,
     EXTENDED_PROFILE,
+    ORIGINAL_PROFILE,
     CandidateMetrics,
     RequestCostBudget,
     _build_jobs,
@@ -18,7 +19,9 @@ from scripts.model_battle import (
     blind_scores_digest,
     build_base_payload,
     build_blind_pair,
+    build_pinned_catalog_entry,
     build_survivor_jobs,
+    build_system_response_format,
     candidate_metrics_from_evidence,
     cases_for_profile,
     combine_hard_profile_selections,
@@ -475,6 +478,79 @@ def test_catalog_preflight_accepts_extended_profile_capabilities() -> None:
         ("sales", "system"),
         profile=EXTENDED_PROFILE,
     )
+
+
+def test_pinned_catalog_rejects_model_without_first_party_endpoint() -> None:
+    with pytest.raises(RuntimeError, match="first-party endpoint"):
+        build_pinned_catalog_entry(
+            "deepseek/deepseek-v4-flash-0731",
+            {"id": "deepseek/deepseek-v4-flash-0731"},
+            {
+                "data": {
+                    "endpoints": [
+                        {
+                            "provider_name": "DeepInfra",
+                            "supported_parameters": ["tools", "tool_choice"],
+                            "pricing": {"prompt": "0.1", "completion": "0.2"},
+                        }
+                    ]
+                }
+            },
+            required_parameters={"tools", "tool_choice"},
+        )
+
+
+def test_pinned_catalog_uses_conservative_first_party_pricing() -> None:
+    entry = build_pinned_catalog_entry(
+        "openai/gpt-5.6-luna",
+        {"id": "openai/gpt-5.6-luna", "pricing": {"prompt": "0.1"}},
+        {
+            "data": {
+                "endpoints": [
+                    {
+                        "name": "OpenAI low",
+                        "provider_name": "OpenAI",
+                        "supported_parameters": ["max_tokens", "reasoning"],
+                        "pricing": {"prompt": "0.0000001", "completion": "0.0000006"},
+                    },
+                    {
+                        "name": "OpenAI high",
+                        "provider_name": "OpenAI",
+                        "supported_parameters": ["max_tokens", "reasoning"],
+                        "pricing": {"prompt": "0.0000002", "completion": "0.0000012"},
+                    },
+                    {
+                        "name": "Azure",
+                        "provider_name": "Azure",
+                        "supported_parameters": ["max_tokens", "reasoning"],
+                        "pricing": {"prompt": "1", "completion": "1"},
+                    },
+                ]
+            }
+        },
+        required_parameters={"max_tokens", "reasoning"},
+    )
+
+    assert entry["pinned_provider"] == "openai"
+    assert entry["pricing"] == {
+        "prompt": "0.0000002",
+        "completion": "0.0000012",
+    }
+    assert len(entry["pinned_endpoints"]) == 2
+
+
+def test_background_hard_profile_uses_json_mode_with_local_schema_validation() -> None:
+    assert build_system_response_format(
+        BACKGROUND_HARD_PROFILE, {"type": "object"}
+    ) == {"type": "json_object"}
+    assert build_system_response_format(ORIGINAL_PROFILE, {"type": "object"}) == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "model_battle_result",
+            "strict": True,
+            "schema": {"type": "object"},
+        },
+    }
 
 
 def test_base_payload_requires_an_endpoint_supporting_all_parameters() -> None:

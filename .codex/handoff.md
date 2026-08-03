@@ -21,6 +21,10 @@ Status: local remediation accepted; paid isolated model selection pending
 - Local fixes now cover typed catalog decisions, authoritative per-turn stock,
   explicit quote consent/lifecycle, and typed evaluator applicability. The
   isolated main/background model-battle harness is ready; no paid run occurred.
+- Exact first-party metadata preflight passes for all background candidates and
+  estimates a combined maximum cap of USD 0.1956. Core endpoint capabilities
+  pass, but GLM-5.2 estimates USD 1.121494 before the 1.25 multiplier, above the
+  accepted USD 1 per-model cap. This budget choice is unresolved.
 
 ## Active work
 
@@ -68,9 +72,10 @@ or live messages and request exact authority.
 
 Next stage id: `tj-ee5f`
 
-Recommended action: request authority for the bounded paid OpenRouter model
-battle. After a sealed winner decision, request separate delivery, deploy, and
-live-acceptance authority. Do not create another umbrella task.
+Recommended action: resolve the GLM core budget boundary, rerun the free
+endpoint-aware preflight, then request authority for the bounded paid OpenRouter
+model battle. After a sealed winner decision, request separate delivery,
+deploy, and live-acceptance authority. Do not create another umbrella task.
 
 ## Starter prompt for next orchestrator
 

@@ -1345,6 +1345,26 @@ def build_base_payload(
     return payload
 
 
+def build_system_response_format(
+    profile: str,
+    schema: Mapping[str, Any],
+    *,
+    name: str = "model_battle_result",
+) -> dict[str, Any]:
+    """Use portable JSON mode for hard profiles and validate schemas locally."""
+
+    if profile in _HARD_PROFILES:
+        return {"type": "json_object"}
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name,
+            "strict": True,
+            "schema": dict(schema),
+        },
+    }
+
+
 def _request_parameter_evidence(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: _sanitize_provider_payload(payload[key])
@@ -1657,6 +1677,7 @@ async def _run_system_case(
     model: str,
     case: Any,
     repetition: int,
+    profile: str = ORIGINAL_PROFILE,
     cost_budget: RequestCostBudget | None = None,
 ) -> dict[str, Any]:
     messages = [
@@ -1673,14 +1694,11 @@ async def _run_system_case(
         payload["tools"] = list(case.tools)
         payload["tool_choice"] = "auto"
     else:
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": case.case_id.replace("-", "_"),
-                "strict": True,
-                "schema": case.schema,
-            },
-        }
+        payload["response_format"] = build_system_response_format(
+            profile,
+            case.schema,
+            name=case.case_id.replace("-", "_"),
+        )
     request_parameters = _request_parameter_evidence(payload)
     attempts = await _request_with_retry(
         client,
@@ -1801,6 +1819,147 @@ async def _fetch_catalog(
     return {model: by_id[model] for model in models}
 
 
+def _normalized_provider_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
+
+
+def _required_parameters_by_model(
+    suites: Sequence[str],
+    *,
+    profile: str,
+) -> dict[str, set[str]]:
+    requirements: dict[str, set[str]] = {}
+    if "sales" in suites:
+        for model in models_for_profile(profile, "sales"):
+            requirements.setdefault(model, set()).update({"tools", "tool_choice"})
+    if "system" in suites:
+        system_parameters = {
+            "tools",
+            "tool_choice",
+            "response_format",
+            "reasoning",
+        }
+        if profile not in _HARD_PROFILES:
+            system_parameters.add("structured_outputs")
+        for model in models_for_profile(profile, "system"):
+            requirements.setdefault(model, set()).update(system_parameters)
+    if profile in _HARD_PROFILES:
+        for required in requirements.values():
+            required.update({"max_tokens", "reasoning"})
+    return requirements
+
+
+def build_pinned_catalog_entry(
+    model: str,
+    model_entry: Mapping[str, Any],
+    endpoint_catalog: Mapping[str, Any],
+    *,
+    required_parameters: set[str],
+) -> dict[str, Any]:
+    """Bind capability and cost evidence to the provider used in requests."""
+
+    owner = model.partition("/")[0]
+    provider_slug = _FIRST_PARTY_PROVIDERS.get(owner)
+    if provider_slug is None:
+        raise RuntimeError(f"No first-party provider pin configured for {model}")
+    data = endpoint_catalog.get("data")
+    endpoints = data.get("endpoints") if isinstance(data, Mapping) else None
+    candidates = [
+        endpoint
+        for endpoint in endpoints or []
+        if isinstance(endpoint, Mapping)
+        and _normalized_provider_name(str(endpoint.get("provider_name") or ""))
+        == provider_slug
+    ]
+    if not candidates:
+        raise RuntimeError(
+            f"No first-party endpoint for {model} with provider {provider_slug}"
+        )
+    eligible = [
+        endpoint
+        for endpoint in candidates
+        if required_parameters
+        <= {
+            str(parameter)
+            for parameter in endpoint.get("supported_parameters", [])
+            if isinstance(parameter, str)
+        }
+    ]
+    if not eligible:
+        raise RuntimeError(
+            f"No first-party endpoint for {model} supports required parameters: "
+            + ", ".join(sorted(required_parameters))
+        )
+
+    def _highest_price(field: str) -> str:
+        values = [
+            str(pricing[field])
+            for endpoint in eligible
+            if isinstance((pricing := endpoint.get("pricing")), Mapping)
+            and field in pricing
+        ]
+        if not values:
+            raise RuntimeError(f"Missing first-party {field} pricing for {model}")
+        return max(values, key=float)
+
+    supported_sets = [
+        {
+            str(parameter)
+            for parameter in endpoint.get("supported_parameters", [])
+            if isinstance(parameter, str)
+        }
+        for endpoint in eligible
+    ]
+    supported = set.intersection(*supported_sets)
+    result = dict(model_entry)
+    result.update(
+        {
+            "pricing": {
+                "prompt": _highest_price("prompt"),
+                "completion": _highest_price("completion"),
+            },
+            "supported_parameters": sorted(supported),
+            "pinned_provider": provider_slug,
+            "pinned_endpoints": [
+                {
+                    key: endpoint[key]
+                    for key in (
+                        "name",
+                        "provider_name",
+                        "supported_parameters",
+                        "pricing",
+                    )
+                    if key in endpoint
+                }
+                for endpoint in eligible
+            ],
+        }
+    )
+    return result
+
+
+async def _fetch_pinned_catalog(
+    client: httpx.AsyncClient,
+    models: Sequence[str],
+    *,
+    suites: Sequence[str],
+    profile: str,
+) -> dict[str, Any]:
+    catalog = await _fetch_catalog(client, models)
+    requirements = _required_parameters_by_model(suites, profile=profile)
+    pinned: dict[str, Any] = {}
+    for model in models:
+        response = await client.get(f"/models/{model}/endpoints", timeout=30.0)
+        response.raise_for_status()
+        pinned[model] = build_pinned_catalog_entry(
+            model,
+            catalog[model],
+            response.json(),
+            required_parameters=requirements.get(model, set()),
+        )
+    return pinned
+
+
 def assert_catalog_capabilities(
     catalog: Mapping[str, Mapping[str, Any]],
     suites: Sequence[str],
@@ -1809,24 +1968,7 @@ def assert_catalog_capabilities(
 ) -> None:
     """Fail before paid calls when a candidate lacks a required API feature."""
 
-    requirements: dict[str, set[str]] = {}
-    if "sales" in suites:
-        for model in models_for_profile(profile, "sales"):
-            requirements.setdefault(model, set()).update({"tools", "tool_choice"})
-    if "system" in suites:
-        for model in models_for_profile(profile, "system"):
-            requirements.setdefault(model, set()).update(
-                {
-                    "tools",
-                    "tool_choice",
-                    "response_format",
-                    "reasoning",
-                    "structured_outputs",
-                }
-            )
-    if profile in _HARD_PROFILES:
-        for required in requirements.values():
-            required.update({"max_tokens", "reasoning"})
+    requirements = _required_parameters_by_model(suites, profile=profile)
     failures: list[str] = []
     for model, required in requirements.items():
         entry = catalog.get(model, {})
@@ -2455,6 +2597,74 @@ def candidate_metrics_from_evidence(
     return metrics, details
 
 
+async def run_metadata_preflight(
+    *,
+    suites: Sequence[str],
+    output_dir: Path,
+    profile: str,
+) -> None:
+    """Fetch exact pinned-endpoint metadata and cost caps without paid calls."""
+
+    if not settings.openrouter_api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured")
+    from scripts.model_battle_cases import validate_case_sets
+
+    validate_case_sets()
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "HTTP-Referer": "https://noor.starec.ai",
+        "X-Title": "Noor Model Battle",
+    }
+    all_models = sorted(
+        {model for suite in suites for model in models_for_profile(profile, suite)}
+    )
+    async with httpx.AsyncClient(
+        base_url=settings.openrouter_base_url.rstrip("/"),
+        headers=headers,
+    ) as client:
+        catalog = (
+            await _fetch_pinned_catalog(
+                client,
+                all_models,
+                suites=suites,
+                profile=profile,
+            )
+            if profile in _HARD_PROFILES
+            else await _fetch_catalog(client, all_models)
+        )
+    assert_catalog_capabilities(catalog, suites, profile=profile)
+    _write_json(output_dir / "model_catalog.json", catalog)
+    for suite in suites:
+        estimated_costs = estimate_model_costs(
+            catalog,
+            profile=profile,
+            suite=suite,
+        )
+        over_budget = {
+            model: estimate
+            for model, estimate in estimated_costs.items()
+            if estimate > 1.0
+        }
+        if over_budget:
+            raise RuntimeError(
+                "Estimated per-model cost exceeds USD 1: "
+                + ", ".join(
+                    f"{model}=${estimate:.6f}"
+                    for model, estimate in sorted(over_budget.items())
+                )
+            )
+        _write_json(
+            output_dir / f"{suite}_cost_preflight.json",
+            {
+                "estimated_costs_usd": estimated_costs,
+                "caps_usd": {
+                    model: min(1.0, estimate * 1.25)
+                    for model, estimate in estimated_costs.items()
+                },
+            },
+        )
+
+
 async def run_battle(
     *,
     suites: Sequence[str],
@@ -2497,7 +2707,16 @@ async def run_battle(
         base_url=settings.openrouter_base_url.rstrip("/"),
         headers=headers,
     ) as client:
-        catalog = await _fetch_catalog(client, all_models)
+        catalog = (
+            await _fetch_pinned_catalog(
+                client,
+                all_models,
+                suites=suites,
+                profile=profile,
+            )
+            if profile in _HARD_PROFILES
+            else await _fetch_catalog(client, all_models)
+        )
         assert_catalog_capabilities(catalog, suites, profile=profile)
         catalog_path = output_dir / "model_catalog.json"
         existing_catalog = (
@@ -2568,6 +2787,7 @@ async def run_battle(
                         model=model,
                         case=case,
                         repetition=repetition,
+                        profile=profile,
                         cost_budget=cost_budget,
                     )
                 rows.append(row)
@@ -2605,6 +2825,7 @@ async def run_battle(
                             model=model,
                             case=case,
                             repetition=repetition,
+                            profile=profile,
                             cost_budget=cost_budget,
                         )
                     rows.append(row)
@@ -2664,6 +2885,11 @@ def _parse_args() -> argparse.Namespace:
         "--score-only",
         action="store_true",
         help="Score existing raw results using a completed blind review file.",
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Write exact provider capability and cost evidence without model calls.",
     )
     parser.add_argument(
         "--blind-scores",
@@ -2726,6 +2952,15 @@ def main() -> None:
         suites = ("system",)
     else:
         suites = ("sales", "system") if args.suite == "all" else (args.suite,)
+    if args.preflight_only:
+        asyncio.run(
+            run_metadata_preflight(
+                suites=suites,
+                output_dir=args.output_dir,
+                profile=args.profile,
+            )
+        )
+        return
     asyncio.run(
         run_battle(
             suites=suites,
