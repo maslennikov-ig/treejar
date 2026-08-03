@@ -30,6 +30,8 @@ worktree: /home/me/code/treejar/.worktrees/tj-ee5f-r07-review-remediation
 write_zone:
   - src/llm/engine.py
   - src/llm/prompts.py
+  - src/services/chat.py
+  - src/services/runtime_execution_evidence.py
   - directly relevant tests under tests/
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.7-review-remediation.md
 success_criteria:
@@ -76,8 +78,11 @@ verification:
   - "RED materializer: deterministic replacement made only one model call (1 failed)"
   - "RED decision: incomplete coverage was rejected despite an exact typed gap (1 failed after interface scaffold)"
   - "RED per-turn stock: get_stock replaced the existing 7-item snapshot with 25 (1 failed)"
+  - "RED R-03 correction: a valid successful model recommendation was replaced deterministically, while four explicit failure paths used an ambiguous recovery label (5 failed)"
+  - "RED provenance persistence: runtime evidence rejected text_provenance and chat persisted a v3 turn without it (3 failed)"
   - "uv run pytest tests/test_llm_engine.py tests/test_llm_catalog_decision.py tests/test_llm_prompts.py -q --tb=short: 759 passed"
   - "uv run pytest tests/test_llm_engine.py -k 'catalog or product_search_limit' -q --tb=short: 166 passed, 577 deselected"
+  - "uv run pytest tests/test_llm_engine.py tests/test_runtime_execution_evidence.py tests/test_services_chat.py tests/test_e2e_observation_producer.py tests/test_quality_evaluator.py -q --tb=short: 820 passed"
   - "uv run mypy src/llm/engine.py src/llm/prompts.py: passed"
   - "uv run ruff check changed files: passed"
   - "uv run ruff format --check changed files: passed"
@@ -85,9 +90,13 @@ verification:
 changed_files:
   - src/llm/engine.py
   - src/llm/prompts.py
+  - src/services/chat.py
+  - src/services/runtime_execution_evidence.py
   - tests/test_llm_catalog_decision.py
   - tests/test_llm_engine.py
   - tests/test_llm_prompts.py
+  - tests/test_runtime_execution_evidence.py
+  - tests/test_services_chat.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.7-review-remediation.md
 explicit_defers:
   - none
@@ -95,20 +104,24 @@ explicit_defers:
 
 # Summary
 
-Catalog remediation now preserves model ownership through a constrained repair pass,
-tracks response-text provenance independently from provider usage, sources live stock
-from one per-turn snapshot, and keeps a typed partial plan with its numeric gap. The
-static product prompt shrank and no longer hardcodes a conflicting search-call count.
+Catalog remediation now preserves a valid model-owned recommendation, uses deterministic
+replacement only after an explicit catalog-output failure, and tracks response-text
+provenance independently from provider usage. Live stock comes from one per-turn snapshot,
+and a typed partial plan retains its numeric gap. The static product prompt shrank and no
+longer hardcodes a conflicting search-call count.
 
 # Scope / Routing
 
-Only the assigned engine, prompt, tests, and stream artifact were changed. No frozen
-acceptance fixture or digest changed, and no scenario transcript entered product code.
+Only the assigned engine, prompt, runtime-evidence persistence, tests, and stream artifact
+were changed. Runtime turn evidence is now v4; its v3 envelope and v3-turn reader remain
+backward compatible. No frozen acceptance fixture or digest changed, and no scenario
+transcript entered product code.
 
 # Verification
 
 Every behavioral change was introduced by a focused failing test before its minimal
-implementation. The combined engine/prompt/decision surface passes 759 tests.
+implementation. The original engine/prompt/decision surface passes 759 tests, and the
+expanded engine, persistence, chat, observation, and evaluator surface passes 820 tests.
 
 # Delivery / Cleanup
 
@@ -117,7 +130,5 @@ change, production readback, or production side effect occurred.
 
 # Risks / Follow-ups / Explicit Defers
 
-`text_provenance` is now explicit on `LLMResponse`; persisting that new dimension into
-the versioned runtime-evidence schema is outside this stream's write zone. No in-scope
-behavioral defer remains. The orchestrator must list this artifact in the stage
-manifest before the artifact validator can pass.
+No in-scope behavioral defer remains. The orchestrator must list this artifact in the
+stage manifest before the artifact validator can pass.

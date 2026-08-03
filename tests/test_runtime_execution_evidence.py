@@ -80,6 +80,7 @@ def test_runtime_turn_evidence_is_versioned_replaced_and_bounded() -> None:
             received_at=now,
             recorded_at=now,
             usage_provenance="provider_reported",
+            text_provenance="model",
             tool_traces=(trace,),
         )
     record_runtime_turn_evidence(
@@ -89,6 +90,7 @@ def test_runtime_turn_evidence_is_versioned_replaced_and_bounded() -> None:
         received_at=now,
         recorded_at=now,
         usage_provenance="deterministic_static",
+        text_provenance="deterministic_static",
         tool_traces=(),
     )
 
@@ -97,9 +99,30 @@ def test_runtime_turn_evidence_is_versioned_replaced_and_bounded() -> None:
     assert evidence["schema_version"] == "noor-runtime-execution-evidence/v3"
     assert len(evidence["turns"]) == 20
     assert evidence["turns"][-1]["assistant_message_id"] == "assistant-replaced"
+    assert evidence["turns"][-1]["schema_version"] == ("noor-runtime-turn-evidence/v4")
+    assert evidence["turns"][-1]["text_provenance"] == "deterministic_static"
     assert [item["source_message_id"] for item in evidence["turns"]].count(
         "message-24"
     ) == 1
+
+
+def test_runtime_turn_evidence_reads_v3_without_text_provenance() -> None:
+    from src.services.runtime_execution_evidence import RuntimeTurnEvidence
+
+    now = datetime.now(UTC)
+    legacy = RuntimeTurnEvidence.model_validate(
+        {
+            "schema_version": "noor-runtime-turn-evidence/v3",
+            "source_message_id": "message-legacy",
+            "assistant_message_id": "assistant-legacy",
+            "received_at": now,
+            "recorded_at": now,
+            "usage_provenance": "provider_reported",
+            "tool_traces": [],
+        }
+    )
+
+    assert legacy.text_provenance is None
 
 
 def test_runtime_inventory_projects_business_effects_without_customer_content() -> None:

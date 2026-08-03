@@ -208,6 +208,7 @@ async def test_process_incoming_batch_success(
     mock_conv.id = "conv-uuid-123"
     mock_conv.phone = "79991234567"
     mock_conv.escalation_status = "none"
+    mock_conv.metadata_ = {}
 
     # Simulate: no bot_enabled config, existing conversation found, empty message dedup
     mock_db.execute.side_effect = [
@@ -228,6 +229,7 @@ async def test_process_incoming_batch_success(
         tokens_out=20,
         cost=0.001,
         model="test-model",
+        text_provenance="model_repaired",
     )
     mock_process_message.return_value = mock_llm_resp
 
@@ -258,6 +260,11 @@ async def test_process_incoming_batch_success(
     mock_process_message.assert_awaited_once()
     mock_provider.send_text.assert_awaited_once()
     mock_redis.enqueue_job.assert_not_called()
+    runtime_evidence = mock_conv.metadata_["runtime_execution_evidence"]
+    assert runtime_evidence["turns"][-1]["schema_version"] == (
+        "noor-runtime-turn-evidence/v4"
+    )
+    assert runtime_evidence["turns"][-1]["text_provenance"] == "model_repaired"
 
 
 @pytest.mark.asyncio

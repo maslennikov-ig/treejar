@@ -1430,7 +1430,11 @@ def _catalog_number_in_text(text: str, value: int | float) -> bool:
     normalized = text.replace(",", "")
     candidates = {f"{float(value):.2f}", f"{float(value):g}"}
     return any(
-        re.search(rf"(?<![\d.]){re.escape(candidate)}(?![\d.])", normalized) is not None
+        re.search(
+            rf"(?<![\d.]){re.escape(candidate)}(?!\d|\.\d)",
+            normalized,
+        )
+        is not None
         for candidate in candidates
     )
 
@@ -1458,6 +1462,47 @@ def _catalog_decision_output_is_valid(text: str, deps: SalesDeps) -> bool:
     if mentioned_skus - allowed_skus:
         return False
     for line in decision.selected_lines:
+        sku = line.sku.strip().casefold()
+        index = normalized.find(sku)
+        if index < 0:
+            return False
+        window = normalized[max(0, index - 100) : index + 260]
+        if not all(
+            _catalog_number_in_text(window, value)
+            for value in (line.quantity, line.unit_price, line.total)
+        ):
+            return False
+    cross_sell = deps.verified_cross_sell
+    if cross_sell is not None and (
+        cross_sell.name.casefold() not in normalized
+        or not _catalog_number_in_text(normalized, cross_sell.price)
+    ):
+        return False
+    no_quote_created = re.search(
+        r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
+        r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
+        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر|"
+        r"(?:кп|коммерческ\w*\s+предложен\w*).{0,24}\bне\s+создан\w*)",
+        normalized,
+    )
+    return _has_explicit_quote_hold(text) or no_quote_created is not None
+
+
+def _catalog_recovery_output_is_valid(text: str, deps: SalesDeps) -> bool:
+    if not isinstance(text, str) or not text.strip():
+        return False
+    selected_by_family = (
+        deps.current_catalog_selections or deps.verified_catalog_selections
+    )
+    selected_lines = tuple(
+        line
+        for family in dict.fromkeys(deps.catalog_planning.families)
+        for line in selected_by_family.get(family, ())
+    )
+    if not selected_lines:
+        return False
+    normalized = text.casefold()
+    for line in selected_lines:
         sku = line.sku.strip().casefold()
         index = normalized.find(sku)
         if index < 0:
@@ -15626,7 +15671,7 @@ async def process_message(
             run_deps: SalesDeps,
             usage: Any,
             cost: float | None,
-            route_suffix: str = "verified-catalog-recovery",
+            route_suffix: str = "verified-catalog-functional-failure",
             allow_product_media: bool = True,
         ) -> LLMResponse:
             final_text = unmask_pii(recovery_text, pii_map)
@@ -16032,7 +16077,9 @@ async def process_message(
                 or _has_explicit_quote_hold(combined_text)
             ),
         )
-        if recovery_text is not None:
+        if recovery_text is not None and not _catalog_recovery_output_is_valid(
+            unmask_pii(result.output, pii_map), run_deps
+        ):
             await _clear_verified_policy_repair_state()
             usage = result.usage() or RunUsage()
             usage_telemetry = get_llm_usage_telemetry(result)
@@ -16070,18 +16117,24 @@ async def process_message(
             )
             repaired_result = await _run_agent(repair_deps)
             await _clear_verified_policy_repair_state()
-            return _build_llm_response(
-                repaired_result,
-                db_model_main,
-                response_deps=repair_deps,
-                text_provenance="model_repaired",
-                route_suffix="catalog-fact-repair",
+            return replace(
+                _build_llm_response(
+                    repaired_result,
+                    db_model_main,
+                    response_deps=repair_deps,
+                    text_provenance="model_repaired",
+                    route_suffix="catalog-fact-repair",
+                ),
+                tool_traces=recovery_traces,
             )
         await _clear_verified_policy_repair_state()
-        return _build_llm_response(
-            result,
-            db_model_main,
-            response_deps=run_deps,
+        return replace(
+            _build_llm_response(
+                result,
+                db_model_main,
+                response_deps=run_deps,
+            ),
+            tool_traces=recovery_traces,
         )
 
     except Exception:

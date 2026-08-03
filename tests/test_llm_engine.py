@@ -6307,7 +6307,13 @@ async def test_verified_catalog_plan_reselects_after_authoritative_stock_change(
 
 @pytest.mark.parametrize(
     "failure_kind",
-    ["validation", "timeout", "timeout_without_cross_sell", "truncated"],
+    [
+        "successful",
+        "validation",
+        "timeout",
+        "timeout_without_cross_sell",
+        "truncated",
+    ],
 )
 @pytest.mark.asyncio
 @patch(
@@ -6318,7 +6324,7 @@ async def test_verified_catalog_plan_reselects_after_authoritative_stock_change(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_materializes_verified_catalog_after_terminal_model_failure(
+async def test_process_message_recovers_catalog_only_after_explicit_functional_failure(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -6428,6 +6434,17 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
                 output_tokens=45,
                 cost=0.0123,
             )
+        if failure_kind == "successful":
+            return _FakeAgentResult(
+                "For the verified fit, I recommend Task Chair (SKU CHAIR-A): "
+                "12 × AED 200.00 = AED 2400.00, plus Two-person Workstation "
+                "(SKU DESK-A): 6 × AED 600.00 = AED 3600.00. Add the verified "
+                "Mobile Pedestal at AED 250.00, for AED 6250.00 total. "
+                "No quotation was created.",
+                input_tokens=321,
+                output_tokens=45,
+                cost=0.0123,
+            )
         if failure_kind in {"timeout", "timeout_without_cross_sell"}:
             raise TimeoutError
         raise UnexpectedModelBehavior(
@@ -6451,7 +6468,21 @@ async def test_process_message_materializes_verified_catalog_after_terminal_mode
             messaging_client=messaging,
         )
 
-    assert response.model == "mock-model|verified-catalog-recovery"
+    if failure_kind == "successful":
+        assert response.model == "mock-model"
+        assert response.text_provenance == "model"
+        assert "For the verified fit, I recommend" in response.text
+        assert [trace.tool_name for trace in response.tool_traces] == [
+            "search_products",
+            "search_products",
+            "recommend_products",
+        ]
+        mock_run.assert_awaited_once()
+        mock_notify.assert_not_awaited()
+        return
+
+    assert response.model == "mock-model|verified-catalog-functional-failure"
+    assert response.text_provenance == "deterministic_replacement"
     assert response.tokens_in == 321
     assert response.tokens_out == 45
     assert response.cost == pytest.approx(0.0123)

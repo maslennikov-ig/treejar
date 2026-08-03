@@ -23,6 +23,12 @@ from pydantic_ai.messages import (
 
 RUNTIME_EXECUTION_EVIDENCE_KEY = "runtime_execution_evidence"
 _RUNTIME_TURN_LIMIT = 20
+RuntimeTextProvenance = Literal[
+    "model",
+    "model_repaired",
+    "deterministic_replacement",
+    "deterministic_static",
+]
 
 
 class RuntimeToolTrace(BaseModel):
@@ -48,22 +54,28 @@ class RuntimeTurnEvidence(BaseModel):
         "noor-runtime-turn-evidence/v1",
         "noor-runtime-turn-evidence/v2",
         "noor-runtime-turn-evidence/v3",
+        "noor-runtime-turn-evidence/v4",
     ]
     source_message_id: str = Field(min_length=1)
     assistant_message_id: str = Field(min_length=1)
     received_at: datetime
     recorded_at: datetime
     usage_provenance: Literal["provider_reported", "deterministic_static"] | None = None
+    text_provenance: RuntimeTextProvenance | None = None
     tool_traces: tuple[RuntimeToolTrace, ...]
     baseline_inventory: dict[str, dict[str, Any]] = Field(default_factory=dict)
     final_inventory: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _versioned_usage_provenance(self) -> RuntimeTurnEvidence:
-        if (self.schema_version == "noor-runtime-turn-evidence/v3") != (
-            self.usage_provenance is not None
-        ):
-            raise ValueError("runtime usage provenance/version binding drift")
+    def _versioned_provenance(self) -> RuntimeTurnEvidence:
+        if self.schema_version == "noor-runtime-turn-evidence/v4":
+            if self.usage_provenance is None or self.text_provenance is None:
+                raise ValueError("runtime v4 provenance is incomplete")
+        elif self.schema_version == "noor-runtime-turn-evidence/v3":
+            if self.usage_provenance is None or self.text_provenance is not None:
+                raise ValueError("runtime v3 provenance/version binding drift")
+        elif self.usage_provenance is not None or self.text_provenance is not None:
+            raise ValueError("legacy runtime evidence contains provenance")
         return self
 
 
@@ -155,6 +167,7 @@ def record_runtime_turn_evidence(
     received_at: datetime,
     recorded_at: datetime,
     usage_provenance: Literal["provider_reported", "deterministic_static"],
+    text_provenance: RuntimeTextProvenance,
     tool_traces: tuple[RuntimeToolTrace, ...],
     baseline_inventory: dict[str, dict[str, Any]] | None = None,
     final_inventory: dict[str, dict[str, Any]] | None = None,
@@ -164,12 +177,13 @@ def record_runtime_turn_evidence(
     if not source_message_id:
         return
     evidence = RuntimeTurnEvidence(
-        schema_version="noor-runtime-turn-evidence/v3",
+        schema_version="noor-runtime-turn-evidence/v4",
         source_message_id=source_message_id,
         assistant_message_id=assistant_message_id,
         received_at=received_at,
         recorded_at=recorded_at,
         usage_provenance=usage_provenance,
+        text_provenance=text_provenance,
         tool_traces=tool_traces,
         baseline_inventory=baseline_inventory or {},
         final_inventory=final_inventory or {},
