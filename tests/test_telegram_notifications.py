@@ -519,7 +519,12 @@ async def test_notify_catalog_mismatch_calls_telegram() -> None:
 @pytest.mark.asyncio
 async def test_final_quality_review_formatting() -> None:
     """Final review should render weighted breakdown and owner-facing sections."""
-    from src.quality.schemas import BlockScore, CriterionScore, EvaluationResult
+    from src.quality.schemas import (
+        BlockScore,
+        CriterionScore,
+        EvaluationDiagnostics,
+        EvaluationResult,
+    )
     from src.services.notifications import format_final_quality_review_message
 
     conv_id = uuid4()
@@ -542,27 +547,41 @@ async def test_final_quality_review_formatting() -> None:
         weaknesses=["Discovery could go deeper"],
         recommendations=["Ask for team size before quoting"],
         next_best_action="Send a concise quote follow-up after confirming quantities.",
+        diagnostics=EvaluationDiagnostics(
+            applicable_rules=12,
+            applicable_blocks=3,
+            nominal_applicable_weight=24.0,
+            low_coverage=False,
+            status="partial",
+        ),
         block_scores=[
             BlockScore(
-                block_name="Opening & Trust", weight=6.0, points=5.0, applicable_rules=4
+                block_name="Opening & Trust",
+                weight=6.0,
+                normalized_weight=7.5,
+                points=7.5,
+                applicable_rules=4,
             ),
             BlockScore(
                 block_name="Relationship & Discovery",
                 weight=9.0,
-                points=7.0,
+                normalized_weight=11.25,
+                points=8.8,
                 applicable_rules=5,
             ),
             BlockScore(
                 block_name="Consultative Solution",
                 weight=9.0,
-                points=7.5,
+                normalized_weight=11.25,
+                points=8.2,
                 applicable_rules=3,
             ),
             BlockScore(
                 block_name="Conversion & Next Step",
                 weight=6.0,
-                points=5.0,
-                applicable_rules=3,
+                normalized_weight=0.0,
+                points=0.0,
+                applicable_rules=0,
             ),
         ],
     )
@@ -584,12 +603,73 @@ async def test_final_quality_review_formatting() -> None:
     assert "Входящий номер:</b> +971551220665" in msg
     assert "Начат (UAE):</b> 09.04.2026 13:30" in msg
     assert "Последняя активность (UAE):</b> 09.04.2026 14:45" in msg
-    assert "Открытие и доверие: 5.0/6" in msg
-    assert "Контакт и выявление потребностей: 7.0/9" in msg
+    assert "Открытие и доверие: 7.5/7.5" in msg
+    assert "Контакт и выявление потребностей: 8.8/11.25" in msg
+    assert "Конверсия и следующий шаг: н/д" in msg
+    assert "7.5/6" not in msg
+    assert "0.0/6" not in msg
     assert "Что сделано хорошо" in msg
     assert "Что ухудшило диалог" in msg
     assert "Рекомендации" in msg
     assert "Следующее действие" in msg
+
+
+@pytest.mark.asyncio
+async def test_low_coverage_quality_review_publishes_diagnostic_not_score() -> None:
+    """Collapsed evaluator coverage must not look like a normal quality score."""
+    from src.quality.schemas import (
+        BlockScore,
+        EvaluationDiagnostics,
+        EvaluationResult,
+    )
+    from src.services.notifications import format_final_quality_review_message
+
+    result = EvaluationResult(
+        criteria=[],
+        summary="",
+        total_score=6.0,
+        rating="poor",
+        block_scores=[
+            BlockScore(
+                block_name="Opening & Trust",
+                weight=6.0,
+                normalized_weight=6.0,
+                points=6.0,
+                applicable_rules=4,
+            ),
+            BlockScore(
+                block_name="Relationship & Discovery",
+                weight=9.0,
+                normalized_weight=0.0,
+                points=0.0,
+                applicable_rules=0,
+            ),
+        ],
+        diagnostics=EvaluationDiagnostics(
+            applicable_rules=4,
+            applicable_blocks=1,
+            nominal_applicable_weight=6.0,
+            low_coverage=True,
+            status="blocking",
+            blocking_reasons=["unexpected_low_coverage"],
+        ),
+    )
+
+    msg = format_final_quality_review_message(
+        conversation_id=uuid4(),
+        phone=None,
+        customer_name=None,
+        inbound_channel_phone=None,
+        conversation_created_at=None,
+        last_activity_at=None,
+        sales_stage="qualification",
+        trigger="closed",
+        result=result,
+    )
+
+    assert "Оценка:</b> не опубликована — ошибка покрытия оценщика" in msg
+    assert "Покрытие:</b> 4/15 правил, 1/4 блоков" in msg
+    assert "6.0/30" not in msg
 
 
 @pytest.mark.asyncio

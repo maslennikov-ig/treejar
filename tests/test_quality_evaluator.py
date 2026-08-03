@@ -247,7 +247,7 @@ def test_calculate_weighted_score_uses_block_weights() -> None:
     assert sum(block.normalized_weight for block in block_scores) == 30.0
 
 
-def test_non_applicable_rules_do_not_penalize_weighted_score() -> None:
+def test_low_coverage_uses_nominal_weights_for_aggregate_score() -> None:
     from src.quality.schemas import CriterionScore, calculate_weighted_score
 
     criteria = [
@@ -386,14 +386,45 @@ def test_non_applicable_rules_do_not_penalize_weighted_score() -> None:
 
     total_score, block_scores = calculate_weighted_score(criteria)
 
-    assert total_score == 30.0
-    assert [block.points for block in block_scores] == [30.0, 0.0, 0.0, 0.0]
+    assert total_score == 6.0
+    assert [block.points for block in block_scores] == [6.0, 0.0, 0.0, 0.0]
     assert [block.normalized_weight for block in block_scores] == [
-        30.0,
+        6.0,
         0.0,
         0.0,
         0.0,
     ]
+
+
+def test_low_rule_coverage_cannot_score_excellent_across_all_blocks() -> None:
+    from src.quality.schemas import (
+        CriterionScore,
+        EvaluationResult,
+        finalize_evaluation_result,
+    )
+
+    result = finalize_evaluation_result(
+        EvaluationResult(
+            criteria=[
+                CriterionScore(
+                    rule_number=rule,
+                    rule_name=f"Rule {rule}",
+                    score=2,
+                    comment="ok",
+                    applicable=rule in {1, 4, 9, 12},
+                )
+                for rule in range(1, 16)
+            ],
+            summary="",
+            total_score=0.0,
+            rating="poor",
+        )
+    )
+
+    assert result.total_score == 8.3
+    assert result.rating == "poor"
+    assert result.diagnostics.low_coverage is True
+    assert result.diagnostics.excluded_from_aggregate is False
 
 
 def _quality_message(role: str, content: str) -> SimpleNamespace:
@@ -693,7 +724,9 @@ def test_advanced_stage_without_typed_events_is_blocking_evaluator_diagnostic() 
     assert assessment.blocking_reasons == ("advanced_stage_without_typed_evidence",)
 
 
-def test_finalize_publishes_low_coverage_without_excluding_score() -> None:
+def test_finalize_marks_low_coverage_as_evaluator_failure_without_excluding_score() -> (
+    None
+):
     from src.quality.schemas import (
         CriterionScore,
         EvaluationResult,
@@ -717,16 +750,14 @@ def test_finalize_publishes_low_coverage_without_excluding_score() -> None:
             total_score=0,
             rating="poor",
         ),
-        diagnostic_blockers=("advanced_stage_without_typed_evidence",),
         applicability_signals=("opening",),
     )
 
-    assert result.total_score == 30.0
+    assert result.total_score == 6.0
+    assert result.rating == "poor"
     assert result.diagnostics.low_coverage is True
     assert result.diagnostics.status == "blocking"
-    assert result.diagnostics.blocking_reasons == [
-        "advanced_stage_without_typed_evidence"
-    ]
+    assert result.diagnostics.blocking_reasons == ["unexpected_low_coverage"]
     assert result.diagnostics.excluded_from_aggregate is False
 
     refinalized = finalize_evaluation_result(result)

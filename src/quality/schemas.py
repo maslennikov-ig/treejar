@@ -244,11 +244,19 @@ def calculate_weighted_score(
         for block in BLOCK_DEFINITIONS
         if block.block_name in applicable_blocks
     )
-    score_scale = (
-        sum(block.weight for block in BLOCK_DEFINITIONS) / nominal_applicable_weight
-        if nominal_applicable_weight
-        else 0.0
+    applicable_rules = sum(
+        criterion.applicable for criterion in criteria_by_rule.values()
     )
+    low_coverage = applicable_rules < 8 or len(applicable_blocks) < 3
+    if not nominal_applicable_weight:
+        score_scale = 0.0
+    elif low_coverage:
+        score_scale = 1.0
+    else:
+        score_scale = (
+            sum(block.weight for block in BLOCK_DEFINITIONS)
+            / nominal_applicable_weight
+        )
 
     for block in BLOCK_DEFINITIONS:
         applicable_criteria = [
@@ -270,7 +278,10 @@ def calculate_weighted_score(
             continue
 
         normalized_weight = block.weight * score_scale
-        per_rule_weight = normalized_weight / len(applicable_criteria)
+        rule_denominator = (
+            len(block.rules) if low_coverage else len(applicable_criteria)
+        )
+        per_rule_weight = normalized_weight / rule_denominator
         raw_block_points = 0.0
         for criterion in applicable_criteria:
             raw_points = (criterion.score / 2) * per_rule_weight
@@ -314,8 +325,11 @@ def build_evaluation_diagnostics(
         if block.block_name in applicable_block_names
     )
     low_coverage = applicable_rules < 8 or len(applicable_block_names) < 3
+    effective_blockers = list(blocking_reasons)
+    if low_coverage:
+        effective_blockers.append("unexpected_low_coverage")
     status: Literal["complete", "partial", "blocking"]
-    if blocking_reasons:
+    if effective_blockers:
         status = "blocking"
     elif low_coverage or applicable_rules < len(criteria):
         status = "partial"
@@ -327,7 +341,7 @@ def build_evaluation_diagnostics(
         nominal_applicable_weight=_round_1(nominal_weight),
         low_coverage=low_coverage,
         status=status,
-        blocking_reasons=list(dict.fromkeys(blocking_reasons)),
+        blocking_reasons=list(dict.fromkeys(effective_blockers)),
         signals=list(dict.fromkeys(signals)),
         excluded_from_aggregate=False,
     )

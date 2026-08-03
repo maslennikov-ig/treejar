@@ -20,7 +20,7 @@ import logfire
 
 from src.core.config import settings
 from src.integrations.notifications.telegram import TelegramClient
-from src.quality.schemas import EvaluationResult, RedFlagItem
+from src.quality.schemas import BlockScore, EvaluationResult, RedFlagItem
 from src.services.customer_identity import format_owner_identity_block
 from src.services.daily_summary import DailySummaryData, calculate_daily_summary
 from src.services.owner_review_formatters import format_detailed_quality_review
@@ -105,6 +105,13 @@ def _collect_evidence_quotes(result: EvaluationResult, *, limit: int = 4) -> lis
             if len(quotes) >= limit:
                 return quotes
     return quotes
+
+
+def _format_quality_block_score(block: BlockScore) -> str:
+    if block.applicable_rules == 0 or block.normalized_weight <= 0:
+        return owner_na()
+    denominator = f"{block.normalized_weight:.2f}".rstrip("0").rstrip(".")
+    return f"{block.points:.1f}/{denominator}"
 
 
 # =============================================================================
@@ -329,8 +336,18 @@ def format_final_quality_review_message(
     breakdown_lines = "\n".join(
         "• "
         f"{escape(translate_quality_block_name(block.block_name, surface='quality_final_review', module='notifications'))}: "
-        f"{block.points:.1f}/{block.weight:.0f}"
+        f"{escape(_format_quality_block_score(block))}"
         for block in result.block_scores
+    )
+    diagnostics = result.diagnostics
+    coverage_line = (
+        f"<b>Покрытие:</b> {diagnostics.applicable_rules}/15 правил, "
+        f"{diagnostics.applicable_blocks}/4 блоков"
+    )
+    score_line = (
+        "<b>Оценка:</b> не опубликована — ошибка покрытия оценщика"
+        if diagnostics.low_coverage
+        else f"<b>Оценка:</b> {result.total_score:.1f}/30 ({escape(rating_label)})"
     )
     evidence_quotes = _collect_evidence_quotes(result)
     strengths_block = _format_bullets(
@@ -356,7 +373,8 @@ def format_final_quality_review_message(
 
     return (
         f"{rating_emoji} <b>Оценка качества</b>\n\n"
-        f"<b>Оценка:</b> {result.total_score:.1f}/30 ({escape(rating_label)})\n"
+        f"{score_line}\n"
+        f"{coverage_line}\n"
         f"<b>Основание:</b> {escape(trigger_label)}\n"
         f"<b>UUID диалога:</b> <code>{conversation_id}</code>\n"
         f"{identity_block}\n"
