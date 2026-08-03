@@ -4,13 +4,14 @@ Updated: 2026-08-03
 Current branch: `codex/tj-ee5f-remediation`
 Accepted stage id: `tj-ee5f`
 Current stage status: functional production E2E and client report accepted with
-a known external Wazzup status limitation; `tj-ee5f.1` and epic are closed
+a known external Wazzup status limitation; `tj-ee5f.1` is closed, epic is blocked
 
 ## Current truth
 
 - Canonical runtime: `https://noor.starec.ai`.
-- Owning task `tj-ee5f.1` and epic `tj-ee5f` are closed. `tj-ee5f.5` remains an
-  independent blocked follow-up for terminal Wazzup status proof.
+- Owning task `tj-ee5f.1` is closed. Epic `tj-ee5f` and child `tj-ee5f.5`
+  remain blocked for terminal Wazzup status proof; product remediation is not
+  reopened.
 - Frozen scope: AC-01..AC-30, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The last deployed, production-tested product release is
@@ -134,6 +135,9 @@ a known external Wazzup status limitation; `tj-ee5f.1` and epic are closed
   `audit.starec.ai` fan-out is unchanged.
 - Broad scenario reruns are not useful while the bug exists because they only
   create additional nonterminal rows.
+- Completion audit preserves the original close condition: the accepted
+  limitation closes functional testing, but not the epic. The epic closes only
+  after the future bounded status retest supplies full terminal proof.
 
 ## Next recommended
 

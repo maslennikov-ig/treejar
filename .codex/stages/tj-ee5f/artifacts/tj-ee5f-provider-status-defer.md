@@ -39,7 +39,7 @@ success_criteria:
   - functional production acceptance remains bound to exact existing evidence
   - provider sent rows remain nonterminal and are not relabeled
   - tj-ee5f.5 remains blocked until Wazzup support announces a fix
-  - tj-ee5f.1 and tj-ee5f can close under the owner's explicit known-limitation acceptance
+  - tj-ee5f.1 can close under the owner's functional known-limitation acceptance while epic tj-ee5f remains blocked until full terminal proof
 selected_docs:
   - AGENTS.md
   - .codex/orchestrator.toml
@@ -95,7 +95,8 @@ explicit_defers:
 
 Wazzup support confirmed that missing `delivered/read` callbacks are a provider
 bug with no current workaround. The owner accepted the already proven
-functional production result with that known limitation.
+functional production result with that known limitation. Completion audit keeps
+the epic open because the limitation is not terminal proof.
 
 # Scope / Routing
 

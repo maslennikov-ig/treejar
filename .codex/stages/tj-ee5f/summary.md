@@ -121,9 +121,10 @@ voice/name canary; that final request explicitly declined a quotation. `.5`
 remains blocked because the other historical outbound effects still lack
 terminal provider or recipient readback.
 
-Beads `tj-ee5f.1` and epic `tj-ee5f` are closed under the owner-approved
-known-limitation disposition. Detached follow-up `tj-ee5f.5` remains
-`BLOCKED` and is the only task to resume after Wazzup announces its fix.
+Beads `tj-ee5f.1` is closed under the owner-approved functional
+known-limitation disposition. Completion audit keeps epic `tj-ee5f` and its
+follow-up `tj-ee5f.5` `BLOCKED`: the original epic may close only after Wazzup
+announces its fix and the bounded terminal-status retest passes.
 
 ## Accepted limitation and closeout decision
 
@@ -138,6 +139,10 @@ terminal status that was not observed. `sent` remains nonterminal, the working
 into an independent blocked follow-up. After provider notification it requires
 one protected test message and exact `sent -> delivered -> read` webhook/audit
 readback; broad commercial scenario reruns are unnecessary.
+
+This accepted functional stage is not the final epic closure. The known bug is
+an explicit defer, not full proof, so the epic remains open until `tj-ee5f.5`
+records terminal evidence.
 
 The historical 23.9/30 table remains the immutable pre-correction score. A new
 aggregate score is not invented: final acceptance combines the release-bound
