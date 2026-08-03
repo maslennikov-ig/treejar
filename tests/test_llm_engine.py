@@ -5739,6 +5739,58 @@ def test_catalog_solver_uses_aed_budget_currency_not_cheaper_foreign_currency(
     } == {"AED"}
 
 
+def test_catalog_solver_preserves_solved_families_and_best_partial_coverage(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=12,
+        families=("seating", "workspace"),
+        complete_coverage=True,
+        budget_cap=7000.0,
+        per_item_cap=400.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-12",
+            name_en="Task Chair",
+            name_ar=None,
+            description_en="Individual chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=200.0,
+            currency="AED",
+            stock=12,
+        ),
+        SimpleNamespace(
+            sku="DESK-8",
+            name_en="Compact Desk",
+            name_ar=None,
+            description_en="Individual desk.",
+            description_ar=None,
+            category="desks & tables",
+            subcategory=None,
+            price=250.0,
+            currency="AED",
+            stock=8,
+        ),
+    ]
+
+    selections = engine_module._solve_verified_catalog_selections(
+        planning,
+        products,
+        customer_context="Complete chair and desk configuration.",
+        segment="Unknown",
+    )
+
+    assert selections is not None
+    assert [line.sku for line in selections["seating"]] == ["CHAIR-12"]
+    assert [line.sku for line in selections["workspace"]] == ["DESK-8"]
+    assert sum(line.quantity * line.capacity for line in selections["workspace"]) == 8
+
+
 @pytest.mark.asyncio
 async def test_verified_catalog_plan_persists_exact_lines_and_trace(
     mock_deps: tuple[
@@ -7562,6 +7614,56 @@ async def test_tools_get_stock(
         in result.content.lower()
     )
     zoho.get_stock.assert_awaited_once_with("CHAIR-01")
+
+
+@pytest.mark.asyncio
+async def test_get_stock_reuses_authoritative_snapshot_within_turn(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    snapshot = engine_module.StockSnapshot(
+        sku="CHAIR-01",
+        available=7,
+        source="zoho",
+        provenance="authoritative",
+        as_of=datetime.datetime.now(datetime.UTC),
+    )
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        stock_snapshots={"chair-01": snapshot},
+    )
+    zoho.get_stock.return_value = {
+        "sku": "CHAIR-01",
+        "stock_on_hand": 25,
+        "rate": 1000.0,
+        "currency_code": "AED",
+    }
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    result = await engine_module.get_stock(ctx, "CHAIR-01")
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "7 items available" in result_text
+    assert "25 items available" not in result_text
+    assert deps.stock_snapshots["chair-01"] is snapshot
 
 
 @pytest.mark.asyncio
@@ -19327,7 +19429,7 @@ async def test_catalog_search_preserves_capacity_constraint_and_evidence_limits(
     assert materialized is not None
     assert "LUMA Four Person Workstation (SKU: WORK-4)" in materialized
     assert "Price: 1883.00 AED" in materialized
-    assert "Stock: 30" in materialized
+    assert "Stock: unconfirmed" in materialized
     assert "Price basis: full 4-seat SKU unit" in materialized
     assert (
         "Catalog description: Screen dividers for each user and four mobile pedestals."
@@ -19559,6 +19661,125 @@ async def test_catalog_fact_materializer_prioritizes_gap_from_later_search_call(
     assert "Supported Workstation 4 (SKU: SUPPORTED-4)" not in materialized
 
 
+@pytest.mark.asyncio
+async def test_catalog_search_uses_one_zoho_stock_value_per_sku(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Show current stock for this workstation.",
+    )
+    zoho.get_stock_bulk.return_value = [
+        {"sku": "WORK-4", "stock_on_hand": 7, "rate": 1883.0}
+    ]
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="WORK-4",
+                    name="LUMA Four Person Workstation",
+                    price=1883.0,
+                    stock=30,
+                    description="Screen dividers.",
+                )
+            ],
+            total_found=1,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="workstation stock",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "workstation")
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "Current stock: 7 (Zoho-confirmed)" in result_text
+    assert "Catalog stock: 30" not in result_text
+    assert deps.stock_snapshots["work-4"] == engine_module.StockSnapshot(
+        sku="WORK-4",
+        available=7,
+        source="zoho",
+        provenance="authoritative",
+        as_of=deps.stock_snapshots["work-4"].as_of,
+    )
+
+
+@pytest.mark.asyncio
+async def test_catalog_search_marks_local_stock_unconfirmed_without_number(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    from src.schemas.product import ProductSearchResult
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query="Show current stock for this workstation.",
+    )
+    zoho.get_stock_bulk.return_value = []
+    mock_search = AsyncMock(
+        return_value=ProductSearchResult(
+            products=[
+                _catalog_acceptance_product(
+                    sku="WORK-4",
+                    name="LUMA Four Person Workstation",
+                    price=1883.0,
+                    stock=30,
+                    description="Screen dividers.",
+                )
+            ],
+            total_found=1,
+        )
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="workstation stock",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    with patch.object(engine_module, "rag_search_products", mock_search):
+        result = await engine_module.search_products(ctx, "workstation")
+
+    result_text = result.return_value if isinstance(result, ToolReturn) else result
+    assert "Current stock: unconfirmed" in result_text
+    assert "Catalog stock: 30" not in result_text
+    assert deps.stock_snapshots["work-4"].source == "catalog"
+    assert deps.stock_snapshots["work-4"].provenance == "unconfirmed"
+
+
 def test_verified_catalog_fact_materializer_ignores_unguarded_queries(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
@@ -19648,7 +19869,7 @@ def test_verified_catalog_fact_materializer_prioritizes_late_gap_product(
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_replaces_unsupported_catalog_inference_with_verified_facts(
+async def test_process_message_repairs_catalog_claims_with_model_owned_answer(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -19669,6 +19890,16 @@ async def test_process_message_replaces_unsupported_catalog_inference_with_verif
 
     async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
         deps = kwargs["deps"]
+        if deps.tool_mode == "catalog_materialization":
+            assert any(
+                "candidate_response" in directive
+                and "verified_catalog_facts" in directive
+                for directive in deps.runtime_directives
+            )
+            return _FakeAgentResult(
+                "I recommend LUMA for its verified divider layout; "
+                "acoustic performance and footprint are not stated in the catalog."
+            )
         deps.unsupported_catalog_facts.update(
             {
                 "acoustic_performance=not_stated",
@@ -19710,14 +19941,14 @@ async def test_process_message_replaces_unsupported_catalog_inference_with_verif
             messaging_client=messaging,
         )
 
-    assert response.model == "mock-model|verified-catalog-facts"
+    assert mock_run.await_count == 2
+    assert response.model == "mock-model|catalog-fact-repair"
+    assert response.text_provenance == "model_repaired"
+    assert response.usage_provenance == "provider_reported"
     assert "dampens sound" not in response.text.casefold()
-    assert "recommend luma" not in response.text.casefold()
-    assert "LUMA Four Person Workstation (SKU: WORK-4)" in response.text
-    assert "Price: 1883.00 AED" in response.text
-    assert "Stock: 30" in response.text
-    assert "Acoustic performance: not stated in the catalog" in response.text
-    assert "Footprint dimensions: not stated in the catalog" in response.text
+    assert "recommend LUMA" in response.text
+    assert "acoustic performance" in response.text.casefold()
+    assert "footprint" in response.text.casefold()
 
 
 @pytest.mark.asyncio
@@ -19740,7 +19971,7 @@ async def test_process_message_replaces_unsupported_catalog_inference_with_verif
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_detects_catalog_fact_gap_and_replaces_model_output(
+async def test_process_message_detects_catalog_fact_gap_and_repairs_model_output(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -19777,6 +20008,8 @@ async def test_process_message_detects_catalog_fact_gap_and_replaces_model_outpu
 
     async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
         deps = kwargs["deps"]
+        if deps.tool_mode == "catalog_materialization":
+            return _FakeAgentResult(f"LUMA remains my recommendation. {expected_gap}")
         ctx = RunContext(
             deps=deps,
             retry=0,
@@ -19814,7 +20047,8 @@ async def test_process_message_detects_catalog_fact_gap_and_replaces_model_outpu
             messaging_client=messaging,
         )
 
-    assert response.model == "mock-model|verified-catalog-facts"
+    assert response.model == "mock-model|catalog-fact-repair"
+    assert response.text_provenance == "model_repaired"
     assert "compact and its panels dampen sound" not in response.text.casefold()
     assert expected_gap in response.text
 
@@ -19991,6 +20225,10 @@ async def test_catalog_search_reports_complete_multi_variant_seat_coverage(
             total_found=3,
         )
     )
+    zoho.get_stock_bulk.return_value = [
+        {"sku": sku, "stock_on_hand": 4, "rate": rate}
+        for sku, rate in (("DESK-A", 58.0), ("DESK-B", 75.0), ("DESK-C", 90.0))
+    ]
     ctx = RunContext(
         deps=deps,
         retry=0,
@@ -20072,6 +20310,10 @@ async def test_catalog_search_keeps_lower_verified_family_total_across_alternati
             ],
             total_found=1,
         ),
+    ]
+    zoho.get_stock_bulk.side_effect = [
+        [{"sku": "CHAIR-LOWER", "stock_on_hand": 12, "rate": 290.0}],
+        [{"sku": "CHAIR-HIGHER", "stock_on_hand": 12, "rate": 297.0}],
     ]
 
     with patch.object(
@@ -20211,6 +20453,10 @@ async def test_catalog_coverage_does_not_mix_chairs_into_desk_capacity(
             total_found=2,
         )
     )
+    zoho.get_stock_bulk.return_value = [
+        {"sku": "DESK-4", "stock_on_hand": 4, "rate": 90.0},
+        {"sku": "CHAIR-12", "stock_on_hand": 12, "rate": 250.0},
+    ]
     ctx = RunContext(
         deps=deps,
         retry=0,
@@ -20476,6 +20722,10 @@ async def test_cross_sell_enforces_remaining_budget_from_catalog_selection(
             total_found=1,
         ),
     ]
+    zoho.get_stock_bulk.side_effect = [
+        [{"sku": "CHAIR-A", "stock_on_hand": 12, "rate": 250.0}],
+        [{"sku": "DESK-A", "stock_on_hand": 12, "rate": 300.0}],
+    ]
     ctx = RunContext(
         deps=deps,
         retry=0,
@@ -20541,6 +20791,18 @@ def test_product_search_limit_scales_with_families_and_is_bounded() -> None:
     )
 
     assert engine_module._product_search_call_limit(deps) == 6
+
+
+def test_product_search_limit_uses_families_requested_in_current_turn() -> None:
+    deps = SimpleNamespace(
+        user_query="Show me cheaper chairs from this configuration.",
+        catalog_planning=engine_module.CatalogPlanningContext(
+            families=("seating", "workspace", "storage"),
+            complete_coverage=True,
+        ),
+    )
+
+    assert engine_module._product_search_call_limit(deps) == 2
 
 
 @pytest.mark.asyncio
@@ -20722,6 +20984,12 @@ async def test_catalog_recovery_uses_complete_current_turn_selection(
             ],
             total_found=1,
         ),
+    ]
+    zoho.get_stock_bulk.side_effect = [
+        [{"sku": "STORAGE-CURRENT", "stock_on_hand": 5, "rate": 600.0}],
+        [{"sku": "CHAIR-CURRENT", "stock_on_hand": 12, "rate": 250.0}],
+        [{"sku": "DESK-CURRENT", "stock_on_hand": 12, "rate": 166.0}],
+        [{"sku": "STORAGE-UNRELATED", "stock_on_hand": 5, "rate": 100.0}],
     ]
 
     with patch.object(

@@ -1271,6 +1271,16 @@ class StockSnapshot:
     available: int
     source: Literal["zoho", "catalog"]
     as_of: datetime.datetime
+    provenance: Literal["authoritative", "unconfirmed"] = "authoritative"
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogCoverageGap:
+    family: str
+    requested: int
+    covered: int
+    resolution: Literal["source_additional_stock", "adjust_quantity"]
+    closing_question: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1282,6 +1292,7 @@ class CatalogDecision:
     stock_snapshots: tuple[StockSnapshot, ...]
     recommendation: str
     unknown_properties: tuple[str, ...] = ()
+    coverage_gaps: tuple[CatalogCoverageGap, ...] = ()
 
 
 def validate_catalog_decision(decision: CatalogDecision) -> CatalogDecision:
@@ -1291,6 +1302,11 @@ def validate_catalog_decision(decision: CatalogDecision) -> CatalogDecision:
         key = snapshot.sku.strip().casefold()
         if not key or snapshot.available < 0 or snapshot.as_of.tzinfo is None:
             raise ValueError("invalid stock snapshot")
+        if (snapshot.source, snapshot.provenance) not in {
+            ("zoho", "authoritative"),
+            ("catalog", "unconfirmed"),
+        }:
+            raise ValueError("stock source and provenance disagree")
         previous = snapshots.get(key)
         if previous is not None and previous.available != snapshot.available:
             raise ValueError(f"conflicting stock for SKU {snapshot.sku}")
@@ -1317,12 +1333,39 @@ def validate_catalog_decision(decision: CatalogDecision) -> CatalogDecision:
 
     if decision.budget_cap is not None and round(total, 2) > decision.budget_cap:
         raise ValueError("selected configuration exceeds budget")
+    gaps_by_family: dict[str, CatalogCoverageGap] = {}
+    question_count = 0
+    for gap in decision.coverage_gaps:
+        if gap.family in gaps_by_family:
+            raise ValueError(f"duplicate coverage gap for family {gap.family}")
+        if gap.requested <= 0 or gap.covered < 0 or gap.covered >= gap.requested:
+            raise ValueError(f"invalid coverage gap for family {gap.family}")
+        question_count += gap.closing_question.count("?") + gap.closing_question.count(
+            "؟"
+        )
+        gaps_by_family[gap.family] = gap
+    if decision.coverage_gaps and question_count != 1:
+        raise ValueError("partial plan requires one closing question")
+
     if decision.requested_seats is not None:
         for family in decision.requirements:
-            if coverage_by_family.get(family, 0) < decision.requested_seats:
-                raise ValueError(f"incomplete coverage for family {family}")
+            covered = coverage_by_family.get(family, 0)
+            current_gap = gaps_by_family.get(family)
+            if current_gap is not None:
+                gaps_by_family.pop(family)
+            if covered < decision.requested_seats:
+                if (
+                    current_gap is None
+                    or current_gap.requested != decision.requested_seats
+                    or current_gap.covered != covered
+                ):
+                    raise ValueError(f"incomplete coverage for family {family}")
+            elif current_gap is not None:
+                raise ValueError(f"unexpected coverage gap for family {family}")
             if len(sku_count_by_family.get(family, set())) > 2:
                 raise ValueError(f"too many SKUs for family {family}")
+    if gaps_by_family:
+        raise ValueError("coverage gap references an unrequested family")
     return decision
 
 
@@ -1347,6 +1390,17 @@ def _catalog_decision_runtime_directive(deps: SalesDeps) -> str | None:
                 for line in decision.selected_lines
             ],
             "budget": decision.budget_cap,
+            "coverage_gaps": [
+                {
+                    "family": gap.family,
+                    "requested": gap.requested,
+                    "covered": gap.covered,
+                    "uncovered": gap.requested - gap.covered,
+                    "resolution": gap.resolution,
+                    "closing_question": gap.closing_question or None,
+                }
+                for gap in decision.coverage_gaps
+            ],
             "cross_sell": (
                 {
                     "name": deps.verified_cross_sell.name,
@@ -1815,6 +1869,30 @@ def _minimum_catalog_coverage_selection(
     candidates: Sequence[_CatalogCoverageCandidate],
     requested_seats: int,
 ) -> tuple[VerifiedCatalogLine, ...] | None:
+    return _catalog_coverage_selection(
+        candidates,
+        requested_seats,
+        allow_partial=False,
+    )
+
+
+def _best_catalog_coverage_selection(
+    candidates: Sequence[_CatalogCoverageCandidate],
+    requested_seats: int,
+) -> tuple[VerifiedCatalogLine, ...] | None:
+    return _catalog_coverage_selection(
+        candidates,
+        requested_seats,
+        allow_partial=True,
+    )
+
+
+def _catalog_coverage_selection(
+    candidates: Sequence[_CatalogCoverageCandidate],
+    requested_seats: int,
+    *,
+    allow_partial: bool,
+) -> tuple[VerifiedCatalogLine, ...] | None:
     if requested_seats <= 0 or not candidates:
         return None
     states: dict[int, tuple[int, float, tuple[int, ...]]] = {
@@ -1845,6 +1923,9 @@ def _minimum_catalog_coverage_selection(
         states = updated
 
     selected = states.get(requested_seats)
+    if selected is None and allow_partial:
+        best_covered = max(states)
+        selected = states[best_covered] if best_covered > 0 else None
     if selected is None:
         return None
     sku_count, _, quantities = selected
@@ -1994,13 +2075,14 @@ def _solve_verified_catalog_selections(
                 )
                 for candidate in family_candidates
             ]
-        selection = _minimum_catalog_coverage_selection(
+        selection = _best_catalog_coverage_selection(
             family_candidates,
             requested_seats,
         )
-        if selection is None:
-            return None
-        selections[family] = selection
+        selections[family] = selection or ()
+
+    if not any(selections.values()):
+        return None
 
     currencies = {
         line.currency.strip().upper()
@@ -2028,6 +2110,36 @@ def _catalog_selection_total(
         sum(line.total for family in required_families for line in selections[family]),
         2,
     )
+
+
+def _catalog_coverage_gaps(
+    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
+    families: Sequence[CatalogFamily],
+    requested_seats: int,
+) -> tuple[CatalogCoverageGap, ...]:
+    gaps: list[CatalogCoverageGap] = []
+    for family in dict.fromkeys(families):
+        covered = sum(
+            line.quantity * line.capacity for line in selections.get(family, ())
+        )
+        if covered >= requested_seats:
+            continue
+        uncovered = requested_seats - covered
+        gaps.append(
+            CatalogCoverageGap(
+                family=family,
+                requested=requested_seats,
+                covered=covered,
+                resolution="source_additional_stock",
+                closing_question=(
+                    f"Should I source {uncovered} additional {family} unit"
+                    f"{'s' if uncovered != 1 else ''}?"
+                    if not gaps
+                    else ""
+                ),
+            )
+        )
+    return tuple(gaps)
 
 
 def _catalog_remaining_budget(
@@ -2610,7 +2722,12 @@ def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
         else:
             price = "يتطلب التحقق" if arabic else "requires verification"
         lines.append(f"  - {'السعر' if arabic else 'Price'}: {price}")
-        lines.append(f"  - {'المخزون' if arabic else 'Stock'}: {product.stock}")
+        snapshot = deps.stock_snapshots.get(product.sku.strip().casefold())
+        if snapshot is not None and snapshot.provenance == "authoritative":
+            stock = str(snapshot.available)
+        else:
+            stock = "غير مؤكد" if arabic else "unconfirmed"
+        lines.append(f"  - {'المخزون' if arabic else 'Stock'}: {stock}")
         if product.capacity is not None and product.capacity > 1:
             basis = (
                 f"وحدة كاملة لـ {product.capacity} مقاعد"
@@ -2667,7 +2784,8 @@ def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
 
 
 def _product_search_call_limit(deps: SalesDeps) -> int:
-    family_count = len(set(deps.catalog_planning.families))
+    turn_families = _catalog_product_families(getattr(deps, "user_query", ""))
+    family_count = len(set(turn_families or deps.catalog_planning.families))
     return min(6, max(2, 2 * family_count))
 
 
@@ -2740,6 +2858,11 @@ def _materialize_verified_catalog_recovery(
             )
             return None
     planning = deps.catalog_planning
+    coverage_gaps = (
+        {gap.family: gap for gap in deps.catalog_decision.coverage_gaps}
+        if deps.catalog_decision is not None
+        else {}
+    )
     required_families = tuple(dict.fromkeys(planning.families))
     current_selections = deps.current_catalog_selections
     selected_by_family = current_selections or deps.verified_catalog_selections
@@ -2780,8 +2903,8 @@ def _materialize_verified_catalog_recovery(
 
     selected_lines: list[VerifiedCatalogLine] = []
     for family in required_families:
-        family_lines = selected_by_family.get(family)
-        if not family_lines:
+        family_lines = selected_by_family.get(family, ())
+        if not family_lines and family not in coverage_gaps:
             return None
         family_total = 0.0
         family_coverage = 0
@@ -2802,7 +2925,13 @@ def _materialize_verified_catalog_recovery(
             family_total += line.total
             family_coverage += line.quantity * line.capacity
         if family_coverage < planning.requested_seats:
-            return None
+            gap = coverage_gaps.get(family)
+            if (
+                gap is None
+                or gap.requested != planning.requested_seats
+                or gap.covered != family_coverage
+            ):
+                return None
         if (
             not uses_current_selections
             and abs(family_total - planning.family_totals.get(family, -1.0)) > 0.01
@@ -2811,7 +2940,7 @@ def _materialize_verified_catalog_recovery(
         selected_lines.extend(family_lines)
 
     selected_total = round(sum(line.total for line in selected_lines), 2)
-    if selected_total > planning.budget_cap:
+    if not selected_lines or selected_total > planning.budget_cap:
         return None
 
     cross_sell = deps.verified_cross_sell
@@ -2843,7 +2972,12 @@ def _materialize_verified_catalog_recovery(
     remaining = round(planning.budget_cap - final_total, 2)
     language = str(deps.conversation.language)
     if language == "ar":
-        lines = [f"تكوين مؤكد ضمن الميزانية لـ {planning.requested_seats} مقعداً:"]
+        heading = (
+            f"تكوين جزئي مؤكد لـ {planning.requested_seats} مقعداً:"
+            if coverage_gaps
+            else f"تكوين مؤكد ضمن الميزانية لـ {planning.requested_seats} مقعداً:"
+        )
+        lines = [heading]
         lines.extend(
             (
                 f"- {line.name} (SKU {line.sku}): {line.quantity} × "
@@ -2864,6 +2998,13 @@ def _materialize_verified_catalog_recovery(
             )
         elif disclosure:
             lines.append(disclosure)
+        for gap in coverage_gaps.values():
+            lines.append(
+                f"فجوة {gap.family}: تم تغطية {gap.covered} من {gap.requested}؛ "
+                f"المتبقي {gap.requested - gap.covered}."
+            )
+            if gap.closing_question:
+                lines.append(gap.closing_question)
         lines.append("لم يتم إنشاء عرض سعر.")
         response_text = "\n".join(lines)
         if len(response_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS:
@@ -2886,7 +3027,12 @@ def _materialize_verified_catalog_recovery(
             else None
         )
 
-    lines = [f"Verified budget-fit configuration for {planning.requested_seats} seats:"]
+    heading = (
+        f"Verified partial configuration for {planning.requested_seats} seats:"
+        if coverage_gaps
+        else f"Verified budget-fit configuration for {planning.requested_seats} seats:"
+    )
+    lines = [heading]
     lines.extend(
         (
             f"- {line.name} (SKU {line.sku}): {line.quantity} × "
@@ -2907,6 +3053,13 @@ def _materialize_verified_catalog_recovery(
         )
     elif disclosure:
         lines.append(disclosure)
+    for gap in coverage_gaps.values():
+        lines.append(
+            f"{gap.family.title()} coverage gap: {gap.covered} of {gap.requested}; "
+            f"{gap.requested - gap.covered} uncovered."
+        )
+        if gap.closing_question:
+            lines.append(gap.closing_question)
     lines.append("No quotation was created.")
     response_text = "\n".join(lines)
     if len(response_text) <= _VERIFIED_CATALOG_RECOVERY_MAX_CHARS:
@@ -3027,10 +3180,24 @@ def _verified_catalog_plan_payload(
                 "sku": snapshot.sku,
                 "available": snapshot.available,
                 "source": snapshot.source,
+                "provenance": snapshot.provenance,
                 "as_of": snapshot.as_of.isoformat(),
             }
             for snapshot in sorted(
                 deps.stock_snapshots.values(), key=lambda item: item.sku.casefold()
+            )
+        ],
+        "coverage_gaps": [
+            {
+                "family": gap.family,
+                "requested": gap.requested,
+                "covered": gap.covered,
+                "uncovered": gap.requested - gap.covered,
+                "resolution": gap.resolution,
+                "closing_question": gap.closing_question or None,
+            }
+            for gap in (
+                deps.catalog_decision.coverage_gaps if deps.catalog_decision else ()
             )
         ],
         "cross_sell": (
@@ -3139,6 +3306,11 @@ async def _try_verified_catalog_plan(
     )
     if selections is None:
         return None
+    coverage_gaps = _catalog_coverage_gaps(
+        selections,
+        planning.families,
+        planning.requested_seats,
+    )
     selected_stock = {
         line.sku.strip().casefold(): line
         for family_lines in selections.values()
@@ -3161,7 +3333,12 @@ async def _try_verified_catalog_plan(
         requested_seats=planning.requested_seats,
         budget_cap=planning.budget_cap,
         stock_snapshots=stock_snapshots,
-        recommendation="verified_complete_configuration",
+        recommendation=(
+            "verified_partial_configuration"
+            if coverage_gaps
+            else "verified_complete_configuration"
+        ),
+        coverage_gaps=coverage_gaps,
     )
     try:
         validate_catalog_decision(decision)
@@ -3253,6 +3430,14 @@ async def _try_verified_catalog_plan(
             has_budget=cross_sell_status == "over_budget",
         )
     )
+    if coverage_gaps:
+        verified_cross_sell = None
+        cross_sell_status = "not_found"
+        cross_sell_disclosure = (
+            "تم تأجيل الإضافة حتى يتم إغلاق فجوة التغطية."
+            if str(deps.conversation.language) == "ar"
+            else "Cross-sell deferred until the coverage gap is closed."
+        )
     resolved_planning = planning.model_copy(deep=True)
     resolved_planning.family_totals = {
         family: round(sum(line.total for line in selections[family]), 2)
@@ -3406,6 +3591,9 @@ class LLMResponse:
     usage_provenance: Literal["provider_reported", "deterministic_static"] = (
         "provider_reported"
     )
+    text_provenance: Literal[
+        "model", "model_repaired", "deterministic_replacement", "deterministic_static"
+    ] = "model"
     deferred_product_media: tuple[ProductMediaPayload, ...] = ()
     tool_traces: tuple[RuntimeToolTrace, ...] = ()
 
@@ -12207,6 +12395,16 @@ async def search_products(
             )
         return "No products found matching the query."
 
+    stock_lookup = await _zoho_stock_for_catalog_candidates(
+        ctx.deps,
+        [str(product.sku) for product in results.products if product.sku],
+    )
+    zoho_stock_by_sku, zoho_stock_as_of = (
+        stock_lookup
+        if stock_lookup is not None
+        else ({}, datetime.datetime.now(datetime.UTC))
+    )
+
     from src.core.discounts import apply_discount
 
     segment = (
@@ -12329,6 +12527,33 @@ async def search_products(
     has_capacity_evidence = False
     coverage_candidates: list[_CatalogCoverageCandidate] = []
     for result_rank, r in enumerate(results.products):
+        sku = str(r.sku).strip()
+        sku_key = sku.casefold()
+        existing_snapshot = ctx.deps.stock_snapshots.get(sku_key)
+        if existing_snapshot is not None and existing_snapshot.source == "zoho":
+            stock_snapshot = existing_snapshot
+        elif sku_key in zoho_stock_by_sku:
+            stock_snapshot = StockSnapshot(
+                sku=sku,
+                available=zoho_stock_by_sku[sku_key],
+                source="zoho",
+                provenance="authoritative",
+                as_of=zoho_stock_as_of,
+            )
+        else:
+            stock_snapshot = StockSnapshot(
+                sku=sku,
+                available=max(int(r.stock or 0), 0),
+                source="catalog",
+                provenance="unconfirmed",
+                as_of=datetime.datetime.now(datetime.UTC),
+            )
+        ctx.deps.stock_snapshots[sku_key] = stock_snapshot
+        stock_line = (
+            f"Current stock: {stock_snapshot.available} (Zoho-confirmed)"
+            if stock_snapshot.provenance == "authoritative"
+            else "Current stock: unconfirmed"
+        )
         catalog_price = _valid_catalog_price(r)
         discounted_price: float | None = None
         if catalog_price is not None:
@@ -12351,13 +12576,18 @@ async def search_products(
             f"Name: {r.name_en}\n"
             f"SKU: {r.sku}\n"
             f"{price_line}\n"
-            f"Catalog stock: {r.stock}\n"
+            f"{stock_line}\n"
             f"Description: {r.description_en}"
         )
         product_text = _product_match_text(r)
         product_capacity = _catalog_product_capacity(product_text)
         product_family = _catalog_product_family(product_text)
-        product_stock = max(int(r.stock or 0), 0)
+        catalog_stock = max(int(r.stock or 0), 0)
+        product_stock = (
+            stock_snapshot.available
+            if stock_snapshot.provenance == "authoritative"
+            else 0
+        )
         if (
             complementary_search
             and product_family is not None
@@ -12441,7 +12671,7 @@ async def search_products(
                     else None
                 ),
                 currency=str(r.currency),
-                stock=product_stock,
+                stock=catalog_stock,
                 description=localized_description,
                 capacity=product_capacity,
                 fact_gaps=evidence_gaps,
@@ -12600,17 +12830,27 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
             return _catalog_mismatch_customer_message()
         return f"Product with SKU {sku} not found in inventory."
 
+    snapshot_key = sku.strip().casefold()
+    existing_snapshot = ctx.deps.stock_snapshots.get(snapshot_key)
     available = stock_info.get("stock_on_hand", 0)
     try:
         available_int = max(int(available), 0)
     except (TypeError, ValueError):
         available_int = 0
-    ctx.deps.stock_snapshots[sku.strip().casefold()] = StockSnapshot(
-        sku=sku.strip(),
-        available=available_int,
-        source="zoho",
-        as_of=datetime.datetime.now(datetime.UTC),
-    )
+    if (
+        existing_snapshot is not None
+        and existing_snapshot.source == "zoho"
+        and existing_snapshot.provenance == "authoritative"
+    ):
+        available_int = existing_snapshot.available
+    else:
+        ctx.deps.stock_snapshots[snapshot_key] = StockSnapshot(
+            sku=sku.strip(),
+            available=available_int,
+            source="zoho",
+            provenance="authoritative",
+            as_of=datetime.datetime.now(datetime.UTC),
+        )
     segment = (
         ctx.deps.crm_context.get("Segment", "Unknown")
         if ctx.deps.crm_context
@@ -12641,7 +12881,7 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         )
 
     stock_text = (
-        f"Zoho-confirmed stock for {sku}: {available} items available. {price_text}"
+        f"Zoho-confirmed stock for {sku}: {available_int} items available. {price_text}"
     )
     if ctx.deps.product_results_seen:
         return ToolReturn(
@@ -14280,14 +14520,13 @@ async def process_message(
         *,
         response_deps: SalesDeps | None = None,
         allow_product_media: bool = True,
+        text_provenance: Literal["model", "model_repaired"] = "model",
+        route_suffix: str | None = None,
     ) -> LLMResponse:
         response_deps = response_deps or deps
-        verified_catalog_text = _materialize_verified_catalog_facts(response_deps)
-        if verified_catalog_text is not None:
-            final_text = verified_catalog_text
-            model_name = f"{model_name}|verified-catalog-facts"
-        else:
-            final_text = unmask_pii(result.output, pii_map)
+        final_text = unmask_pii(result.output, pii_map)
+        if route_suffix:
+            model_name = f"{model_name}|{route_suffix}"
         final_text = _repair_closed_questions(final_text)
         final_text = _guard_premature_quote_detail_collection(
             final_text,
@@ -14331,6 +14570,7 @@ async def process_message(
             cost=usage_telemetry.cost if usage_telemetry is not None else None,
             model=model_name,
             usage_provenance="provider_reported",
+            text_provenance=text_provenance,
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
@@ -14374,6 +14614,7 @@ async def process_message(
             cost=None,
             model=model_name,
             usage_provenance="deterministic_static",
+            text_provenance="deterministic_static",
             deferred_product_media=_deferred_product_media_for_response(
                 response_deps,
                 allow_product_media=allow_product_media,
@@ -14404,6 +14645,7 @@ async def process_message(
             cost=None,
             model=f"{model_name}|verified-policy",
             usage_provenance="deterministic_static",
+            text_provenance="deterministic_static",
             deferred_product_media=_deferred_product_media_for_response(
                 deps,
                 allow_product_media=False,
@@ -15360,6 +15602,7 @@ async def process_message(
                 cost=cost,
                 model=f"{db_model_main}|{route_suffix}",
                 usage_provenance="provider_reported",
+                text_provenance="deterministic_replacement",
                 deferred_product_media=_deferred_product_media_for_response(
                     run_deps,
                     allow_product_media=allow_product_media,
@@ -15757,6 +16000,36 @@ async def process_message(
                     else dynamic_model.provider_cost_snapshot()
                 ),
             )
+        verified_catalog_facts = _materialize_verified_catalog_facts(run_deps)
+        if verified_catalog_facts is not None:
+            repair_payload = json.dumps(
+                {
+                    "candidate_response": str(result.output),
+                    "verified_catalog_facts": verified_catalog_facts,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            repair_deps = replace(
+                run_deps,
+                tool_mode="catalog_materialization",
+                runtime_directives=(
+                    *run_deps.runtime_directives,
+                    "Revise candidate_response against verified_catalog_facts. "
+                    "Preserve supported recommendation reasoning, remove unsupported "
+                    "claims, and return only the customer-facing answer. "
+                    f"{repair_payload}",
+                ),
+            )
+            repaired_result = await _run_agent(repair_deps)
+            await _clear_verified_policy_repair_state()
+            return _build_llm_response(
+                repaired_result,
+                db_model_main,
+                response_deps=repair_deps,
+                text_provenance="model_repaired",
+                route_suffix="catalog-fact-repair",
+            )
         await _clear_verified_policy_repair_state()
         return _build_llm_response(
             result,
@@ -15781,4 +16054,5 @@ async def process_message(
             cost=0.0,
             model=f"{db_model_label}|error",
             usage_provenance="deterministic_static",
+            text_provenance="deterministic_static",
         )

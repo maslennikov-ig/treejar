@@ -264,7 +264,7 @@ async def test_build_system_prompt_preserves_non_escalation_examples_for_bulk_qu
 
 
 @pytest.mark.asyncio
-async def test_build_system_prompt_caps_product_search_retries() -> None:
+async def test_build_system_prompt_defers_product_search_budget_to_runtime() -> None:
     db, redis = AsyncMock(), AsyncMock()
     redis.get.return_value = None
     db.execute.return_value.scalars.return_value.first.return_value = None
@@ -273,7 +273,8 @@ async def test_build_system_prompt_caps_product_search_retries() -> None:
         db, redis, SalesStage.SOLUTION.value, language="en"
     )
 
-    assert "at most ONE silent retry" in prompt
-    assert "Never do more than 2 `search_products` calls" in prompt
+    assert "at most ONE silent retry" not in prompt
+    assert "Never do more than 2 `search_products` calls" not in prompt
+    assert "If two product searches" not in prompt
     assert "Never send an interim message like" in prompt
     assert "Let me try a more specific search for you" in prompt
