@@ -45,6 +45,7 @@ selected_docs:
   - .codex/handoff.md
 selected_skills:
   - superpowers:test-driven-development
+  - superpowers:verification-before-completion
 selected_agents:
   - tj-ee5f-r14-review-remediation
 catalog_candidates:
@@ -73,9 +74,9 @@ docs_impact: behavior
 docs_reviewed: updated
 docs_review_notes: this artifact records only behavior proven by focused harness tests
 verification:
-  - /home/me/code/treejar/.venv/bin/python -m pytest tests/test_scripts_model_battle.py -q --tb=short: passed, 90 tests
-  - /home/me/code/treejar/.venv/bin/ruff check scripts/model_battle.py scripts/model_battle_cases.py tests/test_scripts_model_battle.py: passed
-  - /home/me/code/treejar/.venv/bin/ruff format --check scripts/model_battle.py scripts/model_battle_cases.py tests/test_scripts_model_battle.py: passed
+  - uv run pytest tests/test_scripts_model_battle.py -q: passed, 113 tests
+  - uv run ruff check scripts/model_battle.py tests/test_scripts_model_battle.py: passed
+  - uv run ruff format --check scripts/model_battle.py tests/test_scripts_model_battle.py: passed
   - git diff --check: passed
   - artifact validator: integration-blocked until the parent registers this returned artifact in the stage manifest outside this stream write zone
 changed_files:
@@ -96,17 +97,26 @@ ranking. Replication noise is measured within each case, while tool discipline,
 latency, and actual cost remain deterministic ordering inputs.
 
 Requests include provider usage cost. Each worst-case reservation is reconciled
-to actual reported spend, unused allowance carries forward in cheapest-first
-execution order, and every model retains an independent USD 1 hard cap. A
-length finish is `TRUNCATED`, stops that configuration, and never becomes a
-quality score. Conservative estimates above USD 1 remain preflight evidence
-instead of blocking by themselves.
+to actual reported spend. The request reservation uses the UTF-8 byte length of
+the complete billable payload as a conservative token upper bound. Unused
+allowance carries forward only after a candidate finishes or is eliminated, so
+unfinished candidates retain their reserved allowance; every model also keeps
+an independent USD 1 hard cap. A length finish is `TRUNCATED`, stops that
+configuration, and never becomes a quality score. Non-finite estimates,
+pricing, usage, latency, and cost fail closed.
 
-Blind review files use an independent per-item permutation and include rule
-labels, synthetic tool results, observed tool sequence, and parsed arguments.
-Identified model responses live in a sibling plaintext evidence directory, not
-the blind-review directory. Missing models or required capabilities produce a
-machine-readable `UNSUPPORTED` artifact before the paid-call gate.
+Blind review files use fresh cryptographic entropy for every item and include
+rule labels, synthetic tool results, observed tool sequence, and parsed
+arguments. The reveal key is mode `0600` in the sibling plaintext evidence
+directory; the reviewer bundle exposes only its SHA-256 commitment. Missing
+models or required capabilities produce a machine-readable `UNSUPPORTED`
+artifact before the paid-call gate.
+
+Before either hard-profile winner is selected, the scorer now requires the
+complete unique staged model-by-case-by-repetition matrix. Blind judge scores
+and critical failures are applied to one copied final row set before any scored
+row or aggregate artifact is written, so durable evidence and ranking use the
+same state.
 
 # Scope / Routing
 
@@ -117,13 +127,15 @@ modified. No metadata preflight or paid model call was run.
 
 # Verification
 
-TDD RED produced 14 expected failures across winner selection, cost usage and
+The initial TDD RED produced 14 expected failures across winner selection, cost usage and
 reconciliation, grounding, truncation, blind mapping/evidence, capability
 status, evidence separation, and scenario identity. A later focused RED proved
 that truncated rows leaked into audit comparison; another proved aggregate
 reporting attempted to score them; a final money-integrity RED proved missing
-`usage.cost` did not fail closed. The implementation reached GREEN with 90
-focused tests.
+`usage.cost` did not fail closed. The correction RED produced 27 expected
+failures covering carry isolation, full-payload reservation, staged-matrix
+integrity, immutable final scoring, cryptographic blindness/private reveal, and
+non-finite accounting. The implementation reached GREEN with 113 focused tests.
 
 # Delivery / Cleanup
 

@@ -11,8 +11,10 @@ import asyncio
 import hashlib
 import json
 import math
+import os
 import random
 import re
+import secrets
 import statistics
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -125,6 +127,37 @@ class ProviderAttempt:
     error: str | None
 
 
+def _finite_number(value: Any, field: str, *, nonnegative: bool = True) -> float:
+    if isinstance(value, bool):
+        raise RuntimeError(f"{field} must be a finite number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"{field} must be a finite number") from exc
+    if not math.isfinite(number) or (nonnegative and number < 0):
+        qualifier = "finite non-negative" if nonnegative else "finite"
+        raise RuntimeError(f"{field} must be a {qualifier} number")
+    return number
+
+
+def conservative_input_token_bound(payload: Mapping[str, Any]) -> int:
+    """Bound input tokens by the complete billable request's UTF-8 byte count."""
+
+    try:
+        encoded = json.dumps(
+            dict(payload),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Request payload must be finite JSON") from exc
+    # Every token contains at least one byte, so bytes is conservative for any
+    # UTF-8 tokenizer while avoiding an unproved characters/4 approximation.
+    return max(1, len(encoded))
+
+
 class RequestCostBudget:
     """Reserve each request, then replace it with provider-reported cost."""
 
@@ -136,15 +169,31 @@ class RequestCostBudget:
     ) -> None:
         self._catalog = catalog
         self._caps = {model: 1.0 for model in estimated_costs}
-        self._batch_allowances = {
-            model: min(1.0, max(0.0, float(estimate)) * 1.25)
-            for model, estimate in estimated_costs.items()
-        }
+        self._batch_allowances = {}
+        self._pricing: dict[str, tuple[float, float]] = {}
+        for model, estimate in estimated_costs.items():
+            finite_estimate = _finite_number(estimate, f"Estimate for {model}")
+            self._batch_allowances[model] = min(1.0, finite_estimate * 1.25)
+            pricing = catalog.get(model, {}).get("pricing", {})
+            if not isinstance(pricing, Mapping):
+                raise RuntimeError(f"Missing catalog pricing for {model}")
+            try:
+                self._pricing[model] = (
+                    _finite_number(pricing["prompt"], f"Prompt price for {model}"),
+                    _finite_number(
+                        pricing["completion"], f"Completion price for {model}"
+                    ),
+                )
+            except KeyError as exc:
+                raise RuntimeError(f"Invalid catalog pricing for {model}") from exc
         self._pending = {model: 0.0 for model in estimated_costs}
         self._actual = {model: 0.0 for model in estimated_costs}
-        self._shared_available = 0.0
-        self._active_model: str | None = None
-        self._seen_models: set[str] = set()
+        self._own_available = dict(self._batch_allowances)
+        self._carry_available = 0.0
+        self._reservations: dict[str, list[tuple[float, float, float]]] = {
+            model: [] for model in estimated_costs
+        }
+        self._finished: set[str] = set()
 
     @property
     def actual_spend(self) -> dict[str, float]:
@@ -152,42 +201,18 @@ class RequestCostBudget:
             model: round(cost, 12) for model, cost in self._actual.items() if cost > 0
         }
 
-    def _activate(self, model: str) -> None:
-        if self._active_model == model:
-            return
-        if model in self._seen_models:
-            self._active_model = model
-            return
+    def _require_active(self, model: str) -> None:
         if model not in self._batch_allowances:
             raise RuntimeError(f"No cost allowance configured for {model}")
-        self._active_model = model
-        self._seen_models.add(model)
-        self._shared_available += self._batch_allowances[model]
+        if model in self._finished:
+            raise RuntimeError(f"Cost allowance for {model} is already finished")
 
     def reserve_request(self, model: str, payload: Mapping[str, Any]) -> float:
-        self._activate(model)
-        pricing = self._catalog.get(model, {}).get("pricing", {})
-        if not isinstance(pricing, Mapping):
-            raise RuntimeError(f"Missing catalog pricing for {model}")
-        try:
-            prompt_price = float(pricing["prompt"])
-            completion_price = float(pricing["completion"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RuntimeError(f"Invalid catalog pricing for {model}") from exc
-        prompt_payload = {
-            "messages": payload.get("messages", []),
-            "tools": payload.get("tools", []),
-        }
-        prompt_tokens = max(
-            1,
-            math.ceil(
-                len(json.dumps(prompt_payload, ensure_ascii=False, sort_keys=True)) / 4
-            ),
-        )
-        max_tokens = payload.get("max_tokens", 0)
-        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int | float):
-            raise RuntimeError("Request max_tokens must be numeric for cost preflight")
-        worst_case = prompt_tokens * prompt_price + float(max_tokens) * completion_price
+        self._require_active(model)
+        prompt_price, completion_price = self._pricing[model]
+        prompt_tokens = conservative_input_token_bound(payload)
+        max_tokens = _finite_number(payload.get("max_tokens", 0), "Request max_tokens")
+        worst_case = prompt_tokens * prompt_price + max_tokens * completion_price
         cap = self._caps.get(model)
         if cap is None:
             raise RuntimeError(f"No cost cap configured for {model}")
@@ -200,14 +225,19 @@ class RequestCostBudget:
                 f"${self._actual.get(model, 0.0) + self._pending.get(model, 0.0):.6f}, "
                 f"next worst-case ${worst_case:.6f}, cap ${cap:.6f}"
             )
-        if worst_case > self._shared_available + 1e-12:
+        available = self._own_available[model] + self._carry_available
+        if worst_case > available + 1e-12:
             raise RuntimeError(
-                "Shared battle allowance would be exceeded before provider request: "
+                "Candidate battle allowance would be exceeded before provider request: "
                 f"{model} needs ${worst_case:.6f}, available "
-                f"${self._shared_available:.6f}"
+                f"${available:.6f}"
             )
+        own_used = min(worst_case, self._own_available[model])
+        carry_used = worst_case - own_used
+        self._own_available[model] -= own_used
+        self._carry_available -= carry_used
         self._pending[model] += worst_case
-        self._shared_available -= worst_case
+        self._reservations[model].append((worst_case, own_used, carry_used))
         return worst_case
 
     def reconcile_request(
@@ -217,24 +247,46 @@ class RequestCostBudget:
         *,
         actual_cost: float,
     ) -> None:
-        if actual_cost < 0:
-            raise RuntimeError("Provider-reported cost cannot be negative")
-        if reservation > self._pending.get(model, 0.0) + 1e-12:
+        actual_cost = _finite_number(actual_cost, "Provider-reported actual cost")
+        reservation = _finite_number(reservation, "Cost reservation")
+        reservations = self._reservations.get(model, [])
+        match_index = next(
+            (
+                index
+                for index, item in enumerate(reservations)
+                if abs(item[0] - reservation) <= 1e-12
+            ),
+            None,
+        )
+        if match_index is None:
             raise RuntimeError(f"Unknown cost reservation for {model}")
+        reserved, own_used, carry_used = reservations.pop(match_index)
+        if actual_cost > reserved + 1e-12:
+            raise RuntimeError(
+                f"Provider-reported cost exceeded conservative reservation for {model}"
+            )
         next_actual = self._actual.get(model, 0.0) + actual_cost
         if next_actual > self._caps.get(model, 0.0) + 1e-12:
             raise RuntimeError(
                 f"Model cost cap exceeded after provider response: {model} "
                 f"spent ${next_actual:.6f}, cap ${self._caps.get(model, 0.0):.6f}"
             )
-        delta = reservation - actual_cost
-        if delta < -self._shared_available - 1e-12:
-            raise RuntimeError(
-                f"Provider-reported cost exceeded the shared allowance for {model}"
-            )
-        self._pending[model] -= reservation
+        own_actual = min(actual_cost, own_used)
+        carry_actual = actual_cost - own_actual
+        self._own_available[model] += own_used - own_actual
+        self._carry_available += carry_used - carry_actual
+        self._pending[model] -= reserved
         self._actual[model] = next_actual
-        self._shared_available += delta
+
+    def finish_candidate(self, model: str) -> None:
+        """Release only a completed or eliminated candidate's unused allowance."""
+
+        self._require_active(model)
+        if self._pending[model] > 1e-12:
+            raise RuntimeError(f"Cannot finish {model} with pending cost reservations")
+        self._carry_available += self._own_available[model]
+        self._own_available[model] = 0.0
+        self._finished.add(model)
 
 
 def parse_json_content(content: str) -> Any:
@@ -245,9 +297,15 @@ def parse_json_content(content: str) -> Any:
     if match:
         candidate = match.group(1).strip()
     try:
-        return json.loads(candidate)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Response is not valid JSON: {exc.msg}") from exc
+        return json.loads(
+            candidate,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"Non-finite JSON number: {value}")
+            ),
+        )
+    except (json.JSONDecodeError, ValueError) as exc:
+        message = exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
+        raise ValueError(f"Response is not valid JSON: {message}") from exc
 
 
 def _schema_type_matches(value: Any, expected_type: str) -> bool:
@@ -551,22 +609,24 @@ def build_blind_pair(
     candidates: Mapping[str, Any],
     seed: int,
     assignment_index: int | None = None,
+    entropy: bytes | None = None,
 ) -> dict[str, Any]:
-    """Build a deterministic anonymous group with a separate reveal key."""
+    """Build a cryptographically randomized anonymous group and reveal key."""
 
     if len(candidates) < 2:
         raise ValueError("Blinded review requires at least two candidates")
     if len(candidates) > 26:
         raise ValueError("Blinded review supports at most 26 candidates")
-    model_names = sorted(candidates)
-    if len(model_names) == 2:
-        material = f"{seed}:{case_id}:{repetition}".encode()
-        if hashlib.sha256(material).digest()[0] % 2:
-            model_names.reverse()
-    else:
-        random.Random(
-            f"{seed}:{case_id}:{repetition}:{assignment_index}:multi-model-order"
-        ).shuffle(model_names)
+    del seed, assignment_index
+    random_material = secrets.token_bytes(32) if entropy is None else entropy
+    if len(random_material) < 16:
+        raise ValueError("Blind permutation entropy must contain at least 16 bytes")
+    model_names = sorted(
+        candidates,
+        key=lambda model: hashlib.sha256(
+            random_material + b"\0" + model.encode("utf-8")
+        ).digest(),
+    )
     reveal = {chr(ord("A") + index): model for index, model in enumerate(model_names)}
     return {
         "case_id": case_id,
@@ -598,6 +658,7 @@ def blind_scores_digest(reviews: Sequence[Mapping[str, Any]]) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
@@ -790,6 +851,24 @@ def apply_blind_audit_scores(
         row["objective"] = objective
         mapped.append(row)
     return mapped
+
+
+def finalize_blind_scored_rows(
+    rows: Sequence[Mapping[str, Any]],
+    blind_audits: Sequence[Mapping[str, Any]],
+    key_rows: Sequence[Mapping[str, Any]],
+    blind_hard_gates: Mapping[str, bool],
+) -> list[dict[str, Any]]:
+    """Return the one immutable scored row set used by artifacts and selection."""
+
+    finalized = apply_blind_audit_scores(rows, blind_audits, key_rows)
+    for row in finalized:
+        model = str(row["model"])
+        if not blind_hard_gates.get(model, False):
+            objective = dict(row.get("objective", {}))
+            objective["hard_gate_passed"] = False
+            row["objective"] = objective
+    return finalized
 
 
 def build_blind_evaluator_rows(
@@ -1054,7 +1133,7 @@ def select_hard_profile_winner(
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
     )
 
@@ -1063,13 +1142,47 @@ def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
 
 def plaintext_results_dir(blind_output_dir: Path) -> Path:
     """Keep identified transcripts in a sibling directory, never with blind input."""
 
     return blind_output_dir.parent / f"{blind_output_dir.name}-plaintext"
+
+
+def persist_blind_material(
+    output_dir: Path,
+    blind_rows: Sequence[Mapping[str, Any]],
+    reveal_rows: Sequence[Mapping[str, Any]],
+) -> Path:
+    """Persist reviewer input publicly and the reveal in a mode-0600 sibling."""
+
+    (output_dir / "sales_blind_key.json").unlink(missing_ok=True)
+    _write_json(output_dir / "sales_blind_review.json", list(blind_rows))
+    _write_json(
+        output_dir / "sales_blind_key.commitment.json",
+        {"sha256": blind_scores_digest(reveal_rows)},
+    )
+    private_path = plaintext_results_dir(output_dir) / "sales_blind_key.json"
+    private_path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = (
+        json.dumps(
+            list(reveal_rows),
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        )
+        + "\n"
+    )
+    fd = os.open(private_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        os.write(fd, encoded.encode("utf-8"))
+    finally:
+        os.close(fd)
+    private_path.chmod(0o600)
+    return private_path
 
 
 def _manifest_plaintext_results_dir(
@@ -1299,7 +1412,7 @@ def _provider_attempt_cost(
         if isinstance(usage, Mapping):
             cost = usage.get("cost")
             if isinstance(cost, int | float) and not isinstance(cost, bool):
-                return float(cost)
+                return _finite_number(cost, "Provider usage.cost")
     if not attempt.ok:
         return 0.0
     raise RuntimeError("Successful provider response omitted usage.cost")
@@ -1359,8 +1472,8 @@ def summarize_attempt_accounting(
             if isinstance(attempt, ProviderAttempt)
             else attempt.get("elapsed_ms", 0)
         )
-        if isinstance(elapsed_ms, int | float):
-            totals["latency_ms"] += float(elapsed_ms)
+        if isinstance(elapsed_ms, int | float) and not isinstance(elapsed_ms, bool):
+            totals["latency_ms"] += _finite_number(elapsed_ms, "Attempt latency")
         if not isinstance(response, Mapping):
             continue
         for field, target in (
@@ -1381,15 +1494,21 @@ def summarize_attempt_accounting(
         ):
             value = usage.get(source, 0)
             if isinstance(value, int | float) and not isinstance(value, bool):
-                totals[target] += int(value)
+                finite = _finite_number(value, f"Usage {source}")
+                if not finite.is_integer():
+                    raise RuntimeError(f"Usage {source} must be a finite integer")
+                totals[target] += int(finite)
         prompt_details = usage.get("prompt_tokens_details")
         if isinstance(prompt_details, Mapping):
             cached = prompt_details.get("cached_tokens", 0)
             if isinstance(cached, int | float) and not isinstance(cached, bool):
-                totals["cached_tokens"] += int(cached)
+                finite = _finite_number(cached, "Usage cached_tokens")
+                if not finite.is_integer():
+                    raise RuntimeError("Usage cached_tokens must be a finite integer")
+                totals["cached_tokens"] += int(finite)
         cost = usage.get("cost", 0)
         if isinstance(cost, int | float) and not isinstance(cost, bool):
-            totals["cost_usd"] += float(cost)
+            totals["cost_usd"] += _finite_number(cost, "Usage cost")
     return {
         "attempts": len(attempts),
         "input_tokens": int(totals["input_tokens"]),
@@ -1418,7 +1537,9 @@ def enforce_model_cost_caps(
             continue
         cost = accounting.get("cost_usd", 0)
         if isinstance(cost, int | float) and not isinstance(cost, bool):
-            actual[model] = actual.get(model, 0.0) + float(cost)
+            actual[model] = actual.get(model, 0.0) + _finite_number(
+                cost, f"Accounting cost for {model}"
+            )
     exceeded: list[str] = []
     for model in estimated_costs:
         if actual.get(model, 0.0) > 1.0 + 1e-12:
@@ -1430,12 +1551,16 @@ def enforce_model_cost_caps(
 def build_cost_preflight(estimated_costs: Mapping[str, float]) -> dict[str, Any]:
     """Describe reservations without treating a conservative estimate as spend."""
 
-    order = sorted(estimated_costs, key=lambda model: (estimated_costs[model], model))
+    finite_estimates = {
+        model: _finite_number(estimate, f"Estimate for {model}")
+        for model, estimate in estimated_costs.items()
+    }
+    order = sorted(finite_estimates, key=lambda model: (finite_estimates[model], model))
     return {
-        "estimated_costs_usd": dict(estimated_costs),
+        "estimated_costs_usd": finite_estimates,
         "batch_allowances_usd": {
-            model: min(1.0, max(0.0, float(estimate)) * 1.25)
-            for model, estimate in estimated_costs.items()
+            model: min(1.0, estimate * 1.25)
+            for model, estimate in finite_estimates.items()
         },
         "per_model_caps_usd": {model: 1.0 for model in estimated_costs},
         "execution_order": order,
@@ -1462,19 +1587,24 @@ def estimate_model_costs(
     maximum_input_tokens = max(
         1,
         max(
-            math.ceil(
-                (
-                    len(case.system_prompt)
-                    + len(case.user_prompt)
-                    + (
-                        sum(len(item["content"]) for item in case.conversation)
-                        + len(json.dumps(case.tools, ensure_ascii=False))
-                        + 3 * len(json.dumps(case.tool_results, ensure_ascii=False))
-                        if suite == "sales"
-                        else 0
-                    )
-                )
-                / 4
+            len(
+                json.dumps(
+                    {
+                        "system_prompt": case.system_prompt,
+                        "user_prompt": case.user_prompt,
+                        "conversation": (
+                            list(case.conversation) if suite == "sales" else []
+                        ),
+                        "tools": list(case.tools) if suite == "sales" else [],
+                        "tool_results": (
+                            [case.tool_results] * 3 if suite == "sales" else []
+                        ),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
             )
             for case in cases
         ),
@@ -1486,9 +1616,13 @@ def estimate_model_costs(
         if not isinstance(pricing, Mapping):
             raise RuntimeError(f"Missing catalog pricing for {model}")
         try:
-            prompt_price = float(pricing["prompt"])
-            completion_price = float(pricing["completion"])
-        except (KeyError, TypeError, ValueError) as exc:
+            prompt_price = _finite_number(
+                pricing["prompt"], f"Prompt price for {model}"
+            )
+            completion_price = _finite_number(
+                pricing["completion"], f"Completion price for {model}"
+            )
+        except KeyError as exc:
             raise RuntimeError(f"Invalid catalog pricing for {model}") from exc
         estimates[model] = round(
             planned_case_runs
@@ -2454,6 +2588,57 @@ def build_survivor_jobs(
     return jobs
 
 
+def validate_hard_profile_result_matrix(
+    profile: str,
+    suite: str,
+    rows: Sequence[Mapping[str, Any]],
+) -> None:
+    """Require the exact staged model × case × repetition matrix before ranking."""
+
+    if profile not in _HARD_PROFILES:
+        raise ValueError(f"Not a hard profile: {profile}")
+    actual_keys = [
+        (str(row["model"]), str(row["case_id"]), int(row["repetition"])) for row in rows
+    ]
+    if len(actual_keys) != len(set(actual_keys)):
+        raise ValueError("Hard-profile result matrix contains duplicate rows")
+
+    models = models_for_profile(profile, suite)
+    cases = cases_for_profile(profile, suite)
+    round_zero = {(model, case.case_id, 1) for model in models for case in cases}
+    actual = set(actual_keys)
+    missing_round_zero = round_zero - actual
+    if missing_round_zero:
+        raise ValueError(
+            "Hard-profile result matrix is incomplete: "
+            f"missing {len(missing_round_zero)} round-zero rows"
+        )
+
+    round_zero_rows = [row for row in rows if int(row["repetition"]) == 1]
+    survivors = _round_zero_survivors(suite, round_zero_rows)
+    repeated_cases = cases
+    if profile == BACKGROUND_HARD_PROFILE and suite == "system":
+        differentiating = set(
+            select_differentiating_system_cases(round_zero_rows, limit=3)
+        )
+        repeated_cases = tuple(
+            case for case in cases if case.case_id in differentiating
+        )
+    expected = round_zero | {
+        (model, case.case_id, repetition)
+        for model in survivors
+        for case in repeated_cases
+        for repetition in (2, 3)
+    }
+    missing = expected - actual
+    unexpected = actual - expected
+    if missing or unexpected:
+        raise ValueError(
+            "Hard-profile result matrix is incomplete or unexpected: "
+            f"missing={len(missing)}, unexpected={len(unexpected)}"
+        )
+
+
 def _sales_rule_labels(case: Any) -> dict[str, str]:
     labels = {
         **{
@@ -2564,6 +2749,7 @@ def score_battle(
             _read_jsonl(evidence_dir / "system_results.jsonl"),
             profile=profile,
         )
+        validate_hard_profile_result_matrix(profile, "system", system_rows)
         decision = select_hard_profile_winner(profile, system_rows)
         result = {
             "openrouter_model_main": None,
@@ -2581,6 +2767,8 @@ def score_battle(
         _read_jsonl(evidence_dir / "sales_results.jsonl"),
         profile=profile,
     )
+    if profile == CORE_HARD_PROFILE:
+        validate_hard_profile_result_matrix(profile, "sales", sales_rows)
     blind_scores = parse_json_content(blind_scores_path.read_text(encoding="utf-8"))
     if not isinstance(blind_scores, list):
         raise ValueError("Blind scores must be a JSON array")
@@ -2589,40 +2777,31 @@ def score_battle(
         seal_path = output_dir / "sales_blind_scores.seal.json"
         seal = _read_json_object(seal_path)
         verify_blind_scores_seal(blind_scores, str(seal.get("sha256", "")))
-        _blind_rows, blind_key = _build_blind_files(
-            sales_rows,
-            seed=int(manifest["seed"]),
-            profile=profile,
-        )
-        commitment = _read_json_object(output_dir / "sales_blind_key.commitment.json")
-        verify_blind_scores_seal(
-            blind_key,
-            str(commitment.get("sha256", "")),
-        )
-        _write_json(output_dir / "sales_blind_key.json", blind_key)
-    else:
-        blind_key = json.loads(
-            (output_dir / "sales_blind_key.json").read_text(encoding="utf-8")
-        )
-        if not isinstance(blind_key, list):
-            raise ValueError("Blind key must be a JSON array")
+    blind_key = json.loads(
+        (evidence_dir / "sales_blind_key.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(blind_key, list):
+        raise ValueError("Blind key must be a JSON array")
+    commitment = _read_json_object(output_dir / "sales_blind_key.commitment.json")
+    verify_blind_scores_seal(blind_key, str(commitment.get("sha256", "")))
     blind_quality, blind_hard_gates = evaluate_blind_reviews(
         blind_scores,
         blind_key,
     )
 
     if profile == CORE_HARD_PROFILE:
-        sales_rows = apply_blind_audit_scores(sales_rows, blind_scores, blind_key)
+        sales_rows = finalize_blind_scored_rows(
+            sales_rows,
+            blind_scores,
+            blind_key,
+            blind_hard_gates,
+        )
         _write_json(output_dir / "sales_blind_scores.json", blind_scores)
         _write_jsonl(evidence_dir / "sales_scored_results.jsonl", sales_rows)
         _write_json(
             evidence_dir / "sales_scored_aggregate.json",
             aggregate_rows(sales_rows),
         )
-        for row in sales_rows:
-            model = str(row["model"])
-            if not blind_hard_gates.get(model, False):
-                row["objective"]["hard_gate_passed"] = False
         disagreements = detect_evaluator_disagreements(
             build_blind_evaluator_rows(sales_rows, blind_key),
             blind_scores,
@@ -2788,6 +2967,21 @@ def rescore_system_rows(
 
 
 def aggregate_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    for row in rows:
+        model = str(row.get("model", "unknown"))
+        _finite_number(row.get("latency_ms", 0), f"Latency for {model}")
+        accounting = row.get("accounting", {})
+        if isinstance(accounting, Mapping):
+            for field in (
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "cached_tokens",
+                "cost_usd",
+                "latency_ms",
+            ):
+                if field in accounting:
+                    _finite_number(accounting[field], f"Accounting {field} for {model}")
     aggregate: dict[str, Any] = {}
     for model in sorted({str(row["model"]) for row in rows}):
         model_rows = [row for row in rows if row["model"] == model]
@@ -3199,11 +3393,21 @@ async def run_battle(
                     seed=seed,
                     estimated_costs=estimated_costs,
                 )
+                survivor_models = {model for model, _case, _rep in survivor_jobs}
+                for eliminated_model in set(estimated_costs) - survivor_models:
+                    cost_budget.finish_candidate(eliminated_model)
                 for index, (model, case, repetition) in enumerate(
                     survivor_jobs,
                     start=1,
                 ):
                     if model in stopped_models:
+                        next_model = (
+                            survivor_jobs[index][0]
+                            if index < len(survivor_jobs)
+                            else None
+                        )
+                        if next_model != model:
+                            cost_budget.finish_candidate(model)
                         continue
                     print(
                         f"[{suite} survivors {index}/{len(survivor_jobs)}] "
@@ -3233,6 +3437,14 @@ async def run_battle(
                         stopped_models.add(model)
                     _write_jsonl(evidence_dir / f"{suite}_results.jsonl", rows)
                     enforce_model_cost_caps(rows, estimated_costs)
+                    next_model = (
+                        survivor_jobs[index][0] if index < len(survivor_jobs) else None
+                    )
+                    if next_model != model:
+                        cost_budget.finish_candidate(model)
+            else:
+                for completed_model in estimated_costs:
+                    cost_budget.finish_candidate(completed_model)
 
             _write_json(
                 evidence_dir / f"{suite}_aggregate.json",
@@ -3244,14 +3456,7 @@ async def run_battle(
                     seed=seed,
                     profile=profile,
                 )
-                _write_json(output_dir / "sales_blind_review.json", blind)
-                if profile == CORE_HARD_PROFILE:
-                    _write_json(
-                        output_dir / "sales_blind_key.commitment.json",
-                        {"sha256": blind_scores_digest(reveal)},
-                    )
-                else:
-                    _write_json(output_dir / "sales_blind_key.json", reveal)
+                persist_blind_material(output_dir, blind, reveal)
             merged_manifest.setdefault("job_matrix", {})[suite] = [
                 {
                     "model": model,

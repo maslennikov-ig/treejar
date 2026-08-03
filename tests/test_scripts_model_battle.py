@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import stat
 
 import pytest
 import scripts.model_battle as model_battle
@@ -372,6 +374,55 @@ def test_background_hard_tie_keeps_current_fast_baseline() -> None:
     assert decision.winner == "deepseek/deepseek-v4-flash"
 
 
+def _complete_eliminated_background_matrix() -> list[dict[str, object]]:
+    return [
+        {
+            "suite": "system",
+            "case_id": case.case_id,
+            "model": model,
+            "repetition": 1,
+            "status": "COMPLETED",
+            "success": True,
+            "first_pass_success": True,
+            "latency_ms": 100.0,
+            "accounting": {"cost_usd": 0.001},
+            "json_parse_ok": True,
+            "schema_ok": True,
+            "critical_fields_ok": True,
+            "pii_leakage": False,
+            "semantic_correct": 0,
+            "semantic_total": 1,
+            "semantic_mismatches": ["deliberate elimination"],
+            "tool_parse_error": None,
+        }
+        for case in BACKGROUND_HARD_CASES
+        for model in models_for_profile(BACKGROUND_HARD_PROFILE, "system")
+    ]
+
+
+def test_hard_profile_matrix_requires_every_unique_expected_result() -> None:
+    rows = _complete_eliminated_background_matrix()
+
+    model_battle.validate_hard_profile_result_matrix(
+        BACKGROUND_HARD_PROFILE,
+        "system",
+        rows,
+    )
+
+    with pytest.raises(ValueError, match="incomplete"):
+        model_battle.validate_hard_profile_result_matrix(
+            BACKGROUND_HARD_PROFILE,
+            "system",
+            rows[:-1],
+        )
+    with pytest.raises(ValueError, match="duplicate"):
+        model_battle.validate_hard_profile_result_matrix(
+            BACKGROUND_HARD_PROFILE,
+            "system",
+            [*rows, dict(rows[0])],
+        )
+
+
 def test_run_manifest_merges_separate_suite_invocations() -> None:
     existing = {
         "seed": 27072026,
@@ -733,6 +784,32 @@ def test_attempt_accounting_includes_every_retry_and_provider_resolution() -> No
     }
 
 
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        (field, bad_value)
+        for field in ("prompt_tokens", "completion_tokens", "total_tokens", "cost")
+        for bad_value in (math.nan, math.inf, -math.inf)
+    ],
+)
+def test_attempt_accounting_rejects_non_finite_usage(
+    field: str,
+    bad_value: float,
+) -> None:
+    usage = {
+        "prompt_tokens": 10,
+        "completion_tokens": 2,
+        "total_tokens": 12,
+        "cost": 0.01,
+    }
+    usage[field] = bad_value
+
+    with pytest.raises(RuntimeError, match="finite"):
+        summarize_attempt_accounting(
+            [{"elapsed_ms": 10.0, "response": {"usage": usage}}]
+        )
+
+
 def test_successful_paid_response_without_actual_cost_fails_closed() -> None:
     attempt = model_battle.ProviderAttempt(
         attempt=1,
@@ -794,9 +871,85 @@ def test_request_budget_reconciles_actual_cost_and_carries_unused_allowance() ->
     reservation = budget.reserve_request("cheap", cheap_payload)
     budget.reconcile_request("cheap", reservation, actual_cost=0.01)
 
+    with pytest.raises(RuntimeError, match="allowance"):
+        budget.reserve_request("next", next_payload)
+
+    budget.finish_candidate("cheap")
     assert budget.reserve_request("next", next_payload) == pytest.approx(0.15)
     budget.reconcile_request("next", 0.15, actual_cost=0.04)
     assert budget.actual_spend == {"cheap": 0.01, "next": 0.04}
+
+
+def test_request_reservation_uses_full_utf8_payload_as_conservative_token_bound() -> (
+    None
+):
+    payload = build_base_payload(
+        model="candidate",
+        messages=[{"role": "user", "content": "أحتاج كرسيًا ergonomic"}],
+        max_tokens=10,
+        reasoning_enabled=False,
+    )
+    payload["tools"] = [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Search every billable field",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    payload["tool_choice"] = "auto"
+    expected_upper_bound = len(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    budget = RequestCostBudget(
+        catalog={
+            "candidate": {"pricing": {"prompt": "0.000001", "completion": "0.0001"}}
+        },
+        estimated_costs={"candidate": 0.8},
+    )
+
+    assert model_battle.conservative_input_token_bound(payload) == expected_upper_bound
+    assert budget.reserve_request("candidate", payload) == pytest.approx(
+        expected_upper_bound * 0.000001 + 10 * 0.0001
+    )
+
+
+@pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf])
+def test_budget_rejects_non_finite_estimates_prices_and_actual_costs(
+    bad_value: float,
+) -> None:
+    with pytest.raises(RuntimeError, match="finite"):
+        RequestCostBudget(
+            catalog={"candidate": {"pricing": {"prompt": "0", "completion": "0"}}},
+            estimated_costs={"candidate": bad_value},
+        )
+    with pytest.raises(RuntimeError, match="finite"):
+        RequestCostBudget(
+            catalog={
+                "candidate": {"pricing": {"prompt": str(bad_value), "completion": "0"}}
+            },
+            estimated_costs={"candidate": 0.5},
+        )
+
+    budget = RequestCostBudget(
+        catalog={"candidate": {"pricing": {"prompt": "0", "completion": "0"}}},
+        estimated_costs={"candidate": 0.5},
+    )
+    reservation = budget.reserve_request("candidate", {"messages": [], "max_tokens": 1})
+    with pytest.raises(RuntimeError, match="finite"):
+        budget.reconcile_request("candidate", reservation, actual_cost=bad_value)
+
+
+def test_cost_preflight_rejects_non_finite_estimate() -> None:
+    with pytest.raises(RuntimeError, match="finite"):
+        model_battle.build_cost_preflight({"candidate": math.nan})
 
 
 def test_cost_preflight_keeps_large_estimate_as_reservation_not_hard_block() -> None:
@@ -957,6 +1110,54 @@ def test_blind_audit_score_is_mapped_into_each_objective_before_ranking() -> Non
 
     assert mapped[0]["objective"]["judge_score_out_of_30"] == 28.0
     assert mapped[0]["objective"]["selection_score_out_of_30"] == 26.0
+
+
+def test_blind_critical_gate_is_applied_to_immutable_final_rows() -> None:
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": "S01",
+            "repetition": 1,
+            "model": "challenger",
+            "objective": {
+                "hard_gate_passed": True,
+                "score_out_of_30": 24.0,
+            },
+        }
+    ]
+    audits = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "scores": {
+                "A": {
+                    "score_out_of_30": 28.0,
+                    "applicable_rules": ["language"],
+                }
+            },
+        }
+    ]
+    key = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "reveal": {"A": "challenger"},
+        }
+    ]
+
+    final_rows = model_battle.finalize_blind_scored_rows(
+        rows,
+        audits,
+        key,
+        {"challenger": False},
+    )
+
+    assert final_rows[0]["objective"]["selection_score_out_of_30"] == 26.0
+    assert final_rows[0]["objective"]["hard_gate_passed"] is False
+    assert rows[0]["objective"] == {
+        "hard_gate_passed": True,
+        "score_out_of_30": 24.0,
+    }
 
 
 def test_blind_scores_must_match_pre_reveal_seal() -> None:
@@ -1401,6 +1602,30 @@ def test_aggregate_does_not_count_recovered_schema_as_first_pass() -> None:
     assert aggregate["candidate"]["json_schema_first_pass"] == 0.0
 
 
+@pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf])
+def test_aggregate_rejects_non_finite_latency_and_cost(bad_value: float) -> None:
+    row = {
+        "suite": "system",
+        "case_id": "case",
+        "model": "candidate",
+        "status": "COMPLETED",
+        "first_pass_success": True,
+        "latency_ms": bad_value,
+        "accounting": {"cost_usd": 0.01},
+        "json_parse_ok": True,
+        "schema_ok": True,
+        "semantic_correct": 1,
+        "semantic_total": 1,
+    }
+    with pytest.raises(RuntimeError, match="finite"):
+        aggregate_rows([row])
+
+    row["latency_ms"] = 10.0
+    row["accounting"] = {"cost_usd": bad_value}
+    with pytest.raises(RuntimeError, match="finite"):
+        aggregate_rows([row])
+
+
 def test_percentile_uses_linear_interpolation() -> None:
     timings = [100.0, 200.0, 400.0, 800.0]
 
@@ -1408,7 +1633,10 @@ def test_percentile_uses_linear_interpolation() -> None:
     assert percentile(timings, 0.95) == pytest.approx(740.0)
 
 
-def test_blind_pair_is_deterministic_and_hides_model_names() -> None:
+def test_blind_pair_is_reproducible_with_supplied_entropy_and_hides_model_names() -> (
+    None
+):
+    entropy = bytes(range(32))
     first = build_blind_pair(
         case_id="sales-01",
         repetition=1,
@@ -1417,6 +1645,7 @@ def test_blind_pair_is_deterministic_and_hides_model_names() -> None:
             "deepseek/deepseek-v4-flash": "Second neutral answer",
         },
         seed=27072026,
+        entropy=entropy,
     )
     second = build_blind_pair(
         case_id="sales-01",
@@ -1426,6 +1655,7 @@ def test_blind_pair_is_deterministic_and_hides_model_names() -> None:
             "deepseek/deepseek-v4-flash": "Second neutral answer",
         },
         seed=27072026,
+        entropy=entropy,
     )
 
     assert first == second
@@ -1435,19 +1665,29 @@ def test_blind_pair_is_deterministic_and_hides_model_names() -> None:
     assert set(first["reveal"]) == {"A", "B"}
 
 
-def test_original_pair_keeps_accepted_label_algorithm() -> None:
-    pair = build_blind_pair(
+def test_blind_groups_draw_fresh_cryptographic_entropy(monkeypatch) -> None:
+    calls: list[int] = []
+
+    def fake_token_bytes(size: int) -> bytes:
+        calls.append(size)
+        return bytes([len(calls)]) * size
+
+    monkeypatch.setattr(model_battle.secrets, "token_bytes", fake_token_bytes)
+    candidates = {"left": "First answer", "right": "Second answer"}
+    build_blind_pair(
+        case_id="sales-01",
+        repetition=1,
+        candidates=candidates,
+        seed=27072026,
+    )
+    build_blind_pair(
         case_id="sales-02",
         repetition=1,
-        candidates={
-            "z-ai/glm-5": "First neutral answer",
-            "deepseek/deepseek-v4-flash": "Second neutral answer",
-        },
+        candidates=candidates,
         seed=27072026,
     )
 
-    assert pair["reveal"]["A"] == "deepseek/deepseek-v4-flash"
-    assert pair["reveal"]["B"] == "z-ai/glm-5"
+    assert calls == [32, 32]
 
 
 def test_blind_group_supports_four_anonymous_candidates() -> None:
@@ -1471,28 +1711,31 @@ def test_blind_group_supports_four_anonymous_candidates() -> None:
     assert not any(model in json.dumps(blind["answers"]) for model in candidates)
 
 
-def test_four_way_blinding_is_counterbalanced_across_groups() -> None:
+def test_four_way_blinding_uses_entropy_instead_of_public_assignment_index() -> None:
     candidates = {
         "one": "Answer one",
         "two": "Answer two",
         "three": "Answer three",
         "four": "Answer four",
     }
-    permutations = []
+    first = build_blind_pair(
+        case_id="sales-01",
+        repetition=1,
+        candidates=candidates,
+        seed=27072026,
+        assignment_index=0,
+        entropy=b"a" * 32,
+    )
+    second = build_blind_pair(
+        case_id="sales-01",
+        repetition=1,
+        candidates=candidates,
+        seed=27072026,
+        assignment_index=999,
+        entropy=b"a" * 32,
+    )
 
-    for assignment_index in range(8):
-        blind = build_blind_pair(
-            case_id=f"sales-{assignment_index:02d}",
-            repetition=1,
-            candidates=candidates,
-            seed=27072026,
-            assignment_index=assignment_index,
-        )
-        permutations.append(tuple(blind["reveal"].values()))
-
-    first = permutations[0]
-    rotations = {first[index:] + first[:index] for index in range(len(first))}
-    assert any(permutation not in rotations for permutation in permutations[1:])
+    assert first == second
 
 
 def test_blind_fixture_includes_rule_labels_tool_results_and_tool_evidence() -> None:
@@ -1535,6 +1778,37 @@ def test_plaintext_results_are_stored_outside_the_blind_output_directory(
     assert plaintext_dir.parent == blind_dir.parent
     assert plaintext_dir != blind_dir
     assert blind_dir not in plaintext_dir.parents
+
+
+def test_blind_reveal_is_private_and_public_bundle_exposes_only_commitment(
+    tmp_path,
+) -> None:
+    blind_dir = tmp_path / "reviewer"
+    blind_dir.mkdir()
+    (blind_dir / "sales_blind_key.json").write_text(
+        "stale public reveal",
+        encoding="utf-8",
+    )
+    blind_rows = [{"case_id": "S01", "repetition": 1, "answers": {"A": "x"}}]
+    reveal_rows = [{"case_id": "S01", "repetition": 1, "reveal": {"A": "candidate"}}]
+
+    private_path = model_battle.persist_blind_material(
+        blind_dir,
+        blind_rows,
+        reveal_rows,
+    )
+
+    assert (blind_dir / "sales_blind_review.json").exists()
+    commitment = json.loads(
+        (blind_dir / "sales_blind_key.commitment.json").read_text(encoding="utf-8")
+    )
+    assert commitment == {"sha256": blind_scores_digest(reveal_rows)}
+    assert not (blind_dir / "sales_blind_key.json").exists()
+    assert private_path == model_battle.plaintext_results_dir(blind_dir) / (
+        "sales_blind_key.json"
+    )
+    assert json.loads(private_path.read_text(encoding="utf-8")) == reveal_rows
+    assert stat.S_IMODE(private_path.stat().st_mode) == 0o600
 
 
 def test_blind_review_scores_map_back_to_models_only_after_review() -> None:
