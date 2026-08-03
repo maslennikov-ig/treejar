@@ -1321,7 +1321,7 @@ async def test_process_message_delivery_assembly_interruption_in_expected_frame_
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_dialogue_kernel_enforce_quote_details_stores_legacy_metadata(
+async def test_dialogue_kernel_does_not_capture_legacy_quote_details_without_consent(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -1374,13 +1374,9 @@ async def test_dialogue_kernel_enforce_quote_details_stores_legacy_metadata(
         messaging_client=messaging,
     )
 
-    assert response.model == "dialogue-kernel|quote_details"
-    assert "company name" in response.text.lower()
+    assert response.model != "dialogue-kernel|quote_details"
     assert conv.customer_name == "Lil"
-    assert conv.metadata_["quote_customer_details"] == {
-        "name": "Lil",
-        "address": "1 dubay",
-    }
+    assert conv.metadata_["quote_customer_details"] == {"name": "Lil"}
     assert "pending_quote_selection" in conv.metadata_
     mock_run.assert_not_awaited()
 
@@ -5676,6 +5672,10 @@ async def test_verified_catalog_plan_persists_exact_lines_and_trace(
         ),
     ]
     db.execute.return_value.scalars.return_value.all.return_value = products
+    zoho.get_stock_bulk.return_value = [
+        {"sku": "CHAIR-LUMBAR", "stock_on_hand": 23, "rate": 262.0},
+        {"sku": "DESK-A", "stock_on_hand": 12, "rate": 58.48},
+    ]
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -11780,7 +11780,7 @@ async def test_order_cutover_gh42_second_occurrence_bare_quantity_uses_runtime_f
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_order_cutover_gh52_customer_details_resume_after_point_selection_confirmation(
+async def test_order_cutover_does_not_resume_quote_from_details_without_opt_in(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
@@ -11912,15 +11912,18 @@ async def test_order_cutover_gh52_customer_details_resume_after_point_selection_
         messaging_client=messaging,
     )
 
-    assert second_response.model == "mock-model|quote-resume-missing-details"
-    assert "saved quote frame" not in second_response.text.lower()
-    assert "exact item" not in second_response.text.lower()
-    assert "quantity for each item" not in second_response.text.lower()
-    assert "customer email" in second_response.text.lower()
+    assert second_response.model != "mock-model|quote-resume-missing-details"
+    workflow = conv.metadata_["order_runtime"]["quote_workflow"]
+    assert workflow == {
+        "version": 2,
+        "consent": "not_requested",
+        "lifecycle": "quote_offered",
+    }
     assert conv.metadata_["quote_customer_details"]["company"] == "GHP"
-    assert conv.metadata_["quote_customer_details"]["address"] == "2 street"
-    assert conv.metadata_["quote_customer_details"]["phone"] == "+79137704837"
-    mock_run.assert_not_awaited()
+    assert "address" not in conv.metadata_["quote_customer_details"]
+    assert "phone" not in conv.metadata_["quote_customer_details"]
+    zoho.create_sale_order.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
     mock_notify_manager.assert_not_awaited()
 
 
@@ -20254,14 +20257,94 @@ def test_product_search_limit_keeps_one_complementary_slot_per_plan() -> None:
         ),
     )
 
-    assert (
-        engine_module._product_search_call_limit(one_family_deps)
-        == engine_module.MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
+    assert engine_module._product_search_call_limit(one_family_deps) == 2
+    assert engine_module._product_search_call_limit(two_family_deps) == 4
+
+
+def test_product_search_limit_scales_with_families_and_is_bounded() -> None:
+    deps = SimpleNamespace(
+        catalog_planning=engine_module.CatalogPlanningContext(
+            families=("seating", "workspace", "storage", "privacy"),
+            complete_coverage=True,
+        )
     )
-    assert (
-        engine_module._product_search_call_limit(two_family_deps)
-        == engine_module.MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE + 1
+
+    assert engine_module._product_search_call_limit(deps) == 6
+
+
+@pytest.mark.asyncio
+async def test_quote_detail_store_rejects_budget_address_and_company_individual_conflict(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, *_ = mock_deps
+
+    details = await engine_module._store_extracted_quote_customer_details(
+        db,
+        conv,
+        {
+            "name": "Lina",
+            "company": "Northstar LLC",
+            "customer_type": "individual",
+            "address": "000 total budget",
+        },
     )
+
+    assert details == {"name": "Lina", "company": "Northstar LLC"}
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_blocks_new_workflow_without_consent_before_adapters(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "not_requested",
+                "lifecycle": "quote_offered",
+            }
+        },
+        "quote_customer_details": {
+            "name": "Lina",
+            "company": "Northstar LLC",
+            "email": "lina@example.com",
+            "address": "Office 42, Dubai",
+        },
+    }
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    response = await engine_module.create_quotation(
+        ctx, [QuotationItem(sku="CH-616", quantity=2)]
+    )
+
+    assert "explicitly confirm" in response.casefold()
+    zoho.get_stock_bulk.assert_not_awaited()
+    zoho.create_sale_order.assert_not_awaited()
+    messaging.send_media.assert_not_awaited()
 
 
 @pytest.mark.asyncio

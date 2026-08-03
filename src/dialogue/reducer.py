@@ -10,6 +10,8 @@ from src.dialogue.state import (
     DialogueTrace,
     ExpectedAnswerFrame,
     LastQuestion,
+    QuoteConsent,
+    QuoteLifecycle,
 )
 
 MAX_ACTIVE_EXPECTED_ANSWER_FRAMES = 8
@@ -24,6 +26,13 @@ def apply_extracted_details(
         if key in details:
             slot_updates[key] = details[key]
 
+    address = slot_updates.get("delivery_address")
+    if isinstance(address, str) and _looks_like_budget_artifact(address):
+        slot_updates.pop("delivery_address", None)
+    company = slot_updates.get("company", state.slots.company)
+    if isinstance(company, str) and company.strip():
+        slot_updates["customer_type"] = None
+
     if not slot_updates:
         return state.model_copy(deep=True)
 
@@ -31,6 +40,112 @@ def apply_extracted_details(
         update={"slots": state.slots.model_copy(update=slot_updates, deep=True)},
         deep=True,
     )
+
+
+def reconcile_dialogue_state(state: DialogueState) -> DialogueState:
+    """Return a coherent state derived from confirmed typed facts only."""
+    slot_updates: dict[str, Any] = {}
+    if state.slots.company and state.slots.customer_type == "individual":
+        slot_updates["customer_type"] = None
+    if _looks_like_budget_artifact(state.slots.delivery_address):
+        slot_updates["delivery_address"] = None
+    slots = (
+        state.slots.model_copy(update=slot_updates, deep=True)
+        if slot_updates
+        else state.slots.model_copy(deep=True)
+    )
+
+    consent = state.quote_consent
+    lifecycle = state.quote_lifecycle
+    active_flow = state.active_flow
+    if slots.quote_sent:
+        consent = QuoteConsent.GRANTED
+        lifecycle = QuoteLifecycle.CREATED
+        active_flow = "post_quotation_hold"
+    elif consent is not QuoteConsent.GRANTED:
+        if consent is QuoteConsent.DECLINED:
+            lifecycle = QuoteLifecycle.CONSULTATION
+        elif slots.selected_items or lifecycle is not QuoteLifecycle.CONSULTATION:
+            lifecycle = QuoteLifecycle.QUOTE_OFFERED
+        active_flow = "product_selection" if slots.selected_items else active_flow
+    elif slots.selected_items:
+        lifecycle = (
+            lifecycle
+            if lifecycle in {QuoteLifecycle.CREATING, QuoteLifecycle.CREATED}
+            else QuoteLifecycle.COLLECTING_DETAILS
+        )
+        active_flow = "quote_details"
+    else:
+        lifecycle = QuoteLifecycle.QUOTE_REQUESTED
+
+    sales_stage = _reconciled_sales_stage(
+        state.sales_stage,
+        slots=slots,
+        consent=consent,
+        lifecycle=lifecycle,
+    )
+
+    return state.model_copy(
+        update={
+            "version": 2,
+            "slots": slots,
+            "quote_consent": consent,
+            "quote_lifecycle": lifecycle,
+            "active_flow": active_flow,
+            "sales_stage": sales_stage,
+        },
+        deep=True,
+    )
+
+
+_SALES_STAGE_ORDER = (
+    "greeting",
+    "qualifying",
+    "needs_analysis",
+    "solution",
+    "company_details",
+    "quoting",
+    "closing",
+    "feedback",
+)
+
+
+def _reconciled_sales_stage(
+    current: str | None,
+    *,
+    slots: DialogueSlots,
+    consent: QuoteConsent,
+    lifecycle: QuoteLifecycle,
+) -> str:
+    if lifecycle is QuoteLifecycle.CREATED:
+        desired = "quoting"
+    elif consent is QuoteConsent.GRANTED and lifecycle in {
+        QuoteLifecycle.COLLECTING_DETAILS,
+        QuoteLifecycle.CREATING,
+    }:
+        desired = "company_details"
+    elif slots.selected_items:
+        desired = "solution"
+    elif slots.pending_product_refs:
+        desired = "needs_analysis"
+    elif slots.customer_name:
+        desired = "qualifying"
+    else:
+        desired = "greeting"
+    if current not in _SALES_STAGE_ORDER:
+        return desired
+    return max((current, desired), key=_SALES_STAGE_ORDER.index)
+
+
+def _looks_like_budget_artifact(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = " ".join(value.casefold().split())
+    if not normalized:
+        return False
+    if "budget" in normalized or "total" in normalized:
+        return bool(any(char.isdigit() for char in normalized))
+    return normalized.strip(" ,.").isdigit()
 
 
 def set_last_question(

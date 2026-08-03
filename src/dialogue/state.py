@@ -7,10 +7,15 @@ from typing import Any, cast
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from src.dialogue.order_state import (
+    QuoteConsent,
     QuoteFrame,
+    QuoteLifecycle,
     quote_frame_from_metadata,
     quote_frame_is_active,
+    quote_workflow_from_metadata,
 )
+
+__all__ = ["QuoteConsent", "QuoteLifecycle"]
 
 DIALOGUE_KERNEL_METADATA_KEY = "dialogue_kernel"
 DIALOGUE_STATE_METADATA_KEY = "dialogue_state"
@@ -89,9 +94,12 @@ class DialogueTrace(BaseModel):
 
 
 class DialogueState(BaseModel):
-    version: int = 1
+    version: int = 2
     thread_id: str | None = None
     active_flow: str | None = None
+    sales_stage: str | None = None
+    quote_consent: QuoteConsent = QuoteConsent.NOT_REQUESTED
+    quote_lifecycle: QuoteLifecycle = QuoteLifecycle.CONSULTATION
     slots: DialogueSlots = Field(default_factory=DialogueSlots)
     last_question: LastQuestion | None = None
     expected_answer_frames: list[ExpectedAnswerFrame] = Field(default_factory=list)
@@ -142,6 +150,24 @@ class DialogueState(BaseModel):
             return cls(thread_id=thread_id)
         if thread_id and not state.thread_id:
             state = state.model_copy(update={"thread_id": thread_id})
+        if "quote_consent" not in payload and "quote_lifecycle" not in payload:
+            workflow = quote_workflow_from_metadata(metadata)
+            if workflow.consent is not QuoteConsent.NOT_REQUESTED:
+                state = state.model_copy(
+                    update={
+                        "quote_consent": workflow.consent,
+                        "quote_lifecycle": workflow.lifecycle,
+                    }
+                )
+            elif state.active_flow == "quote_details":
+                state = state.model_copy(
+                    update={
+                        "quote_consent": QuoteConsent.GRANTED,
+                        "quote_lifecycle": QuoteLifecycle.COLLECTING_DETAILS,
+                    }
+                )
+        if state.version < 2:
+            state = state.model_copy(update={"version": 2})
         return state
 
     @classmethod
@@ -215,7 +241,12 @@ class DialogueState(BaseModel):
         if not thread_id and getattr(conversation, "id", None):
             thread_id = f"conversation:{conversation.id}"
         state = state.model_copy(
-            update={"active_flow": active_flow, "thread_id": thread_id},
+            update={
+                "active_flow": active_flow,
+                "thread_id": thread_id,
+                "sales_stage": state.sales_stage
+                or _text_value(getattr(conversation, "sales_stage", None)),
+            },
             deep=True,
         )
         return state

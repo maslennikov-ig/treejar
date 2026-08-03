@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, Literal, TypeGuard
 
 from pydantic import BaseModel, Field, ValidationError
@@ -12,6 +13,7 @@ from src.dialogue.catalog_refs import extract_catalog_references
 ORDER_RUNTIME_METADATA_KEY = "order_runtime"
 QUOTE_FRAME_METADATA_KEY = "quote_frame"
 PENDING_QUESTION_FRAME_METADATA_KEY = "pending_question_frame"
+QUOTE_WORKFLOW_METADATA_KEY = "quote_workflow"
 ACTIVE_QUOTE_FRAME_STATUSES = frozenset({"collecting_details", "repair_required"})
 
 OrderLineStatus = Literal["unresolved", "resolved", "needs_quantity"]
@@ -23,6 +25,28 @@ OrderDecisionRoute = Literal[
 ]
 PendingQuestionKind = Literal["quantity"]
 PendingQuestionStatus = Literal["active", "answered", "expired"]
+
+
+class QuoteConsent(StrEnum):
+    NOT_REQUESTED = "not_requested"
+    DEFERRED = "deferred"
+    DECLINED = "declined"
+    GRANTED = "granted"
+
+
+class QuoteLifecycle(StrEnum):
+    CONSULTATION = "consultation"
+    QUOTE_OFFERED = "quote_offered"
+    QUOTE_REQUESTED = "quote_requested"
+    COLLECTING_DETAILS = "collecting_details"
+    CREATING = "creating"
+    CREATED = "created"
+
+
+class QuoteWorkflowState(BaseModel):
+    version: Literal[2] = 2
+    consent: QuoteConsent = QuoteConsent.NOT_REQUESTED
+    lifecycle: QuoteLifecycle = QuoteLifecycle.CONSULTATION
 
 
 class QuoteDetails(BaseModel):
@@ -146,6 +170,7 @@ class OrderState(BaseModel):
     quote_frame: QuoteFrame | None = None
     quote_status: str | None = None
     missing_quote_fields: list[str] = Field(default_factory=list)
+    quote_workflow: QuoteWorkflowState = Field(default_factory=QuoteWorkflowState)
 
     @classmethod
     def from_legacy_metadata(cls, metadata: Mapping[str, Any] | None) -> OrderState:
@@ -182,7 +207,66 @@ class OrderState(BaseModel):
             pending_question_frame=pending_question_frame,
             quote_details=quote_details,
             quote_frame=quote_frame,
+            quote_workflow=quote_workflow_from_metadata(metadata),
         )
+
+
+def quote_workflow_from_metadata(
+    metadata: Mapping[str, Any] | None,
+) -> QuoteWorkflowState:
+    if not isinstance(metadata, Mapping):
+        return QuoteWorkflowState()
+
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    if isinstance(runtime, Mapping):
+        raw_workflow = runtime.get(QUOTE_WORKFLOW_METADATA_KEY)
+        if isinstance(raw_workflow, Mapping):
+            try:
+                return QuoteWorkflowState.model_validate(raw_workflow)
+            except ValidationError:
+                pass
+        raw_frame = runtime.get(QUOTE_FRAME_METADATA_KEY)
+        if isinstance(raw_frame, Mapping) and _mapping_text(raw_frame, "source") in {
+            "exact_quote",
+            "sales_order_quote",
+        }:
+            return QuoteWorkflowState(
+                consent=QuoteConsent.GRANTED,
+                lifecycle=QuoteLifecycle.COLLECTING_DETAILS,
+            )
+
+    sales_memory = metadata.get("sales_memory")
+    legacy_hold = (
+        sales_memory.get("quotation_hold")
+        if isinstance(sales_memory, Mapping)
+        else metadata.get("quote_on_hold")
+    )
+    if str(legacy_hold or "").strip().casefold() in {"1", "true", "yes", "on"}:
+        return QuoteWorkflowState(
+            consent=QuoteConsent.DEFERRED,
+            lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+        )
+    legacy_selection = metadata.get("pending_quote_selection")
+    if isinstance(legacy_selection, Mapping) and _mapping_text(
+        legacy_selection, "source"
+    ) in {"exact_quote", "sales_order_quote"}:
+        return QuoteWorkflowState(
+            consent=QuoteConsent.GRANTED,
+            lifecycle=QuoteLifecycle.COLLECTING_DETAILS,
+        )
+    return QuoteWorkflowState()
+
+
+def quote_workflow_to_metadata(
+    metadata: Mapping[str, Any] | None,
+    workflow: QuoteWorkflowState,
+) -> dict[str, Any]:
+    updated = dict(metadata or {})
+    runtime = updated.get(ORDER_RUNTIME_METADATA_KEY)
+    runtime_metadata = dict(runtime) if isinstance(runtime, Mapping) else {}
+    runtime_metadata[QUOTE_WORKFLOW_METADATA_KEY] = workflow.model_dump(mode="json")
+    updated[ORDER_RUNTIME_METADATA_KEY] = runtime_metadata
+    return updated
 
 
 class OrderDecision(BaseModel):

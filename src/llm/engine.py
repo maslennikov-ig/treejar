@@ -33,10 +33,13 @@ from src.dialogue.order_guards import is_order_selection_blocked
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import (
     PendingQuestionFrame,
+    QuoteConsent,
     QuoteDetails,
     QuoteFrame,
+    QuoteLifecycle,
     QuoteLine,
     QuoteUnresolvedLine,
+    QuoteWorkflowState,
     age_pending_question_frame,
     pending_question_frame_cleared_metadata,
     pending_question_frame_from_metadata,
@@ -45,6 +48,8 @@ from src.dialogue.order_state import (
     quote_frame_from_metadata,
     quote_frame_is_active,
     quote_frame_to_metadata,
+    quote_workflow_from_metadata,
+    quote_workflow_to_metadata,
 )
 from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
@@ -1259,6 +1264,67 @@ class VerifiedCatalogLine:
 
 
 @dataclass(frozen=True, slots=True)
+class StockSnapshot:
+    sku: str
+    available: int
+    source: Literal["zoho", "catalog"]
+    as_of: datetime.datetime
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogDecision:
+    requirements: tuple[str, ...]
+    selected_lines: tuple[VerifiedCatalogLine, ...]
+    requested_seats: int | None
+    budget_cap: float | None
+    stock_snapshots: tuple[StockSnapshot, ...]
+    recommendation: str
+    unknown_properties: tuple[str, ...] = ()
+
+
+def validate_catalog_decision(decision: CatalogDecision) -> CatalogDecision:
+    """Validate model-independent recommendation facts before materialization."""
+    snapshots: dict[str, StockSnapshot] = {}
+    for snapshot in decision.stock_snapshots:
+        key = snapshot.sku.strip().casefold()
+        if not key or snapshot.available < 0 or snapshot.as_of.tzinfo is None:
+            raise ValueError("invalid stock snapshot")
+        previous = snapshots.get(key)
+        if previous is not None and previous.available != snapshot.available:
+            raise ValueError(f"conflicting stock for SKU {snapshot.sku}")
+        if previous is None or snapshot.source == "zoho":
+            snapshots[key] = snapshot
+
+    total = 0.0
+    coverage_by_family: dict[str, int] = {}
+    sku_count_by_family: dict[str, set[str]] = {}
+    for line in decision.selected_lines:
+        key = line.sku.strip().casefold()
+        stock_snapshot = snapshots.get(key)
+        if stock_snapshot is None or stock_snapshot.source != "zoho":
+            raise ValueError(f"selected SKU {line.sku} lacks Zoho stock")
+        if line.quantity <= 0 or stock_snapshot.available < line.quantity:
+            raise ValueError(f"selected SKU {line.sku} exceeds Zoho stock")
+        if abs(line.total - line.quantity * line.unit_price) > 0.01:
+            raise ValueError(f"selected SKU {line.sku} has inconsistent total")
+        total += line.total
+        coverage_by_family[line.family] = (
+            coverage_by_family.get(line.family, 0) + line.quantity * line.capacity
+        )
+        sku_count_by_family.setdefault(line.family, set()).add(key)
+
+    if decision.budget_cap is not None and round(total, 2) > decision.budget_cap:
+        raise ValueError("selected configuration exceeds budget")
+    if decision.requested_seats is not None:
+        for family in decision.requirements:
+            if coverage_by_family.get(family, 0) < decision.requested_seats:
+                raise ValueError(f"incomplete coverage for family {family}")
+            if len(sku_count_by_family.get(family, set())) > 2:
+                raise ValueError(f"too many SKUs for family {family}")
+    return decision
+
+
+@dataclass(frozen=True, slots=True)
 class VerifiedCrossSell:
     name: str
     sku: str | None
@@ -1648,8 +1714,8 @@ def _minimum_catalog_coverage_selection(
 ) -> tuple[VerifiedCatalogLine, ...] | None:
     if requested_seats <= 0 or not candidates:
         return None
-    states: dict[int, tuple[float, tuple[int, ...]]] = {
-        0: (0.0, (0,) * len(candidates))
+    states: dict[int, tuple[int, float, tuple[int, ...]]] = {
+        0: (0, 0.0, (0,) * len(candidates))
     }
     for index, candidate in enumerate(candidates):
         if candidate.capacity <= 0 or candidate.stock <= 0 or candidate.unit_price <= 0:
@@ -1659,7 +1725,7 @@ def _minimum_catalog_coverage_selection(
             (requested_seats + candidate.capacity - 1) // candidate.capacity,
         )
         updated = dict(states)
-        for covered, (cost, quantities) in states.items():
+        for covered, (sku_count, cost, quantities) in states.items():
             for quantity in range(1, max_units + 1):
                 new_covered = min(
                     requested_seats,
@@ -1667,17 +1733,20 @@ def _minimum_catalog_coverage_selection(
                 )
                 new_cost = cost + quantity * candidate.unit_price
                 previous = updated.get(new_covered)
-                if previous is not None and previous[0] <= new_cost:
+                new_score = (sku_count + 1, new_cost)
+                if previous is not None and previous[:2] <= new_score:
                     continue
                 new_quantities = list(quantities)
                 new_quantities[index] = quantity
-                updated[new_covered] = (new_cost, tuple(new_quantities))
+                updated[new_covered] = (*new_score, tuple(new_quantities))
         states = updated
 
     selected = states.get(requested_seats)
     if selected is None:
         return None
-    _, quantities = selected
+    sku_count, _, quantities = selected
+    if sku_count > 2:
+        return None
     lines = tuple(
         VerifiedCatalogLine(
             family=candidate.family,
@@ -2365,6 +2434,8 @@ class SalesDeps:
         field(default_factory=dict)
     )
     verified_cross_sell: VerifiedCrossSell | None = None
+    stock_snapshots: dict[str, StockSnapshot] = field(default_factory=dict)
+    catalog_decision: CatalogDecision | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
 
@@ -2461,13 +2532,8 @@ def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
 
 
 def _product_search_call_limit(deps: SalesDeps) -> int:
-    if (
-        deps.catalog_planning.complete_coverage
-        and len(set(deps.catalog_planning.families)) >= 2
-        and _CROSS_SELL_REQUEST_RE.search(deps.user_query)
-    ):
-        return MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE + 1
-    return MAX_PRODUCT_SEARCH_CALLS_PER_MESSAGE
+    family_count = len(set(deps.catalog_planning.families))
+    return min(6, max(2, 2 * family_count))
 
 
 def _append_required_tool_disclosures(text: str, deps: SalesDeps) -> str:
@@ -2530,6 +2596,14 @@ def _materialize_verified_catalog_recovery(
     *,
     explicit_quote_hold: bool,
 ) -> str | None:
+    if deps.catalog_decision is not None:
+        try:
+            validate_catalog_decision(deps.catalog_decision)
+        except ValueError:
+            logger.warning(
+                "Blocked verified catalog materialization after decision validation"
+            )
+            return None
     planning = deps.catalog_planning
     required_families = tuple(dict.fromkeys(planning.families))
     current_selections = deps.current_catalog_selections
@@ -2813,6 +2887,17 @@ def _verified_catalog_plan_payload(
             for family in deps.catalog_planning.families
             for line in selections[family]
         ],
+        "stock_snapshots": [
+            {
+                "sku": snapshot.sku,
+                "available": snapshot.available,
+                "source": snapshot.source,
+                "as_of": snapshot.as_of.isoformat(),
+            }
+            for snapshot in sorted(
+                deps.stock_snapshots.values(), key=lambda item: item.sku.casefold()
+            )
+        ],
         "cross_sell": (
             {
                 "name": cross_sell.name,
@@ -2907,6 +2992,25 @@ async def _try_verified_catalog_plan(
         segment=segment,
     )
     if selections is None:
+        return None
+    verified_stock = await _zoho_stock_for_catalog_selections(deps, selections)
+    if verified_stock is None:
+        return None
+    selections, stock_snapshots = verified_stock
+    decision = CatalogDecision(
+        requirements=tuple(planning.families),
+        selected_lines=tuple(
+            line for family in planning.families for line in selections[family]
+        ),
+        requested_seats=planning.requested_seats,
+        budget_cap=planning.budget_cap,
+        stock_snapshots=stock_snapshots,
+        recommendation="verified_complete_configuration",
+    )
+    try:
+        validate_catalog_decision(decision)
+    except ValueError:
+        logger.warning("Verified catalog plan failed authoritative stock validation")
         return None
 
     selected_total = _catalog_selection_total(selections, planning.families)
@@ -3005,6 +3109,10 @@ async def _try_verified_catalog_plan(
         verified_catalog_selections=dict(selections),
         verified_cross_sell=verified_cross_sell,
         required_cross_sell_disclosure=cross_sell_disclosure,
+        stock_snapshots={
+            snapshot.sku.casefold(): snapshot for snapshot in stock_snapshots
+        },
+        catalog_decision=decision,
         executed_tool_names=[],
         recovery_tool_traces=[],
     )
@@ -3051,9 +3159,69 @@ async def _try_verified_catalog_plan(
     deps.verified_catalog_selections = dict(selections)
     deps.verified_cross_sell = verified_cross_sell
     deps.required_cross_sell_disclosure = cross_sell_disclosure
+    deps.stock_snapshots = dict(resolved_deps.stock_snapshots)
+    deps.catalog_decision = decision
     deps.executed_tool_names = [trace.tool_name]
     deps.recovery_tool_traces = [trace]
     return response, (trace,)
+
+
+async def _zoho_stock_for_catalog_selections(
+    deps: SalesDeps,
+    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
+) -> (
+    tuple[
+        dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
+        tuple[StockSnapshot, ...],
+    ]
+    | None
+):
+    lines = tuple(line for family_lines in selections.values() for line in family_lines)
+    skus = list(dict.fromkeys(line.sku for line in lines))
+    try:
+        raw_items = await deps.zoho_inventory.get_stock_bulk(skus)
+    except Exception:
+        logger.warning(
+            "Zoho stock lookup failed for verified catalog plan", exc_info=True
+        )
+        return None
+    if not isinstance(raw_items, list):
+        return None
+
+    stock_by_sku: dict[str, int] = {}
+    for raw_item in raw_items:
+        item = _coerce_inventory_item(raw_item, require_item_id=False)
+        if item is None:
+            continue
+        raw_stock = item.get("stock_on_hand")
+        if raw_stock is None:
+            continue
+        try:
+            inventory_available = int(raw_stock)
+        except (TypeError, ValueError):
+            continue
+        stock_by_sku[str(item["sku"]).strip().casefold()] = max(inventory_available, 0)
+
+    as_of = datetime.datetime.now(datetime.UTC)
+    snapshots: list[StockSnapshot] = []
+    reconciled: dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] = {}
+    for family, family_lines in selections.items():
+        updated_lines: list[VerifiedCatalogLine] = []
+        for line in family_lines:
+            selected_available = stock_by_sku.get(line.sku.strip().casefold())
+            if selected_available is None:
+                return None
+            snapshots.append(
+                StockSnapshot(
+                    sku=line.sku,
+                    available=selected_available,
+                    source="zoho",
+                    as_of=as_of,
+                )
+            )
+            updated_lines.append(replace(line, stock=selected_available))
+        reconciled[family] = tuple(updated_lines)
+    return reconciled, tuple(snapshots)
 
 
 # Allowed transitions for the advance_stage tool
@@ -7098,6 +7266,15 @@ async def _store_pending_quote_selection(
             for item in resolution.unresolved
         ],
     }
+    workflow = quote_workflow_from_metadata(metadata)
+    if workflow.consent is not QuoteConsent.GRANTED:
+        metadata = quote_workflow_to_metadata(
+            metadata,
+            QuoteWorkflowState(
+                consent=workflow.consent,
+                lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+            ),
+        )
     conversation.metadata_ = metadata
     _store_quote_frame_metadata(
         conversation,
@@ -8456,10 +8633,27 @@ async def _quote_offer_allowed_for_turn(
     text: str,
 ) -> bool:
     if _has_explicit_quote_hold(text):
+        await _store_quote_workflow(
+            db,
+            conversation,
+            QuoteWorkflowState(
+                consent=QuoteConsent.DEFERRED,
+                lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+            ),
+        )
         return False
 
     memory = _sales_memory_from_metadata(conversation)
     if not memory.get("quotation_hold"):
+        if _has_explicit_quote_opt_in(text):
+            await _store_quote_workflow(
+                db,
+                conversation,
+                QuoteWorkflowState(
+                    consent=QuoteConsent.GRANTED,
+                    lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
+                ),
+            )
         return True
     if not _has_explicit_quote_opt_in(text):
         return False
@@ -8473,8 +8667,36 @@ async def _quote_offer_allowed_for_turn(
     else:
         metadata.pop(SALES_MEMORY_KEY, None)
     conversation.metadata_ = metadata
+    conversation.metadata_ = quote_workflow_to_metadata(
+        conversation.metadata_,
+        QuoteWorkflowState(
+            consent=QuoteConsent.GRANTED,
+            lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
+        ),
+    )
     await db.flush()
     return True
+
+
+async def _store_quote_workflow(
+    db: AsyncSession,
+    conversation: Conversation,
+    workflow: QuoteWorkflowState,
+) -> None:
+    conversation.metadata_ = quote_workflow_to_metadata(
+        conversation.metadata_, workflow
+    )
+    await db.flush()
+
+
+def _has_canonical_quote_workflow(conversation: Conversation) -> bool:
+    metadata = conversation.metadata_
+    if not isinstance(metadata, Mapping):
+        return False
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    return isinstance(runtime, Mapping) and isinstance(
+        runtime.get("quote_workflow"), Mapping
+    )
 
 
 def _fact_value_as_text(value: Any) -> str:
@@ -9389,6 +9611,12 @@ async def _store_extracted_quote_customer_details(
     metadata = dict(conversation.metadata_ or {})
     existing = _quote_customer_details_from_metadata(conversation)
     extracted_details = dict(extracted)
+    extracted_company = _string_value(extracted_details.get("company"))
+    if extracted_company and not _is_individual_detail_value(extracted_company):
+        extracted_details.pop("customer_type", None)
+    extracted_address = _string_value(extracted_details.get("address"))
+    if extracted_address and _looks_like_budget_address_artifact(extracted_address):
+        extracted_details.pop("address", None)
     existing_company = existing.get("company")
     if (
         _string_value(existing_company)
@@ -9427,6 +9655,15 @@ async def _store_extracted_quote_customer_details(
             exc_info=True,
         )
     return details
+
+
+def _looks_like_budget_address_artifact(value: str) -> bool:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return False
+    if "budget" in normalized or "total" in normalized:
+        return any(char.isdigit() for char in normalized)
+    return normalized.strip(" ,.").isdigit()
 
 
 def _quote_intent_frame_from_text(text: str) -> dict[str, Any] | None:
@@ -10498,6 +10735,13 @@ async def _suspend_quote_workflow(
     metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
     metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
     metadata = quote_frame_cleared_metadata(metadata)
+    metadata = quote_workflow_to_metadata(
+        metadata,
+        QuoteWorkflowState(
+            consent=QuoteConsent.DEFERRED,
+            lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+        ),
+    )
     dialogue_state = DialogueState.load(metadata)
     quote_details_frames = [
         frame.model_copy(update={"status": "interrupted"}, deep=True)
@@ -12173,6 +12417,16 @@ async def get_stock(ctx: RunContext[SalesDeps], sku: str) -> str | ToolReturn:
         return f"Product with SKU {sku} not found in inventory."
 
     available = stock_info.get("stock_on_hand", 0)
+    try:
+        available_int = max(int(available), 0)
+    except (TypeError, ValueError):
+        available_int = 0
+    ctx.deps.stock_snapshots[sku.strip().casefold()] = StockSnapshot(
+        sku=sku.strip(),
+        available=available_int,
+        source="zoho",
+        as_of=datetime.datetime.now(datetime.UTC),
+    )
     segment = (
         ctx.deps.crm_context.get("Segment", "Unknown")
         if ctx.deps.crm_context
@@ -12735,11 +12989,31 @@ async def create_quotation(
     """
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
+    workflow = quote_workflow_from_metadata(ctx.deps.conversation.metadata_)
+    if (
+        _has_canonical_quote_workflow(ctx.deps.conversation)
+        and workflow.consent is not QuoteConsent.GRANTED
+    ):
+        return (
+            "I can prepare the quotation only after you explicitly confirm that "
+            "you want it. No customer, order, PDF, or message was created."
+        )
+
     missing_required = _quote_missing_required_details(ctx.deps, items)
     if missing_required:
         return _quote_missing_required_details_message(
             missing_required,
             language=str(ctx.deps.conversation.language),
+        )
+
+    if _has_canonical_quote_workflow(ctx.deps.conversation):
+        await _store_quote_workflow(
+            ctx.deps.db,
+            ctx.deps.conversation,
+            QuoteWorkflowState(
+                consent=QuoteConsent.GRANTED,
+                lifecycle=QuoteLifecycle.CREATING,
+            ),
         )
 
     # Needs to fetch item details from Zoho Inventory
@@ -12880,6 +13154,15 @@ async def create_quotation(
             _string_value(existing_effect.get("sale_order_number")) or "DRAFT"
         )
         ctx.deps.quotation_created = True
+        if _has_canonical_quote_workflow(ctx.deps.conversation):
+            await _store_quote_workflow(
+                ctx.deps.db,
+                ctx.deps.conversation,
+                QuoteWorkflowState(
+                    consent=QuoteConsent.GRANTED,
+                    lifecycle=QuoteLifecycle.CREATED,
+                ),
+            )
         return _quotation_prepared_message(ctx.deps.conversation, quote_number)
 
     # Create a draft once. If an earlier attempt stopped after order creation,
@@ -13140,6 +13423,15 @@ async def create_quotation(
         )
 
     ctx.deps.quotation_created = True
+    if _has_canonical_quote_workflow(ctx.deps.conversation):
+        await _store_quote_workflow(
+            ctx.deps.db,
+            ctx.deps.conversation,
+            QuoteWorkflowState(
+                consent=QuoteConsent.GRANTED,
+                lifecycle=QuoteLifecycle.CREATED,
+            ),
+        )
     return _quotation_prepared_message(ctx.deps.conversation, quote_number)
 
 
@@ -14182,6 +14474,21 @@ async def process_message(
             exc_info=True,
         )
         dialogue_kernel_result = None
+    if dialogue_kernel_result is not None:
+        kernel_workflow = QuoteWorkflowState(
+            consent=dialogue_kernel_result.state.quote_consent,
+            lifecycle=dialogue_kernel_result.state.quote_lifecycle,
+        )
+        current_workflow = quote_workflow_from_metadata(conv.metadata_)
+        kernel_has_explicit_consent = isinstance(
+            dialogue_kernel_result.decision.metadata.get("quote_consent"), str
+        )
+        if kernel_workflow != current_workflow and (
+            kernel_has_explicit_consent
+            or kernel_workflow.consent is QuoteConsent.GRANTED
+            or current_workflow.consent is not QuoteConsent.GRANTED
+        ):
+            await _store_quote_workflow(db, conv, kernel_workflow)
     if (
         dialogue_kernel_result is not None
         and dialogue_kernel_result.should_use_kernel
@@ -14242,6 +14549,17 @@ async def process_message(
         _active_pending_quote_selection_from_conversation(conv)
     )
     has_pending_quote_selection = pending_quote_selection_at_start is not None
+    pending_unconsented_detail_keys: set[str] = set()
+    if has_pending_quote_selection and not current_quote_customer_details:
+        identity_candidates = _extract_terse_quote_customer_details(combined_text)
+        pending_unconsented_detail_keys = set(identity_candidates).intersection(
+            {"customer_type", "email", "phone", "address"}
+        )
+        current_quote_customer_details = {
+            key: value
+            for key, value in identity_candidates.items()
+            if key in {"name", "company"}
+        }
     pending_exact_quote_followup_candidates = (
         _exact_quote_followup_candidates(
             selection=pending_quote_selection_at_start,
@@ -14276,7 +14594,32 @@ async def process_message(
             or _has_affirmative_quote_resume_intent(masked_text)
         )
     )
-    quote_detail_context_active = (
+    explicit_quote_consent = not quote_offer_reply_has_consultative_priority and (
+        _has_explicit_quote_opt_in(combined_text)
+        or _has_explicit_quote_opt_in(masked_text)
+        or (
+            assistant_offered_quote_selection
+            and (
+                _has_affirmative_quote_resume_intent(combined_text)
+                or _has_affirmative_quote_resume_intent(masked_text)
+            )
+        )
+    )
+    quote_workflow = quote_workflow_from_metadata(conv.metadata_)
+    if explicit_quote_consent:
+        quote_workflow = QuoteWorkflowState(
+            consent=QuoteConsent.GRANTED,
+            lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
+        )
+        await _store_quote_workflow(db, conv, quote_workflow)
+    quote_consent_granted = quote_workflow.consent is QuoteConsent.GRANTED
+    unconsented_quote_details = not quote_consent_granted and bool(
+        pending_unconsented_detail_keys
+        or set(current_quote_customer_details).intersection(
+            {"customer_type", "email", "phone", "address"}
+        )
+    )
+    quote_detail_context_active = quote_consent_granted and (
         assistant_supports_quote_resume or has_pending_quote_selection
     )
     quote_brief_confirmation_details: dict[str, str] | None = None
@@ -14356,10 +14699,15 @@ async def process_message(
             allow_product_media=False,
         )
         if current_quote_customer_details:
+            identity_details = {
+                key: value
+                for key, value in current_quote_customer_details.items()
+                if key in {"name", "company"}
+            }
             await _store_extracted_quote_customer_details(
                 db,
                 conv,
-                current_quote_customer_details,
+                identity_details,
             )
         if current_quote_intent_frame is not None:
             await _store_quote_intent_frame(db, conv, combined_text)
@@ -14371,12 +14719,21 @@ async def process_message(
     # can call create_quotation. Phone is enough to create a draft, while the
     # other fields are optional PDF details when the customer provides them.
     if current_quote_customer_details:
+        allowed_quote_customer_details = (
+            current_quote_customer_details
+            if quote_consent_granted
+            else {
+                key: value
+                for key, value in current_quote_customer_details.items()
+                if key in {"name", "company"}
+            }
+        )
         await _store_extracted_quote_customer_details(
             db,
             conv,
-            current_quote_customer_details,
+            allowed_quote_customer_details,
         )
-        if confirmed_quote_brief_address:
+        if quote_consent_granted and confirmed_quote_brief_address:
             await _store_confirmed_quote_brief_address(
                 db,
                 conv,
@@ -14450,13 +14807,17 @@ async def process_message(
             )
         else:
             if not _has_detail_capture_handoff_blocker(combined_text):
-                if _has_active_sales_detail_capture_context(
-                    conv,
-                    deps.recent_history,
-                ) and _is_neutral_detail_capture_update(
-                    text=combined_text,
-                    customer_details=current_quote_customer_details,
-                    sales_memory_updates=current_sales_memory_updates,
+                if (
+                    quote_consent_granted
+                    and _has_active_sales_detail_capture_context(
+                        conv,
+                        deps.recent_history,
+                    )
+                    and _is_neutral_detail_capture_update(
+                        text=combined_text,
+                        customer_details=current_quote_customer_details,
+                        sales_memory_updates=current_sales_memory_updates,
+                    )
                 ):
                     return _build_static_response(
                         _detail_capture_acknowledgement(
@@ -14472,6 +14833,17 @@ async def process_message(
                     "name-capture",
                     allow_product_media=False,
                 )
+
+    if unconsented_quote_details:
+        return _build_static_response(
+            (
+                "I have kept the selected items, but I will collect customer and "
+                "delivery details only after you explicitly confirm that you want "
+                "a formal quotation."
+            ),
+            "quote-consent-required",
+            allow_product_media=False,
+        )
 
     offer_quote_for_turn = await _quote_offer_allowed_for_turn(
         db,
@@ -14546,6 +14918,7 @@ async def process_message(
 
     if (
         not quote_detail_context_active
+        and quote_consent_granted
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
         and _is_neutral_detail_capture_update(
             text=combined_text,
@@ -14562,9 +14935,11 @@ async def process_message(
             allow_product_media=False,
         )
 
-    if _has_active_sales_detail_capture_context(
-        conv, deps.recent_history
-    ) and _is_saved_sales_context_summary_request(combined_text):
+    if (
+        quote_consent_granted
+        and _has_active_sales_detail_capture_context(conv, deps.recent_history)
+        and _is_saved_sales_context_summary_request(combined_text)
+    ):
         return _build_static_response(
             _saved_sales_context_summary(deps),
             "saved-context-summary",
@@ -14578,30 +14953,34 @@ async def process_message(
         combined_text=combined_text,
         masked_text=masked_text,
     )
-    order_quote_response = await _order_quote_route_for_turn(
-        phase="pre_policy",
-        db=db,
-        conversation=conv,
-        deps=deps,
-        masked_text=masked_text,
-        combined_text=combined_text,
-        is_first_turn=is_first_turn,
-        pending_quote_selection_at_start=pending_quote_selection_at_start,
-        pending_exact_quote_followup_candidates=pending_exact_quote_followup_candidates,
-        current_quote_intent_frame=current_quote_intent_frame,
-        current_quote_customer_details=current_quote_customer_details,
-        assistant_supports_quote_resume=assistant_supports_quote_resume,
-        quote_detail_context_active=quote_detail_context_active,
-        has_pending_quote_selection=has_pending_quote_selection,
-        pending_reference_route=pending_reference_route,
-        zoho_client=zoho_client,
-        crm_context=crm_context,
-        trace_enabled=dialogue_kernel_trace_enabled,
-        build_static_response=_build_static_response,
-        clear_verified_policy_repair_state=_clear_verified_policy_repair_state,
-        offer_quote=offer_quote_for_turn,
-        resumed_name_gate_intent=resumed_name_gate_intent,
-    )
+    order_quote_response = None
+    if not unconsented_quote_details:
+        order_quote_response = await _order_quote_route_for_turn(
+            phase="pre_policy",
+            db=db,
+            conversation=conv,
+            deps=deps,
+            masked_text=masked_text,
+            combined_text=combined_text,
+            is_first_turn=is_first_turn,
+            pending_quote_selection_at_start=pending_quote_selection_at_start,
+            pending_exact_quote_followup_candidates=(
+                pending_exact_quote_followup_candidates
+            ),
+            current_quote_intent_frame=current_quote_intent_frame,
+            current_quote_customer_details=current_quote_customer_details,
+            assistant_supports_quote_resume=assistant_supports_quote_resume,
+            quote_detail_context_active=quote_detail_context_active,
+            has_pending_quote_selection=has_pending_quote_selection,
+            pending_reference_route=pending_reference_route,
+            zoho_client=zoho_client,
+            crm_context=crm_context,
+            trace_enabled=dialogue_kernel_trace_enabled,
+            build_static_response=_build_static_response,
+            clear_verified_policy_repair_state=_clear_verified_policy_repair_state,
+            offer_quote=offer_quote_for_turn,
+            resumed_name_gate_intent=resumed_name_gate_intent,
+        )
     if order_quote_response is not None:
         return order_quote_response
 
@@ -14785,38 +15164,42 @@ async def process_message(
                 allow_product_media=False,
             )
 
-        order_quote_response = await _order_quote_route_for_turn(
-            phase="post_policy",
-            db=db,
-            conversation=conv,
-            deps=deps,
-            masked_text=masked_text,
-            combined_text=combined_text,
-            is_first_turn=is_first_turn,
-            pending_quote_selection_at_start=pending_quote_selection_at_start,
-            pending_exact_quote_followup_candidates=(
-                pending_exact_quote_followup_candidates
-            ),
-            current_quote_intent_frame=current_quote_intent_frame,
-            current_quote_customer_details=current_quote_customer_details,
-            assistant_supports_quote_resume=assistant_supports_quote_resume,
-            quote_detail_context_active=quote_detail_context_active,
-            has_pending_quote_selection=has_pending_quote_selection,
-            pending_reference_route=pending_reference_route,
-            zoho_client=zoho_client,
-            crm_context=crm_context,
-            trace_enabled=dialogue_kernel_trace_enabled,
-            build_static_response=_build_static_response,
-            clear_verified_policy_repair_state=_clear_verified_policy_repair_state,
-            db_model_main=db_model_main,
-            dynamic_model=dynamic_model,
-            run_agent=_run_agent,
-            build_llm_response=_build_llm_response,
-            has_escalation=_has_escalation,
-            quote_brief_confirmation_details=quote_brief_confirmation_details,
-            offer_quote=offer_quote_for_turn,
-            resumed_name_gate_intent=resumed_name_gate_intent,
-        )
+        order_quote_response = None
+        if not unconsented_quote_details:
+            order_quote_response = await _order_quote_route_for_turn(
+                phase="post_policy",
+                db=db,
+                conversation=conv,
+                deps=deps,
+                masked_text=masked_text,
+                combined_text=combined_text,
+                is_first_turn=is_first_turn,
+                pending_quote_selection_at_start=pending_quote_selection_at_start,
+                pending_exact_quote_followup_candidates=(
+                    pending_exact_quote_followup_candidates
+                ),
+                current_quote_intent_frame=current_quote_intent_frame,
+                current_quote_customer_details=current_quote_customer_details,
+                assistant_supports_quote_resume=assistant_supports_quote_resume,
+                quote_detail_context_active=quote_detail_context_active,
+                has_pending_quote_selection=has_pending_quote_selection,
+                pending_reference_route=pending_reference_route,
+                zoho_client=zoho_client,
+                crm_context=crm_context,
+                trace_enabled=dialogue_kernel_trace_enabled,
+                build_static_response=_build_static_response,
+                clear_verified_policy_repair_state=(
+                    _clear_verified_policy_repair_state
+                ),
+                db_model_main=db_model_main,
+                dynamic_model=dynamic_model,
+                run_agent=_run_agent,
+                build_llm_response=_build_llm_response,
+                has_escalation=_has_escalation,
+                quote_brief_confirmation_details=quote_brief_confirmation_details,
+                offer_quote=offer_quote_for_turn,
+                resumed_name_gate_intent=resumed_name_gate_intent,
+            )
         if order_quote_response is not None:
             return order_quote_response
 

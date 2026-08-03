@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from src.dialogue.order_state import (
     OrderState,
+    QuoteWorkflowState,
     extract_order_intent_from_text,
     quote_frame_from_metadata,
+    quote_workflow_from_metadata,
+    quote_workflow_to_metadata,
 )
+from src.dialogue.state import QuoteConsent, QuoteLifecycle
 
 
 def test_extract_order_intent_preserves_multi_item_lines() -> None:
@@ -123,3 +127,27 @@ def test_quote_frame_from_metadata_prefers_canonical_runtime_frame() -> None:
         ("CH-616-NEW-BLACK", 4),
     ]
     assert frame.quote_details.name == "Lilia"
+
+
+def test_quote_workflow_uses_versioned_runtime_and_dual_reads_legacy_hold() -> None:
+    legacy = quote_workflow_from_metadata({"sales_memory": {"quotation_hold": "yes"}})
+
+    assert legacy == QuoteWorkflowState(
+        consent=QuoteConsent.DEFERRED,
+        lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+    )
+
+    metadata = quote_workflow_to_metadata(
+        {"sales_memory": {"quotation_hold": "yes"}},
+        QuoteWorkflowState(
+            consent=QuoteConsent.GRANTED,
+            lifecycle=QuoteLifecycle.QUOTE_REQUESTED,
+        ),
+    )
+
+    assert metadata["order_runtime"]["quote_workflow"] == {
+        "version": 2,
+        "consent": "granted",
+        "lifecycle": "quote_requested",
+    }
+    assert metadata["sales_memory"] == {"quotation_hold": "yes"}

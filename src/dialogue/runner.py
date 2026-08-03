@@ -18,8 +18,14 @@ from src.dialogue.reducer import (
     expire_expected_answer_frames,
     mark_frame_fulfilled,
     mark_quote_sent,
+    reconcile_dialogue_state,
 )
-from src.dialogue.state import DialogueDecision, DialogueState
+from src.dialogue.state import (
+    DialogueDecision,
+    DialogueState,
+    QuoteConsent,
+    QuoteLifecycle,
+)
 from src.models.conversation import Conversation
 
 DialogueKernelMode = Literal["legacy", "shadow", "enforce"]
@@ -103,7 +109,9 @@ async def run_dialogue_kernel(
     trace_enabled: bool,
 ) -> DialogueKernelResult:
     normalized_mode = _normalize_mode(mode)
-    before_state = DialogueState.from_conversation(conversation)
+    before_state = reconcile_dialogue_state(
+        DialogueState.from_conversation(conversation)
+    )
     if normalized_mode == "legacy":
         return DialogueKernelResult(
             decision=DialogueDecision(
@@ -123,7 +131,9 @@ async def run_dialogue_kernel(
     }
     graph_output = cast("_GraphOutput", await _COMPILED_GRAPH.ainvoke(graph_input))
     decision = graph_output["decision"]
-    after_state = graph_output.get("after_state") or before_state
+    after_state = reconcile_dialogue_state(
+        graph_output.get("after_state") or before_state
+    )
     allowed_flows = set(parse_enforced_flows(enforced_flows))
     should_use_kernel = (
         normalized_mode == "enforce"
@@ -147,6 +157,8 @@ async def run_dialogue_kernel(
         traced_state = append_trace_bounded(after_state, trace, limit=TRACE_LIMIT)
         after_state = traced_state
     conversation.metadata_ = after_state.to_metadata(conversation.metadata_)
+    if after_state.sales_stage:
+        conversation.sales_stage = after_state.sales_stage
 
     return DialogueKernelResult(
         decision=decision,
@@ -228,6 +240,77 @@ def _match_expected_answer_node(state: _GraphInput) -> _GraphOutput:
 def _decide_node(state: _GraphOutput) -> _GraphOutput:
     dialogue_state = state["state"]
     text = state["text"]
+    if _is_post_quotation_context(dialogue_state):
+        after_state = mark_quote_sent(
+            dialogue_state,
+            post_quotation_status="awaiting_customer_decision",
+        ).model_copy(update={"active_flow": "post_quotation_hold"})
+        return {
+            **state,
+            "decision": DialogueDecision(
+                action="hold_post_quotation",
+                flow="post_quotation_hold",
+                response_text=(
+                    "Thank you, I have noted your reply about the quotation. "
+                    "I will keep the quotation context and avoid restarting the "
+                    "conversation."
+                ),
+                handled=True,
+            ),
+            "after_state": after_state,
+        }
+    consent_signal = _quote_consent_signal(text, state["recent_history"])
+    if consent_signal in {QuoteConsent.DECLINED, QuoteConsent.DEFERRED}:
+        after_state = reconcile_dialogue_state(
+            dialogue_state.model_copy(
+                update={
+                    "quote_consent": consent_signal,
+                    "quote_lifecycle": (
+                        QuoteLifecycle.CONSULTATION
+                        if consent_signal is QuoteConsent.DECLINED
+                        else QuoteLifecycle.QUOTE_OFFERED
+                    ),
+                    "active_flow": "product_selection",
+                },
+                deep=True,
+            )
+        )
+        return {
+            **state,
+            "decision": DialogueDecision(
+                action="fallback_legacy",
+                flow="legacy_fallback",
+                handled=False,
+                metadata={"quote_consent": consent_signal.value},
+            ),
+            "after_state": after_state,
+        }
+    if consent_signal is QuoteConsent.GRANTED and dialogue_state.slots.selected_items:
+        after_state = reconcile_dialogue_state(
+            dialogue_state.model_copy(
+                update={
+                    "quote_consent": QuoteConsent.GRANTED,
+                    "quote_lifecycle": QuoteLifecycle.QUOTE_REQUESTED,
+                },
+                deep=True,
+            )
+        )
+        missing = _missing_quote_details(after_state)
+        return {
+            **state,
+            "decision": DialogueDecision(
+                action="collect_quote_details",
+                flow="quote_details",
+                response_text=_quote_details_response(missing),
+                handled=True,
+                metadata={
+                    "quote_customer_details": {},
+                    "missing_required": missing,
+                    "quote_consent": QuoteConsent.GRANTED.value,
+                },
+            ),
+            "after_state": after_state,
+        }
     expected_answer_decision = _expected_answer_decision(
         dialogue_state,
         state.get("expected_answer_match"),
@@ -282,26 +365,6 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
                 action="ask_name",
                 flow="name_gate",
                 response_text="Hello",
-                handled=True,
-            ),
-            "after_state": after_state,
-        }
-
-    if _is_post_quotation_context(dialogue_state):
-        after_state = mark_quote_sent(
-            dialogue_state,
-            post_quotation_status="awaiting_customer_decision",
-        ).model_copy(update={"active_flow": "post_quotation_hold"})
-        return {
-            **state,
-            "decision": DialogueDecision(
-                action="hold_post_quotation",
-                flow="post_quotation_hold",
-                response_text=(
-                    "Thank you, I have noted your reply about the quotation. "
-                    "I will keep the quotation context and avoid restarting the "
-                    "conversation."
-                ),
                 handled=True,
             ),
             "after_state": after_state,
@@ -430,6 +493,8 @@ def _is_post_quotation_context(
 def _is_quote_details_context(
     state: DialogueState,
 ) -> bool:
+    if state.quote_consent is not QuoteConsent.GRANTED:
+        return False
     if state.slots.selected_items:
         return True
     return state.active_flow == "quote_details" and _has_active_flow_frame(
@@ -501,6 +566,57 @@ def _is_specific_delivery_address(value: str | None) -> bool:
     if normalized in {"dubai", "dubay", "uae", "дубай"}:
         return False
     return bool(re.search(r"\d", value)) or len(normalized.split()) >= 2
+
+
+_QUOTE_DECLINE_RE = re.compile(
+    r"\b(?:no|without)\s+(?:a\s+)?(?:quote|quotation)\b|"
+    r"\b(?:do\s+not|don't|dont|not\s+want)\b.{0,32}\b(?:quote|quotation)\b|"
+    r"(?:не\s+(?:нужно|хочу)|без)\s+(?:кп|коммерческ\w+\s+предлож)|"
+    r"(?:لا\s+أريد|بدون)\s+(?:عرض\s+سعر|عرض\s+السعر)",
+    re.IGNORECASE,
+)
+_QUOTE_DEFER_RE = re.compile(
+    r"\b(?:quote|quotation)\b.{0,24}\b(?:later|not\s+yet|on\s+hold|pause)\b|"
+    r"\b(?:later|not\s+yet|hold|pause)\b.{0,24}\b(?:quote|quotation)\b|"
+    r"(?:кп|коммерческ\w+\s+предлож).{0,24}(?:позже|пока\s+не|отлож)|"
+    r"(?:عرض\s+سعر|عرض\s+السعر).{0,24}(?:لاحق|ليس\s+الآن)",
+    re.IGNORECASE,
+)
+_QUOTE_REQUEST_RE = re.compile(
+    r"\b(?:prepare|create|send|need|want|get)\b.{0,28}\b(?:quote|quotation)\b|"
+    r"\b(?:quote|quotation)\b.{0,20}\b(?:please|now)\b|"
+    r"(?:подготов|сдел|пришл|отправ).{0,28}(?:кп|коммерческ\w+\s+предлож)|"
+    r"(?:جهز|أرسل|ارسل).{0,28}(?:عرض\s+سعر|عرض\s+السعر)",
+    re.IGNORECASE,
+)
+
+
+def _quote_consent_signal(
+    text: str,
+    recent_history: list[str],
+) -> QuoteConsent | None:
+    if _QUOTE_DECLINE_RE.search(text):
+        return QuoteConsent.DECLINED
+    if _QUOTE_DEFER_RE.search(text):
+        return QuoteConsent.DEFERRED
+    if _QUOTE_REQUEST_RE.search(text):
+        return QuoteConsent.GRANTED
+    normalized = " ".join(text.casefold().split()).strip(" .!?،؟")
+    affirmative = normalized in {
+        "yes",
+        "yes please",
+        "ok",
+        "okay",
+        "да",
+        "да пожалуйста",
+        "نعم",
+    }
+    if affirmative and any(
+        term in " ".join(recent_history).casefold()
+        for term in ("quote", "quotation", "кп", "коммерческ", "عرض سعر")
+    ):
+        return QuoteConsent.GRANTED
+    return None
 
 
 def _looks_like_bare_name(text: str) -> bool:

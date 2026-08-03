@@ -21,6 +21,8 @@ from src.dialogue.state import (
     ExpectedAnswerFrame,
     ExpectedSlot,
     LastQuestion,
+    QuoteConsent,
+    QuoteLifecycle,
 )
 
 
@@ -416,3 +418,54 @@ def test_append_trace_bounded_keeps_newest_entries() -> None:
         state = append_trace_bounded(state, trace, limit=3)
 
     assert [item.decision.action for item in state.trace_history] == ["a2", "a3", "a4"]
+
+
+def test_dialogue_state_dual_reads_legacy_quote_hold_without_rewriting_it() -> None:
+    state = DialogueState.load(
+        {
+            "sales_memory": {"quotation_hold": "yes"},
+            "dialogue_kernel": {
+                "state": {
+                    "version": 1,
+                    "active_flow": "quote_details",
+                    "slots": {
+                        "customer_name": "Mira",
+                        "selected_items": [{"sku": "CH-616", "quantity": 2}],
+                    },
+                }
+            },
+        }
+    )
+
+    assert state.quote_consent is QuoteConsent.DEFERRED
+    assert state.quote_lifecycle is QuoteLifecycle.QUOTE_OFFERED
+    patch = state.to_metadata_patch()
+    assert patch["dialogue_kernel"]["state"]["version"] == 2
+    assert patch["dialogue_kernel"]["state"]["quote_consent"] == "deferred"
+    assert "quote_on_hold" not in str(patch)
+
+
+def test_reconcile_dialogue_state_removes_impossible_slot_combinations() -> None:
+    from src.dialogue.reducer import reconcile_dialogue_state
+
+    state = DialogueState(
+        active_flow="quote_details",
+        quote_consent=QuoteConsent.NOT_REQUESTED,
+        quote_lifecycle=QuoteLifecycle.COLLECTING_DETAILS,
+        slots={
+            "customer_name": "Lina",
+            "company": "Northstar LLC",
+            "customer_type": "individual",
+            "delivery_address": "000 total budget",
+            "selected_items": [{"sku": "CH-616", "quantity": 4}],
+        },
+    )
+
+    reconciled = reconcile_dialogue_state(state)
+
+    assert reconciled.slots.company == "Northstar LLC"
+    assert reconciled.slots.customer_type is None
+    assert reconciled.slots.delivery_address is None
+    assert reconciled.quote_lifecycle is QuoteLifecycle.QUOTE_OFFERED
+    assert reconciled.active_flow == "product_selection"
+    assert reconciled.sales_stage == "solution"

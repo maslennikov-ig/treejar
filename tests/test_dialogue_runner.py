@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from src.dialogue.state import DialogueState
+from src.dialogue.state import DialogueState, QuoteConsent, QuoteLifecycle
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
 
@@ -850,3 +850,81 @@ async def test_dialogue_kernel_post_quotation_hold_loads_legacy_quote_metadata()
     assert result.decision.flow == "post_quotation_hold"
     assert result.state.slots.quote_sent is True
     assert result.state.slots.selected_items == [{"sku": "CH 616", "quantity": 12}]
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_decline_interrupts_quote_details_before_slot_capture() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Samir")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 2,
+                "active_flow": "quote_details",
+                "quote_consent": "granted",
+                "quote_lifecycle": "collecting_details",
+                "slots": {
+                    "customer_name": "Samir",
+                    "selected_items": [{"sku": "CH-616", "quantity": 4}],
+                },
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="No quotation. My budget is AED 12,000 total.",
+        recent_history=["assistant: Please share the delivery address."],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("quote_details",),
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.state.quote_consent is QuoteConsent.DECLINED
+    assert result.state.quote_lifecycle is QuoteLifecycle.CONSULTATION
+    assert result.state.active_flow == "product_selection"
+    assert result.state.slots.delivery_address is None
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_collects_quote_details_only_after_explicit_consent() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Mira")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 2,
+                "active_flow": "product_selection",
+                "quote_consent": "not_requested",
+                "quote_lifecycle": "quote_offered",
+                "slots": {
+                    "customer_name": "Mira",
+                    "selected_items": [{"sku": "CH-616", "quantity": 2}],
+                },
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="Yes, please prepare the quotation.",
+        recent_history=["assistant: Would you like a formal quotation?"],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("quote_details",),
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is True
+    assert result.state.quote_consent is QuoteConsent.GRANTED
+    assert result.state.quote_lifecycle is QuoteLifecycle.COLLECTING_DETAILS
+    assert result.state.active_flow == "quote_details"
+    assert "company" in (result.decision.response_text or "").casefold()
