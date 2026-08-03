@@ -2,7 +2,7 @@
 schema_version: orchestration-artifact/v3
 artifact_type: delegated-stream
 stage_manifest: .codex/stages/tj-ee5f/stage-manifest.json
-stream_owner: engine_remediation
+stream_owner: engine-remediation
 orchestration_level: integration
 scope_kind: product_slice
 immediate_consumer: tj-ee5f.13 model battle
@@ -12,7 +12,7 @@ non_goals:
   - evaluator, model battle, deployment, paid calls, Beads updates, or live side effects
 evidence:
   - none
-task_id: tj-ee5f.7-.8
+task_id: tj-ee5f.7-.8-quality
 epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f-engine-remediation
@@ -59,9 +59,9 @@ parallel_group: engine-state-catalog
 depends_on_streams:
   - none
 parallel_decision: parallel
-status: returned
+status: accepted
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: parent orchestrator owns integration and worktree cleanup
 risk_level: high

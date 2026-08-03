@@ -13,13 +13,13 @@ non_goals:
   - product dialogue, catalog, prompt, deployment, or live changes
   - Beads, stage manifest, or handoff changes
 evidence:
-  - focused RED and GREEN commands below
+  - none
 task_id: tj-ee5f.12
 epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: evaluator-remediation
 milestone: quality-remediation
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: python_pro
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -52,9 +52,9 @@ parallel_group: quality-model-remediation
 depends_on_streams:
   - none
 parallel_decision: parallel
-status: returned
+status: accepted
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: parent must review and integrate the commit before cleanup
 risk_level: medium
@@ -140,3 +140,8 @@ This correction depends on the dialogue stream commit that provides
 stream before this evaluator delta. The model battle stream should treat
 `diagnostics.status == "blocking"` as evaluator failure and should add its
 separate blind-audit `EVAL_DISAGREEMENT` result.
+
+# Risks / Follow-ups
+
+The paid comparison and blind-audit disagreement decision remain with
+`tj-ee5f.13`; this stream makes no provider or production calls.

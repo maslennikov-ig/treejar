@@ -2,7 +2,7 @@
 schema_version: orchestration-artifact/v3
 artifact_type: delegated-stream
 stage_manifest: .codex/stages/tj-ee5f/stage-manifest.json
-stream_owner: model_battle_remediation
+stream_owner: model-battle-remediation
 orchestration_level: integration
 scope_kind: product_slice
 immediate_consumer: tj-ee5f integration owner
@@ -56,7 +56,7 @@ depends_on_streams:
   - tj-ee5f.12
 parallel_decision: parallel
 status: accepted
-delivery_method: cherry-pick plus orchestrator correction
+delivery_method: cherry-pick
 accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: integration owner must review and integrate the committed branch

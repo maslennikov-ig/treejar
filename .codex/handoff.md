@@ -3,7 +3,7 @@
 Updated: 2026-08-03
 Current branch: `codex/tj-ee5f-quality-model-battle`
 Active stage: `tj-ee5f`
-Status: local remediation and isolated model-selection tooling in progress
+Status: local remediation accepted; paid isolated model selection pending
 
 ## Current truth
 
@@ -18,6 +18,9 @@ Status: local remediation and isolated model-selection tooling in progress
   evidence and identifiers are protected outside Git.
 - Frozen scope remains `AC-01..AC-30`, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
+- Local fixes now cover typed catalog decisions, authoritative per-turn stock,
+  explicit quote consent/lifecycle, and typed evaluator applicability. The
+  isolated main/background model-battle harness is ready; no paid run occurred.
 
 ## Active work
 
@@ -25,7 +28,7 @@ Status: local remediation and isolated model-selection tooling in progress
   stock, search budget, coverage, and recommendation validation.
 - `tj-ee5f.8` (`in_progress`): typed quote consent/lifecycle, reconciled state,
   no premature detail collection, and safe slot conflicts.
-- `tj-ee5f.12` (`open`): language-independent rule applicability and normalized
+- `tj-ee5f.12` (`in_progress`): language-independent rule applicability and normalized
   `/30` scoring.
 - `tj-ee5f.13` (`in_progress`): isolated core/background model-battle profiles;
   it depends on `.7/.8/.12` and blocks `.1`.
@@ -48,9 +51,11 @@ The accepted design and executable plan are:
 
 ## Verification
 
-Implementation streams use focused RED/GREEN tests. After integration, run
-Ruff check, Ruff format check, Mypy, the full pytest suite, and canonical
-process verification once.
+The one broad release attempt recorded `2665 passed`, `19 skipped`, and 79
+integration failures. After bounded correction, all failed surfaces are green:
+68 dialogue/quotation tests, 11 replay tests, 11 frontend tests, and 44 manifest
+tests. The isolated dialogue stream additionally passed 856 tests. Ruff,
+format, Mypy, process verification, and all new artifact validators pass.
 
 ## Approval gates
 
@@ -59,11 +64,20 @@ authorized. Stop before paid model calls, runtime configuration changes,
 non-force push, deploy, production readback, test-only Zoho/PDF/Wazzup effects,
 or live messages and request exact authority.
 
-## Next stage
+## Next recommended
 
-Continue `tj-ee5f`; do not create another umbrella. After the local release gate,
-request paid-model-battle authority. After a sealed winner decision, request
-separate delivery/deploy/live acceptance authority.
+Next stage id: `tj-ee5f`
+
+Recommended action: request authority for the bounded paid OpenRouter model
+battle. After a sealed winner decision, request separate delivery, deploy, and
+live-acceptance authority. Do not create another umbrella task.
+
+## Starter prompt for next orchestrator
+
+Use $orchestrator-stage for the active `tj-ee5f` integration stage. Read the
+current specification, plan, handoff, stage manifest, scope ledger, and Beads
+`.1`, `.5`, `.7`, `.8`, `.12`, `.13`. Preserve AC-01..AC-30 and stop before
+paid, push, deploy, or live actions until the owner grants exact authority.
 
 ## Explicit defers
 
