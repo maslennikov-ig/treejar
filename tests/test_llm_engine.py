@@ -246,6 +246,14 @@ def _grant_quote_consent(conv: Conversation) -> None:
     conv.metadata_ = metadata
 
 
+def _assert_quote_consent_granted(conv: Conversation) -> None:
+    assert conv.metadata_["order_runtime"]["quote_workflow"] == {
+        "version": 2,
+        "consent": "granted",
+        "lifecycle": "quote_requested",
+    }
+
+
 def _set_required_quote_details(conv: Conversation) -> None:
     conv.customer_name = "Test User"
     metadata = dict(conv.metadata_ or {})
@@ -3509,7 +3517,11 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
     assert pending["version"] == 2
     assert pending["text"] == pending_text
     assert pending["intent"] == "catalog_discovery"
-    assert "order_runtime" not in first_metadata
+    assert first_metadata["order_runtime"]["quote_workflow"] == {
+        "version": 2,
+        "consent": "deferred",
+        "lifecycle": "quote_offered",
+    }
     assert "pending_quote_selection" not in first_metadata
     assert "quote_intent_frame" not in first_metadata
 
@@ -3531,7 +3543,7 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
     assert "quotation" not in second_response.text.casefold()
     assert "confirm the quantity" not in second_response.text.casefold()
     assert "name_gate_pending_request" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "deferred"
     assert "pending_quote_selection" not in conv.metadata_
     assert "quote_intent_frame" not in conv.metadata_
     assert conv.metadata_["sales_memory"]["quotation_hold"] == "yes"
@@ -4282,10 +4294,7 @@ async def test_process_message_address_detail_update_does_not_handoff(
     )
 
     assert conv.escalation_status == "none"
-    assert conv.metadata_["quote_customer_details"] == {
-        "name": "Lili",
-        "address": "Bay Square Building 3, Business Bay, Dubai",
-    }
+    assert conv.metadata_["quote_customer_details"] == {"name": "Lili"}
     assert response.model == "detail-capture"
     assert "bay square building 3" in response.text.lower()
     assert "manager" not in response.text.lower()
@@ -5242,7 +5251,7 @@ async def test_process_message_commercial_offer_request_does_not_escalate_after_
     assert conv.escalation_status == "none"
     assert "manager" not in response.text.lower()
     assert "quantity" in response.text.lower()
-    assert conv.metadata_ == {}
+    _assert_quote_consent_granted(conv)
 
 
 @pytest.mark.asyncio
@@ -11011,13 +11020,7 @@ async def test_process_message_name_gate_resume_accepts_name_plus_customer_type(
     assert "Quantity: 2" in response.text
     assert conv.customer_name == "Victor PII Test"
     assert conv.escalation_status == "none"
-    assert conv.metadata_["quote_customer_details"] == {
-        "email": "victor.pii.e2e@example.com",
-        "phone": "+15550001111",
-        "name": "Victor PII Test",
-        "address": "Office 1905, JLT Dubai",
-        "customer_type": "individual",
-    }
+    assert conv.metadata_["quote_customer_details"] == {"name": "Victor PII Test"}
     assert "name_gate_pending_request" not in conv.metadata_
     mock_notify_manager.assert_not_awaited()
     mock_run.assert_not_awaited()
@@ -11105,7 +11108,8 @@ async def test_process_message_ch616_spaced_sku_with_details_uses_leading_quanti
     assert "please share any details" not in response.text.lower()
     assert "full name" not in response.text.lower()
     assert "delivery address" not in response.text.lower()
-    assert "using the details" in response.text.lower()
+    assert "would you like me to prepare a formal quotation" in response.text.lower()
+    assert conv.metadata_["quote_customer_details"] == {"name": "Victor"}
     assert response.deferred_product_media == ()
     assert conv.escalation_status == "none"
     pending_quote = conv.metadata_["pending_quote_selection"]
@@ -11197,13 +11201,7 @@ async def test_process_message_first_turn_with_name_contacts_and_sku_skips_name_
     assert "[PII-" not in response.text
     assert conv.customer_name == "Victor PII Test"
     assert conv.escalation_status == "none"
-    assert conv.metadata_["quote_customer_details"] == {
-        "email": "victor.pii.e2e@example.com",
-        "phone": "+15550001111",
-        "name": "Victor PII Test",
-        "address": "Office 1905, JLT Dubai",
-        "customer_type": "individual",
-    }
+    assert conv.metadata_["quote_customer_details"] == {"name": "Victor PII Test"}
     pending_quote = conv.metadata_["pending_quote_selection"]
     assert [(item["sku"], item["quantity"]) for item in pending_quote["items"]] == [
         ("CH-616", 2)
@@ -11308,10 +11306,7 @@ async def test_process_message_name_gate_resume_with_contacts_and_sku_stays_prod
     assert "manager will confirm" not in response.text.lower()
     assert conv.customer_name == "Victor PII Test"
     assert conv.escalation_status == "none"
-    assert conv.metadata_["quote_customer_details"]["email"] == (
-        "victor.pii.e2e@example.com"
-    )
-    assert conv.metadata_["quote_customer_details"]["phone"] == "+15550001111"
+    assert conv.metadata_["quote_customer_details"] == {"name": "Victor PII Test"}
     assert "name_gate_pending_request" not in conv.metadata_
     mock_notify_manager.assert_not_awaited()
     mock_run.assert_not_awaited()
@@ -12370,6 +12365,7 @@ async def test_process_message_customer_details_resume_pending_quote_selection(
             "unresolved_items": [],
         }
     }
+    _grant_quote_consent(conv)
     text = (
         "Full name: Lilia Kustova\n"
         "Company: Test Clinic LLC\n"
@@ -12788,6 +12784,7 @@ async def test_process_message_canonical_only_quote_frame_resumes_without_assist
             }
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(parts=[TextPart(content="Thanks, I noted the selected items.")]),
@@ -12844,6 +12841,7 @@ async def test_order_cutover_quote_details_do_not_recover_items_from_assistant_p
     conv.language = "en"
     conv.sales_stage = SalesStage.QUOTING.value
     conv.metadata_ = {}
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -12889,7 +12887,8 @@ async def test_order_cutover_quote_details_do_not_recover_items_from_assistant_p
     assert response.model == "mock-model|quote-frame-repair-missing-items"
     assert "saved quote frame" in response.text.lower()
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    _assert_quote_consent_granted(conv)
+    assert "quote_frame" not in conv.metadata_["order_runtime"]
     mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     mock_run.assert_not_awaited()
@@ -13112,6 +13111,7 @@ async def test_process_message_quote_details_after_bullet_summary_requires_saved
     conv.customer_name = "Lilia Kustova"
     conv.language = "en"
     conv.metadata_ = {}
+    _grant_quote_consent(conv)
     assistant_summary = (
         "Here is your order summary:\n"
         "- 2 x MEETING TABLE SKYLAND NOVO 2400 — 3,480.00 AED\n"
@@ -13170,7 +13170,7 @@ async def test_process_message_quote_details_after_bullet_summary_requires_saved
     mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    _assert_quote_consent_granted(conv)
 
 
 @pytest.mark.asyncio
@@ -13204,6 +13204,7 @@ async def test_process_message_terse_details_preserves_pending_quote_context(
             "unresolved_items": [],
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13291,6 +13292,7 @@ async def test_process_message_unlabeled_quote_brief_completes_pdf_details(
             "unresolved_items": [],
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13364,6 +13366,7 @@ async def test_process_message_unlabeled_quote_brief_keeps_order_named_customer_
             "unresolved_items": [],
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13444,6 +13447,7 @@ async def test_process_message_ambiguous_individual_reply_keeps_explicit_company
             "unresolved_items": [],
         },
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13515,6 +13519,7 @@ async def test_process_message_low_confidence_unlabeled_brief_asks_confirmation(
             "unresolved_items": [],
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13596,6 +13601,7 @@ async def test_process_message_confirmed_quote_brief_generates_quotation(
             "unresolved_items": [],
         },
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13670,6 +13676,7 @@ async def test_process_message_terse_details_blocks_llm_selection_table_recovery
     conv.customer_name = "Lil"
     conv.language = "en"
     conv.metadata_ = {}
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -13711,7 +13718,7 @@ async def test_process_message_terse_details_blocks_llm_selection_table_recovery
         "address": "1 dubay",
     }
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    assert "quote_frame" not in conv.metadata_["order_runtime"]
     assert conv.escalation_status == "none"
     mock_run.assert_not_awaited()
     mock_resolve_sku.assert_not_awaited()
@@ -14022,6 +14029,7 @@ async def test_process_message_terse_details_blocks_llm_selection_prose_confirma
     conv.customer_name = "Lil"
     conv.language = "en"
     conv.metadata_ = {}
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -14060,7 +14068,8 @@ async def test_process_message_terse_details_blocks_llm_selection_prose_confirma
         "address": "2 street",
     }
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    _assert_quote_consent_granted(conv)
+    assert "quote_frame" not in conv.metadata_["order_runtime"]
     mock_run.assert_not_awaited()
     mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
@@ -14097,6 +14106,7 @@ async def test_process_message_terse_details_blocks_availability_quote_context_r
     conv.customer_name = "Lil"
     conv.language = "en"
     conv.metadata_ = {}
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -14146,7 +14156,7 @@ async def test_process_message_terse_details_blocks_availability_quote_context_r
         "address": "2 street",
     }
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    assert "quote_frame" not in conv.metadata_["order_runtime"]
     mock_run.assert_not_awaited()
     mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
@@ -14233,7 +14243,7 @@ async def test_process_message_quote_confirmation_blocks_availability_offer_reco
         "address": "2 street",
     }
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    assert "quote_frame" not in conv.metadata_["order_runtime"]
     mock_run.assert_not_awaited()
     mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
@@ -14366,7 +14376,7 @@ async def test_process_message_quote_details_blocks_proceed_with_units_recovery(
     assert "saved quote frame" in response.text.lower()
     assert "confirm the products and quantities" in response.text.lower()
     assert "pending_quote_selection" not in conv.metadata_
-    assert "order_runtime" not in conv.metadata_
+    _assert_quote_consent_granted(conv)
     mock_run.assert_not_awaited()
     mock_resolve_sku.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
@@ -14545,12 +14555,7 @@ async def test_process_message_quote_details_item_correction_updates_selection_f
     assert response.model == "mock-model|selection-confirmation"
     assert "CH 140" in response.text
     assert "Quantity: 5" in response.text
-    assert conv.metadata_["quote_customer_details"] == {
-        "customer_type": "individual",
-        "email": "lil@example.com",
-        "name": "Lil",
-        "address": "2 street",
-    }
+    assert "quote_customer_details" not in conv.metadata_
     assert conv.metadata_["pending_quote_selection"]["items"] == [
         {
             "sku": "CH-140",
@@ -14667,7 +14672,6 @@ async def test_process_message_quote_details_only_model_position_updates_selecti
     assert conv.metadata_["quote_customer_details"] == {
         "company": "Del company",
         "name": "Lilia",
-        "address": "2 street",
     }
     assert conv.metadata_["pending_quote_selection"]["items"] == [
         {
@@ -14718,6 +14722,7 @@ async def test_process_message_selection_unresolved_followup_resumes_quote(
             ],
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -14816,6 +14821,7 @@ async def test_process_message_selection_unresolved_followup_resumes_from_canoni
             ],
         },
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(
@@ -14971,6 +14977,7 @@ async def test_process_message_terse_generic_city_still_asks_specific_address(
             "unresolved_items": [],
         }
     }
+    _grant_quote_consent(conv)
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),
         ModelResponse(parts=[TextPart(content="Please share company and address.")]),
@@ -15194,6 +15201,7 @@ async def test_process_message_details_without_pending_quote_does_not_create_quo
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Thanks, I have noted your details.")
 
     response = await process_message(
         conversation_id=conv.id,
@@ -15207,7 +15215,7 @@ async def test_process_message_details_without_pending_quote_does_not_create_quo
 
     assert response.text
     mock_create_quotation.assert_not_awaited()
-    mock_run.assert_not_awaited()
+    mock_run.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -15867,6 +15875,7 @@ async def test_process_message_exact_quote_unresolved_followup_resolves_sku_and_
             ],
         },
     }
+    _grant_quote_consent(conv)
     text = "The exact SKU is CH 620 grey, quantity 5."
     mock_build_history.return_value = [
         ModelRequest(parts=[SystemPromptPart(content="summary")]),

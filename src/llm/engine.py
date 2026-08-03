@@ -5409,6 +5409,13 @@ def _extract_purchase_selection_from_quote_details_reply(
     return None
 
 
+def _has_quote_reply_purchase_selection_update(*texts: str) -> bool:
+    return any(
+        _extract_purchase_selection_from_quote_details_reply(text) is not None
+        for text in texts
+    )
+
+
 def _clean_product_reference_segment(segment: str) -> str:
     cleaned = BOT_TEST_MARKER_RE.sub("", _normalize_sku_homoglyphs(segment))
     cleaned = _PRODUCT_REFERENCE_REQUEST_PREFIX_RE.sub("", cleaned)
@@ -14654,7 +14661,10 @@ async def process_message(
         if kernel_workflow != current_workflow and (
             kernel_has_explicit_consent
             or kernel_workflow.consent is QuoteConsent.GRANTED
-            or current_workflow.consent is not QuoteConsent.GRANTED
+            or (
+                _has_canonical_quote_workflow(conv)
+                and current_workflow.consent is QuoteConsent.NOT_REQUESTED
+            )
         ):
             await _store_quote_workflow(db, conv, kernel_workflow)
     if (
@@ -14752,6 +14762,9 @@ async def process_message(
         _has_quote_resume_consultative_priority(combined_text)
         or _has_quote_resume_consultative_priority(masked_text)
     )
+    quote_reply_updates_purchase_selection = _has_quote_reply_purchase_selection_update(
+        combined_text, masked_text
+    )
     assistant_supports_quote_resume = assistant_asked_quote_details or (
         assistant_offered_quote_selection
         and not quote_offer_reply_has_consultative_priority
@@ -14781,10 +14794,18 @@ async def process_message(
         )
         await _store_quote_workflow(db, conv, quote_workflow)
     quote_consent_granted = quote_workflow.consent is QuoteConsent.GRANTED
-    unconsented_quote_details = not quote_consent_granted and bool(
-        pending_unconsented_detail_keys
-        or set(current_quote_customer_details).intersection(
-            {"customer_type", "email", "phone", "address"}
+    unconsented_quote_details = (
+        not quote_consent_granted
+        and not quote_offer_reply_has_consultative_priority
+        and not quote_reply_updates_purchase_selection
+        and bool(
+            (has_pending_quote_selection or assistant_asked_quote_details)
+            and (
+                pending_unconsented_detail_keys
+                or set(current_quote_customer_details).intersection(
+                    {"customer_type", "email", "phone", "address"}
+                )
+            )
         )
     )
     quote_detail_context_active = quote_consent_granted and (
@@ -14945,6 +14966,12 @@ async def process_message(
                         **resumed_quote_customer_details,
                         "name": captured_customer_name,
                     }
+                if not quote_consent_granted:
+                    resumed_quote_customer_details = {
+                        key: value
+                        for key, value in resumed_quote_customer_details.items()
+                        if key in {"name", "company"}
+                    }
                 await _store_extracted_quote_customer_details(
                     db,
                     conv,
@@ -14976,11 +15003,11 @@ async def process_message(
         else:
             if not _has_detail_capture_handoff_blocker(combined_text):
                 if (
-                    quote_consent_granted
-                    and _has_active_sales_detail_capture_context(
+                    _has_active_sales_detail_capture_context(
                         conv,
                         deps.recent_history,
                     )
+                    and not quote_reply_updates_purchase_selection
                     and _is_neutral_detail_capture_update(
                         text=combined_text,
                         customer_details=current_quote_customer_details,
@@ -15054,7 +15081,12 @@ async def process_message(
     # customer is mid-quote (pending selection or the assistant just asked for
     # quote details), let the normal quote handling own the turn instead (M-3).
     stock_price_options: tuple[ResolvedPurchaseSelectionItem, ...] = ()
-    if not quote_detail_context_active:
+    stock_price_quote_context_active = (
+        quote_detail_context_active
+        or has_pending_quote_selection
+        or assistant_asked_quote_details
+    )
+    if not stock_price_quote_context_active:
         stock_price_options = await _stock_price_resolved_options(
             db=db,
             zoho_client=zoho_client,
@@ -15086,7 +15118,7 @@ async def process_message(
 
     if (
         not quote_detail_context_active
-        and quote_consent_granted
+        and not quote_reply_updates_purchase_selection
         and _has_active_sales_detail_capture_context(conv, deps.recent_history)
         and _is_neutral_detail_capture_update(
             text=combined_text,
@@ -15103,11 +15135,9 @@ async def process_message(
             allow_product_media=False,
         )
 
-    if (
-        quote_consent_granted
-        and _has_active_sales_detail_capture_context(conv, deps.recent_history)
-        and _is_saved_sales_context_summary_request(combined_text)
-    ):
+    if _has_active_sales_detail_capture_context(
+        conv, deps.recent_history
+    ) and _is_saved_sales_context_summary_request(combined_text):
         return _build_static_response(
             _saved_sales_context_summary(deps),
             "saved-context-summary",

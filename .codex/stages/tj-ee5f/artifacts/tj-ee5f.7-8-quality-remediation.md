@@ -89,6 +89,9 @@ verification:
   - correction RED for empty, malformed, and legacy quote metadata: failed as expected
   - correction RED for model bypass and stale selected stock: failed as expected
   - correction focused quote, catalog-plan, and model-materialization set: passed 79
+  - release-gate integration RED for dialogue and quote compatibility paths: 69 failed, 787 passed
+  - correction integration set for quote consent, catalog routing, and replay compatibility: passed 856
+  - catalog decision regression file after correction: passed 3
   - targeted Ruff check and format check: passed
   - targeted Mypy: passed
   - git diff check: passed
@@ -101,8 +104,13 @@ changed_files:
   - tests/test_dialogue_order_state.py
   - tests/test_dialogue_runner.py
   - tests/test_dialogue_state.py
+  - tests/test_dialog_scenarios.py
+  - tests/test_dialogue_replay_fixtures.py
+  - tests/fixtures/dialogue/dialogue_state_kernel_replay.json
+  - tests/test_e2e_tools.py
   - tests/test_llm_engine.py
   - tests/test_llm_catalog_decision.py
+  - tests/test_llm_quotation.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.7-8-quality-remediation.md
 explicit_defers:
   - tj-ee5f.13 owns isolated model comparison and its evidence
@@ -132,6 +140,15 @@ passed compactly to a tool-free chat-model run and its output is validated;
 the deterministic materializer is used only with an explicit
 `verified-catalog-functional-failure` route marker.
 
+Release-gate correction removed the remaining unsafe compatibility shortcut:
+legacy `quote_details` alone no longer proves consent, and the dialogue kernel
+cannot overwrite an explicit defer or decline with a default state. Product
+selection corrections keep priority over detail capture, while customer and
+delivery fields remain unavailable to quotation creation until canonical
+consent is granted. Direct quotation tests and replay fixtures now declare the
+same evidence they require in production instead of relying on implicit legacy
+state.
+
 # Scope / Routing
 
 This stream owns only the local dialogue, quotation-state, and catalog-decision
@@ -144,8 +161,9 @@ Focused TDD demonstrated the missing types and slot-conflict behavior before
 implementation. The final bounded acceptance passed 47 dialogue/catalog tests
 and 75 affected engine tests. The correction wave passed 79 affected engine
 tests, including three untrusted-consent shapes, model-output validation, and
-authoritative-stock re-selection, plus targeted Ruff, format, Mypy, and diff
-checks.
+authoritative-stock re-selection. The release-gate correction then passed all
+856 affected dialogue, quote, replay, and customer-fact tests plus the catalog
+decision regression file, targeted Ruff, format, Mypy, and diff checks.
 
 # Delivery / Cleanup
 

@@ -159,13 +159,6 @@ class DialogueState(BaseModel):
                         "quote_lifecycle": workflow.lifecycle,
                     }
                 )
-            elif state.active_flow == "quote_details":
-                state = state.model_copy(
-                    update={
-                        "quote_consent": QuoteConsent.GRANTED,
-                        "quote_lifecycle": QuoteLifecycle.COLLECTING_DETAILS,
-                    }
-                )
         if state.version < 2:
             state = state.model_copy(update={"version": 2})
         return state

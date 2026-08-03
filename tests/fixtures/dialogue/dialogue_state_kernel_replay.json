@@ -207,13 +207,12 @@
         }
       ],
       "expected": {
-        "route": "quote_resume_missing_details",
-        "flow": "quotation_build",
+        "route": "quote_consent_required",
+        "flow": "product_selection",
         "slots": {
           "customer_name": "Lil",
           "quote_customer_details": {
-            "name": "Lil",
-            "address": "1 dubay"
+            "name": "Lil"
           },
           "pending_quote_selection": {
             "items": [

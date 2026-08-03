@@ -52,7 +52,7 @@ def test_dialogue_replay_fixture_contract() -> None:
     ("case_id", "expected_kernel_route", "expected_should_use_kernel"),
     [
         ("gh11_post_quotation_bulk_sample_discount_hold", "post_quotation_hold", False),
-        ("gh40_terse_quote_details_preserve_context", "quote_details", False),
+        ("gh40_terse_quote_details_preserve_context", "legacy_fallback", False),
         ("gh39_ch616_selection_after_product_choice", "product_selection", False),
         ("multilingual_mixed_latin_cyrillic_sku_variants", "product_selection", False),
     ],

@@ -21,7 +21,7 @@ def _quote_metadata(
     company: str = "Test Trading LLC",
     address: str = "Dubai Marina, Tower A",
     customer_type: str | None = None,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, object]:
     details = {
         "name": name,
         "company": company,
@@ -31,7 +31,16 @@ def _quote_metadata(
     }
     if customer_type:
         details["customer_type"] = customer_type
-    return {"quote_customer_details": details}
+    return {
+        "quote_customer_details": details,
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "quote_requested",
+            }
+        },
+    }
 
 
 def test_inventory_contact_payload_preserves_delivery_address() -> None:

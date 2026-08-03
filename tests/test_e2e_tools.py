@@ -83,6 +83,18 @@ def _make_deps(
     )
 
 
+def _grant_quote_consent(conv: Conversation) -> None:
+    metadata = dict(conv.metadata_ or {})
+    metadata["order_runtime"] = {
+        "quote_workflow": {
+            "version": 2,
+            "consent": "granted",
+            "lifecycle": "quote_requested",
+        }
+    }
+    conv.metadata_ = metadata
+
+
 @dataclass
 class _FakeRunContext:
     deps: SalesDeps
@@ -323,6 +335,7 @@ class TestCreateQuotation:
         mock_redis.setex = AsyncMock()
 
         conv = _make_conversation()
+        _grant_quote_consent(conv)
         deps = _make_deps(
             conv,
             zoho_inventory=mock_inv,
@@ -363,6 +376,7 @@ class TestCreateQuotation:
         mock_inv.get_stock_bulk.return_value = []  # no items found
 
         conv = _make_conversation()
+        _grant_quote_consent(conv)
         deps = _make_deps(
             conv, zoho_inventory=mock_inv, crm_context={"Segment": "Unknown"}
         )
@@ -418,6 +432,7 @@ class TestCreateQuotation:
         mock_redis.setex = AsyncMock()
 
         conv = _make_conversation()
+        _grant_quote_consent(conv)
         deps = _make_deps(
             conv,
             zoho_inventory=mock_inv,
@@ -479,6 +494,7 @@ class TestCreateQuotation:
         mock_redis.setex = AsyncMock()
 
         conv = _make_conversation()
+        _grant_quote_consent(conv)
         # No discount (Unknown segment) → rate stays 1000
         deps = _make_deps(
             conv,

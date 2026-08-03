@@ -360,13 +360,20 @@ class TestScenario3QuotationFlow:
             SalesStage.QUOTING, customer_name="Sarah", phone="+971509876543"
         )
         conv.metadata_ = {
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "granted",
+                    "lifecycle": "quote_requested",
+                }
+            },
             "quote_customer_details": {
                 "name": "Sarah",
                 "company": "Scenario Trading LLC",
                 "email": "sarah@example.com",
                 "phone": "+971509876543",
                 "address": "Dubai Marina, Tower A",
-            }
+            },
         }
 
         # Redis must be AsyncMock for setex/get (not MagicMock from spec=Redis)
