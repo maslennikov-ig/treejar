@@ -174,6 +174,19 @@ transport timeout permit one retry, and both attempts remain evidence.
 Before paid work, a free metadata preflight validates availability, parameters,
 and current prices. Per-model spend is capped at `min(USD 1, 1.25 * estimate)`.
 
+Keep `max_tokens=2200`; do not reduce answer capacity to satisfy the theoretical
+all-retries maximum. Within each round, run candidates in ascending exact
+first-party estimated cost. Unused batch allowance carries forward to later
+candidates, but no candidate may borrow enough to exceed its own per-model cap.
+Before every request, reserve its worst-case cost; after the response, reconcile
+the reservation to provider-reported actual cost so unused output allowance is
+released. Stop before a request that cannot fit the remaining cap.
+
+`finish_reason=length` is `TRUNCATED`, not a model-quality score. Preserve the
+attempt, stop that candidate/configuration for review, and do not automatically
+retry it. The complete production S01-S10 suite is run only for the selected
+main/background pair, not for every comparison candidate.
+
 A winner has no hard failure, a median of at least `20/30` on every case, an
 average of case medians at least `24/30`, no invented product/commercial facts,
 and no loss of locale, intent, quantity, or quote refusal. Rank by quality,

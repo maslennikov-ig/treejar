@@ -94,10 +94,13 @@ authority. The stage cannot close while `.5` lacks terminal provider proof.
 
 ## Next stage
 
-Remain in `tj-ee5f`. Resolve the core GLM budget boundary, repeat free preflight,
-then request paid-model-battle authority and run the sealed isolated comparison.
-Production acceptance follows only after a winner decision and separate
-push/deploy/live authority.
+Remain in `tj-ee5f`. The accepted budget decision keeps `max_tokens=2200`, runs
+cheapest candidates first, reconciles each reservation to actual cost, carries
+unused batch allowance forward without raising the USD 1 per-model cap, and
+marks length-limited output `TRUNCATED`. Wait for the owner's Opus 5 review
+before implementing this delta. Then repeat free preflight and request paid
+model-battle authority. Production acceptance follows only after a winner
+decision and separate push/deploy/live authority.
 
 ## Explicit defers
 

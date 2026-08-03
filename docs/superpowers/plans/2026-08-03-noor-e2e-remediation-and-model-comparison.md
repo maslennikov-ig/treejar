@@ -111,6 +111,8 @@ Run only quality/evaluator tests and `git diff --check`.
   and omitted unsupported sampling parameters.
 - Cover multi-turn fixtures, retries, all-attempt accounting, cost caps, blind
   mapping, terminal polling, elimination, ties, and separate winners.
+- Cover cheapest-first ordering, release of unused request reservation to the
+  next candidate, unchanged per-model caps, and `TRUNCATED` handling.
 - Prove comparison paths cannot call business adapters or mutate runtime config.
 
 **Implementation**
@@ -118,6 +120,9 @@ Run only quality/evaluator tests and `git diff --check`.
 - Add core-hard and background-gold profiles to the existing harness.
 - Support ordered multi-turn fixtures and staged replication.
 - Add free metadata/cost preflight and sealed evidence fields.
+- Keep `max_tokens=2200`. Reserve the next call conservatively, then reconcile
+  to provider-reported actual cost; unused batch allowance carries forward but
+  cannot raise any model above its own USD 1 cap.
 - Produce separate main/fast recommendations without applying them.
 
 **Focused verification**
@@ -150,11 +155,16 @@ After approval:
 
 1. Run free metadata and price preflight.
 2. Seal prompt copy/hash and randomized blind mapping outside Git.
-3. Run round 0 for core and background candidates.
+3. Run round 0 for core and background candidates in ascending exact-provider
+   estimated cost.
 4. Eliminate hard failures; run only prescribed survivor replications.
 5. Blind-audit scores and applicability.
 6. Publish redacted comparison and separate main/fast winners.
 7. Create `.14` only if configuration actually changes.
+
+The complete production S01-S10 suite is not part of the candidate battle. It
+runs only for the winning main/background pair in Task 7. Implement the budget
+delta only after incorporating the owner's pending Opus 5 review.
 
 ## Task 7: production acceptance — deploy/live authority gate
 

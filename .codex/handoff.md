@@ -24,7 +24,11 @@ Status: local remediation accepted; paid isolated model selection pending
 - Exact first-party metadata preflight passes for all background candidates and
   estimates a combined maximum cap of USD 0.1956. Core endpoint capabilities
   pass, but GLM-5.2 estimates USD 1.121494 before the 1.25 multiplier, above the
-  accepted USD 1 per-model cap. This budget choice is unresolved.
+  accepted USD 1 per-model cap. The owner resolved this by keeping 2200 output
+  tokens, using actual-cost reconciliation, and retaining the USD 1 cap.
+- Candidate execution is cheapest-first. Unused batch allowance carries to the
+  next candidate but never increases its own cap. `finish_reason=length` is
+  `TRUNCATED`, not a quality score. Full S01-S10 runs only for the winners.
 
 ## Active work
 
@@ -72,10 +76,11 @@ or live messages and request exact authority.
 
 Next stage id: `tj-ee5f`
 
-Recommended action: resolve the GLM core budget boundary, rerun the free
-endpoint-aware preflight, then request authority for the bounded paid OpenRouter
-model battle. After a sealed winner decision, request separate delivery,
-deploy, and live-acceptance authority. Do not create another umbrella task.
+Recommended action: wait for and incorporate the owner's Opus 5 implementation
+review, implement the accepted dynamic budget delta, rerun the free endpoint-
+aware preflight, then request authority for the bounded paid OpenRouter model
+battle. After a sealed winner decision, request separate delivery, deploy, and
+live-acceptance authority. Do not create another umbrella task.
 
 ## Starter prompt for next orchestrator
 
