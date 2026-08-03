@@ -1,8 +1,8 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-03  
-Current branch: `codex/tj-ee5f-quality-model-battle`  
-Active stage: `tj-ee5f`  
+Updated: 2026-08-03
+Current branch: `codex/tj-ee5f-quality-model-battle`
+Active stage: `tj-ee5f`
 Status: local remediation and isolated model-selection tooling in progress
 
 ## Current truth

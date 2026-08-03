@@ -8,6 +8,7 @@ from scripts.model_battle import (
     CORE_HARD_PROFILE,
     EXTENDED_PROFILE,
     CandidateMetrics,
+    RequestCostBudget,
     _build_jobs,
     _safe_error_text,
     _sanitize_provider_payload,
@@ -20,6 +21,7 @@ from scripts.model_battle import (
     build_survivor_jobs,
     candidate_metrics_from_evidence,
     cases_for_profile,
+    combine_hard_profile_selections,
     contains_pii_leakage,
     detect_evaluator_disagreements,
     enforce_model_cost_caps,
@@ -601,6 +603,58 @@ def test_cost_cap_is_125_percent_of_estimate_capped_at_one_dollar() -> None:
         )
 
 
+def test_request_cost_budget_blocks_before_the_next_provider_attempt() -> None:
+    budget = RequestCostBudget(
+        catalog={"candidate": {"pricing": {"prompt": "0", "completion": "0.01"}}},
+        estimated_costs={"candidate": 0.08},
+    )
+    payload = {"messages": [{"role": "user", "content": "test"}], "max_tokens": 6}
+
+    assert budget.reserve_request("candidate", payload) == pytest.approx(0.06)
+    with pytest.raises(RuntimeError, match="before provider request"):
+        budget.reserve_request("candidate", payload)
+
+
+def test_combines_core_and_background_decisions_into_one_sealed_artifact(
+    tmp_path,
+) -> None:
+    core_dir = tmp_path / "core"
+    background_dir = tmp_path / "background"
+    core_dir.mkdir()
+    background_dir.mkdir()
+    (core_dir / "run_manifest.json").write_text(
+        json.dumps({"profile": CORE_HARD_PROFILE}), encoding="utf-8"
+    )
+    (background_dir / "run_manifest.json").write_text(
+        json.dumps({"profile": BACKGROUND_HARD_PROFILE}), encoding="utf-8"
+    )
+    main = {"outcome": "winner", "winner": "z-ai/glm-5.2", "reason": "best"}
+    fast = {
+        "outcome": "winner",
+        "winner": "deepseek/deepseek-v4-flash",
+        "reason": "best",
+    }
+    (core_dir / "model_selection.json").write_text(
+        json.dumps({"openrouter_model_main": main, "openrouter_model_fast": None}),
+        encoding="utf-8",
+    )
+    (background_dir / "model_selection.json").write_text(
+        json.dumps({"openrouter_model_main": None, "openrouter_model_fast": fast}),
+        encoding="utf-8",
+    )
+    output = tmp_path / "sealed-selection.json"
+
+    combined = combine_hard_profile_selections(core_dir, background_dir, output)
+
+    assert combined["openrouter_model_main"] == main
+    assert combined["openrouter_model_fast"] == fast
+    assert len(combined["core_selection_sha256"]) == 64
+    assert len(combined["background_selection_sha256"]) == 64
+    assert len(combined["sealed_sha256"]) == 64
+    with pytest.raises(FileExistsError):
+        combine_hard_profile_selections(core_dir, background_dir, output)
+
+
 def test_blind_audit_disagreement_blocks_on_score_or_applicability() -> None:
     disagreements = detect_evaluator_disagreements(
         [
@@ -862,6 +916,23 @@ def test_sales_scoring_blocks_ungrounded_numbers_and_wrong_language() -> None:
         allowed_numbers=set(),
     )
     assert russian["language_ok"] is True
+
+
+def test_missing_critical_required_phrase_fails_the_hard_gate() -> None:
+    score = score_sales_response(
+        content="The requested quantity is available.",
+        required_phrases=("AX-E1", "12"),
+        critical_required_phrases=("AX-E1", "12"),
+        forbidden_phrases=(),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="en",
+        allowed_numbers={"12"},
+    )
+
+    assert score["required_phrases"] == {"AX-E1": False, "12": False}
+    assert score["critical_required_phrases_passed"] is False
+    assert score["hard_gate_passed"] is False
 
 
 def test_sales_scoring_does_not_treat_negated_claim_as_asserted() -> None:

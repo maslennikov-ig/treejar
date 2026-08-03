@@ -1,8 +1,8 @@
 # Noor E2E Remediation and Model Comparison
 
-**Date:** 2026-08-03  
-**Stage:** `tj-ee5f`  
-**Level:** integration  
+**Date:** 2026-08-03
+**Stage:** `tj-ee5f`
+**Level:** integration
 **Scope owner:** `tj-ee5f.1`
 
 ## Outcome

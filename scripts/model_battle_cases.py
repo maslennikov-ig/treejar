@@ -17,6 +17,7 @@ class SalesCase:
     expected_tools: tuple[str, ...] = ()
     expected_tool_arguments: dict[str, dict[str, Any]] = field(default_factory=dict)
     required_phrases: tuple[str, ...] = ()
+    critical_required_phrases: tuple[str, ...] = ()
     forbidden_phrases: tuple[str, ...] = ()
     expected_language: str | None = None
     conversation: tuple[dict[str, str], ...] = ()
@@ -415,6 +416,7 @@ that exact SKU. Use only the returned synthetic facts.
             "check_stock": {"sku": "CH 616 NEW black"},
         },
         required_phrases=("CH 616 NEW black", "295", "41"),
+        critical_required_phrases=("CH 616 NEW black", "295", "41"),
         forbidden_phrases=(
             "quantity",
             "similar option",
@@ -455,6 +457,7 @@ and desk set" and limit 4.
             "search_catalog": {"query": "six-person chair and desk set", "limit": 4}
         },
         required_phrases=("AX-E1", "DK-4", "10,000"),
+        critical_required_phrases=("AX-E1", "DK-4", "10,000"),
         forbidden_phrases=("over budget", "chair only"),
         expected_language="en",
     ),
@@ -479,6 +482,7 @@ Call search_catalog with query exactly "acoustic pod 120x120" and limit 2.
             "search_catalog": {"query": "acoustic pod 120x120", "limit": 2}
         },
         required_phrases=("120x120",),
+        critical_required_phrases=("120x120",),
         forbidden_phrases=("perfect match", "manager"),
         expected_language="ar",
     ),
@@ -508,6 +512,7 @@ stock quantity in the same answer.
         expected_tools=("check_stock",),
         expected_tool_arguments={"check_stock": {"sku": "AX-E1"}},
         required_phrases=("AX-E1", "7", "Dubai"),
+        critical_required_phrases=("AX-E1", "7", "Dubai"),
         forbidden_phrases=("8 units", "catalog stock"),
         expected_language="en",
     ),
@@ -526,6 +531,7 @@ or address. Delivery timing is not verified in this fixture.
         ),
         user_prompt="No quotation. How does delivery work?",
         required_phrases=("delivery", "verify"),
+        critical_required_phrases=("delivery", "verify"),
         forbidden_phrases=("company name", "phone", "email", "address"),
         expected_language="en",
     ),
@@ -543,6 +549,7 @@ Use quantity 12, keep SKU AX-E1, and ask only one product-relevant next question
         ),
         user_prompt="Make that 12. Do not prepare a quotation yet.",
         required_phrases=("12", "AX-E1"),
+        critical_required_phrases=("12", "AX-E1"),
         forbidden_phrases=("20 chairs", "company name", "address"),
         expected_language="en",
     ),

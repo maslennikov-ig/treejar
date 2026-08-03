@@ -1,8 +1,8 @@
 # Stage tj-ee5f Summary
 
-Updated: 2026-08-03  
-Status: in progress after failed scored production acceptance  
-Branch: `codex/tj-ee5f-quality-model-battle`  
+Updated: 2026-08-03
+Status: in progress after failed scored production acceptance
+Branch: `codex/tj-ee5f-quality-model-battle`
 Beads owner: `tj-ee5f.1`
 
 ## Current outcome

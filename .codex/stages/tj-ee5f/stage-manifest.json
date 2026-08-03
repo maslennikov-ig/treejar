@@ -278,6 +278,21 @@
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.6-9-dialog-remediation.md"
     },
     {
+      "task_id": "tj-ee5f.7-.8-quality",
+      "stream_owner": "engine-remediation",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.7-8-quality-remediation.md"
+    },
+    {
+      "task_id": "tj-ee5f.12",
+      "stream_owner": "evaluator-remediation",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.12-evaluator-remediation.md"
+    },
+    {
+      "task_id": "tj-ee5f.13",
+      "stream_owner": "model-battle-remediation",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.13-model-battle.md"
+    },
+    {
       "task_id": "tj-ee5f-provider-status-defer",
       "stream_owner": "provider-status-closeout-owner",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f-provider-status-defer.md"

@@ -15,7 +15,7 @@ import random
 import re
 import statistics
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -123,6 +123,59 @@ class ProviderAttempt:
     elapsed_ms: float
     response: dict[str, Any] | None
     error: str | None
+
+
+class RequestCostBudget:
+    """Reserve worst-case request cost before each provider attempt."""
+
+    def __init__(
+        self,
+        *,
+        catalog: Mapping[str, Mapping[str, Any]],
+        estimated_costs: Mapping[str, float],
+    ) -> None:
+        self._catalog = catalog
+        self._caps = {
+            model: min(1.0, max(0.0, float(estimate)) * 1.25)
+            for model, estimate in estimated_costs.items()
+        }
+        self._reserved = {model: 0.0 for model in estimated_costs}
+
+    def reserve_request(self, model: str, payload: Mapping[str, Any]) -> float:
+        pricing = self._catalog.get(model, {}).get("pricing", {})
+        if not isinstance(pricing, Mapping):
+            raise RuntimeError(f"Missing catalog pricing for {model}")
+        try:
+            prompt_price = float(pricing["prompt"])
+            completion_price = float(pricing["completion"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid catalog pricing for {model}") from exc
+        prompt_payload = {
+            "messages": payload.get("messages", []),
+            "tools": payload.get("tools", []),
+        }
+        prompt_tokens = max(
+            1,
+            math.ceil(
+                len(json.dumps(prompt_payload, ensure_ascii=False, sort_keys=True)) / 4
+            ),
+        )
+        max_tokens = payload.get("max_tokens", 0)
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int | float):
+            raise RuntimeError("Request max_tokens must be numeric for cost preflight")
+        worst_case = prompt_tokens * prompt_price + float(max_tokens) * completion_price
+        cap = self._caps.get(model)
+        if cap is None:
+            raise RuntimeError(f"No cost cap configured for {model}")
+        next_total = self._reserved.get(model, 0.0) + worst_case
+        if next_total > cap + 1e-12:
+            raise RuntimeError(
+                "Model cost cap would be exceeded before provider request: "
+                f"{model} reserved ${self._reserved.get(model, 0.0):.6f}, "
+                f"next worst-case ${worst_case:.6f}, cap ${cap:.6f}"
+            )
+        self._reserved[model] = next_total
+        return worst_case
 
 
 def parse_json_content(content: str) -> Any:
@@ -913,6 +966,54 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
+def combine_hard_profile_selections(
+    core_dir: Path,
+    background_dir: Path,
+    output_path: Path,
+) -> dict[str, Any]:
+    """Seal verified main and background decisions into one route handoff."""
+
+    if output_path.exists():
+        raise FileExistsError(f"Refusing to overwrite sealed selection: {output_path}")
+    core_manifest = _read_json_object(core_dir / "run_manifest.json")
+    background_manifest = _read_json_object(background_dir / "run_manifest.json")
+    if core_manifest.get("profile") != CORE_HARD_PROFILE:
+        raise ValueError("Core selection does not belong to the core hard profile")
+    if background_manifest.get("profile") != BACKGROUND_HARD_PROFILE:
+        raise ValueError(
+            "Background selection does not belong to the background hard profile"
+        )
+
+    core_path = core_dir / "model_selection.json"
+    background_path = background_dir / "model_selection.json"
+    core = _read_json_object(core_path)
+    background = _read_json_object(background_path)
+    main_decision = core.get("openrouter_model_main")
+    fast_decision = background.get("openrouter_model_fast")
+    if not isinstance(main_decision, Mapping) or not isinstance(fast_decision, Mapping):
+        raise ValueError("Both main and background route decisions are required")
+
+    payload: dict[str, Any] = {
+        "schema_version": "noor-model-selection/v1",
+        "openrouter_model_main": dict(main_decision),
+        "openrouter_model_fast": dict(fast_decision),
+        "core_selection_sha256": hashlib.sha256(core_path.read_bytes()).hexdigest(),
+        "background_selection_sha256": hashlib.sha256(
+            background_path.read_bytes()
+        ).hexdigest(),
+        "production_changed": False,
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    payload["sealed_sha256"] = hashlib.sha256(canonical).hexdigest()
+    _write_json(output_path, payload)
+    return payload
+
+
 def _sanitize_provider_payload(value: Any) -> Any:
     """Remove provider/account identifiers before preserving raw evidence."""
 
@@ -949,9 +1050,12 @@ async def _request_with_retry(
     *,
     payload: Mapping[str, Any],
     timeout_seconds: float,
+    before_request: Callable[[], object] | None = None,
 ) -> list[ProviderAttempt]:
     attempts: list[ProviderAttempt] = []
     for attempt_number in (1, 2):
+        if before_request is not None:
+            before_request()
         started = time.perf_counter()
         try:
             response = await client.post(
@@ -1133,20 +1237,27 @@ def estimate_model_costs(
     else:
         planned_case_runs = len(cases)
     max_output_tokens = 2200 if suite == "sales" else 900
-    average_input_tokens = max(
+    maximum_input_tokens = max(
         1,
-        math.ceil(
-            statistics.fmean(
-                len(case.system_prompt)
-                + len(case.user_prompt)
-                + sum(len(item["content"]) for item in case.conversation)
-                if suite == "sales"
-                else len(case.system_prompt) + len(case.user_prompt)
-                for case in cases
+        max(
+            math.ceil(
+                (
+                    len(case.system_prompt)
+                    + len(case.user_prompt)
+                    + (
+                        sum(len(item["content"]) for item in case.conversation)
+                        + len(json.dumps(case.tools, ensure_ascii=False))
+                        + 3 * len(json.dumps(case.tool_results, ensure_ascii=False))
+                        if suite == "sales"
+                        else 0
+                    )
+                )
+                / 4
             )
-            / 4
+            for case in cases
         ),
     )
+    maximum_provider_attempts = 6 if suite == "sales" else 2
     estimates: dict[str, float] = {}
     for model in models_for_profile(profile, suite):
         pricing = catalog.get(model, {}).get("pricing", {})
@@ -1159,8 +1270,9 @@ def estimate_model_costs(
             raise RuntimeError(f"Invalid catalog pricing for {model}") from exc
         estimates[model] = round(
             planned_case_runs
+            * maximum_provider_attempts
             * (
-                average_input_tokens * prompt_price
+                maximum_input_tokens * prompt_price
                 + max_output_tokens * completion_price
             ),
             12,
@@ -1344,10 +1456,15 @@ def score_sales_response(
     observed_tools: Sequence[str],
     expected_language: str | None,
     allowed_numbers: set[str],
+    critical_required_phrases: Sequence[str] = (),
 ) -> dict[str, Any]:
     normalized = _normal_text(content)
     required_results = {
         phrase: _normal_text(phrase) in normalized for phrase in required_phrases
+    }
+    critical_required_results = {
+        phrase: required_results.get(phrase, _normal_text(phrase) in normalized)
+        for phrase in critical_required_phrases
     }
     forbidden_results = {
         phrase: not _contains_asserted_phrase(normalized, _normal_text(phrase))
@@ -1381,7 +1498,8 @@ def score_sales_response(
     return {
         "passed": passed,
         "hard_gate_passed": (
-            all(forbidden_results.values())
+            all(critical_required_results.values())
+            and all(forbidden_results.values())
             and expected_tool_ok
             and language_ok
             and not ungrounded_numbers
@@ -1391,6 +1509,8 @@ def score_sales_response(
         "score_out_of_30": round(30 * checks_passed / checks_total, 3),
         "applicable_rules": applicable_rules,
         "required_phrases": required_results,
+        "critical_required_phrases": critical_required_results,
+        "critical_required_phrases_passed": all(critical_required_results.values()),
         "forbidden_phrases": forbidden_results,
         "tool_sequence_ok": expected_tool_ok,
         "language_ok": language_ok,
@@ -1404,6 +1524,7 @@ async def _run_sales_case(
     model: str,
     case: Any,
     repetition: int,
+    cost_budget: RequestCostBudget | None = None,
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": case.system_prompt},
@@ -1432,6 +1553,11 @@ async def _run_sales_case(
             client,
             payload=payload,
             timeout_seconds=90.0,
+            before_request=(
+                None
+                if cost_budget is None
+                else lambda payload=payload: cost_budget.reserve_request(model, payload)
+            ),
         )
         all_attempts.extend(attempts)
         attempt_counts_by_round.append(len(attempts))
@@ -1495,6 +1621,7 @@ async def _run_sales_case(
         observed_tools=observed_tools,
         expected_language=case.expected_language,
         allowed_numbers=extract_numeric_tokens(grounding_evidence),
+        critical_required_phrases=case.critical_required_phrases,
     )
     tool_args_ok = all(
         item["parse_error"] is None and item["correct"] == item["total"]
@@ -1530,6 +1657,7 @@ async def _run_system_case(
     model: str,
     case: Any,
     repetition: int,
+    cost_budget: RequestCostBudget | None = None,
 ) -> dict[str, Any]:
     messages = [
         {"role": "system", "content": case.system_prompt},
@@ -1558,6 +1686,11 @@ async def _run_system_case(
         client,
         payload=payload,
         timeout_seconds=45.0,
+        before_request=(
+            None
+            if cost_budget is None
+            else lambda: cost_budget.reserve_request(model, payload)
+        ),
     )
     message = _choice_message(attempts)
     content = str(message.get("content") or "").strip() if message else ""
@@ -2052,6 +2185,7 @@ def rescore_sales_rows(
             observed_tools=[str(item) for item in row["observed_tools"]],
             expected_language=case.expected_language,
             allowed_numbers=extract_numeric_tokens(grounding_evidence),
+            critical_required_phrases=case.critical_required_phrases,
         )
         tool_arguments = row.get("tool_arguments", [])
         tool_args_ok = all(
@@ -2400,6 +2534,10 @@ async def run_battle(
                     },
                 },
             )
+            cost_budget = RequestCostBudget(
+                catalog=catalog,
+                estimated_costs=estimated_costs,
+            )
             round_zero_jobs = _build_jobs(
                 suite=suite,
                 repetitions=1 if profile in _HARD_PROFILES else repetitions,
@@ -2422,6 +2560,7 @@ async def run_battle(
                         model=model,
                         case=case,
                         repetition=repetition,
+                        cost_budget=cost_budget,
                     )
                 else:
                     row = await _run_system_case(
@@ -2429,6 +2568,7 @@ async def run_battle(
                         model=model,
                         case=case,
                         repetition=repetition,
+                        cost_budget=cost_budget,
                     )
                 rows.append(row)
                 _write_jsonl(output_dir / f"{suite}_results.jsonl", rows)
@@ -2457,6 +2597,7 @@ async def run_battle(
                             model=model,
                             case=case,
                             repetition=repetition,
+                            cost_budget=cost_budget,
                         )
                     else:
                         row = await _run_system_case(
@@ -2464,6 +2605,7 @@ async def run_battle(
                             model=model,
                             case=case,
                             repetition=repetition,
+                            cost_budget=cost_budget,
                         )
                     rows.append(row)
                     _write_jsonl(output_dir / f"{suite}_results.jsonl", rows)
@@ -2533,11 +2675,34 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Commit completed blind scores before the reveal/scoring step.",
     )
+    parser.add_argument("--combine-core-dir", type=Path)
+    parser.add_argument("--combine-background-dir", type=Path)
+    parser.add_argument("--combined-output", type=Path)
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+    combine_args = (
+        args.combine_core_dir,
+        args.combine_background_dir,
+        args.combined_output,
+    )
+    if any(value is not None for value in combine_args):
+        if any(value is None for value in combine_args):
+            raise SystemExit(
+                "Combining selections requires --combine-core-dir, "
+                "--combine-background-dir, and --combined-output"
+            )
+        assert args.combine_core_dir is not None
+        assert args.combine_background_dir is not None
+        assert args.combined_output is not None
+        combine_hard_profile_selections(
+            args.combine_core_dir,
+            args.combine_background_dir,
+            args.combined_output,
+        )
+        return
     if args.seal_blind_scores:
         if args.blind_scores is None:
             raise SystemExit("--seal-blind-scores requires --blind-scores")
