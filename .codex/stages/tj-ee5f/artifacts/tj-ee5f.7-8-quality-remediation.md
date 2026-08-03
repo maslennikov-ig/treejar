@@ -86,6 +86,9 @@ verification:
   - focused slot-conflict RED: failed as expected
   - focused dialogue and catalog pytest set: passed 47
   - focused affected engine pytest set: passed 75
+  - correction RED for empty, malformed, and legacy quote metadata: failed as expected
+  - correction RED for model bypass and stale selected stock: failed as expected
+  - correction focused quote, catalog-plan, and model-materialization set: passed 79
   - targeted Ruff check and format check: passed
   - targeted Mypy: passed
   - git diff check: passed
@@ -120,6 +123,15 @@ coverage, excess family SKU count, and over-budget configurations before a
 customer response is rendered. Search allowance is derived from product-family
 count, and complete configurations prefer fewer SKUs before price.
 
+Correction review tightened both boundaries. `create_quotation` now accepts
+consent only from a valid canonical v2 workflow; empty, malformed, or legacy
+metadata cannot authorize Zoho, PDF, or messaging work. Catalog planning now
+checks a bounded candidate set against Zoho before the final solver, so stale
+catalog stock can fall back to another covering SKU. The verified decision is
+passed compactly to a tool-free chat-model run and its output is validated;
+the deterministic materializer is used only with an explicit
+`verified-catalog-functional-failure` route marker.
+
 # Scope / Routing
 
 This stream owns only the local dialogue, quotation-state, and catalog-decision
@@ -130,7 +142,10 @@ the product system prompt. Exact scenario transcripts remain in tests only.
 
 Focused TDD demonstrated the missing types and slot-conflict behavior before
 implementation. The final bounded acceptance passed 47 dialogue/catalog tests
-and 75 affected engine tests, plus targeted Ruff, format, Mypy, and diff checks.
+and 75 affected engine tests. The correction wave passed 79 affected engine
+tests, including three untrusted-consent shapes, model-output validation, and
+authoritative-stock re-selection, plus targeted Ruff, format, Mypy, and diff
+checks.
 
 # Delivery / Cleanup
 

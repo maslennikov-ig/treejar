@@ -233,6 +233,19 @@ def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
     assert text.endswith(expected_tail)
 
 
+def _grant_quote_consent(conv: Conversation) -> None:
+    metadata = dict(conv.metadata_ or {})
+    runtime = metadata.get("order_runtime")
+    order_runtime = dict(runtime) if isinstance(runtime, dict) else {}
+    order_runtime["quote_workflow"] = {
+        "version": 2,
+        "consent": "granted",
+        "lifecycle": "quote_requested",
+    }
+    metadata["order_runtime"] = order_runtime
+    conv.metadata_ = metadata
+
+
 def _set_required_quote_details(conv: Conversation) -> None:
     conv.customer_name = "Test User"
     metadata = dict(conv.metadata_ or {})
@@ -244,6 +257,7 @@ def _set_required_quote_details(conv: Conversation) -> None:
         "address": "Dubai Marina, Tower A",
     }
     conv.metadata_ = metadata
+    _grant_quote_consent(conv)
 
 
 def _active_product_planning_history(
@@ -5900,12 +5914,29 @@ async def test_verified_catalog_plan_materializer_failure_leaves_no_verified_sta
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_uses_verified_catalog_plan_without_chat_model(
+@pytest.mark.parametrize(
+    ("model_output", "expected_model"),
+    [
+        (
+            "I recommend 12 Task Chair units (SKU CHAIR-A) at AED 200.00 each, "
+            "AED 2400.00 total. No quotation was created.",
+            "mock-model|verified-catalog-plan",
+        ),
+        (
+            "Choose 12 invented chairs (SKU CHAIR-X) for AED 1.00.",
+            "mock-model|verified-catalog-functional-failure",
+        ),
+    ],
+    ids=["validated", "functional-failure"],
+)
+async def test_process_message_uses_verified_catalog_plan_through_chat_model(
     mock_run: AsyncMock,
     mock_build_history: AsyncMock,
     mock_get_system_config: AsyncMock,
     mock_search_knowledge: AsyncMock,
     mock_notify: AsyncMock,
+    model_output: str,
+    expected_model: str,
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
@@ -5933,17 +5964,73 @@ async def test_process_message_uses_verified_catalog_plan_without_chat_model(
     ]
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    selected_line = engine_module.VerifiedCatalogLine(
+        family="seating",
+        name="Task Chair",
+        sku="CHAIR-A",
+        quantity=12,
+        unit_price=200.0,
+        total=2400.0,
+        currency="AED",
+        stock=20,
+        capacity=1,
+    )
+    stock_snapshot = engine_module.StockSnapshot(
+        sku="CHAIR-A",
+        available=20,
+        source="zoho",
+        as_of=datetime.datetime.now(datetime.UTC),
+    )
     trace = engine_module.build_runtime_tool_trace(
         tool_name="plan_catalog_configuration",
         arguments={"requested_seats": 12, "budget_cap": 7000.0},
         outcome={"status": "verified"},
     )
 
+    async def prepare_plan(
+        run_deps: SalesDeps,
+    ) -> tuple[str, tuple[engine_module.RuntimeToolTrace, ...]]:
+        run_deps.catalog_planning = engine_module.CatalogPlanningContext(
+            requested_seats=12,
+            families=("seating",),
+            complete_coverage=True,
+            budget_cap=7000.0,
+        )
+        run_deps.current_catalog_selections = {"seating": (selected_line,)}
+        run_deps.verified_catalog_selections = {"seating": (selected_line,)}
+        run_deps.required_cross_sell_disclosure = (
+            "No verified cross-sell fits the remaining budget."
+        )
+        run_deps.stock_snapshots = {"chair-a": stock_snapshot}
+        run_deps.catalog_decision = engine_module.CatalogDecision(
+            requirements=("seating",),
+            selected_lines=(selected_line,),
+            requested_seats=12,
+            budget_cap=7000.0,
+            stock_snapshots=(stock_snapshot,),
+            recommendation="verified_complete_configuration",
+        )
+        run_deps.executed_tool_names = [trace.tool_name]
+        run_deps.recovery_tool_traces = [trace]
+        return (
+            "Verified budget-fit configuration for 12 seats:\n"
+            "- Task Chair (SKU CHAIR-A): 12 × AED 200.00 = AED 2400.00\n"
+            "No quotation was created.",
+            (trace,),
+        )
+
+    mock_run.return_value = _FakeAgentResult(
+        model_output,
+        input_tokens=123,
+        output_tokens=45,
+        cost=0.004,
+    )
+
     with patch.object(
         engine_module,
         "_try_verified_catalog_plan",
         new_callable=AsyncMock,
-        return_value=("Verified complete plan.\nNo quotation was created.", (trace,)),
+        side_effect=prepare_plan,
     ) as mock_plan:
         response = await process_message(
             conversation_id=conv.id,
@@ -5956,17 +6043,101 @@ async def test_process_message_uses_verified_catalog_plan_without_chat_model(
         )
 
     mock_plan.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    mock_run.assert_awaited_once()
     mock_notify.assert_not_awaited()
-    assert response.model == "mock-model|verified-catalog-plan"
-    assert response.usage_provenance == "deterministic_static"
-    assert response.tokens_in == 0
-    assert response.tokens_out == 0
-    assert response.cost is None
+    model_deps = mock_run.await_args.kwargs["deps"]
+    assert isinstance(model_deps, SalesDeps)
+    assert model_deps.tool_mode == "catalog_materialization"
+    assert any("catalog_decision" in item for item in model_deps.runtime_directives)
+    assert response.model == expected_model
+    assert response.usage_provenance == "provider_reported"
+    assert response.tokens_in == 123
+    assert response.tokens_out == 45
+    assert response.cost == pytest.approx(0.004)
     assert [item.tool_name for item in response.tool_traces] == [
         "plan_catalog_configuration"
     ]
-    assert response.text.endswith("No quotation was created.")
+    assert "SKU CHAIR-A" in response.text
+    assert "No quotation was created." in response.text
+
+
+@pytest.mark.asyncio
+async def test_verified_catalog_plan_reselects_after_authoritative_stock_change(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    planning = engine_module.CatalogPlanningContext(
+        requested_seats=2,
+        families=("seating",),
+        complete_coverage=True,
+        budget_cap=1000.0,
+    )
+    products = [
+        SimpleNamespace(
+            sku="CHAIR-STALE",
+            name_en="Catalog Cheapest Chair",
+            name_ar=None,
+            description_en="One-person office chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=100.0,
+            currency="AED",
+            stock=10,
+        ),
+        SimpleNamespace(
+            sku="CHAIR-LIVE",
+            name_en="Available Chair",
+            name_ar=None,
+            description_en="One-person office chair.",
+            description_ar=None,
+            category="chairs",
+            subcategory=None,
+            price=120.0,
+            currency="AED",
+            stock=10,
+        ),
+    ]
+    db.execute.return_value.scalars.return_value.all.return_value = products
+    zoho.get_stock_bulk.return_value = [
+        {"sku": "CHAIR-STALE", "stock_on_hand": 0, "rate": 100.0},
+        {"sku": "CHAIR-LIVE", "stock_on_hand": 2, "rate": 120.0},
+    ]
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+        user_query=(
+            "Give me a complete chair configuration under AED 1,000 with one "
+            "cross-sell. Do not prepare a quotation."
+        ),
+        recent_history=["user: We need chairs for two staff."],
+        catalog_planning=planning,
+    )
+
+    with patch(
+        "src.services.recommendations.get_cross_sell",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        resolved = await engine_module._try_verified_catalog_plan(deps)
+
+    assert resolved is not None
+    assert zoho.get_stock_bulk.await_args.args[0] == [
+        "CHAIR-STALE",
+        "CHAIR-LIVE",
+    ]
+    stored_lines = conv.metadata_["verified_catalog_plan_v1"]["lines"]
+    assert [(line["sku"], line["quantity"]) for line in stored_lines] == [
+        ("CHAIR-LIVE", 2)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -7823,6 +7994,7 @@ async def test_tools_create_quotation_prefers_customer_details_metadata(
             "address": "Dubai, UAE",
         }
     }
+    _grant_quote_consent(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -7919,6 +8091,7 @@ async def test_tools_create_quotation_individual_metadata_overrides_stale_crm_pd
             "address": "2 street",
         }
     }
+    _grant_quote_consent(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -8029,6 +8202,7 @@ async def test_tools_create_quotation_explicit_company_beats_ambiguous_individua
             "address": "2 street",
         }
     }
+    _grant_quote_consent(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -8123,6 +8297,7 @@ async def test_tools_create_quotation_requires_explicit_email_instead_of_crm_tes
             "address": "2 street",
         }
     }
+    _grant_quote_consent(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -8220,6 +8395,7 @@ async def test_tools_create_quotation_requires_explicit_company_or_individual_in
             "address": "2 street",
         }
     }
+    _grant_quote_consent(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -8298,6 +8474,7 @@ async def test_tools_create_quotation_blocks_missing_required_customer_details_b
             "address": "UAE",
         }
     }
+    _grant_quote_consent(conv)
     deps = SalesDeps(
         db=db,
         conversation=conv,
@@ -20295,29 +20472,55 @@ async def test_quote_detail_store_rejects_budget_address_and_company_individual_
 
 
 @pytest.mark.asyncio
-async def test_create_quotation_blocks_new_workflow_without_consent_before_adapters(
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {},
+        {
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "granted",
+                    "lifecycle": "malformed",
+                },
+                "quote_frame": {
+                    "source": "exact_quote",
+                    "status": "collecting_details",
+                    "lines": [{"sku": "CH-616", "quantity": 2}],
+                },
+            },
+            "quote_customer_details": {
+                "name": "Lina",
+                "company": "Northstar LLC",
+                "email": "lina@example.com",
+                "address": "Office 42, Dubai",
+            },
+        },
+        {
+            "pending_quote_selection": {
+                "source": "exact_quote",
+                "items": [{"sku": "CH-616", "quantity": 2}],
+            },
+            "quote_customer_details": {
+                "name": "Lina",
+                "company": "Northstar LLC",
+                "email": "lina@example.com",
+                "address": "Office 42, Dubai",
+            },
+        },
+    ],
+    ids=["empty", "malformed", "legacy"],
+)
+async def test_create_quotation_blocks_untrusted_workflow_before_adapters(
     mock_deps: tuple[
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
+    metadata: dict[str, object],
 ) -> None:
     from pydantic_ai.usage import RunUsage
 
     db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
-    conv.metadata_ = {
-        "order_runtime": {
-            "quote_workflow": {
-                "version": 2,
-                "consent": "not_requested",
-                "lifecycle": "quote_offered",
-            }
-        },
-        "quote_customer_details": {
-            "name": "Lina",
-            "company": "Northstar LLC",
-            "email": "lina@example.com",
-            "address": "Office 42, Dubai",
-        },
-    }
+    conv.metadata_ = metadata
     deps = SalesDeps(
         db=db,
         conversation=conv,

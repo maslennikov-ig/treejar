@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import inspect
+import json
 import logging
 import math
 import re
@@ -1126,6 +1127,7 @@ _CATALOG_PRODUCT_FAMILIES: tuple[tuple[CatalogFamily, tuple[str, ...]], ...] = (
 _CATALOG_PLANNING_KEY = "catalog_planning_v1"
 _VERIFIED_CATALOG_PLAN_KEY = "verified_catalog_plan_v1"
 _CATALOG_BUDGET_CURRENCY = "AED"
+_CATALOG_DECISION_CANDIDATES_PER_FAMILY = 6
 _CATALOG_CROSS_SELL_SOURCE: dict[CatalogFamily, str] = {
     "seating": "chair",
     "workspace": "desk",
@@ -1322,6 +1324,107 @@ def validate_catalog_decision(decision: CatalogDecision) -> CatalogDecision:
             if len(sku_count_by_family.get(family, set())) > 2:
                 raise ValueError(f"too many SKUs for family {family}")
     return decision
+
+
+def _catalog_decision_runtime_directive(deps: SalesDeps) -> str | None:
+    decision = deps.catalog_decision
+    if decision is None:
+        return None
+    try:
+        validate_catalog_decision(decision)
+    except ValueError:
+        return None
+    payload = {
+        "catalog_decision": {
+            "lines": [
+                {
+                    "sku": line.sku,
+                    "qty": line.quantity,
+                    "unit": line.unit_price,
+                    "total": line.total,
+                    "currency": line.currency,
+                }
+                for line in decision.selected_lines
+            ],
+            "budget": decision.budget_cap,
+            "cross_sell": (
+                {
+                    "name": deps.verified_cross_sell.name,
+                    "sku": deps.verified_cross_sell.sku,
+                    "price": deps.verified_cross_sell.price,
+                    "currency": deps.verified_cross_sell.currency,
+                }
+                if deps.verified_cross_sell is not None
+                else None
+            ),
+            "quote_created": False,
+        }
+    }
+    compact_payload = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return (
+        "Render one customer-facing recommendation from catalog_decision only. "
+        "Include every SKU, quantity, unit price and line total; preserve the "
+        "customer language and state that no quotation was created. Do not add "
+        f"products or facts. {compact_payload}"
+    )
+
+
+def _catalog_number_in_text(text: str, value: int | float) -> bool:
+    normalized = text.replace(",", "")
+    candidates = {f"{float(value):.2f}", f"{float(value):g}"}
+    return any(
+        re.search(rf"(?<![\d.]){re.escape(candidate)}(?![\d.])", normalized) is not None
+        for candidate in candidates
+    )
+
+
+def _catalog_decision_output_is_valid(text: str, deps: SalesDeps) -> bool:
+    decision = deps.catalog_decision
+    if decision is None or not isinstance(text, str) or not text.strip():
+        return False
+    try:
+        validate_catalog_decision(decision)
+    except ValueError:
+        return False
+    normalized = text.casefold()
+    allowed_skus = {line.sku.strip().casefold() for line in decision.selected_lines}
+    if deps.verified_cross_sell is not None and deps.verified_cross_sell.sku:
+        allowed_skus.add(deps.verified_cross_sell.sku.strip().casefold())
+    mentioned_skus = {
+        match.group(1).strip().casefold()
+        for match in re.finditer(
+            r"\bsku\s*[:#-]?\s*([a-z0-9][a-z0-9._/-]*)",
+            text,
+            re.IGNORECASE,
+        )
+    }
+    if mentioned_skus - allowed_skus:
+        return False
+    for line in decision.selected_lines:
+        sku = line.sku.strip().casefold()
+        index = normalized.find(sku)
+        if index < 0:
+            return False
+        window = normalized[max(0, index - 100) : index + 260]
+        if not all(
+            _catalog_number_in_text(window, value)
+            for value in (line.quantity, line.unit_price, line.total)
+        ):
+            return False
+    cross_sell = deps.verified_cross_sell
+    if cross_sell is not None and (
+        cross_sell.name.casefold() not in normalized
+        or not _catalog_number_in_text(normalized, cross_sell.price)
+    ):
+        return False
+    no_quote_created = re.search(
+        r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
+        r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
+        r"لم\s+يتم\s+إنشاء\s+عرض\s+سعر|"
+        r"(?:кп|коммерческ\w*\s+предложен\w*).{0,24}\bне\s+создан\w*)",
+        normalized,
+    )
+    return _has_explicit_quote_hold(text) or no_quote_created is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1780,25 +1883,16 @@ def _catalog_product_text(product: Any) -> str:
     )
 
 
-def _solve_verified_catalog_selections(
+def _catalog_coverage_candidates(
     planning: CatalogPlanningContext,
     products: Sequence[Any],
     *,
     customer_context: str,
     segment: str,
-) -> dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] | None:
-    requested_seats = planning.requested_seats
-    required_families = tuple(dict.fromkeys(planning.families))
-    if (
-        requested_seats is None
-        or requested_seats <= 0
-        or not required_families
-        or not planning.complete_coverage
-    ):
-        return None
-
+) -> dict[CatalogFamily, list[_CatalogCoverageCandidate]]:
     from src.core.discounts import apply_discount
 
+    required_families = tuple(dict.fromkeys(planning.families))
     needs_lumbar = _requests_confirmed_lumbar_support(customer_context)
     candidates: dict[CatalogFamily, list[_CatalogCoverageCandidate]] = {
         family: [] for family in required_families
@@ -1848,6 +1942,33 @@ def _solve_verified_catalog_selections(
                 currency=currency,
             )
         )
+    return candidates
+
+
+def _solve_verified_catalog_selections(
+    planning: CatalogPlanningContext,
+    products: Sequence[Any],
+    *,
+    customer_context: str,
+    segment: str,
+    authoritative_stock_by_sku: Mapping[str, int] | None = None,
+) -> dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] | None:
+    requested_seats = planning.requested_seats
+    required_families = tuple(dict.fromkeys(planning.families))
+    if (
+        requested_seats is None
+        or requested_seats <= 0
+        or not required_families
+        or not planning.complete_coverage
+    ):
+        return None
+
+    candidates = _catalog_coverage_candidates(
+        planning,
+        products,
+        customer_context=customer_context,
+        segment=segment,
+    )
 
     selections: dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] = {}
     for family in required_families:
@@ -1860,6 +1981,19 @@ def _solve_verified_catalog_selections(
                 item.sku,
             ),
         )
+        if authoritative_stock_by_sku is not None:
+            family_candidates = [
+                replace(
+                    candidate,
+                    stock=max(
+                        authoritative_stock_by_sku.get(
+                            candidate.sku.strip().casefold(), 0
+                        ),
+                        0,
+                    ),
+                )
+                for candidate in family_candidates
+            ]
         selection = _minimum_catalog_coverage_selection(
             family_candidates,
             requested_seats,
@@ -2412,6 +2546,7 @@ class SalesDeps:
         "service_policy",
         "exact_quote",
         "selection_confirmation",
+        "catalog_materialization",
     ] = "full"
     runtime_directives: tuple[str, ...] = ()
     customer_facts_context: str | None = None
@@ -2985,18 +3120,39 @@ async def _try_verified_catalog_plan(
         if isinstance(deps.crm_context, Mapping)
         else "Unknown"
     )
-    selections = _solve_verified_catalog_selections(
+    candidate_skus = _bounded_catalog_candidate_skus(
         planning,
         products,
         customer_context=customer_context,
         segment=segment,
     )
+    authoritative_stock = await _zoho_stock_for_catalog_candidates(deps, candidate_skus)
+    if authoritative_stock is None:
+        return None
+    stock_by_sku, stock_as_of = authoritative_stock
+    selections = _solve_verified_catalog_selections(
+        planning,
+        products,
+        customer_context=customer_context,
+        segment=segment,
+        authoritative_stock_by_sku=stock_by_sku,
+    )
     if selections is None:
         return None
-    verified_stock = await _zoho_stock_for_catalog_selections(deps, selections)
-    if verified_stock is None:
-        return None
-    selections, stock_snapshots = verified_stock
+    selected_stock = {
+        line.sku.strip().casefold(): line
+        for family_lines in selections.values()
+        for line in family_lines
+    }
+    stock_snapshots = tuple(
+        StockSnapshot(
+            sku=line.sku,
+            available=stock_by_sku[key],
+            source="zoho",
+            as_of=stock_as_of,
+        )
+        for key, line in selected_stock.items()
+    )
     decision = CatalogDecision(
         requirements=tuple(planning.families),
         selected_lines=tuple(
@@ -3166,20 +3322,42 @@ async def _try_verified_catalog_plan(
     return response, (trace,)
 
 
-async def _zoho_stock_for_catalog_selections(
+def _bounded_catalog_candidate_skus(
+    planning: CatalogPlanningContext,
+    products: Sequence[Any],
+    *,
+    customer_context: str,
+    segment: str,
+) -> list[str]:
+    candidates = _catalog_coverage_candidates(
+        planning,
+        products,
+        customer_context=customer_context,
+        segment=segment,
+    )
+    skus: list[str] = []
+    for family in dict.fromkeys(planning.families):
+        family_candidates = sorted(
+            candidates.get(family, ()),
+            key=lambda item: (
+                item.unit_price / item.capacity,
+                item.unit_price,
+                item.name.casefold(),
+                item.sku,
+            ),
+        )[:_CATALOG_DECISION_CANDIDATES_PER_FAMILY]
+        skus.extend(candidate.sku for candidate in family_candidates)
+    return list(dict.fromkeys(skus))
+
+
+async def _zoho_stock_for_catalog_candidates(
     deps: SalesDeps,
-    selections: Mapping[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
-) -> (
-    tuple[
-        dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]],
-        tuple[StockSnapshot, ...],
-    ]
-    | None
-):
-    lines = tuple(line for family_lines in selections.values() for line in family_lines)
-    skus = list(dict.fromkeys(line.sku for line in lines))
+    skus: Sequence[str],
+) -> tuple[dict[str, int], datetime.datetime] | None:
+    if not skus:
+        return None
     try:
-        raw_items = await deps.zoho_inventory.get_stock_bulk(skus)
+        raw_items = await deps.zoho_inventory.get_stock_bulk(list(skus))
     except Exception:
         logger.warning(
             "Zoho stock lookup failed for verified catalog plan", exc_info=True
@@ -3202,26 +3380,7 @@ async def _zoho_stock_for_catalog_selections(
             continue
         stock_by_sku[str(item["sku"]).strip().casefold()] = max(inventory_available, 0)
 
-    as_of = datetime.datetime.now(datetime.UTC)
-    snapshots: list[StockSnapshot] = []
-    reconciled: dict[CatalogFamily, tuple[VerifiedCatalogLine, ...]] = {}
-    for family, family_lines in selections.items():
-        updated_lines: list[VerifiedCatalogLine] = []
-        for line in family_lines:
-            selected_available = stock_by_sku.get(line.sku.strip().casefold())
-            if selected_available is None:
-                return None
-            snapshots.append(
-                StockSnapshot(
-                    sku=line.sku,
-                    available=selected_available,
-                    source="zoho",
-                    as_of=as_of,
-                )
-            )
-            updated_lines.append(replace(line, stock=selected_available))
-        reconciled[family] = tuple(updated_lines)
-    return reconciled, tuple(snapshots)
+    return stock_by_sku, datetime.datetime.now(datetime.UTC)
 
 
 # Allowed transitions for the advance_stage tool
@@ -8694,9 +8853,16 @@ def _has_canonical_quote_workflow(conversation: Conversation) -> bool:
     if not isinstance(metadata, Mapping):
         return False
     runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
-    return isinstance(runtime, Mapping) and isinstance(
-        runtime.get("quote_workflow"), Mapping
-    )
+    if not isinstance(runtime, Mapping):
+        return False
+    raw_workflow = runtime.get("quote_workflow")
+    if not isinstance(raw_workflow, Mapping):
+        return False
+    try:
+        QuoteWorkflowState.model_validate(raw_workflow)
+    except ValidationError:
+        return False
+    return True
 
 
 def _fact_value_as_text(value: Any) -> str:
@@ -11804,6 +11970,8 @@ async def _prepare_sales_tools(
     ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
     """Hide product search after the allowed per-message budget is exhausted."""
+    if ctx.deps.tool_mode == "catalog_materialization":
+        return []
     if ctx.deps.tool_mode == "order_handoff":
         return [
             tool_def
@@ -12991,8 +13159,8 @@ async def create_quotation(
 
     workflow = quote_workflow_from_metadata(ctx.deps.conversation.metadata_)
     if (
-        _has_canonical_quote_workflow(ctx.deps.conversation)
-        and workflow.consent is not QuoteConsent.GRANTED
+        not _has_canonical_quote_workflow(ctx.deps.conversation)
+        or workflow.consent is not QuoteConsent.GRANTED
     ):
         return (
             "I can prepare the quotation only after you explicitly confirm that "
@@ -15107,6 +15275,8 @@ async def process_message(
             run_deps: SalesDeps,
             usage: Any,
             cost: float | None,
+            route_suffix: str = "verified-catalog-recovery",
+            allow_product_media: bool = True,
         ) -> LLMResponse:
             final_text = unmask_pii(recovery_text, pii_map)
             final_text = _repair_closed_questions(final_text)
@@ -15114,7 +15284,7 @@ async def process_message(
             record_legacy_route(
                 conv,
                 dialogue_kernel_result,
-                legacy_route=f"{db_model_main}|verified-catalog-recovery",
+                legacy_route=f"{db_model_main}|{route_suffix}",
             )
             _capture_expected_answer_frames_from_assistant_response(
                 conv,
@@ -15126,11 +15296,11 @@ async def process_message(
                 tokens_in=usage.input_tokens,
                 tokens_out=usage.output_tokens,
                 cost=cost,
-                model=f"{db_model_main}|verified-catalog-recovery",
+                model=f"{db_model_main}|{route_suffix}",
                 usage_provenance="provider_reported",
                 deferred_product_media=_deferred_product_media_for_response(
                     run_deps,
-                    allow_product_media=True,
+                    allow_product_media=allow_product_media,
                     response_text=final_text,
                 ),
                 tool_traces=recovery_traces,
@@ -15396,15 +15566,65 @@ async def process_message(
 
         verified_catalog_plan = await _try_verified_catalog_plan(deps)
         if verified_catalog_plan is not None:
-            plan_text, plan_traces = verified_catalog_plan
+            fallback_text, plan_traces = verified_catalog_plan
+            decision_directive = _catalog_decision_runtime_directive(deps)
+            if decision_directive is None:
+                await _clear_verified_policy_repair_state()
+                return _build_static_response(
+                    fallback_text,
+                    f"{db_model_main}|verified-catalog-functional-failure",
+                    response_deps=deps,
+                    allow_product_media=False,
+                    tool_traces=plan_traces,
+                )
+            run_deps = replace(
+                deps,
+                tool_mode="catalog_materialization",
+                runtime_directives=(
+                    *deps.runtime_directives,
+                    decision_directive,
+                ),
+            )
+            try:
+                result = await _run_agent(run_deps)
+            except (UnexpectedModelBehavior, TimeoutError):
+                await _clear_verified_policy_repair_state()
+                return _build_verified_catalog_recovery_response(
+                    fallback_text,
+                    plan_traces,
+                    run_deps=run_deps,
+                    usage=failed_run_usage or RunUsage(),
+                    cost=dynamic_model.provider_cost_snapshot(),
+                    route_suffix="verified-catalog-functional-failure",
+                    allow_product_media=False,
+                )
+            if not _catalog_decision_output_is_valid(
+                unmask_pii(result.output, pii_map), run_deps
+            ):
+                usage = result.usage() or RunUsage()
+                usage_telemetry = get_llm_usage_telemetry(result)
+                await _clear_verified_policy_repair_state()
+                return _build_verified_catalog_recovery_response(
+                    fallback_text,
+                    plan_traces,
+                    run_deps=run_deps,
+                    usage=usage,
+                    cost=(
+                        usage_telemetry.cost
+                        if usage_telemetry is not None
+                        else dynamic_model.provider_cost_snapshot()
+                    ),
+                    route_suffix="verified-catalog-functional-failure",
+                    allow_product_media=False,
+                )
             await _clear_verified_policy_repair_state()
-            return _build_static_response(
-                plan_text,
+            response = _build_llm_response(
+                result,
                 f"{db_model_main}|verified-catalog-plan",
                 response_deps=deps,
                 allow_product_media=False,
-                tool_traces=plan_traces,
             )
+            return replace(response, tool_traces=plan_traces)
 
         run_deps = deps
         if _CROSS_SELL_REQUEST_RE.search(combined_text) or (
