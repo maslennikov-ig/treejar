@@ -23,7 +23,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
 from src.dialogue.runner import DialogueKernelResult
-from src.dialogue.state import DialogueDecision, DialogueState
+from src.dialogue.state import DialogueDecision, DialogueState, QuoteConsent
 from src.llm import engine as engine_module
 from src.llm.communication_policy import EVIDENCE_GROUNDING_POLICY
 from src.llm.engine import (
@@ -1712,6 +1712,13 @@ async def test_inject_system_prompt_includes_captured_sales_context(
     db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
     conv.customer_name = "Lili"
     conv.metadata_ = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "declined",
+                "lifecycle": "consultation",
+            }
+        },
         "quote_customer_details": {
             "name": "Lili",
             "company": "Memory Test LLC",
@@ -1751,7 +1758,8 @@ async def test_inject_system_prompt_includes_captured_sales_context(
     assert "company: Memory Test LLC" in prompt
     assert "delivery address: Bay Square Building 3, Business Bay, Dubai" in prompt
     assert "assembly required: yes" in prompt
-    assert "quotation hold requested: yes" in prompt
+    assert "quotation consent: declined" in prompt
+    assert "quotation hold requested" not in prompt
     assert (
         "latest product note: Final items should still be 2 Skyland Novo "
         "workstations and 3 mobile drawers."
@@ -3604,8 +3612,8 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
     assert pending["intent"] == "catalog_discovery"
     assert first_metadata["order_runtime"]["quote_workflow"] == {
         "version": 2,
-        "consent": "deferred",
-        "lifecycle": "quote_offered",
+        "consent": "declined",
+        "lifecycle": "consultation",
     }
     assert "pending_quote_selection" not in first_metadata
     assert "quote_intent_frame" not in first_metadata
@@ -3628,10 +3636,10 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
     assert "quotation" not in second_response.text.casefold()
     assert "confirm the quantity" not in second_response.text.casefold()
     assert "name_gate_pending_request" not in conv.metadata_
-    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "deferred"
+    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "declined"
     assert "pending_quote_selection" not in conv.metadata_
     assert "quote_intent_frame" not in conv.metadata_
-    assert conv.metadata_["sales_memory"]["quotation_hold"] == "yes"
+    assert "quotation_hold" not in conv.metadata_.get("sales_memory", {})
     zoho.get_item.assert_awaited_once_with(requested.zoho_item_id)
     mock_run.assert_not_awaited()
     mock_notify.assert_not_awaited()
@@ -4425,13 +4433,15 @@ async def test_process_message_sales_memory_note_does_not_handoff(
     )
 
     assert conv.escalation_status == "none"
-    assert conv.metadata_["sales_memory"] == {
-        "assembly_required": "yes",
-        "quotation_hold": "yes",
+    assert conv.metadata_["sales_memory"] == {"assembly_required": "yes"}
+    assert conv.metadata_["order_runtime"]["quote_workflow"] == {
+        "version": 2,
+        "consent": "deferred",
+        "lifecycle": "quote_offered",
     }
     assert response.model == "detail-capture"
     assert "assembly" in response.text.lower()
-    assert "quotation" in response.text.lower()
+    assert "on hold" not in response.text.lower()
     assert "manager" not in response.text.lower()
     assert mock_run.await_count == 0
     mock_notify.assert_not_awaited()
@@ -4521,6 +4531,13 @@ async def test_process_message_saved_context_summary_does_not_handoff(
     conv.customer_name = "Lili"
     conv.sales_stage = SalesStage.QUALIFYING.value
     conv.metadata_ = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "declined",
+                "lifecycle": "consultation",
+            }
+        },
         "quote_customer_details": {
             "name": "Lili",
             "company": "Memory Test LLC",
@@ -4557,6 +4574,8 @@ async def test_process_message_saved_context_summary_does_not_handoff(
     assert "2 workstations" in response.text
     assert "2-3 days" in response.text
     assert "Assembly: required" in response.text
+    assert "Quotation: declined" in response.text
+    assert "on hold" not in response.text.casefold()
     assert "Next step:" in response.text
     assert "manager" not in response.text.lower()
     assert mock_run.await_count == 0
@@ -14186,6 +14205,48 @@ def test_quote_offer_guard_removes_detail_collection_before_opt_in(
     assert "confirmation of quantities" not in guarded.casefold()
 
 
+def test_quote_offer_guard_blocks_address_request_without_quote_word_before_consent(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+
+    guarded = engine_module._guard_premature_quote_detail_collection(
+        "Please share your delivery address.",
+        conversation=conv,
+        customer_text="Please recommend the best option.",
+    )
+
+    assert guarded == "Would you like me to prepare a formal quotation?"
+
+
+def test_quote_offer_guard_allows_details_for_typed_grant_without_active_frame(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "quote_requested",
+            }
+        }
+    }
+    text = "Please share your delivery address for the quotation."
+
+    guarded = engine_module._guard_premature_quote_detail_collection(
+        text,
+        conversation=conv,
+        customer_text="Please continue.",
+    )
+
+    assert guarded == text
+
+
 @pytest.mark.asyncio
 @patch(
     "src.integrations.notifications.escalation.notify_manager_escalation",
@@ -15195,7 +15256,7 @@ async def test_process_message_terse_generic_city_still_asks_specific_address(
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
 @patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
 @patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
-async def test_process_message_unparseable_quote_details_reply_stays_in_quote_context(
+async def test_process_message_unparseable_quote_details_reply_requires_typed_consent(
     mock_run: AsyncMock,
     mock_create_quotation: AsyncMock,
     mock_build_history: AsyncMock,
@@ -15231,11 +15292,11 @@ async def test_process_message_unparseable_quote_details_reply_stays_in_quote_co
         messaging_client=messaging,
     )
 
-    assert "what do you need" not in response.text.lower()
-    assert "before i prepare the quotation" in response.text.lower()
-    assert "customer name" in response.text.lower()
-    assert "company name" in response.text.lower()
-    assert "specific delivery address" in response.text.lower()
+    assert "would you like" in response.text.lower()
+    assert "formal quotation" in response.text.lower()
+    assert "customer name" not in response.text.lower()
+    assert "company name" not in response.text.lower()
+    assert "delivery address" not in response.text.lower()
     mock_run.assert_not_awaited()
     mock_create_quotation.assert_not_awaited()
 
@@ -15303,6 +15364,10 @@ async def test_process_message_ok_i_can_buy_resumes_pending_quote_without_reaski
     assert "quantity" not in response.text.lower()
     assert "email" in response.text.lower()
     assert response.model.endswith("|quote-resume-missing-details")
+    assert (
+        conv.metadata_["order_runtime"]["quote_workflow"]["consent"]
+        == QuoteConsent.GRANTED.value
+    )
     assert conv.metadata_["pending_quote_selection"]["items"] == [
         {"sku": "CH-140", "quantity": 4}
     ]
@@ -18754,6 +18819,7 @@ def test_sales_opportunity_request_separates_company_and_budget_fields() -> None
     request = engine_module._extract_sales_opportunity_request(text)
     assert request is not None
     assert request.amount == 7000.0
+    assert request.quote_consent is QuoteConsent.DECLINED
     assert not engine_module._is_neutral_detail_capture_update(
         text=text,
         customer_details={"company": "Horizon QA Test LLC"},
@@ -18816,7 +18882,6 @@ async def test_process_message_records_explicit_sales_opportunity_without_quote(
                 "We are planning to buy 20 CH 616 NEW black chairs this month "
                 "and want help moving the project forward, but no quotation yet."
             ),
-            "quotation_hold": "yes",
         },
     }
     text = (
@@ -18863,7 +18928,14 @@ async def test_process_message_records_explicit_sales_opportunity_without_quote(
     assert float(conv.deal_amount) == 7000.0
     assert response.model == "sales-opportunity"
     assert "recorded" in response.text.casefold()
-    assert "quotation remains on hold" in response.text.casefold()
+    assert "quotation was not created" in response.text.casefold()
+    assert "on hold" not in response.text.casefold()
+    assert conv.metadata_["order_runtime"]["quote_workflow"] == {
+        "version": 2,
+        "consent": "declined",
+        "lifecycle": "consultation",
+    }
+    assert "quotation_hold" not in conv.metadata_.get("sales_memory", {})
     assert "follow-up in one week" in response.text.casefold()
     zoho_crm.create_deal.assert_awaited_once_with(
         {
@@ -20852,20 +20924,8 @@ async def test_quote_detail_store_rejects_budget_address_and_company_individual_
                 "address": "Office 42, Dubai",
             },
         },
-        {
-            "pending_quote_selection": {
-                "source": "exact_quote",
-                "items": [{"sku": "CH-616", "quantity": 2}],
-            },
-            "quote_customer_details": {
-                "name": "Lina",
-                "company": "Northstar LLC",
-                "email": "lina@example.com",
-                "address": "Office 42, Dubai",
-            },
-        },
     ],
-    ids=["empty", "malformed", "legacy"],
+    ids=["empty", "malformed"],
 )
 async def test_create_quotation_blocks_untrusted_workflow_before_adapters(
     mock_deps: tuple[
@@ -20904,6 +20964,57 @@ async def test_create_quotation_blocks_untrusted_workflow_before_adapters(
     zoho.get_stock_bulk.assert_not_awaited()
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_quotation_migrates_trusted_legacy_grant_before_inventory(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    from pydantic_ai.usage import RunUsage
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "exact_quote",
+            "items": [{"sku": "CH-616", "quantity": 2}],
+        },
+        "quote_customer_details": {
+            "name": "Lina",
+            "company": "Northstar LLC",
+            "email": "lina@example.com",
+            "address": "Office 42, Dubai",
+        },
+    }
+    db.execute.return_value.scalar_one_or_none.return_value = None
+    zoho.get_stock_bulk.return_value = []
+    zoho.get_stock.return_value = None
+    deps = SalesDeps(
+        db=db,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        redis=redis,
+    )
+    ctx = RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+    response = await engine_module.create_quotation(
+        ctx, [QuotationItem(sku="CH-616", quantity=2)]
+    )
+
+    assert "explicitly confirm" not in response.casefold()
+    assert conv.metadata_["order_runtime"]["quote_workflow"]["consent"] == "granted"
 
 
 @pytest.mark.asyncio

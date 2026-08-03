@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from src.core.config import settings
 from src.dialogue.state import DialogueState, QuoteConsent, QuoteLifecycle
 from src.models.conversation import Conversation
 from src.schemas.common import SalesStage
@@ -117,6 +118,34 @@ async def test_dialogue_kernel_legacy_mode_is_noop() -> None:
     assert result.should_use_kernel is False
     assert result.decision.handled is False
     assert conv.metadata_ is None
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_default_reconciles_state_without_static_reply() -> None:
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Mira")
+    conv.metadata_ = {
+        "pending_quote_selection": {
+            "source": "selection_confirmation",
+            "items": [{"sku": "CH-616", "quantity": 4}],
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="Please compare the options.",
+        recent_history=[],
+        is_first_turn=False,
+        mode=settings.dialogue_kernel_mode,
+        enforced_flows=settings.dialogue_kernel_enforced_flows,
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.flow == "legacy_fallback"
+    assert conv.sales_stage == SalesStage.SOLUTION.value
+    assert conv.metadata_["dialogue_kernel"]["state"]["sales_stage"] == "solution"
 
 
 @pytest.mark.asyncio
@@ -889,6 +918,80 @@ async def test_dialogue_kernel_decline_interrupts_quote_details_before_slot_capt
     assert result.state.quote_lifecycle is QuoteLifecycle.CONSULTATION
     assert result.state.active_flow == "product_selection"
     assert result.state.slots.delivery_address is None
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_decline_after_sent_quote_exits_hold_without_erasing_creation() -> (
+    None
+):
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Samir")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 2,
+                "active_flow": "post_quotation_hold",
+                "quote_consent": "granted",
+                "quote_lifecycle": "created",
+                "slots": {
+                    "customer_name": "Samir",
+                    "quote_sent": True,
+                    "post_quotation_status": "awaiting_customer_decision",
+                },
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="I do not want the quotation.",
+        recent_history=["assistant: I sent the quotation PDF."],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("post_quotation_hold",),
+        trace_enabled=False,
+    )
+
+    assert result.should_use_kernel is False
+    assert result.decision.action == "fallback_legacy"
+    assert result.state.quote_consent is QuoteConsent.DECLINED
+    assert result.state.quote_lifecycle is QuoteLifecycle.CREATED
+    assert result.state.active_flow == "product_selection"
+
+
+@pytest.mark.asyncio
+async def test_dialogue_kernel_explicit_later_phrase_is_deferred_not_declined() -> None:
+    from src.dialogue.runner import run_dialogue_kernel
+
+    conv = _conversation(customer_name="Mira")
+    conv.metadata_ = {
+        "dialogue_kernel": {
+            "state": {
+                "version": 2,
+                "active_flow": "quote_details",
+                "quote_consent": "granted",
+                "quote_lifecycle": "collecting_details",
+                "slots": {
+                    "customer_name": "Mira",
+                    "selected_items": [{"sku": "CH-616", "quantity": 2}],
+                },
+            }
+        }
+    }
+
+    result = await run_dialogue_kernel(
+        conversation=conv,
+        text="No quotation for now, maybe later.",
+        recent_history=[],
+        is_first_turn=False,
+        mode="enforce",
+        enforced_flows=("quote_details",),
+        trace_enabled=False,
+    )
+
+    assert result.state.quote_consent is QuoteConsent.DEFERRED
+    assert result.state.quote_lifecycle is QuoteLifecycle.QUOTE_OFFERED
 
 
 @pytest.mark.asyncio

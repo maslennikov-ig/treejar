@@ -257,6 +257,32 @@ def quote_workflow_from_metadata(
     return QuoteWorkflowState()
 
 
+def canonical_quote_workflow_from_metadata(
+    metadata: Mapping[str, Any] | None,
+) -> QuoteWorkflowState | None:
+    if not isinstance(metadata, Mapping):
+        return None
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    if not isinstance(runtime, Mapping):
+        return None
+    raw_workflow = runtime.get(QUOTE_WORKFLOW_METADATA_KEY)
+    if not isinstance(raw_workflow, Mapping):
+        return None
+    try:
+        return QuoteWorkflowState.model_validate(raw_workflow)
+    except ValidationError:
+        return None
+
+
+def canonical_quote_workflow_metadata_present(
+    metadata: Mapping[str, Any] | None,
+) -> bool:
+    if not isinstance(metadata, Mapping):
+        return False
+    runtime = metadata.get(ORDER_RUNTIME_METADATA_KEY)
+    return isinstance(runtime, Mapping) and QUOTE_WORKFLOW_METADATA_KEY in runtime
+
+
 def quote_workflow_to_metadata(
     metadata: Mapping[str, Any] | None,
     workflow: QuoteWorkflowState,

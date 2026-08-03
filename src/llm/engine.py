@@ -42,6 +42,8 @@ from src.dialogue.order_state import (
     QuoteUnresolvedLine,
     QuoteWorkflowState,
     age_pending_question_frame,
+    canonical_quote_workflow_from_metadata,
+    canonical_quote_workflow_metadata_present,
     pending_question_frame_cleared_metadata,
     pending_question_frame_from_metadata,
     pending_question_frame_to_metadata,
@@ -56,6 +58,7 @@ from src.dialogue.reducer import push_expected_answer_frame
 from src.dialogue.runner import (
     DialogueKernelResult,
     expected_answer_match_payload,
+    quote_consent_signal,
     record_legacy_route,
     run_dialogue_kernel,
 )
@@ -3741,7 +3744,7 @@ class PurchaseSelectionResolution:
 class SalesOpportunityRequest:
     amount: float | None
     currency: str | None
-    quote_on_hold: bool
+    quote_consent: QuoteConsent
     decision_horizon_days: int | None = None
     decision_horizon_hours: int | None = None
 
@@ -8844,9 +8847,6 @@ def _extract_sales_memory_updates(text: str) -> dict[str, str]:
     ):
         updates["assembly_required"] = "yes"
 
-    if _has_explicit_quote_hold(normalized):
-        updates["quotation_hold"] = "yes"
-
     return updates
 
 
@@ -8946,10 +8946,13 @@ def _extract_sales_opportunity_request(
             )
 
     decision_horizon_hours = _decision_horizon_hours(normalized)
+    consent = quote_consent_signal(normalized, [])
+    if consent is None and _has_explicit_quote_hold(normalized):
+        consent = QuoteConsent.DECLINED
     return SalesOpportunityRequest(
         amount=amount,
         currency=currency,
-        quote_on_hold=_has_explicit_quote_hold(normalized),
+        quote_consent=consent or QuoteConsent.NOT_REQUESTED,
         decision_horizon_days=(
             decision_horizon_hours // 24 if decision_horizon_hours is not None else None
         ),
@@ -8987,12 +8990,17 @@ async def _quote_offer_allowed_for_turn(
     text: str,
 ) -> bool:
     if _has_explicit_quote_hold(text):
+        consent = quote_consent_signal(text, []) or QuoteConsent.DECLINED
         await _store_quote_workflow(
             db,
             conversation,
             QuoteWorkflowState(
-                consent=QuoteConsent.DEFERRED,
-                lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+                consent=consent,
+                lifecycle=(
+                    QuoteLifecycle.QUOTE_OFFERED
+                    if consent is QuoteConsent.DEFERRED
+                    else QuoteLifecycle.CONSULTATION
+                ),
             ),
         )
         return False
@@ -9476,10 +9484,9 @@ def _format_captured_sales_context(deps: SalesDeps) -> str:
         lines.append(
             f"delivery timing: {_captured_context_value(memory['delivery_timing'])}"
         )
-    if memory.get("quotation_hold"):
-        lines.append(
-            f"quotation hold requested: {_captured_context_value(memory['quotation_hold'])}"
-        )
+    workflow = quote_workflow_from_metadata(deps.conversation.metadata_)
+    if workflow.consent in {QuoteConsent.DECLINED, QuoteConsent.DEFERRED}:
+        lines.append(f"quotation consent: {workflow.consent.value}")
     if memory.get("latest_product_note"):
         lines.append(
             f"latest product note: {_captured_context_value(memory['latest_product_note'])}"
@@ -9712,13 +9719,13 @@ def _guard_premature_quote_detail_collection(
     conversation: Conversation,
     customer_text: str,
 ) -> str:
-    if (
-        _has_explicit_quote_opt_in(customer_text)
-        or quote_frame_is_active(_quote_frame_from_conversation(conversation))
-        or not _last_assistant_asked_quote_customer_details(
-            [f"assistant: {text}"],
-            quote_context_active=False,
-        )
+    del customer_text
+    workflow = quote_workflow_from_metadata(conversation.metadata_)
+    if workflow.consent is QuoteConsent.GRANTED:
+        return text
+    if not _last_assistant_asked_quote_customer_details(
+        [f"assistant: {text}"],
+        quote_context_active=True,
     ):
         return text
 
@@ -9728,14 +9735,24 @@ def _guard_premature_quote_detail_collection(
         text,
         flags=re.IGNORECASE,
     )
-    if quote_match is None:
-        return text
-    sentence_starts = (
-        text.rfind("\n", 0, quote_match.start()) + 1,
-        text.rfind(". ", 0, quote_match.start()) + 2,
-        text.rfind("? ", 0, quote_match.start()) + 2,
-        text.rfind("! ", 0, quote_match.start()) + 2,
+    detail_match = re.search(
+        r"\b(?:company(?:\s+name)?|(?:specific\s+)?delivery\s+address|"
+        r"(?:customer|full)\s+name|(?:customer\s+)?email(?:\s+address)?|"
+        r"(?:phone|mobile)(?:\s+number)?)\b|"
+        r"(?:اسم\s+العميل|اسم\s+الشركة|عنوان\s+التوصيل(?:\s+المحدد)?|"
+        r"البريد\s+الإلكتروني|رقم\s+الهاتف)",
+        text,
+        flags=re.IGNORECASE,
     )
+    anchors = [
+        match.start() for match in (quote_match, detail_match) if match is not None
+    ]
+    request_start = min(anchors) if anchors else 0
+    sentence_starts = [0]
+    for separator in ("\n", ". ", "? ", "! "):
+        boundary = text.rfind(separator, 0, request_start)
+        if boundary >= 0:
+            sentence_starts.append(boundary + len(separator))
     prefix = text[: max(sentence_starts)].rstrip()
     offer = (
         "هل ترغب أن أجهز عرض سعر رسمي؟"
@@ -9816,6 +9833,7 @@ def _is_saved_sales_context_summary_request(text: str) -> bool:
 def _saved_sales_context_summary(deps: SalesDeps) -> str:
     details = _quote_context_details_from_deps(deps)
     memory = _sales_memory_from_metadata(deps.conversation)
+    workflow = quote_workflow_from_metadata(deps.conversation.metadata_)
     lines: list[str] = []
 
     if details.get("name"):
@@ -9830,8 +9848,10 @@ def _saved_sales_context_summary(deps: SalesDeps) -> str:
         lines.append(f"Delivery timing: {memory['delivery_timing']}")
     if memory.get("assembly_required"):
         lines.append("Assembly: required")
-    if memory.get("quotation_hold"):
-        lines.append("Quotation: on hold until you confirm")
+    if workflow.consent is QuoteConsent.DECLINED:
+        lines.append("Quotation: declined; none will be created unless you request one")
+    elif workflow.consent is QuoteConsent.DEFERRED:
+        lines.append("Quotation: deferred until you confirm")
 
     if not lines:
         return (
@@ -9843,8 +9863,10 @@ def _saved_sales_context_summary(deps: SalesDeps) -> str:
     )
     if memory.get("latest_product_note"):
         quotation_note = (
-            "the quotation remains on hold."
-            if memory.get("quotation_hold")
+            "no quotation will be created unless you request one."
+            if workflow.consent is QuoteConsent.DECLINED
+            else "the quotation remains deferred until you confirm."
+            if workflow.consent is QuoteConsent.DEFERRED
             else "then confirm the next commercial step."
         )
         return (
@@ -11097,6 +11119,8 @@ async def _clear_pending_quote_selection(
 async def _suspend_quote_workflow(
     db: AsyncSession,
     conversation: Conversation,
+    *,
+    consent: QuoteConsent | None = None,
 ) -> None:
     """Clear quote-only routing state after an explicit customer hold."""
     metadata = dict(conversation.metadata_ or {})
@@ -11105,11 +11129,17 @@ async def _suspend_quote_workflow(
     metadata.pop(PENDING_QUOTE_BRIEF_CONFIRMATION_KEY, None)
     metadata.pop(QUOTE_BRIEF_CONFIRMED_ADDRESS_KEY, None)
     metadata = quote_frame_cleared_metadata(metadata)
+    current_workflow = quote_workflow_from_metadata(metadata)
+    resolved_consent = consent or current_workflow.consent
     metadata = quote_workflow_to_metadata(
         metadata,
         QuoteWorkflowState(
-            consent=QuoteConsent.DEFERRED,
-            lifecycle=QuoteLifecycle.QUOTE_OFFERED,
+            consent=resolved_consent,
+            lifecycle=(
+                QuoteLifecycle.QUOTE_OFFERED
+                if resolved_consent is QuoteConsent.DEFERRED
+                else QuoteLifecycle.CONSULTATION
+            ),
         ),
     )
     dialogue_state = DialogueState.load(metadata)
@@ -13324,7 +13354,13 @@ def _sales_opportunity_response(
         else None
     )
     if is_arabic_customer_language(language):
-        hold = " وسيبقى عرض السعر معلقاً." if request.quote_on_hold else ""
+        quote_status = (
+            " لم يتم إنشاء عرض سعر."
+            if request.quote_consent is QuoteConsent.DECLINED
+            else " تم تأجيل عرض السعر حتى تؤكده."
+            if request.quote_consent is QuoteConsent.DEFERRED
+            else ""
+        )
         if short_horizon:
             follow_up = " هل نتفق الآن على موعد التواصل ضمن نافذة القرار؟"
         elif follow_up_days is not None:
@@ -13335,9 +13371,15 @@ def _sales_opportunity_response(
             follow_up = ""
         return (
             "تم تسجيل فرصة البيع والتحقق منها في نظام CRM. الخطوة التجارية التالية "
-            f"هي تأكيد خطة التسليم واعتماد صاحب القرار.{hold}{follow_up}"
+            f"هي تأكيد خطة التسليم واعتماد صاحب القرار.{quote_status}{follow_up}"
         )
-    hold = " The quotation remains on hold." if request.quote_on_hold else ""
+    quote_status = (
+        " The quotation was not created."
+        if request.quote_consent is QuoteConsent.DECLINED
+        else " The quotation remains deferred until you confirm."
+        if request.quote_consent is QuoteConsent.DEFERRED
+        else ""
+    )
     if short_horizon:
         follow_up = (
             " Can we agree the next contact time now, within your decision window?"
@@ -13353,7 +13395,7 @@ def _sales_opportunity_response(
         follow_up = ""
     return (
         "I recorded and verified this as a CRM sales opportunity. The next commercial "
-        f"step is to confirm the delivery plan and decision-maker approval.{hold}"
+        f"step is to confirm the delivery plan and decision-maker approval.{quote_status}"
         f"{follow_up}"
     )
 
@@ -13413,11 +13455,14 @@ async def create_quotation(
     """
     logger.info(f"LLM Tool called: create_quotation(items={items})")
 
-    workflow = quote_workflow_from_metadata(ctx.deps.conversation.metadata_)
-    if (
-        not _has_canonical_quote_workflow(ctx.deps.conversation)
-        or workflow.consent is not QuoteConsent.GRANTED
-    ):
+    metadata = ctx.deps.conversation.metadata_
+    workflow = quote_workflow_from_metadata(metadata)
+    canonical_workflow = canonical_quote_workflow_from_metadata(metadata)
+    invalid_canonical_workflow = (
+        canonical_workflow is None
+        and canonical_quote_workflow_metadata_present(metadata)
+    )
+    if invalid_canonical_workflow or workflow.consent is not QuoteConsent.GRANTED:
         return (
             "I can prepare the quotation only after you explicitly confirm that "
             "you want it. No customer, order, PDF, or message was created."
@@ -13430,15 +13475,14 @@ async def create_quotation(
             language=str(ctx.deps.conversation.language),
         )
 
-    if _has_canonical_quote_workflow(ctx.deps.conversation):
-        await _store_quote_workflow(
-            ctx.deps.db,
-            ctx.deps.conversation,
-            QuoteWorkflowState(
-                consent=QuoteConsent.GRANTED,
-                lifecycle=QuoteLifecycle.CREATING,
-            ),
-        )
+    await _store_quote_workflow(
+        ctx.deps.db,
+        ctx.deps.conversation,
+        QuoteWorkflowState(
+            consent=QuoteConsent.GRANTED,
+            lifecycle=QuoteLifecycle.CREATING,
+        ),
+    )
 
     # Needs to fetch item details from Zoho Inventory
     skus_to_fetch = [item.sku for item in items]
@@ -14873,7 +14917,11 @@ async def process_message(
         )
 
     if _has_explicit_quote_hold(combined_text):
-        await _suspend_quote_workflow(db, conv)
+        await _suspend_quote_workflow(
+            db,
+            conv,
+            consent=quote_consent_signal(combined_text, []) or QuoteConsent.DECLINED,
+        )
 
     order_runtime_blocks_kernel_reply = (
         _active_pending_quote_selection_from_conversation(conv) is not None
@@ -15053,7 +15101,10 @@ async def process_message(
         _has_explicit_quote_opt_in(combined_text)
         or _has_explicit_quote_opt_in(masked_text)
         or (
-            assistant_offered_quote_selection
+            (
+                assistant_offered_quote_selection
+                or (has_pending_quote_selection and assistant_asked_quote_details)
+            )
             and (
                 _has_affirmative_quote_resume_intent(combined_text)
                 or _has_affirmative_quote_resume_intent(masked_text)
@@ -15319,14 +15370,10 @@ async def process_message(
         conv,
         combined_text,
     )
-    if (
-        current_sales_opportunity_request is not None
-        and not offer_quote_for_turn
-        and not current_sales_opportunity_request.quote_on_hold
-    ):
+    if current_sales_opportunity_request is not None and not offer_quote_for_turn:
         current_sales_opportunity_request = replace(
             current_sales_opportunity_request,
-            quote_on_hold=True,
+            quote_consent=quote_workflow_from_metadata(conv.metadata_).consent,
         )
 
     if current_sales_opportunity_request is not None:

@@ -10,6 +10,7 @@ from src.dialogue.order_state import (
     QuoteConsent,
     QuoteFrame,
     QuoteLifecycle,
+    canonical_quote_workflow_from_metadata,
     quote_frame_from_metadata,
     quote_frame_is_active,
     quote_workflow_from_metadata,
@@ -150,7 +151,15 @@ class DialogueState(BaseModel):
             return cls(thread_id=thread_id)
         if thread_id and not state.thread_id:
             state = state.model_copy(update={"thread_id": thread_id})
-        if "quote_consent" not in payload and "quote_lifecycle" not in payload:
+        canonical_workflow = canonical_quote_workflow_from_metadata(metadata)
+        if canonical_workflow is not None:
+            state = state.model_copy(
+                update={
+                    "quote_consent": canonical_workflow.consent,
+                    "quote_lifecycle": canonical_workflow.lifecycle,
+                }
+            )
+        elif "quote_consent" not in payload and "quote_lifecycle" not in payload:
             workflow = quote_workflow_from_metadata(metadata)
             if workflow.consent is not QuoteConsent.NOT_REQUESTED:
                 state = state.model_copy(

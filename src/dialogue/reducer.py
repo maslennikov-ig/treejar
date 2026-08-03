@@ -58,14 +58,17 @@ def reconcile_dialogue_state(state: DialogueState) -> DialogueState:
     consent = state.quote_consent
     lifecycle = state.quote_lifecycle
     active_flow = state.active_flow
-    if slots.quote_sent:
+    if consent is QuoteConsent.DECLINED:
+        lifecycle = (
+            QuoteLifecycle.CREATED if slots.quote_sent else QuoteLifecycle.CONSULTATION
+        )
+        active_flow = "product_selection"
+    elif slots.quote_sent:
         consent = QuoteConsent.GRANTED
         lifecycle = QuoteLifecycle.CREATED
         active_flow = "post_quotation_hold"
     elif consent is not QuoteConsent.GRANTED:
-        if consent is QuoteConsent.DECLINED:
-            lifecycle = QuoteLifecycle.CONSULTATION
-        elif slots.selected_items or lifecycle is not QuoteLifecycle.CONSULTATION:
+        if slots.selected_items or lifecycle is not QuoteLifecycle.CONSULTATION:
             lifecycle = QuoteLifecycle.QUOTE_OFFERED
         active_flow = "product_selection" if slots.selected_items else active_flow
     elif slots.selected_items:

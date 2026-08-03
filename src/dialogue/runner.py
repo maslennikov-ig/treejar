@@ -240,26 +240,7 @@ def _match_expected_answer_node(state: _GraphInput) -> _GraphOutput:
 def _decide_node(state: _GraphOutput) -> _GraphOutput:
     dialogue_state = state["state"]
     text = state["text"]
-    if _is_post_quotation_context(dialogue_state):
-        after_state = mark_quote_sent(
-            dialogue_state,
-            post_quotation_status="awaiting_customer_decision",
-        ).model_copy(update={"active_flow": "post_quotation_hold"})
-        return {
-            **state,
-            "decision": DialogueDecision(
-                action="hold_post_quotation",
-                flow="post_quotation_hold",
-                response_text=(
-                    "Thank you, I have noted your reply about the quotation. "
-                    "I will keep the quotation context and avoid restarting the "
-                    "conversation."
-                ),
-                handled=True,
-            ),
-            "after_state": after_state,
-        }
-    consent_signal = _quote_consent_signal(text, state["recent_history"])
+    consent_signal = quote_consent_signal(text, state["recent_history"])
     if consent_signal in {QuoteConsent.DECLINED, QuoteConsent.DEFERRED}:
         after_state = reconcile_dialogue_state(
             dialogue_state.model_copy(
@@ -282,6 +263,25 @@ def _decide_node(state: _GraphOutput) -> _GraphOutput:
                 flow="legacy_fallback",
                 handled=False,
                 metadata={"quote_consent": consent_signal.value},
+            ),
+            "after_state": after_state,
+        }
+    if _is_post_quotation_context(dialogue_state):
+        after_state = mark_quote_sent(
+            dialogue_state,
+            post_quotation_status="awaiting_customer_decision",
+        ).model_copy(update={"active_flow": "post_quotation_hold"})
+        return {
+            **state,
+            "decision": DialogueDecision(
+                action="hold_post_quotation",
+                flow="post_quotation_hold",
+                response_text=(
+                    "Thank you, I have noted your reply about the quotation. "
+                    "I will keep the quotation context and avoid restarting the "
+                    "conversation."
+                ),
+                handled=True,
             ),
             "after_state": after_state,
         }
@@ -576,7 +576,7 @@ _QUOTE_DECLINE_RE = re.compile(
     re.IGNORECASE,
 )
 _QUOTE_DEFER_RE = re.compile(
-    r"\b(?:quote|quotation)\b.{0,24}\b(?:later|not\s+yet|on\s+hold|pause)\b|"
+    r"\b(?:quote|quotation)\b.{0,24}\b(?:later|yet|for\s+now|on\s+hold|pause)\b|"
     r"\b(?:later|not\s+yet|hold|pause)\b.{0,24}\b(?:quote|quotation)\b|"
     r"(?:кп|коммерческ\w+\s+предлож).{0,24}(?:позже|пока\s+не|отлож)|"
     r"(?:عرض\s+سعر|عرض\s+السعر).{0,24}(?:لاحق|ليس\s+الآن)",
@@ -591,14 +591,14 @@ _QUOTE_REQUEST_RE = re.compile(
 )
 
 
-def _quote_consent_signal(
+def quote_consent_signal(
     text: str,
     recent_history: list[str],
 ) -> QuoteConsent | None:
-    if _QUOTE_DECLINE_RE.search(text):
-        return QuoteConsent.DECLINED
     if _QUOTE_DEFER_RE.search(text):
         return QuoteConsent.DEFERRED
+    if _QUOTE_DECLINE_RE.search(text):
+        return QuoteConsent.DECLINED
     if _QUOTE_REQUEST_RE.search(text):
         return QuoteConsent.GRANTED
     normalized = " ".join(text.casefold().split()).strip(" .!?،؟")

@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     )
 
     # Dialogue kernel rollout
-    dialogue_kernel_mode: str = "legacy"
+    dialogue_kernel_mode: str = "enforce"
     dialogue_kernel_trace_enabled: bool = True
     dialogue_kernel_enforced_flows: str = ""
 

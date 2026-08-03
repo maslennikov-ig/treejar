@@ -445,6 +445,30 @@ def test_dialogue_state_dual_reads_legacy_quote_hold_without_rewriting_it() -> N
     assert "quote_on_hold" not in str(patch)
 
 
+def test_dialogue_state_canonical_quote_workflow_wins_over_stale_kernel_state() -> None:
+    state = DialogueState.load(
+        {
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "declined",
+                    "lifecycle": "consultation",
+                }
+            },
+            "dialogue_kernel": {
+                "state": {
+                    "version": 2,
+                    "quote_consent": "granted",
+                    "quote_lifecycle": "collecting_details",
+                }
+            },
+        }
+    )
+
+    assert state.quote_consent is QuoteConsent.DECLINED
+    assert state.quote_lifecycle is QuoteLifecycle.CONSULTATION
+
+
 def test_reconcile_dialogue_state_removes_impossible_slot_combinations() -> None:
     from src.dialogue.reducer import reconcile_dialogue_state
 
