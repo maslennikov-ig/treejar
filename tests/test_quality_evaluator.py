@@ -446,9 +446,12 @@ def test_rule_applicability_distinguishes_quote_decline_from_collection() -> Non
     conversation = SimpleNamespace(
         language="ru",
         metadata_={
-            "sales_state": {
-                "quote_consent": "declined",
-                "quote_lifecycle": "quote_offered",
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "declined",
+                    "lifecycle": "consultation",
+                }
             }
         },
     )
@@ -468,7 +471,7 @@ def test_rule_applicability_distinguishes_quote_decline_from_collection() -> Non
     assert "quote_not_ready" in assessment.signals
 
 
-def test_rule_applicability_reads_validated_runtime_tool_evidence() -> None:
+def test_rule_applicability_requires_explicit_runtime_quote_success() -> None:
     from src.quality.evaluator import _build_applicability_assessment
 
     conversation = SimpleNamespace(
@@ -493,6 +496,12 @@ def test_rule_applicability_reads_validated_runtime_tool_evidence() -> None:
                                 "state": "returned",
                             }
                         ],
+                        "final_inventory": {
+                            "quotation:sale_order:so-1": {
+                                "state": "active",
+                                "status": "pdf_sent",
+                            }
+                        },
                     }
                 ],
             }
@@ -509,6 +518,161 @@ def test_rule_applicability_reads_validated_runtime_tool_evidence() -> None:
     )
 
     assert assessment.rule_applicability[12] is True
+    assert assessment.rule_applicability[14] is True
+    assert "quote_created" in assessment.signals
+
+
+@pytest.mark.parametrize(
+    ("workflow", "outcome_name"),
+    [
+        (
+            {"version": 2, "consent": "granted", "lifecycle": "creating"},
+            "fail_closed",
+        ),
+        (
+            {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "collecting_details",
+            },
+            "missing_details",
+        ),
+    ],
+)
+def test_returned_create_quotation_is_not_a_successful_business_effect(
+    workflow: dict[str, object],
+    outcome_name: str,
+) -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "order_runtime": {"quote_workflow": workflow},
+            "runtime_execution_evidence": {
+                "schema_version": "noor-runtime-execution-evidence/v3",
+                "turns": [
+                    {
+                        "schema_version": "noor-runtime-turn-evidence/v3",
+                        "source_message_id": f"source-{outcome_name}",
+                        "assistant_message_id": f"assistant-{outcome_name}",
+                        "received_at": "2026-08-03T10:00:00Z",
+                        "recorded_at": "2026-08-03T10:00:01Z",
+                        "usage_provenance": "provider_reported",
+                        "tool_traces": [
+                            {
+                                "call_id": f"call-{outcome_name}",
+                                "tool_name": "create_quotation",
+                                "arguments_digest": "a" * 64,
+                                "outcome_digest": "b" * 64,
+                                "state": "returned",
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "Create the quotation"),
+            _quality_message("assistant", "Unable to complete it"),
+        ],
+        "quoting",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[12] is True
+    assert assessment.rule_applicability[14] is False
+    assert "quote_created" not in assessment.signals
+
+
+@pytest.mark.parametrize(
+    ("consent", "lifecycle", "rule_12", "rule_14", "rule_15"),
+    [
+        ("declined", "consultation", False, False, True),
+        ("deferred", "quote_offered", False, False, True),
+        ("granted", "quote_requested", True, False, False),
+        ("granted", "created", True, True, False),
+    ],
+)
+def test_rule_applicability_reads_only_canonical_quote_workflow(
+    consent: str,
+    lifecycle: str,
+    rule_12: bool,
+    rule_14: bool,
+    rule_15: bool,
+) -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="ru",
+        metadata_={
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": consent,
+                    "lifecycle": lifecycle,
+                }
+            },
+            "lookalike_payload": {
+                "quote_consent": "granted" if consent != "granted" else "declined",
+                "quote_lifecycle": "created",
+            },
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "Каноническое состояние"),
+            _quality_message("assistant", "Состояние учтено"),
+        ],
+        "solution",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[12] is rule_12
+    assert assessment.rule_applicability[14] is rule_14
+    assert assessment.rule_applicability[15] is rule_15
+    assert ("quote_created" in assessment.signals) is (lifecycle == "created")
+
+
+def test_quote_effect_journal_is_an_explicit_success_outcome() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "order_runtime": {
+                "quote_workflow": {
+                    "version": 2,
+                    "consent": "granted",
+                    "lifecycle": "creating",
+                }
+            },
+            "quotation_effect_journal": {
+                "version": 1,
+                "entries": [
+                    {
+                        "version": 2,
+                        "sale_order_id": "so-verified",
+                        "status": "pdf_sent",
+                    }
+                ],
+            },
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "Create it"),
+            _quality_message("assistant", "Sent"),
+        ],
+        "quoting",
+        conversation,
+    )
+
     assert assessment.rule_applicability[14] is True
     assert "quote_created" in assessment.signals
 

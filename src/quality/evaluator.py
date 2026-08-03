@@ -6,10 +6,10 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -18,6 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from src.core.config import settings
+from src.dialogue.order_state import (
+    QuoteConsent,
+    QuoteLifecycle,
+    QuoteWorkflowState,
+    quote_workflow_from_metadata,
+)
 from src.dialogue.state import DialogueState
 from src.llm.safety import (
     PATH_QUALITY_FINAL,
@@ -96,6 +102,22 @@ class ApplicabilityAssessment:
     signals: tuple[str, ...]
     blocking_reasons: tuple[str, ...]
     language: str
+
+
+@dataclass(frozen=True, slots=True)
+class _RuntimeApplicabilityEvidence:
+    tool_names: frozenset[str]
+    quote_succeeded: bool = False
+
+
+class _CompletedQuotationEffect(BaseModel):
+    """Minimal typed projection of the server-owned quotation effect journal."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    version: Literal[2]
+    sale_order_id: str = Field(min_length=1)
+    status: Literal["pdf_sent"]
 
 
 EVALUATION_PROMPT = """Ты эксперт по оценке качества продаж Treejar, мебельной компании из ОАЭ.
@@ -197,33 +219,10 @@ _STAGE_RANK = {
 _CATALOG_FLOWS = frozenset(
     {"product_selection", "catalog", "recommendation", "solution"}
 )
-_QUOTE_FLOWS = frozenset(
-    {
-        "quote_details",
-        "quotation",
-        "post_quotation_hold",
-        "quote_requested",
-        "collecting_details",
-        "creating",
-        "created",
-    }
-)
 _FOLLOWUP_FLOWS = frozenset({"follow_up", "followup", "next_step"})
 _CATALOG_TOOLS = frozenset({"search_products", "get_stock", "recommend_products"})
 _CRM_TOOLS = frozenset({"lookup_customer", "create_deal"})
-_QUOTE_TOOLS = frozenset({"create_quotation"})
 _FOLLOWUP_TOOLS = frozenset({"schedule_follow_up", "schedule_followup"})
-_QUOTE_CONSENT_VALUES = frozenset({"not_requested", "deferred", "declined", "granted"})
-_QUOTE_LIFECYCLE_VALUES = frozenset(
-    {
-        "consultation",
-        "quote_offered",
-        "quote_requested",
-        "collecting_details",
-        "creating",
-        "created",
-    }
-)
 INSUFFICIENT_EVIDENCE_NEXT_ACTION = (
     "Недостаточно данных для AI-оценки: transcript content недоступен для этого режима."
 )
@@ -304,50 +303,14 @@ def _conversation_from_messages(messages: Sequence[Message]) -> Any | None:
     return None
 
 
-def _mapping_children(value: object, *, max_depth: int = 4) -> list[Mapping[str, Any]]:
-    """Return a bounded breadth-first view of versioned metadata mappings."""
-    if not isinstance(value, Mapping):
-        return []
-    result: list[Mapping[str, Any]] = []
-    queue: list[tuple[Mapping[str, Any], int]] = [(value, 0)]
-    while queue:
-        current, depth = queue.pop(0)
-        result.append(current)
-        if depth >= max_depth:
-            continue
-        for child in current.values():
-            if isinstance(child, Mapping):
-                queue.append((child, depth + 1))
-            elif isinstance(child, list | tuple):
-                queue.extend(
-                    (item, depth + 1) for item in child if isinstance(item, Mapping)
-                )
-    return result
-
-
-def _metadata_enum(
+def _runtime_applicability_evidence(
     metadata: Mapping[str, Any],
-    key: str,
-    allowed: frozenset[str],
-) -> str | None:
-    for mapping in _mapping_children(metadata):
-        value = mapping.get(key)
-        if isinstance(value, str):
-            normalized = value.strip().casefold()
-            if normalized in allowed:
-                return normalized
-    return None
-
-
-def _metadata_flag(metadata: Mapping[str, Any], key: str) -> bool:
-    return any(mapping.get(key) is True for mapping in _mapping_children(metadata))
-
-
-def _runtime_tool_names(metadata: Mapping[str, Any]) -> frozenset[str]:
+) -> _RuntimeApplicabilityEvidence:
     payload = metadata.get(RUNTIME_EXECUTION_EVIDENCE_KEY)
     if not isinstance(payload, Mapping) or not isinstance(payload.get("turns"), list):
-        return frozenset()
+        return _RuntimeApplicabilityEvidence(tool_names=frozenset())
     names: set[str] = set()
+    quote_succeeded = False
     for item in payload["turns"]:
         try:
             turn = RuntimeTurnEvidence.model_validate(item)
@@ -356,7 +319,36 @@ def _runtime_tool_names(metadata: Mapping[str, Any]) -> frozenset[str]:
         names.update(
             trace.tool_name for trace in turn.tool_traces if trace.state == "returned"
         )
-    return frozenset(names)
+        for key, inventory_item in turn.final_inventory.items():
+            if not key.startswith("quotation:sale_order:") or not isinstance(
+                inventory_item, Mapping
+            ):
+                continue
+            if (
+                inventory_item.get("state") == "active"
+                and inventory_item.get("status") == "pdf_sent"
+            ):
+                quote_succeeded = True
+    return _RuntimeApplicabilityEvidence(
+        tool_names=frozenset(names),
+        quote_succeeded=quote_succeeded,
+    )
+
+
+def _quotation_effect_succeeded(metadata: Mapping[str, Any]) -> bool:
+    raw_journal = metadata.get("quotation_effect_journal")
+    if not isinstance(raw_journal, Mapping) or raw_journal.get("version") != 1:
+        return False
+    entries = raw_journal.get("entries")
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        try:
+            _CompletedQuotationEffect.model_validate(entry)
+        except ValidationError:
+            continue
+        return True
+    return False
 
 
 def _filled_slot_names(state: DialogueState) -> frozenset[str]:
@@ -368,6 +360,26 @@ def _filled_slot_names(state: DialogueState) -> frozenset[str]:
         or (isinstance(value, str) and bool(value.strip()))
         or (isinstance(value, list | tuple | dict) and bool(value))
     )
+
+
+def _reconciled_quote_workflow(
+    state: DialogueState,
+    metadata: Mapping[str, Any],
+) -> QuoteWorkflowState:
+    """Prefer the canonical runtime workflow, then typed state and legacy reads."""
+    runtime = metadata.get("order_runtime")
+    if isinstance(runtime, Mapping) and isinstance(
+        runtime.get("quote_workflow"), Mapping
+    ):
+        return quote_workflow_from_metadata(metadata)
+
+    state_workflow = QuoteWorkflowState(
+        consent=state.quote_consent,
+        lifecycle=state.quote_lifecycle,
+    )
+    if state_workflow != QuoteWorkflowState():
+        return state_workflow
+    return quote_workflow_from_metadata(metadata)
 
 
 def _build_applicability_assessment(
@@ -403,13 +415,9 @@ def _build_applicability_assessment(
     }
     flows = {active_flow, *frame_flows, *trace_flows} - {""}
     filled_slots = _filled_slot_names(state)
-    tool_names = _runtime_tool_names(metadata)
-    quote_consent = _metadata_enum(metadata, "quote_consent", _QUOTE_CONSENT_VALUES)
-    quote_lifecycle = _metadata_enum(
-        metadata, "quote_lifecycle", _QUOTE_LIFECYCLE_VALUES
-    )
-    if quote_consent is None and _metadata_flag(metadata, "quote_on_hold"):
-        quote_consent = "deferred"
+    runtime_evidence = _runtime_applicability_evidence(metadata)
+    tool_names = runtime_evidence.tool_names
+    quote_workflow = _reconciled_quote_workflow(state, metadata)
 
     assistant_turns = len(_assistant_messages(messages))
     customer_turns = _customer_message_count(messages)
@@ -419,21 +427,30 @@ def _build_applicability_assessment(
         or filled_slots & {"selected_items", "pending_product_refs"}
         or tool_names & _CATALOG_TOOLS
     )
-    quote_started = bool(
-        flows & _QUOTE_FLOWS
-        or quote_consent == "granted"
-        or quote_lifecycle
-        in {"quote_requested", "collecting_details", "creating", "created"}
-        or tool_names & _QUOTE_TOOLS
-    )
     quote_created = bool(
-        quote_lifecycle == "created"
-        or "quote_sent" in filled_slots
-        or tool_names & _QUOTE_TOOLS
+        (
+            quote_workflow.consent is QuoteConsent.GRANTED
+            and quote_workflow.lifecycle is QuoteLifecycle.CREATED
+        )
+        or runtime_evidence.quote_succeeded
+        or _quotation_effect_succeeded(metadata)
+    )
+    quote_started = bool(
+        quote_created
+        or (
+            quote_workflow.consent is QuoteConsent.GRANTED
+            and quote_workflow.lifecycle
+            in {
+                QuoteLifecycle.QUOTE_REQUESTED,
+                QuoteLifecycle.COLLECTING_DETAILS,
+                QuoteLifecycle.CREATING,
+                QuoteLifecycle.CREATED,
+            }
+        )
     )
     crm = bool(tool_names & _CRM_TOOLS)
     quote_not_ready = bool(
-        quote_consent in {"deferred", "declined"}
+        quote_workflow.consent in {QuoteConsent.DEFERRED, QuoteConsent.DECLINED}
         or trace_actions
         & {"quote_declined", "quote_deferred", "defer_quote", "decline_quote"}
     )

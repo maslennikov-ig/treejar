@@ -76,6 +76,10 @@ docs_review_notes: this artifact records the changed scoring and applicability c
 verification:
   - "RED: 8 selected regressions failed before implementation"
   - "GREEN: uv run --extra dev pytest tests/test_quality_evaluator.py -q: 32 passed"
+  - "correction RED: 8 of 9 quote-effect and canonical-workflow regressions failed"
+  - "correction GREEN: uv run --extra dev pytest tests/test_quality_evaluator.py -q: 39 passed"
+  - "targeted Ruff check and format check: passed"
+  - "targeted Mypy for evaluator.py and schemas.py: passed"
   - "git diff --check: passed"
 changed_files:
   - src/quality/evaluator.py
@@ -94,6 +98,12 @@ filled slots, validated runtime tool traces, quote consent/lifecycle, refusal,
 next-step signals, and message roles. It no longer infers EN/AR/RU behavior from
 English keyword lists.
 
+The correction pass distinguishes a returned `create_quotation` invocation
+from a completed business effect. Quote completion now requires reconciled
+`QuoteWorkflowState.created`, a validated successful effect-journal entry, or
+an explicit successful quotation inventory outcome. Fail-closed and
+missing-details tool returns therefore cannot claim a created quotation.
+
 # Score and Coverage Contract
 
 If a complete scoring block is not applicable, its nominal weight is removed
@@ -105,9 +115,11 @@ remain in aggregate scoring; no exclusion flag can be enabled.
 # Compatibility
 
 Conversation metadata is read through the existing `DialogueState` adapter,
-including its legacy fallback, while new quote state fields are discovered from
-versioned nested mappings. Runtime tool evidence is accepted only after typed
-schema validation. The public REST and database schemas were not changed.
+including its legacy fallback. Quote consent and lifecycle are reconciled from
+the exact canonical `order_runtime.quote_workflow` through
+`QuoteWorkflowState`; similarly named nested payloads are ignored. Runtime tool
+evidence is accepted only after typed schema validation. The public REST and
+database schemas were not changed.
 
 # Verification
 
@@ -116,9 +128,15 @@ quote-decline misclassification, missing runtime evidence, and silent advanced
 stage gaps. The owned evaluator test file then passed all 32 tests. No model,
 provider, production, database, or other external call was made.
 
+Correction RED reproduced eight false-success/canonical-state failures,
+including fail-closed and missing-details returned traces. Correction GREEN
+passed all 39 focused evaluator tests plus targeted Ruff, format, Mypy, and
+`git diff --check`.
+
 # Integration Seam
 
-The dialogue stream may add fields to `DialogueSlots` or move versioned quote
-state within conversation metadata without changing this adapter. The model
-battle stream should treat `diagnostics.status == "blocking"` as evaluator
-failure and should add its separate blind-audit `EVAL_DISAGREEMENT` result.
+This correction depends on the dialogue stream commit that provides
+`QuoteWorkflowState` and reconciled `DialogueState` quote fields; integrate that
+stream before this evaluator delta. The model battle stream should treat
+`diagnostics.status == "blocking"` as evaluator failure and should add its
+separate blind-audit `EVAL_DISAGREEMENT` result.
