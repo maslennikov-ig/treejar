@@ -92,6 +92,9 @@ verification:
   - release-gate integration RED for dialogue and quote compatibility paths: 69 failed, 787 passed
   - correction integration set for quote consent, catalog routing, and replay compatibility: passed 856
   - catalog decision regression file after correction: passed 3
+  - review RED for stale kernel grant and pre-consent customer-facts projection: 3 failed, 1 passed
+  - review focused quote authority and customer-facts set: passed 4
+  - final affected integration set after review fixes: passed 859
   - targeted Ruff check and format check: passed
   - targeted Mypy: passed
   - git diff check: passed
@@ -109,6 +112,7 @@ changed_files:
   - tests/fixtures/dialogue/dialogue_state_kernel_replay.json
   - tests/test_e2e_tools.py
   - tests/test_llm_engine.py
+  - tests/test_llm_engine_customer_facts.py
   - tests/test_llm_catalog_decision.py
   - tests/test_llm_quotation.py
   - .codex/stages/tj-ee5f/artifacts/tj-ee5f.7-8-quality-remediation.md
@@ -149,6 +153,13 @@ consent is granted. Direct quotation tests and replay fixtures now declare the
 same evidence they require in production instead of relying on implicit legacy
 state.
 
+Independent review found two further authority leaks. A canonical deferred or
+declined workflow now blocks a stale kernel grant and kernel quote-details
+reply unless the current customer turn explicitly grants consent. Accepted
+customer facts continue to update the general profile and active-order memory,
+but email, phone, address, and customer type are projected into legacy quote
+details only when a canonical v2 workflow is granted.
+
 # Scope / Routing
 
 This stream owns only the local dialogue, quotation-state, and catalog-decision
@@ -164,6 +175,9 @@ tests, including three untrusted-consent shapes, model-output validation, and
 authoritative-stock re-selection. The release-gate correction then passed all
 856 affected dialogue, quote, replay, and customer-fact tests plus the catalog
 decision regression file, targeted Ruff, format, Mypy, and diff checks.
+After independent review, focused RED reproduced both authority leaks; the
+corrected affected integration set passed all 859 tests and the targeted static
+checks again passed.
 
 # Delivery / Cleanup
 

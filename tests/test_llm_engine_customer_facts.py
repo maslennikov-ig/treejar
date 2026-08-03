@@ -241,15 +241,47 @@ async def test_process_message_customer_facts_enforce_persists_and_injects_conte
     mock_context.assert_awaited_once()
     call_deps = mock_run.await_args.kwargs["deps"]
     assert "Known customer profile:" in call_deps.customer_facts_context
+    assert conv.metadata_["quote_customer_details"] == {"name": "Lili"}
+    trace = conv.metadata_["customer_facts"]["traces"][-1]
+    assert trace["mode"] == "enforce"
+    assert trace["accepted_count"] >= 4
+
+
+@pytest.mark.asyncio
+async def test_customer_facts_syncs_quote_only_fields_after_canonical_consent() -> None:
+    db, conv, _embedding, _zoho, _redis, _messaging, _crm = _deps()
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": "granted",
+                "lifecycle": "quote_requested",
+            }
+        }
+    }
+    facts = [
+        SimpleNamespace(scope="persistent_profile", key="customer.name", value="Lili"),
+        SimpleNamespace(
+            scope="persistent_profile",
+            key="customer.email",
+            value="lili@example.com",
+        ),
+        SimpleNamespace(scope="current_order", key="customer.type", value="individual"),
+        SimpleNamespace(scope="current_order", key="delivery.address", value="1 Dubai"),
+    ]
+
+    await engine_module._apply_customer_facts_to_legacy_quote_details(
+        db,
+        conv,
+        facts,
+    )
+
     assert conv.metadata_["quote_customer_details"] == {
         "name": "Lili",
         "email": "lili@example.com",
         "address": "1 Dubai",
         "customer_type": "individual",
     }
-    trace = conv.metadata_["customer_facts"]["traces"][-1]
-    assert trace["mode"] == "enforce"
-    assert trace["accepted_count"] >= 4
 
 
 @pytest.mark.asyncio

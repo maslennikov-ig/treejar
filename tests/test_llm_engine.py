@@ -1035,6 +1035,91 @@ async def test_process_message_dialogue_kernel_shadow_fail_open_uses_legacy(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("consent", "lifecycle"),
+    [
+        ("deferred", "quote_offered"),
+        ("declined", "consultation"),
+    ],
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_process_message_canonical_quote_consent_wins_over_stale_kernel_grant(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_dialogue_kernel: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    consent: str,
+    lifecycle: str,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Lili"
+    conv.metadata_ = {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": consent,
+                "lifecycle": lifecycle,
+            }
+        }
+    }
+    text = "Please show me chair options."
+    mock_build_history.return_value = [
+        ModelRequest(parts=[SystemPromptPart(content="summary")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_dialogue_kernel.return_value = DialogueKernelResult(
+        decision=DialogueDecision(
+            action="collect_quote_details",
+            flow="quote_details",
+            response_text="Please share customer and delivery details.",
+            handled=True,
+        ),
+        state=DialogueState(
+            quote_consent="granted",
+            quote_lifecycle="quote_requested",
+        ),
+        should_use_kernel=True,
+    )
+
+    async def config_side_effect(_db: object, key: str, default: str) -> str:
+        return {
+            "dialogue_kernel_mode": "shadow",
+            "dialogue_kernel_trace_enabled": "true",
+            "dialogue_kernel_enforced_flows": "product_selection",
+            "openrouter_model_main": "mock-model",
+        }.get(key, default)
+
+    mock_get_system_config.side_effect = config_side_effect
+    mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult("Here are chair options.")
+
+    await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=embedding,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert conv.metadata_["order_runtime"]["quote_workflow"] == {
+        "version": 2,
+        "consent": consent,
+        "lifecycle": lifecycle,
+    }
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 @patch("src.core.config.get_system_config", new_callable=AsyncMock)
 @patch("src.llm.engine.run_dialogue_kernel", new_callable=AsyncMock)
 @patch("src.llm.engine.build_message_history", new_callable=AsyncMock)

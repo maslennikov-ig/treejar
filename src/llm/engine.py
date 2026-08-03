@@ -8913,6 +8913,15 @@ async def _apply_customer_facts_to_legacy_quote_details(
     facts: Iterable[Any],
 ) -> None:
     details = _quote_details_from_customer_facts(facts)
+    canonical_quote_consent_granted = (
+        _has_canonical_quote_workflow(conversation)
+        and quote_workflow_from_metadata(conversation.metadata_).consent
+        is QuoteConsent.GRANTED
+    )
+    if not canonical_quote_consent_granted:
+        details = {
+            key: value for key, value in details.items() if key in {"name", "company"}
+        }
     if details:
         await _store_extracted_quote_customer_details(db, conversation, details)
 
@@ -14655,21 +14664,44 @@ async def process_message(
             lifecycle=dialogue_kernel_result.state.quote_lifecycle,
         )
         current_workflow = quote_workflow_from_metadata(conv.metadata_)
-        kernel_has_explicit_consent = isinstance(
-            dialogue_kernel_result.decision.metadata.get("quote_consent"), str
+        kernel_consent_value = dialogue_kernel_result.decision.metadata.get(
+            "quote_consent"
+        )
+        kernel_has_explicit_consent = isinstance(kernel_consent_value, str)
+        kernel_grant_is_current_turn = (
+            kernel_consent_value == QuoteConsent.GRANTED.value
+            and (
+                _has_explicit_quote_opt_in(combined_text)
+                or (
+                    _last_assistant_offered_quote_for_selection(recent_history)
+                    and _has_affirmative_quote_resume_intent(combined_text)
+                )
+            )
+        )
+        canonical_blocks_stale_kernel_grant = (
+            _has_canonical_quote_workflow(conv)
+            and current_workflow.consent
+            in {QuoteConsent.DEFERRED, QuoteConsent.DECLINED}
+            and kernel_workflow.consent is QuoteConsent.GRANTED
+            and not kernel_grant_is_current_turn
         )
         if kernel_workflow != current_workflow and (
-            kernel_has_explicit_consent
-            or kernel_workflow.consent is QuoteConsent.GRANTED
+            kernel_grant_is_current_turn
             or (
-                _has_canonical_quote_workflow(conv)
+                kernel_has_explicit_consent
+                and kernel_workflow.consent is not QuoteConsent.GRANTED
+            )
+            or (
+                not _has_canonical_quote_workflow(conv)
                 and current_workflow.consent is QuoteConsent.NOT_REQUESTED
+                and kernel_workflow.consent is not QuoteConsent.GRANTED
             )
         ):
             await _store_quote_workflow(db, conv, kernel_workflow)
     if (
         dialogue_kernel_result is not None
         and dialogue_kernel_result.should_use_kernel
+        and not canonical_blocks_stale_kernel_grant
         and dialogue_kernel_result.decision.action != "product_preference_answer"
         and not (
             order_runtime_blocks_kernel_reply
