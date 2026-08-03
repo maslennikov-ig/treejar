@@ -19,6 +19,7 @@ class SalesCase:
     required_phrases: tuple[str, ...] = ()
     forbidden_phrases: tuple[str, ...] = ()
     expected_language: str | None = None
+    conversation: tuple[dict[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,7 @@ class SystemCase:
     expected_fields: dict[str, Any]
     tools: tuple[dict[str, Any], ...] = ()
     expected_tool: str = ""
+    critical_fields: tuple[str, ...] = ()
 
 
 def _tool(
@@ -61,6 +63,15 @@ CATALOG_SEARCH_TOOL = _tool(
     {
         "query": {"type": "string"},
         "limit": {"type": "integer", "minimum": 1, "maximum": 2},
+    },
+    ["query", "limit"],
+)
+COMPLETE_CATALOG_SEARCH_TOOL = _tool(
+    "search_catalog",
+    "Search fixed catalog evidence for a complete multi-family solution.",
+    {
+        "query": {"type": "string"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 6},
     },
     ["query", "limit"],
 )
@@ -362,6 +373,178 @@ quantity or preferred color.
         user_prompt="The Axis sounds suitable. What do you need from me next?",
         required_phrases=("quantity", "color"),
         forbidden_phrases=("stock is confirmed",),
+    ),
+)
+
+
+CORE_HARD_CASES: tuple[SalesCase, ...] = (
+    SalesCase(
+        case_id="S01",
+        category="name_gate_resume",
+        system_prompt=_SALES_BASE
+        + """
+The saved customer request is for the exact SKU CH 616 NEW black. After the
+customer supplies a name, resume that request without asking for quantity or
+offering alternatives. First call get_inventory_rate and then check_stock with
+that exact SKU. Use only the returned synthetic facts.
+""",
+        conversation=(
+            {
+                "role": "user",
+                "content": "Сколько стоит CH 616 NEW black и есть ли он в наличии?",
+            },
+            {"role": "assistant", "content": "Как я могу к вам обращаться?"},
+        ),
+        user_prompt="Игорь",
+        tools=(INVENTORY_RATE_TOOL, STOCK_TOOL),
+        tool_results={
+            "get_inventory_rate": {
+                "sku": "CH 616 NEW black",
+                "currency": "AED",
+                "rate": 295,
+            },
+            "check_stock": {
+                "sku": "CH 616 NEW black",
+                "available_quantity": 41,
+                "as_of": "2026-08-03T10:00:00Z",
+            },
+        },
+        expected_tools=("get_inventory_rate", "check_stock"),
+        expected_tool_arguments={
+            "get_inventory_rate": {"sku": "CH 616 NEW black"},
+            "check_stock": {"sku": "CH 616 NEW black"},
+        },
+        required_phrases=("CH 616 NEW black", "295", "41"),
+        forbidden_phrases=(
+            "quantity",
+            "similar option",
+            "quotation",
+            "количество",
+            "аналоги",
+            "коммерческое предложение",
+        ),
+        expected_language="ru",
+    ),
+    SalesCase(
+        case_id="S02",
+        category="complete_configuration",
+        system_prompt=_SALES_BASE
+        + """
+The fixed evidence contains a complete six-person set: six AX-E1 chairs at AED
+1,000 and one DK-4 desk at AED 4,000, total AED 10,000. The budget is AED
+12,000. Cover both requested families and do not replace either with a cheaper
+irrelevant item. Call search_catalog once with query exactly "six-person chair
+and desk set" and limit 4.
+""",
+        conversation=(
+            {"role": "user", "content": "We need seating and a desk for six people."},
+            {"role": "assistant", "content": "What total budget should I use?"},
+        ),
+        user_prompt="AED 12,000 total.",
+        tools=(COMPLETE_CATALOG_SEARCH_TOOL,),
+        tool_results={
+            "search_catalog": {
+                "products": [
+                    {"sku": "AX-E1", "family": "chair", "price_aed": 1000},
+                    {"sku": "DK-4", "family": "desk", "price_aed": 4000},
+                ]
+            }
+        },
+        expected_tools=("search_catalog",),
+        expected_tool_arguments={
+            "search_catalog": {"query": "six-person chair and desk set", "limit": 4}
+        },
+        required_phrases=("AX-E1", "DK-4", "10,000"),
+        forbidden_phrases=("over budget", "chair only"),
+        expected_language="en",
+    ),
+    SalesCase(
+        case_id="S03",
+        category="arabic_no_match",
+        system_prompt=_SALES_BASE
+        + """
+No fixed catalog item matches a 120x120 cm acoustic pod. State the numerical
+gap honestly in Arabic and ask one useful closing question. Do not escalate.
+Call search_catalog with query exactly "acoustic pod 120x120" and limit 2.
+""",
+        conversation=(
+            {"role": "user", "content": "أحتاج كابينة عازلة للصوت."},
+            {"role": "assistant", "content": "ما المقاس المطلوب؟"},
+        ),
+        user_prompt="المقاس 120x120 سم بالضبط.",
+        tools=(COMPLETE_CATALOG_SEARCH_TOOL,),
+        tool_results={"search_catalog": {"products": []}},
+        expected_tools=("search_catalog",),
+        expected_tool_arguments={
+            "search_catalog": {"query": "acoustic pod 120x120", "limit": 2}
+        },
+        required_phrases=("120x120",),
+        forbidden_phrases=("perfect match", "manager"),
+        expected_language="ar",
+    ),
+    SalesCase(
+        case_id="S04",
+        category="stock_consistency",
+        system_prompt=_SALES_BASE
+        + """
+For SKU AX-E1 the only authoritative stock snapshot is 7 units in Dubai as of
+2026-08-03T10:00:00Z. Call check_stock once with AX-E1. Never show a second
+stock quantity in the same answer.
+""",
+        conversation=(
+            {"role": "user", "content": "I need the current AX-E1 stock."},
+            {"role": "assistant", "content": "I will verify the live snapshot."},
+        ),
+        user_prompt="Please give me the verified quantity only.",
+        tools=(STOCK_TOOL,),
+        tool_results={
+            "check_stock": {
+                "sku": "AX-E1",
+                "available_quantity": 7,
+                "warehouse": "Dubai",
+                "as_of": "2026-08-03T10:00:00Z",
+            }
+        },
+        expected_tools=("check_stock",),
+        expected_tool_arguments={"check_stock": {"sku": "AX-E1"}},
+        required_phrases=("AX-E1", "7", "Dubai"),
+        forbidden_phrases=("8 units", "catalog stock"),
+        expected_language="en",
+    ),
+    SalesCase(
+        case_id="S05",
+        category="quote_decline",
+        system_prompt=_SALES_BASE
+        + """
+The customer declined a quotation after selecting exact SKU NV-T2. Respect the
+decline. Answer the delivery question without collecting company, phone, email,
+or address. Delivery timing is not verified in this fixture.
+""",
+        conversation=(
+            {"role": "user", "content": "NV-T2 is the exact chair I want."},
+            {"role": "assistant", "content": "Would you like a quotation?"},
+        ),
+        user_prompt="No quotation. How does delivery work?",
+        required_phrases=("delivery", "verify"),
+        forbidden_phrases=("company name", "phone", "email", "address"),
+        expected_language="en",
+    ),
+    SalesCase(
+        case_id="S08",
+        category="requirement_correction",
+        system_prompt=_SALES_BASE
+        + """
+The latest request corrects the quantity from 20 to 12 and defers a quotation.
+Use quantity 12, keep SKU AX-E1, and ask only one product-relevant next question.
+""",
+        conversation=(
+            {"role": "user", "content": "We may need 20 AX-E1 chairs."},
+            {"role": "assistant", "content": "Shall I prepare a quotation for 20?"},
+        ),
+        user_prompt="Make that 12. Do not prepare a quotation yet.",
+        required_phrases=("12", "AX-E1"),
+        forbidden_phrases=("20 chairs", "company name", "address"),
+        expected_language="en",
     ),
 )
 
@@ -683,6 +866,7 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
             "quantity": 8,
             "next_action": {"$contains_all": ["confirm", "color"]},
         },
+        critical_fields=("language", "selected_sku", "quantity"),
     ),
     SystemCase(
         "system-summary-04",
@@ -811,6 +995,150 @@ SYSTEM_CASES: tuple[SystemCase, ...] = (
 )
 
 
+_BACKGROUND_SUMMARY_SCHEMA = _strict_object(
+    {
+        "language": {"type": "string", "enum": ["en", "ar"]},
+        "selected_sku": {"type": ["string", "null"]},
+        "quantity": {"type": ["integer", "null"]},
+        "next_action": {"type": "string"},
+    }
+)
+_BACKGROUND_EXTRACTION_SCHEMA = _strict_object(
+    {
+        "language": {"type": "string", "enum": ["ru"]},
+        "sku": {"type": "string"},
+        "quote_consent": {
+            "type": "string",
+            "enum": ["not_requested", "deferred", "declined", "granted"],
+        },
+    }
+)
+_BACKGROUND_CONSENT_SCHEMA = _strict_object(
+    {
+        "quote_consent": {
+            "type": "string",
+            "enum": ["not_requested", "deferred", "declined", "granted"],
+        },
+        "collect_details": {"type": "boolean"},
+    }
+)
+_BACKGROUND_CUSTOMER_SCHEMA = _strict_object(
+    {
+        "customer_type": {"type": "string", "enum": ["company", "individual"]},
+        "company": {"type": ["string", "null"]},
+        "budget_aed": {"type": ["integer", "null"]},
+        "address": {"type": ["string", "null"]},
+    }
+)
+_BACKGROUND_EVALUATOR_SCHEMA = _strict_object(
+    {
+        "flags": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "applicable_rules": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "score_out_of_30": {"type": "number", "minimum": 0, "maximum": 30},
+    }
+)
+
+
+BACKGROUND_HARD_CASES: tuple[SystemCase, ...] = (
+    SystemCase(
+        "bg-en-summary-correction",
+        "summary",
+        _SYSTEM_BASE + "Use the latest explicit correction.",
+        (
+            "Conversation: customer first requested 20 AX-E1 chairs, then corrected "
+            "the quantity to 12. Next action is to confirm color."
+        ),
+        _BACKGROUND_SUMMARY_SCHEMA,
+        {
+            "language": "en",
+            "selected_sku": "AX-E1",
+            "quantity": 12,
+            "next_action": {"$contains_all": ["confirm", "color"]},
+        },
+    ),
+    SystemCase(
+        "bg-ar-summary",
+        "summary",
+        _SYSTEM_BASE + "Summarize the explicit Arabic request without translating it.",
+        "العميل اختار NV-T2 وعدد 8. الخطوة التالية تأكيد اللون.",
+        _BACKGROUND_SUMMARY_SCHEMA,
+        {
+            "language": "ar",
+            "selected_sku": "NV-T2",
+            "quantity": 8,
+            "next_action": {"$contains_all": ["اللون"]},
+        },
+        critical_fields=("language", "selected_sku", "quantity"),
+    ),
+    SystemCase(
+        "bg-ru-exact-sku-no-quote",
+        "fact_extraction",
+        _SYSTEM_BASE + "Extract the exact SKU and explicit quotation refusal.",
+        "Нужен именно CH 616 NEW black. Коммерческое предложение не делайте.",
+        _BACKGROUND_EXTRACTION_SCHEMA,
+        {
+            "language": "ru",
+            "sku": "CH 616 NEW black",
+            "quote_consent": "declined",
+        },
+        critical_fields=("language", "sku", "quote_consent"),
+    ),
+    SystemCase(
+        "bg-quote-consent",
+        "fact_extraction",
+        _SYSTEM_BASE
+        + "A request to discuss a quotation later is deferred, not granted.",
+        "The products look suitable, but let's discuss a quotation later.",
+        _BACKGROUND_CONSENT_SCHEMA,
+        {"quote_consent": "deferred", "collect_details": False},
+        critical_fields=("quote_consent", "collect_details"),
+    ),
+    SystemCase(
+        "bg-customer-facts",
+        "fact_extraction",
+        _SYSTEM_BASE
+        + "A budget is not an address and a named company is not an individual.",
+        "Orbit 12 LLC has a budget of AED 12,000. No delivery address was given.",
+        _BACKGROUND_CUSTOMER_SCHEMA,
+        {
+            "customer_type": "company",
+            "company": "Orbit 12 LLC",
+            "budget_aed": 12000,
+            "address": None,
+        },
+        critical_fields=("customer_type", "company", "budget_aed", "address"),
+    ),
+    SystemCase(
+        "bg-red-flags-evaluator",
+        "red_flags",
+        _SYSTEM_BASE
+        + "Score only applicable rules. The invented stock is a critical flag.",
+        (
+            "Customer asks for AX-E1 stock. Assistant claims 50 units without a "
+            "stock tool. Applicable rules: catalog_grounding and factual_trust."
+        ),
+        _BACKGROUND_EVALUATOR_SCHEMA,
+        {
+            "flags.$length": 1,
+            "flags[0]": "invented_stock",
+            "applicable_rules.$length": 2,
+            "score_out_of_30": 0,
+        },
+        critical_fields=(
+            "flags.$length",
+            "flags[0]",
+            "applicable_rules.$length",
+        ),
+    ),
+)
+
+
 def validate_case_sets() -> None:
     """Fail early when the accepted suite shape or strictness drifts."""
 
@@ -818,7 +1146,15 @@ def validate_case_sets() -> None:
         raise ValueError(f"Expected 12 sales cases, got {len(SALES_CASES)}")
     if len(SYSTEM_CASES) != 24:
         raise ValueError(f"Expected 24 system cases, got {len(SYSTEM_CASES)}")
-    all_ids = [case.case_id for case in (*SALES_CASES, *SYSTEM_CASES)]
+    all_ids = [
+        case.case_id
+        for case in (
+            *SALES_CASES,
+            *SYSTEM_CASES,
+            *CORE_HARD_CASES,
+            *BACKGROUND_HARD_CASES,
+        )
+    ]
     if len(all_ids) != len(set(all_ids)):
         raise ValueError("Case IDs must be unique")
     expected_categories = {
@@ -835,8 +1171,21 @@ def validate_case_sets() -> None:
             f"System categories mismatch: expected {expected_categories}, "
             f"got {actual_categories}"
         )
-    for case in SYSTEM_CASES:
+    for case in (*SYSTEM_CASES, *BACKGROUND_HARD_CASES):
         if case.tools and not case.expected_tool:
             raise ValueError(f"{case.case_id}: tool case lacks expected_tool")
         if not case.tools and not case.schema:
             raise ValueError(f"{case.case_id}: structured case lacks schema")
+    if {case.case_id for case in CORE_HARD_CASES} != {
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S08",
+    }:
+        raise ValueError("Core hard fixture IDs must remain S01-S05 and S08")
+    if len(BACKGROUND_HARD_CASES) != 6:
+        raise ValueError("Expected 6 differentiating background fixtures")
+    if not all(case.conversation for case in CORE_HARD_CASES):
+        raise ValueError("Every core hard fixture must exercise multi-turn context")

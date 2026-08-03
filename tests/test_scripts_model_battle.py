@@ -4,6 +4,8 @@ import json
 
 import pytest
 from scripts.model_battle import (
+    BACKGROUND_HARD_PROFILE,
+    CORE_HARD_PROFILE,
     EXTENDED_PROFILE,
     CandidateMetrics,
     _build_jobs,
@@ -12,9 +14,15 @@ from scripts.model_battle import (
     aggregate_rows,
     assert_catalog_capabilities,
     assert_existing_run_evidence,
+    blind_scores_digest,
     build_base_payload,
     build_blind_pair,
+    build_survivor_jobs,
     candidate_metrics_from_evidence,
+    cases_for_profile,
+    contains_pii_leakage,
+    detect_evaluator_disagreements,
+    enforce_model_cost_caps,
     evaluate_blind_reviews,
     extract_numeric_tokens,
     merge_run_manifest,
@@ -28,11 +36,21 @@ from scripts.model_battle import (
     score_blind_reviews,
     score_expected_fields,
     score_sales_response,
+    select_differentiating_system_cases,
+    select_hard_profile_winner,
     select_winner,
     should_retry_status,
+    summarize_attempt_accounting,
     validate_json_schema,
+    verify_blind_scores_seal,
 )
-from scripts.model_battle_cases import SALES_CASES, SYSTEM_CASES, validate_case_sets
+from scripts.model_battle_cases import (
+    BACKGROUND_HARD_CASES,
+    CORE_HARD_CASES,
+    SALES_CASES,
+    SYSTEM_CASES,
+    validate_case_sets,
+)
 
 
 def test_case_sets_cover_the_accepted_battle_shape() -> None:
@@ -86,6 +104,223 @@ def test_extended_profile_builds_complete_deterministic_job_matrix() -> None:
     assert {model for model, _case, _repetition in first} == set(
         models_for_profile(EXTENDED_PROFILE, "sales")
     )
+
+
+def test_hard_profiles_pin_exact_candidates_and_fixtures() -> None:
+    assert models_for_profile(CORE_HARD_PROFILE, "sales") == (
+        "z-ai/glm-5.2",
+        "deepseek/deepseek-v4-flash-0731",
+        "openai/gpt-5.6-luna",
+        "xiaomi/mimo-v2.5-pro",
+    )
+    assert models_for_profile(BACKGROUND_HARD_PROFILE, "system") == (
+        "deepseek/deepseek-v4-flash",
+        "z-ai/glm-5.2",
+        "deepseek/deepseek-v4-flash-0731",
+        "openai/gpt-5.6-luna",
+        "xiaomi/mimo-v2.5-pro",
+    )
+    assert cases_for_profile(CORE_HARD_PROFILE, "sales") == CORE_HARD_CASES
+    assert cases_for_profile(BACKGROUND_HARD_PROFILE, "system") == (
+        BACKGROUND_HARD_CASES
+    )
+    assert {case.case_id for case in CORE_HARD_CASES} == {
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S08",
+    }
+    assert all(case.conversation for case in CORE_HARD_CASES)
+    assert len(BACKGROUND_HARD_CASES) == 6
+    assert (
+        len(
+            _build_jobs(
+                suite="sales",
+                repetitions=1,
+                seed=27072026,
+                profile=CORE_HARD_PROFILE,
+            )
+        )
+        == 24
+    )
+    assert (
+        len(
+            _build_jobs(
+                suite="system",
+                repetitions=1,
+                seed=27072026,
+                profile=BACKGROUND_HARD_PROFILE,
+            )
+        )
+        == 30
+    )
+
+
+def test_hard_profile_payload_is_first_party_and_parameter_minimal() -> None:
+    payload = build_base_payload(
+        model="openai/gpt-5.6-luna",
+        messages=[{"role": "user", "content": "hello"}],
+        max_tokens=2200,
+        reasoning_enabled=False,
+    )
+
+    assert payload == {
+        "model": "openai/gpt-5.6-luna",
+        "messages": [{"role": "user", "content": "hello"}],
+        "max_tokens": 2200,
+        "provider": {
+            "only": ["openai"],
+            "allow_fallbacks": False,
+            "require_parameters": True,
+        },
+        "reasoning": {"enabled": False},
+    }
+    assert (
+        not {
+            "temperature",
+            "top_p",
+            "seed",
+            "frequency_penalty",
+            "presence_penalty",
+            "stop",
+            "parallel_tool_calls",
+        }
+        & payload.keys()
+    )
+
+
+def test_survivor_jobs_exclude_core_hard_failure_and_use_three_repetitions() -> None:
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": case.case_id,
+            "model": model,
+            "repetition": 1,
+            "objective": {"hard_gate_passed": model != "unsafe"},
+        }
+        for case in CORE_HARD_CASES
+        for model in ("safe", "unsafe")
+    ]
+
+    jobs = build_survivor_jobs(
+        suite="sales",
+        profile=CORE_HARD_PROFILE,
+        round_zero_rows=rows,
+        seed=27072026,
+    )
+
+    assert {model for model, _case, _repetition in jobs} == {"safe"}
+    assert {repetition for _model, _case, repetition in jobs} == {2, 3}
+    assert len(jobs) == len(CORE_HARD_CASES) * 2
+
+
+def test_background_survivors_repeat_only_three_differentiating_cases() -> None:
+    rows = []
+    for index, case in enumerate(BACKGROUND_HARD_CASES):
+        rows.extend(
+            [
+                {
+                    "suite": "system",
+                    "case_id": case.case_id,
+                    "model": "left",
+                    "repetition": 1,
+                    "first_pass_success": True,
+                    "json_parse_ok": True,
+                    "schema_ok": True,
+                    "semantic_correct": 100,
+                    "semantic_total": 100,
+                    "semantic_mismatches": [],
+                },
+                {
+                    "suite": "system",
+                    "case_id": case.case_id,
+                    "model": "right",
+                    "repetition": 1,
+                    "first_pass_success": True,
+                    "json_parse_ok": True,
+                    "schema_ok": True,
+                    "semantic_correct": 100 if index < 3 else 102 - index,
+                    "semantic_total": 100,
+                    "semantic_mismatches": [] if index < 3 else ["different"],
+                },
+            ]
+        )
+
+    selected = select_differentiating_system_cases(rows, limit=3)
+    jobs = build_survivor_jobs(
+        suite="system",
+        profile=BACKGROUND_HARD_PROFILE,
+        round_zero_rows=rows,
+        seed=27072026,
+    )
+
+    assert selected == tuple(case.case_id for case in BACKGROUND_HARD_CASES[-3:][::-1])
+    assert {case.case_id for _model, case, _repetition in jobs} == set(selected)
+    assert {repetition for _model, _case, repetition in jobs} == {2, 3}
+    assert len(jobs) == 2 * 3 * 2
+
+
+def test_core_hard_tie_keeps_glm_baseline() -> None:
+    rows = [
+        {
+            "suite": "sales",
+            "case_id": case.case_id,
+            "model": model,
+            "repetition": repetition,
+            "first_pass_success": True,
+            "latency_ms": 500,
+            "accounting": {"cost_usd": 0.01},
+            "objective": {
+                "hard_gate_passed": True,
+                "score_out_of_30": score,
+                "tool_sequence_ok": True,
+                "tool_arguments_ok": True,
+            },
+        }
+        for case in CORE_HARD_CASES
+        for repetition in (1, 2, 3)
+        for model, score in (
+            ("z-ai/glm-5.2", 25.0),
+            ("openai/gpt-5.6-luna", 25.5),
+        )
+    ]
+
+    decision = select_hard_profile_winner(CORE_HARD_PROFILE, rows)
+
+    assert decision.outcome == "practical_tie"
+    assert decision.winner == "z-ai/glm-5.2"
+
+
+def test_background_hard_tie_keeps_current_fast_baseline() -> None:
+    rows = [
+        {
+            "suite": "system",
+            "case_id": case.case_id,
+            "model": model,
+            "repetition": 1,
+            "first_pass_success": True,
+            "latency_ms": 200,
+            "accounting": {"cost_usd": 0.001},
+            "json_parse_ok": True,
+            "schema_ok": True,
+            "semantic_correct": 20,
+            "semantic_total": 20,
+            "semantic_mismatches": [],
+            "tool_parse_error": None,
+        }
+        for case in BACKGROUND_HARD_CASES
+        for model in (
+            "deepseek/deepseek-v4-flash",
+            "xiaomi/mimo-v2.5-pro",
+        )
+    ]
+
+    decision = select_hard_profile_winner(BACKGROUND_HARD_PROFILE, rows)
+
+    assert decision.outcome == "practical_tie"
+    assert decision.winner == "deepseek/deepseek-v4-flash"
 
 
 def test_run_manifest_merges_separate_suite_invocations() -> None:
@@ -298,12 +533,150 @@ def test_provider_evidence_redacts_account_identifiers() -> None:
     assert "user_private_account" not in _safe_error_text(payload)
 
 
-@pytest.mark.parametrize("status", [408, 409, 429, 500, 502, 503, 504])
+def test_attempt_accounting_includes_every_retry_and_provider_resolution() -> None:
+    accounting = summarize_attempt_accounting(
+        [
+            {
+                "elapsed_ms": 100.0,
+                "response": {
+                    "model": "resolved-a",
+                    "provider": "openai",
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 2,
+                        "total_tokens": 12,
+                        "cost": 0.01,
+                        "prompt_tokens_details": {"cached_tokens": 4},
+                    },
+                },
+            },
+            {
+                "elapsed_ms": 250.0,
+                "response": {
+                    "model": "resolved-a",
+                    "provider": "openai",
+                    "usage": {
+                        "prompt_tokens": 20,
+                        "completion_tokens": 5,
+                        "total_tokens": 25,
+                        "cost": 0.02,
+                    },
+                },
+            },
+        ]
+    )
+
+    assert accounting == {
+        "attempts": 2,
+        "input_tokens": 30,
+        "output_tokens": 7,
+        "total_tokens": 37,
+        "cached_tokens": 4,
+        "cost_usd": pytest.approx(0.03),
+        "latency_ms": 350.0,
+        "resolved_models": ["resolved-a"],
+        "providers": ["openai"],
+        "endpoints": [],
+    }
+
+
+def test_cost_cap_is_125_percent_of_estimate_capped_at_one_dollar() -> None:
+    rows = [
+        {"model": "cheap", "accounting": {"cost_usd": 0.5}},
+        {"model": "cheap", "accounting": {"cost_usd": 0.2}},
+        {"model": "expensive", "accounting": {"cost_usd": 0.99}},
+    ]
+
+    enforce_model_cost_caps(rows, {"cheap": 0.6, "expensive": 0.9})
+
+    with pytest.raises(RuntimeError, match="cheap"):
+        enforce_model_cost_caps(
+            rows + [{"model": "cheap", "accounting": {"cost_usd": 0.06}}],
+            {"cheap": 0.6, "expensive": 0.9},
+        )
+    with pytest.raises(RuntimeError, match="expensive"):
+        enforce_model_cost_caps(
+            rows + [{"model": "expensive", "accounting": {"cost_usd": 0.02}}],
+            {"cheap": 0.6, "expensive": 0.9},
+        )
+
+
+def test_blind_audit_disagreement_blocks_on_score_or_applicability() -> None:
+    disagreements = detect_evaluator_disagreements(
+        [
+            {
+                "case_id": "S01",
+                "repetition": 1,
+                "model": "model-a",
+                "score_out_of_30": 25,
+                "applicable_rules": ["catalog", "language"],
+            },
+            {
+                "case_id": "S01",
+                "repetition": 1,
+                "model": "model-b",
+                "score_out_of_30": 24,
+                "applicable_rules": ["catalog"],
+            },
+        ],
+        [
+            {
+                "case_id": "S01",
+                "repetition": 1,
+                "scores": {
+                    "A": {
+                        "score_out_of_30": 22,
+                        "applicable_rules": ["catalog", "language"],
+                    },
+                    "B": {
+                        "score_out_of_30": 24,
+                        "applicable_rules": ["catalog", "language"],
+                    },
+                },
+            }
+        ],
+        [
+            {
+                "case_id": "S01",
+                "repetition": 1,
+                "reveal": {"A": "model-a", "B": "model-b"},
+            }
+        ],
+    )
+
+    assert {(item["model"], item["reason"]) for item in disagreements} == {
+        ("model-a", "score_delta"),
+        ("model-b", "applicability"),
+    }
+    assert {item["status"] for item in disagreements} == {"EVAL_DISAGREEMENT"}
+
+
+def test_blind_scores_must_match_pre_reveal_seal() -> None:
+    scores = [{"case_id": "S01", "repetition": 1, "scores": {"A": {}}}]
+    digest = blind_scores_digest(scores)
+
+    verify_blind_scores_seal(scores, digest)
+    with pytest.raises(ValueError, match="seal"):
+        verify_blind_scores_seal([*scores, {"tampered": True}], digest)
+
+
+def test_background_pii_guard_allows_source_facts_but_blocks_invention() -> None:
+    assert contains_pii_leakage(
+        "Call +971501234567 or email hidden@example.com",
+        "No contact details were supplied.",
+    )
+    assert not contains_pii_leakage(
+        "The supplied email is sales@example.com",
+        "Customer email: sales@example.com",
+    )
+
+
+@pytest.mark.parametrize("status", [429, 500, 501, 502, 503, 504, 599])
 def test_retry_status_accepts_only_transient_http_errors(status: int) -> None:
     assert should_retry_status(status) is True
 
 
-@pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 408, 409, 422])
 def test_retry_status_rejects_permanent_http_errors(status: int) -> None:
     assert should_retry_status(status) is False
 
@@ -478,6 +851,17 @@ def test_sales_scoring_blocks_ungrounded_numbers_and_wrong_language() -> None:
     assert score["ungrounded_numbers"] == ["99"]
     assert score["passed"] is False
     assert extract_numeric_tokens("AED 1,450 and 15%") == {"1450", "15"}
+
+    russian = score_sales_response(
+        content="Модель AX-E1 доступна по подтверждённым фактам.",
+        required_phrases=("AX-E1",),
+        forbidden_phrases=(),
+        expected_tools=(),
+        observed_tools=(),
+        expected_language="ru",
+        allowed_numbers=set(),
+    )
+    assert russian["language_ok"] is True
 
 
 def test_sales_scoring_does_not_treat_negated_claim_as_asserted() -> None:

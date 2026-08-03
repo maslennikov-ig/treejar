@@ -28,6 +28,8 @@ SALES_MODELS = ("z-ai/glm-5", "deepseek/deepseek-v4-flash")
 SYSTEM_MODELS = ("nex-agi/nex-n2-mini", "deepseek/deepseek-v4-flash")
 ORIGINAL_PROFILE = "original"
 EXTENDED_PROFILE = "extended-2026-07-27"
+CORE_HARD_PROFILE = "core-hard-2026-08-03"
+BACKGROUND_HARD_PROFILE = "background-hard-2026-08-03"
 MODEL_PROFILES = {
     ORIGINAL_PROFILE: {
         "sales": SALES_MODELS,
@@ -47,9 +49,32 @@ MODEL_PROFILES = {
             "deepseek/deepseek-v4-pro",
         ),
     },
+    CORE_HARD_PROFILE: {
+        "sales": (
+            "z-ai/glm-5.2",
+            "deepseek/deepseek-v4-flash-0731",
+            "openai/gpt-5.6-luna",
+            "xiaomi/mimo-v2.5-pro",
+        ),
+    },
+    BACKGROUND_HARD_PROFILE: {
+        "system": (
+            "deepseek/deepseek-v4-flash",
+            "z-ai/glm-5.2",
+            "deepseek/deepseek-v4-flash-0731",
+            "openai/gpt-5.6-luna",
+            "xiaomi/mimo-v2.5-pro",
+        ),
+    },
 }
 DEFAULT_SEED = 27072026
-_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+_HARD_PROFILES = {CORE_HARD_PROFILE, BACKGROUND_HARD_PROFILE}
+_FIRST_PARTY_PROVIDERS = {
+    "deepseek": "deepseek",
+    "openai": "openai",
+    "xiaomi": "xiaomi",
+    "z-ai": "z-ai",
+}
 
 _JSON_FENCE_RE = re.compile(
     r"^\s*```(?:json)?\s*(.*?)\s*```\s*$",
@@ -58,6 +83,9 @@ _JSON_FENCE_RE = re.compile(
 _PATH_PART_RE = re.compile(r"([^[.\]]+)|\[(\d+)\]")
 _NUMBER_RE = re.compile(r"(?<![\w-])\d[\d,]*(?:\.\d+)?%?")
 _ARABIC_RE = re.compile(r"[\u0600-\u06ff]")
+_CYRILLIC_RE = re.compile(r"[\u0400-\u04ff]")
+_EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
+_PHONE_RE = re.compile(r"(?<!\w)\+?\d(?:[\s()-]*\d){7,}(?!\w)")
 _PROVIDER_SENSITIVE_TEXT_RE = re.compile(
     r"""(?i)(['"](?:api_key|authorization|user_id)['"]\s*:\s*['"])[^'"]+(['"])"""
 )
@@ -313,6 +341,27 @@ def models_for_profile(profile: str, suite: str) -> tuple[str, ...]:
         raise ValueError(f"Unknown suite: {suite}") from exc
 
 
+def cases_for_profile(profile: str, suite: str) -> tuple[Any, ...]:
+    """Return the immutable fixture set selected by a benchmark profile."""
+
+    from scripts.model_battle_cases import (
+        BACKGROUND_HARD_CASES,
+        CORE_HARD_CASES,
+        SALES_CASES,
+        SYSTEM_CASES,
+    )
+
+    if suite == "sales":
+        return CORE_HARD_CASES if profile == CORE_HARD_PROFILE else SALES_CASES
+    if suite == "system":
+        return (
+            BACKGROUND_HARD_CASES
+            if profile == BACKGROUND_HARD_PROFILE
+            else SYSTEM_CASES
+        )
+    raise ValueError(f"Unknown suite: {suite}")
+
+
 def merge_run_manifest(
     existing: Mapping[str, Any] | None,
     *,
@@ -366,7 +415,7 @@ def merge_run_manifest(
     merged_suites = [
         suite for suite in ("sales", "system") if suite in requested_suites
     ]
-    return {
+    merged: dict[str, Any] = {
         "seed": seed,
         "repetitions": repetitions,
         "suites": merged_suites,
@@ -376,7 +425,11 @@ def merge_run_manifest(
         },
         "production_changed": False,
         "synthetic_evidence_only": True,
+        "staged": profile in _HARD_PROFILES,
     }
+    if existing and isinstance(existing.get("job_matrix"), Mapping):
+        merged["job_matrix"] = dict(existing["job_matrix"])
+    return merged
 
 
 def build_blind_pair(
@@ -429,6 +482,28 @@ def normalize_blind_reviews(
             row["scores"] = row.pop("answers")
         normalized.append(row)
     return normalized
+
+
+def blind_scores_digest(reviews: Sequence[Mapping[str, Any]]) -> str:
+    """Return a canonical commitment for scores captured before identity reveal."""
+
+    canonical = json.dumps(
+        list(reviews),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def verify_blind_scores_seal(
+    reviews: Sequence[Mapping[str, Any]],
+    expected_digest: str,
+) -> None:
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        raise ValueError("Blind score seal is not a SHA-256 digest")
+    if blind_scores_digest(reviews) != expected_digest:
+        raise ValueError("Blind score seal does not match the submitted review")
 
 
 def evaluate_blind_reviews(
@@ -501,6 +576,65 @@ def score_blind_reviews(
 ) -> dict[str, float]:
     quality, _hard_gates = evaluate_blind_reviews(reviews, key_rows)
     return quality
+
+
+def detect_evaluator_disagreements(
+    evaluator_rows: Sequence[Mapping[str, Any]],
+    blind_audits: Sequence[Mapping[str, Any]],
+    key_rows: Sequence[Mapping[str, Any]],
+    *,
+    tolerance: float = 2.0,
+) -> list[dict[str, Any]]:
+    """Compare sealed blind audits with evaluator scores after identity reveal."""
+
+    evaluator_by_key = {
+        (str(row["case_id"]), int(row["repetition"]), str(row["model"])): row
+        for row in evaluator_rows
+    }
+    key_by_pair = {
+        (str(row["case_id"]), int(row["repetition"])): row for row in key_rows
+    }
+    disagreements: list[dict[str, Any]] = []
+    for audit in blind_audits:
+        pair = (str(audit["case_id"]), int(audit["repetition"]))
+        key_row = key_by_pair.get(pair)
+        scores = audit.get("scores")
+        reveal = key_row.get("reveal") if isinstance(key_row, Mapping) else None
+        if not isinstance(scores, Mapping) or not isinstance(reveal, Mapping):
+            raise ValueError(f"{pair}: blind audit lacks sealed reveal mapping")
+        for label, audit_score in scores.items():
+            model = reveal.get(label)
+            if not isinstance(model, str) or not isinstance(audit_score, Mapping):
+                raise ValueError(f"{pair}: incomplete audit label {label}")
+            evaluator = evaluator_by_key.get((*pair, model))
+            if evaluator is None:
+                raise ValueError(f"{pair}: missing evaluator row for {model}")
+            expected_applicability = {
+                str(item) for item in evaluator.get("applicable_rules", [])
+            }
+            audited_applicability = {
+                str(item) for item in audit_score.get("applicable_rules", [])
+            }
+            if expected_applicability != audited_applicability:
+                reason = "applicability"
+            else:
+                delta = abs(
+                    float(evaluator.get("score_out_of_30", 0))
+                    - float(audit_score.get("score_out_of_30", 0))
+                )
+                if delta <= tolerance:
+                    continue
+                reason = "score_delta"
+            disagreements.append(
+                {
+                    "status": "EVAL_DISAGREEMENT",
+                    "case_id": pair[0],
+                    "repetition": pair[1],
+                    "model": model,
+                    "reason": reason,
+                }
+            )
+    return disagreements
 
 
 def select_winner(
@@ -582,6 +716,125 @@ def select_winner(
     )
 
 
+def select_hard_profile_winner(
+    profile: str,
+    rows: Sequence[Mapping[str, Any]],
+) -> WinnerDecision:
+    """Apply the accepted hard-profile gates and deterministic baseline ties."""
+
+    if profile == CORE_HARD_PROFILE:
+        baseline = "z-ai/glm-5.2"
+        expected_cases = {case.case_id for case in cases_for_profile(profile, "sales")}
+        by_model: dict[str, list[Mapping[str, Any]]] = {}
+        for row in rows:
+            by_model.setdefault(str(row["model"]), []).append(row)
+        ranked: list[tuple[str, float, float, float, float]] = []
+        for model, model_rows in by_model.items():
+            if any(
+                not bool(row.get("objective", {}).get("hard_gate_passed"))
+                for row in model_rows
+            ):
+                continue
+            case_scores: list[float] = []
+            all_scores: list[float] = []
+            complete = True
+            for case_id in expected_cases:
+                scores = [
+                    float(row["objective"]["score_out_of_30"])
+                    for row in model_rows
+                    if row["case_id"] == case_id
+                ]
+                if len(scores) != 3:
+                    complete = False
+                    break
+                median = statistics.median(scores)
+                if median < 20:
+                    complete = False
+                    break
+                case_scores.append(median)
+                all_scores.extend(scores)
+            if not complete or statistics.fmean(case_scores) < 24:
+                continue
+            p95 = percentile(
+                [float(row.get("latency_ms", 0)) for row in model_rows],
+                0.95,
+            )
+            cost = sum(
+                float(row.get("accounting", {}).get("cost_usd", 0))
+                for row in model_rows
+            )
+            spread = statistics.pstdev(all_scores) if len(all_scores) > 1 else 0.0
+            ranked.append((model, statistics.fmean(case_scores), spread, p95, cost))
+    elif profile == BACKGROUND_HARD_PROFILE:
+        baseline = "deepseek/deepseek-v4-flash"
+        by_model = {}
+        for row in rows:
+            by_model.setdefault(str(row["model"]), []).append(row)
+        ranked = []
+        for model, model_rows in by_model.items():
+            if not all(
+                bool(row.get("success", row.get("first_pass_success")))
+                and bool(row.get("json_parse_ok"))
+                and bool(row.get("schema_ok"))
+                and bool(row.get("critical_fields_ok", True))
+                and not bool(row.get("pii_leakage", False))
+                for row in model_rows
+            ):
+                continue
+            correct = sum(int(row.get("semantic_correct", 0)) for row in model_rows)
+            total = sum(int(row.get("semantic_total", 0)) for row in model_rows)
+            accuracy = correct / total if total else 0.0
+            if accuracy < 0.95:
+                continue
+            per_row = [
+                int(row.get("semantic_correct", 0))
+                / max(1, int(row.get("semantic_total", 0)))
+                for row in model_rows
+            ]
+            p95 = percentile(
+                [float(row.get("latency_ms", 0)) for row in model_rows],
+                0.95,
+            )
+            cost = sum(
+                float(row.get("accounting", {}).get("cost_usd", 0))
+                for row in model_rows
+            )
+            spread = statistics.pstdev(per_row) * 30 if len(per_row) > 1 else 0.0
+            ranked.append((model, accuracy * 30, spread, p95, cost))
+    else:
+        raise ValueError(f"Not a hard profile: {profile}")
+
+    if not ranked:
+        return WinnerDecision(
+            outcome="no_safe_replacement",
+            winner=None,
+            reason="All candidates failed at least one hard-profile gate.",
+        )
+    ranked.sort(key=lambda item: (-item[1], item[2], item[3], item[4], item[0]))
+    if len(ranked) == 1:
+        return WinnerDecision(
+            outcome="winner",
+            winner=ranked[0][0],
+            reason="Every other candidate failed a hard-profile gate.",
+        )
+    leader, runner_up = ranked[:2]
+    gap = leader[1] - runner_up[1]
+    observed_spread = max(leader[2], runner_up[2])
+    if gap < 1.0 or gap < observed_spread:
+        safe_models = {item[0] for item in ranked}
+        tie_winner = baseline if baseline in safe_models else leader[0]
+        return WinnerDecision(
+            outcome="practical_tie",
+            winner=tie_winner,
+            reason="Quality difference is below one point or observed variation.",
+        )
+    return WinnerDecision(
+        outcome="winner",
+        winner=leader[0],
+        reason=f"Quality leads by {gap:.2f} points after hard gates.",
+    )
+
+
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -611,13 +864,11 @@ def assert_existing_run_evidence(
 ) -> None:
     """Reject a partial prior suite before merging new evidence metadata."""
 
-    from scripts.model_battle_cases import SALES_CASES, SYSTEM_CASES
-
     profile = str(manifest["profile"])
     repetitions = int(manifest["repetitions"])
     case_ids = {
-        "sales": [case.case_id for case in SALES_CASES],
-        "system": [case.case_id for case in SYSTEM_CASES],
+        suite: [case.case_id for case in cases_for_profile(profile, suite)]
+        for suite in manifest.get("suites", [])
     }
     for suite in manifest.get("suites", []):
         if suite not in case_ids:
@@ -628,12 +879,23 @@ def assert_existing_run_evidence(
         rows = _read_jsonl(path)
         if any(str(row.get("suite")) != suite for row in rows):
             raise ValueError(f"Existing {suite} evidence contains a wrong suite tag")
-        expected = {
-            (case_id, repetition, model)
-            for case_id in case_ids[suite]
-            for repetition in range(1, repetitions + 1)
-            for model in models_for_profile(profile, suite)
-        }
+        matrix = manifest.get("job_matrix", {}).get(suite)
+        if profile in _HARD_PROFILES and isinstance(matrix, list):
+            expected = {
+                (
+                    str(item["case_id"]),
+                    int(item["repetition"]),
+                    str(item["model"]),
+                )
+                for item in matrix
+            }
+        else:
+            expected = {
+                (case_id, repetition, model)
+                for case_id in case_ids[suite]
+                for repetition in range(1, repetitions + 1)
+                for model in models_for_profile(profile, suite)
+            }
         actual = [
             (str(row["case_id"]), int(row["repetition"]), str(row["model"]))
             for row in rows
@@ -759,6 +1021,153 @@ def _usage(attempts: Sequence[ProviderAttempt]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def summarize_attempt_accounting(
+    attempts: Sequence[ProviderAttempt | Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate tokens, cache, cost, latency and routing from every attempt."""
+
+    totals: dict[str, int | float] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cached_tokens": 0,
+        "cost_usd": 0.0,
+        "latency_ms": 0.0,
+    }
+    resolved_models: set[str] = set()
+    providers: set[str] = set()
+    endpoints: set[str] = set()
+    for attempt in attempts:
+        response = (
+            attempt.response
+            if isinstance(attempt, ProviderAttempt)
+            else attempt.get("response")
+        )
+        elapsed_ms = (
+            attempt.elapsed_ms
+            if isinstance(attempt, ProviderAttempt)
+            else attempt.get("elapsed_ms", 0)
+        )
+        if isinstance(elapsed_ms, int | float):
+            totals["latency_ms"] += float(elapsed_ms)
+        if not isinstance(response, Mapping):
+            continue
+        for field, target in (
+            ("model", resolved_models),
+            ("provider", providers),
+            ("endpoint", endpoints),
+        ):
+            value = response.get(field)
+            if isinstance(value, str) and value:
+                target.add(value)
+        usage = response.get("usage")
+        if not isinstance(usage, Mapping):
+            continue
+        for source, target in (
+            ("prompt_tokens", "input_tokens"),
+            ("completion_tokens", "output_tokens"),
+            ("total_tokens", "total_tokens"),
+        ):
+            value = usage.get(source, 0)
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                totals[target] += int(value)
+        prompt_details = usage.get("prompt_tokens_details")
+        if isinstance(prompt_details, Mapping):
+            cached = prompt_details.get("cached_tokens", 0)
+            if isinstance(cached, int | float) and not isinstance(cached, bool):
+                totals["cached_tokens"] += int(cached)
+        cost = usage.get("cost", 0)
+        if isinstance(cost, int | float) and not isinstance(cost, bool):
+            totals["cost_usd"] += float(cost)
+    return {
+        "attempts": len(attempts),
+        "input_tokens": int(totals["input_tokens"]),
+        "output_tokens": int(totals["output_tokens"]),
+        "total_tokens": int(totals["total_tokens"]),
+        "cached_tokens": int(totals["cached_tokens"]),
+        "cost_usd": round(float(totals["cost_usd"]), 12),
+        "latency_ms": round(float(totals["latency_ms"]), 3),
+        "resolved_models": sorted(resolved_models),
+        "providers": sorted(providers),
+        "endpoints": sorted(endpoints),
+    }
+
+
+def enforce_model_cost_caps(
+    rows: Sequence[Mapping[str, Any]],
+    estimated_costs: Mapping[str, float],
+) -> None:
+    """Fail closed when all-attempt spend exceeds 1.25x estimate or USD 1."""
+
+    actual: dict[str, float] = {}
+    for row in rows:
+        model = str(row["model"])
+        accounting = row.get("accounting")
+        if not isinstance(accounting, Mapping):
+            continue
+        cost = accounting.get("cost_usd", 0)
+        if isinstance(cost, int | float) and not isinstance(cost, bool):
+            actual[model] = actual.get(model, 0.0) + float(cost)
+    exceeded: list[str] = []
+    for model, estimate in estimated_costs.items():
+        cap = min(1.0, max(0.0, float(estimate)) * 1.25)
+        if actual.get(model, 0.0) > cap + 1e-12:
+            exceeded.append(f"{model}: spent ${actual[model]:.6f}, cap ${cap:.6f}")
+    if exceeded:
+        raise RuntimeError("Model cost cap exceeded: " + "; ".join(exceeded))
+
+
+def estimate_model_costs(
+    catalog: Mapping[str, Mapping[str, Any]],
+    *,
+    profile: str,
+    suite: str,
+) -> dict[str, float]:
+    """Estimate the maximum staged run from catalog prices before paid calls."""
+
+    cases = cases_for_profile(profile, suite)
+    if profile == BACKGROUND_HARD_PROFILE:
+        planned_case_runs = len(cases) + 2 * min(3, len(cases))
+    elif profile == CORE_HARD_PROFILE:
+        planned_case_runs = len(cases) * 3
+    else:
+        planned_case_runs = len(cases)
+    max_output_tokens = 2200 if suite == "sales" else 900
+    average_input_tokens = max(
+        1,
+        math.ceil(
+            statistics.fmean(
+                len(case.system_prompt)
+                + len(case.user_prompt)
+                + sum(len(item["content"]) for item in case.conversation)
+                if suite == "sales"
+                else len(case.system_prompt) + len(case.user_prompt)
+                for case in cases
+            )
+            / 4
+        ),
+    )
+    estimates: dict[str, float] = {}
+    for model in models_for_profile(profile, suite):
+        pricing = catalog.get(model, {}).get("pricing", {})
+        if not isinstance(pricing, Mapping):
+            raise RuntimeError(f"Missing catalog pricing for {model}")
+        try:
+            prompt_price = float(pricing["prompt"])
+            completion_price = float(pricing["completion"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(f"Invalid catalog pricing for {model}") from exc
+        estimates[model] = round(
+            planned_case_runs
+            * (
+                average_input_tokens * prompt_price
+                + max_output_tokens * completion_price
+            ),
+            12,
+        )
+    return estimates
+
+
 def reasoning_was_observed(
     attempts: Sequence[ProviderAttempt | Mapping[str, Any]],
 ) -> bool:
@@ -793,7 +1202,7 @@ def reasoning_was_observed(
 
 
 def should_retry_status(status_code: int) -> bool:
-    return status_code in _RETRYABLE_STATUS_CODES
+    return status_code == 429 or 500 <= status_code < 600
 
 
 def build_base_payload(
@@ -803,16 +1212,40 @@ def build_base_payload(
     max_tokens: int,
     reasoning_enabled: bool | None = None,
 ) -> dict[str, Any]:
+    owner = model.partition("/")[0]
+    provider: dict[str, Any] = {"require_parameters": True}
+    provider_slug = _FIRST_PARTY_PROVIDERS.get(owner)
+    if provider_slug is not None:
+        provider.update(
+            {
+                "only": [provider_slug],
+                "allow_fallbacks": False,
+            }
+        )
     payload: dict[str, Any] = {
         "model": model,
         "messages": list(messages),
-        "temperature": 0.0,
         "max_tokens": max_tokens,
-        "provider": {"require_parameters": True},
+        "provider": provider,
     }
     if reasoning_enabled is not None:
         payload["reasoning"] = {"enabled": reasoning_enabled}
     return payload
+
+
+def _request_parameter_evidence(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: _sanitize_provider_payload(payload[key])
+        for key in (
+            "model",
+            "max_tokens",
+            "provider",
+            "reasoning",
+            "tool_choice",
+            "response_format",
+        )
+        if key in payload
+    }
 
 
 def _extract_tool_calls(message: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -870,6 +1303,14 @@ def extract_numeric_tokens(value: str) -> set[str]:
     return {token.rstrip("%").replace(",", "") for token in _NUMBER_RE.findall(value)}
 
 
+def contains_pii_leakage(output: str, source: str) -> bool:
+    """Detect contact details that were not present in the synthetic fixture."""
+
+    output_pii = set(_EMAIL_RE.findall(output)) | set(_PHONE_RE.findall(output))
+    source_pii = set(_EMAIL_RE.findall(source)) | set(_PHONE_RE.findall(source))
+    return bool(output_pii - source_pii)
+
+
 def retry_was_used(attempt_counts_by_round: Sequence[int]) -> bool:
     """A second tool round is not a provider retry."""
 
@@ -884,10 +1325,13 @@ def _language_matches(content: str, expected_language: str | None) -> bool:
         return False
     arabic_letters = len(_ARABIC_RE.findall(content))
     arabic_ratio = arabic_letters / len(letters)
+    cyrillic_ratio = len(_CYRILLIC_RE.findall(content)) / len(letters)
     if expected_language == "ar":
         return arabic_ratio >= 0.35
     if expected_language == "en":
-        return arabic_ratio < 0.10
+        return arabic_ratio < 0.10 and cyrillic_ratio < 0.10
+    if expected_language == "ru":
+        return cyrillic_ratio >= 0.35
     raise ValueError(f"Unsupported expected language: {expected_language}")
 
 
@@ -927,13 +1371,25 @@ def score_sales_response(
         + int(language_ok)
         + int(not ungrounded_numbers)
     )
+    applicable_rules = [
+        *(f"required:{phrase}" for phrase in required_phrases),
+        *(f"forbidden:{phrase}" for phrase in forbidden_phrases),
+        "tool_sequence",
+        "language",
+        "numeric_grounding",
+    ]
     return {
         "passed": passed,
         "hard_gate_passed": (
-            all(forbidden_results.values()) and expected_tool_ok and language_ok
+            all(forbidden_results.values())
+            and expected_tool_ok
+            and language_ok
+            and not ungrounded_numbers
         ),
         "checks_passed": checks_passed,
         "checks_total": checks_total,
+        "score_out_of_30": round(30 * checks_passed / checks_total, 3),
+        "applicable_rules": applicable_rules,
         "required_phrases": required_results,
         "forbidden_phrases": forbidden_results,
         "tool_sequence_ok": expected_tool_ok,
@@ -951,24 +1407,27 @@ async def _run_sales_case(
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": case.system_prompt},
-        {"role": "user", "content": case.user_prompt},
     ]
+    messages.extend(dict(item) for item in case.conversation)
+    messages.append({"role": "user", "content": case.user_prompt})
     all_attempts: list[ProviderAttempt] = []
     attempt_counts_by_round: list[int] = []
     observed_tools: list[str] = []
     tool_argument_results: list[dict[str, Any]] = []
     final_content = ""
+    request_parameters: list[dict[str, Any]] = []
 
     for _round in range(3):
         payload = build_base_payload(
             model=model,
             messages=messages,
             max_tokens=2200,
-            reasoning_enabled=None,
+            reasoning_enabled=False,
         )
         if case.tools:
             payload["tools"] = list(case.tools)
             payload["tool_choice"] = "auto"
+        request_parameters.append(_request_parameter_evidence(payload))
         attempts = await _request_with_retry(
             client,
             payload=payload,
@@ -1043,6 +1502,7 @@ async def _run_sales_case(
     )
     objective["tool_arguments_ok"] = tool_args_ok
     objective["passed"] = objective["passed"] and tool_args_ok
+    objective["hard_gate_passed"] = objective["hard_gate_passed"] and tool_args_ok
     return {
         "suite": "sales",
         "case_id": case.case_id,
@@ -1055,6 +1515,8 @@ async def _run_sales_case(
         "latency_ms": round(sum(item.elapsed_ms for item in all_attempts), 3),
         "provider_attempts": [asdict(item) for item in all_attempts],
         "usage": _usage(all_attempts),
+        "accounting": summarize_attempt_accounting(all_attempts),
+        "request_parameters": request_parameters,
         "final_content": final_content,
         "observed_tools": observed_tools,
         "tool_arguments": tool_argument_results,
@@ -1091,6 +1553,7 @@ async def _run_system_case(
                 "schema": case.schema,
             },
         }
+    request_parameters = _request_parameter_evidence(payload)
     attempts = await _request_with_retry(
         client,
         payload=payload,
@@ -1142,6 +1605,18 @@ async def _run_system_case(
                 score_expected_fields(parsed, case.expected_fields)
             )
 
+    critical_fields_ok = True
+    if case.critical_fields:
+        critical_expected = {
+            field: case.expected_fields[field] for field in case.critical_fields
+        }
+        critical_correct, critical_total, _critical_mismatches = (
+            score_expected_fields(parsed, critical_expected)
+            if parse_ok
+            else (0, len(critical_expected), ["$: structured result unavailable"])
+        )
+        critical_fields_ok = critical_correct == critical_total
+
     return {
         "suite": "system",
         "case_id": case.case_id,
@@ -1156,6 +1631,8 @@ async def _run_system_case(
         "latency_ms": round(sum(item.elapsed_ms for item in attempts), 3),
         "provider_attempts": [asdict(item) for item in attempts],
         "usage": _usage(attempts),
+        "accounting": summarize_attempt_accounting(attempts),
+        "request_parameters": [request_parameters],
         "content": content,
         "parsed": parsed,
         "json_parse_ok": parse_ok,
@@ -1164,6 +1641,8 @@ async def _run_system_case(
         "semantic_correct": semantic_correct,
         "semantic_total": semantic_total,
         "semantic_mismatches": semantic_mismatches,
+        "critical_fields_ok": critical_fields_ok,
+        "pii_leakage": contains_pii_leakage(content, case.user_prompt),
         "observed_tool": observed_tool,
         "expected_tool": case.expected_tool,
         "tool_parse_error": tool_parse_error,
@@ -1212,6 +1691,9 @@ def assert_catalog_capabilities(
                     "structured_outputs",
                 }
             )
+    if profile in _HARD_PROFILES:
+        for required in requirements.values():
+            required.update({"max_tokens", "reasoning"})
     failures: list[str] = []
     for model, required in requirements.items():
         entry = catalog.get(model, {})
@@ -1237,16 +1719,8 @@ def _build_jobs(
     seed: int,
     profile: str = ORIGINAL_PROFILE,
 ) -> list[tuple[str, Any, int]]:
-    from scripts.model_battle_cases import SALES_CASES, SYSTEM_CASES
-
-    if suite == "sales":
-        models = models_for_profile(profile, suite)
-        cases = SALES_CASES
-    elif suite == "system":
-        models = models_for_profile(profile, suite)
-        cases = SYSTEM_CASES
-    else:
-        raise ValueError(f"Unknown suite: {suite}")
+    models = models_for_profile(profile, suite)
+    cases = cases_for_profile(profile, suite)
     jobs = [
         (model, case, repetition)
         for case in cases
@@ -1257,14 +1731,94 @@ def _build_jobs(
     return jobs
 
 
+def select_differentiating_system_cases(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    limit: int = 3,
+) -> tuple[str, ...]:
+    """Choose fixtures with the largest deterministic semantic score spread."""
+
+    by_case: dict[str, list[float]] = {}
+    for row in rows:
+        total = int(row.get("semantic_total", 0))
+        score = 0.0 if total <= 0 else int(row.get("semantic_correct", 0)) / total
+        by_case.setdefault(str(row["case_id"]), []).append(score)
+    ranked = sorted(
+        by_case,
+        key=lambda case_id: (
+            -(max(by_case[case_id]) - min(by_case[case_id])),
+            case_id,
+        ),
+    )
+    return tuple(ranked[:limit])
+
+
+def _round_zero_survivors(
+    suite: str,
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    by_model: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        by_model.setdefault(str(row["model"]), []).append(row)
+    survivors: list[str] = []
+    for model, model_rows in by_model.items():
+        if suite == "sales":
+            passed = all(
+                bool(row.get("objective", {}).get("hard_gate_passed"))
+                for row in model_rows
+            )
+        elif suite == "system":
+            schema_passed = all(
+                bool(row.get("success", row.get("first_pass_success")))
+                and bool(row.get("json_parse_ok"))
+                and bool(row.get("schema_ok"))
+                and bool(row.get("critical_fields_ok", True))
+                and not bool(row.get("pii_leakage", False))
+                for row in model_rows
+            )
+            correct = sum(int(row.get("semantic_correct", 0)) for row in model_rows)
+            total = sum(int(row.get("semantic_total", 0)) for row in model_rows)
+            passed = schema_passed and total > 0 and correct / total >= 0.95
+        else:
+            raise ValueError(f"Unknown suite: {suite}")
+        if passed:
+            survivors.append(model)
+    return tuple(sorted(survivors))
+
+
+def build_survivor_jobs(
+    *,
+    suite: str,
+    profile: str,
+    round_zero_rows: Sequence[Mapping[str, Any]],
+    seed: int,
+) -> list[tuple[str, Any, int]]:
+    """Build repetitions two and three only for round-zero survivors."""
+
+    survivors = _round_zero_survivors(suite, round_zero_rows)
+    cases = cases_for_profile(profile, suite)
+    if profile == BACKGROUND_HARD_PROFILE and suite == "system":
+        differentiating = set(
+            select_differentiating_system_cases(round_zero_rows, limit=3)
+        )
+        cases = tuple(case for case in cases if case.case_id in differentiating)
+    jobs = [
+        (model, case, repetition)
+        for case in cases
+        for repetition in (2, 3)
+        for model in survivors
+    ]
+    random.Random(f"{seed}:{suite}:survivors").shuffle(jobs)
+    return jobs
+
+
 def _build_blind_files(
     rows: Sequence[Mapping[str, Any]],
     *,
     seed: int,
+    profile: str = ORIGINAL_PROFILE,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    from scripts.model_battle_cases import SALES_CASES
-
-    cases_by_id = {case.case_id: case for case in SALES_CASES}
+    cases_by_id = {case.case_id: case for case in cases_for_profile(profile, "sales")}
     grouped: dict[tuple[str, int], dict[str, str]] = {}
     for row in rows:
         if row.get("suite") != "sales":
@@ -1277,6 +1831,8 @@ def _build_blind_files(
     for assignment_index, ((case_id, repetition), candidates) in enumerate(
         sorted(grouped.items())
     ):
+        if len(candidates) < 2:
+            continue
         pair = build_blind_pair(
             case_id=case_id,
             repetition=repetition,
@@ -1290,6 +1846,7 @@ def _build_blind_files(
                 "repetition": pair["repetition"],
                 "scenario": {
                     "system_prompt": cases_by_id[case_id].system_prompt,
+                    "conversation": list(cases_by_id[case_id].conversation),
                     "user_prompt": cases_by_id[case_id].user_prompt,
                     "rubric": {
                         "dimensions": sorted(_BLIND_REVIEW_DIMENSIONS),
@@ -1308,6 +1865,8 @@ def _build_blind_files(
                             },
                             "critical_failure": "boolean",
                             "critical_failure_reason": "string; required when true",
+                            "score_out_of_30": "number 0..30",
+                            "applicable_rules": "sorted string array",
                         },
                     },
                 },
@@ -1324,29 +1883,117 @@ def _build_blind_files(
     return blind_rows, reveal_rows
 
 
-def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
+def score_battle(
+    output_dir: Path,
+    blind_scores_path: Path | None,
+) -> dict[str, Any]:
     """Turn raw evidence plus completed blind scores into route decisions."""
 
-    sales_rows = rescore_sales_rows(_read_jsonl(output_dir / "sales_results.jsonl"))
-    system_rows = rescore_system_rows(_read_jsonl(output_dir / "system_results.jsonl"))
-    blind_scores = parse_json_content(blind_scores_path.read_text(encoding="utf-8"))
-    blind_key = json.loads(
-        (output_dir / "sales_blind_key.json").read_text(encoding="utf-8")
+    manifest = _read_json_object(output_dir / "run_manifest.json")
+    profile = str(manifest["profile"])
+    if profile == BACKGROUND_HARD_PROFILE:
+        system_rows = rescore_system_rows(
+            _read_jsonl(output_dir / "system_results.jsonl"),
+            profile=profile,
+        )
+        decision = select_hard_profile_winner(profile, system_rows)
+        result = {
+            "openrouter_model_main": None,
+            "openrouter_model_fast": asdict(decision),
+            "eval_disagreements": [],
+            "production_changed": False,
+        }
+        _write_jsonl(output_dir / "system_scored_results.jsonl", system_rows)
+        _write_json(output_dir / "model_selection.json", result)
+        return result
+
+    if blind_scores_path is None:
+        raise ValueError("Sales scoring requires a completed blind review file")
+    sales_rows = rescore_sales_rows(
+        _read_jsonl(output_dir / "sales_results.jsonl"),
+        profile=profile,
     )
-    if not isinstance(blind_scores, list) or not isinstance(blind_key, list):
-        raise ValueError("Blind scores and key must be JSON arrays")
+    blind_scores = parse_json_content(blind_scores_path.read_text(encoding="utf-8"))
+    if not isinstance(blind_scores, list):
+        raise ValueError("Blind scores must be a JSON array")
     blind_scores = normalize_blind_reviews(blind_scores)
+    if profile == CORE_HARD_PROFILE:
+        seal_path = output_dir / "sales_blind_scores.seal.json"
+        seal = _read_json_object(seal_path)
+        verify_blind_scores_seal(blind_scores, str(seal.get("sha256", "")))
+        _blind_rows, blind_key = _build_blind_files(
+            sales_rows,
+            seed=int(manifest["seed"]),
+            profile=profile,
+        )
+        commitment = _read_json_object(output_dir / "sales_blind_key.commitment.json")
+        verify_blind_scores_seal(
+            blind_key,
+            str(commitment.get("sha256", "")),
+        )
+        _write_json(output_dir / "sales_blind_key.json", blind_key)
+    else:
+        blind_key = json.loads(
+            (output_dir / "sales_blind_key.json").read_text(encoding="utf-8")
+        )
+        if not isinstance(blind_key, list):
+            raise ValueError("Blind key must be a JSON array")
     _write_json(output_dir / "sales_blind_scores.json", blind_scores)
     _write_jsonl(output_dir / "sales_scored_results.jsonl", sales_rows)
     _write_json(output_dir / "sales_scored_aggregate.json", aggregate_rows(sales_rows))
+    blind_quality, blind_hard_gates = evaluate_blind_reviews(
+        blind_scores,
+        blind_key,
+    )
+
+    if profile == CORE_HARD_PROFILE:
+        for row in sales_rows:
+            model = str(row["model"])
+            if not blind_hard_gates.get(model, False):
+                row["objective"]["hard_gate_passed"] = False
+        disagreements = detect_evaluator_disagreements(
+            [
+                {
+                    "case_id": row["case_id"],
+                    "repetition": row["repetition"],
+                    "model": row["model"],
+                    "score_out_of_30": row["objective"]["score_out_of_30"],
+                    "applicable_rules": row["objective"]["applicable_rules"],
+                }
+                for row in sales_rows
+                if any(
+                    key_row["case_id"] == row["case_id"]
+                    and key_row["repetition"] == row["repetition"]
+                    for key_row in blind_key
+                )
+            ],
+            blind_scores,
+            blind_key,
+        )
+        decision = (
+            WinnerDecision(
+                outcome="blocked",
+                winner=None,
+                reason="EVAL_DISAGREEMENT must be resolved before reveal acceptance.",
+            )
+            if disagreements
+            else select_hard_profile_winner(profile, sales_rows)
+        )
+        result = {
+            "openrouter_model_main": asdict(decision),
+            "openrouter_model_fast": None,
+            "blind_quality": blind_quality,
+            "eval_disagreements": disagreements,
+            "production_changed": False,
+        }
+        _write_json(output_dir / "model_selection.json", result)
+        return result
+
+    system_rows = rescore_system_rows(_read_jsonl(output_dir / "system_results.jsonl"))
     _write_jsonl(output_dir / "system_scored_results.jsonl", system_rows)
     _write_json(
         output_dir / "system_scored_aggregate.json",
         aggregate_rows(system_rows),
-    )
-    blind_quality, blind_hard_gates = evaluate_blind_reviews(
-        blind_scores,
-        blind_key,
     )
 
     sales_metrics, sales_details = candidate_metrics_from_evidence(
@@ -1378,12 +2025,12 @@ def score_battle(output_dir: Path, blind_scores_path: Path) -> dict[str, Any]:
 
 def rescore_sales_rows(
     rows: Sequence[Mapping[str, Any]],
+    *,
+    profile: str = ORIGINAL_PROFILE,
 ) -> list[dict[str, Any]]:
     """Reapply the current deterministic scorer without new provider calls."""
 
-    from scripts.model_battle_cases import SALES_CASES
-
-    cases_by_id = {case.case_id: case for case in SALES_CASES}
+    cases_by_id = {case.case_id: case for case in cases_for_profile(profile, "sales")}
     rescored: list[dict[str, Any]] = []
     for source_row in rows:
         row = dict(source_row)
@@ -1391,6 +2038,7 @@ def rescore_sales_rows(
         grounding_evidence = json.dumps(
             {
                 "system_prompt": case.system_prompt,
+                "conversation": case.conversation,
                 "user_prompt": case.user_prompt,
                 "tool_results": case.tool_results,
             },
@@ -1420,12 +2068,12 @@ def rescore_sales_rows(
 
 def rescore_system_rows(
     rows: Sequence[Mapping[str, Any]],
+    *,
+    profile: str = ORIGINAL_PROFILE,
 ) -> list[dict[str, Any]]:
     """Reapply current semantic normalization without new provider calls."""
 
-    from scripts.model_battle_cases import SYSTEM_CASES
-
-    cases_by_id = {case.case_id: case for case in SYSTEM_CASES}
+    cases_by_id = {case.case_id: case for case in cases_for_profile(profile, "system")}
     rescored: list[dict[str, Any]] = []
     for source_row in rows:
         row = dict(source_row)
@@ -1460,6 +2108,18 @@ def rescore_system_rows(
         row["semantic_correct"] = correct
         row["semantic_total"] = total
         row["semantic_mismatches"] = mismatches
+        if case.critical_fields:
+            critical_expected = {
+                field: case.expected_fields[field] for field in case.critical_fields
+            }
+            critical_correct, critical_total, _critical_mismatches = (
+                score_expected_fields(parsed, critical_expected)
+                if parse_ok
+                else (0, len(critical_expected), [])
+            )
+            row["critical_fields_ok"] = critical_correct == critical_total
+        else:
+            row["critical_fields_ok"] = True
         rescored.append(row)
     return rescored
 
@@ -1673,6 +2333,8 @@ async def run_battle(
 
     if not settings.openrouter_api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not configured")
+    if profile in _HARD_PROFILES and repetitions != 3:
+        raise ValueError("Hard profiles require exactly three staged repetitions")
     from scripts.model_battle_cases import validate_case_sets
 
     validate_case_sets()
@@ -1710,15 +2372,47 @@ async def run_battle(
         _write_json(catalog_path, {**existing_catalog, **catalog})
         for suite in suites:
             rows: list[dict[str, Any]] = []
-            jobs = _build_jobs(
+            estimated_costs = estimate_model_costs(
+                catalog,
+                profile=profile,
                 suite=suite,
-                repetitions=repetitions,
+            )
+            over_budget = {
+                model: estimate
+                for model, estimate in estimated_costs.items()
+                if estimate > 1.0
+            }
+            if over_budget:
+                raise RuntimeError(
+                    "Estimated per-model cost exceeds USD 1: "
+                    + ", ".join(
+                        f"{model}=${estimate:.6f}"
+                        for model, estimate in sorted(over_budget.items())
+                    )
+                )
+            _write_json(
+                output_dir / f"{suite}_cost_preflight.json",
+                {
+                    "estimated_costs_usd": estimated_costs,
+                    "caps_usd": {
+                        model: min(1.0, estimate * 1.25)
+                        for model, estimate in estimated_costs.items()
+                    },
+                },
+            )
+            round_zero_jobs = _build_jobs(
+                suite=suite,
+                repetitions=1 if profile in _HARD_PROFILES else repetitions,
                 seed=seed,
                 profile=profile,
             )
-            for index, (model, case, repetition) in enumerate(jobs, start=1):
+            jobs = list(round_zero_jobs)
+            for index, (model, case, repetition) in enumerate(
+                round_zero_jobs,
+                start=1,
+            ):
                 print(
-                    f"[{suite} {index}/{len(jobs)}] "
+                    f"[{suite} round-0 {index}/{len(round_zero_jobs)}] "
                     f"{case.case_id} rep={repetition} model={model}",
                     flush=True,
                 )
@@ -1738,15 +2432,69 @@ async def run_battle(
                     )
                 rows.append(row)
                 _write_jsonl(output_dir / f"{suite}_results.jsonl", rows)
+                enforce_model_cost_caps(rows, estimated_costs)
+
+            if profile in _HARD_PROFILES:
+                survivor_jobs = build_survivor_jobs(
+                    suite=suite,
+                    profile=profile,
+                    round_zero_rows=rows,
+                    seed=seed,
+                )
+                jobs.extend(survivor_jobs)
+                for index, (model, case, repetition) in enumerate(
+                    survivor_jobs,
+                    start=1,
+                ):
+                    print(
+                        f"[{suite} survivors {index}/{len(survivor_jobs)}] "
+                        f"{case.case_id} rep={repetition} model={model}",
+                        flush=True,
+                    )
+                    if suite == "sales":
+                        row = await _run_sales_case(
+                            client,
+                            model=model,
+                            case=case,
+                            repetition=repetition,
+                        )
+                    else:
+                        row = await _run_system_case(
+                            client,
+                            model=model,
+                            case=case,
+                            repetition=repetition,
+                        )
+                    rows.append(row)
+                    _write_jsonl(output_dir / f"{suite}_results.jsonl", rows)
+                    enforce_model_cost_caps(rows, estimated_costs)
 
             _write_json(
                 output_dir / f"{suite}_aggregate.json",
                 aggregate_rows(rows),
             )
             if suite == "sales":
-                blind, reveal = _build_blind_files(rows, seed=seed)
+                blind, reveal = _build_blind_files(
+                    rows,
+                    seed=seed,
+                    profile=profile,
+                )
                 _write_json(output_dir / "sales_blind_review.json", blind)
-                _write_json(output_dir / "sales_blind_key.json", reveal)
+                if profile == CORE_HARD_PROFILE:
+                    _write_json(
+                        output_dir / "sales_blind_key.commitment.json",
+                        {"sha256": blind_scores_digest(reveal)},
+                    )
+                else:
+                    _write_json(output_dir / "sales_blind_key.json", reveal)
+            merged_manifest.setdefault("job_matrix", {})[suite] = [
+                {
+                    "model": model,
+                    "case_id": case.case_id,
+                    "repetition": repetition,
+                }
+                for model, case, repetition in jobs
+            ]
 
     _write_json(manifest_path, merged_manifest)
 
@@ -1780,19 +2528,39 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         help="Completed blinded sales rubric JSON used with --score-only.",
     )
+    parser.add_argument(
+        "--seal-blind-scores",
+        action="store_true",
+        help="Commit completed blind scores before the reveal/scoring step.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    if args.score_only:
+    if args.seal_blind_scores:
         if args.blind_scores is None:
-            raise SystemExit("--score-only requires --blind-scores")
+            raise SystemExit("--seal-blind-scores requires --blind-scores")
+        reviews = parse_json_content(args.blind_scores.read_text(encoding="utf-8"))
+        if not isinstance(reviews, list):
+            raise SystemExit("--blind-scores must contain a JSON array")
+        reviews = normalize_blind_reviews(reviews)
+        _write_json(
+            args.output_dir / "sales_blind_scores.seal.json",
+            {"sha256": blind_scores_digest(reviews)},
+        )
+        return
+    if args.score_only:
         score_battle(args.output_dir, args.blind_scores)
         return
     if args.repetitions < 1:
         raise SystemExit("--repetitions must be at least 1")
-    suites = ("sales", "system") if args.suite == "all" else (args.suite,)
+    if args.suite == "all" and args.profile == CORE_HARD_PROFILE:
+        suites = ("sales",)
+    elif args.suite == "all" and args.profile == BACKGROUND_HARD_PROFILE:
+        suites = ("system",)
+    else:
+        suites = ("sales", "system") if args.suite == "all" else (args.suite,)
     asyncio.run(
         run_battle(
             suites=suites,
