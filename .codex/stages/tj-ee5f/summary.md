@@ -135,8 +135,8 @@ accepted the functional production result with this known limitation.
 
 The stage therefore closes its functional E2E boundary without claiming
 terminal status that was not observed. `sent` remains nonterminal, the working
-`audit.starec.ai` callback/fan-out remains unchanged, and `tj-ee5f.5` is split
-into an independent blocked follow-up. After provider notification it requires
+`audit.starec.ai` callback/fan-out remains unchanged, and `tj-ee5f.5` remains
+a blocked child follow-up under the epic. After provider notification it requires
 one protected test message and exact `sent -> delivered -> read` webhook/audit
 readback; broad commercial scenario reruns are unnecessary.
 
