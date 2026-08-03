@@ -85,8 +85,22 @@ class BlockScore(BaseModel):
 
     block_name: str
     weight: float
+    normalized_weight: float = 0.0
     points: float
     applicable_rules: int
+
+
+class EvaluationDiagnostics(BaseModel):
+    """Internal score-coverage diagnostics; never removes a scored scenario."""
+
+    applicable_rules: int = 0
+    applicable_blocks: int = 0
+    nominal_applicable_weight: float = 0.0
+    low_coverage: bool = True
+    status: Literal["complete", "partial", "blocking"] = "partial"
+    blocking_reasons: list[str] = Field(default_factory=list)
+    signals: list[str] = Field(default_factory=list)
+    excluded_from_aggregate: Literal[False] = False
 
 
 class EvaluationResult(BaseModel):
@@ -101,6 +115,7 @@ class EvaluationResult(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
     next_best_action: str = ""
     block_scores: list[BlockScore] = Field(default_factory=list)
+    diagnostics: EvaluationDiagnostics = Field(default_factory=EvaluationDiagnostics)
 
 
 class RedFlagItem(BaseModel):
@@ -215,10 +230,25 @@ def canonicalize_criteria(
 def calculate_weighted_score(
     criteria: list[CriterionScore],
 ) -> tuple[float, list[BlockScore]]:
-    """Compute weighted /30 score without penalizing non-applicable rules."""
+    """Compute a normalized /30 score without penalizing absent blocks."""
     criteria_by_rule = {criterion.rule_number: criterion for criterion in criteria}
     block_scores: list[BlockScore] = []
     total_score_raw = 0.0
+    applicable_blocks = {
+        block.block_name
+        for block in BLOCK_DEFINITIONS
+        if any(criteria_by_rule[rule].applicable for rule in block.rules)
+    }
+    nominal_applicable_weight = sum(
+        block.weight
+        for block in BLOCK_DEFINITIONS
+        if block.block_name in applicable_blocks
+    )
+    score_scale = (
+        sum(block.weight for block in BLOCK_DEFINITIONS) / nominal_applicable_weight
+        if nominal_applicable_weight
+        else 0.0
+    )
 
     for block in BLOCK_DEFINITIONS:
         applicable_criteria = [
@@ -232,13 +262,15 @@ def calculate_weighted_score(
                 BlockScore(
                     block_name=block.block_name,
                     weight=block.weight,
+                    normalized_weight=0.0,
                     points=0.0,
                     applicable_rules=0,
                 )
             )
             continue
 
-        per_rule_weight = block.weight / len(applicable_criteria)
+        normalized_weight = block.weight * score_scale
+        per_rule_weight = normalized_weight / len(applicable_criteria)
         raw_block_points = 0.0
         for criterion in applicable_criteria:
             raw_points = (criterion.score / 2) * per_rule_weight
@@ -253,6 +285,7 @@ def calculate_weighted_score(
             BlockScore(
                 block_name=block.block_name,
                 weight=block.weight,
+                normalized_weight=normalized_weight,
                 points=block_points,
                 applicable_rules=len(applicable_criteria),
             )
@@ -262,10 +295,50 @@ def calculate_weighted_score(
     return total_score, block_scores
 
 
+def build_evaluation_diagnostics(
+    criteria: list[CriterionScore],
+    *,
+    blocking_reasons: tuple[str, ...] = (),
+    signals: tuple[str, ...] = (),
+) -> EvaluationDiagnostics:
+    """Describe applicability coverage without changing aggregate membership."""
+    applicable_rules = sum(criterion.applicable for criterion in criteria)
+    applicable_block_names = {
+        criterion.block_name
+        for criterion in criteria
+        if criterion.applicable and criterion.block_name
+    }
+    nominal_weight = sum(
+        block.weight
+        for block in BLOCK_DEFINITIONS
+        if block.block_name in applicable_block_names
+    )
+    low_coverage = applicable_rules < 8 or len(applicable_block_names) < 3
+    status: Literal["complete", "partial", "blocking"]
+    if blocking_reasons:
+        status = "blocking"
+    elif low_coverage or applicable_rules < len(criteria):
+        status = "partial"
+    else:
+        status = "complete"
+    return EvaluationDiagnostics(
+        applicable_rules=applicable_rules,
+        applicable_blocks=len(applicable_block_names),
+        nominal_applicable_weight=_round_1(nominal_weight),
+        low_coverage=low_coverage,
+        status=status,
+        blocking_reasons=list(dict.fromkeys(blocking_reasons)),
+        signals=list(dict.fromkeys(signals)),
+        excluded_from_aggregate=False,
+    )
+
+
 def finalize_evaluation_result(
     result: EvaluationResult,
     *,
     applicability_map: dict[int, bool] | None = None,
+    diagnostic_blockers: tuple[str, ...] = (),
+    applicability_signals: tuple[str, ...] = (),
 ) -> EvaluationResult:
     """Apply deterministic scoring, block breakdown, and summary formatting."""
     canonical_criteria = canonicalize_criteria(
@@ -273,6 +346,15 @@ def finalize_evaluation_result(
         applicability_map=applicability_map,
     )
     total_score, block_scores = calculate_weighted_score(canonical_criteria)
+    effective_blockers = diagnostic_blockers or tuple(
+        result.diagnostics.blocking_reasons
+    )
+    effective_signals = applicability_signals or tuple(result.diagnostics.signals)
+    diagnostics = build_evaluation_diagnostics(
+        canonical_criteria,
+        blocking_reasons=effective_blockers,
+        signals=effective_signals,
+    )
     strengths = _clean_items(
         result.strengths, "Явно выраженные сильные стороны не зафиксированы."
     )
@@ -303,5 +385,6 @@ def finalize_evaluation_result(
             "recommendations": recommendations,
             "next_best_action": next_best_action,
             "block_scores": block_scores,
+            "diagnostics": diagnostics,
         }
     )

@@ -5,6 +5,7 @@ TDD: Tests written first, then implementation.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -235,12 +236,15 @@ def test_calculate_weighted_score_uses_block_weights() -> None:
 
     total_score, block_scores = calculate_weighted_score(criteria)
 
-    assert total_score == 15.9
+    assert total_score == 19.9
     assert block_scores[0].block_name == "Opening & Trust"
-    assert block_scores[0].points == BLOCKS_BY_NAME["Opening & Trust"].weight
-    assert block_scores[1].points == 5.4
-    assert block_scores[2].points == 4.5
+    assert block_scores[0].points == 7.5
+    assert block_scores[0].weight == BLOCKS_BY_NAME["Opening & Trust"].weight
+    assert block_scores[0].normalized_weight == 7.5
+    assert block_scores[1].points == 6.8
+    assert block_scores[2].points == 5.6
     assert block_scores[3].points == 0.0
+    assert sum(block.normalized_weight for block in block_scores) == 30.0
 
 
 def test_non_applicable_rules_do_not_penalize_weighted_score() -> None:
@@ -382,8 +386,188 @@ def test_non_applicable_rules_do_not_penalize_weighted_score() -> None:
 
     total_score, block_scores = calculate_weighted_score(criteria)
 
-    assert total_score == 6.0
-    assert [block.points for block in block_scores] == [6.0, 0.0, 0.0, 0.0]
+    assert total_score == 30.0
+    assert [block.points for block in block_scores] == [30.0, 0.0, 0.0, 0.0]
+    assert [block.normalized_weight for block in block_scores] == [
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+
+
+def _quality_message(role: str, content: str) -> SimpleNamespace:
+    return SimpleNamespace(role=role, content=content)
+
+
+@pytest.mark.parametrize(
+    ("language", "customer_text"),
+    [
+        ("ar", "أحتاج تجهيز مكتب لفريقي"),
+        ("ru", "Нужно подобрать мебель для команды"),
+    ],
+)
+def test_rule_applicability_uses_typed_catalog_state_for_any_language(
+    language: str,
+    customer_text: str,
+) -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language=language,
+        metadata_={
+            "dialogue_kernel": {
+                "state": {
+                    "version": 1,
+                    "active_flow": "product_selection",
+                    "slots": {"pending_product_refs": ["requested-family"]},
+                }
+            }
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", customer_text),
+            _quality_message("assistant", "Ответ на языке клиента"),
+        ],
+        "needs_analysis",
+        conversation,
+    )
+
+    assert assessment.language == language
+    assert all(assessment.rule_applicability[rule] for rule in (8, 9, 10, 11))
+    assert "catalog" in assessment.signals
+
+
+def test_rule_applicability_distinguishes_quote_decline_from_collection() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="ru",
+        metadata_={
+            "sales_state": {
+                "quote_consent": "declined",
+                "quote_lifecycle": "quote_offered",
+            }
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "Нет, коммерческое предложение не нужно"),
+            _quality_message("assistant", "Понял, продолжаем без КП."),
+        ],
+        "solution",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[15] is True
+    assert assessment.rule_applicability[12] is False
+    assert assessment.rule_applicability[14] is False
+    assert "quote_not_ready" in assessment.signals
+
+
+def test_rule_applicability_reads_validated_runtime_tool_evidence() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    conversation = SimpleNamespace(
+        language="en",
+        metadata_={
+            "runtime_execution_evidence": {
+                "schema_version": "noor-runtime-execution-evidence/v3",
+                "turns": [
+                    {
+                        "schema_version": "noor-runtime-turn-evidence/v3",
+                        "source_message_id": "source-1",
+                        "assistant_message_id": "assistant-1",
+                        "received_at": "2026-08-03T10:00:00Z",
+                        "recorded_at": "2026-08-03T10:00:01Z",
+                        "usage_provenance": "provider_reported",
+                        "tool_traces": [
+                            {
+                                "call_id": "call-1",
+                                "tool_name": "create_quotation",
+                                "arguments_digest": "a" * 64,
+                                "outcome_digest": "b" * 64,
+                                "state": "returned",
+                            }
+                        ],
+                    }
+                ],
+            }
+        },
+    )
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "Please create it"),
+            _quality_message("assistant", "Done"),
+        ],
+        "quoting",
+        conversation,
+    )
+
+    assert assessment.rule_applicability[12] is True
+    assert assessment.rule_applicability[14] is True
+    assert "quote_created" in assessment.signals
+
+
+def test_advanced_stage_without_typed_events_is_blocking_evaluator_diagnostic() -> None:
+    from src.quality.evaluator import _build_applicability_assessment
+
+    assessment = _build_applicability_assessment(
+        [
+            _quality_message("user", "مرحبا"),
+            _quality_message("assistant", "أهلا"),
+        ],
+        "quoting",
+        SimpleNamespace(language="ar", metadata_={}),
+    )
+
+    assert assessment.rule_applicability[12] is False
+    assert assessment.blocking_reasons == ("advanced_stage_without_typed_evidence",)
+
+
+def test_finalize_publishes_low_coverage_without_excluding_score() -> None:
+    from src.quality.schemas import (
+        CriterionScore,
+        EvaluationResult,
+        finalize_evaluation_result,
+    )
+
+    criteria = [
+        CriterionScore(
+            rule_number=rule,
+            rule_name=f"Rule {rule}",
+            score=2,
+            comment="ok",
+            applicable=rule in {1, 2, 3, 7},
+        )
+        for rule in range(1, 16)
+    ]
+    result = finalize_evaluation_result(
+        EvaluationResult(
+            criteria=criteria,
+            summary="",
+            total_score=0,
+            rating="poor",
+        ),
+        diagnostic_blockers=("advanced_stage_without_typed_evidence",),
+        applicability_signals=("opening",),
+    )
+
+    assert result.total_score == 30.0
+    assert result.diagnostics.low_coverage is True
+    assert result.diagnostics.status == "blocking"
+    assert result.diagnostics.blocking_reasons == [
+        "advanced_stage_without_typed_evidence"
+    ]
+    assert result.diagnostics.excluded_from_aggregate is False
+
+    refinalized = finalize_evaluation_result(result)
+    assert refinalized.diagnostics.status == "blocking"
+    assert refinalized.diagnostics.signals == ["opening"]
 
 
 # =============================================================================

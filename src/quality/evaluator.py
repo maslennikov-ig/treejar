@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import logging
-import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
+from pydantic import ValidationError
 from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from src.core.config import settings
+from src.dialogue.state import DialogueState
 from src.llm.safety import (
     PATH_QUALITY_FINAL,
     PATH_QUALITY_RED_FLAGS,
@@ -32,7 +34,6 @@ from src.models.message import Message
 from src.quality.config import AIQualityTranscriptMode
 from src.quality.schemas import (
     RULE_NAMES,
-    RULE_TO_BLOCK,
     CriterionScore,
     EvaluationResult,
     RedFlagEvaluationResult,
@@ -43,6 +44,10 @@ from src.quality.transcript_context import (
     build_review_transcript_context,
 )
 from src.schemas.common import SalesStage
+from src.services.runtime_execution_evidence import (
+    RUNTIME_EXECUTION_EVIDENCE_KEY,
+    RuntimeTurnEvidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +84,18 @@ def _openrouter_model(model_name: str, path: str) -> OpenAIChatModel:
 @dataclass(frozen=True, slots=True)
 class FinalJudgeDeps:
     rule_applicability: dict[int, bool]
+    diagnostic_blockers: tuple[str, ...] = ()
+    applicability_signals: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicabilityAssessment:
+    """Rule-level applicability derived only from typed runtime facts."""
+
+    rule_applicability: dict[int, bool]
+    signals: tuple[str, ...]
+    blocking_reasons: tuple[str, ...]
+    language: str
 
 
 EVALUATION_PROMPT = """Ты эксперт по оценке качества продаж Treejar, мебельной компании из ОАЭ.
@@ -177,55 +194,35 @@ _STAGE_RANK = {
     SalesStage.CLOSING.value: 6,
     SalesStage.FEEDBACK.value: 7,
 }
-_QUESTION_WORDS = (
-    "what",
-    "which",
-    "when",
-    "where",
-    "how many",
-    "how much",
-    "size",
-    "budget",
-    "quantity",
-    "delivery",
-    "office",
-    "team",
-    "company",
-    "industry",
-    "requirements",
-    "use case",
-    "timeline",
+_CATALOG_FLOWS = frozenset(
+    {"product_selection", "catalog", "recommendation", "solution"}
 )
-_SOLUTION_HINTS = (
-    "option",
-    "options",
-    "recommend",
-    "suggest",
-    "solution",
-    "package",
-    "bundle",
-    "chair",
-    "desk",
-    "pod",
-    "workstation",
-    "sku",
-    "model",
-    "quotation",
+_QUOTE_FLOWS = frozenset(
+    {
+        "quote_details",
+        "quotation",
+        "post_quotation_hold",
+        "quote_requested",
+        "collecting_details",
+        "creating",
+        "created",
+    }
 )
-_CONVERSION_HINTS = (
-    "quote",
-    "quotation",
-    "order",
-    "delivery",
-    "contact",
-    "email",
-    "phone",
-    "whatsapp",
-    "follow up",
-    "follow-up",
-    "call me",
-    "invoice",
-    "payment",
+_FOLLOWUP_FLOWS = frozenset({"follow_up", "followup", "next_step"})
+_CATALOG_TOOLS = frozenset({"search_products", "get_stock", "recommend_products"})
+_CRM_TOOLS = frozenset({"lookup_customer", "create_deal"})
+_QUOTE_TOOLS = frozenset({"create_quotation"})
+_FOLLOWUP_TOOLS = frozenset({"schedule_follow_up", "schedule_followup"})
+_QUOTE_CONSENT_VALUES = frozenset({"not_requested", "deferred", "declined", "granted"})
+_QUOTE_LIFECYCLE_VALUES = frozenset(
+    {
+        "consultation",
+        "quote_offered",
+        "quote_requested",
+        "collecting_details",
+        "creating",
+        "created",
+    }
 )
 INSUFFICIENT_EVIDENCE_NEXT_ACTION = (
     "Недостаточно данных для AI-оценки: transcript content недоступен для этого режима."
@@ -250,6 +247,8 @@ async def validate_evaluation(
     return finalize_evaluation_result(
         result,
         applicability_map=ctx.deps.rule_applicability,
+        diagnostic_blockers=ctx.deps.diagnostic_blockers,
+        applicability_signals=ctx.deps.applicability_signals,
     )
 
 
@@ -288,78 +287,241 @@ async def validate_red_flags(
     )
 
 
-def _normalise_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
 def _assistant_messages(messages: Sequence[Message]) -> list[Message]:
     return [message for message in messages if message.role == "assistant"]
 
 
-def _messages_with_keywords(
-    messages: Sequence[Message], keywords: Sequence[str]
-) -> bool:
+def _customer_message_count(messages: Sequence[Message]) -> int:
+    return sum(message.role == "user" for message in messages)
+
+
+def _conversation_from_messages(messages: Sequence[Message]) -> Any | None:
+    """Read the eagerly loaded owner without triggering an async lazy load."""
     for message in messages:
-        if message.role != "assistant" and keywords is _CONVERSION_HINTS:
-            pass
-        text = _normalise_text(message.content)
-        if any(keyword in text for keyword in keywords):
-            return True
-    return False
+        conversation = vars(message).get("conversation")
+        if conversation is not None:
+            return conversation
+    return None
 
 
-def _has_discovery_followup(messages: Sequence[Message]) -> bool:
-    for message in _assistant_messages(messages):
-        text = _normalise_text(message.content)
-        if "?" not in message.content:
+def _mapping_children(value: object, *, max_depth: int = 4) -> list[Mapping[str, Any]]:
+    """Return a bounded breadth-first view of versioned metadata mappings."""
+    if not isinstance(value, Mapping):
+        return []
+    result: list[Mapping[str, Any]] = []
+    queue: list[tuple[Mapping[str, Any], int]] = [(value, 0)]
+    while queue:
+        current, depth = queue.pop(0)
+        result.append(current)
+        if depth >= max_depth:
             continue
-        if any(keyword in text for keyword in _QUESTION_WORDS):
-            return True
-    return False
+        for child in current.values():
+            if isinstance(child, Mapping):
+                queue.append((child, depth + 1))
+            elif isinstance(child, list | tuple):
+                queue.extend(
+                    (item, depth + 1) for item in child if isinstance(item, Mapping)
+                )
+    return result
 
 
-def _has_solution_signal(messages: Sequence[Message]) -> bool:
-    return _messages_with_keywords(_assistant_messages(messages), _SOLUTION_HINTS)
+def _metadata_enum(
+    metadata: Mapping[str, Any],
+    key: str,
+    allowed: frozenset[str],
+) -> str | None:
+    for mapping in _mapping_children(metadata):
+        value = mapping.get(key)
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            if normalized in allowed:
+                return normalized
+    return None
 
 
-def _has_conversion_signal(messages: Sequence[Message]) -> bool:
-    return _messages_with_keywords(messages, _CONVERSION_HINTS)
+def _metadata_flag(metadata: Mapping[str, Any], key: str) -> bool:
+    return any(mapping.get(key) is True for mapping in _mapping_children(metadata))
+
+
+def _runtime_tool_names(metadata: Mapping[str, Any]) -> frozenset[str]:
+    payload = metadata.get(RUNTIME_EXECUTION_EVIDENCE_KEY)
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("turns"), list):
+        return frozenset()
+    names: set[str] = set()
+    for item in payload["turns"]:
+        try:
+            turn = RuntimeTurnEvidence.model_validate(item)
+        except ValidationError:
+            continue
+        names.update(
+            trace.tool_name for trace in turn.tool_traces if trace.state == "returned"
+        )
+    return frozenset(names)
+
+
+def _filled_slot_names(state: DialogueState) -> frozenset[str]:
+    values = state.slots.model_dump()
+    return frozenset(
+        key
+        for key, value in values.items()
+        if value is True
+        or (isinstance(value, str) and bool(value.strip()))
+        or (isinstance(value, list | tuple | dict) and bool(value))
+    )
+
+
+def _build_applicability_assessment(
+    messages: Sequence[Message],
+    sales_stage: str,
+    conversation: Any | None = None,
+) -> ApplicabilityAssessment:
+    """Derive each rule from state, slots, tool traces, and turn roles."""
+    metadata_value = getattr(conversation, "metadata_", None)
+    metadata: Mapping[str, Any] = (
+        metadata_value if isinstance(metadata_value, Mapping) else {}
+    )
+    state = (
+        DialogueState.from_conversation(conversation)
+        if conversation
+        else DialogueState()
+    )
+    active_flow = (state.active_flow or "").strip().casefold()
+    frame_flows = {
+        frame.flow.strip().casefold()
+        for frame in state.expected_answer_frames
+        if frame.status == "active" and frame.flow.strip()
+    }
+    trace_actions = {
+        trace.decision.action.strip().casefold()
+        for trace in state.trace_history
+        if trace.decision.action.strip()
+    }
+    trace_flows = {
+        trace.decision.flow.strip().casefold()
+        for trace in state.trace_history
+        if trace.decision.flow.strip()
+    }
+    flows = {active_flow, *frame_flows, *trace_flows} - {""}
+    filled_slots = _filled_slot_names(state)
+    tool_names = _runtime_tool_names(metadata)
+    quote_consent = _metadata_enum(metadata, "quote_consent", _QUOTE_CONSENT_VALUES)
+    quote_lifecycle = _metadata_enum(
+        metadata, "quote_lifecycle", _QUOTE_LIFECYCLE_VALUES
+    )
+    if quote_consent is None and _metadata_flag(metadata, "quote_on_hold"):
+        quote_consent = "deferred"
+
+    assistant_turns = len(_assistant_messages(messages))
+    customer_turns = _customer_message_count(messages)
+    opening = assistant_turns > 0
+    catalog = bool(
+        flows & _CATALOG_FLOWS
+        or filled_slots & {"selected_items", "pending_product_refs"}
+        or tool_names & _CATALOG_TOOLS
+    )
+    quote_started = bool(
+        flows & _QUOTE_FLOWS
+        or quote_consent == "granted"
+        or quote_lifecycle
+        in {"quote_requested", "collecting_details", "creating", "created"}
+        or tool_names & _QUOTE_TOOLS
+    )
+    quote_created = bool(
+        quote_lifecycle == "created"
+        or "quote_sent" in filled_slots
+        or tool_names & _QUOTE_TOOLS
+    )
+    crm = bool(tool_names & _CRM_TOOLS)
+    quote_not_ready = bool(
+        quote_consent in {"deferred", "declined"}
+        or trace_actions
+        & {"quote_declined", "quote_deferred", "defer_quote", "decline_quote"}
+    )
+    followup = bool(
+        flows & _FOLLOWUP_FLOWS
+        or tool_names & _FOLLOWUP_TOOLS
+        or trace_actions & {"schedule_follow_up", "schedule_followup"}
+    )
+    discovery = bool(
+        catalog
+        or quote_started
+        or crm
+        or filled_slots
+        & {"company", "customer_type", "selected_items", "pending_product_refs"}
+        or _STAGE_RANK.get(sales_stage, 0) >= _STAGE_RANK[SalesStage.QUALIFYING.value]
+    )
+    company_context = bool(
+        filled_slots & {"company", "customer_type"} or quote_started or crm
+    )
+    confirmed_next_step = bool(
+        quote_created
+        or crm
+        or followup
+        or _STAGE_RANK.get(sales_stage, 0) >= _STAGE_RANK[SalesStage.CLOSING.value]
+    )
+
+    rules = {rule_number: False for rule_number in range(1, 16)}
+    for rule_number in (1, 2, 3):
+        rules[rule_number] = opening
+    rules[4] = opening and customer_turns > 0
+    rules[5] = opening and customer_turns > 0
+    rules[6] = opening and discovery
+    rules[7] = opening
+    rules[8] = discovery
+    rules[9] = catalog
+    rules[10] = catalog
+    rules[11] = catalog
+    rules[12] = quote_started or crm
+    rules[13] = company_context
+    rules[14] = confirmed_next_step
+    rules[15] = quote_not_ready or followup
+
+    signals: set[str] = set()
+    if opening:
+        signals.add("opening")
+    if discovery:
+        signals.add("discovery")
+    if catalog:
+        signals.add("catalog")
+    if quote_started:
+        signals.add("quote_started")
+    if quote_created:
+        signals.add("quote_created")
+    if crm:
+        signals.add("crm")
+    if quote_not_ready:
+        signals.add("quote_not_ready")
+    if followup:
+        signals.add("next_step")
+
+    stage_rank = _STAGE_RANK.get(sales_stage, 0)
+    typed_progress = catalog or quote_started or crm or quote_not_ready or followup
+    blockers: tuple[str, ...] = ()
+    if stage_rank >= _STAGE_RANK[SalesStage.SOLUTION.value] and not typed_progress:
+        blockers = ("advanced_stage_without_typed_evidence",)
+
+    language_value = getattr(conversation, "language", None)
+    language = (
+        language_value.strip().casefold()
+        if isinstance(language_value, str) and language_value.strip()
+        else "unknown"
+    )
+    return ApplicabilityAssessment(
+        rule_applicability=rules,
+        signals=tuple(sorted(signals)),
+        blocking_reasons=blockers,
+        language=language,
+    )
 
 
 def _build_rule_applicability(
     messages: Sequence[Message],
     sales_stage: str,
+    conversation: Any | None = None,
 ) -> dict[int, bool]:
-    stage_rank = _STAGE_RANK.get(sales_stage, 0)
-    conversion_stages = {
-        SalesStage.COMPANY_DETAILS.value,
-        SalesStage.QUOTING.value,
-        SalesStage.CLOSING.value,
-        SalesStage.FEEDBACK.value,
-    }
-
-    opening_applicable = bool(_assistant_messages(messages))
-    relationship_applicable = stage_rank >= _STAGE_RANK[
-        SalesStage.QUALIFYING.value
-    ] or _has_discovery_followup(messages)
-    consultative_applicable = stage_rank >= _STAGE_RANK[
-        SalesStage.SOLUTION.value
-    ] or _has_solution_signal(messages)
-    conversion_applicable = sales_stage in conversion_stages or _has_conversion_signal(
-        messages
-    )
-
-    applicability: dict[int, bool] = {}
-    for rule_number, block in RULE_TO_BLOCK.items():
-        if block.block_name == "Opening & Trust":
-            applicability[rule_number] = opening_applicable
-        elif block.block_name == "Relationship & Discovery":
-            applicability[rule_number] = relationship_applicable
-        elif block.block_name == "Consultative Solution":
-            applicability[rule_number] = consultative_applicable
-        else:
-            applicability[rule_number] = conversion_applicable
-    return applicability
+    return _build_applicability_assessment(
+        messages, sales_stage, conversation
+    ).rule_applicability
 
 
 def _format_applicability_instructions(applicability_map: dict[int, bool]) -> str:
@@ -376,6 +538,7 @@ async def _load_messages(
 ) -> list[Message]:
     stmt = (
         select(Message)
+        .options(joinedload(Message.conversation))
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
     )
@@ -488,8 +651,20 @@ async def evaluate_conversation(
     selected_model = model_name_for_path(PATH_QUALITY_FINAL, model_name)
     mode = AIQualityTranscriptMode(transcript_mode)
     messages = await _load_messages(conversation_id, db)
-    stage = sales_stage or await _load_sales_stage(conversation_id, db) or "unknown"
-    applicability_map = _build_rule_applicability(messages, stage)
+    conversation = _conversation_from_messages(messages)
+    conversation_stage = getattr(conversation, "sales_stage", None)
+    stage = sales_stage or (
+        conversation_stage
+        if isinstance(conversation_stage, str) and conversation_stage.strip()
+        else None
+    )
+    stage = stage or await _load_sales_stage(conversation_id, db) or "unknown"
+    applicability = _build_applicability_assessment(
+        messages,
+        stage,
+        conversation,
+    )
+    applicability_map = applicability.rule_applicability
     summary_text = (
         await _load_summary_text(conversation_id, db)
         if mode != AIQualityTranscriptMode.FULL
@@ -510,6 +685,7 @@ async def evaluate_conversation(
     user_prompt = (
         f"{_format_applicability_instructions(applicability_map)}\n\n"
         f"Текущий этап продаж: {stage}\n\n"
+        f"Язык диалога: {applicability.language}\n\n"
         f"{context.prompt}"
     )
 
@@ -527,7 +703,11 @@ async def evaluate_conversation(
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_FINAL),
         cache_telemetry_enabled=cache_telemetry_enabled,
-        deps=FinalJudgeDeps(rule_applicability=applicability_map),
+        deps=FinalJudgeDeps(
+            rule_applicability=applicability_map,
+            diagnostic_blockers=applicability.blocking_reasons,
+            applicability_signals=applicability.signals,
+        ),
         usage_limits=UsageLimits(
             output_tokens_limit=2500,
             total_tokens_limit=10000,
@@ -536,6 +716,8 @@ async def evaluate_conversation(
     result = finalize_evaluation_result(
         run_result.output,
         applicability_map=applicability_map,
+        diagnostic_blockers=applicability.blocking_reasons,
+        applicability_signals=applicability.signals,
     )
     return cast(
         "EvaluationResult",
