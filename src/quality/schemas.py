@@ -254,8 +254,7 @@ def calculate_weighted_score(
         score_scale = 1.0
     else:
         score_scale = (
-            sum(block.weight for block in BLOCK_DEFINITIONS)
-            / nominal_applicable_weight
+            sum(block.weight for block in BLOCK_DEFINITIONS) / nominal_applicable_weight
         )
 
     for block in BLOCK_DEFINITIONS:

@@ -1,110 +1,111 @@
 # Stage tj-ee5f Summary
 
 Updated: 2026-08-03
-Status: local remediation accepted; paid model selection pending
+Status: local review remediation accepted; paid battle and live proof pending
 Branch: `codex/tj-ee5f-quality-model-battle`
 Beads owner: `tj-ee5f.1`
 
 ## Current outcome
 
-The fresh S01-S10 production run against exact release `a2f245c` completed all
-ten scenarios but failed acceptance: mean **18.4/30** versus required 24.0.
-The deterministic causes behind S01, S03, S04, S05, S08, and S10 are now
-remediated locally: catalog decisions are typed and stock-consistent, quote
-collection requires explicit consent, and evaluator applicability comes from
-typed events with exact `/30` normalization.
+The last production S01-S10 run remains failed evidence on exact release
+`a2f245c`: mean **18.4/30**, below the required 24.0. No new production run,
+model comparison, configuration change, deploy, or live readback occurred in
+this local round.
 
-Technical integration paths already proven by that run remain valid: S09 Zoho
-contact/order/PDF readback and cleanup passed, S10 CRM readback and cleanup
-passed, Arabic catalog, exact SKU without quotation, honest no-match, and voice
-transcription worked. Failed raw evidence stays protected outside Git.
+The reviewed deterministic defects now have focused local proofs and an
+independent bounded correction re-review with verdict APPROVE:
 
-The isolated model-battle harness is also ready. It seals separate main-chat
-and background-model decisions, pins first-party providers, fails on missing
-critical facts, reserves worst-case cost before calls, and cannot access Noor,
-Zoho, Wazzup, or production storage. Exact-provider free metadata preflight
-passed for the background profile. Core endpoint capabilities passed, but the
-conservative GLM-5.2 estimate is USD 1.121494 versus the accepted USD 1 cap, so
-the paid comparison has not been run.
+- `.7` (`R-03`, `R-04`, `R-08`, `R-16`): verified facts constrain a
+  model-owned repair pass instead of replacing the answer; a SKU exposes one
+  authoritative Zoho stock number per turn or `unconfirmed`; prompt search
+  limits no longer contradict runtime; partial plans retain solved families and
+  publish a numeric coverage gap plus one closing question.
+- `.8` (`R-01`, `R-02`, `R-05`): the code default is
+  `dialogue_kernel_mode=enforce` with an empty enforced-flow allowlist; typed
+  state is reconciled on the default path while replies remain model-owned;
+  refusal persists `declined`, never renders as “on hold”, and quote-only
+  details require canonical `granted` consent.
+- `.12` (`R-06`, `R-07`): collapsed coverage is blocking and cannot become an
+  excellent `/30` score; owner reports publish coverage diagnostics, normalized
+  denominators, and `н/д` for inapplicable blocks.
+- `.14` (`R-09` through `R-15`, `R-19`, `R-20`, harness portion of `R-17`):
+  a challenger can produce `winner` only from a complete unique matrix; sealed
+  judge scores and critical gates are applied before durable writes; provider
+  cost reconciles a conservative full-payload reservation; carry cannot consume
+  an unfinished survivor's allowance; non-finite values fail closed;
+  `TRUNCATED` and `UNSUPPORTED` are machine-readable. Reviewer-visible evidence
+  exposes only a commitment to a cryptographically random private reveal.
+
+The legacy combined `.7/.8` artifact was corrected: verified catalog facts now
+drive a model-owned repair pass, while deterministic recovery replacement alone
+uses the explicit functional-failure marker.
 
 ## Boundary
 
-This is one integration stage. It preserves the frozen `AC-01..AC-30` snapshot
-and digest
+The frozen `AC-01..AC-30` snapshot and digest remain unchanged:
 `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
-No criterion is added, removed, or renumbered.
+No public REST/webhook contract or database schema changed. Exact scenario text
+remains in fixture code or protected evidence, not product code. The product
+system prompt shrank.
 
-The local remediation and isolated comparison remain inside `tj-ee5f`.
-`tj-ee5f.5` is a separate external boundary: Wazzup support confirmed that
-terminal status webhooks are affected by a provider bug with no current
-workaround. Existing `sent` rows are not relabelled.
+The code default does not overwrite an existing stored
+`dialogue_kernel_mode`. No runtime setting was mutated. The paid battle and a
+winner-only production pass remain later authority boundaries.
 
-## Parallel decomposition matrix
+## Verification
 
-| Stream | Owner | Material benefit | Write isolation | Dependency |
-|---|---|---|---|---|
-| `.7` + `.8` catalog/dialogue | `engine-remediation` | shared routing context and one owner for `engine.py` | dialogue, catalog/quote engine regions, focused tests | none |
-| `.12` evaluator | `evaluator-remediation` | independent scoring domain | `src/quality/*`, evaluator tests | consumes compatible typed state |
-| `.13` model battle | `model-battle-remediation` | independent harness and evidence boundary | `scripts/model_battle*`, battle tests | runs only after `.7/.8/.12` |
-| integration | root orchestrator | cross-stream review and one release proof | docs, Beads, stage state | all local streams |
+Focused RED/GREEN evidence is stored in the four review-remediation artifacts:
 
-The evaluator uses a backward-compatible typed-state adapter while the dialogue
-stream is parallel. Model battle never calls business adapters or production.
+- `.7`: original 759 tests; integrated correction set 823; targeted
+  Ruff/format/Mypy passed.
+- `.8`: 803 tests; targeted Ruff/format/Mypy passed.
+- `.12`: 99 tests; `git diff --check` passed.
+- `.14`: 113 tests; scoped Ruff/format and diff check passed.
+- Independent bounded correction re-review: 34 passed, 841 deselected; APPROVE.
 
-## Scope ledger
+Combined-tree gate on 2026-08-03:
 
-- `.7`: catalog decision, search budget, stock snapshots, planner, materializer.
-- `.8`: sales-stage reconciliation, slots, quote consent and lifecycle.
-- `.12`: rule applicability, coverage diagnostics, exact `/30` arithmetic.
-- `.13`: isolated main/background model profiles and sealed report.
-- `.13` depends on `.7/.8/.12` and blocks `.1`.
-- `.1`: winner-only production acceptance after separate authority.
-- `.5`: future bounded Wazzup terminal-status retest.
-- `.14` is created only if a challenger wins and runtime configuration changes.
+- `uv run ruff check src/ tests/`: passed.
+- `uv run mypy src/`: passed, 165 source files after correction integration.
+- `scripts/orchestration/run_process_verification.sh`: passed after the final
+  documentation refresh.
+- Full Pytest: `2776 passed, 19 skipped, 3 failed`; all three failures were the
+  expected `runtime-truth` digest drift caused by the handoff update. After the
+  final digest refresh, the exact three failed manifest tests passed.
+- Ruff format initially found one worker formatting drift in
+  `src/quality/schemas.py`; after the mechanical correction the full check
+  reports 327 files already formatted.
 
-## Verification contract
+The stage is not production-accepted by local tests. S01-S10 remains failed
+until a separately authorized winner-only release-bound pass proves otherwise.
 
-Each implementation stream records focused RED/GREEN evidence only. The one
-release gate was executed. Its first full pytest pass exposed 79 integration
-regressions (`2665 passed`, `19 skipped`); after the bounded correction, only
-the failed surfaces were repeated and are green:
+## Parallel decomposition
 
-```text
-uv run ruff check src/ tests/
-uv run ruff format --check src/ tests/
-uv run mypy src/
-uv run pytest tests/ -v --tb=short
-scripts/orchestration/run_process_verification.sh
-```
+| Stream | Owner | Artifact | Result |
+|---|---|---|---|
+| `.7` catalog | `tj_ee5f_r07` | `tj-ee5f.7-review-remediation.md` | accepted locally |
+| `.8` dialogue | `dialogue-review-remediation` | `tj-ee5f.8-review-remediation.md` | accepted locally |
+| `.12` evaluator | `tj-ee5f-r12-review-remediation` | `tj-ee5f.12-review-remediation.md` | accepted locally |
+| `.14` harness | `tj-ee5f-r14-review-remediation` | `tj-ee5f.14-review-remediation.md` | accepted locally |
 
-- Ruff check and format check: passed.
-- Mypy: passed for all `src/`.
-- Previously failing dialogue/quotation set: 68 passed.
-- Exact affected dialogue subset in its isolated stream: 856 passed.
-- Replay fixtures: 11 passed; frontend regressions: 11 passed; acceptance
-  manifests: 44 passed.
-- Process verification and all three new artifact validators: passed.
+`.13` owns the future paid isolated comparison and still depends on `.7`, `.8`,
+`.12`, and `.14`. `.1` owns winner-only production acceptance. `.5` remains the
+provider-blocked Wazzup terminal-status proof.
 
-The full suite is not repeated a second time because the verification contract
-requires minimal reruns after a bounded defect, not another broad pass.
+## Next boundary
 
-Paid comparison, runtime configuration mutation, push, deploy, production
-readbacks, Zoho/PDF/Wazzup effects, and live messages require fresh exact
-authority. The stage cannot close while `.5` lacks terminal provider proof.
-
-## Next stage
-
-Remain in `tj-ee5f`. The accepted budget decision keeps `max_tokens=2200`, runs
-cheapest candidates first, reconciles each reservation to actual cost, carries
-unused batch allowance forward without raising the USD 1 per-model cap, and
-marks length-limited output `TRUNCATED`. Wait for the owner's Opus 5 review
-before implementing this delta. Then repeat free preflight and request paid
-model-battle authority. Production acceptance follows only after a winner
-decision and separate push/deploy/live authority.
+After the local digest and process closeout, stop. A later task must
+obtain exact current authority before any paid OpenRouter call, model
+configuration change, push, deploy, production readback, Zoho/PDF/Wazzup
+effect, or live message.
 
 ## Explicit defers
 
+- `tj-ee5f.13.9` / product-runtime part of `R-17`: model-id, reasoning
+  capability, and cache-control cleanup in `src/core/config.py` and
+  `src/llm/safety.py`; harness capability/unsupported evidence is implemented.
 - `tj-ee5f.5`: wait for Wazzup's provider fix, then prove one protected
   `sent -> delivered -> read` transition.
-- Production and paid comparison are not part of the current local authority.
-- Existing raw production/model evidence remains outside Git.
+- Paid comparison, runtime configuration mutation, delivery, deploy, and
+  production acceptance are outside this local authority.
+- Protected raw production/model evidence remains outside Git.

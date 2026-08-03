@@ -32,8 +32,43 @@ routing and materialization paths overlap in `src/llm/engine.py`.
 - `.13` depends on `.7`, `.8`, and `.12`, and blocks `.1`.
 - `.1` owns winner-only production acceptance.
 - `.5` remains blocked on the provider fix and does not disappear from the epic.
-- Create `.14` only after evidence shows that a challenger won and a runtime
-  configuration change is necessary.
+- `.14` is the model-battle harness repair task added by the review round.
+  Create a new task for a runtime configuration change only after evidence
+  shows that a challenger actually won.
+
+## Review remediation round (added 2026-08-03)
+
+The independent Opus 5 review of `f831e6c..3701c1e` is incorporated. Its
+findings `R-01`..`R-20` are in the spec under "Review outcome". Tasks 1-4 below
+stay as written; this round is the delta needed before Task 5 can be claimed.
+
+| Stream | Beads | Findings |
+|---|---|---|
+| Dialogue and quote state | `.8` | `R-01`, `R-02`, `R-05` |
+| Catalog and materializer | `.7` | `R-03`, `R-04`, `R-08`, `R-16` |
+| Evaluator and reporting | `.12` | `R-06`, `R-07` |
+| Model battle harness repair | `.14` | `R-09`..`R-15`, `R-17`, `R-19`, `R-20` |
+| Stage documents | epic | `R-18` |
+
+Harness repair is `tj-ee5f.14`, a direct child of the epic rather than of
+`.13`. Blocking propagates from parent to child, and `.13` is correctly blocked
+by `.7/.8/.12` because it owns the paid run; repairing harness code is not the
+paid run and must stay workable in parallel. `.13` now depends on `.14`, so the
+comparison still waits for both. The issues kept their original `tj-ee5f.13.x`
+ids after reparenting.
+
+Order matters in two places. `R-01` decides whether the `.8` fixes are live at
+all, so resolve it first and record the answer. `R-12` unblocks the budget
+mechanics, so it precedes `R-20`.
+
+Owner resolution (2026-08-03): the code default becomes
+`dialogue_kernel_mode=enforce`; the enforced-flow allowlist remains empty so
+typed state is live without replacing model-owned replies. No stored runtime
+configuration is changed by this local remediation.
+
+Only `S05` of the six deterministic failures is currently closed. Do not claim
+a failure remediated without a focused test that reproduces the original
+customer-visible symptom and then shows it gone.
 
 ## Task 1: typed dialogue and quotation state
 
@@ -163,8 +198,17 @@ After approval:
 7. Create `.14` only if configuration actually changes.
 
 The complete production S01-S10 suite is not part of the candidate battle. It
-runs only for the winning main/background pair in Task 7. Implement the budget
-delta only after incorporating the owner's pending Opus 5 review.
+runs only for the winning main/background pair in Task 7.
+
+The budget mechanics are owner-confirmed and recorded in the spec under
+"Budget decisions for the paid battle". In short: `max_tokens=2200` stays;
+candidates run cheapest first; the USD 1 per-model cap is never raised; a
+conservative reservation is replaced by provider-reported actual cost after
+each response and the freed difference returns to the shared allowance;
+carry-forward can never lift a candidate above its own cap; a response cut off
+by `max_tokens` is `TRUNCATED`, a harness budget event rather than a model
+quality failure. `R-12` must land before any of this can be measured, because
+`usage.cost` is not currently requested from the provider.
 
 ## Task 7: production acceptance — deploy/live authority gate
 

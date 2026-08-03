@@ -283,14 +283,34 @@
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.7-8-quality-remediation.md"
     },
     {
+      "task_id": "tj-ee5f.7",
+      "stream_owner": "tj_ee5f_r07",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.7-review-remediation.md"
+    },
+    {
+      "task_id": "tj-ee5f.8",
+      "stream_owner": "dialogue-review-remediation",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.8-review-remediation.md"
+    },
+    {
       "task_id": "tj-ee5f.12",
       "stream_owner": "evaluator-remediation",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.12-evaluator-remediation.md"
     },
     {
+      "task_id": "tj-ee5f.12-review-remediation",
+      "stream_owner": "tj-ee5f-r12-review-remediation",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.12-review-remediation.md"
+    },
+    {
       "task_id": "tj-ee5f.13",
       "stream_owner": "model-battle-remediation",
       "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.13-model-battle.md"
+    },
+    {
+      "task_id": "tj-ee5f.14",
+      "stream_owner": "tj-ee5f-r14-review-remediation",
+      "artifact_path": ".codex/stages/tj-ee5f/artifacts/tj-ee5f.14-review-remediation.md"
     },
     {
       "task_id": "tj-ee5f-provider-status-defer",

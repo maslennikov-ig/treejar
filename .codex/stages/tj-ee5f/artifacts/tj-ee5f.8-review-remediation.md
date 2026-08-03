@@ -18,7 +18,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: tj-ee5f-r08-review-remediation
 milestone: deterministic dialogue review remediation
-milestone_status: returned
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -64,9 +64,9 @@ parallel_group: quality-model-remediation
 depends_on_streams:
   - none
 parallel_decision: parallel
-status: returned
+status: accepted
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: parent must review and integrate the commit before cleanup
 risk_level: high

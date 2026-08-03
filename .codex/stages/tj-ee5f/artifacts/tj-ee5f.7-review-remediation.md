@@ -17,7 +17,7 @@ epic_id: tj-ee5f
 stage_id: tj-ee5f
 session_id: n/a
 milestone: cohesive-vertical-slice
-milestone_status: in_progress
+milestone_status: accepted
 agent_type: worker
 subagent_model: inherit_orchestrator
 reasoning_effort: inherit_orchestrator
@@ -51,9 +51,9 @@ parallel_group: tj-ee5f-review-remediation
 depends_on_streams:
   - none
 parallel_decision: parallel
-status: returned
+status: accepted
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: orchestrator owns post-acceptance cleanup
 risk_level: high

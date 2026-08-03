@@ -52,9 +52,9 @@ parallel_group: tj-ee5f-review-remediation
 depends_on_streams:
   - none
 parallel_decision: parallel
-status: returned
+status: accepted
 delivery_method: cherry-pick
-accepted_by_orchestrator: no
+accepted_by_orchestrator: yes
 cleanup_status: pending
 cleanup_notes: parent orchestrator owns integration and worktree cleanup
 risk_level: medium

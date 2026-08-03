@@ -140,8 +140,10 @@ consent only from a valid canonical v2 workflow; empty, malformed, or legacy
 metadata cannot authorize Zoho, PDF, or messaging work. Catalog planning now
 checks a bounded candidate set against Zoho before the final solver, so stale
 catalog stock can fall back to another covering SKU. The verified decision is
-passed compactly to a tool-free chat-model run and its output is validated;
-the deterministic materializer is used only with an explicit
+passed compactly to a tool-free chat-model run and its output is validated. The
+later review remediation separated response-text from cost provenance:
+verified catalog facts now drive a model-owned repair pass, while only
+deterministic recovery replacement uses the explicit
 `verified-catalog-functional-failure` route marker.
 
 Release-gate correction removed the remaining unsafe compatibility shortcut:
