@@ -1,0 +1,124 @@
+{
+  "schema_version": "orchestration-stage/v1",
+  "stage_id": "tj-feet",
+  "goal_id": "tj-feet",
+  "profile_at_creation": "balanced-v2.19",
+  "status": "in_progress",
+  "sequence": 3,
+  "acceptance_boundary_id": "sales-grounding-and-tool-obedience",
+  "acceptance_owner": "root-orchestrator",
+  "stage_shape": "cohesive_vertical_slice",
+  "stage_boundary_reason": "shared_acceptance_boundary",
+  "boundary": {
+    "subsystems": [
+      "customer-conversation",
+      "catalog-and-commercial-safety",
+      "quotation-consent",
+      "isolated-model-selection"
+    ],
+    "risk_models": [
+      "commercial-correctness",
+      "evaluation-integrity",
+      "external-side-effects",
+      "cost-control",
+      "privacy"
+    ],
+    "test_environments": [
+      "local-contract-tests",
+      "isolated-model-battle"
+    ],
+    "rollback_boundary": "immutable-superseded-evidence-plus-local-branch",
+    "acceptance_proofs": [
+      "focused-red-green-per-task",
+      "read-only-catalog-completeness-counters",
+      "hand-labelled-anchor-set-agreement",
+      "fixture-integrity-regressions",
+      "repo-gate-suite"
+    ]
+  },
+  "work_areas": [
+    "decision",
+    "contract",
+    "implementation",
+    "tests",
+    "proof",
+    "docs_and_graph_review"
+  ],
+  "scope_snapshot": {
+    "source_kind": "beads",
+    "source_id": "tj-feet",
+    "source_digest": "67d183fed52fbf164e67ce17bdadbdd5d860575a8a009f7072449ded547d4185",
+    "criteria": [
+      {
+        "criterion_id": "TF-01",
+        "text": "The quotation tool is absent from the offered set while the persisted consent is DECLINED, ahead of every tool_mode branch, and a renewed explicit request in English or Arabic restores it.",
+        "text_digest": "8048dbe2dbc9e4fa07d667e8c074a4986b49417ffe4d755f611f729a13efd23a"
+      },
+      {
+        "criterion_id": "TF-02",
+        "text": "A reply asserting that a quotation was prepared when the trace holds no successful call is recorded as a defect.",
+        "text_digest": "3f70a773837439713734d4803f43e1e8bfcde06279e0bc67654de28f0b1eb8b5"
+      },
+      {
+        "criterion_id": "TF-03",
+        "text": "A claim whose field path is absent from the row actually retrieved cannot reach the customer, and a claim about a different SKU cannot borrow another row.",
+        "text_digest": "709cc0bdc7d5b65c2568b80c9dea354c829de5d55eeaa65b4f43c79d87d1f161"
+      },
+      {
+        "criterion_id": "TF-04",
+        "text": "A missing attribute is a typed status and the unknown branch produces a useful partial answer that still hands over what is confirmed, never a refusal.",
+        "text_digest": "6af45ae15b0a4a53ac4547a409722e091d4c754c37cbb19baf620b13a0e2e869"
+      },
+      {
+        "criterion_id": "TF-05",
+        "text": "Seating capacity may be offered only as a visible assumption carrying a confirming question, never as a catalog fact.",
+        "text_digest": "232775ab53a833ac43fabf59ba013eb2ba1a42dd030b5f0d8859da3e9b62004e"
+      },
+      {
+        "criterion_id": "TF-06",
+        "text": "The rubric distinguishes catalog_fact, derived_fact, explicit_assumption and recommendation, and reports groundedness, tool obedience and conversational quality separately with their own denominators.",
+        "text_digest": "aae407c480bd058dc01798a28044ffeee48cc004576203095eaef07c069a48cb"
+      },
+      {
+        "criterion_id": "TF-07",
+        "text": "The labelled assumption the superseded instrument failed now passes, and the vague unsourced claim it passed now fails.",
+        "text_digest": "7596ba9a8d54be45791f23388424791276f4eec76916090f90e29ccb6ff9a340"
+      },
+      {
+        "criterion_id": "TF-08",
+        "text": "Judge identity, rubric version and anchor-set version are pinned and recorded, and agreement with the anchor set is reported as a number.",
+        "text_digest": "d4eac7dc4b9a1f51ed03d58ff72303663293bb1344850e3dc381153ce7c3955f"
+      },
+      {
+        "criterion_id": "TF-09",
+        "text": "S01 supplies the capacity it demands an explanation of, S04 supplies the attributes it claims were received, and DK-4 capacity is consistent across every fixture that names it.",
+        "text_digest": "2fc8ea725144526c44cebbb6cecf8bbea301bce42b82056e5c8041d05e8793e0"
+      },
+      {
+        "criterion_id": "TF-10",
+        "text": "The superseded sealed rounds are recorded as superseded with the reason and stay immutable where they are.",
+        "text_digest": "22dd9fe82c95c9a2436aad9553fbb5a77e67043f0c749b121803770b1a6e5399"
+      },
+      {
+        "criterion_id": "TF-11",
+        "text": "The counter-set covers five answerable categories plus controls in English and Arabic, and all seven metrics are reported separately with denominators.",
+        "text_digest": "aae06aa350492d384da3a43507742eee5e641b5622846f2c015d3fc27281bf13"
+      },
+      {
+        "criterion_id": "TF-12",
+        "text": "Frozen AC-01..AC-30 and its digest, the product system prompt, public REST/webhook contracts and the database schema are unchanged.",
+        "text_digest": "9d6367de84ea65befafaf9dfaa821ce677cd13711b01cc4c425690c4e801b6e3"
+      }
+    ]
+  },
+  "scope_anchor": ".codex/goals/tj-feet/scope-criterion-snapshot.json",
+  "scope_anchor_digest": "67d183fed52fbf164e67ce17bdadbdd5d860575a8a009f7072449ded547d4185",
+  "scope_ledger": "none",
+  "stream_artifacts": [
+    {
+      "task_id": "tj-feet-root-stream",
+      "stream_owner": "tj-feet-local-implementation",
+      "artifact_path": ".codex/stages/tj-feet/artifacts/tj-feet-root-stream.md"
+    }
+  ]
+}

@@ -1,9 +1,10 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-03
-Current branch: `codex/tj-ee5f-quality-model-battle`
-Current stage id: `tj-ee5f`
-Status: local review remediation accepted; paid battle and live proof pending
+Updated: 2026-08-05
+Current branch: `codex/tj-feet`
+Current stage id: `tj-feet`
+Status: grounding and tool obedience delivered and locally accepted; stopped at
+the `tj-feet.8` paid provider gate
 
 ## Current truth
 
@@ -101,6 +102,34 @@ model battle. After a sealed winner decision, request separate authority for
 model configuration, push, deploy, and winner-only production acceptance. Do
 not fold the bounded product-runtime `R-17` defer into the paid run.
 
+## Stage tj-feet
+
+Grounding, tool obedience and evaluation repair. Branch `codex/tj-feet`, based
+on `codex/tj-ee5f-quality-model-battle` at `ea35d44`, head `89ffff7`. Full
+detail in `.codex/stages/tj-feet/summary.md`.
+
+- Closed: `tj-feet.1` catalog audit, `.2` consent-declined tool gating, `.3`
+  volunteered-claim contract, `.4` claim rubric, `.7` fixture repair.
+- Open: `.5` instrument built and measurement pending, `.6` and `.9` waiting on
+  that scale, `.8` prepared but not run, `.10` new bounded defer.
+- The customer-visible change: the assistant no longer offers the quotation tool
+  after an explicit decline and restores it only on a new explicit request; an
+  asserted product attribute must name a field path present on the row actually
+  retrieved; an unknown attribute produces a useful partial answer rather than a
+  refusal; seating capacity may be offered only as a marked assumption with a
+  confirming question.
+- The 2026-08-05 catalog audit found no seating-capacity field on any of 344
+  active SKUs and no Arabic catalog text at all. `tj-2pkk` now has the evidence
+  it has been blocked on since 2026-06-16.
+- Sealed rounds of 2026-08-04 and 2026-08-05 are superseded, immutable, and not
+  comparable with anything scored under `noor-claim-rubric/v1`.
+- Local acceptance on the combined tree: Ruff, format over 331 files, Mypy over
+  166 source files, process verification, and Pytest `2923 passed, 19 skipped`.
+- Actual candidate spend of the superseded round was `$0.0274` core and
+  `$0.0062` background. The re-run estimate is `$0.04` against the retained
+  `$4.00` reservation; the specification's dollar-scale figure included the paid
+  judge, which the owner has removed.
+
 ## Starter prompt for next orchestrator
 
 Use $orchestrator-stage for the active `tj-ee5f` stage. Read `AGENTS.md`,
@@ -123,6 +152,17 @@ configuration changes, push, deploy, staging/production mutation or readback,
 test-only business effects, or real-user messaging.
 
 ## Explicit defers
+
+- `tj-feet.10`: the claim contract runs on the requested-gap repair trigger
+  only. Extending it to every catalog turn costs either one extra model call per
+  catalog turn or a structured main output, and needs an owner decision on that
+  per-turn cost.
+- `tj-feet.5`, `.6`, `.9`: no measured numbers until the counter-set generation
+  run happens, which the owner scheduled after the model is chosen.
+- `tj-feet.8` paid provider calls remain an ungranted authority gate.
+- `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit
+  `.codex/handoff.md`; the other stream's edits are uncommitted in its own
+  worktree and will need reconciling at merge.
 
 - `tj-ee5f.13.9` / product-runtime `R-17`: validate and centralize model ids,
   reasoning capabilities, and cache-control support in `src/core/config.py` and
