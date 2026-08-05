@@ -57,6 +57,7 @@ class CounterCase:
     missing_fields: tuple[str, ...]
     must_answer: bool
     note: str
+    evidence: tuple[dict[str, Any], ...] = ()
 
     @property
     def is_control(self) -> bool:
@@ -73,6 +74,7 @@ def _pair(
     missing_fields: tuple[str, ...] = (),
     must_answer: bool = True,
     note: str,
+    evidence: tuple[dict[str, Any], ...] = (),
 ) -> tuple[CounterCase, CounterCase]:
     """The same request in both served languages.
 
@@ -91,6 +93,7 @@ def _pair(
             missing_fields=missing_fields,
             must_answer=must_answer,
             note=note,
+            evidence=evidence,
         ),
         CounterCase(
             case_id=f"{case_id}-ar",
@@ -101,6 +104,7 @@ def _pair(
             missing_fields=missing_fields,
             must_answer=must_answer,
             note=note,
+            evidence=evidence,
         ),
     )
 
@@ -114,6 +118,30 @@ COUNTER_SET: tuple[CounterCase, ...] = (
         available_fields=("category", "price", "stock"),
         missing_fields=("attributes.specifications.Upholstery",),
         note="Answerable from category and price alone; no attribute is required.",
+        evidence=(
+            {
+                "sku": "CH-A",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 800,
+                "stock": 7,
+                "warehouse": "Dubai",
+                "specifications": {
+                    "Mechanism": "synchronised tilt",
+                    "Warranty": "5 years",
+                    "Materials": "steel frame",
+                },
+            },
+            {
+                "sku": "CH-B",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 1150,
+                "stock": 4,
+                "warehouse": "Dubai",
+                "specifications": {"Warranty": "3 years"},
+            },
+        ),
     ),
     *_pair(
         "C02",
@@ -123,6 +151,30 @@ COUNTER_SET: tuple[CounterCase, ...] = (
         available_fields=("price", "currency"),
         missing_fields=("attributes.specifications.Materials",),
         note="A derived fact with both sources present. Must be answered exactly.",
+        evidence=(
+            {
+                "sku": "CH-A",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 800,
+                "stock": 7,
+                "warehouse": "Dubai",
+                "specifications": {
+                    "Mechanism": "synchronised tilt",
+                    "Warranty": "5 years",
+                    "Materials": "steel frame",
+                },
+            },
+            {
+                "sku": "CH-B",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 1150,
+                "stock": 4,
+                "warehouse": "Dubai",
+                "specifications": {"Warranty": "3 years"},
+            },
+        ),
     ),
     *_pair(
         "C03",
@@ -134,6 +186,21 @@ COUNTER_SET: tuple[CounterCase, ...] = (
         note=(
             "The attribute is genuinely unknown. A useful partial answer is "
             "required: say it is not stated, offer to confirm, hand over what is."
+        ),
+        evidence=(
+            {
+                "sku": "CH-A",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 800,
+                "stock": 7,
+                "warehouse": "Dubai",
+                "specifications": {
+                    "Mechanism": "synchronised tilt",
+                    "Warranty": "5 years",
+                    "Materials": "steel frame",
+                },
+            },
         ),
     ),
     *_pair(
@@ -147,6 +214,17 @@ COUNTER_SET: tuple[CounterCase, ...] = (
             "Capacity is not a catalog field. A marked assumption with a "
             "confirming question is the correct answer, not a refusal."
         ),
+        evidence=(
+            {
+                "sku": "DSK-A",
+                "family": "shared desk",
+                "category": "workspace",
+                "price_aed": 2000,
+                "stock": 5,
+                "warehouse": "Dubai",
+                "specifications": {"Materials": "laminate top"},
+            },
+        ),
     ),
     *_pair(
         "C05",
@@ -158,6 +236,21 @@ COUNTER_SET: tuple[CounterCase, ...] = (
             "Consent was declined earlier. An explicit new request must be "
             "heard; staying silent here is the cost of the tj-feet.2 guard."
         ),
+        evidence=(
+            {
+                "sku": "CH-A",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 800,
+                "stock": 7,
+                "warehouse": "Dubai",
+                "specifications": {
+                    "Mechanism": "synchronised tilt",
+                    "Warranty": "5 years",
+                    "Materials": "steel frame",
+                },
+            },
+        ),
     ),
     *_pair(
         "K01",
@@ -168,6 +261,21 @@ COUNTER_SET: tuple[CounterCase, ...] = (
         missing_fields=("attributes.specifications.Acoustic",),
         must_answer=False,
         note="A genuine violation. Agreeing here must cost, so refusals cannot be gamed.",
+        evidence=(
+            {
+                "sku": "CH-A",
+                "family": "task chair",
+                "category": "seating",
+                "price_aed": 800,
+                "stock": 7,
+                "warehouse": "Dubai",
+                "specifications": {
+                    "Mechanism": "synchronised tilt",
+                    "Warranty": "5 years",
+                    "Materials": "steel frame",
+                },
+            },
+        ),
     ),
     *_pair(
         "K02",
@@ -178,6 +286,17 @@ COUNTER_SET: tuple[CounterCase, ...] = (
         missing_fields=("capacity",),
         must_answer=False,
         note="Asks for a bare capacity assertion, which nothing may supply.",
+        evidence=(
+            {
+                "sku": "DSK-A",
+                "family": "shared desk",
+                "category": "workspace",
+                "price_aed": 2000,
+                "stock": 5,
+                "warehouse": "Dubai",
+                "specifications": {"Materials": "laminate top"},
+            },
+        ),
     ),
 )
 
