@@ -21,9 +21,9 @@ reproducible from the observations, so a disagreement is always locatable.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 RUBRIC_VERSION = "noor-claim-rubric/v1"
 """Pinned with every scored round. Bump on any change to the decision rules."""
@@ -274,6 +274,108 @@ class AxisReport:
     tool_obedience_rate: float
     conversational_quality: float
     critical_failures: int
+
+
+def is_claim_review(reviews: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether a blind scores file is in the claim-rubric format.
+
+    Detection rather than a flag, so a superseded round scored by the old
+    instrument keeps loading through the old path untouched.
+    """
+    for row in reviews:
+        scores = row.get("scores")
+        if not isinstance(scores, Mapping):
+            continue
+        for entry in scores.values():
+            if isinstance(entry, Mapping) and "claims" in entry:
+                return True
+    return False
+
+
+def _grade_from_review(entry: Mapping[str, Any]) -> ResponseGrade:
+    claims = tuple(
+        ClaimVerdict(
+            claim_type=str(raw.get("claim_type", "catalog_fact")),  # type: ignore[arg-type]
+            evidence=str(raw.get("evidence", "")),
+            field_path_present=bool(raw.get("field_path_present")),
+            same_sku=bool(raw.get("same_sku")),
+            value_matches=bool(raw.get("value_matches")),
+            computation_shown=bool(raw.get("computation_shown")),
+            marker_present=bool(raw.get("marker_present")),
+            confirming_question=bool(raw.get("confirming_question")),
+            contradicts_known=bool(raw.get("contradicts_known")),
+            appropriate=bool(raw.get("appropriate", True)),
+        )
+        for raw in entry.get("claims", ())
+        if isinstance(raw, Mapping)
+    )
+    raw_tools = entry.get("tool_obedience")
+    tools = (
+        ToolObedience(
+            required_calls_made=bool(raw_tools.get("required_calls_made", True)),
+            forbidden_call_made=bool(raw_tools.get("forbidden_call_made")),
+            effect_claimed_without_call=bool(
+                raw_tools.get("effect_claimed_without_call")
+            ),
+            call_sequence_matches=bool(raw_tools.get("call_sequence_matches", True)),
+        )
+        if isinstance(raw_tools, Mapping)
+        else ToolObedience()
+    )
+    raw_quality = entry.get("conversational_quality")
+    if not isinstance(raw_quality, Mapping):
+        raise ValueError("a claim review needs conversational_quality")
+    quality = ConversationalQuality(
+        clarity=int(raw_quality["clarity"]),
+        concision=int(raw_quality["concision"]),
+        persuasion=int(raw_quality["persuasion"]),
+        next_step=int(raw_quality["next_step"]),
+    )
+    return grade_response(claims, tool_obedience=tools, conversational_quality=quality)
+
+
+def evaluate_claim_reviews(
+    reviews: Sequence[Mapping[str, Any]],
+    key_rows: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, AxisReport], dict[str, bool]]:
+    """Reveal claim-rubric scores into per-model axis reports and hard gates.
+
+    Mirrors the legacy reveal step in one respect only — it refuses to proceed
+    when the scored pairs and the sealed key do not match — and differs in the
+    one that matters: it returns three axes per model instead of one blended
+    number.
+    """
+    review_by_pair = {
+        (str(row["case_id"]), int(row["repetition"])): row for row in reviews
+    }
+    key_by_pair = {
+        (str(row["case_id"]), int(row["repetition"])): row for row in key_rows
+    }
+    if set(review_by_pair) != set(key_by_pair):
+        raise ValueError("Claim review pairs do not match the reveal key")
+
+    grades_by_model: dict[str, list[ResponseGrade]] = {}
+    for pair, key_row in key_by_pair.items():
+        scores = review_by_pair[pair].get("scores")
+        reveal = key_row.get("reveal")
+        if not isinstance(scores, Mapping) or not isinstance(reveal, Mapping):
+            raise ValueError(f"{pair}: missing scores or reveal mapping")
+        if set(scores) != set(reveal):
+            raise ValueError(f"{pair}: score labels do not match reveal labels")
+        for label, model in reveal.items():
+            entry = scores.get(label)
+            if not isinstance(entry, Mapping) or not isinstance(model, str):
+                raise ValueError(f"{pair}: incomplete label {label}")
+            grades_by_model.setdefault(model, []).append(_grade_from_review(entry))
+
+    reports = {
+        model: aggregate_grades(grades) for model, grades in grades_by_model.items()
+    }
+    hard_gates = {
+        model: all(not grade.critical_failure for grade in grades)
+        for model, grades in grades_by_model.items()
+    }
+    return reports, hard_gates
 
 
 def aggregate_grades(grades: Sequence[ResponseGrade]) -> AxisReport:

@@ -283,3 +283,130 @@ def test_anchor_set_carries_no_captured_wording() -> None:
         assert anchor.rationale
         for claim in anchor.claims:
             assert '"' not in claim.evidence
+
+
+# --- the reveal step for a claim-rubric round --------------------------------
+
+
+def _claim_review_entry(*, unsupported: bool = False, forbidden_call: bool = False):
+    return {
+        "claims": [
+            {
+                "claim_type": "catalog_fact",
+                "field_path_present": not unsupported,
+                "same_sku": not unsupported,
+                "value_matches": not unsupported,
+            }
+        ],
+        "tool_obedience": {"forbidden_call_made": forbidden_call},
+        "conversational_quality": {
+            "clarity": 4,
+            "concision": 4,
+            "persuasion": 4,
+            "next_step": 4,
+        },
+    }
+
+
+def test_a_legacy_scores_file_is_not_mistaken_for_a_claim_review() -> None:
+    from scripts.model_battle_rubric import is_claim_review
+
+    legacy = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "scores": {"A": {"scores": {"clarity": 4}, "critical_failure": False}},
+        }
+    ]
+
+    assert is_claim_review(legacy) is False
+    assert (
+        is_claim_review(
+            [
+                {
+                    "case_id": "S01",
+                    "repetition": 1,
+                    "scores": {"A": _claim_review_entry()},
+                }
+            ]
+        )
+        is True
+    )
+
+
+def test_the_reveal_returns_three_axes_per_model_and_a_hard_gate() -> None:
+    from scripts.model_battle_rubric import evaluate_claim_reviews
+
+    reviews = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "scores": {
+                "A": _claim_review_entry(),
+                "B": _claim_review_entry(unsupported=True),
+                "C": _claim_review_entry(forbidden_call=True),
+            },
+        }
+    ]
+    key_rows = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "reveal": {
+                "A": "model-clean",
+                "B": "model-fabricates",
+                "C": "model-disobeys",
+            },
+        }
+    ]
+
+    reports, hard_gates = evaluate_claim_reviews(reviews, key_rows)
+
+    assert reports["model-clean"].groundedness == 1.0
+    assert reports["model-fabricates"].groundedness == 0.0
+    assert reports["model-disobeys"].groundedness == 1.0
+    assert reports["model-disobeys"].tool_obedience_rate == 0.0
+    assert hard_gates == {
+        "model-clean": True,
+        "model-fabricates": False,
+        "model-disobeys": False,
+    }
+
+
+def test_the_reveal_refuses_a_key_that_does_not_match_the_scores() -> None:
+    from scripts.model_battle_rubric import evaluate_claim_reviews
+
+    with pytest.raises(ValueError, match="do not match"):
+        evaluate_claim_reviews(
+            [
+                {
+                    "case_id": "S01",
+                    "repetition": 1,
+                    "scores": {"A": _claim_review_entry()},
+                }
+            ],
+            [{"case_id": "S01", "repetition": 2, "reveal": {"A": "m"}}],
+        )
+
+
+def test_a_failed_claim_gate_removes_a_model_from_selection() -> None:
+    """The objective score is untouched; only the gate moves."""
+    from scripts.model_battle import apply_claim_hard_gates
+
+    rows = [
+        {
+            "model": "clean",
+            "objective": {"hard_gate_passed": True, "score_out_of_30": 28},
+        },
+        {
+            "model": "fabricates",
+            "objective": {"hard_gate_passed": True, "score_out_of_30": 29},
+        },
+    ]
+
+    gated = apply_claim_hard_gates(rows, {"clean": True, "fabricates": False})
+
+    assert gated[0]["objective"]["hard_gate_passed"] is True
+    assert gated[1]["objective"]["hard_gate_passed"] is False
+    assert gated[1]["objective"]["score_out_of_30"] == 29
+    assert rows[1]["objective"]["hard_gate_passed"] is True

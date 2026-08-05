@@ -24,6 +24,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from scripts.model_battle_rubric import (
+    RUBRIC_VERSION,
+    evaluate_claim_reviews,
+    is_claim_review,
+)
 
 from src.core.config import settings
 
@@ -1168,6 +1173,84 @@ def select_winner(
             "latency or reliability advantage."
         ),
     )
+
+
+def apply_claim_hard_gates(
+    rows: Sequence[Mapping[str, Any]],
+    hard_gates: Mapping[str, bool],
+) -> list[dict[str, Any]]:
+    """Carry the claim-rubric gate into the rows the selection reads.
+
+    The deterministic objective score is untouched. Only the gate moves, so a
+    model that fabricates cannot be selected however well it writes.
+    """
+    gated: list[dict[str, Any]] = []
+    for row in rows:
+        copied = dict(row)
+        objective = dict(copied.get("objective") or {})
+        if not hard_gates.get(str(copied.get("model")), True):
+            objective["hard_gate_passed"] = False
+            objective["hard_gate_reason"] = "claim rubric critical failure"
+        copied["objective"] = objective
+        gated.append(copied)
+    return gated
+
+
+def _score_with_claim_rubric(
+    blind_scores: Sequence[Mapping[str, Any]],
+    *,
+    output_dir: Path,
+    evidence_dir: Path,
+    profile: str,
+    sales_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Reveal and select from a round scored by the tj-feet.4 rubric.
+
+    Three axes are reported per model beside the selection score. There is no
+    blended quality figure, and these numbers are not comparable with the
+    superseded rounds.
+    """
+    blind_key = json.loads(
+        (evidence_dir / "sales_blind_key.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(blind_key, list):
+        raise ValueError("Blind key must be a JSON array")
+    commitment = _read_json_object(output_dir / "sales_blind_key.commitment.json")
+    verify_blind_scores_seal(blind_key, str(commitment.get("sha256", "")))
+
+    reports, hard_gates = evaluate_claim_reviews(blind_scores, blind_key)
+    gated_rows = apply_claim_hard_gates(sales_rows, hard_gates)
+    decision = select_hard_profile_winner(profile, gated_rows)
+
+    result: dict[str, Any] = {
+        "openrouter_model_main": asdict(decision),
+        "openrouter_model_fast": None,
+        "rubric_version": RUBRIC_VERSION,
+        "comparable_with_superseded_rounds": False,
+        "axes": {
+            model: {
+                "responses": report.responses,
+                "groundedness": report.groundedness,
+                "grounded_claims_scored": report.grounded_claims_scored,
+                "grounded_claims_failed": report.grounded_claims_failed,
+                "tool_obedience_rate": report.tool_obedience_rate,
+                "conversational_quality": report.conversational_quality,
+                "critical_failures": report.critical_failures,
+            }
+            for model, report in sorted(reports.items())
+        },
+        "hard_gates": dict(sorted(hard_gates.items())),
+        "eval_disagreements": [],
+        "eval_score_calibration": None,
+        "production_changed": False,
+    }
+    _write_json(output_dir / "sales_blind_scores.json", list(blind_scores))
+    _write_jsonl(evidence_dir / "sales_scored_results.jsonl", gated_rows)
+    _write_json(
+        evidence_dir / "sales_scored_aggregate.json", aggregate_rows(gated_rows)
+    )
+    _write_json(output_dir / "model_selection.json", result)
+    return result
 
 
 def select_hard_profile_winner(
@@ -3226,6 +3309,16 @@ def score_battle(
     blind_scores = parse_json_content(blind_scores_path.read_text(encoding="utf-8"))
     if not isinstance(blind_scores, list):
         raise ValueError("Blind scores must be a JSON array")
+    if is_claim_review(blind_scores):
+        # tj-feet.4 rubric. Kept behind format detection so a superseded round
+        # scored by the old instrument still loads through the old path.
+        return _score_with_claim_rubric(
+            blind_scores,
+            output_dir=output_dir,
+            evidence_dir=evidence_dir,
+            profile=profile,
+            sales_rows=sales_rows,
+        )
     blind_scores = normalize_blind_reviews(blind_scores)
     if profile == CORE_HARD_PROFILE:
         seal_path = output_dir / "sales_blind_scores.seal.json"
