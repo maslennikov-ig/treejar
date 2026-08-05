@@ -17,8 +17,9 @@ import re
 import secrets
 import statistics
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,11 @@ _FIRST_PARTY_PROVIDERS = {
     "xiaomi": "xiaomi",
     "z-ai": "z-ai",
 }
+_PROVIDER_CHAIN_LIMIT = 3
+# An fp4-class serving answers as a measurably different artefact than the
+# weights its publisher hosts. Comparing one candidate's fp4 serving against
+# another's native precision would measure the host, not the model.
+_EXCLUDED_QUANTIZATIONS = {"fp4", "int4", "q4", "int3", "q3", "q2"}
 
 _JSON_FENCE_RE = re.compile(
     r"^\s*```(?:json)?\s*(.*?)\s*```\s*$",
@@ -84,6 +90,9 @@ _JSON_FENCE_RE = re.compile(
 )
 _PATH_PART_RE = re.compile(r"([^[.\]]+)|\[(\d+)\]")
 _NUMBER_RE = re.compile(r"(?<![\w-])\d[\d,]*(?:\.\d+)?%?")
+_ISO_TIMESTAMP_RE = re.compile(
+    r"(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?"
+)
 _ARABIC_RE = re.compile(r"[\u0600-\u06ff]")
 _CYRILLIC_RE = re.compile(r"[\u0400-\u04ff]")
 _EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
@@ -158,6 +167,62 @@ def conservative_input_token_bound(payload: Mapping[str, Any]) -> int:
     return max(1, len(encoded))
 
 
+DEFAULT_PER_MODEL_CAP_USD = 1.0
+_JSON_RESPONSE_FORMAT_NOTICE = "Answer with a single json object and nothing else."
+
+
+class CostCapExhausted(RuntimeError):
+    """A candidate reached its own limit; the round continues without it."""
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        committed: float,
+        cap: float,
+        limit: str = "cost cap",
+    ) -> None:
+        super().__init__(
+            f"Model {limit} reached before provider request: {model} "
+            f"committed ${committed:.6f}, limit ${cap:.6f}"
+        )
+        self.model = model
+        self.committed = committed
+        self.cap = cap
+        self.limit = limit
+
+
+def resolve_model_caps(
+    estimated_costs: Mapping[str, float],
+    *,
+    policy: str = "fixed",
+    default_cap: float = DEFAULT_PER_MODEL_CAP_USD,
+    overrides: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    """Resolve one auditable cap per model before any paid request.
+
+    ``fixed`` keeps the accepted flat cap. ``cover-estimate`` raises a cap only
+    as far as that model's own conservative worst-case estimate, which is what
+    lets every candidate finish the complete matrix instead of stopping early.
+    """
+
+    if policy not in {"fixed", "cover-estimate"}:
+        raise ValueError(f"Unknown cap policy: {policy}")
+    default_cap = _finite_number(default_cap, "Default per-model cap")
+    resolved: dict[str, float] = {}
+    for model, estimate in estimated_costs.items():
+        cap = default_cap
+        if policy == "cover-estimate":
+            finite_estimate = _finite_number(estimate, f"Estimate for {model}")
+            cap = max(cap, math.ceil(finite_estimate * 100) / 100)
+        resolved[model] = cap
+    for model, override in (overrides or {}).items():
+        if model not in resolved:
+            raise ValueError(f"Cap override names an unconfigured model: {model}")
+        resolved[model] = _finite_number(override, f"Cap override for {model}")
+    return resolved
+
+
 class RequestCostBudget:
     """Reserve each request, then replace it with provider-reported cost."""
 
@@ -166,14 +231,28 @@ class RequestCostBudget:
         *,
         catalog: Mapping[str, Mapping[str, Any]],
         estimated_costs: Mapping[str, float],
+        caps: Mapping[str, float] | None = None,
     ) -> None:
         self._catalog = catalog
-        self._caps = {model: 1.0 for model in estimated_costs}
+        resolved_caps = (
+            resolve_model_caps(estimated_costs) if caps is None else dict(caps)
+        )
+        missing_caps = set(estimated_costs) - set(resolved_caps)
+        if missing_caps:
+            raise RuntimeError(
+                "No cost cap configured for " + ", ".join(sorted(missing_caps))
+            )
+        self._caps = {
+            model: _finite_number(resolved_caps[model], f"Cost cap for {model}")
+            for model in estimated_costs
+        }
         self._batch_allowances = {}
         self._pricing: dict[str, tuple[float, float]] = {}
         for model, estimate in estimated_costs.items():
             finite_estimate = _finite_number(estimate, f"Estimate for {model}")
-            self._batch_allowances[model] = min(1.0, finite_estimate * 1.25)
+            self._batch_allowances[model] = min(
+                self._caps[model], finite_estimate * 1.25
+            )
             pricing = catalog.get(model, {}).get("pricing", {})
             if not isinstance(pricing, Mapping):
                 raise RuntimeError(f"Missing catalog pricing for {model}")
@@ -201,6 +280,10 @@ class RequestCostBudget:
             model: round(cost, 12) for model, cost in self._actual.items() if cost > 0
         }
 
+    @property
+    def caps(self) -> dict[str, float]:
+        return dict(self._caps)
+
     def _require_active(self, model: str) -> None:
         if model not in self._batch_allowances:
             raise RuntimeError(f"No cost allowance configured for {model}")
@@ -216,21 +299,16 @@ class RequestCostBudget:
         cap = self._caps.get(model)
         if cap is None:
             raise RuntimeError(f"No cost cap configured for {model}")
-        next_total = self._actual.get(model, 0.0) + self._pending.get(model, 0.0)
-        next_total += worst_case
-        if next_total > cap + 1e-12:
-            raise RuntimeError(
-                "Model cost cap would be exceeded before provider request: "
-                f"{model} committed "
-                f"${self._actual.get(model, 0.0) + self._pending.get(model, 0.0):.6f}, "
-                f"next worst-case ${worst_case:.6f}, cap ${cap:.6f}"
-            )
+        committed = self._actual.get(model, 0.0) + self._pending.get(model, 0.0)
+        if committed + worst_case > cap + 1e-12:
+            raise CostCapExhausted(model, committed=committed, cap=cap)
         available = self._own_available[model] + self._carry_available
         if worst_case > available + 1e-12:
-            raise RuntimeError(
-                "Candidate battle allowance would be exceeded before provider request: "
-                f"{model} needs ${worst_case:.6f}, available "
-                f"${available:.6f}"
+            raise CostCapExhausted(
+                model,
+                committed=committed,
+                cap=available,
+                limit="battle allowance",
             )
         own_used = min(worst_case, self._own_available[model])
         carry_used = worst_case - own_used
@@ -745,14 +823,12 @@ def score_blind_reviews(
     return quality
 
 
-def detect_evaluator_disagreements(
+def _paired_instrument_scores(
     evaluator_rows: Sequence[Mapping[str, Any]],
     blind_audits: Sequence[Mapping[str, Any]],
     key_rows: Sequence[Mapping[str, Any]],
-    *,
-    tolerance: float = 2.0,
-) -> list[dict[str, Any]]:
-    """Compare sealed blind audits with evaluator scores after identity reveal."""
+) -> Iterator[dict[str, Any]]:
+    """Walk the sealed reveal once and pair both instruments per response."""
 
     evaluator_by_key = {
         (str(row["case_id"]), int(row["repetition"]), str(row["model"])): row
@@ -761,7 +837,6 @@ def detect_evaluator_disagreements(
     key_by_pair = {
         (str(row["case_id"]), int(row["repetition"])): row for row in key_rows
     }
-    disagreements: list[dict[str, Any]] = []
     for audit in blind_audits:
         pair = (str(audit["case_id"]), int(audit["repetition"]))
         key_row = key_by_pair.get(pair)
@@ -776,32 +851,144 @@ def detect_evaluator_disagreements(
             evaluator = evaluator_by_key.get((*pair, model))
             if evaluator is None:
                 raise ValueError(f"{pair}: missing evaluator row for {model}")
-            expected_applicability = {
-                str(item) for item in evaluator.get("applicable_rules", [])
+            yield {
+                "case_id": pair[0],
+                "repetition": pair[1],
+                "model": model,
+                "checklist_score": float(evaluator.get("score_out_of_30", 0)),
+                "judge_score": float(audit_score.get("score_out_of_30", 0)),
+                "checklist_rules": {
+                    str(item) for item in evaluator.get("applicable_rules", [])
+                },
+                "judge_rules": {
+                    str(item) for item in audit_score.get("applicable_rules", [])
+                },
             }
-            audited_applicability = {
-                str(item) for item in audit_score.get("applicable_rules", [])
+
+
+def detect_rank_inversions(
+    paired: Sequence[Mapping[str, Any]],
+    *,
+    tolerance: float = 2.0,
+) -> list[dict[str, Any]]:
+    """Find candidate pairs the two instruments order in opposite directions."""
+
+    checklist: dict[str, list[float]] = {}
+    judge: dict[str, list[float]] = {}
+    for entry in paired:
+        model = str(entry["model"])
+        checklist.setdefault(model, []).append(float(entry["checklist_score"]))
+        judge.setdefault(model, []).append(float(entry["judge_score"]))
+    means = {
+        model: (statistics.fmean(values), statistics.fmean(judge[model]))
+        for model, values in checklist.items()
+        if values and judge.get(model)
+    }
+    inversions: list[dict[str, Any]] = []
+    for first, second in combinations(sorted(means), 2):
+        checklist_delta = means[first][0] - means[second][0]
+        judge_delta = means[first][1] - means[second][1]
+        # Only an ordering that both instruments state clearly can be
+        # contradicted; a gap inside the tolerance is noise on either side.
+        if min(abs(checklist_delta), abs(judge_delta)) <= tolerance:
+            continue
+        if (checklist_delta > 0) == (judge_delta > 0):
+            continue
+        inversions.append(
+            {
+                "status": "EVAL_DISAGREEMENT",
+                "reason": "rank_inversion",
+                "models": [first, second],
+                "checklist_delta": round(checklist_delta, 4),
+                "judge_delta": round(judge_delta, 4),
             }
-            if expected_applicability != audited_applicability:
-                reason = "applicability"
-            else:
-                delta = abs(
-                    float(evaluator.get("score_out_of_30", 0))
-                    - float(audit_score.get("score_out_of_30", 0))
-                )
-                if delta <= tolerance:
-                    continue
-                reason = "score_delta"
-            disagreements.append(
-                {
-                    "status": "EVAL_DISAGREEMENT",
-                    "case_id": pair[0],
-                    "repetition": pair[1],
-                    "model": model,
-                    "reason": reason,
-                }
-            )
+        )
+    return inversions
+
+
+def detect_evaluator_disagreements(
+    evaluator_rows: Sequence[Mapping[str, Any]],
+    blind_audits: Sequence[Mapping[str, Any]],
+    key_rows: Sequence[Mapping[str, Any]],
+    *,
+    tolerance: float = 2.0,
+) -> list[dict[str, Any]]:
+    """Report blocking cross-instrument conflicts after identity reveal.
+
+    Two comparisons are valid here. Applicability asks both instruments the
+    same question - which rubric rules govern this scenario - so a mismatch is
+    a real conflict. Ordering asks whether the deterministic checklist and the
+    blind judge disagree about which candidate is better, which is the only
+    score comparison a selection round actually depends on.
+
+    Absolute `score_out_of_30` is deliberately not compared. The checklist
+    score measures rule coverage while the judge score measures holistic
+    quality, so the offset between them is calibration between two different
+    instruments, not disagreement about a candidate.
+    `summarize_evaluator_calibration` publishes that offset as a diagnostic.
+    """
+
+    paired = list(_paired_instrument_scores(evaluator_rows, blind_audits, key_rows))
+    disagreements: list[dict[str, Any]] = [
+        {
+            "status": "EVAL_DISAGREEMENT",
+            "case_id": entry["case_id"],
+            "repetition": entry["repetition"],
+            "model": entry["model"],
+            "reason": "applicability",
+        }
+        for entry in paired
+        if entry["checklist_rules"] != entry["judge_rules"]
+    ]
+    disagreements.extend(detect_rank_inversions(paired, tolerance=tolerance))
     return disagreements
+
+
+def summarize_evaluator_calibration(
+    evaluator_rows: Sequence[Mapping[str, Any]],
+    blind_audits: Sequence[Mapping[str, Any]],
+    key_rows: Sequence[Mapping[str, Any]],
+    *,
+    tolerance: float = 2.0,
+) -> dict[str, Any]:
+    """Publish the checklist/judge offset that no longer blocks acceptance."""
+
+    paired = list(_paired_instrument_scores(evaluator_rows, blind_audits, key_rows))
+    deltas = [
+        entry["checklist_score"] - entry["judge_score"]
+        for entry in paired
+        if entry["checklist_rules"] == entry["judge_rules"]
+    ]
+    per_model: dict[str, dict[str, float | int]] = {}
+    for entry in paired:
+        bucket = per_model.setdefault(
+            str(entry["model"]),
+            {"observations": 0, "checklist_mean": 0.0, "judge_mean": 0.0},
+        )
+        bucket["observations"] = int(bucket["observations"]) + 1
+        bucket["checklist_mean"] += entry["checklist_score"]
+        bucket["judge_mean"] += entry["judge_score"]
+    for bucket in per_model.values():
+        observations = int(bucket["observations"])
+        bucket["checklist_mean"] = round(bucket["checklist_mean"] / observations, 4)
+        bucket["judge_mean"] = round(bucket["judge_mean"] / observations, 4)
+        bucket["mean_signed_delta"] = round(
+            float(bucket["checklist_mean"]) - float(bucket["judge_mean"]), 4
+        )
+    return {
+        "tolerance": tolerance,
+        "responses_compared": len(deltas),
+        "responses_within_tolerance": sum(
+            1 for delta in deltas if abs(delta) <= tolerance
+        ),
+        "mean_signed_delta": round(sum(deltas) / len(deltas), 4) if deltas else 0.0,
+        "mean_absolute_delta": (
+            round(sum(abs(delta) for delta in deltas) / len(deltas), 4)
+            if deltas
+            else 0.0
+        ),
+        "per_model": dict(sorted(per_model.items())),
+    }
 
 
 def apply_blind_audit_scores(
@@ -1402,6 +1589,20 @@ async def _request_with_retry(
     return attempts
 
 
+def _served_providers(attempts: Sequence[ProviderAttempt]) -> list[str]:
+    """Name who actually answered, in order, so a chain stays auditable."""
+
+    served: list[str] = []
+    for attempt in attempts:
+        response = attempt.response
+        if not isinstance(response, Mapping):
+            continue
+        provider = response.get("provider")
+        if isinstance(provider, str) and provider and provider not in served:
+            served.append(provider)
+    return served
+
+
 def _provider_attempt_cost(
     _reservation: object | None,
     attempt: ProviderAttempt,
@@ -1526,8 +1727,9 @@ def summarize_attempt_accounting(
 def enforce_model_cost_caps(
     rows: Sequence[Mapping[str, Any]],
     estimated_costs: Mapping[str, float],
+    caps: Mapping[str, float] | None = None,
 ) -> None:
-    """Fail closed when provider-reported spend exceeds USD 1 per model."""
+    """Fail closed when provider-reported spend exceeds a model's own cap."""
 
     actual: dict[str, float] = {}
     for row in rows:
@@ -1540,29 +1742,53 @@ def enforce_model_cost_caps(
             actual[model] = actual.get(model, 0.0) + _finite_number(
                 cost, f"Accounting cost for {model}"
             )
+    resolved_caps = resolve_model_caps(estimated_costs) if caps is None else dict(caps)
     exceeded: list[str] = []
     for model in estimated_costs:
-        if actual.get(model, 0.0) > 1.0 + 1e-12:
-            exceeded.append(f"{model}: spent ${actual[model]:.6f}, cap $1.000000")
+        cap = _finite_number(
+            resolved_caps.get(model, DEFAULT_PER_MODEL_CAP_USD), f"Cost cap for {model}"
+        )
+        if actual.get(model, 0.0) > cap + 1e-12:
+            exceeded.append(f"{model}: spent ${actual[model]:.6f}, cap ${cap:.6f}")
     if exceeded:
         raise RuntimeError("Model cost cap exceeded: " + "; ".join(exceeded))
 
 
-def build_cost_preflight(estimated_costs: Mapping[str, float]) -> dict[str, Any]:
+def build_cost_preflight(
+    estimated_costs: Mapping[str, float],
+    caps: Mapping[str, float] | None = None,
+    *,
+    cap_policy: str = "fixed",
+) -> dict[str, Any]:
     """Describe reservations without treating a conservative estimate as spend."""
 
     finite_estimates = {
         model: _finite_number(estimate, f"Estimate for {model}")
         for model, estimate in estimated_costs.items()
     }
+    resolved_caps = (
+        resolve_model_caps(finite_estimates, policy=cap_policy)
+        if caps is None
+        else {
+            model: _finite_number(caps[model], f"Cost cap for {model}")
+            for model in finite_estimates
+        }
+    )
     order = sorted(finite_estimates, key=lambda model: (finite_estimates[model], model))
     return {
         "estimated_costs_usd": finite_estimates,
         "batch_allowances_usd": {
-            model: min(1.0, estimate * 1.25)
+            model: min(resolved_caps[model], estimate * 1.25)
             for model, estimate in finite_estimates.items()
         },
-        "per_model_caps_usd": {model: 1.0 for model in estimated_costs},
+        "per_model_caps_usd": resolved_caps,
+        "cap_policy": cap_policy,
+        "caps_raised_above_default": {
+            model: cap
+            for model, cap in resolved_caps.items()
+            if cap > DEFAULT_PER_MODEL_CAP_USD + 1e-12
+        },
+        "maximum_total_usd": sum(resolved_caps.values()),
         "execution_order": order,
         "estimate_is_reservation_not_spend": True,
     }
@@ -1679,11 +1905,26 @@ def build_base_payload(
     messages: Sequence[Mapping[str, Any]],
     max_tokens: int,
     reasoning_enabled: bool | None = None,
+    provider_order: Sequence[str] | None = None,
+    provider_quantizations: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     owner = model.partition("/")[0]
     provider: dict[str, Any] = {"require_parameters": True}
     provider_slug = _FIRST_PARTY_PROVIDERS.get(owner)
-    if provider_slug is not None:
+    if provider_order:
+        # An ordered chain with fallbacks off stays inside the resolved list and
+        # tries it in sequence, so a provider outage costs the next entry rather
+        # than the candidate's whole matrix. The order names providers, so the
+        # quantization allowlist is what keeps a vetted serving vetted.
+        provider.update(
+            {
+                "order": list(provider_order),
+                "allow_fallbacks": False,
+            }
+        )
+        if provider_quantizations:
+            provider["quantizations"] = list(provider_quantizations)
+    elif provider_slug is not None:
         provider.update(
             {
                 "only": [provider_slug],
@@ -1700,6 +1941,16 @@ def build_base_payload(
     if reasoning_enabled is not None:
         payload["reasoning"] = {"enabled": reasoning_enabled}
     return payload
+
+
+def _render_required_schema(schema: Mapping[str, Any]) -> str:
+    """State the required JSON contract that portable `json_object` cannot carry."""
+
+    return (
+        "The json object must conform exactly to this JSON Schema. Use these "
+        "property names verbatim and include every required property:\n"
+        + json.dumps(dict(schema), ensure_ascii=False, sort_keys=True)
+    )
 
 
 def build_system_response_format(
@@ -1798,6 +2049,66 @@ def _extract_asserted_numeric_tokens(value: str) -> set[str]:
     return extract_numeric_tokens(without_list_markers)
 
 
+def _numeric_token(value: float) -> str:
+    """Render a derived value in the same normalized form as an extracted one."""
+
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.4f}".rstrip("0").rstrip(".")
+
+
+def derive_quotation_arithmetic(tokens: set[str], *, limit: int = 120) -> set[str]:
+    """Admit the arithmetic a quotation must perform on grounded numbers.
+
+    A sales answer that multiplies a grounded unit price by a grounded quantity,
+    or adds two grounded line totals, is not inventing a commercial fact. Without
+    this closure the grounding gate rejects every competent quotation, which is
+    what eliminated the whole candidate field in the first core round.
+    """
+
+    values: list[float] = []
+    for token in tokens:
+        try:
+            values.append(float(token))
+        except ValueError:
+            continue
+    if len(values) > limit:
+        return set(tokens)
+    derived = set(tokens)
+    for index, left in enumerate(values):
+        for right in values[index:]:
+            candidates = [left * right, left + right, abs(left - right)]
+            # Division recovers the per-unit price from a grounded line total,
+            # which is the other half of ordinary quotation arithmetic.
+            if right:
+                candidates.append(left / right)
+            if left:
+                candidates.append(right / left)
+            for candidate in candidates:
+                if math.isfinite(candidate) and candidate >= 0:
+                    derived.add(_numeric_token(candidate))
+    return derived
+
+
+def timestamp_component_tokens(value: str) -> set[str]:
+    """Expose the parts of an ISO timestamp the SKU-safe number regex hides.
+
+    ``_NUMBER_RE`` refuses digits preceded by a hyphen or letter so that SKUs
+    like ``AX-E1`` are never read as numbers. That also hides the month, day and
+    hour of ``2026-08-03T10:00:00Z``, so a model restating the same timestamp in
+    words looks like it invented ``3`` and ``10``.
+    """
+
+    tokens: set[str] = set()
+    for match in _ISO_TIMESTAMP_RE.finditer(value):
+        for part in match.groups():
+            if part is None:
+                continue
+            tokens.add(part)
+            tokens.add(str(int(part)))
+    return tokens
+
+
 def build_sales_grounding_numbers(case: Any) -> set[str]:
     """Build the one numeric evidence set used by live and offline scoring."""
 
@@ -1810,7 +2121,9 @@ def build_sales_grounding_numbers(case: Any) -> set[str]:
         },
         ensure_ascii=False,
     )
-    return extract_numeric_tokens(grounding_evidence)
+    grounded = extract_numeric_tokens(grounding_evidence)
+    grounded |= timestamp_component_tokens(grounding_evidence)
+    return derive_quotation_arithmetic(grounded)
 
 
 def contains_pii_leakage(output: str, source: str) -> bool:
@@ -1925,6 +2238,8 @@ async def _run_sales_case(
     case: Any,
     repetition: int,
     cost_budget: RequestCostBudget | None = None,
+    provider_order: Sequence[str] | None = None,
+    provider_quantizations: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": case.system_prompt},
@@ -1945,6 +2260,8 @@ async def _run_sales_case(
             messages=messages,
             max_tokens=2200,
             reasoning_enabled=False,
+            provider_order=provider_order,
+            provider_quantizations=provider_quantizations,
         )
         if case.tools:
             payload["tools"] = list(case.tools)
@@ -2057,6 +2374,8 @@ async def _run_sales_case(
         "retry_used": retry_was_used(attempt_counts_by_round),
         "latency_ms": round(sum(item.elapsed_ms for item in all_attempts), 3),
         "provider_attempts": [asdict(item) for item in all_attempts],
+        "provider_order": list(provider_order or []),
+        "served_providers": _served_providers(all_attempts),
         "usage": _usage(all_attempts),
         "accounting": summarize_attempt_accounting(all_attempts),
         "request_parameters": request_parameters,
@@ -2075,9 +2394,22 @@ async def _run_system_case(
     repetition: int,
     profile: str = ORIGINAL_PROFILE,
     cost_budget: RequestCostBudget | None = None,
+    provider_order: Sequence[str] | None = None,
+    provider_quantizations: Sequence[str] | None = None,
 ) -> dict[str, Any]:
+    system_prompt = case.system_prompt
+    if not case.tools:
+        # Two provider-neutral additions, identical for every candidate, so
+        # comparability is unchanged. OpenAI rejects a JSON response format
+        # unless the messages contain the word "json". And a hard profile uses
+        # portable `json_object`, which carries no schema, so the required shape
+        # has to be stated in the prompt or every candidate answers a contract
+        # it was never shown.
+        system_prompt = f"{system_prompt}\n{_JSON_RESPONSE_FORMAT_NOTICE}"
+        if profile in _HARD_PROFILES:
+            system_prompt = f"{system_prompt}\n{_render_required_schema(case.schema)}"
     messages = [
-        {"role": "system", "content": case.system_prompt},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": case.user_prompt},
     ]
     payload = build_base_payload(
@@ -2085,6 +2417,8 @@ async def _run_system_case(
         messages=messages,
         max_tokens=900,
         reasoning_enabled=False,
+        provider_order=provider_order,
+        provider_quantizations=provider_quantizations,
     )
     if case.tools:
         payload["tools"] = list(case.tools)
@@ -2204,6 +2538,8 @@ async def _run_system_case(
         "reasoning_observed": reasoning_was_observed(attempts),
         "latency_ms": round(sum(item.elapsed_ms for item in attempts), 3),
         "provider_attempts": [asdict(item) for item in attempts],
+        "provider_order": list(provider_order or []),
+        "served_providers": _served_providers(attempts),
         "usage": _usage(attempts),
         "accounting": summarize_attempt_accounting(attempts),
         "request_parameters": [request_parameters],
@@ -2274,6 +2610,133 @@ def _required_parameters_by_model(
     return requirements
 
 
+def _endpoint_price(endpoint: Mapping[str, Any], field: str) -> float:
+    """Price an endpoint for ordering; an unpriced endpoint sorts last."""
+
+    pricing = endpoint.get("pricing")
+    if isinstance(pricing, Mapping) and field in pricing:
+        try:
+            return float(pricing[field])
+        except (TypeError, ValueError):
+            return math.inf
+    return math.inf
+
+
+def _endpoint_provider_slug(endpoint: Mapping[str, Any]) -> str:
+    """Prefer the tag's own prefix; it is the slug routing actually accepts.
+
+    A display name does not survive normalization reliably - "AtlasCloud"
+    becomes `atlascloud` while the routable slug is `atlas-cloud`, and an order
+    entry that names no real provider is silently dropped.
+    """
+
+    tag = endpoint.get("tag")
+    if isinstance(tag, str) and tag.strip():
+        return tag.partition("/")[0].strip()
+    return _normalized_provider_name(str(endpoint.get("provider_name") or ""))
+
+
+def resolve_provider_chain(
+    model: str,
+    endpoint_catalog: Mapping[str, Any],
+    *,
+    required_parameters: set[str],
+    limit: int = _PROVIDER_CHAIN_LIMIT,
+) -> list[dict[str, Any]]:
+    """Order the endpoints a candidate may be served by, first party first.
+
+    The publisher's own endpoint is the reference serving of a model, so it
+    always leads and every comparison prefers it. It can also be down, and a
+    round that dies on one provider outage buys nothing, so a bounded number of
+    alternates follows it in published order. Aggressively quantized servings
+    are excluded outright rather than ranked last, because they answer as a
+    different artefact and would silently turn a model comparison into a host
+    comparison.
+    """
+
+    owner = model.partition("/")[0]
+    first_party = _FIRST_PARTY_PROVIDERS.get(owner)
+    if first_party is None:
+        raise RuntimeError(f"No first-party provider pin configured for {model}")
+    data = endpoint_catalog.get("data")
+    endpoints = data.get("endpoints") if isinstance(data, Mapping) else None
+    eligible: list[dict[str, Any]] = []
+    for endpoint in endpoints or []:
+        if not isinstance(endpoint, Mapping):
+            continue
+        supported = {
+            str(parameter)
+            for parameter in endpoint.get("supported_parameters", [])
+            if isinstance(parameter, str)
+        }
+        if not required_parameters <= supported:
+            continue
+        quantization = str(endpoint.get("quantization") or "unknown").casefold()
+        if quantization in _EXCLUDED_QUANTIZATIONS:
+            continue
+        eligible.append(dict(endpoint))
+    if not eligible:
+        raise RuntimeError(
+            f"No unquantized endpoint for {model} supports required parameters: "
+            + ", ".join(sorted(required_parameters))
+        )
+
+    def _rank(endpoint: Mapping[str, Any]) -> tuple[Any, ...]:
+        return (
+            0 if _endpoint_provider_slug(endpoint) == first_party else 1,
+            _endpoint_price(endpoint, "completion"),
+            _endpoint_price(endpoint, "prompt"),
+            -float(endpoint.get("uptime_last_1d") or 0.0),
+            _endpoint_provider_slug(endpoint),
+        )
+
+    ranked = sorted(eligible, key=_rank)
+    admitted: list[str] = []
+    for endpoint in ranked:
+        slug = _endpoint_provider_slug(endpoint)
+        if slug not in admitted:
+            if len(admitted) >= limit:
+                continue
+            admitted.append(slug)
+    # Every eligible endpoint of an admitted provider stays in the chain. The
+    # chain is what cost and capability evidence is computed over, so dropping a
+    # provider's dearer endpoint would understate what a run can actually cost.
+    return [
+        endpoint for endpoint in ranked if _endpoint_provider_slug(endpoint) in admitted
+    ]
+
+
+def provider_order_from_chain(chain: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Name each distinct chain provider as `provider.order` expects it.
+
+    Provider slugs, not endpoint tags. A tag also selects a serving variant, so
+    ordering by tag would let the cheapest variant of the publisher's own
+    endpoint - a flex or batch tier - replace the standard serving a previous
+    round measured, and quietly change latency as well as the provider.
+    """
+
+    order: list[str] = []
+    claimed: set[str] = set()
+    for endpoint in chain:
+        slug = _endpoint_provider_slug(endpoint)
+        if slug in claimed:
+            continue
+        claimed.add(slug)
+        order.append(slug)
+    return order
+
+
+def provider_quantizations_from_chain(chain: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Allow only the servings the chain vetted, since order names providers."""
+
+    return sorted(
+        {
+            str(endpoint.get("quantization") or "unknown").casefold()
+            for endpoint in chain
+        }
+    )
+
+
 def build_pinned_catalog_entry(
     model: str,
     model_entry: Mapping[str, Any],
@@ -2281,50 +2744,27 @@ def build_pinned_catalog_entry(
     *,
     required_parameters: set[str],
 ) -> dict[str, Any]:
-    """Bind capability and cost evidence to the provider used in requests."""
+    """Bind capability and cost evidence to the providers used in requests."""
 
     owner = model.partition("/")[0]
     provider_slug = _FIRST_PARTY_PROVIDERS.get(owner)
     if provider_slug is None:
         raise RuntimeError(f"No first-party provider pin configured for {model}")
-    data = endpoint_catalog.get("data")
-    endpoints = data.get("endpoints") if isinstance(data, Mapping) else None
-    candidates = [
-        endpoint
-        for endpoint in endpoints or []
-        if isinstance(endpoint, Mapping)
-        and _normalized_provider_name(str(endpoint.get("provider_name") or ""))
-        == provider_slug
-    ]
-    if not candidates:
-        raise RuntimeError(
-            f"No first-party endpoint for {model} with provider {provider_slug}"
-        )
-    eligible = [
-        endpoint
-        for endpoint in candidates
-        if required_parameters
-        <= {
-            str(parameter)
-            for parameter in endpoint.get("supported_parameters", [])
-            if isinstance(parameter, str)
-        }
-    ]
-    if not eligible:
-        raise RuntimeError(
-            f"No first-party endpoint for {model} supports required parameters: "
-            + ", ".join(sorted(required_parameters))
-        )
+    chain = resolve_provider_chain(
+        model,
+        endpoint_catalog,
+        required_parameters=required_parameters,
+    )
 
     def _highest_price(field: str) -> str:
         values = [
             str(pricing[field])
-            for endpoint in eligible
+            for endpoint in chain
             if isinstance((pricing := endpoint.get("pricing")), Mapping)
             and field in pricing
         ]
         if not values:
-            raise RuntimeError(f"Missing first-party {field} pricing for {model}")
+            raise RuntimeError(f"Missing {field} pricing for {model}")
         return max(values, key=float)
 
     supported_sets = [
@@ -2333,7 +2773,7 @@ def build_pinned_catalog_entry(
             for parameter in endpoint.get("supported_parameters", [])
             if isinstance(parameter, str)
         }
-        for endpoint in eligible
+        for endpoint in chain
     ]
     supported = set.intersection(*supported_sets)
     result = dict(model_entry)
@@ -2345,18 +2785,25 @@ def build_pinned_catalog_entry(
             },
             "supported_parameters": sorted(supported),
             "pinned_provider": provider_slug,
+            "first_party_available": any(
+                _endpoint_provider_slug(endpoint) == provider_slug for endpoint in chain
+            ),
+            "provider_order": provider_order_from_chain(chain),
+            "provider_quantizations": provider_quantizations_from_chain(chain),
             "pinned_endpoints": [
                 {
                     key: endpoint[key]
                     for key in (
                         "name",
                         "provider_name",
+                        "tag",
+                        "quantization",
                         "supported_parameters",
                         "pricing",
                     )
                     if key in endpoint
                 }
-                for endpoint in eligible
+                for endpoint in chain
             ],
         }
     )
@@ -2522,7 +2969,13 @@ def _round_zero_survivors(
     for row in rows:
         by_model.setdefault(str(row["model"]), []).append(row)
     survivors: list[str] = []
-    for model, model_rows in by_model.items():
+    for model, all_model_rows in by_model.items():
+        # A truncated answer is a harness budget event, not a quality failure,
+        # so it is left unscored instead of eliminating the candidate. A model
+        # with nothing but truncated rows has no evidence and cannot advance.
+        model_rows = [row for row in all_model_rows if row.get("status") != "TRUNCATED"]
+        if not model_rows:
+            continue
         if suite == "sales":
             passed = all(
                 row.get("status", "COMPLETED") == "COMPLETED"
@@ -2751,10 +3204,11 @@ def score_battle(
         )
         validate_hard_profile_result_matrix(profile, "system", system_rows)
         decision = select_hard_profile_winner(profile, system_rows)
-        result = {
+        result: dict[str, Any] = {
             "openrouter_model_main": None,
             "openrouter_model_fast": asdict(decision),
             "eval_disagreements": [],
+            "eval_score_calibration": None,
             "production_changed": False,
         }
         _write_jsonl(evidence_dir / "system_scored_results.jsonl", system_rows)
@@ -2802,8 +3256,14 @@ def score_battle(
             evidence_dir / "sales_scored_aggregate.json",
             aggregate_rows(sales_rows),
         )
+        evaluator_rows = build_blind_evaluator_rows(sales_rows, blind_key)
         disagreements = detect_evaluator_disagreements(
-            build_blind_evaluator_rows(sales_rows, blind_key),
+            evaluator_rows,
+            blind_scores,
+            blind_key,
+        )
+        calibration = summarize_evaluator_calibration(
+            evaluator_rows,
             blind_scores,
             blind_key,
         )
@@ -2821,6 +3281,7 @@ def score_battle(
             "openrouter_model_fast": None,
             "blind_quality": blind_quality,
             "eval_disagreements": disagreements,
+            "eval_score_calibration": calibration,
             "production_changed": False,
         }
         _write_json(output_dir / "model_selection.json", result)
@@ -3214,6 +3675,9 @@ async def run_metadata_preflight(
     suites: Sequence[str],
     output_dir: Path,
     profile: str,
+    cap_policy: str = "fixed",
+    per_model_cap_usd: float = DEFAULT_PER_MODEL_CAP_USD,
+    cap_overrides: Mapping[str, float] | None = None,
 ) -> None:
     """Fetch exact pinned-endpoint metadata and cost caps without paid calls."""
 
@@ -3258,7 +3722,16 @@ async def run_metadata_preflight(
         )
         _write_json(
             output_dir / f"{suite}_cost_preflight.json",
-            build_cost_preflight(estimated_costs),
+            build_cost_preflight(
+                estimated_costs,
+                resolve_model_caps(
+                    estimated_costs,
+                    policy=cap_policy,
+                    default_cap=per_model_cap_usd,
+                    overrides=cap_overrides,
+                ),
+                cap_policy=cap_policy,
+            ),
         )
 
 
@@ -3269,6 +3742,9 @@ async def run_battle(
     repetitions: int,
     seed: int,
     profile: str = ORIGINAL_PROFILE,
+    cap_policy: str = "fixed",
+    per_model_cap_usd: float = DEFAULT_PER_MODEL_CAP_USD,
+    cap_overrides: Mapping[str, float] | None = None,
 ) -> None:
     """Execute selected suites sequentially and preserve durable evidence."""
 
@@ -3326,6 +3802,18 @@ async def run_battle(
             _read_json_object(catalog_path) if catalog_path.exists() else {}
         )
         _write_json(catalog_path, {**existing_catalog, **catalog})
+        provider_orders = {
+            model: list(order)
+            for model, entry in catalog.items()
+            if isinstance(entry, Mapping)
+            and isinstance((order := entry.get("provider_order")), list)
+        }
+        provider_quantizations = {
+            model: list(allowed)
+            for model, entry in catalog.items()
+            if isinstance(entry, Mapping)
+            and isinstance((allowed := entry.get("provider_quantizations")), list)
+        }
         for suite in suites:
             rows: list[dict[str, Any]] = []
             estimated_costs = estimate_model_costs(
@@ -3333,13 +3821,24 @@ async def run_battle(
                 profile=profile,
                 suite=suite,
             )
+            model_caps = resolve_model_caps(
+                estimated_costs,
+                policy=cap_policy,
+                default_cap=per_model_cap_usd,
+                overrides=cap_overrides,
+            )
             _write_json(
                 output_dir / f"{suite}_cost_preflight.json",
-                build_cost_preflight(estimated_costs),
+                build_cost_preflight(
+                    estimated_costs,
+                    model_caps,
+                    cap_policy=cap_policy,
+                ),
             )
             cost_budget = RequestCostBudget(
                 catalog=catalog,
                 estimated_costs=estimated_costs,
+                caps=model_caps,
             )
             round_zero_jobs = _build_jobs(
                 suite=suite,
@@ -3349,41 +3848,87 @@ async def run_battle(
                 estimated_costs=estimated_costs,
             )
             jobs: list[tuple[str, Any, int]] = []
-            stopped_models: set[str] = set()
+            exhausted_models: set[str] = set()
+            cap_exhaustion: list[dict[str, Any]] = []
+
+            def _record_exhaustion(
+                exc: CostCapExhausted,
+                *,
+                stage: str,
+                case_id: str,
+                repetition: int,
+                suite: str = suite,
+                budget: RequestCostBudget = cost_budget,
+                stopped: set[str] = exhausted_models,
+                ledger: list[dict[str, Any]] = cap_exhaustion,
+            ) -> None:
+                """Stop one candidate on its own cap and keep the round running."""
+
+                stopped.add(exc.model)
+                ledger.append(
+                    {
+                        "model": exc.model,
+                        "stage": stage,
+                        "stopped_before_case_id": case_id,
+                        "stopped_before_repetition": repetition,
+                        "committed_usd": round(exc.committed, 12),
+                        "cap_usd": round(exc.cap, 12),
+                        "limit": exc.limit,
+                        "reason": "CAP_EXHAUSTED",
+                    }
+                )
+                budget.finish_candidate(exc.model)
+                print(
+                    f"[{suite} {stage}] {exc.model} stopped: {exc.limit} "
+                    f"${exc.cap:.6f} reached with ${exc.committed:.6f} committed",
+                    flush=True,
+                )
+
             for index, (model, case, repetition) in enumerate(
                 round_zero_jobs,
                 start=1,
             ):
-                if model in stopped_models:
+                if model in exhausted_models:
                     continue
                 print(
                     f"[{suite} round-0 {index}/{len(round_zero_jobs)}] "
                     f"{case.case_id} rep={repetition} model={model}",
                     flush=True,
                 )
-                if suite == "sales":
-                    row = await _run_sales_case(
-                        client,
-                        model=model,
-                        case=case,
+                try:
+                    if suite == "sales":
+                        row = await _run_sales_case(
+                            client,
+                            model=model,
+                            case=case,
+                            repetition=repetition,
+                            cost_budget=cost_budget,
+                            provider_order=provider_orders.get(model),
+                            provider_quantizations=provider_quantizations.get(model),
+                        )
+                    else:
+                        row = await _run_system_case(
+                            client,
+                            model=model,
+                            case=case,
+                            repetition=repetition,
+                            profile=profile,
+                            cost_budget=cost_budget,
+                            provider_order=provider_orders.get(model),
+                            provider_quantizations=provider_quantizations.get(model),
+                        )
+                except CostCapExhausted as exc:
+                    _record_exhaustion(
+                        exc,
+                        stage="round-0",
+                        case_id=case.case_id,
                         repetition=repetition,
-                        cost_budget=cost_budget,
                     )
-                else:
-                    row = await _run_system_case(
-                        client,
-                        model=model,
-                        case=case,
-                        repetition=repetition,
-                        profile=profile,
-                        cost_budget=cost_budget,
-                    )
+                    continue
                 rows.append(row)
                 jobs.append((model, case, repetition))
-                if row.get("status") == "TRUNCATED":
-                    stopped_models.add(model)
                 _write_jsonl(evidence_dir / f"{suite}_results.jsonl", rows)
-                enforce_model_cost_caps(rows, estimated_costs)
+                enforce_model_cost_caps(rows, estimated_costs, model_caps)
 
             if profile in _HARD_PROFILES:
                 survivor_jobs = build_survivor_jobs(
@@ -3394,57 +3939,76 @@ async def run_battle(
                     estimated_costs=estimated_costs,
                 )
                 survivor_models = {model for model, _case, _rep in survivor_jobs}
-                for eliminated_model in set(estimated_costs) - survivor_models:
+                for eliminated_model in (
+                    set(estimated_costs) - survivor_models - exhausted_models
+                ):
                     cost_budget.finish_candidate(eliminated_model)
                 for index, (model, case, repetition) in enumerate(
                     survivor_jobs,
                     start=1,
                 ):
-                    if model in stopped_models:
-                        next_model = (
-                            survivor_jobs[index][0]
-                            if index < len(survivor_jobs)
-                            else None
-                        )
-                        if next_model != model:
-                            cost_budget.finish_candidate(model)
+                    next_model = (
+                        survivor_jobs[index][0] if index < len(survivor_jobs) else None
+                    )
+                    if model in exhausted_models:
                         continue
                     print(
                         f"[{suite} survivors {index}/{len(survivor_jobs)}] "
                         f"{case.case_id} rep={repetition} model={model}",
                         flush=True,
                     )
-                    if suite == "sales":
-                        row = await _run_sales_case(
-                            client,
-                            model=model,
-                            case=case,
+                    try:
+                        if suite == "sales":
+                            row = await _run_sales_case(
+                                client,
+                                model=model,
+                                case=case,
+                                repetition=repetition,
+                                cost_budget=cost_budget,
+                                provider_order=provider_orders.get(model),
+                                provider_quantizations=provider_quantizations.get(
+                                    model
+                                ),
+                            )
+                        else:
+                            row = await _run_system_case(
+                                client,
+                                model=model,
+                                case=case,
+                                repetition=repetition,
+                                profile=profile,
+                                cost_budget=cost_budget,
+                                provider_order=provider_orders.get(model),
+                                provider_quantizations=provider_quantizations.get(
+                                    model
+                                ),
+                            )
+                    except CostCapExhausted as exc:
+                        _record_exhaustion(
+                            exc,
+                            stage="survivors",
+                            case_id=case.case_id,
                             repetition=repetition,
-                            cost_budget=cost_budget,
                         )
-                    else:
-                        row = await _run_system_case(
-                            client,
-                            model=model,
-                            case=case,
-                            repetition=repetition,
-                            profile=profile,
-                            cost_budget=cost_budget,
-                        )
+                        continue
                     rows.append(row)
                     jobs.append((model, case, repetition))
-                    if row.get("status") == "TRUNCATED":
-                        stopped_models.add(model)
                     _write_jsonl(evidence_dir / f"{suite}_results.jsonl", rows)
-                    enforce_model_cost_caps(rows, estimated_costs)
-                    next_model = (
-                        survivor_jobs[index][0] if index < len(survivor_jobs) else None
-                    )
+                    enforce_model_cost_caps(rows, estimated_costs, model_caps)
                     if next_model != model:
                         cost_budget.finish_candidate(model)
             else:
-                for completed_model in estimated_costs:
+                for completed_model in set(estimated_costs) - exhausted_models:
                     cost_budget.finish_candidate(completed_model)
+
+            _write_json(
+                evidence_dir / f"{suite}_cap_exhaustion.json",
+                {
+                    "cap_policy": cap_policy,
+                    "per_model_caps_usd": model_caps,
+                    "stopped_candidates": cap_exhaustion,
+                },
+            )
 
             _write_json(
                 evidence_dir / f"{suite}_aggregate.json",
@@ -3467,6 +4031,19 @@ async def run_battle(
             ]
 
     _write_json(manifest_path, merged_manifest)
+
+
+def _parse_cap_overrides(values: Sequence[str]) -> dict[str, float]:
+    overrides: dict[str, float] = {}
+    for item in values:
+        model, separator, raw_cap = item.partition("=")
+        if not separator or not model.strip():
+            raise SystemExit(f"--model-cap expects MODEL=USD, received {item!r}")
+        try:
+            overrides[model.strip()] = _finite_number(raw_cap, "Cap override")
+        except RuntimeError as exc:
+            raise SystemExit(f"--model-cap {item!r}: {exc}") from exc
+    return overrides
 
 
 def _parse_args() -> argparse.Namespace:
@@ -3507,6 +4084,29 @@ def _parse_args() -> argparse.Namespace:
         "--seal-blind-scores",
         action="store_true",
         help="Commit completed blind scores before the reveal/scoring step.",
+    )
+    parser.add_argument(
+        "--cap-policy",
+        choices=("fixed", "cover-estimate"),
+        default="fixed",
+        help=(
+            "fixed keeps the accepted flat per-model cap; cover-estimate raises "
+            "a cap only to that model's own worst-case estimate so the complete "
+            "matrix can finish."
+        ),
+    )
+    parser.add_argument(
+        "--per-model-cap-usd",
+        type=float,
+        default=DEFAULT_PER_MODEL_CAP_USD,
+        help="Default per-model USD cap before any policy or override.",
+    )
+    parser.add_argument(
+        "--model-cap",
+        action="append",
+        default=[],
+        metavar="MODEL=USD",
+        help="Explicit per-model USD cap; repeatable.",
     )
     parser.add_argument("--combine-core-dir", type=Path)
     parser.add_argument("--combine-background-dir", type=Path)
@@ -3559,12 +4159,16 @@ def main() -> None:
         suites = ("system",)
     else:
         suites = ("sales", "system") if args.suite == "all" else (args.suite,)
+    cap_overrides = _parse_cap_overrides(args.model_cap)
     if args.preflight_only:
         asyncio.run(
             run_metadata_preflight(
                 suites=suites,
                 output_dir=args.output_dir,
                 profile=args.profile,
+                cap_policy=args.cap_policy,
+                per_model_cap_usd=args.per_model_cap_usd,
+                cap_overrides=cap_overrides,
             )
         )
         return
@@ -3575,6 +4179,9 @@ def main() -> None:
             repetitions=args.repetitions,
             seed=args.seed,
             profile=args.profile,
+            cap_policy=args.cap_policy,
+            per_model_cap_usd=args.per_model_cap_usd,
+            cap_overrides=cap_overrides,
         )
     )
 

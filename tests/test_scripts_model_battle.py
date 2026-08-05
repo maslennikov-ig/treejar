@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import stat
+from collections.abc import Mapping, Sequence
 
 import pytest
 import scripts.model_battle as model_battle
@@ -38,8 +39,10 @@ from scripts.model_battle import (
     normalize_blind_reviews,
     parse_json_content,
     percentile,
+    provider_order_from_chain,
     reasoning_was_observed,
     rescore_system_rows,
+    resolve_provider_chain,
     retry_was_used,
     score_blind_reviews,
     score_expected_fields,
@@ -606,8 +609,34 @@ def test_capability_artifact_marks_missing_and_incompatible_models_unsupported()
     }
 
 
-def test_pinned_catalog_rejects_model_without_first_party_endpoint() -> None:
-    with pytest.raises(RuntimeError, match="first-party endpoint"):
+def test_pinned_catalog_falls_through_when_the_publisher_endpoint_is_absent() -> None:
+    entry = build_pinned_catalog_entry(
+        "deepseek/deepseek-v4-flash-0731",
+        {"id": "deepseek/deepseek-v4-flash-0731"},
+        {
+            "data": {
+                "endpoints": [
+                    {
+                        "provider_name": "DeepInfra",
+                        "tag": "deepinfra/fp8",
+                        "quantization": "fp8",
+                        "supported_parameters": ["tools", "tool_choice"],
+                        "pricing": {"prompt": "0.1", "completion": "0.2"},
+                    }
+                ]
+            }
+        },
+        required_parameters={"tools", "tool_choice"},
+    )
+
+    assert entry["pinned_provider"] == "deepseek"
+    assert entry["first_party_available"] is False
+    assert entry["provider_order"] == ["deepinfra"]
+    assert entry["provider_quantizations"] == ["fp8"]
+
+
+def test_pinned_catalog_rejects_a_model_with_only_quantized_endpoints() -> None:
+    with pytest.raises(RuntimeError, match="No unquantized endpoint"):
         build_pinned_catalog_entry(
             "deepseek/deepseek-v4-flash-0731",
             {"id": "deepseek/deepseek-v4-flash-0731"},
@@ -616,6 +645,8 @@ def test_pinned_catalog_rejects_model_without_first_party_endpoint() -> None:
                     "endpoints": [
                         {
                             "provider_name": "DeepInfra",
+                            "tag": "deepinfra/fp4",
+                            "quantization": "fp4",
                             "supported_parameters": ["tools", "tool_choice"],
                             "pricing": {"prompt": "0.1", "completion": "0.2"},
                         }
@@ -626,7 +657,7 @@ def test_pinned_catalog_rejects_model_without_first_party_endpoint() -> None:
         )
 
 
-def test_pinned_catalog_uses_conservative_first_party_pricing() -> None:
+def test_pinned_catalog_leads_with_the_publisher_and_prices_the_whole_chain() -> None:
     entry = build_pinned_catalog_entry(
         "openai/gpt-5.6-luna",
         {"id": "openai/gpt-5.6-luna", "pricing": {"prompt": "0.1"}},
@@ -634,22 +665,25 @@ def test_pinned_catalog_uses_conservative_first_party_pricing() -> None:
             "data": {
                 "endpoints": [
                     {
+                        "name": "Azure",
+                        "provider_name": "Azure",
+                        "tag": "azure",
+                        "supported_parameters": ["max_tokens", "reasoning"],
+                        "pricing": {"prompt": "1", "completion": "1"},
+                    },
+                    {
                         "name": "OpenAI low",
                         "provider_name": "OpenAI",
+                        "tag": "openai",
                         "supported_parameters": ["max_tokens", "reasoning"],
                         "pricing": {"prompt": "0.0000001", "completion": "0.0000006"},
                     },
                     {
                         "name": "OpenAI high",
                         "provider_name": "OpenAI",
+                        "tag": "openai",
                         "supported_parameters": ["max_tokens", "reasoning"],
                         "pricing": {"prompt": "0.0000002", "completion": "0.0000012"},
-                    },
-                    {
-                        "name": "Azure",
-                        "provider_name": "Azure",
-                        "supported_parameters": ["max_tokens", "reasoning"],
-                        "pricing": {"prompt": "1", "completion": "1"},
                     },
                 ]
             }
@@ -658,11 +692,102 @@ def test_pinned_catalog_uses_conservative_first_party_pricing() -> None:
     )
 
     assert entry["pinned_provider"] == "openai"
-    assert entry["pricing"] == {
-        "prompt": "0.0000002",
-        "completion": "0.0000012",
+    assert entry["first_party_available"] is True
+    # The publisher leads even though the alternate was listed first upstream.
+    assert entry["provider_order"] == ["openai", "azure"]
+    # Cost evidence covers every endpoint a request can actually reach.
+    assert entry["pricing"] == {"prompt": "1", "completion": "1"}
+    assert len(entry["pinned_endpoints"]) == 3
+
+
+def test_provider_chain_admits_a_bounded_number_of_alternates() -> None:
+    endpoints = [
+        {
+            "provider_name": f"Host{index}",
+            "tag": f"host{index}",
+            "supported_parameters": ["max_tokens"],
+            "pricing": {"prompt": f"0.{index}", "completion": f"0.{index}"},
+        }
+        for index in range(1, 6)
+    ]
+    chain = resolve_provider_chain(
+        "z-ai/glm-5.2",
+        {"data": {"endpoints": endpoints}},
+        required_parameters={"max_tokens"},
+    )
+
+    assert provider_order_from_chain(chain) == ["host1", "host2", "host3"]
+
+
+def test_provider_order_names_providers_not_serving_variants() -> None:
+    """A tag would let a cheap flex tier stand in for the standard serving."""
+
+    chain = resolve_provider_chain(
+        "openai/gpt-5.6-luna",
+        {
+            "data": {
+                "endpoints": [
+                    {
+                        "provider_name": "OpenAI",
+                        "tag": "openai/flex",
+                        "supported_parameters": ["max_tokens"],
+                        "pricing": {"prompt": "0.1", "completion": "0.1"},
+                    },
+                    {
+                        "provider_name": "OpenAI",
+                        "tag": "openai",
+                        "supported_parameters": ["max_tokens"],
+                        "pricing": {"prompt": "0.2", "completion": "0.2"},
+                    },
+                ]
+            }
+        },
+        required_parameters={"max_tokens"},
+    )
+
+    assert provider_order_from_chain(chain) == ["openai"]
+
+
+def test_provider_slug_comes_from_the_tag_not_the_display_name() -> None:
+    """`AtlasCloud` normalizes to `atlascloud`; routing only knows `atlas-cloud`."""
+
+    chain = resolve_provider_chain(
+        "z-ai/glm-5.2",
+        {
+            "data": {
+                "endpoints": [
+                    {
+                        "provider_name": "AtlasCloud",
+                        "tag": "atlas-cloud/fp8",
+                        "quantization": "fp8",
+                        "supported_parameters": ["max_tokens"],
+                        "pricing": {"prompt": "0.1", "completion": "0.1"},
+                    }
+                ]
+            }
+        },
+        required_parameters={"max_tokens"},
+    )
+
+    assert provider_order_from_chain(chain) == ["atlas-cloud"]
+
+
+def test_ordered_provider_chain_replaces_the_single_provider_pin() -> None:
+    payload = build_base_payload(
+        model="deepseek/deepseek-v4-flash-0731",
+        messages=[{"role": "user", "content": "hello"}],
+        max_tokens=900,
+        reasoning_enabled=False,
+        provider_order=["deepseek", "gmicloud"],
+        provider_quantizations=["fp8", "unknown"],
+    )
+
+    assert payload["provider"] == {
+        "require_parameters": True,
+        "order": ["deepseek", "gmicloud"],
+        "allow_fallbacks": False,
+        "quantizations": ["fp8", "unknown"],
     }
-    assert len(entry["pinned_endpoints"]) == 2
 
 
 def test_background_hard_profile_uses_json_mode_with_local_schema_validation() -> None:
@@ -1026,54 +1151,111 @@ def test_combines_core_and_background_decisions_into_one_sealed_artifact(
         combine_hard_profile_selections(core_dir, background_dir, output)
 
 
-def test_blind_audit_disagreement_blocks_on_score_or_applicability() -> None:
-    disagreements = detect_evaluator_disagreements(
-        [
-            {
-                "case_id": "S01",
-                "repetition": 1,
-                "model": "model-a",
-                "score_out_of_30": 25,
-                "applicable_rules": ["catalog", "language"],
+def _instrument_fixture(
+    pairs: Sequence[tuple[str, str, float, float]],
+    *,
+    judge_rules: Mapping[str, list[str]] | None = None,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Build evaluator rows, blind audits, and the reveal for one case.
+
+    Each pair is `(label, model, checklist_score, judge_score)`. Applicability
+    matches on both sides unless `judge_rules` overrides one label.
+    """
+
+    rules = ["catalog", "language"]
+    evaluator_rows = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "model": model,
+            "score_out_of_30": checklist,
+            "applicable_rules": rules,
+        }
+        for _label, model, checklist, _judge in pairs
+    ]
+    audits = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "scores": {
+                label: {
+                    "score_out_of_30": judge,
+                    "applicable_rules": (judge_rules or {}).get(label, rules),
+                }
+                for label, _model, _checklist, judge in pairs
             },
-            {
-                "case_id": "S01",
-                "repetition": 1,
-                "model": "model-b",
-                "score_out_of_30": 24,
-                "applicable_rules": ["catalog"],
-            },
-        ],
-        [
-            {
-                "case_id": "S01",
-                "repetition": 1,
-                "scores": {
-                    "A": {
-                        "score_out_of_30": 22,
-                        "applicable_rules": ["catalog", "language"],
-                    },
-                    "B": {
-                        "score_out_of_30": 24,
-                        "applicable_rules": ["catalog", "language"],
-                    },
-                },
-            }
-        ],
-        [
-            {
-                "case_id": "S01",
-                "repetition": 1,
-                "reveal": {"A": "model-a", "B": "model-b"},
-            }
-        ],
+        }
+    ]
+    key_rows = [
+        {
+            "case_id": "S01",
+            "repetition": 1,
+            "reveal": {label: model for label, model, _checklist, _judge in pairs},
+        }
+    ]
+    return evaluator_rows, audits, key_rows
+
+
+def test_blind_audit_blocks_on_applicability_not_on_instrument_offset() -> None:
+    # The checklist scores rule coverage and the judge scores holistic quality,
+    # so a large but consistently signed gap is calibration, not disagreement.
+    evaluator_rows, audits, key_rows = _instrument_fixture(
+        [("A", "model-a", 29.0, 22.0), ("B", "model-b", 28.0, 21.0)],
+        judge_rules={"B": ["catalog"]},
     )
 
+    disagreements = detect_evaluator_disagreements(evaluator_rows, audits, key_rows)
+
     assert {(item["model"], item["reason"]) for item in disagreements} == {
-        ("model-a", "score_delta"),
         ("model-b", "applicability"),
     }
     assert {item["status"] for item in disagreements} == {"EVAL_DISAGREEMENT"}
+
+
+def test_blind_audit_blocks_when_instruments_order_candidates_oppositely() -> None:
+    evaluator_rows, audits, key_rows = _instrument_fixture(
+        [("A", "model-a", 29.0, 18.0), ("B", "model-b", 24.0, 26.0)]
+    )
+
+    disagreements = detect_evaluator_disagreements(evaluator_rows, audits, key_rows)
+
+    assert [item["reason"] for item in disagreements] == ["rank_inversion"]
+    inversion = disagreements[0]
+    assert inversion["status"] == "EVAL_DISAGREEMENT"
+    assert inversion["models"] == ["model-a", "model-b"]
+    assert inversion["checklist_delta"] == 5.0
+    assert inversion["judge_delta"] == -8.0
+
+
+def test_an_ordering_gap_inside_the_tie_band_is_not_an_inversion() -> None:
+    # Both instruments rank the pair the other way round, but each gap is
+    # noise, so the round must not be blocked on it.
+    evaluator_rows, audits, key_rows = _instrument_fixture(
+        [("A", "model-a", 28.5, 23.0), ("B", "model-b", 28.2, 23.6)]
+    )
+
+    assert detect_evaluator_disagreements(evaluator_rows, audits, key_rows) == []
+
+
+def test_instrument_offset_is_published_as_a_calibration_diagnostic() -> None:
+    evaluator_rows, audits, key_rows = _instrument_fixture(
+        [("A", "model-a", 29.0, 22.0), ("B", "model-b", 27.0, 23.0)]
+    )
+
+    calibration = model_battle.summarize_evaluator_calibration(
+        evaluator_rows, audits, key_rows
+    )
+
+    assert calibration["responses_compared"] == 2
+    assert calibration["responses_within_tolerance"] == 0
+    assert calibration["mean_signed_delta"] == 5.5
+    assert calibration["mean_absolute_delta"] == 5.5
+    assert calibration["per_model"]["model-a"] == {
+        "observations": 1,
+        "checklist_mean": 29.0,
+        "judge_mean": 22.0,
+        "mean_signed_delta": 7.0,
+    }
 
 
 def test_blind_audit_score_is_mapped_into_each_objective_before_ranking() -> None:
@@ -1393,17 +1575,23 @@ def test_live_and_rescore_paths_share_one_grounding_builder() -> None:
 
     numbers = model_battle.build_sales_grounding_numbers(case)
 
-    assert numbers == extract_numeric_tokens(
-        json.dumps(
-            {
-                "system_prompt": case.system_prompt,
-                "conversation": case.conversation,
-                "user_prompt": case.user_prompt,
-                "tool_results": case.tool_results,
-            },
-            ensure_ascii=False,
+    # One builder feeds both the live and the rescore path, so every literal
+    # number in the fixture stays grounded whatever the builder adds on top.
+    assert (
+        extract_numeric_tokens(
+            json.dumps(
+                {
+                    "system_prompt": case.system_prompt,
+                    "conversation": case.conversation,
+                    "user_prompt": case.user_prompt,
+                    "tool_results": case.tool_results,
+                },
+                ensure_ascii=False,
+            )
         )
+        <= numbers
     )
+    assert model_battle.build_sales_grounding_numbers(case) == numbers
 
 
 def test_missing_critical_required_phrase_fails_the_hard_gate() -> None:
@@ -2155,3 +2343,184 @@ def test_rescore_system_rows_applies_current_text_normalization() -> None:
 
     assert rows[0]["semantic_correct"] == rows[0]["semantic_total"]
     assert rows[0]["semantic_mismatches"] == []
+
+
+def test_cover_estimate_policy_raises_only_to_each_model_own_estimate() -> None:
+    estimates = {"cheap": 0.19, "expensive": 1.121494}
+
+    fixed = model_battle.resolve_model_caps(estimates)
+    covered = model_battle.resolve_model_caps(estimates, policy="cover-estimate")
+
+    assert fixed == {"cheap": 1.0, "expensive": 1.0}
+    assert covered == {"cheap": 1.0, "expensive": 1.13}
+
+
+def test_cost_preflight_publishes_every_cap_raised_above_the_default() -> None:
+    preflight = model_battle.build_cost_preflight(
+        {"cheap": 0.19, "expensive": 1.121494},
+        cap_policy="cover-estimate",
+    )
+
+    assert preflight["cap_policy"] == "cover-estimate"
+    assert preflight["caps_raised_above_default"] == {"expensive": 1.13}
+    assert preflight["maximum_total_usd"] == pytest.approx(2.13)
+    assert preflight["execution_order"] == ["cheap", "expensive"]
+
+
+def test_cap_exhaustion_is_typed_and_leaves_the_candidate_finishable() -> None:
+    budget = RequestCostBudget(
+        catalog={"candidate": {"pricing": {"prompt": "0", "completion": "0.01"}}},
+        estimated_costs={"candidate": 0.08},
+        caps={"candidate": 0.1},
+    )
+    payload = {"messages": [], "max_tokens": 6}
+
+    reservation = budget.reserve_request("candidate", payload)
+    budget.reconcile_request("candidate", reservation, actual_cost=0.06)
+
+    with pytest.raises(model_battle.CostCapExhausted) as excinfo:
+        budget.reserve_request("candidate", payload)
+
+    assert excinfo.value.model == "candidate"
+    assert excinfo.value.committed == pytest.approx(0.06)
+    # The round can keep going: nothing is pending, so the candidate closes out
+    # and releases its remainder instead of aborting the run.
+    budget.finish_candidate("candidate")
+    assert budget.actual_spend == {"candidate": 0.06}
+
+
+def test_raised_cap_is_honoured_by_post_hoc_spend_enforcement() -> None:
+    rows = [
+        {"model": "expensive", "accounting": {"cost_usd": 1.08}},
+    ]
+
+    with pytest.raises(RuntimeError, match="Model cost cap exceeded"):
+        enforce_model_cost_caps(rows, {"expensive": 1.121494})
+
+    enforce_model_cost_caps(rows, {"expensive": 1.121494}, {"expensive": 1.13})
+
+
+def test_truncated_round_zero_answer_does_not_eliminate_the_candidate() -> None:
+    rows = [
+        {
+            "model": "verbose",
+            "case_id": "S01",
+            "repetition": 1,
+            "status": "TRUNCATED",
+            "objective": {"scored": False, "reason": "TRUNCATED"},
+        },
+        {
+            "model": "verbose",
+            "case_id": "S02",
+            "repetition": 1,
+            "status": "COMPLETED",
+            "objective": {"hard_gate_passed": True},
+        },
+    ]
+
+    assert model_battle._round_zero_survivors("sales", rows) == ("verbose",)
+
+
+def test_candidate_with_only_truncated_answers_has_no_evidence_to_advance() -> None:
+    rows = [
+        {
+            "model": "verbose",
+            "case_id": "S01",
+            "repetition": 1,
+            "status": "TRUNCATED",
+            "objective": {"scored": False, "reason": "TRUNCATED"},
+        },
+    ]
+
+    assert model_battle._round_zero_survivors("sales", rows) == ()
+
+
+def test_cap_override_argument_rejects_malformed_input() -> None:
+    assert model_battle._parse_cap_overrides(["z-ai/glm-5.2=1.30"]) == {
+        "z-ai/glm-5.2": 1.30
+    }
+
+    with pytest.raises(SystemExit):
+        model_battle._parse_cap_overrides(["z-ai/glm-5.2"])
+    with pytest.raises(SystemExit):
+        model_battle._parse_cap_overrides(["z-ai/glm-5.2=nan"])
+
+
+def test_quotation_arithmetic_on_grounded_numbers_is_not_an_invented_fact() -> None:
+    grounded = model_battle.derive_quotation_arithmetic({"1450", "4", "980"})
+
+    # unit price x quantity, the sum of two grounded prices, and the per-unit
+    # price recovered from a grounded total are ordinary quotation arithmetic.
+    assert "5800" in grounded
+    assert "2430" in grounded
+    assert "362.5" in grounded
+    # The closure stays one step deep, so an unrelated figure is still ungrounded.
+    assert "7" not in grounded
+
+
+def test_invented_product_specification_still_fails_numeric_grounding() -> None:
+    grounded = model_battle.derive_quotation_arithmetic({"1450", "4", "980"})
+
+    invented = model_battle._extract_asserted_numeric_tokens(
+        "135 degree recline and supports up to 150 kg"
+    )
+
+    assert sorted(invented - grounded) == ["135", "150"]
+
+
+def test_timestamp_restated_in_words_is_grounded_by_its_iso_source() -> None:
+    evidence = '{"as_of": "2026-08-03T10:00:00Z", "available_quantity": 7}'
+
+    components = model_battle.timestamp_component_tokens(evidence)
+
+    # The SKU-safe number regex hides the month, day and hour of an ISO stamp,
+    # so a model writing "3 August 2026, 10:00" must not look like an invention.
+    assert {"08", "8", "03", "3", "10"} <= components
+
+
+def test_sales_grounding_accepts_a_correct_restatement_of_verified_stock() -> None:
+    case = next(
+        item
+        for item in model_battle.cases_for_profile(
+            model_battle.CORE_HARD_PROFILE, "sales"
+        )
+        if item.case_id == "S03"
+    )
+    answer = (
+        "The verified current stock for AX-E1 is 7 units, at the Dubai "
+        "warehouse, as of 3 August 2026, 10:00 UAE time."
+    )
+
+    asserted = model_battle._extract_asserted_numeric_tokens(answer)
+
+    assert asserted - model_battle.build_sales_grounding_numbers(case) == set()
+
+
+def test_structured_case_prompt_names_json_for_every_candidate() -> None:
+    # OpenAI refuses a json_object response format unless the messages contain
+    # the word "json", which eliminated every OpenAI candidate by construction.
+    assert "json" in model_battle._JSON_RESPONSE_FORMAT_NOTICE.lower()
+
+    for case in model_battle.cases_for_profile(
+        model_battle.BACKGROUND_HARD_PROFILE, "system"
+    ):
+        if case.tools:
+            continue
+        prompt = f"{case.system_prompt}\n{model_battle._JSON_RESPONSE_FORMAT_NOTICE}"
+        assert "json" in prompt.lower()
+
+
+def test_portable_json_mode_states_the_schema_it_cannot_carry() -> None:
+    # A hard profile uses `{"type": "json_object"}`, which conveys no schema.
+    # Without the contract in the prompt every candidate answers a shape it was
+    # never shown, which is unpassable by construction rather than by quality.
+    assert model_battle.build_system_response_format(
+        model_battle.BACKGROUND_HARD_PROFILE, {"type": "object"}
+    ) == {"type": "json_object"}
+
+    rendered = model_battle._render_required_schema(
+        {"type": "object", "required": ["quote_consent"]}
+    )
+
+    assert "quote_consent" in rendered
+    assert "json" in rendered.lower()
