@@ -6,6 +6,7 @@ import uuid
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -21720,3 +21721,191 @@ def test_short_decision_horizon_uses_neutral_follow_up(horizon: str) -> None:
     assert "ahead of your decision" not in response.casefold()
     assert "in 1 day" not in response.casefold()
     assert "decision window" in response.casefold()
+
+
+def _quote_consent_metadata(consent: QuoteConsent, lifecycle: str) -> dict[str, Any]:
+    """Persisted quote workflow exactly as the dialogue runner writes it."""
+    return {
+        "order_runtime": {
+            "quote_workflow": {
+                "version": 2,
+                "consent": consent.value,
+                "lifecycle": lifecycle,
+            }
+        }
+    }
+
+
+def _sales_tool_defs() -> list[ToolDefinition]:
+    return [
+        ToolDefinition(name="search_products"),
+        ToolDefinition(name="get_stock"),
+        ToolDefinition(name="create_quotation"),
+        ToolDefinition(name="escalate_to_manager"),
+        ToolDefinition(name="update_language"),
+    ]
+
+
+def _run_context(deps: SalesDeps) -> RunContext[SalesDeps]:
+    from pydantic_ai.usage import RunUsage
+
+    return RunContext(
+        deps=deps,
+        retry=0,
+        messages=[],
+        prompt="",
+        model=TestModel(),
+        usage=RunUsage(),
+    )
+
+
+def _deps_with_consent(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+    consent: QuoteConsent,
+    *,
+    lifecycle: str = "consultation",
+    tool_mode: str = "full",
+) -> SalesDeps:
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    conv.metadata_ = _quote_consent_metadata(consent, lifecycle)
+    return SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        tool_mode=tool_mode,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.asyncio
+async def test_prepare_tools_hides_quotation_after_explicit_decline(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """The customer declined, so the model is never offered the quotation tool."""
+    deps = _deps_with_consent(mock_deps, QuoteConsent.DECLINED)
+
+    filtered = await engine_module._prepare_sales_tools(
+        _run_context(deps), _sales_tool_defs()
+    )
+
+    assert "create_quotation" not in [tool.name for tool in filtered]
+    assert "search_products" in [tool.name for tool in filtered]
+    assert "escalate_to_manager" in [tool.name for tool in filtered]
+
+
+@pytest.mark.asyncio
+async def test_prepare_tools_hides_quotation_after_decline_inside_exact_quote_mode(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """A declined consent outranks any tool_mode that would otherwise allow it."""
+    deps = _deps_with_consent(mock_deps, QuoteConsent.DECLINED, tool_mode="exact_quote")
+
+    filtered = await engine_module._prepare_sales_tools(
+        _run_context(deps), _sales_tool_defs()
+    )
+
+    assert "create_quotation" not in [tool.name for tool in filtered]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "consent",
+    [QuoteConsent.NOT_REQUESTED, QuoteConsent.DEFERRED, QuoteConsent.GRANTED],
+)
+async def test_prepare_tools_keeps_quotation_unless_declined(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+    consent: QuoteConsent,
+) -> None:
+    """Only an explicit decline removes the tool; existing behaviour is preserved."""
+    deps = _deps_with_consent(mock_deps, consent)
+
+    filtered = await engine_module._prepare_sales_tools(
+        _run_context(deps), _sales_tool_defs()
+    )
+
+    assert "create_quotation" in [tool.name for tool in filtered]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("language", "renewed_request"),
+    [
+        ("en", "Actually, please prepare the quotation now"),
+        ("ru", "Подготовьте КП, пожалуйста"),
+        ("ar", "جهز عرض سعر من فضلك"),
+    ],
+)
+async def test_renewed_explicit_request_restores_quotation_tool(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+    language: str,
+    renewed_request: str,
+) -> None:
+    """A declined customer who asks again is heard, not stonewalled."""
+    from src.dialogue.runner import quote_consent_signal
+
+    declined = _deps_with_consent(mock_deps, QuoteConsent.DECLINED)
+    declined.conversation.language = language
+    assert "create_quotation" not in [
+        tool.name
+        for tool in await engine_module._prepare_sales_tools(
+            _run_context(declined), _sales_tool_defs()
+        )
+    ]
+
+    assert quote_consent_signal(renewed_request, []) is QuoteConsent.GRANTED
+
+    granted = _deps_with_consent(mock_deps, QuoteConsent.GRANTED)
+    granted.conversation.language = language
+
+    assert "create_quotation" in [
+        tool.name
+        for tool in await engine_module._prepare_sales_tools(
+            _run_context(granted), _sales_tool_defs()
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I have prepared the quotation and sent it to you.",
+        "Your quotation is ready.",
+        "КП подготовлено и отправлено вам.",
+        "عرض السعر جاهز.",
+    ],
+)
+def test_quotation_claimed_without_call_is_a_defect(reply: str) -> None:
+    from src.dialogue.order_guards import quotation_claimed_without_call
+
+    assert quotation_claimed_without_call(reply, quotation_created=False) is True
+    assert quotation_claimed_without_call(reply, quotation_created=True) is False
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I will prepare the quotation once you confirm the delivery address.",
+        "I cannot send a quotation without your confirmation.",
+        "Understood, no quotation for now. Here is the price and stock instead.",
+        "Я подготовлю КП, как только вы подтвердите адрес.",
+        "سوف أجهز عرض السعر عندما تؤكد العنوان.",
+    ],
+)
+def test_quotation_promise_is_not_a_defect(reply: str) -> None:
+    from src.dialogue.order_guards import quotation_claimed_without_call
+
+    assert quotation_claimed_without_call(reply, quotation_created=False) is False

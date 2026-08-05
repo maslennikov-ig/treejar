@@ -49,6 +49,57 @@ _EXPLICIT_SELECTION_RE = re.compile(
 )
 
 
+_QUOTATION_DONE_CLAIM_RE = re.compile(
+    r"\b(?:quote|quotation)\b[^.!?\n]{0,60}\b"
+    r"(?:prepared|created|generated|issued|drafted|ready|sent|attached)\b"
+    r"|\b(?:prepared|created|generated|issued|drafted|sent|attached)\b"
+    r"[^.!?\n]{0,60}\b(?:quote|quotation)\b"
+    r"|(?:кп|коммерческ\w+\s+предложени\w*)[^.!?\n]{0,60}"
+    r"(?:готов|подготовлен|создан|сформирован|отправлен|направлен)"
+    r"|(?:подготовил|создал|сформировал|отправил|направил)\w*"
+    r"[^.!?\n]{0,60}(?:кп|коммерческ\w+\s+предложени\w*)"
+    r"|(?:عرض\s+(?:ال)?سعر)[^.!?\n]{0,60}(?:جاهز|جاهزة|مرفق|أُرسل|ارسل)"
+    r"|(?:تم\s+(?:إعداد|اعداد|إرسال|ارسال)|جهزت|أعددت|اعددت)"
+    r"[^.!?\n]{0,60}(?:عرض\s+(?:ال)?سعر)",
+    re.IGNORECASE,
+)
+# A promise is not an assertion. Without this the guard would fire on
+# "I will prepare the quotation once you confirm", which is exactly the honest
+# sentence the assistant is supposed to say after a decline.
+_QUOTATION_NOT_YET_RE = re.compile(
+    r"\b(?:will|would|can|could|shall|going\s+to|once|after\s+you|when\s+you"
+    r"|as\s+soon\s+as|if\s+you|cannot|can't|won't|not\s+yet|before)\b"
+    r"|(?:буд(?:у|ет|ем)|смогу|готов\w*\s+подготовить|как\s+только"
+    r"|после\s+того|когда\s+вы|если\s+вы|не\s+могу|пока\s+не)"
+    r"|(?:سوف|سأ|بمجرد|عندما|إذا|لا\s+أستطيع|لم\s+)",
+    re.IGNORECASE,
+)
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?؟\n]+")
+
+
+def quotation_claimed_without_call(
+    reply_text: str,
+    *,
+    quotation_created: bool,
+) -> bool:
+    """Whether the reply tells the customer a quotation exists that never ran.
+
+    This is an action claim, not a catalog fact, so pattern matching is the
+    right instrument here: the trace answers definitively whether the call
+    succeeded, and the only open question is whether the reply asserts it did.
+    """
+    if quotation_created:
+        return False
+    for sentence in _SENTENCE_SPLIT_RE.split(reply_text):
+        if not sentence.strip():
+            continue
+        if _QUOTATION_DONE_CLAIM_RE.search(
+            sentence
+        ) and not _QUOTATION_NOT_YET_RE.search(sentence):
+            return True
+    return False
+
+
 def is_order_selection_blocked(text: str) -> bool:
     normalized = " ".join(text.split())
     if not normalized:

@@ -30,7 +30,10 @@ from sqlalchemy.orm import load_only
 
 from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
-from src.dialogue.order_guards import is_order_selection_blocked
+from src.dialogue.order_guards import (
+    is_order_selection_blocked,
+    quotation_claimed_without_call,
+)
 from src.dialogue.order_runtime import run_order_runtime
 from src.dialogue.order_state import (
     PendingQuestionFrame,
@@ -12245,10 +12248,44 @@ async def _resolve_inventory_item(
     return None, catalog_product
 
 
+QUOTATION_TOOLS = frozenset({"create_quotation"})
+
+
+def _quotation_tools_withdrawn(deps: SalesDeps) -> bool:
+    """Whether the customer's persisted answer forbids offering the quotation tool.
+
+    Read here rather than carried as a `tool_mode`: a mode has to be set at every
+    call site and can be forgotten, while this read runs on every turn. Consent
+    returns to a tool-bearing state only when the runner records a new explicit
+    request, never on the model's own initiative.
+    """
+    return (
+        quote_workflow_from_metadata(deps.conversation.metadata_).consent
+        is QuoteConsent.DECLINED
+    )
+
+
 async def _prepare_sales_tools(
     ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
 ) -> list[ToolDefinition]:
     """Hide product search after the allowed per-message budget is exhausted."""
+    if _quotation_tools_withdrawn(ctx.deps):
+        withdrawn = [
+            tool_def for tool_def in tool_defs if tool_def.name in QUOTATION_TOOLS
+        ]
+        if withdrawn:
+            logger.info(
+                "quotation tools %s withdrawn after a declined quotation for "
+                "conversation %s",
+                sorted(tool_def.name for tool_def in withdrawn),
+                ctx.deps.conversation.id,
+            )
+            tool_defs = [
+                tool_def
+                for tool_def in tool_defs
+                if tool_def.name not in QUOTATION_TOOLS
+            ]
+
     if ctx.deps.tool_mode == "catalog_materialization":
         return []
     if ctx.deps.tool_mode == "order_handoff":
@@ -14630,6 +14667,18 @@ async def process_message(
         )
         final_text = grounding_result.text
         final_text = _append_required_tool_disclosures(final_text, response_deps)
+        if quotation_claimed_without_call(
+            final_text, quotation_created=response_deps.quotation_created
+        ):
+            # Recorded, not rewritten: withdrawing the tool is the elimination,
+            # and blocking a whole response over one sentence is out of scope.
+            logger.error(
+                "Reply asserts a prepared quotation with no successful call: "
+                "conversation=%s model=%s executed_tools=%s",
+                response_deps.conversation.id,
+                model_name,
+                response_deps.executed_tool_names,
+            )
         if grounding_result.action is not GroundingOutputAction.UNCHANGED:
             logger.warning(
                 "Enforced model customer output: action=%s violations=%s "
