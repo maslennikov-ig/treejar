@@ -3,8 +3,9 @@
 Updated: 2026-08-05
 Current branch: `codex/tj-feet`
 Current stage id: `tj-feet`
-Status: grounding and tool obedience delivered and locally accepted; stopped at
-the `tj-feet.8` paid provider gate
+Status: grounding and tool obedience delivered and locally accepted; the sealed
+re-run is executed and `tj-feet.8` is closed; stopped before the owner-owned
+model decision
 
 ## Current truth
 
@@ -110,8 +111,18 @@ detail in `.codex/stages/tj-feet/summary.md`.
 
 - Closed: `tj-feet.1` catalog audit, `.2` consent-declined tool gating, `.3`
   volunteered-claim contract, `.4` claim rubric, `.7` fixture repair.
+- Closed additionally: `.8`, the sealed re-run on repaired fixtures.
 - Open: `.5` instrument built and measurement pending, `.6` and `.9` waiting on
-  that scale, `.8` prepared but not run, `.10` new bounded defer.
+  that scale, `.10` new bounded defer.
+- Core winner `openai/gpt-5.6-luna`, the only candidate to finish the matrix with
+  no critical failure: groundedness 24/24, tool obedience 1.00, conversational
+  quality 0.867. Background winner `deepseek/deepseek-v4-flash`, a practical tie
+  with the model production already runs. The main slot still runs `z-ai/glm-5.2`,
+  which scored the highest conversational quality at 0.894 and the worst
+  groundedness at 0.83, with four of the seven critical failures. Switching the
+  main model is `tj-ee5f.15` and remains the owner's gate.
+- Round `20260805/core-r5` and `bg-r5` cost `$0.0335` actual against the retained
+  `$4.00` reservation. The judge was the orchestrator session and cost nothing.
 - The customer-visible change: the assistant no longer offers the quotation tool
   after an explicit decline and restores it only on a new explicit request; an
   asserted product attribute must name a field path present on the row actually
@@ -125,10 +136,8 @@ detail in `.codex/stages/tj-feet/summary.md`.
   comparable with anything scored under `noor-claim-rubric/v1`.
 - Local acceptance on the combined tree: Ruff, format over 331 files, Mypy over
   166 source files, process verification, and Pytest `2923 passed, 19 skipped`.
-- Actual candidate spend of the superseded round was `$0.0274` core and
-  `$0.0062` background. The re-run estimate is `$0.04` against the retained
-  `$4.00` reservation; the specification's dollar-scale figure included the paid
-  judge, which the owner has removed.
+- The specification's dollar-scale cost figure included the paid judge, which the
+  owner has removed; candidate spend is two orders of magnitude lower.
 
 ## Starter prompt for next orchestrator
 
@@ -159,7 +168,6 @@ test-only business effects, or real-user messaging.
   per-turn cost.
 - `tj-feet.5`, `.6`, `.9`: no measured numbers until the counter-set generation
   run happens, which the owner scheduled after the model is chosen.
-- `tj-feet.8` paid provider calls remain an ungranted authority gate.
 - `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit
   `.codex/handoff.md`; the other stream's edits are uncommitted in its own
   worktree and will need reconciling at merge.

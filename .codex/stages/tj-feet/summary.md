@@ -1,10 +1,11 @@
 # Stage tj-feet Summary
 
 Updated: 2026-08-05
-Status: in progress, stopped at the `tj-feet.8` paid provider gate
+Status: in progress; `tj-feet.8` executed and closed, stopped before the
+owner-owned model decision
 Branch: `codex/tj-feet`, worktree `.worktrees/tj-feet`
 Base: `codex/tj-ee5f-quality-model-battle` at `ea35d44`
-Head: `89ffff7`
+Head: see git log; the re-run evidence is protected and outside Git
 
 ## Boundary
 
@@ -42,7 +43,7 @@ reconcile `.codex/handoff.md`, which that stream is editing in parallel.
 | `tj-feet.7` | fixture traps repaired, superseded rounds recorded | `9746a25` |
 | `tj-feet.3` | volunteered claims verified against the retrieved row | `8d0bdb7` |
 | `tj-feet.5` | counter-set and seven metrics built; measurement pending | `57e065d` |
-| `tj-feet.8` | scoring path ready; **paid run not executed** | `89ffff7` |
+| `tj-feet.8` | sealed re-run executed; winner named | `89ffff7` |
 
 ## What the audit changed
 
@@ -88,11 +89,27 @@ Run once, at this boundary, on the combined tree:
 The seven frontend cases fail in a fresh worktree until `npm ci` runs in
 `frontend/admin`; after it they pass. That is environment, not code.
 
+## The sealed re-run
+
+Executed under owner authorization. Rounds `20260805/core-r5` and `bg-r5`.
+
+Core winner **`openai/gpt-5.6-luna`**, the only candidate to finish the matrix
+with no critical failure: groundedness 24/24, tool obedience 1.00,
+conversational quality 0.867. Background winner `deepseek/deepseek-v4-flash`, a
+practical tie with what production already runs.
+
+The perverse incentive the specification identified did not decide the round.
+The candidate with the highest conversational quality, `z-ai/glm-5.2` at 0.894 —
+the model production runs in the main slot today — has the worst groundedness at
+0.83 and four of the seven critical failures.
+
+All seven critical failures were read by hand against the actual model context,
+and so were all 18 winner responses. Actual spend **$0.0335** against the $4.00
+reservation; the published estimate was $0.04. Detail in
+`docs/reports/2026-08-05-sealed-rerun-result.md`.
+
 ## Open, with reasons
 
-- `tj-feet.8` — prepared, not run. Estimated candidate spend **$0.04** against
-  the retained $4.00 reservation. Needs explicit authority for the paid calls.
-  See `docs/reports/2026-08-05-sealed-rerun-plan.md`.
 - `tj-feet.5` — instrument built and tested; the seven metrics have no numbers
   yet because the generation run waits on the chosen model.
 - `tj-feet.6` — persuasion and next_step work has nothing to improve against
