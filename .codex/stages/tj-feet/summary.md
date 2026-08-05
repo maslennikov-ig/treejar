@@ -1,8 +1,14 @@
 # Stage tj-feet Summary
 
 Updated: 2026-08-05
-Status: in progress; `tj-feet.8` executed and closed, stopped before the
-owner-owned model decision
+Status: implementation complete; all ten planned children closed, four measured
+follow-ups recorded, stopped before production acceptance on the new model
+docs-reviewed: updated - six stage reports under `docs/reports/2026-08-05-*`
+record the audit, the rubric, the superseded rounds, the sealed re-run, the
+counter-set baseline, the marked-assumption result, the paraphrase decision and
+the every-turn pricing; `.codex/handoff.md` and this summary carry current
+state. No README, AGENTS.md, runbook, contract, migration or integration doc
+changed, because no public facade, schema or ops procedure changed.
 Branch: `codex/tj-feet`, worktree `.worktrees/tj-feet`
 Base: `codex/tj-ee5f-quality-model-battle` at `ea35d44`
 Head: see git log; the re-run evidence is protected and outside Git
@@ -44,6 +50,9 @@ reconcile `.codex/handoff.md`, which that stream is editing in parallel.
 | `tj-feet.3` | volunteered claims verified against the retrieved row | `8d0bdb7` |
 | `tj-feet.5` | counter-set built and measured on the chosen model | `57e065d`, `0f4311c` |
 | `tj-feet.8` | sealed re-run executed; winner named | `89ffff7` |
+| `tj-feet.6` | marked-assumption move taught on the turn | `4fb74b2` |
+| `tj-feet.9` | paraphrase checker measured and declined | `d311b4a` |
+| `tj-feet.10` | contract on every catalog turn, shipped off | `24afdf5` |
 
 ## What the audit changed
 
@@ -81,9 +90,9 @@ Decision 5 reverses the specification's ordering, in which `tj-feet.5` blocked
 Run once, at this boundary, on the combined tree:
 
 - `uv run ruff check src/ tests/` — passed
-- `uv run ruff format --check src/ tests/` — 331 files already formatted
+- `uv run ruff format --check src/ tests/` — 334 files already formatted
 - `uv run mypy src/` — no issues in 166 source files
-- `uv run pytest tests/ -v --tb=short` — **2923 passed, 19 skipped**
+- `uv run pytest tests/ -q` — **3035 passed, 19 skipped**
 - `scripts/orchestration/run_process_verification.sh` — OK
 
 The seven frontend cases fail in a fresh worktree until `npm ci` runs in
@@ -108,20 +117,74 @@ and so were all 18 winner responses. Actual spend **$0.0335** against the $4.00
 reservation; the published estimate was $0.04. Detail in
 `docs/reports/2026-08-05-sealed-rerun-result.md`.
 
-## Open, with reasons
+## The three tasks that finished the stage
 
-- `tj-feet.6` — now has a specific target: persuasion 3.262 of 5, and the single
-  highest-value change is teaching the marked-assumption move, which would
-  convert all six false refusals into answers without loosening any factual
-  guard, because the claim contract already permits it. Constrained by the frozen
-  product system prompt, so it cannot be bought with prompt text.
-- `tj-feet.9` — the scale now exists, and it carries a warning: the
-  unsupported-fact rate is already 0.000 on this set, so a paraphrase checker has
-  no headroom here and would be judged almost entirely on its false-block rate.
-  Harder grounding cases are needed before it can be accepted or rejected.
-- `tj-feet.10` — new. The claim contract runs on the requested-gap repair
-  trigger only; extending it to every catalog turn costs either an extra model
-  call per turn or a structured main output, and needs an owner decision.
+**`tj-feet.6` — the marked-assumption move.** A per-turn directive, read off the
+customer request and never off the reply, teaches the assistant to answer a
+stated headcount with an assumption it marks and confirms rather than a decline.
+No factual guard was loosened; the claim contract already approved the answer.
+Both rounds were re-scored together in one sitting, because the published
+`tj-feet.5` persuasion figure turned out not to be comparable across judging
+sessions — the responses had not changed, the judge's calibration had. Paired
+result: false refusals 0.200 → 0.000, task completion 0.767 → 1.000, persuasion
+2.548 → 3.071, next step 3.429 → 3.667, unsupported facts 0.000 and control
+compliance 1.000 in both. On the 30 responses whose prompt did not change, drift
+was −0.067 and −0.167, which is the error band the effect has to beat and does.
+Detail in `docs/reports/2026-08-05-marked-assumption-result.md`.
+
+**`tj-feet.9` — the paraphrase checker, declined.** Measured on a 24-probe EN/AR
+set built for it, since the counter-set's unsupported-fact rate of 0.000 left
+nothing to improve. `gpt-5.6-luna` scored TPR 1.000, TNR 1.000, false blocks
+0.000; `deepseek-v4-flash` 1.000 / 0.972 with its one false block in Arabic.
+2.0–2.5 s per claim, $0.000041 per claim. Not adopted: nothing measured says
+widening is happening, the price is seconds on the customer's turn, and a
+perfect score on probes the judge wrote and labelled cannot accept a checker. A
+recorded negative result, which the acceptance criterion allows. Detail in
+`docs/reports/2026-08-05-paraphrase-checker-decision.md`.
+
+**`tj-feet.10` — the widened scope, shipped switched off.** Structural trigger,
+one `system_configs` row, default unchanged. 7698 ms median added latency,
+17319 ms p90, $0.000465 per turn, contract followed on 37 of 42. The blocker is
+not the latency: over the 209 claims those turns emitted, 30 of 37 would be
+rewritten, and the cause is three gaps in the contract — derived facts, Arabic
+surface forms, absence claims — now `tj-feet.12`, `.13` and `.14`. Detail in
+`docs/reports/2026-08-05-claim-contract-every-turn.md`.
+
+## Open, all found by measurement
+
+- `tj-feet.13` (P1) — an Arabic surface form is withheld against its English
+  catalog value. The module states that Arabic is verified against the English
+  row and the Arabic wording treated as translation; containment does not
+  implement that. Affects the shipped narrow repair path, not only the widened
+  scope.
+- `tj-feet.12` — `check_claim` has no branch for a derived fact, so a
+  comparison, a total or an arithmetic result can never be supported.
+- `tj-feet.14` — a claim that an attribute is absent is itself withheld, which
+  withholds the very sentence the partial answer exists to produce.
+- `tj-feet.11` — the `tj-ee5f` traceability manifest pins whole-file digests of
+  two files the repository contract declares to be current state.
+- Enabling `tj-feet.10` remains the owner's call and should wait for `.12`,
+  `.13` and `.14`.
+
+## One live defect fixed on the way
+
+Literal containment withheld a stored price quoted as `AED 800` against a stored
+`800.00` — on 16 of the 37 measured turns — and a stock count on 10. That
+comparison is shared with the shipped narrow repair path, so a customer could
+have been told the catalog does not state a price it does state. A value whose
+numbers are all stored numbers is now covered; a different number is still
+withheld, and both directions are pinned by tests.
+
+This is also the first non-empty denominator for counter-set metric 5, *the
+guard deleted a correct claim*. It reported `n/a` on 42 responses because
+nothing was ever withheld. The widened scope produced the observations.
+
+## Spend
+
+`$0.0663` for the whole stage: sealed re-run `$0.0335`, counter-set baseline
+`$0.0039`, counter-set with the directive `$0.0052`, paraphrase checker
+`$0.0081`, claim-pass pricing `$0.0195`. The judge was the orchestrator session
+throughout and cost nothing.
 
 ## The counter-set, measured
 

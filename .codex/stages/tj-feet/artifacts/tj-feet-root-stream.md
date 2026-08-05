@@ -7,11 +7,10 @@ orchestration_level: slice_acceptance
 scope_kind: product_slice
 immediate_consumer: the Noor sales assistant runtime and the sealed model comparison
 public_facade: no new public facade; per-turn runtime directives and the battle harness
-bounded_acceptance: one root-owned acceptance after implementation, stopped at the tj-feet.8 paid gate
+bounded_acceptance: one root-owned acceptance after implementation; the tj-feet.8 paid gate was authorized and executed
 non_goals:
   - paid provider calls, model configuration change, push, deploy, production mutation, Zoho/PDF/Wazzup effects, live messaging
-  - paraphrase detection inside a field that exists, which belongs to tj-feet.9
-  - the counter-set generation run, which the owner scheduled after the model is chosen
+  - production S01-S10 acceptance on the switched model, which stays with tj-ee5f.1
 evidence:
   - none
 task_id: tj-feet-root-stream
@@ -19,7 +18,7 @@ epic_id: tj-feet
 stage_id: tj-feet
 session_id: tj-feet
 milestone: sales grounding, tool obedience and evaluation repair
-milestone_status: in_progress
+milestone_status: done
 agent_type: n/a
 subagent_model: n/a
 reasoning_effort: inherit_orchestrator
@@ -56,8 +55,8 @@ parallel_decision: local
 status: accepted
 delivery_method: manual integration
 accepted_by_orchestrator: yes
-cleanup_status: pending
-cleanup_notes: branch codex/tj-feet and its worktree stay in place; the stage is not closed
+cleanup_status: blocked
+cleanup_notes: branch codex/tj-feet and its worktree stay in place because no push, merge or delivery authority was granted; cleanup is blocked on that authority, not on work
 risk_level: medium
 verification_tier: integration
 risk_tags:
