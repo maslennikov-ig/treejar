@@ -42,7 +42,7 @@ reconcile `.codex/handoff.md`, which that stream is editing in parallel.
 | `tj-feet.4` | claim rubric, four types, three separate graders | `3083b74` |
 | `tj-feet.7` | fixture traps repaired, superseded rounds recorded | `9746a25` |
 | `tj-feet.3` | volunteered claims verified against the retrieved row | `8d0bdb7` |
-| `tj-feet.5` | counter-set and seven metrics built; measurement pending | `57e065d` |
+| `tj-feet.5` | counter-set built and measured on the chosen model | `57e065d`, `0f4311c` |
 | `tj-feet.8` | sealed re-run executed; winner named | `89ffff7` |
 
 ## What the audit changed
@@ -110,14 +110,39 @@ reservation; the published estimate was $0.04. Detail in
 
 ## Open, with reasons
 
-- `tj-feet.5` — instrument built and tested; the seven metrics have no numbers
-  yet because the generation run waits on the chosen model.
-- `tj-feet.6` — persuasion and next_step work has nothing to improve against
-  until `tj-feet.5` produces a baseline.
-- `tj-feet.9` — the paraphrase checker must not start before that scale exists.
+- `tj-feet.6` — now has a specific target: persuasion 3.262 of 5, and the single
+  highest-value change is teaching the marked-assumption move, which would
+  convert all six false refusals into answers without loosening any factual
+  guard, because the claim contract already permits it. Constrained by the frozen
+  product system prompt, so it cannot be bought with prompt text.
+- `tj-feet.9` — the scale now exists, and it carries a warning: the
+  unsupported-fact rate is already 0.000 on this set, so a paraphrase checker has
+  no headroom here and would be judged almost entirely on its false-block rate.
+  Harder grounding cases are needed before it can be accepted or rejected.
 - `tj-feet.10` — new. The claim contract runs on the requested-gap repair
   trigger only; extending it to every catalog turn costs either an extra model
   call per turn or a structured main output, and needs an owner decision.
+
+## The counter-set, measured
+
+42 responses on the chosen model, $0.0039. Unsupported-fact rate **0.000**
+(0/42) with control compliance **1.000** (12/12), so the clean sheet is not
+caution in disguise. False-refusal rate **0.200** (6/30), every one of them the
+labelled-hypothesis category. Task completion 0.767, persuasion 3.262 of 5,
+next step 3.833 of 5. Metric 5 reports an empty denominator, not a zero.
+
+The finding that matters: the over-refusal is **not** caused by the guards. The
+claim contract permits a marked capacity assumption with a confirming question;
+the model declined on its own caution. Detail in
+`docs/reports/2026-08-05-counter-set-baseline.md`.
+
+## Runtime model
+
+Switched to `openai/gpt-5.6-luna` on 2026-08-05 under explicit owner authority
+(`tj-ee5f.15`, closed). One row in production `system_configs`; no deploy, no
+restart, no `.env` change; verified against the deployed source and read back
+through the deployed runtime. Revert by deleting that row. Winner-only S01-S10
+production acceptance under `tj-ee5f.1` has **not** been run.
 
 ## Not comparable
 

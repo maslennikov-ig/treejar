@@ -111,9 +111,18 @@ detail in `.codex/stages/tj-feet/summary.md`.
 
 - Closed: `tj-feet.1` catalog audit, `.2` consent-declined tool gating, `.3`
   volunteered-claim contract, `.4` claim rubric, `.7` fixture repair.
-- Closed additionally: `.8`, the sealed re-run on repaired fixtures.
-- Open: `.5` instrument built and measurement pending, `.6` and `.9` waiting on
-  that scale, `.10` new bounded defer.
+- Closed additionally: `.8` the sealed re-run, and `.5` the counter-set measured
+  on the chosen model.
+- Open: `.6` and `.9` now have a scale, `.10` is a bounded defer.
+- Counter-set on the chosen model, 42 responses for `$0.0039`: unsupported-fact
+  rate `0.000` (0/42), control compliance `1.000` (12/12), false-refusal rate
+  `0.200` (6/30) all in the labelled-hypothesis category, persuasion `3.262/5`.
+  The over-refusal is not caused by the guards: the claim contract permits the
+  answer that was missing.
+- Runtime main model switched to `openai/gpt-5.6-luna` under explicit owner
+  authority; one row in production `system_configs`, no deploy or restart, read
+  back through the deployed runtime. `tj-ee5f.15` closed. Production S01-S10
+  acceptance on the new model has NOT been run and stays with `tj-ee5f.1`.
 - Core winner `openai/gpt-5.6-luna`, the only candidate to finish the matrix with
   no critical failure: groundedness 24/24, tool obedience 1.00, conversational
   quality 0.867. Background winner `deepseek/deepseek-v4-flash`, a practical tie
