@@ -23,6 +23,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
+from src.dialogue.claim_contract import sizing_assumption_directive
 from src.dialogue.runner import DialogueKernelResult
 from src.dialogue.state import DialogueDecision, DialogueState, QuoteConsent
 from src.llm import engine as engine_module
@@ -22114,3 +22115,73 @@ async def test_a_fabricated_seating_capacity_never_reaches_the_customer(
     assert "seats ten people" not in result.output
     assert "Assuming" in result.output
     assert contract is not None and contract.withheld == ()
+
+
+# --- tj-feet.6: the marked-assumption move on the turn ----------------------
+
+
+def test_a_sizing_turn_adds_the_assumption_directive() -> None:
+    """The `C04` shape, which the counter-set measured as a refusal 6 of 6."""
+    directives = engine_module._turn_runtime_directives(
+        "We are twenty people. Would two of these desks be enough?"
+    )
+
+    assert sizing_assumption_directive() in directives
+
+
+def test_an_arabic_sizing_turn_adds_it_too() -> None:
+    directives = engine_module._turn_runtime_directives(
+        "نحن عشرون شخصاً. هل يكفي مكتبان من هذه؟"
+    )
+
+    assert sizing_assumption_directive() in directives
+
+
+def test_an_ordinary_turn_adds_nothing() -> None:
+    assert engine_module._turn_runtime_directives("Please send me 20 chairs.") == ()
+
+
+def test_the_cross_sell_directive_still_fires_from_the_same_seam() -> None:
+    """Both per-turn directives now come from one place; neither displaces the other."""
+    directives = engine_module._turn_runtime_directives(
+        "We are twenty people, are two desks enough - and any cross-sell?"
+    )
+
+    assert sizing_assumption_directive() in directives
+    for directive in engine_module.CROSS_SELL_VERIFICATION_DIRECTIVES:
+        assert directive in directives
+
+
+def test_a_withheld_capacity_path_is_re_offered_as_an_assumption() -> None:
+    """The repair pass used to push the refusal it was supposed to prevent.
+
+    Its withheld branch said only *the catalog does not state them*, which is
+    the exact sentence the counter-set scored as a false refusal.
+    """
+    directive = engine_module._claim_contract_directive(
+        "{}", withheld_field_paths=("capacity",)
+    )
+
+    lowered = directive.casefold()
+    assert "assumption" in lowered
+    assert "capacity" in lowered
+    assert "does not state" not in lowered
+
+
+def test_a_withheld_attribute_path_still_gets_the_partial_answer() -> None:
+    directive = engine_module._claim_contract_directive(
+        "{}", withheld_field_paths=("attributes.specifications.Back material",)
+    )
+
+    assert "does not state" in directive
+    assert "attributes.specifications.Back material" in directive
+
+
+def test_a_mixed_withholding_gets_both_instructions() -> None:
+    directive = engine_module._claim_contract_directive(
+        "{}",
+        withheld_field_paths=("attributes.specifications.Back material", "capacity"),
+    )
+
+    assert "does not state" in directive
+    assert "assumption" in directive.casefold()

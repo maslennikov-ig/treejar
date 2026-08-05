@@ -41,15 +41,24 @@ _DECLINED_QUOTE_HISTORY = (
 )
 
 
-def _messages(case: CounterCase) -> list[dict[str, Any]]:
+def _messages(case: CounterCase, *, turn_directives: bool) -> list[dict[str, Any]]:
     evidence = json.dumps(
         {"catalog_evidence": list(case.evidence)},
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": f"{_SYSTEM_PROMPT}\n\n{evidence}"}
-    ]
+    system = f"{_SYSTEM_PROMPT}\n\n{evidence}"
+    if turn_directives:
+        # The product runtime's own function, over the customer request, so the
+        # measured text is the shipped text rather than a paraphrase of it.
+        # Imported here because the engine builds a provider at import time.
+        from src.llm.engine import _turn_runtime_directives
+
+        earned = _turn_runtime_directives(case.request)
+        if earned:
+            block = "\n".join(f"- {directive}" for directive in earned)
+            system += f"\n\n[RUNTIME DIRECTIVES]\n{block}"
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
     if case.category == "renewed_quotation_request":
         messages.extend(dict(turn) for turn in _DECLINED_QUOTE_HISTORY)
     messages.append({"role": "user", "content": case.request})
@@ -62,6 +71,7 @@ async def run_counter_set(
     output_path: Path,
     repetitions: int,
     max_tokens: int,
+    turn_directives: bool,
 ) -> None:
     if not settings.openrouter_api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not configured")
@@ -83,7 +93,7 @@ async def run_counter_set(
                     "temperature": 0,
                     "provider": {"allow_fallbacks": False},
                     "usage": {"include": True},
-                    "messages": _messages(case),
+                    "messages": _messages(case, turn_directives=turn_directives),
                 }
                 print(
                     f"[counter-set {index}/{len(COUNTER_SET)} rep={repetition}] "
@@ -103,6 +113,7 @@ async def run_counter_set(
                 results.append(
                     {
                         "case_id": case.case_id,
+                        "turn_directives": turn_directives,
                         "category": case.category,
                         "language": case.language,
                         "repetition": repetition,
@@ -119,6 +130,7 @@ async def run_counter_set(
         encoding="utf-8",
     )
     print(f"model: {model}")
+    print(f"turn_directives: {turn_directives}")
     print(f"responses: {len(results)}")
     print(f"cost: ${total_cost:.6f}")
 
@@ -129,6 +141,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--max-tokens", type=int, default=1200)
+    parser.add_argument(
+        "--turn-directives",
+        action="store_true",
+        help="add the per-turn runtime directives the product runtime would add",
+    )
     args = parser.parse_args()
     asyncio.run(
         run_counter_set(
@@ -136,6 +153,7 @@ def main() -> None:
             output_path=args.output,
             repetitions=args.repetitions,
             max_tokens=args.max_tokens,
+            turn_directives=args.turn_directives,
         )
     )
 

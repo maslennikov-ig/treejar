@@ -35,7 +35,10 @@ from src.dialogue.claim_contract import (
     ContractResult,
     RetrievedRow,
     apply_contract,
+    assumption_eligible_paths,
+    requests_sizing_judgement,
     row_from_catalog_product,
+    sizing_assumption_directive,
 )
 from src.dialogue.order_guards import (
     is_order_selection_blocked,
@@ -408,6 +411,24 @@ CROSS_SELL_VERIFICATION_DIRECTIVES = (
 _VERIFIED_CATALOG_RECOVERY_MAX_CHARS = 900
 _VERIFIED_CATALOG_FIELD_MAX_CHARS = 256
 _CROSS_SELL_REQUEST_RE = re.compile(r"\bcross(?:-|\s)?sell\b", re.IGNORECASE)
+
+
+def _turn_runtime_directives(*texts: str) -> tuple[str, ...]:
+    """Directives this customer turn earns, in one place.
+
+    Both are demand-side: they read the customer request, never the generated
+    reply. PII masking rewrites the text, so each variant is inspected — a
+    headcount survives masking, but the surrounding wording may not.
+    """
+    candidates = tuple(dict.fromkeys(text for text in texts if text))
+    directives: list[str] = []
+    if any(_CROSS_SELL_REQUEST_RE.search(text) for text in candidates):
+        directives.extend(CROSS_SELL_VERIFICATION_DIRECTIVES)
+    if any(requests_sizing_judgement(text) for text in candidates):
+        directives.append(sizing_assumption_directive())
+    return tuple(directives)
+
+
 PRODUCT_PREFERENCE_PROMPT_KEY = "workspace_luma_novo_preference"
 PRODUCT_PREFERENCE_FRAME_TTL_MINUTES = 30
 SKU_QUANTITY_PROMPT_KEY = "product_reference_quantity"
@@ -2775,12 +2796,25 @@ def _claim_contract_directive(
         "Preserve supported recommendation reasoning and remove unsupported "
         f"claims. {_CLAIM_CONTRACT_CONTRACT} {repair_payload}"
     )
-    if withheld_field_paths:
+    assumption_paths, plain_paths = assumption_eligible_paths(withheld_field_paths)
+    if plain_paths:
         directive += (
             " These field paths are not stated on the retrieved rows: "
-            f"{', '.join(withheld_field_paths)}. Do not assert them. Say the "
+            f"{', '.join(plain_paths)}. Do not assert them. Say the "
             "catalog does not state them and that you will confirm with a "
             "manager, and still give every detail that is confirmed."
+        )
+    if assumption_paths:
+        # Withholding these as flatly as the paths above is what produced the
+        # false refusals `tj-feet.5` measured. The contract approves them when
+        # they carry a marker and a confirming question, so the retry is told
+        # to re-offer them that way rather than to drop the answer.
+        directive += (
+            " These field paths are not catalog facts and must not be stated "
+            f"as facts: {', '.join(assumption_paths)}. Do not drop the answer. "
+            "Re-offer each as an explicit assumption: mark it as an "
+            "assumption, state the per-unit figure you are assuming, and ask "
+            "one short question that confirms it."
         )
     return directive
 
@@ -16236,14 +16270,13 @@ async def process_message(
             return replace(response, tool_traces=plan_traces)
 
         run_deps = deps
-        if _CROSS_SELL_REQUEST_RE.search(combined_text) or (
-            masked_text != combined_text and _CROSS_SELL_REQUEST_RE.search(masked_text)
-        ):
+        turn_directives = _turn_runtime_directives(combined_text, masked_text)
+        if turn_directives:
             run_deps = replace(
                 deps,
                 runtime_directives=(
                     *deps.runtime_directives,
-                    *CROSS_SELL_VERIFICATION_DIRECTIVES,
+                    *turn_directives,
                 ),
             )
         try:

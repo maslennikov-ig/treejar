@@ -319,6 +319,84 @@ def row_from_catalog_product(
     return RetrievedRow(sku=str(sku), fields=fields, absent_fields=frozenset(absent))
 
 
+_SIZING_PEOPLE_RE = re.compile(
+    r"(?:\b(?:people|persons?|staff|employees?|colleagues?|team|headcount)\b"
+    r"|أشخاص|اشخاص|شخص|موظف|فريق|أفراد|افراد)",
+    re.IGNORECASE,
+)
+
+_COUNT_WORD = (
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"fifteen|twenty|thirty|forty|fifty|hundred)"
+)
+
+_SIZING_FIT_RE = re.compile(
+    r"(?:\b(?:enough|sufficient|suffice|fits?|accommodates?|"
+    rf"seats?\s+(?:our|your|the|my|all|a\b|up\s+to|{_COUNT_WORD}))\b"
+    r"|يكفي|تكفي|كافي|يتسع|تتسع|يسع|يستوعب|تستوعب)",
+    re.IGNORECASE,
+)
+
+
+def requests_sizing_judgement(customer_text: str) -> bool:
+    """Did the customer ask whether a product suits a headcount they stated?
+
+    Read over the **customer request**, never over the reply. A lexical
+    backstop over generated text is on the specification's rejected list; this
+    is the same demand-side shape the existing evidence-gap detection uses.
+
+    English and Arabic only, per the owner decision of 2026-08-05 on the served
+    languages. A request in any other language simply does not fire the
+    directive, which leaves behaviour exactly as it was.
+    """
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    return bool(_SIZING_PEOPLE_RE.search(text) and _SIZING_FIT_RE.search(text))
+
+
+def sizing_assumption_directive() -> str:
+    """The per-turn directive that unlocks the answer without unlocking a fact.
+
+    Measured need: the `tj-feet.5` counter-set of 2026-08-05 put the
+    false-refusal rate at 0.200, and all six were this one shape. The contract
+    already approved the answer — a capacity carrying a visible marker and a
+    confirming question — so the gap was instruction, not permission.
+
+    It lives here rather than in the product system prompt, which the stage
+    contract freezes.
+    """
+    return (
+        "The customer has asked whether a product suits a headcount they "
+        "stated. Answer it. Do the arithmetic in the open on their number and "
+        "give the sizing as an explicit assumption: name it as an assumption, "
+        "state the per-unit figure you are assuming, and ask one short "
+        "question that confirms it. Seating or desk capacity is not a catalog "
+        "fact and must never be presented as one, so never state it without "
+        "that marker and that question. Give every confirmed detail alongside "
+        "it, and close with one concrete next step. Declining to answer is not "
+        "an acceptable outcome here."
+    )
+
+
+def assumption_eligible_paths(
+    withheld_field_paths: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Split withheld paths into the ones a marked assumption may re-offer.
+
+    Only capacity. A headcount is the customer's own number and the assistant
+    can do the arithmetic in the open; a back material is a property of the
+    product, and no amount of labelling invents one.
+    """
+    eligible = tuple(
+        path
+        for path in withheld_field_paths
+        if normalize_field_path(path) in CAPACITY_FIELD_PATHS
+    )
+    remaining = tuple(path for path in withheld_field_paths if path not in eligible)
+    return eligible, remaining
+
+
 def partial_answer(
     *,
     sku: str,
