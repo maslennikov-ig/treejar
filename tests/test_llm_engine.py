@@ -22185,3 +22185,187 @@ def test_a_mixed_withholding_gets_both_instructions() -> None:
 
     assert "does not state" in directive
     assert "assumption" in directive.casefold()
+
+
+# --- tj-feet.10: the contract on every catalog turn --------------------------
+
+
+def test_claim_rows_materialize_only_when_a_row_was_retrieved(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    deps = _claim_rows_deps(mock_deps)
+    rows = engine_module._materialize_claim_rows(deps)
+
+    assert rows is not None
+    assert "AX-E1" in rows
+    assert rows["AX-E1"]["attributes.specifications.Mechanism"] == "synchronised tilt"
+
+    deps.claim_rows.clear()
+    assert engine_module._materialize_claim_rows(deps) is None
+
+
+@pytest.mark.asyncio
+async def test_a_volunteered_attribute_is_withheld_with_no_requested_gap(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """The hole `tj-feet.3` left open.
+
+    Nobody asked about a back material. The old trigger fires only on one of
+    two hardcoded requested gaps, so on this turn the model's text was final
+    and the volunteered mesh back reached the customer unchecked.
+    """
+    deps = _claim_rows_deps(mock_deps)
+    calls: list[str] = []
+
+    async def _run(verify_deps: SalesDeps) -> _FakeResult:
+        directive = verify_deps.runtime_directives[-1]
+        calls.append(directive)
+        if len(calls) == 1:
+            return _FakeResult(
+                json.dumps(
+                    {
+                        "claims": [
+                            {
+                                "claim_type": "catalog_fact",
+                                "sku": "AX-E1",
+                                "field_path": "attributes.specifications.Back material",
+                                "value": "mesh",
+                            }
+                        ],
+                        "answer": "AX-E1 has a mesh back and costs 800 AED.",
+                    }
+                )
+            )
+        return _FakeResult(
+            json.dumps(
+                {
+                    "claims": [
+                        {
+                            "claim_type": "catalog_fact",
+                            "sku": "AX-E1",
+                            "field_path": "attributes.specifications.Mechanism",
+                            "value": "synchronised tilt",
+                        }
+                    ],
+                    "answer": (
+                        "AX-E1 uses a synchronised tilt and costs 800 AED. The "
+                        "catalog does not state the back material; I will "
+                        "confirm it with a manager."
+                    ),
+                }
+            )
+        )
+
+    result, contract = await engine_module._verify_volunteered_claims(
+        _FakeResult("AX-E1 has a mesh back and costs 800 AED."),
+        run_deps=deps,
+        run_agent=_run,
+    )
+
+    assert "mesh back" not in result.output
+    assert "synchronised tilt" in result.output
+    assert contract is not None and contract.withheld == ()
+    # The retry was told the exact path, which is what makes it a partial
+    # answer instead of a refusal.
+    assert "attributes.specifications.Back material" in calls[1]
+
+
+@pytest.mark.asyncio
+async def test_a_clean_turn_keeps_the_original_reply_untouched(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """Nothing withheld means nothing rewritten.
+
+    A verified turn must pay the check and never a rewrite, or every catalog
+    turn risks losing formatting, media and tone to a second generation.
+    """
+    deps = _claim_rows_deps(mock_deps)
+    original = _FakeResult("AX-E1 uses a synchronised tilt and costs 800 AED.")
+
+    async def _run(_deps: SalesDeps) -> _FakeResult:
+        return _FakeResult(
+            json.dumps(
+                {
+                    "claims": [
+                        {
+                            "claim_type": "catalog_fact",
+                            "sku": "AX-E1",
+                            "field_path": "attributes.specifications.Mechanism",
+                            "value": "synchronised tilt",
+                        }
+                    ],
+                    "answer": "A terser rewrite that must not ship.",
+                }
+            )
+        )
+
+    result, contract = await engine_module._verify_volunteered_claims(
+        original, run_deps=deps, run_agent=_run
+    )
+
+    assert result is original
+    assert contract is not None and contract.withheld == ()
+
+
+@pytest.mark.asyncio
+async def test_an_unparseable_verification_never_breaks_the_turn(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    deps = _claim_rows_deps(mock_deps)
+    original = _FakeResult("AX-E1 costs 800 AED.")
+
+    async def _run(_deps: SalesDeps) -> _FakeResult:
+        return _FakeResult("I could not follow the contract.")
+
+    result, contract = await engine_module._verify_volunteered_claims(
+        original, run_deps=deps, run_agent=_run
+    )
+
+    assert result is original
+    assert contract is None
+
+
+@pytest.mark.asyncio
+async def test_no_retrieved_row_means_no_extra_call(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """The trigger is structural: no catalog row, no cost."""
+    deps = _claim_rows_deps(mock_deps)
+    deps.claim_rows.clear()
+    original = _FakeResult("Sure, a manager will call you.")
+
+    async def _never(_deps: SalesDeps) -> None:
+        raise AssertionError("a turn with no catalog row must not pay for a check")
+
+    result, contract = await engine_module._verify_volunteered_claims(
+        original, run_deps=deps, run_agent=_never
+    )
+
+    assert result is original
+    assert contract is None
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("every_catalog_turn", True),
+        ("requested_gaps", False),
+        ("", False),
+        ("EVERY_CATALOG_TURN", True),
+        ("nonsense", False),
+    ],
+)
+def test_the_scope_switch_reads_one_config_value(
+    configured: str, expected: bool
+) -> None:
+    assert engine_module._claim_contract_runs_every_catalog_turn(configured) is expected

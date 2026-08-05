@@ -270,3 +270,65 @@ def test_the_contract_separates_what_may_ship_from_what_may_not() -> None:
         "attributes.specifications.Back material",
         "capacity",
     )
+
+
+# --- formatted values, found by the tj-feet.10 measurement -------------------
+
+
+@pytest.mark.parametrize(
+    ("claimed", "stored"),
+    [
+        # What the model actually emitted against the live extras, where a
+        # price is stored as a bare decimal and quoted with its currency.
+        ("AED 800", "800.00"),
+        ("800 AED", "800.00"),
+        ("2,000", "2000"),
+        ("2,000 AED", "2000.00"),
+        ("٨٠٠ درهم", "800.00"),
+        ("5-year warranty", "5 years"),
+        ("5 units", "5"),
+    ],
+)
+def test_a_formatted_number_is_the_stored_number(claimed: str, stored: str) -> None:
+    """Currency, separators and word order are presentation, not provenance.
+
+    Measured on 2026-08-05: withholding these was the single largest class of
+    false withholding, ahead of every real one. A customer being told the
+    catalog does not state a price it does state is the worst outcome the
+    contract can produce.
+    """
+    rows = {
+        "AX-E1": RetrievedRow(sku="AX-E1", fields={"price": stored}),
+    }
+    check = check_claim(
+        AttributeClaim(
+            claim_type="catalog_fact", sku="AX-E1", field_path="price", value=claimed
+        ),
+        rows,
+    )
+
+    assert check.may_reach_customer is True
+
+
+@pytest.mark.parametrize(
+    ("claimed", "stored"),
+    [
+        ("150 kg", "120 kg"),
+        ("AED 900", "800.00"),
+        ("7 units", "5"),
+        ("mesh", "steel frame"),
+    ],
+)
+def test_a_different_number_is_still_withheld(claimed: str, stored: str) -> None:
+    """The tolerance is for formatting, not for a different value."""
+    rows = {
+        "AX-E1": RetrievedRow(sku="AX-E1", fields={"price": stored}),
+    }
+    check = check_claim(
+        AttributeClaim(
+            claim_type="catalog_fact", sku="AX-E1", field_path="price", value=claimed
+        ),
+        rows,
+    )
+
+    assert check.may_reach_customer is False

@@ -2923,6 +2923,89 @@ async def _enforce_claim_contract(
     return _ContractedResult(retried, retried_answer), retried_contract
 
 
+CLAIM_CONTRACT_SCOPE_KEY = "claim_contract_scope"
+_CLAIM_CONTRACT_SCOPE_EVERY_TURN = "every_catalog_turn"
+_CLAIM_CONTRACT_ROW_LIMIT = 5
+_CLAIM_CONTRACT_VALUE_MAX_CHARS = 256
+
+
+def _claim_contract_runs_every_catalog_turn(configured: str) -> bool:
+    """One config value decides the scope, and it defaults to today's behaviour.
+
+    `tj-feet.10` costs an extra model call on every catalog turn, which is a
+    latency decision the owner holds. So the widened scope ships switched off,
+    reversible by a single `system_configs` row exactly like the model slot,
+    and any value that is not the widened one leaves the old trigger in place.
+    """
+    return str(configured).strip().casefold() == _CLAIM_CONTRACT_SCOPE_EVERY_TURN
+
+
+def _materialize_claim_rows(deps: SalesDeps) -> dict[str, dict[str, str]] | None:
+    """The rows this turn retrieved, as the contract will check them.
+
+    Structural, not lexical: the trigger is *a catalog row reached the model*,
+    never a pattern over the reply text, which the specification rejects.
+    """
+    if not deps.claim_rows:
+        return None
+    rows: dict[str, dict[str, str]] = {}
+    for sku, row in sorted(deps.claim_rows.items())[:_CLAIM_CONTRACT_ROW_LIMIT]:
+        rows[sku] = {
+            path: value[:_CLAIM_CONTRACT_VALUE_MAX_CHARS]
+            for path, value in sorted(row.fields.items())
+        }
+    return rows or None
+
+
+async def _verify_volunteered_claims(
+    result: Any,
+    *,
+    run_deps: SalesDeps,
+    run_agent: Any,
+) -> tuple[Any, ContractResult | None]:
+    """Check a catalog turn nobody asked a question about.
+
+    The `tj-feet.3` repair pass fires only on one of two hardcoded requested
+    gap types. On a turn where the customer asked nothing, the model's text was
+    final and a volunteered attribute had nothing to be checked against.
+
+    A clean turn keeps its original reply untouched: the check is paid, the
+    rewrite is not. Only a turn that actually volunteered something unsupported
+    is regenerated, and an answer that cannot be parsed leaves the turn exactly
+    as it was.
+    """
+    rows = _materialize_claim_rows(run_deps)
+    if rows is None:
+        return result, None
+    verify_payload = json.dumps(
+        {"candidate_response": str(result.output), "retrieved_rows": rows},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    verify_deps = replace(
+        run_deps,
+        tool_mode="catalog_materialization",
+        runtime_directives=(
+            *run_deps.runtime_directives,
+            _claim_contract_directive(verify_payload),
+        ),
+    )
+    verified = await run_agent(verify_deps)
+    parsed = _parse_claim_payload(getattr(verified, "output", ""))
+    if parsed is None:
+        return result, None
+    claims, _answer = parsed
+    contract = apply_contract(claims, run_deps.claim_rows)
+    if not contract.withheld:
+        return result, contract
+    return await _enforce_claim_contract(
+        verified,
+        repair_deps=verify_deps,
+        repair_payload=verify_payload,
+        run_agent=run_agent,
+    )
+
+
 def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
     guarded_facts = deps.unsupported_catalog_facts.intersection(
         {
@@ -15101,6 +15184,13 @@ async def process_message(
         minimum=0,
         maximum=10,
     )
+    claim_contract_every_catalog_turn = _claim_contract_runs_every_catalog_turn(
+        await get_system_config(
+            db,
+            CLAIM_CONTRACT_SCOPE_KEY,
+            "requested_gaps",
+        )
+    )
     dialogue_kernel_mode = await get_system_config(
         db,
         "dialogue_kernel_mode",
@@ -16381,6 +16471,31 @@ async def process_message(
                 ),
                 tool_traces=recovery_traces,
             )
+        if claim_contract_every_catalog_turn:
+            verified_result, volunteered = await _verify_volunteered_claims(
+                result,
+                run_deps=run_deps,
+                run_agent=_run_agent,
+            )
+            if verified_result is not result:
+                if volunteered is not None and volunteered.withheld:
+                    logger.warning(
+                        "Claim contract withheld %s on an unrequested catalog "
+                        "turn for conversation %s",
+                        list(volunteered.withheld_field_paths),
+                        run_deps.conversation.id,
+                    )
+                await _clear_verified_policy_repair_state()
+                return replace(
+                    _build_llm_response(
+                        verified_result,
+                        db_model_main,
+                        response_deps=run_deps,
+                        text_provenance="model_repaired",
+                        route_suffix="claim-contract-turn",
+                    ),
+                    tool_traces=recovery_traces,
+                )
         await _clear_verified_policy_repair_state()
         return replace(
             _build_llm_response(

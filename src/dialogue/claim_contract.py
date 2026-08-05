@@ -230,17 +230,44 @@ def check_claim(
     )
 
 
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
+_ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+
+def _numbers_in(text: str) -> set[float]:
+    """Every number a value carries, free of separators and digit script."""
+    found: set[float] = set()
+    for token in _NUMBER_RE.findall(str(text).translate(_ARABIC_INDIC_DIGITS)):
+        try:
+            found.add(float(token.replace(",", "")))
+        except ValueError:
+            continue
+    return found
+
+
 def _value_is_covered(claimed: str, stored: str) -> bool:
     """Containment, not paraphrase.
 
     Whether wording widens the meaning of a value that does exist belongs to
     tj-feet.9. Here a claim passes when its value is the stored one.
+
+    Literal containment alone was too strict, and the `tj-feet.10` measurement
+    of 2026-08-05 put a number on it: withholding `AED 800` against a stored
+    `800.00` was the largest single class of withholding, ahead of every real
+    one. A price the catalog does state being reported to the customer as not
+    stated is the worst thing this function can cause, so a value whose numbers
+    are all stored numbers is covered. Currency, thousands separators, Arabic
+    digits and word order are presentation; a *different* number is not.
     """
     claimed_normalized = " ".join(str(claimed).casefold().split())
     stored_normalized = " ".join(str(stored).casefold().split())
     if not claimed_normalized:
         return bool(stored_normalized)
-    return claimed_normalized in stored_normalized
+    if claimed_normalized in stored_normalized:
+        return True
+    claimed_numbers = _numbers_in(claimed_normalized)
+    stored_numbers = _numbers_in(stored_normalized)
+    return bool(claimed_numbers) and claimed_numbers <= stored_numbers
 
 
 @dataclass(frozen=True, slots=True)
