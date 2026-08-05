@@ -1,0 +1,272 @@
+"""Regressions for the volunteered-attribute contract (tj-feet.3)."""
+
+from __future__ import annotations
+
+import pytest
+
+from src.dialogue.claim_contract import (
+    AttributeClaim,
+    AttributeStatus,
+    RetrievedRow,
+    apply_contract,
+    attribute_status,
+    check_claim,
+    normalize_field_path,
+    partial_answer,
+)
+
+# One row shaped like the live catalog: an English description, a short
+# specifications map with the namespace exactly as the audit found it.
+_ROWS = {
+    "AX-E1": RetrievedRow(
+        sku="AX-E1",
+        fields={
+            "attributes.specifications.Mechanism": "synchronised tilt",
+            "attributes.specifications.Recommended load": "120 kg",
+            "attributes.specifications.Warranty": "5 years",
+            "price": "800",
+        },
+        absent_fields=frozenset({"attributes.specifications.Upholstery"}),
+        not_applicable_fields=frozenset({"attributes.specifications.Gaslift"}),
+    )
+}
+
+
+def _claim(**overrides: object) -> AttributeClaim:
+    values: dict[str, object] = {"claim_type": "catalog_fact", "sku": "AX-E1"}
+    values.update(overrides)
+    return AttributeClaim(**values)  # type: ignore[arg-type]
+
+
+# --- the volunteered unsupported attribute ----------------------------------
+
+
+def test_a_volunteered_attribute_absent_from_the_row_cannot_reach_the_customer() -> (
+    None
+):
+    """The mesh back nobody asked about and the catalog never stated."""
+    check = check_claim(
+        _claim(field_path="attributes.specifications.Back material", value="mesh"),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is False
+    assert check.supported is False
+    assert check.status is AttributeStatus.UNKNOWN
+
+
+def test_a_supported_attribute_reaches_the_customer() -> None:
+    check = check_claim(
+        _claim(
+            field_path="attributes.specifications.Mechanism", value="synchronised tilt"
+        ),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is True
+    assert check.status is AttributeStatus.KNOWN_VALUE
+
+
+def test_a_claim_about_another_sku_does_not_borrow_this_row() -> None:
+    check = check_claim(
+        _claim(
+            sku="DK-4",
+            field_path="attributes.specifications.Mechanism",
+            value="synchronised tilt",
+        ),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is False
+
+
+def test_a_value_the_row_does_not_carry_is_withheld() -> None:
+    check = check_claim(
+        _claim(field_path="attributes.specifications.Warranty", value="10 years"),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is False
+    assert "not the value stored" in check.reason
+
+
+def test_the_uncanonical_key_namespace_does_not_produce_false_negatives() -> None:
+    """`Recommended load` and `Recommended Load` are both live catalog keys."""
+    assert normalize_field_path("attributes.specifications.Recommended Load") == (
+        normalize_field_path("Recommended load")
+    )
+
+    check = check_claim(
+        _claim(field_path="Recommended Load", value="120 kg"),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is True
+
+
+# --- the fabricated seating capacity ----------------------------------------
+
+
+def test_a_bare_seating_capacity_claim_cannot_reach_the_customer() -> None:
+    """No active SKU carries a capacity field; a bare claim is always invented."""
+    check = check_claim(
+        _claim(sku="DK-4", field_path="capacity", value="10 people"),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is False
+    assert "not a catalog field" in check.reason
+
+
+@pytest.mark.parametrize("path", ["capacity", "seats", "seating_capacity", "pax"])
+def test_every_capacity_path_is_refused_as_a_plain_fact(path: str) -> None:
+    assert (
+        check_claim(
+            _claim(sku="DK-4", field_path=path, value="10"), _ROWS
+        ).may_reach_customer
+        is False
+    )
+
+
+def test_a_marked_capacity_assumption_with_a_question_is_allowed() -> None:
+    """Owner decision of 2026-08-05: this is the permitted way to say it."""
+    check = check_claim(
+        _claim(
+            claim_type="explicit_assumption",
+            sku="DK-4",
+            field_path="capacity",
+            value="10",
+            marker_present=True,
+            confirming_question=True,
+        ),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is True
+
+
+@pytest.mark.parametrize(
+    ("marker", "question"), [(True, False), (False, True), (False, False)]
+)
+def test_an_assumption_without_marker_or_question_is_withheld(
+    marker: bool, question: bool
+) -> None:
+    check = check_claim(
+        _claim(
+            claim_type="explicit_assumption",
+            sku="DK-4",
+            field_path="capacity",
+            value="10",
+            marker_present=marker,
+            confirming_question=question,
+        ),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is False
+
+
+def test_an_assumption_cannot_contradict_a_value_the_row_already_carries() -> None:
+    check = check_claim(
+        _claim(
+            claim_type="explicit_assumption",
+            field_path="attributes.specifications.Warranty",
+            value="10 years",
+            marker_present=True,
+            confirming_question=True,
+        ),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is False
+    assert "contradicts" in check.reason
+
+
+# --- typed statuses ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("attributes.specifications.Mechanism", AttributeStatus.KNOWN_VALUE),
+        ("attributes.specifications.Upholstery", AttributeStatus.CONFIRMED_ABSENT),
+        ("attributes.specifications.Gaslift", AttributeStatus.NOT_APPLICABLE),
+        ("attributes.specifications.Back material", AttributeStatus.UNKNOWN),
+    ],
+)
+def test_a_missing_attribute_is_a_typed_status_not_an_empty_string(
+    path: str, expected: AttributeStatus
+) -> None:
+    assert attribute_status("AX-E1", path, _ROWS) is expected
+
+
+def test_a_recommendation_is_never_blocked_as_a_catalog_attribute() -> None:
+    check = check_claim(_claim(claim_type="recommendation"), _ROWS)
+
+    assert check.may_reach_customer is True
+
+
+# --- the unknown branch answers, it does not refuse -------------------------
+
+
+def test_an_unknown_attribute_yields_a_useful_partial_answer() -> None:
+    answer = partial_answer(
+        sku="AX-E1",
+        unknown_field_paths=("attributes.specifications.Back material",),
+        confirmed={"price": "AED 800", "stock": "7 in Dubai"},
+    )
+
+    assert "does not state" in answer
+    assert "confirm" in answer
+    assert "AED 800" in answer and "7 in Dubai" in answer
+    for refusal in ("cannot help", "unable to", "I can't"):
+        assert refusal not in answer
+
+
+def test_the_arabic_partial_answer_still_hands_over_what_is_confirmed() -> None:
+    answer = partial_answer(
+        sku="AX-E1",
+        unknown_field_paths=("attributes.specifications.Back material",),
+        confirmed={"price": "800 AED"},
+        arabic=True,
+    )
+
+    assert "AX-E1" in answer
+    assert "800 AED" in answer
+
+
+def test_an_arabic_reply_is_verified_against_the_english_row() -> None:
+    """No active SKU carries Arabic text, so there is no Arabic source to want."""
+    check = check_claim(
+        _claim(
+            field_path="attributes.specifications.Mechanism", value="synchronised tilt"
+        ),
+        _ROWS,
+    )
+
+    assert check.may_reach_customer is True
+
+
+# --- the contract over a whole reply ----------------------------------------
+
+
+def test_the_contract_separates_what_may_ship_from_what_may_not() -> None:
+    result = apply_contract(
+        (
+            _claim(
+                field_path="attributes.specifications.Mechanism",
+                value="synchronised tilt",
+            ),
+            _claim(field_path="attributes.specifications.Back material", value="mesh"),
+            _claim(sku="DK-4", field_path="capacity", value="10"),
+            _claim(claim_type="recommendation"),
+        ),
+        _ROWS,
+    )
+
+    assert len(result.approved) == 2
+    assert len(result.withheld) == 2
+    assert result.withheld_field_paths == (
+        "attributes.specifications.Back material",
+        "capacity",
+    )

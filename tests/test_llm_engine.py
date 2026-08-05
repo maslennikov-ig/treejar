@@ -21909,3 +21909,208 @@ def test_quotation_promise_is_not_a_defect(reply: str) -> None:
     from src.dialogue.order_guards import quotation_claimed_without_call
 
     assert quotation_claimed_without_call(reply, quotation_created=False) is False
+
+
+class _FakeResult:
+    def __init__(self, output: str) -> None:
+        self.output = output
+
+    def usage(self) -> None:
+        return None
+
+
+def _claim_rows_deps(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> SalesDeps:
+    from src.dialogue.claim_contract import row_from_catalog_product
+
+    db, conv, embedding, zoho, zoho_crm, redis, messaging = mock_deps
+    deps = SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=embedding,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        runtime_directives=("prior directive", "claim contract directive"),
+    )
+    deps.claim_rows["AX-E1"] = row_from_catalog_product(
+        sku="AX-E1",
+        attributes={"specifications": {"Mechanism": "synchronised tilt"}},
+        extras={"price": 800, "currency": "AED"},
+    )
+    return deps
+
+
+def test_parse_claim_payload_falls_back_cleanly_on_plain_text() -> None:
+    assert engine_module._parse_claim_payload("Just a normal reply.") is None
+    assert engine_module._parse_claim_payload('{"answer": ""}') is None
+
+
+def test_parse_claim_payload_reads_claims_and_answer() -> None:
+    parsed = engine_module._parse_claim_payload(
+        json.dumps(
+            {
+                "claims": [
+                    {
+                        "claim_type": "catalog_fact",
+                        "sku": "AX-E1",
+                        "field_path": "attributes.specifications.Mechanism",
+                        "value": "synchronised tilt",
+                    }
+                ],
+                "answer": "AX-E1 uses a synchronised tilt.",
+            }
+        )
+    )
+
+    assert parsed is not None
+    claims, answer = parsed
+    assert answer == "AX-E1 uses a synchronised tilt."
+    assert claims[0].field_path == "attributes.specifications.Mechanism"
+
+
+@pytest.mark.asyncio
+async def test_supported_claim_reaches_the_customer_unchanged(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    deps = _claim_rows_deps(mock_deps)
+    payload = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_type": "catalog_fact",
+                    "sku": "AX-E1",
+                    "field_path": "attributes.specifications.Mechanism",
+                    "value": "synchronised tilt",
+                }
+            ],
+            "answer": "AX-E1 uses a synchronised tilt.",
+        }
+    )
+
+    async def _never_called(_deps: SalesDeps) -> None:
+        raise AssertionError("a supported claim must not trigger a retry")
+
+    result, contract = await engine_module._enforce_claim_contract(
+        _FakeResult(payload),
+        repair_deps=deps,
+        repair_payload="{}",
+        run_agent=_never_called,
+    )
+
+    assert result.output == "AX-E1 uses a synchronised tilt."
+    assert contract is not None and contract.withheld == ()
+
+
+@pytest.mark.asyncio
+async def test_a_volunteered_unsupported_attribute_never_reaches_the_customer(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """Failure class (a): nobody asked, the model volunteered a mesh back."""
+    deps = _claim_rows_deps(mock_deps)
+    fabricated = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_type": "catalog_fact",
+                    "sku": "AX-E1",
+                    "field_path": "attributes.specifications.Back material",
+                    "value": "breathable mesh",
+                }
+            ],
+            "answer": "AX-E1 has a breathable mesh back.",
+        }
+    )
+    repaired = json.dumps(
+        {
+            "claims": [],
+            "answer": (
+                "The catalog does not state the back material for AX-E1 and I will "
+                "confirm it with a manager. The confirmed price is AED 800."
+            ),
+        }
+    )
+    seen: list[tuple[str, ...]] = []
+
+    async def _retry(retry_deps: SalesDeps) -> _FakeResult:
+        seen.append(retry_deps.runtime_directives)
+        return _FakeResult(repaired)
+
+    result, contract = await engine_module._enforce_claim_contract(
+        _FakeResult(fabricated),
+        repair_deps=deps,
+        repair_payload="{}",
+        run_agent=_retry,
+    )
+
+    assert "mesh" not in result.output
+    assert "does not state" in result.output
+    assert "AED 800" in result.output
+    assert contract is not None and contract.withheld == ()
+    # The retry is told exactly which path failed, and keeps the prior directives.
+    assert seen and "attributes.specifications.Back material" in seen[0][-1]
+    assert seen[0][0] == "prior directive"
+
+
+@pytest.mark.asyncio
+async def test_a_fabricated_seating_capacity_never_reaches_the_customer(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """No SKU carries a capacity field, so a bare capacity claim is invented."""
+    deps = _claim_rows_deps(mock_deps)
+    fabricated = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_type": "catalog_fact",
+                    "sku": "AX-E1",
+                    "field_path": "capacity",
+                    "value": "10 people",
+                }
+            ],
+            "answer": "Each desk seats ten people.",
+        }
+    )
+    marked = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_type": "explicit_assumption",
+                    "sku": "AX-E1",
+                    "field_path": "capacity",
+                    "value": "10",
+                    "marker_present": True,
+                    "confirming_question": True,
+                }
+            ],
+            "answer": (
+                "Assuming about ten workstations per desk - would you prefer a "
+                "different split?"
+            ),
+        }
+    )
+
+    async def _retry(_deps: SalesDeps) -> _FakeResult:
+        return _FakeResult(marked)
+
+    result, contract = await engine_module._enforce_claim_contract(
+        _FakeResult(fabricated),
+        repair_deps=deps,
+        repair_payload="{}",
+        run_agent=_retry,
+    )
+
+    assert "seats ten people" not in result.output
+    assert "Assuming" in result.output
+    assert contract is not None and contract.withheld == ()

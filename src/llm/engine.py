@@ -30,6 +30,13 @@ from sqlalchemy.orm import load_only
 
 from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
+from src.dialogue.claim_contract import (
+    AttributeClaim,
+    ContractResult,
+    RetrievedRow,
+    apply_contract,
+    row_from_catalog_product,
+)
 from src.dialogue.order_guards import (
     is_order_selection_blocked,
     quotation_claimed_without_call,
@@ -2725,6 +2732,11 @@ class SalesDeps:
     catalog_fact_products: dict[str, VerifiedCatalogFactProduct] = field(
         default_factory=dict
     )
+    # Every catalog row that reached the model this turn, recorded whether or
+    # not the customer asked about an attribute. The old guard only recorded
+    # rows on request, which is exactly why a volunteered claim had nothing to
+    # be checked against.
+    claim_rows: dict[str, RetrievedRow] = field(default_factory=dict)
     verified_catalog_selections: dict[
         CatalogFamily, tuple[VerifiedCatalogLine, ...]
     ] = field(default_factory=dict)
@@ -2736,6 +2748,145 @@ class SalesDeps:
     catalog_decision: CatalogDecision | None = None
     executed_tool_names: list[str] = field(default_factory=list)
     recovery_tool_traces: list[RuntimeToolTrace] = field(default_factory=list)
+
+
+_CLAIM_CONTRACT_CONTRACT = (
+    'Return JSON only: {"claims":[{"claim_type":"catalog_fact|derived_fact|'
+    'explicit_assumption|recommendation","sku":"","field_path":"","value":"",'
+    '"marker_present":false,"confirming_question":false}],"answer":""}. '
+    "List one claim object for every product attribute the answer asserts, "
+    "naming the exact field path it relies on. Technical provenance stays in "
+    "the claims and never appears in answer. answer is the customer-facing "
+    "reply and nothing else."
+)
+
+
+def _claim_contract_directive(
+    repair_payload: str,
+    withheld_field_paths: tuple[str, ...] = (),
+) -> str:
+    """The per-turn directive for the structured repair pass.
+
+    The product system prompt is frozen, so the contract lives here, on the
+    turn, where it can also name the exact paths a previous attempt failed on.
+    """
+    directive = (
+        "Revise candidate_response against verified_catalog_facts. "
+        "Preserve supported recommendation reasoning and remove unsupported "
+        f"claims. {_CLAIM_CONTRACT_CONTRACT} {repair_payload}"
+    )
+    if withheld_field_paths:
+        directive += (
+            " These field paths are not stated on the retrieved rows: "
+            f"{', '.join(withheld_field_paths)}. Do not assert them. Say the "
+            "catalog does not state them and that you will confirm with a "
+            "manager, and still give every detail that is confirmed."
+        )
+    return directive
+
+
+class _ContractedResult:
+    """A model result whose text is the contract-approved answer.
+
+    Usage and telemetry are delegated, so cost accounting stays attached to the
+    call that actually happened.
+    """
+
+    def __init__(self, source: Any, output: str) -> None:
+        self._source = source
+        self.output = output
+
+    def usage(self) -> Any:
+        return self._source.usage()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._source, name)
+
+
+def _parse_claim_payload(
+    output: str,
+) -> tuple[tuple[AttributeClaim, ...], str] | None:
+    """Read the structured repair payload, or give up cleanly.
+
+    A model that ignores the contract must not break the turn, so an
+    unparseable payload falls back to the previous plain-text behaviour.
+    """
+    try:
+        parsed = json.loads(str(output).strip())
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    answer = parsed.get("answer")
+    raw_claims = parsed.get("claims")
+    if not isinstance(answer, str) or not answer.strip():
+        return None
+    if raw_claims is None:
+        raw_claims = []
+    if not isinstance(raw_claims, list):
+        return None
+    claims: list[AttributeClaim] = []
+    for raw in raw_claims:
+        if not isinstance(raw, Mapping):
+            continue
+        claim_type = str(raw.get("claim_type") or "catalog_fact")
+        if claim_type not in {
+            "catalog_fact",
+            "derived_fact",
+            "explicit_assumption",
+            "recommendation",
+        }:
+            claim_type = "catalog_fact"
+        claims.append(
+            AttributeClaim(
+                claim_type=claim_type,  # type: ignore[arg-type]
+                sku=str(raw.get("sku") or ""),
+                field_path=str(raw.get("field_path") or ""),
+                value=str(raw.get("value") or ""),
+                marker_present=bool(raw.get("marker_present")),
+                confirming_question=bool(raw.get("confirming_question")),
+            )
+        )
+    return tuple(claims), answer.strip()
+
+
+async def _enforce_claim_contract(
+    repaired_result: Any,
+    *,
+    repair_deps: SalesDeps,
+    repair_payload: str,
+    run_agent: Any,
+) -> tuple[Any, ContractResult | None]:
+    """Verify the emitted claims and keep unsupported ones off the wire.
+
+    One bounded retry: the second attempt is told exactly which field paths the
+    rows do not carry, so the answer becomes a useful partial one rather than a
+    refusal or a quiet repetition of the same claim.
+    """
+    parsed = _parse_claim_payload(getattr(repaired_result, "output", ""))
+    if parsed is None:
+        return repaired_result, None
+    claims, answer = parsed
+    contract = apply_contract(claims, repair_deps.claim_rows)
+    if not contract.withheld:
+        return _ContractedResult(repaired_result, answer), contract
+
+    retry_deps = replace(
+        repair_deps,
+        runtime_directives=(
+            *repair_deps.runtime_directives[:-1],
+            _claim_contract_directive(
+                repair_payload, withheld_field_paths=contract.withheld_field_paths
+            ),
+        ),
+    )
+    retried = await run_agent(retry_deps)
+    retried_parsed = _parse_claim_payload(getattr(retried, "output", ""))
+    if retried_parsed is None:
+        return retried, contract
+    retried_claims, retried_answer = retried_parsed
+    retried_contract = apply_contract(retried_claims, repair_deps.claim_rows)
+    return _ContractedResult(retried, retried_answer), retried_contract
 
 
 def _materialize_verified_catalog_facts(deps: SalesDeps) -> str | None:
@@ -12762,6 +12913,18 @@ async def search_products(
             if fact_assessment_active
             else ()
         )
+        ctx.deps.claim_rows[sku] = row_from_catalog_product(
+            sku=sku,
+            attributes=getattr(r, "attributes", None),
+            extras={
+                "name": r.name_en,
+                "description": r.description_en,
+                "category": r.category,
+                "subcategory": r.subcategory,
+                "price": r.price,
+                "currency": r.currency,
+            },
+        )
         if fact_assessment_active:
             gap_set = set(evidence_gaps)
             ctx.deps.unsupported_catalog_facts.update(gap_set)
@@ -16158,13 +16321,22 @@ async def process_message(
                 tool_mode="catalog_materialization",
                 runtime_directives=(
                     *run_deps.runtime_directives,
-                    "Revise candidate_response against verified_catalog_facts. "
-                    "Preserve supported recommendation reasoning, remove unsupported "
-                    "claims, and return only the customer-facing answer. "
-                    f"{repair_payload}",
+                    _claim_contract_directive(repair_payload),
                 ),
             )
             repaired_result = await _run_agent(repair_deps)
+            repaired_result, contract = await _enforce_claim_contract(
+                repaired_result,
+                repair_deps=repair_deps,
+                repair_payload=repair_payload,
+                run_agent=_run_agent,
+            )
+            if contract is not None and contract.withheld:
+                logger.warning(
+                    "Claim contract withheld %s for conversation %s",
+                    list(contract.withheld_field_paths),
+                    run_deps.conversation.id,
+                )
             await _clear_verified_policy_repair_state()
             return replace(
                 _build_llm_response(
