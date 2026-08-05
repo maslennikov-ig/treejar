@@ -404,6 +404,10 @@ recommendation with a bare fact dump.
         user_prompt="Task chairs, shared desks, and storage; AED 30,000 total.",
         tools=(COMPLETE_CATALOG_SEARCH_TOOL,),
         tool_results={
+            # seats_per_unit is supplied because the fixture demands an
+            # explanation of coverage. Without it the only way to answer was to
+            # invent a per-desk occupancy, so silence and assumption were both
+            # punished and the case measured nothing.
             "search_catalog": {
                 "products": [
                     {
@@ -411,12 +415,14 @@ recommendation with a bare fact dump.
                         "family": "task chair",
                         "price_aed": 800,
                         "quantity": 20,
+                        "seats_per_unit": 1,
                     },
                     {
                         "sku": "DK-4",
-                        "family": "shared desk",
-                        "price_aed": 4000,
-                        "quantity": 2,
+                        "family": "four-person desk",
+                        "price_aed": 2000,
+                        "quantity": 5,
+                        "seats_per_unit": 4,
                     },
                     {
                         "sku": "ST-2",
@@ -425,7 +431,8 @@ recommendation with a bare fact dump.
                         "quantity": 2,
                     },
                 ],
-                "total_aed": 27000,
+                "covered_seats": 20,
+                "total_aed": 29000,
             }
         },
         expected_tools=("search_catalog",),
@@ -435,7 +442,7 @@ recommendation with a bare fact dump.
                 "limit": 6,
             }
         },
-        required_phrases=("AX-E1", "DK-4", "ST-2", "27,000", "coverage"),
+        required_phrases=("AX-E1", "DK-4", "ST-2", "29,000", "coverage"),
         critical_required_phrases=("AX-E1", "DK-4", "ST-2"),
         forbidden_phrases=("chair only", "over budget", "quotation created"),
         expected_language="en",
@@ -517,7 +524,23 @@ collect customer details, or replace the answer with a bare list of facts.
 """,
         conversation=(
             {"role": "user", "content": "AX-E1 looks suitable. Would you quote it?"},
-            {"role": "assistant", "content": "I can prepare a quotation if you want."},
+            {
+                # The system prompt asserts that verified catalog facts were
+                # received. They are supplied here, using real specification key
+                # names, so the case tests the consent gate instead of testing
+                # whether a model will invent attributes it was never given.
+                # The set is deliberately short: anything cited beyond it is
+                # still a fabrication.
+                "role": "assistant",
+                "content": (
+                    "Verified catalog facts for AX-E1 - price AED 800; stock 7 in "
+                    "Dubai; specifications.Mechanism: synchronised tilt; "
+                    "specifications.Upholstery: mesh back; "
+                    "specifications.Adjustable Armrest: yes; "
+                    "specifications.Warranty: 5 years. "
+                    "I can prepare a quotation if you want."
+                ),
+            },
         ),
         user_prompt="No quotation. Just explain why AX-E1 fits long workdays.",
         tools=(QUOTE_DRAFT_TOOL,),
@@ -541,8 +564,8 @@ collect customer details, or replace the answer with a bare list of facts.
         system_prompt=_SALES_BASE
         + """
 The customer needs a complete twelve-seat workstation configuration within AED
-20,000. The fixed evidence contains twelve AX-E1 chairs at AED 1,000 each and
-three DK-4 four-person desks at AED 2,000 each, total AED 18,000. Call
+20,000. The fixed evidence contains twelve AX-E1 chairs at AED 800 each and
+three DK-4 four-person desks at AED 2,000 each, total AED 15,600. Call
 search_catalog once with query exactly "twelve-seat workstation configuration"
 and limit 4. Cover all twelve seats and both furniture families.
 """,
@@ -559,17 +582,19 @@ and limit 4. Cover all twelve seats and both furniture families.
                         "sku": "AX-E1",
                         "family": "chair",
                         "quantity": 12,
-                        "unit_price_aed": 1000,
+                        "unit_price_aed": 800,
+                        "seats_per_unit": 1,
                     },
                     {
                         "sku": "DK-4",
                         "family": "four-person desk",
                         "quantity": 3,
                         "unit_price_aed": 2000,
+                        "seats_per_unit": 4,
                     },
                 ],
                 "covered_seats": 12,
-                "total_aed": 18000,
+                "total_aed": 15600,
             }
         },
         expected_tools=("search_catalog",),
@@ -579,7 +604,7 @@ and limit 4. Cover all twelve seats and both furniture families.
                 "limit": 4,
             }
         },
-        required_phrases=("AX-E1", "DK-4", "12", "18,000", "within budget"),
+        required_phrases=("AX-E1", "DK-4", "12", "15,600", "within budget"),
         critical_required_phrases=("AX-E1", "DK-4", "12"),
         forbidden_phrases=("partial", "over budget", "chair only"),
         expected_language="en",
