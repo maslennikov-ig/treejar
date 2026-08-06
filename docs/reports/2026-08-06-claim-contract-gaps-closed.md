@@ -185,6 +185,36 @@ anything after all.
 silent about — a mesh back on a chair whose back is undocumented — now reaches
 the customer. That was the original `tj-feet.3` criterion, and this reverses it.
 
+### What the reversal actually lets through, measured
+
+The sentence above states a risk. Applying the shipped contract to the 265
+claims of `claimpass-r2` puts a number on it:
+
+| | |
+|---|---|
+| claims approved | 261 |
+| of those, unverified | **15** — 5.7% of all claims |
+| withheld | 4, all the capacity rule |
+| turns carrying an unverified claim | 11 of 42 |
+
+**All 15 are derived facts. Not one is a `catalog_fact`.** The feared case — the
+model asserting a product attribute the row does not carry — did not occur once
+in 42 turns. What ships unconfirmed is arithmetic whose unverifiable input is a
+quantity the customer supplied: `total_price_aed = 4000` from two desks at 2000,
+`required_desks = 5`. That is the class the contract never could verify and had
+no business blocking, and it agrees with the judge scoring these same replies at
+0.000 unsupported facts.
+
+The quality of a *rewritten* reply remains unmeasured, before or after. The
+exposure shrank rather than being closed: rewrites fell from 12 turns in 42 to
+4, and those 4 are the capacity rule, which routes into the marked-assumption
+path that `tj-feet.6` did measure at 0.000 false refusals and 1.000 task
+completion.
+
+Caveat, as always: 42 turns, one model, one sitting. The counter-set is built to
+bait fabrication, which makes 0 catalog-fact fabrications a meaningful result
+rather than an easy one, but it is not production traffic.
+
 ## `tj-feet.11` — the manifest pins that kept breaking
 
 `.codex/orchestrator.toml` and `.codex/handoff.md` are declared by `AGENTS.md`
