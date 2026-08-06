@@ -2812,11 +2812,13 @@ def _claim_contract_directive(
     assumption_paths, plain_paths = assumption_eligible_paths(withheld_field_paths)
     if plain_paths:
         directive += (
-            " These field paths are not stated on the retrieved rows: "
-            f"{', '.join(plain_paths)}. Do not assert them. Say the "
-            "catalog does not state them and that you will confirm with a "
-            "manager, and still give every detail that is confirmed. Record "
-            "each one as a claim of type absence, not as a catalog_fact."
+            # Since 2026-08-06 a path only reaches this branch when the row
+            # positively contradicts it, so the instruction is to use the value
+            # the catalog holds rather than to fall back on not knowing.
+            " The retrieved rows state a different value for these field "
+            f"paths: {', '.join(plain_paths)}. Use the value the row states, or "
+            "drop the claim. Do not tell the customer the catalog is silent "
+            "about them, because it is not, and keep every other detail."
         )
     if assumption_paths:
         # Withholding these as flatly as the paths above is what produced the
@@ -2831,6 +2833,38 @@ def _claim_contract_directive(
             "one short question that confirms it."
         )
     return directive
+
+
+def _log_claim_contract(
+    contract: ContractResult | None,
+    conversation_id: Any,
+    *,
+    scope: str,
+) -> None:
+    """Record what the contract refuted and what it merely could not confirm.
+
+    Since the owner decision of 2026-08-06 the contract blocks only a claim the
+    row positively contradicts, so the unverified bucket is where the evidence
+    now lives: it is how we find out, on live traffic, whether the strict rule
+    was protecting anything. It is logged at info, because it changes no reply.
+    """
+    if contract is None:
+        return
+    if contract.withheld:
+        logger.warning(
+            "Claim contract refuted %s on a %s catalog turn for conversation %s",
+            list(contract.withheld_field_paths),
+            scope,
+            conversation_id,
+        )
+    if contract.unverified:
+        logger.info(
+            "Claim contract could not confirm %s on a %s catalog turn for "
+            "conversation %s; the reply was left intact",
+            list(contract.unverified_field_paths),
+            scope,
+            conversation_id,
+        )
 
 
 class _ContractedResult:
@@ -16496,12 +16530,7 @@ async def process_message(
                 repair_payload=repair_payload,
                 run_agent=_run_agent,
             )
-            if contract is not None and contract.withheld:
-                logger.warning(
-                    "Claim contract withheld %s for conversation %s",
-                    list(contract.withheld_field_paths),
-                    run_deps.conversation.id,
-                )
+            _log_claim_contract(contract, run_deps.conversation.id, scope="requested")
             await _clear_verified_policy_repair_state()
             return replace(
                 _build_llm_response(
@@ -16519,14 +16548,10 @@ async def process_message(
                 run_deps=run_deps,
                 run_agent=_run_agent,
             )
+            _log_claim_contract(
+                volunteered, run_deps.conversation.id, scope="volunteered"
+            )
             if verified_result is not result:
-                if volunteered is not None and volunteered.withheld:
-                    logger.warning(
-                        "Claim contract withheld %s on an unrequested catalog "
-                        "turn for conversation %s",
-                        list(volunteered.withheld_field_paths),
-                        run_deps.conversation.id,
-                    )
                 await _clear_verified_policy_repair_state()
                 return replace(
                     _build_llm_response(

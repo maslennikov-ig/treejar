@@ -132,10 +132,58 @@ Every remaining withholding is a derived fact. The causes, by hand:
 
 ## What this means for enabling the widened scope
 
-It does not confirm it. The condition for turning `claim_contract_scope` on was
+It did not confirm it. The condition for turning `claim_contract_scope` on was
 that the measurement back the projection, and it did not: 12 turns in 42 would
 still be rewritten, and the latency it was first weighed on is unchanged at
 8.5 s median. The switch stays off.
+
+## The reversal: block only what the row refutes
+
+Owner decision, 2026-08-06, stated plainly: *a spoiled reply is worse than a
+model error. An error can be corrected; a mangled answer has already been read.*
+
+The contract was built on the opposite assumption — block anything that cannot
+be proven — and the measurement is what settles it. Across a counter-set built
+specifically to bait fabrication, the model's measured unsupported-fact rate was
+**0.000**, taken before the contract's repair pass ever ran. So the strict rule
+was rewriting most replies while catching nothing that had been measured.
+
+`supported` and `may_reach_customer` were already separate fields on
+`ClaimCheck`; the code simply set them together. They are now used for what they
+mean:
+
+* **refuted** — the row carries a different value → still blocked;
+* **unverified** — the row cannot confirm it → ships, and is recorded;
+* **supported** — the row confirms it.
+
+Two blocks survive untouched because they are owner rules about *presentation*,
+not about verification: a seating capacity may never be stated as a plain fact,
+and an assumption still needs its marker and its confirming question.
+
+A comparison now falls under unverified rather than refuted, because a
+comparison restates and does not calculate — there is no arithmetic in it to
+prove a stray figure wrong with. A sum, difference or product still is, so
+`800 + 900` reported as `1,500` remains blocked.
+
+Measured on the same two rounds, with the code as it now stands:
+
+| | turns rewritten |
+|---|---|
+| r1, strict rule as shipped 2026-08-05 | 30 of 37 |
+| r2, after the three gap fixes | 12 of 42 |
+| **r2, refuted-only** | **4 of 42** |
+
+All four are the capacity rule. Nothing is now rewritten for being merely
+unconfirmed.
+
+The block is gone, the visibility is not: `ContractResult.unverified` is its own
+bucket and is logged at info on every turn. That is what will tell us, from live
+traffic rather than from a counter-set, whether the strict rule was protecting
+anything after all.
+
+**What was given up, said plainly.** An invented attribute the catalog is simply
+silent about — a mesh back on a chair whose back is undocumented — now reaches
+the customer. That was the original `tj-feet.3` criterion, and this reverses it.
 
 ## `tj-feet.11` — the manifest pins that kept breaking
 

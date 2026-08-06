@@ -148,6 +148,26 @@ class ClaimCheck:
     may_reach_customer: bool
 
 
+def _unverified(status: AttributeStatus, reason: str) -> ClaimCheck:
+    """Cannot be proven, and therefore not blocked.
+
+    Owner decision of 2026-08-06, and the reason `supported` and
+    `may_reach_customer` are separate fields rather than one. A claim the
+    contract cannot verify is not a claim the contract has caught. Blocking it
+    trades a rare invented attribute for a common spoiled answer, and a spoiled
+    answer is the worse of the two: the customer sees it immediately, and it
+    tells them the catalog is silent about something the catalog states.
+
+    The evidence behind the decision: across the counter-set built specifically
+    to bait fabrication, the measured unsupported-fact rate was 0.000, so the
+    strict rule had caught nothing while rewriting 30 of 37 replies. It is
+    recorded as unverified so it stays visible in the logs.
+    """
+    return ClaimCheck(
+        status=status, supported=False, reason=reason, may_reach_customer=True
+    )
+
+
 _NON_WORD_RE = re.compile(r"[^0-9a-z؀-ۿ]+")
 
 
@@ -258,12 +278,7 @@ def check_claim(
 
     status = attribute_status(claim.sku, claim.field_path, rows)
     if status is not AttributeStatus.KNOWN_VALUE:
-        return ClaimCheck(
-            status=status,
-            supported=False,
-            reason=f"field path is {status.value} on the retrieved row",
-            may_reach_customer=False,
-        )
+        return _unverified(status, f"field path is {status.value} on the retrieved row")
 
     row = _row_for(claim.sku, rows)
     stored = (row.normalized_fields() if row else {}).get(
@@ -328,56 +343,45 @@ def _check_derivation(
     unknown = AttributeStatus.UNKNOWN
     operation = normalize_field_path(claim.operation)
     if operation not in _DERIVED_OPERATIONS:
-        return ClaimCheck(
-            status=unknown,
-            supported=False,
-            reason=(
-                "a derivation must name an operation the runtime can restate: "
-                f"{', '.join(sorted(_DERIVED_OPERATIONS))}"
-            ),
-            may_reach_customer=False,
+        return _unverified(
+            unknown, "the derivation names no operation the runtime can restate"
         )
     if not claim.inputs:
-        return ClaimCheck(
-            status=unknown,
-            supported=False,
-            reason="a derivation names no input to verify",
-            may_reach_customer=False,
-        )
+        return _unverified(unknown, "the derivation names no input to verify")
     if operation == "comparison" and len(claim.inputs) < 2:
-        return ClaimCheck(
-            status=unknown,
-            supported=False,
-            reason="a comparison rests on at least two inputs",
-            may_reach_customer=False,
-        )
+        return _unverified(unknown, "a comparison rests on at least two inputs")
     if operation == "difference" and len(claim.inputs) != 2:
-        return ClaimCheck(
-            status=unknown,
-            supported=False,
-            reason="a difference is restatable over exactly two inputs",
-            may_reach_customer=False,
+        return _unverified(
+            unknown, "a difference is restatable over exactly two inputs"
         )
 
+    unverifiable: str | None = None
     for derived_input in claim.inputs:
-        verdict = _derivation_input_is_grounded(derived_input, rows)
-        if not verdict.ok:
+        outcome, reason = _derivation_input_outcome(derived_input, rows)
+        if outcome == "blocked":
             return ClaimCheck(
                 status=unknown,
                 supported=False,
-                reason=f"a derivation input is not supported: {verdict.reason}",
+                reason=f"a derivation input is refused: {reason}",
                 may_reach_customer=False,
             )
+        if outcome == "unverified":
+            unverifiable = reason
+    if unverifiable is not None:
+        return _unverified(unknown, f"a derivation input is unverified: {unverifiable}")
 
-    if not _numbers_are_covered(
+    # Only the computed operations can prove a stated figure wrong. A comparison
+    # restates rather than calculates, so a stray number in it is unverified,
+    # not false.
+    if operation != "comparison" and not _numbers_are_covered(
         _numbers_in(claim.value), _restatable_numbers(operation, claim.inputs)
     ):
         return ClaimCheck(
             status=unknown,
             supported=False,
             reason=(
-                "the derived value states a number the runtime cannot restate "
-                "from the inputs it names"
+                f"the {operation} of the inputs it names does not produce the "
+                "figure the reply states"
             ),
             may_reach_customer=False,
         )
@@ -389,45 +393,33 @@ def _check_derivation(
     )
 
 
-def _derivation_input_is_grounded(
+def _derivation_input_outcome(
     derived_input: ClaimInput,
     rows: Mapping[str, RetrievedRow],
-) -> _ValueVerdict:
-    """One input of a derivation, against the row it names.
+) -> tuple[str, str]:
+    """One input of a derivation: `ok`, `unverified`, or `blocked`.
 
-    A per-product seating capacity is refused whatever route it takes. The owner
-    decision of 2026-08-05 is that capacity is not a catalog fact, and
-    multiplying it by a quantity does not make it one — `two desks x ten people
-    = twenty` was the measured shape. A figure carrying no SKU is about the
-    customer's own team, not about a product, so it is not caught by this.
+    Only two things block. A per-product seating capacity, whatever route it
+    takes — the owner decision of 2026-08-05 is that capacity is not a catalog
+    fact, and multiplying it by a quantity does not make it one, which is what
+    `two desks x ten people = twenty` was doing. And a value the row positively
+    contradicts. A figure carrying no SKU is about the customer's own team, not
+    about a product, so the capacity rule does not reach it.
     """
     is_capacity = normalize_field_path(derived_input.field_path) in CAPACITY_FIELD_PATHS
     if is_capacity and derived_input.sku.strip():
-        return _ValueVerdict(
-            False,
+        return "blocked", (
             "seating capacity is not a catalog fact and may not be derived from; "
-            "it belongs in a marked assumption with a confirming question",
+            "it belongs in a marked assumption with a confirming question"
         )
-    if derived_input.customer_stated:
-        # Taken at face value, because the customer said it — but it may not
-        # overwrite something the catalog does state, or `customer_stated`
-        # becomes a hole straight through the contract.
-        stored = _stored_value(derived_input.sku, derived_input.field_path, rows)
-        if stored and not _value_is_covered(derived_input.value, stored):
-            return _ValueVerdict(
-                False, "a customer-stated input contradicts the retrieved row"
-            )
-        return _ValueVerdict(True, "supplied by the customer")
-    check = check_claim(
-        AttributeClaim(
-            claim_type="catalog_fact",
-            sku=derived_input.sku,
-            field_path=derived_input.field_path,
-            value=derived_input.value,
-        ),
-        rows,
-    )
-    return _ValueVerdict(check.may_reach_customer, check.reason)
+    stored = _stored_value(derived_input.sku, derived_input.field_path, rows)
+    if not stored:
+        # Nothing to compare against. The customer's own quantity looks exactly
+        # like this, and so does a path the catalog simply does not carry.
+        return "unverified", "the row carries no value for this input"
+    if not _value_is_covered(derived_input.value, stored):
+        return "blocked", "an input contradicts the value stored on the row"
+    return "ok", "the row carries this value"
 
 
 def _restatable_numbers(
@@ -589,11 +581,26 @@ def _value_is_covered(claimed: str, stored: str) -> bool:
 class ContractResult:
     approved: tuple[AttributeClaim, ...]
     withheld: tuple[tuple[AttributeClaim, ClaimCheck], ...]
+    unverified: tuple[tuple[AttributeClaim, ClaimCheck], ...] = ()
+    """Claims that reached the customer without the row being able to confirm them.
+
+    Kept as its own bucket rather than folded into `approved`, because giving up
+    the block is not a reason to give up the visibility. This is what tells us,
+    on live traffic, whether the strict rule was protecting anything.
+    """
 
     @property
     def withheld_field_paths(self) -> tuple[str, ...]:
         return tuple(
             sorted({claim.field_path for claim, _ in self.withheld if claim.field_path})
+        )
+
+    @property
+    def unverified_field_paths(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {claim.field_path for claim, _ in self.unverified if claim.field_path}
+            )
         )
 
 
@@ -603,13 +610,20 @@ def apply_contract(
 ) -> ContractResult:
     approved: list[AttributeClaim] = []
     withheld: list[tuple[AttributeClaim, ClaimCheck]] = []
+    unverified: list[tuple[AttributeClaim, ClaimCheck]] = []
     for claim in claims:
         check = check_claim(claim, rows)
-        if check.may_reach_customer:
-            approved.append(claim)
-        else:
+        if not check.may_reach_customer:
             withheld.append((claim, check))
-    return ContractResult(approved=tuple(approved), withheld=tuple(withheld))
+            continue
+        approved.append(claim)
+        if not check.supported:
+            unverified.append((claim, check))
+    return ContractResult(
+        approved=tuple(approved),
+        withheld=tuple(withheld),
+        unverified=tuple(unverified),
+    )
 
 
 def row_from_catalog_product(

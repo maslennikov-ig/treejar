@@ -22068,19 +22068,18 @@ def test_the_directive_states_both_shapes_a_derivation_input_may_take() -> None:
     assert "explicit_assumption instead" in directive
 
 
-def test_a_withheld_plain_path_is_recorded_as_an_absence_claim() -> None:
-    """tj-feet.14: the retry used to re-emit the sentence that got withheld.
+def test_the_base_contract_still_asks_for_absence_claims() -> None:
+    """tj-feet.14. The partial answer survives the 2026-08-06 reversal.
 
-    The directive asked for *the catalog does not state them*, the model
-    returned that as a `catalog_fact` whose path is absent, and the contract
-    withheld it again.
+    It is produced on the demand side, when the customer asked about something
+    the catalog lacks, and it is typed as `absence` by the base contract rather
+    than by the withheld-path branch. Nothing about relaxing the block should
+    stop the assistant saying honestly that the catalog is silent.
     """
-    directive = engine_module._claim_contract_directive(
-        "{}", withheld_field_paths=("attributes.specifications.Back material",)
-    )
+    directive = engine_module._claim_contract_directive("{}")
 
     assert "absence" in directive
-    assert "does not state" in directive
+    assert "silent about" in directive
 
 
 @pytest.mark.asyncio
@@ -22124,7 +22123,14 @@ async def test_a_volunteered_unsupported_attribute_never_reaches_the_customer(
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
-    """Failure class (a): nobody asked, the model volunteered a mesh back."""
+    """Failure class (a): nobody asked, the model volunteered a mesh back.
+
+    Reversed by the owner decision of 2026-08-06. The row is silent about the
+    back material, so the contract cannot refute the claim, only fail to
+    confirm it — and rewriting on that basis is what spoiled 30 of 37 replies
+    while catching no measured fabrication. The reply now ships untouched and
+    the claim is recorded as unverified.
+    """
     deps = _claim_rows_deps(mock_deps)
     fabricated = json.dumps(
         {
@@ -22161,13 +22167,14 @@ async def test_a_volunteered_unsupported_attribute_never_reaches_the_customer(
         run_agent=_retry,
     )
 
-    assert "mesh" not in result.output
-    assert "does not state" in result.output
-    assert "AED 800" in result.output
-    assert contract is not None and contract.withheld == ()
-    # The retry is told exactly which path failed, and keeps the prior directives.
-    assert seen and "attributes.specifications.Back material" in seen[0][-1]
-    assert seen[0][0] == "prior directive"
+    assert "mesh" in result.output
+    assert contract is not None
+    assert contract.withheld == ()
+    assert contract.unverified_field_paths == (
+        "attributes.specifications.Back material",
+    )
+    # No retry: nothing was refuted, so there was nothing to repair.
+    assert seen == []
 
 
 @pytest.mark.asyncio
@@ -22276,22 +22283,29 @@ def test_a_withheld_capacity_path_is_re_offered_as_an_assumption() -> None:
     assert "does not state" not in lowered
 
 
-def test_a_withheld_attribute_path_still_gets_the_partial_answer() -> None:
+def test_a_refuted_path_is_told_to_use_the_value_the_row_holds() -> None:
+    """Since 2026-08-06 a plain path reaches this branch only when refuted.
+
+    Telling the model the catalog is silent about it would then be false, and
+    would turn a correctable wrong value into the spoiled answer the whole
+    reversal exists to avoid.
+    """
     directive = engine_module._claim_contract_directive(
-        "{}", withheld_field_paths=("attributes.specifications.Back material",)
+        "{}", withheld_field_paths=("attributes.specifications.Warranty",)
     )
 
-    assert "does not state" in directive
-    assert "attributes.specifications.Back material" in directive
+    assert "different value" in directive
+    assert "attributes.specifications.Warranty" in directive
+    assert "catalog is silent" in directive
 
 
 def test_a_mixed_withholding_gets_both_instructions() -> None:
     directive = engine_module._claim_contract_directive(
         "{}",
-        withheld_field_paths=("attributes.specifications.Back material", "capacity"),
+        withheld_field_paths=("attributes.specifications.Warranty", "capacity"),
     )
 
-    assert "does not state" in directive
+    assert "different value" in directive
     assert "assumption" in directive.casefold()
 
 
@@ -22320,11 +22334,13 @@ async def test_a_volunteered_attribute_is_withheld_with_no_requested_gap(
         AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
     ],
 ) -> None:
-    """The hole `tj-feet.3` left open.
+    """The volunteered attribute is now seen, and deliberately not blocked.
 
-    Nobody asked about a back material. The old trigger fires only on one of
-    two hardcoded requested gaps, so on this turn the model's text was final
-    and the volunteered mesh back reached the customer unchecked.
+    `tj-feet.10` built the seam that lets an unrequested catalog turn be
+    checked at all — before it, the model's text was final and nothing looked
+    at the volunteered mesh back. That seam still runs. What changed on
+    2026-08-06 is the verdict: the row is silent about a back material, so the
+    contract records the claim as unverified and leaves the reply alone.
     """
     deps = _claim_rows_deps(mock_deps)
     calls: list[str] = []
@@ -22374,12 +22390,14 @@ async def test_a_volunteered_attribute_is_withheld_with_no_requested_gap(
         run_agent=_run,
     )
 
-    assert "mesh back" not in result.output
-    assert "synchronised tilt" in result.output
-    assert contract is not None and contract.withheld == ()
-    # The retry was told the exact path, which is what makes it a partial
-    # answer instead of a refusal.
-    assert "attributes.specifications.Back material" in calls[1]
+    assert "mesh back" in result.output
+    assert contract is not None
+    assert contract.withheld == ()
+    assert contract.unverified_field_paths == (
+        "attributes.specifications.Back material",
+    )
+    # The verification call happened; the repair call did not.
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio

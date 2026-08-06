@@ -41,16 +41,27 @@ def _claim(**overrides: object) -> AttributeClaim:
 # --- the volunteered unsupported attribute ----------------------------------
 
 
-def test_a_volunteered_attribute_absent_from_the_row_cannot_reach_the_customer() -> (
+def test_a_volunteered_attribute_absent_from_the_row_is_unverified_not_blocked() -> (
     None
 ):
-    """The mesh back nobody asked about and the catalog never stated."""
+    """The mesh back nobody asked about and the catalog never stated.
+
+    This reverses the original `tj-feet.3` criterion, under the owner decision
+    of 2026-08-06. The strict rule blocked whatever it could not prove, and the
+    measurement said what that bought: 0.000 fabrications caught across a
+    counter-set built to bait them, against 30 of 37 replies rewritten. A
+    spoiled reply is worse than a rare invented attribute — the customer sees it
+    at once, and a wrong reply can be corrected while a mangled one has already
+    been read.
+
+    So the claim ships, and is recorded as unverified rather than approved.
+    """
     check = check_claim(
         _claim(field_path="attributes.specifications.Back material", value="mesh"),
         _ROWS,
     )
 
-    assert check.may_reach_customer is False
+    assert check.may_reach_customer is True
     assert check.supported is False
     assert check.status is AttributeStatus.UNKNOWN
 
@@ -67,7 +78,8 @@ def test_a_supported_attribute_reaches_the_customer() -> None:
     assert check.status is AttributeStatus.KNOWN_VALUE
 
 
-def test_a_claim_about_another_sku_does_not_borrow_this_row() -> None:
+def test_a_claim_about_another_sku_is_not_confirmed_by_this_row() -> None:
+    """No row was retrieved for DK-4, so nothing here can confirm or deny it."""
     check = check_claim(
         _claim(
             sku="DK-4",
@@ -77,7 +89,8 @@ def test_a_claim_about_another_sku_does_not_borrow_this_row() -> None:
         _ROWS,
     )
 
-    assert check.may_reach_customer is False
+    assert check.supported is False
+    assert check.may_reach_customer is True
 
 
 def test_a_value_the_row_does_not_carry_is_withheld() -> None:
@@ -250,7 +263,13 @@ def test_an_arabic_reply_is_verified_against_the_english_row() -> None:
 # --- the contract over a whole reply ----------------------------------------
 
 
-def test_the_contract_separates_what_may_ship_from_what_may_not() -> None:
+def test_the_contract_separates_proven_false_from_merely_unconfirmed() -> None:
+    """Three buckets, not two.
+
+    Only the capacity is blocked, because the owner rule of 2026-08-05 blocks
+    it outright. The unstated back material ships but stays visible in its own
+    bucket: giving up the block is not a reason to give up the telemetry.
+    """
     result = apply_contract(
         (
             _claim(
@@ -264,12 +283,21 @@ def test_the_contract_separates_what_may_ship_from_what_may_not() -> None:
         _ROWS,
     )
 
-    assert len(result.approved) == 2
-    assert len(result.withheld) == 2
-    assert result.withheld_field_paths == (
-        "attributes.specifications.Back material",
-        "capacity",
+    assert len(result.approved) == 3
+    assert result.withheld_field_paths == ("capacity",)
+    assert result.unverified_field_paths == ("attributes.specifications.Back material",)
+
+
+def test_a_contradicted_value_is_still_blocked() -> None:
+    """The one thing the contract still stops: a statement the row refutes."""
+    result = apply_contract(
+        (_claim(field_path="attributes.specifications.Warranty", value="10 years"),),
+        _ROWS,
     )
+
+    assert result.approved == ()
+    assert result.unverified == ()
+    assert result.withheld_field_paths == ("attributes.specifications.Warranty",)
 
 
 # --- formatted values, found by the tj-feet.10 measurement -------------------

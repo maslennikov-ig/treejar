@@ -332,8 +332,13 @@ def test_a_total_computed_from_an_unsupported_input_does_not_ship() -> None:
     assert "input" in check.reason
 
 
-def test_a_derivation_whose_arithmetic_does_not_restate_is_withheld() -> None:
-    """Supported inputs are not enough; the number in the reply must follow."""
+def test_a_derivation_whose_arithmetic_does_not_restate_is_blocked() -> None:
+    """Supported inputs are not enough; the number in the reply must follow.
+
+    This survives the 2026-08-06 reversal, because it is not an unproven claim.
+    Both prices are on the row and `800 + 900` is not `1,500`, so the runtime
+    can show the figure is wrong rather than merely unconfirmed.
+    """
     check = check_claim(
         AttributeClaim(
             claim_type="derived_fact",
@@ -349,10 +354,16 @@ def test_a_derivation_whose_arithmetic_does_not_restate_is_withheld() -> None:
     )
 
     assert check.may_reach_customer is False
-    assert "restate" in check.reason
+    assert "does not produce" in check.reason
 
 
-def test_a_comparison_may_not_introduce_a_figure_of_its_own() -> None:
+def test_a_stray_figure_in_a_comparison_is_unverified_not_false() -> None:
+    """A comparison restates, it does not calculate, so nothing here is proven.
+
+    The strict rule blocked this. Under the 2026-08-06 decision it ships and is
+    recorded, because `250` between a stored 800 and 900 is unconfirmed rather
+    than refuted — the operation names no arithmetic to refute it with.
+    """
     check = check_claim(
         AttributeClaim(
             claim_type="derived_fact",
@@ -367,7 +378,8 @@ def test_a_comparison_may_not_introduce_a_figure_of_its_own() -> None:
         _ROWS,
     )
 
-    assert check.may_reach_customer is False
+    assert check.may_reach_customer is True
+    assert check.supported is True
 
 
 def test_a_difference_that_does_restate_reaches_the_customer() -> None:
@@ -388,34 +400,41 @@ def test_a_difference_that_does_restate_reaches_the_customer() -> None:
     assert check.may_reach_customer is True
 
 
-def test_a_derivation_naming_no_inputs_is_withheld() -> None:
-    check = check_claim(
-        AttributeClaim(
-            claim_type="derived_fact",
-            sku="CH-A",
-            value="CH-A is the better value",
-            operation="comparison",
+@pytest.mark.parametrize(
+    ("label", "claim"),
+    [
+        (
+            "no inputs to check against",
+            AttributeClaim(
+                claim_type="derived_fact",
+                sku="CH-A",
+                value="CH-A is the better value",
+                operation="comparison",
+            ),
         ),
-        _ROWS,
-    )
-
-    assert check.may_reach_customer is False
-    assert "input" in check.reason
-
-
-def test_a_derivation_naming_no_operation_is_withheld() -> None:
-    check = check_claim(
-        AttributeClaim(
-            claim_type="derived_fact",
-            sku="CH-A",
-            value="CH-A works out cheaper overall",
-            inputs=(_input(sku="CH-A", value="800.00"),),
+        (
+            "no operation to recompute",
+            AttributeClaim(
+                claim_type="derived_fact",
+                sku="CH-A",
+                value="CH-A works out cheaper overall",
+                inputs=(ClaimInput(sku="CH-A", field_path="price", value="800.00"),),
+            ),
         ),
-        _ROWS,
-    )
+    ],
+)
+def test_a_derivation_the_runtime_cannot_check_ships_as_unverified(
+    label: str, claim: AttributeClaim
+) -> None:
+    """Unable to check is not the same as caught.
 
-    assert check.may_reach_customer is False
-    assert "operation" in check.reason
+    Both of these were blocked before 2026-08-06. Neither is refuted by
+    anything on the row, so under the owner decision both ship and are recorded.
+    """
+    check = check_claim(claim, _ROWS)
+
+    assert check.may_reach_customer is True, label
+    assert check.supported is False, label
 
 
 def test_a_seating_capacity_cannot_enter_through_arithmetic() -> None:
