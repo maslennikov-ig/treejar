@@ -12,7 +12,7 @@
 
 Use the repo-local verification commands from `.codex/orchestrator.toml`.
 Use `scripts/orchestration/run_process_verification.sh` as the process-verification entrypoint before claiming the orchestration layer is in a good state.
-Use `scripts/orchestration/run_stage_closeout.py --stage <stage_id>` when a stage is actually closing; it is the canonical two-phase closeout entrypoint.
+Use `scripts/orchestration/run_stage_closeout.py --stage <stage_id> --level slice_acceptance --command '<focused command>'` when a stage closes; it runs only the root-selected acceptance commands.
 
 Typical code-change gates in this repo include:
 - `uv run ruff check src/ tests/`
@@ -45,7 +45,7 @@ Typical code-change gates in this repo include:
 - `.codex/agent-reports/` is the legacy local-only pre-v2 archive.
 - `scripts/orchestration/validate_artifact.py` validates tracked artifacts.
 - `scripts/orchestration/check_stage_ready.py <stage_id>` is the minimal hard stop before stage close.
-- `scripts/orchestration/run_stage_closeout.py --stage <stage_id>` runs stage-close verification before delivery.
+- `scripts/orchestration/run_stage_closeout.py --stage <stage_id> --level slice_acceptance --command '<focused command>'` runs the single task acceptance before delivery.
 - `scripts/orchestration/cleanup_stage_workspace.py --stage <stage_id>` removes safe local worktrees and branches for completed stage deliveries.
 - `scripts/orchestration/report_child_completion.py` records delegated completion events.
 - `scripts/orchestration/review_completion_inbox.py` shows unread completion events and review decisions.
