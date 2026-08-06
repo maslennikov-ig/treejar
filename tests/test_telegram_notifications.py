@@ -466,21 +466,6 @@ async def test_red_flag_warning_formatting() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notify_escalation_calls_telegram() -> None:
-    """notify_escalation should send message via TelegramClient."""
-    from src.services.notifications import notify_escalation
-
-    with patch("src.services.notifications.TelegramClient") as MockTg:
-        mock_instance = AsyncMock()
-        MockTg.return_value = mock_instance
-        mock_instance.send_message = AsyncMock()
-
-        await notify_escalation("+971501234567", uuid4(), "Customer wants human")
-
-        mock_instance.send_message.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_catalog_mismatch_formatting() -> None:
     from src.services.notifications import format_catalog_mismatch_message
 

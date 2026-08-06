@@ -443,7 +443,6 @@ async def get_settings(
     return SettingsRead(
         bot_enabled=bool(configs.get("bot_enabled", True)),
         default_language=str(configs.get("default_language", "en")),
-        auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
         telegram_test_mode_enabled=bool(
             configs.get("telegram_test_mode_enabled", True)
         ),
@@ -484,7 +483,6 @@ async def update_settings(
     return SettingsRead(
         bot_enabled=bool(configs.get("bot_enabled", True)),
         default_language=str(configs.get("default_language", "en")),
-        auto_escalation_enabled=bool(configs.get("auto_escalation_enabled", True)),
         telegram_test_mode_enabled=bool(
             configs.get("telegram_test_mode_enabled", True)
         ),

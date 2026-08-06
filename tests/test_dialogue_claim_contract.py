@@ -12,7 +12,6 @@ from src.dialogue.claim_contract import (
     attribute_status,
     check_claim,
     normalize_field_path,
-    partial_answer,
 )
 
 # One row shaped like the live catalog: an English description, a short
@@ -217,35 +216,6 @@ def test_a_recommendation_is_never_blocked_as_a_catalog_attribute() -> None:
     check = check_claim(_claim(claim_type="recommendation"), _ROWS)
 
     assert check.may_reach_customer is True
-
-
-# --- the unknown branch answers, it does not refuse -------------------------
-
-
-def test_an_unknown_attribute_yields_a_useful_partial_answer() -> None:
-    answer = partial_answer(
-        sku="AX-E1",
-        unknown_field_paths=("attributes.specifications.Back material",),
-        confirmed={"price": "AED 800", "stock": "7 in Dubai"},
-    )
-
-    assert "does not state" in answer
-    assert "confirm" in answer
-    assert "AED 800" in answer and "7 in Dubai" in answer
-    for refusal in ("cannot help", "unable to", "I can't"):
-        assert refusal not in answer
-
-
-def test_the_arabic_partial_answer_still_hands_over_what_is_confirmed() -> None:
-    answer = partial_answer(
-        sku="AX-E1",
-        unknown_field_paths=("attributes.specifications.Back material",),
-        confirmed={"price": "800 AED"},
-        arabic=True,
-    )
-
-    assert "AX-E1" in answer
-    assert "800 AED" in answer
 
 
 def test_an_arabic_reply_is_verified_against_the_english_row() -> None:

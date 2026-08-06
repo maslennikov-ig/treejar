@@ -50,19 +50,13 @@ newly switched model
 
 ## Local verification
 
-- `.7` catalog/materializer: original 759 focused tests; integrated correction
-  set 823 passed; targeted Ruff/format/Mypy passed.
-- `.8` dialogue/quotation: 803 focused tests; targeted Ruff/format/Mypy passed.
-- `.12` evaluator/reporting: 99 focused tests; diff check passed.
-- `.14` model-battle harness: 113 focused tests; scoped Ruff/format/diff passed.
-- Independent bounded correction re-review: APPROVE; 34 passed, 841 deselected.
-- Combined tree: Ruff lint passed; Ruff format reports 327 files formatted;
-  Mypy passed over 165 source files; canonical process verification passed
-  after the final documentation refresh.
-- Full combined Pytest produced `2776 passed, 19 skipped, 3 failed`; all three
-  failures were traceability `runtime-truth` digest drift caused by the handoff
-  rewrite. After the final digest refresh, the exact three failed manifest tests
-  passed.
+- `tj-ee5f` children, at their own close: `.7` 823 passed after the integrated
+  correction set, `.8` 803 focused, `.12` 99, `.14` 113; targeted
+  Ruff/format/Mypy passed for each. Independent bounded correction re-review:
+  APPROVE, 34 passed and 841 deselected.
+- That round's combined tree gave `2776 passed, 19 skipped, 3 failed` — all
+  three traceability digest drift from the handoff rewrite, green after the
+  refresh. Superseded by the stage-close numbers below.
 
 ## Active work
 
@@ -108,22 +102,22 @@ on `codex/tj-ee5f-quality-model-battle` at `ea35d44`. All ten planned children
 and all four follow-ups are closed. Detail in
 `.codex/stages/tj-feet/summary.md` and the reports it names.
 
-- The customer-visible change: no quotation tool after an explicit decline until
-  a new explicit request; an asserted product attribute must name a field path
-  present on the row actually retrieved; an unknown attribute produces a useful
-  partial answer, never a refusal; seating capacity only as a marked assumption
-  with a confirming question, which a stated headcount now gets.
+- Customer-visible: no quotation tool after an explicit decline until a new
+  explicit request; an unknown attribute produces a useful partial answer, never
+  a refusal; seating capacity only as a marked assumption with a confirming
+  question, which a stated headcount now gets. An asserted attribute is checked
+  against the retrieved row but blocked only when refuted — see the reversal.
 - `.6` paired re-score: false refusals `0.200` to `0.000`, task completion
   `0.767` to `1.000`, persuasion `2.548` to `3.071`, next step `3.429` to
   `3.667`, unsupported facts `0.000` and control compliance `1.000` in both.
-  The published `tj-feet.5` persuasion figure is not comparable: the responses
-  did not change, the judge's calibration did, so both rounds were re-scored
+  The published `tj-feet.5` persuasion figure is not comparable: responses did
+  not change, the judge's calibration did, so both rounds were re-scored
   together and only that pairing is valid.
 - `.9` not adopted, a recorded negative the criterion allows. `.10` implemented
   and shipped off behind one `system_configs` row `claim_contract_scope`.
 - A live defect found by the `.10` measurement and fixed: literal containment
   withheld a stored price quoted as `AED 800` against `800.00`, on 16 of 37
-  turns, and a stock count on 10. Shared with the shipped narrow repair path.
+  turns. Shared with the shipped narrow repair path.
 - Runtime main model switched to `openai/gpt-5.6-luna` under explicit owner
   authority; one row in production `system_configs`, no deploy or restart, read
   back through the deployed runtime. `tj-ee5f.15` closed. Production S01-S10
@@ -134,23 +128,29 @@ and all four follow-ups are closed. Detail in
   2026-08-05 are superseded and not comparable with `noor-claim-rubric/v1`.
 - `.12`, `.13`, `.14` closed 2026-08-06. A derivation is verified through its
   inputs with its arithmetic recomputed; an Arabic surface form carries the
-  English value it translates and may not introduce a number the row lacks; an
-  absence statement is its own claim type checked against the row's status; a
-  claim naming the SKU itself is supported.
-- Confirming round `20260805/claimpass-r2`, `$0.0250`, authorized 2026-08-06:
-  turns that would be rewritten fall from `30/37` to **`12/42`**, contract
-  followed `42/42` at 2500 tokens, latency `8519 ms` median. The offline replay
-  projected `1/37`; that bound was wrong by an order of magnitude and is
-  superseded. All 19 remaining withholdings are derived facts, 12 of them the
-  customer's own quantity left unlabelled `customer_stated`. The directive now
-  states both shapes an input may take; that change is unmeasured. Detail in
+  English value it translates; an absence statement is its own claim type
+  checked against the row's status; a claim naming the SKU is supported.
+- **Owner decision 2026-08-06: a spoiled reply is worse than a model error.**
+  The contract now blocks only what a row *refutes*; what it cannot confirm
+  ships and lands in `ContractResult.unverified`, logged every turn. This
+  reverses the original `tj-feet.3` criterion, so an invented attribute the
+  catalog is silent about reaches the customer. Turns rewritten: `30/37` as
+  shipped, `12/42` after the gap fixes, **`4/42`** now, all four the capacity
+  rule. Confirming round `claimpass-r2` cost `$0.0250` and showed the offline
+  replay's `1/37` projection wrong by an order of magnitude. Detail in
   `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
 - `.11` closed with `scripts/orchestration/repin_traceability_sources.py`. Run
   it after moving current state: `--check` reports drift, a plain run re-pins
   `.codex/orchestrator.toml` and `.codex/handoff.md` and revalidates. It
   refuses every other source, so frozen drift still fails loudly.
-- Stage close: Ruff, format over 335 files, Mypy over 166 sources, Pytest
-  `3080 passed, 19 skipped`. Provider spend `$0.0913` against `$4.00`.
+- Escalation audit 2026-08-06: `tj-itbu`, `tj-fwkh` closed (phantom admin
+  toggle and two dead helpers removed); `tj-oq9x` closed as a wrong finding of
+  mine. `tj-rkh3` stays open and is the live risk: an undelivered manager alert
+  now logs `MANAGER NOT NOTIFIED` with a reason, but production
+  `telegram_test_mode_enabled` and `telegram_allowed_inbound_phone` are unread
+  and no real escalation is shown to reach a manager.
+- Stage close: Ruff, format over 336 files, Mypy over 166 sources, Pytest
+  `3081 passed, 19 skipped`. Provider spend `$0.0913` against `$4.00`.
 
 ## Starter prompt for next orchestrator
 

@@ -447,25 +447,6 @@ def format_daily_summary(metrics: DailySummaryData) -> str:
 # =============================================================================
 
 
-async def notify_escalation(phone: str, conversation_id: UUID, reason: str) -> None:
-    """Send escalation notification to Telegram.
-
-    Safe to call even when Telegram is not configured.
-    """
-    try:
-        client = _get_telegram_client()
-        message = format_escalation_message(phone, conversation_id, reason)
-        await client.send_message(message)
-    except Exception:
-        logfire.error(
-            "telegram.notify_escalation.failed",
-            notification_type="escalation",
-            phone_masked=_mask_phone(phone),
-            conv_id=str(conversation_id),
-        )
-        logger.exception("Failed to send escalation notification to Telegram")
-
-
 async def notify_catalog_mismatch(
     *,
     sku: str | None,

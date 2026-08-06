@@ -14,6 +14,14 @@ from src.services.inbound_channels import (
 logger = logging.getLogger(__name__)
 
 
+class _AlertNotDelivered(Exception):
+    """Internal signal: the manager alert stopped short of being sent.
+
+    Not an error. It carries the three quiet exits — gating, an unconfigured
+    client, a failed call — to the one place that reports them.
+    """
+
+
 async def notify_manager_escalation(
     conversation: Conversation,
     reason: str,
@@ -61,16 +69,26 @@ async def notify_manager_escalation(
     )
     await db.commit()
 
-    # Send Telegram notification with action buttons (non-blocking)
+    # Send Telegram notification with action buttons (non-blocking).
+    #
+    # The escalation row above is already committed, so an escalation is never
+    # lost. What can be lost is the manager finding out about it in time, and
+    # until 2026-08-06 all three ways of losing it were quiet: channel gating
+    # returned early at info level, an unconfigured client returned None, and
+    # any failure was swallowed by the except below. A suppressed alert looked
+    # exactly like a delivered one. Every path now ends at one warning that
+    # says the manager was not notified and why.
+    delivered = False
+    undelivered_reason = ""
     try:
         if not await should_send_telegram_alert_for_conversation_with_db(
             conversation, db
         ):
-            logger.info(
-                "Skipping Telegram escalation notification for %s due to inbound channel gating",
-                conversation.id,
+            undelivered_reason = (
+                "inbound channel gating: telegram_test_mode_enabled is on and "
+                "this conversation is not on the allowed inbound channel"
             )
-            return
+            raise _AlertNotDelivered
 
         from src.services.notifications import format_escalation_message
 
@@ -124,7 +142,11 @@ async def notify_manager_escalation(
                 ]
             ]
 
-        await client.send_message_with_inline_keyboard(message, buttons)
+        sent = await client.send_message_with_inline_keyboard(message, buttons)
+        if sent is None:
+            undelivered_reason = "Telegram is not configured on this runtime"
+            raise _AlertNotDelivered
+        delivered = True
 
         # Send PDF document if provided (ORDER_CONFIRMATION with quotation)
         if pdf_bytes:
@@ -137,5 +159,17 @@ async def notify_manager_escalation(
             except Exception:
                 logger.exception("Failed to send PDF document to Telegram")
 
+    except _AlertNotDelivered:
+        pass
     except Exception:
+        undelivered_reason = "the Telegram call raised"
         logger.exception("Failed to send Telegram escalation notification")
+
+    if not delivered:
+        logger.warning(
+            "MANAGER NOT NOTIFIED of escalation for conversation %s (%s): %s. "
+            "The escalation row is recorded and visible in the admin panel.",
+            conversation.id,
+            escalation_type,
+            undelivered_reason or "unknown reason",
+        )

@@ -77,41 +77,7 @@ async def test_quality_evaluation_e2e_pipeline() -> None:
 
 
 # =============================================================================
-# 2. Telegram escalation notification E2E
-# =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_telegram_escalation_notification_delivered() -> None:
-    """notify_escalation() → TelegramClient.send_message() called with masked phone."""
-    from src.services.notifications import notify_escalation
-
-    mock_client = MagicMock()
-    mock_client.send_message = AsyncMock()
-
-    conv_id = uuid4()
-    phone = "+971501234567"
-
-    with patch(
-        "src.services.notifications._get_telegram_client", return_value=mock_client
-    ):
-        await notify_escalation(
-            phone=phone, conversation_id=conv_id, reason="Customer requested human"
-        )
-
-    mock_client.send_message.assert_called_once()
-    html_message: str = mock_client.send_message.call_args[0][0]
-
-    # Message must contain alert header and full phone (managers need to call back)
-    assert "Эскалация" in html_message, "Expected 'Эскалация' in message"
-    assert "+971501234567" in html_message, (
-        f"Phone should be shown in full for managers, got: {html_message}"
-    )
-    assert "запрошен менеджер" in html_message
-
-
-# =============================================================================
-# 3. Report generation and Telegram send E2E
+# 2. Report generation and Telegram send E2E
 # =============================================================================
 
 
