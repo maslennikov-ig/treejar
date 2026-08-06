@@ -29,12 +29,33 @@ routing and materialization paths overlap in `src/llm/engine.py`.
 - `.7` owns catalog/search/stock/materializer remediation.
 - `.8` owns stage reconciliation, slots, and quote consent/lifecycle.
 - `.12` owns evaluator applicability and score normalization.
-- `.13` depends on `.7`, `.8`, and `.12`, and blocks `.1`.
+- `.13` depends on `.7`, `.8`, and `.12`, and blocks `.1`. **Resolved
+  2026-08-04:** `.7` and `.8` closed on local-remediation scope. Their own
+  closure condition was a release-bound production retest, which only `.1` can
+  run and which `.13` must precede, so leaving them open deadlocked the queue.
+  That production obligation is recorded on `.1`.
 - `.1` owns winner-only production acceptance.
 - `.5` remains blocked on the provider fix and does not disappear from the epic.
 - `.14` is the model-battle harness repair task added by the review round.
   Create a new task for a runtime configuration change only after evidence
-  shows that a challenger actually won.
+  shows that a challenger actually won. **Reached 2026-08-04:** the core round
+  named `openai/gpt-5.6-luna`, so that configuration task is now due; it is
+  still a separate authority gate and no runtime setting was touched.
+- **Rescoped 2026-08-04:** the battle's `EVAL_DISAGREEMENT` gate no longer
+  compares the checklist score with the judge score per response. It blocks on
+  applicability and on `rank_inversion`; the offset is published as
+  `eval_score_calibration`. Rationale is in the spec under `tj-ee5f.13`.
+- **Resolved 2026-08-05:** the account owner lifted the OpenRouter privacy
+  restriction, so DeepSeek is reachable again (`tj-ee5f.13.13`). The residual
+  failure under the publisher pin was a DeepSeek-side outage, not a policy
+  block.
+- **Rescoped 2026-08-05:** a single-provider pin is replaced by an ordered
+  provider chain, publisher first, fp4-class servings excluded, and the serving
+  provider recorded per response (`tj-ee5f.13.14`). Rationale is in the spec
+  under `tj-ee5f.13`.
+- **Reached 2026-08-05:** both rounds reran on a complete field. The core
+  winner is unchanged, and the background round now also names a replacement
+  because the current production fast model failed its own gate.
 
 ## Review remediation round (added 2026-08-03)
 
@@ -202,7 +223,9 @@ runs only for the winning main/background pair in Task 7.
 
 The budget mechanics are owner-confirmed and recorded in the spec under
 "Budget decisions for the paid battle". In short: `max_tokens=2200` stays;
-candidates run cheapest first; the USD 1 per-model cap is never raised; a
+candidates run cheapest first; the USD 1 per-model cap is the default and is
+raised per candidate only when partial evidence does not settle that
+candidate's standing, with every raise published in the cost preflight; a
 conservative reservation is replaced by provider-reported actual cost after
 each response and the freed difference returns to the shared allowance;
 carry-forward can never lift a candidate above its own cap; a response cut off

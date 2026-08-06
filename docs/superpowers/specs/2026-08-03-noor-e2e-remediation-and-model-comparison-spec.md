@@ -45,6 +45,14 @@ These supersede the unresolved GLM-5.2 cap question in `.codex/handoff.md`.
 - `max_tokens=2200` stays.
 - Candidates run in ascending exact-provider estimated cost: cheapest first.
 - The per-model hard cap of USD 1 is **not** raised for any candidate.
+  **Amended by the owner on 2026-08-04:** completeness now outranks the flat
+  cap. Every candidate must be tested on the full matrix. When a candidate stops
+  on its own cap, first judge whether the partial evidence already settles its
+  standing; if it does not, raise that candidate's cap far enough to finish.
+  A raise is per candidate, never shared, and every cap above the USD 1 default
+  is published in the run's cost preflight under `caps_raised_above_default`.
+  The `cover-estimate` cap policy applies this up front by sizing each cap to
+  that model's own conservative worst-case estimate.
 - Unused allowance from a completed candidate carries forward to the next
   candidate, but can never lift a candidate above its own USD 1 cap.
 - A pre-call reservation is conservative; after each response it is replaced by
@@ -53,6 +61,10 @@ These supersede the unresolved GLM-5.2 cap question in `.codex/handoff.md`.
   reservation and no longer blocks the round on its own.
 - A response cut off by `max_tokens` is recorded `TRUNCATED`. It is a harness
   budget event, not a model quality failure, and is not scored as one.
+  **Clarified 2026-08-04:** because it is not a quality failure it must not
+  eliminate the candidate either. A truncated cell stays unscored while the
+  candidate continues the matrix; only a candidate whose cells are all truncated
+  has no evidence and cannot advance.
 - The full `S01`-`S10` production suite runs only for the winning pair.
 - Exact scenario transcripts belong only in fixtures or external raw evidence.
 - Do not grow the product system prompt. Prefer typed state, pure decisions,
@@ -158,7 +170,9 @@ For every block:
 
 The final result is independently mapped for a blind orchestration audit. A
 score difference greater than two points or any applicability disagreement is
-`EVAL_DISAGREEMENT` and blocks acceptance.
+`EVAL_DISAGREEMENT` and blocks acceptance. This band holds where both sides
+score the same rubric. The isolated battle does not; see the rescope in
+`tj-ee5f.13`.
 
 E2E waits for a terminal turn state with a bounded timeout rather than a fixed
 five-second sleep. Production `prompt:*` keys are never cleared. Comparisons
@@ -187,6 +201,9 @@ reasoning.enabled=false
 tool_choice=auto
 max_tokens=2200
 ```
+
+The single-provider pin above is superseded by the provider chain; see the
+rescope in `tj-ee5f.13.14` below.
 
 Do not send `temperature`, `top_p`, `seed`, penalties, `stop`, or
 `parallel_tool_calls`. Record requested/resolved model, endpoint/provider,
@@ -219,6 +236,71 @@ and no loss of locale, intent, quantity, or quote refusal. Rank by quality,
 objective assertions, stability, tool discipline, p95 latency, and cost. A
 difference below one point or below observed dispersion is a tie; an unresolved
 tie keeps GLM-5.2.
+
+#### Cross-instrument agreement, rescoped 2026-08-04
+
+`R-10` removed the constant `30.0` that forced the judge to score `28/30`
+everywhere, but the battle still compared two instruments that do not measure
+the same thing: the deterministic checklist scores rule coverage, and the blind
+judge scores holistic quality. Observed on the paid round, the checklist landed
+at `27-30` and the judge at `12-27`, a mean signed offset of `+5.74` with only
+`7` of `42` responses inside the `±2.0` band and zero applicability
+disagreements. That offset is calibration between instruments, not disagreement
+about a candidate, and it blocked a round whose gates were otherwise satisfied.
+
+What blocks acceptance is therefore:
+
+- any applicability disagreement, unchanged, because both instruments answer
+  the same question there;
+- a `rank_inversion`: the checklist and the judge order two candidates in
+  opposite directions and both gaps exceed the `2.0` band. This is the only
+  score comparison a selection round depends on.
+
+The per-response score offset is published as the non-blocking diagnostic
+`eval_score_calibration` in `model_selection.json`, carrying the tolerance,
+responses compared, responses inside the band, mean signed and absolute delta,
+and per-model checklist/judge means. The judge's `critical_failure` remains a
+blocking hard gate, so an invented commercial fact still eliminates a
+candidate; the offset never did that work.
+
+#### Provider chain, rescoped 2026-08-05
+
+A single-provider pin makes a candidate's evidence depend on one endpoint's
+uptime. On 2026-08-05 DeepSeek's own endpoint went down - OpenRouter reported
+`status -5` with 0% uptime over 5 and 30 minutes against ~94% over the day, and
+it had not recovered an hour later - and both DeepSeek candidates again produced
+nothing. OpenRouter answers with the same guardrail-worded 404 whenever the
+filtered endpoint set is empty, so a provider outage is textually
+indistinguishable from an account policy block. Owner decision: prefer the
+publisher, then move to the next provider rather than lose the candidate.
+
+Requests now carry an ordered chain instead:
+
+```text
+provider.order=[publisher, alternate, alternate]
+provider.allow_fallbacks=false
+provider.quantizations=[vetted servings only]
+provider.require_parameters=true
+```
+
+Four properties keep this a model comparison rather than a host comparison:
+
+- the publisher always leads, so a healthy candidate is measured exactly as
+  before; alternates follow by price, then by daily uptime, bounded to three
+  providers total;
+- the order names provider slugs, never endpoint tags. A tag also selects a
+  serving variant, and ordering by tag let a cheap `openai/flex` tier stand in
+  for the standard serving, changing latency as well as the route;
+- fp4-class servings are excluded from the chain outright, not ranked last,
+  because they answer as a measurably different artefact. The quantization
+  allowlist is what enforces that once the order names only providers;
+- cost and capability evidence is computed over the whole chain, so a
+  reservation cannot understate what a run may actually cost, and every
+  response records `served_providers`.
+
+`first_party_available` in the catalog states whether the publisher's endpoint
+was in the chain at all, so evidence never implies a reference serving that was
+never reachable.
 
 ### Background candidates
 
