@@ -205,11 +205,47 @@ quantity the customer supplied: `total_price_aed = 4000` from two desks at 2000,
 no business blocking, and it agrees with the judge scoring these same replies at
 0.000 unsupported facts.
 
-The quality of a *rewritten* reply remains unmeasured, before or after. The
-exposure shrank rather than being closed: rewrites fell from 12 turns in 42 to
-4, and those 4 are the capacity rule, which routes into the marked-assumption
-path that `tj-feet.6` did measure at 0.000 false refusals and 1.000 task
-completion.
+### The four rewrites, read by hand
+
+The quality of a rewritten reply had never been looked at, before or after, in
+any round. Under the shipped rule four turns in 42 are rewritten, so they were
+read against their originals.
+
+**No rewrite lost a fact.** Price, stock, line total and the capacity caveat
+survive in all four, and the `K02` control holds in both versions of both its
+turns.
+
+What the rewrite does cost is sales energy, and it does it the same way each
+time: it drops the opening commitment, drops the emphasis, and in one case
+drops the closing next step. On `C04-ar` repetition 3 the reply goes from *yes,
+assuming ten per desk, two cover twenty* with an offer to proceed, to *two may
+suffice only if each seats ten* with the offer removed — 349 characters down to
+271. Read on the `tj-feet.6` scale that is roughly persuasion `3.0 → 2.5` and
+next step `3.5 → 3.0`, with unsupported facts and control compliance unmoved.
+
+Three limits on that reading, the first of which softens it a lot:
+
+* This offline pass sent **only** the contract directive. In production the same
+  turn also carries the sizing directive, which explicitly demands the
+  arithmetic in the open and a concrete next step — the two things the rewrites
+  dropped. The real production rewrite is very likely better than what was read
+  here, and the lost arithmetic is a missing directive rather than a property of
+  rewriting.
+* Four turns. No statistics.
+* **It is an inspection, not a measurement.** A rewrite is recognisable by its
+  structure, so the judge cannot be blinded to which text is which. The figures
+  above are an orientation and should not be quoted as scores.
+
+The exposure shrank rather than being closed: rewrites fell from 30 turns in 37,
+to 12 in 42, to 4, and those 4 are the capacity rule, which routes into the
+marked-assumption path that `tj-feet.6` measured at 0.000 false refusals and
+1.000 task completion.
+
+One repairable gap it exposed: the repair directive never asks for a closing
+next step, while the main sizing directive does. That explains the worst of the
+four. It is one line to fix and deliberately not fixed here, because the only
+evidence available to score the fix is the same four examples it would be
+written from.
 
 Caveat, as always: 42 turns, one model, one sitting. The counter-set is built to
 bait fabrication, which makes 0 catalog-fact fabrications a meaningful result
