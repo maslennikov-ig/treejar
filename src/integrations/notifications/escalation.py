@@ -8,7 +8,7 @@ from src.models.conversation import Conversation
 from src.models.escalation import Escalation
 from src.schemas.common import EscalationStatus, EscalationType
 from src.services.inbound_channels import (
-    should_send_telegram_alert_for_conversation_with_db,
+    should_send_manager_alert_for_conversation_with_db,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ async def notify_manager_escalation(
     delivered = False
     undelivered_reason = ""
     try:
-        if not await should_send_telegram_alert_for_conversation_with_db(
+        if not await should_send_manager_alert_for_conversation_with_db(
             conversation, db
         ):
             undelivered_reason = (

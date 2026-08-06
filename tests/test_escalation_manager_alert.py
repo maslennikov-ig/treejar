@@ -71,7 +71,7 @@ async def test_channel_gating_says_the_manager_was_not_notified(
     with (
         patch.object(
             escalation_module,
-            "should_send_telegram_alert_for_conversation_with_db",
+            "should_send_manager_alert_for_conversation_with_db",
             AsyncMock(return_value=False),
         ),
         caplog.at_level(logging.WARNING),
@@ -96,7 +96,7 @@ async def test_an_unconfigured_telegram_says_the_manager_was_not_notified(
     with (
         patch.object(
             escalation_module,
-            "should_send_telegram_alert_for_conversation_with_db",
+            "should_send_manager_alert_for_conversation_with_db",
             AsyncMock(return_value=True),
         ),
         patch.object(escalation_module, "TelegramClient", return_value=client),
@@ -120,7 +120,7 @@ async def test_a_failed_send_says_the_manager_was_not_notified(
     with (
         patch.object(
             escalation_module,
-            "should_send_telegram_alert_for_conversation_with_db",
+            "should_send_manager_alert_for_conversation_with_db",
             AsyncMock(return_value=True),
         ),
         patch.object(escalation_module, "TelegramClient", return_value=client),
@@ -144,7 +144,7 @@ async def test_a_delivered_alert_stays_quiet(
     with (
         patch.object(
             escalation_module,
-            "should_send_telegram_alert_for_conversation_with_db",
+            "should_send_manager_alert_for_conversation_with_db",
             AsyncMock(return_value=True),
         ),
         patch.object(escalation_module, "TelegramClient", return_value=client),

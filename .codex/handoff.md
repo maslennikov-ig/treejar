@@ -50,13 +50,11 @@ newly switched model
 
 ## Local verification
 
-- `tj-ee5f` children, at their own close: `.7` 823 passed after the integrated
-  correction set, `.8` 803 focused, `.12` 99, `.14` 113; targeted
-  Ruff/format/Mypy passed for each. Independent bounded correction re-review:
-  APPROVE, 34 passed and 841 deselected.
-- That round's combined tree gave `2776 passed, 19 skipped, 3 failed` — all
-  three traceability digest drift from the handoff rewrite, green after the
-  refresh. Superseded by the stage-close numbers below.
+- `tj-ee5f` children at their own close: `.7` 823 passed, `.8` 803, `.12` 99,
+  `.14` 113, targeted Ruff/format/Mypy each; independent correction re-review
+  APPROVE. That round's combined tree was `2776 passed, 19 skipped, 3 failed`,
+  the three being traceability digest drift, green after the refresh. All
+  superseded by the stage-close numbers below.
 
 ## Active work
 
@@ -111,21 +109,19 @@ and all four follow-ups are closed. Detail in
   `0.767` to `1.000`, persuasion `2.548` to `3.071`, next step `3.429` to
   `3.667`, unsupported facts `0.000` and control compliance `1.000` in both.
   The published `tj-feet.5` persuasion figure is not comparable: responses did
-  not change, the judge's calibration did, so both rounds were re-scored
-  together and only that pairing is valid.
-- `.9` not adopted, a recorded negative the criterion allows. `.10` implemented
-  and shipped off behind one `system_configs` row `claim_contract_scope`.
-- A live defect found by the `.10` measurement and fixed: literal containment
-  withheld a stored price quoted as `AED 800` against `800.00`, on 16 of 37
-  turns. Shared with the shipped narrow repair path.
+  not change, the judge's calibration did, so only the re-scored pairing holds.
+- `.9` not adopted, a recorded negative. `.10` implemented and shipped off
+  behind one `system_configs` row `claim_contract_scope`. A live defect it found
+  and fixed: containment withheld a stored price quoted `AED 800` against
+  `800.00`, 16 of 37 turns, on the path already shipped.
 - Runtime main model switched to `openai/gpt-5.6-luna` under explicit owner
   authority; one row in production `system_configs`, no deploy or restart, read
   back through the deployed runtime. `tj-ee5f.15` closed. Production S01-S10
   acceptance on the new model has NOT been run and stays with `tj-ee5f.1`.
 - The 2026-08-05 catalog audit found no seating-capacity field on any of 344
-  active SKUs and no Arabic catalog text at all. `tj-2pkk` now has the evidence
-  it has been blocked on since 2026-06-16. Sealed rounds of 2026-08-04 and
-  2026-08-05 are superseded and not comparable with `noor-claim-rubric/v1`.
+  active SKUs and no Arabic catalog text at all; `tj-2pkk` now has the evidence
+  it has been blocked on since 2026-06-16. Sealed rounds of 2026-08-04/05 are
+  superseded and not comparable with `noor-claim-rubric/v1`.
 - `.12`, `.13`, `.14` closed 2026-08-06. A derivation is verified through its
   inputs with its arithmetic recomputed; an Arabic surface form carries the
   English value it translates; an absence statement is its own claim type
@@ -136,21 +132,25 @@ and all four follow-ups are closed. Detail in
   reverses the original `tj-feet.3` criterion, so an invented attribute the
   catalog is silent about reaches the customer. Turns rewritten: `30/37` as
   shipped, `12/42` after the gap fixes, **`4/42`** now, all four the capacity
-  rule. Confirming round `claimpass-r2` cost `$0.0250` and showed the offline
-  replay's `1/37` projection wrong by an order of magnitude. Detail in
+  rule. Confirming round `claimpass-r2`, `$0.0250`, showed the offline replay's
+  `1/37` wrong by an order of magnitude. See
   `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
 - `.11` closed with `scripts/orchestration/repin_traceability_sources.py`. Run
   it after moving current state: `--check` reports drift, a plain run re-pins
-  `.codex/orchestrator.toml` and `.codex/handoff.md` and revalidates. It
-  refuses every other source, so frozen drift still fails loudly.
-- Escalation audit 2026-08-06: `tj-itbu`, `tj-fwkh` closed (phantom admin
-  toggle and two dead helpers removed); `tj-oq9x` closed as a wrong finding of
-  mine. `tj-rkh3` stays open and is the live risk: an undelivered manager alert
-  now logs `MANAGER NOT NOTIFIED` with a reason, but production
-  `telegram_test_mode_enabled` and `telegram_allowed_inbound_phone` are unread
-  and no real escalation is shown to reach a manager.
+  `.codex/orchestrator.toml` and `.codex/handoff.md` and revalidates, and it
+  refuses every other source so frozen drift still fails loudly.
+- Escalation audit 2026-08-06, verified read-only against production. Manager
+  alerts **do** reach Telegram: all 15 escalations of the last 30 days were on
+  the allowed inbound line. `tj-rkh3`, `tj-oq9x` closed as wrong findings of
+  mine; `tj-itbu`, `tj-fwkh`, `tj-zyxz` closed by fixes. An undelivered alert
+  now logs `MANAGER NOT NOTIFIED` with a reason; the allowlist takes a list and
+  escalation gating fails open, while routine quality alerts stay strict.
+- Operational, not code: 10 of 15 escalations sit `pending`, oldest 2026-07-08,
+  none assigned, `manager_reviews` has one row all time. Managers reply in
+  WhatsApp, invisible to the bot's database, so whether those customers were
+  answered cannot be known from here.
 - Stage close: Ruff, format over 336 files, Mypy over 166 sources, Pytest
-  `3081 passed, 19 skipped`. Provider spend `$0.0913` against `$4.00`.
+  `3092 passed, 19 skipped`. Provider spend `$0.0913` against `$4.00`.
 
 ## Starter prompt for next orchestrator
 
