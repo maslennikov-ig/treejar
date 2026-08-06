@@ -1,11 +1,11 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-05
+Updated: 2026-08-06
 Current branch: `codex/tj-feet`
 Current stage id: `tj-feet`
-Status: stage `tj-feet` implementation complete; all ten planned children are
-closed, four measured follow-ups are recorded, and the stage stops before
-production acceptance on the newly switched model
+Status: stage `tj-feet` complete; all ten planned children and all four measured
+follow-ups are closed, and the stage stops before production acceptance on the
+newly switched model
 
 ## Current truth
 
@@ -63,8 +63,6 @@ production acceptance on the newly switched model
   failures were traceability `runtime-truth` digest drift caused by the handoff
   rewrite. After the final digest refresh, the exact three failed manifest tests
   passed.
-- Full format initially found only `src/quality/schemas.py`; it was mechanically
-  reformatted. The current full format check passes.
 
 ## Active work
 
@@ -93,58 +91,64 @@ Accepted design and executable plan:
 
 ## Next recommended
 
-Local remediation and documentation closeout are complete. Stop here; the next
-work is the separately authorized paid model battle.
-
 Next stage id: `tj-ee5f`
 
-Recommended action: keep the stage open for the separately authorized paid
-model battle. After a sealed winner decision, request separate authority for
-model configuration, push, deploy, and winner-only production acceptance. Do
-not fold the bounded product-runtime `R-17` defer into the paid run.
+The paid comparison has since run under `tj-feet.8` and the main model was
+switched, so the battle this section used to point at is done.
+
+Recommended action: keep `tj-ee5f` open for `tj-ee5f.1`, winner-only
+release-bound S01-S10 production acceptance on `openai/gpt-5.6-luna`, and
+request that authority separately. Do not fold the bounded product-runtime
+`R-17` defer into it.
 
 ## Stage tj-feet
 
 Grounding, tool obedience and evaluation repair. Branch `codex/tj-feet`, based
 on `codex/tj-ee5f-quality-model-battle` at `ea35d44`. All ten planned children
-are closed. Full detail, every number and the four follow-ups are in
+and all four follow-ups are closed. Detail in
 `.codex/stages/tj-feet/summary.md` and the reports it names.
 
-- The customer-visible change: the assistant no longer offers the quotation tool
-  after an explicit decline and restores it only on a new explicit request; an
-  asserted product attribute must name a field path present on the row actually
-  retrieved; an unknown attribute produces a useful partial answer rather than a
-  refusal; seating capacity may be offered only as a marked assumption with a
-  confirming question, and a stated headcount now gets that assumption instead
-  of a decline.
+- The customer-visible change: no quotation tool after an explicit decline until
+  a new explicit request; an asserted product attribute must name a field path
+  present on the row actually retrieved; an unknown attribute produces a useful
+  partial answer, never a refusal; seating capacity only as a marked assumption
+  with a confirming question, which a stated headcount now gets.
 - `.6` paired re-score: false refusals `0.200` to `0.000`, task completion
   `0.767` to `1.000`, persuasion `2.548` to `3.071`, next step `3.429` to
-  `3.667`, with unsupported facts `0.000` and control compliance `1.000` in
-  both rounds. The published `tj-feet.5` persuasion figure is not comparable
-  with these: the responses did not change, the judge's calibration did, so
-  both rounds were re-scored together and only that pairing is valid.
+  `3.667`, unsupported facts `0.000` and control compliance `1.000` in both.
+  The published `tj-feet.5` persuasion figure is not comparable: the responses
+  did not change, the judge's calibration did, so both rounds were re-scored
+  together and only that pairing is valid.
 - `.9` not adopted, a recorded negative the criterion allows. `.10` implemented
   and shipped switched off behind one `system_configs` row
   `claim_contract_scope`; nothing moves until the owner sets it.
-- A live defect was found by the `.10` measurement and fixed: literal
-  containment withheld a stored price quoted as `AED 800` against `800.00`, on
-  16 of 37 measured turns, and a stock count on 10. That comparison is shared
-  with the shipped narrow repair path.
+- A live defect found by the `.10` measurement and fixed: literal containment
+  withheld a stored price quoted as `AED 800` against `800.00`, on 16 of 37
+  turns, and a stock count on 10. Shared with the shipped narrow repair path.
 - Runtime main model switched to `openai/gpt-5.6-luna` under explicit owner
   authority; one row in production `system_configs`, no deploy or restart, read
   back through the deployed runtime. `tj-ee5f.15` closed. Production S01-S10
   acceptance on the new model has NOT been run and stays with `tj-ee5f.1`.
 - The 2026-08-05 catalog audit found no seating-capacity field on any of 344
   active SKUs and no Arabic catalog text at all. `tj-2pkk` now has the evidence
-  it has been blocked on since 2026-06-16.
-- Sealed rounds of 2026-08-04 and 2026-08-05 are superseded, immutable, and not
-  comparable with anything scored under `noor-claim-rubric/v1`.
-- Local acceptance on the combined tree at stage close: Ruff, format over 334
-  files, Mypy over 166 source files, and Pytest `3035 passed, 19 skipped`.
-- Total provider spend for the whole stage `$0.0663`, against a `$4.00`
-  reservation. The judge was the orchestrator session throughout and cost
-  nothing, which is why the specification's dollar-scale figure was two orders
-  of magnitude high.
+  it has been blocked on since 2026-06-16. Sealed rounds of 2026-08-04 and
+  2026-08-05 are superseded and not comparable with `noor-claim-rubric/v1`.
+- `.12`, `.13`, `.14` closed 2026-08-06, no provider call. A derivation is
+  verified through its inputs with its arithmetic recomputed; an Arabic surface
+  form carries the English value it translates and may not introduce a number
+  the row lacks; an absence statement is its own claim type checked against the
+  row's status; a claim naming the SKU itself is supported. Replaying the stored
+  209 claims, turns that would be rewritten fall from `30/37` to an upper bound
+  of `1/37` — a bound, not a measurement, since the stored claims predate the
+  fields the fixes need. `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
+- `.11` closed with `scripts/orchestration/repin_traceability_sources.py`. Run
+  it after moving current state: `--check` reports drift, a plain run re-pins
+  `.codex/orchestrator.toml` and `.codex/handoff.md` and reloads the result
+  through the real validator. It refuses every other source, so frozen drift
+  still fails loudly.
+- Stage close: Ruff, format over 335 files, Mypy over 166 source files, Pytest
+  `3079 passed, 19 skipped`. Total provider spend `$0.0663` against a `$4.00`
+  reservation; the judge was the orchestrator session and cost nothing.
 
 ## Starter prompt for next orchestrator
 
@@ -169,22 +173,21 @@ test-only business effects, or real-user messaging.
 
 ## Explicit defers
 
-- `tj-feet.13` (P1), `.12`, `.14`: three gaps in the claim contract, each found
-  by measurement on 2026-08-05 and each blocking the widened `tj-feet.10` scope.
-  `.13` also affects the shipped narrow repair path.
-- `tj-feet.11`: `.codex/stages/tj-ee5f/traceability-manifest.json` pins
-  whole-file digests of `.codex/orchestrator.toml` and `.codex/handoff.md`,
-  which the repository contract declares to be current state. Any stage that
-  updates either breaks three manifest tests. `tj-feet` re-pinned them twice to
-  keep the gate green; the design question belongs to the `tj-ee5f` stream.
-- `tj-feet.10`, enabling it: the switch exists and is measured. Turning it on is
-  the owner's call and should wait for `.12`, `.13` and `.14`. Option (b) from
-  the task design, a structured main output that removes the second call, was
-  not built and is now the more attractive of the two.
+- Registering `repin_traceability_sources.py` in the `AGENTS.md` Operational
+  State inventory. Tried and reverted: `AGENTS.md` is pinned as `repo-contract`
+  in the same frozen registry, so a one-line addition breaks three manifest
+  tests and needs a deliberate re-pin of another stream's provenance. Owned by
+  `tj-ee5f`, with the design question of whether a frozen manifest may pin
+  mutable state at all.
+- `tj-feet.10`, enabling it: `.12`, `.13` and `.14` no longer block it. What is
+  missing is a measurement, not a fix — one claim pass on the current contract,
+  42 turns and about `$0.02`, would replace the `1/37` upper bound with a real
+  number. The latency it was first weighed on, 7.7 s median and 17 s at p90, is
+  unchanged. Option (b), a structured main output removing the second call, was
+  not built and is still the more attractive of the two.
 - `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit
   `.codex/handoff.md`; the other stream's edits are uncommitted in its own
   worktree and will need reconciling at merge.
-
 - `tj-ee5f.13.9` / product-runtime `R-17`: validate and centralize model ids,
   reasoning capabilities, and cache-control support in `src/core/config.py` and
   `src/llm/safety.py`. Harness capability evidence is complete; product-runtime

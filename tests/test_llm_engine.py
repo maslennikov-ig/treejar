@@ -21975,6 +21975,98 @@ def test_parse_claim_payload_reads_claims_and_answer() -> None:
     assert claims[0].field_path == "attributes.specifications.Mechanism"
 
 
+def test_parse_claim_payload_reads_the_three_gap_fields() -> None:
+    """tj-feet.12/.13/.14: the fields the contract needs must survive the wire.
+
+    A derivation verified through its inputs is only as good as the inputs
+    reaching the contract, and an absence claim that is parsed back as a
+    `catalog_fact` is withheld exactly as it was before the fix.
+    """
+    parsed = engine_module._parse_claim_payload(
+        json.dumps(
+            {
+                "claims": [
+                    {
+                        "claim_type": "absence",
+                        "sku": "AX-E1",
+                        "field_path": "attributes.specifications.Back material",
+                    },
+                    {
+                        "claim_type": "catalog_fact",
+                        "sku": "AX-E1",
+                        "field_path": "price",
+                        "value": "٨٠٠ درهم",
+                        "source_value": "800",
+                    },
+                    {
+                        "claim_type": "derived_fact",
+                        "sku": "AX-E1",
+                        "value": "AED 1,600",
+                        "operation": "product",
+                        "inputs": [
+                            {"sku": "AX-E1", "field_path": "price", "value": "800"},
+                            {
+                                "field_path": "quantity",
+                                "value": "2",
+                                "customer_stated": True,
+                            },
+                        ],
+                    },
+                ],
+                "answer": "Two of them come to AED 1,600.",
+            }
+        )
+    )
+
+    assert parsed is not None
+    claims, _answer = parsed
+    assert claims[0].claim_type == "absence"
+    assert claims[1].source_value == "800"
+    assert claims[2].operation == "product"
+    assert len(claims[2].inputs) == 2
+    assert claims[2].inputs[1].customer_stated is True
+
+
+@pytest.mark.parametrize("raw_inputs", [None, "two desks", 7, [1, "x", None]])
+def test_a_malformed_input_list_never_breaks_the_turn(raw_inputs: object) -> None:
+    """It leaves the derivation unverifiable, which the contract withholds."""
+    parsed = engine_module._parse_claim_payload(
+        json.dumps(
+            {
+                "claims": [
+                    {
+                        "claim_type": "derived_fact",
+                        "sku": "AX-E1",
+                        "value": "AED 1,600",
+                        "operation": "product",
+                        "inputs": raw_inputs,
+                    }
+                ],
+                "answer": "Two of them come to AED 1,600.",
+            }
+        )
+    )
+
+    assert parsed is not None
+    claims, _answer = parsed
+    assert claims[0].inputs == ()
+
+
+def test_a_withheld_plain_path_is_recorded_as_an_absence_claim() -> None:
+    """tj-feet.14: the retry used to re-emit the sentence that got withheld.
+
+    The directive asked for *the catalog does not state them*, the model
+    returned that as a `catalog_fact` whose path is absent, and the contract
+    withheld it again.
+    """
+    directive = engine_module._claim_contract_directive(
+        "{}", withheld_field_paths=("attributes.specifications.Back material",)
+    )
+
+    assert "absence" in directive
+    assert "does not state" in directive
+
+
 @pytest.mark.asyncio
 async def test_supported_claim_reaches_the_customer_unchanged(
     mock_deps: tuple[

@@ -34,8 +34,22 @@ from enum import StrEnum
 from typing import Literal
 
 ClaimType = Literal[
-    "catalog_fact", "derived_fact", "explicit_assumption", "recommendation"
+    "catalog_fact",
+    "derived_fact",
+    "absence",
+    "explicit_assumption",
+    "recommendation",
 ]
+
+DerivedOperation = Literal["comparison", "sum", "difference", "product"]
+"""The operations the runtime can restate from the inputs a derivation names.
+
+Deliberately short. A derivation the runtime cannot recompute is not verified
+by listing its inputs, it is only decorated with them, so anything outside this
+set stays withheld.
+"""
+
+_DERIVED_OPERATIONS = frozenset({"comparison", "sum", "difference", "product"})
 
 CAPACITY_FIELD_PATHS = frozenset(
     {
@@ -76,9 +90,32 @@ class RetrievedRow:
     not_applicable_fields: frozenset[str] = frozenset()
 
     def normalized_fields(self) -> dict[str, str]:
-        return {
+        normalized = {
             normalize_field_path(path): value for path, value in self.fields.items()
         }
+        # The row *is* this SKU, so naming it is the one claim that needs no
+        # column. The 2026-08-05 replay found the model claiming
+        # `field_path=sku, value=CH-A` and the contract withholding it, because
+        # the identifier was never flattened into the fields the model is shown.
+        normalized.setdefault("sku", self.sku)
+        return normalized
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimInput:
+    """One value a derivation rests on.
+
+    A derivation has no field path of its own, so it is verified through the
+    inputs it names rather than through its output. An input the customer
+    supplied — their headcount, the quantity they asked for — is theirs, not the
+    catalog's, and is taken at face value; `customer_stated` records that
+    difference instead of hiding it.
+    """
+
+    sku: str = ""
+    field_path: str = ""
+    value: str = ""
+    customer_stated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +128,16 @@ class AttributeClaim:
     value: str = ""
     marker_present: bool = False
     confirming_question: bool = False
+    source_value: str = ""
+    """The English catalog value a non-Latin surface form rests on.
+
+    No active SKU carries Arabic text, so an Arabic reply is grounded in an
+    English row and its wording is translation. Carrying the English value
+    alongside the Arabic one lets the row be checked without a translation
+    call.
+    """
+    operation: str = ""
+    inputs: tuple[ClaimInput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +204,12 @@ def check_claim(
 
     is_capacity = normalize_field_path(claim.field_path) in CAPACITY_FIELD_PATHS
 
+    if claim.claim_type == "absence":
+        return _check_absence(claim, rows)
+
+    if claim.claim_type == "derived_fact":
+        return _check_derivation(claim, rows)
+
     if claim.claim_type == "explicit_assumption":
         if not (claim.marker_present and claim.confirming_question):
             return ClaimCheck(
@@ -174,11 +227,12 @@ def check_claim(
             stored = (row.normalized_fields() if row else {}).get(
                 normalize_field_path(claim.field_path), ""
             )
-            if not _value_is_covered(claim.value, stored):
+            verdict = _claimed_value_is_grounded(claim, stored)
+            if not verdict.ok:
                 return ClaimCheck(
                     status=status,
                     supported=False,
-                    reason="assumption contradicts the value already on the row",
+                    reason=f"assumption contradicts the row: {verdict.reason}",
                     may_reach_customer=False,
                 )
         return ClaimCheck(
@@ -215,19 +269,197 @@ def check_claim(
     stored = (row.normalized_fields() if row else {}).get(
         normalize_field_path(claim.field_path), ""
     )
-    if not _value_is_covered(claim.value, stored):
+    verdict = _claimed_value_is_grounded(claim, stored)
+    return ClaimCheck(
+        status=status,
+        supported=verdict.ok,
+        reason=verdict.reason,
+        may_reach_customer=verdict.ok,
+    )
+
+
+def _check_absence(
+    claim: AttributeClaim,
+    rows: Mapping[str, RetrievedRow],
+) -> ClaimCheck:
+    """Verify the sentence that says the catalog is silent about something.
+
+    `tj-feet.14`. Routing this through the attribute check withheld it: the path
+    is absent, so the claim was unsupported — which withheld the assistant
+    saying the catalog does not state something, the exact sentence the partial
+    answer exists to produce. An absence statement is not an attribute claim, so
+    it is checked against the row's *status* rather than against a value.
+
+    It is checked, not waved through: denying an attribute the row does state is
+    a false statement about the catalog and stays withheld.
+    """
+    status = attribute_status(claim.sku, claim.field_path, rows)
+    if status is AttributeStatus.KNOWN_VALUE:
         return ClaimCheck(
             status=status,
             supported=False,
-            reason="claimed value is not the value stored on the row",
+            reason="the retrieved row does state this attribute",
             may_reach_customer=False,
         )
     return ClaimCheck(
         status=status,
         supported=True,
-        reason="exact SKU, field path and value present on the retrieved row",
+        reason=f"the row reports this attribute as {status.value}, which is what the reply says",
         may_reach_customer=True,
     )
+
+
+def _check_derivation(
+    claim: AttributeClaim,
+    rows: Mapping[str, RetrievedRow],
+) -> ClaimCheck:
+    """Verify the inputs of a derivation and the arithmetic over them.
+
+    `tj-feet.12`. A comparison, a total or a calculation has no field path by
+    definition, so routing it through the existence check made it permanently
+    unsupported. What can be verified is the other end: every input value is
+    checked against the row it names, and the figure the reply states must be
+    one the runtime can recompute from those inputs.
+
+    Listing inputs without recomputing would only decorate the claim, so an
+    operation outside `_DERIVED_OPERATIONS` stays withheld even when every input
+    is sound.
+    """
+    unknown = AttributeStatus.UNKNOWN
+    operation = normalize_field_path(claim.operation)
+    if operation not in _DERIVED_OPERATIONS:
+        return ClaimCheck(
+            status=unknown,
+            supported=False,
+            reason=(
+                "a derivation must name an operation the runtime can restate: "
+                f"{', '.join(sorted(_DERIVED_OPERATIONS))}"
+            ),
+            may_reach_customer=False,
+        )
+    if not claim.inputs:
+        return ClaimCheck(
+            status=unknown,
+            supported=False,
+            reason="a derivation names no input to verify",
+            may_reach_customer=False,
+        )
+    if operation == "comparison" and len(claim.inputs) < 2:
+        return ClaimCheck(
+            status=unknown,
+            supported=False,
+            reason="a comparison rests on at least two inputs",
+            may_reach_customer=False,
+        )
+    if operation == "difference" and len(claim.inputs) != 2:
+        return ClaimCheck(
+            status=unknown,
+            supported=False,
+            reason="a difference is restatable over exactly two inputs",
+            may_reach_customer=False,
+        )
+
+    for derived_input in claim.inputs:
+        verdict = _derivation_input_is_grounded(derived_input, rows)
+        if not verdict.ok:
+            return ClaimCheck(
+                status=unknown,
+                supported=False,
+                reason=f"a derivation input is not supported: {verdict.reason}",
+                may_reach_customer=False,
+            )
+
+    if not _numbers_are_covered(
+        _numbers_in(claim.value), _restatable_numbers(operation, claim.inputs)
+    ):
+        return ClaimCheck(
+            status=unknown,
+            supported=False,
+            reason=(
+                "the derived value states a number the runtime cannot restate "
+                "from the inputs it names"
+            ),
+            may_reach_customer=False,
+        )
+    return ClaimCheck(
+        status=unknown,
+        supported=True,
+        reason=f"every input is supported and the {operation} restates from them",
+        may_reach_customer=True,
+    )
+
+
+def _derivation_input_is_grounded(
+    derived_input: ClaimInput,
+    rows: Mapping[str, RetrievedRow],
+) -> _ValueVerdict:
+    """One input of a derivation, against the row it names.
+
+    A per-product seating capacity is refused whatever route it takes. The owner
+    decision of 2026-08-05 is that capacity is not a catalog fact, and
+    multiplying it by a quantity does not make it one — `two desks x ten people
+    = twenty` was the measured shape. A figure carrying no SKU is about the
+    customer's own team, not about a product, so it is not caught by this.
+    """
+    is_capacity = normalize_field_path(derived_input.field_path) in CAPACITY_FIELD_PATHS
+    if is_capacity and derived_input.sku.strip():
+        return _ValueVerdict(
+            False,
+            "seating capacity is not a catalog fact and may not be derived from; "
+            "it belongs in a marked assumption with a confirming question",
+        )
+    if derived_input.customer_stated:
+        # Taken at face value, because the customer said it — but it may not
+        # overwrite something the catalog does state, or `customer_stated`
+        # becomes a hole straight through the contract.
+        stored = _stored_value(derived_input.sku, derived_input.field_path, rows)
+        if stored and not _value_is_covered(derived_input.value, stored):
+            return _ValueVerdict(
+                False, "a customer-stated input contradicts the retrieved row"
+            )
+        return _ValueVerdict(True, "supplied by the customer")
+    check = check_claim(
+        AttributeClaim(
+            claim_type="catalog_fact",
+            sku=derived_input.sku,
+            field_path=derived_input.field_path,
+            value=derived_input.value,
+        ),
+        rows,
+    )
+    return _ValueVerdict(check.may_reach_customer, check.reason)
+
+
+def _restatable_numbers(
+    operation: str,
+    inputs: tuple[ClaimInput, ...],
+) -> set[float]:
+    """Every figure the reply may state, given these inputs and this operation.
+
+    The input figures themselves are always restatable — a comparison that
+    quotes both prices is restating, not computing. Beyond them only the single
+    result of the named operation is allowed, so a derivation cannot smuggle in
+    a number of its own.
+    """
+    per_input = [_numbers_in(item.value) for item in inputs]
+    allowed: set[float] = set().union(*per_input) if per_input else set()
+    if operation == "comparison":
+        return allowed
+    if any(len(numbers) != 1 for numbers in per_input):
+        # Arithmetic over an input that carries no number, or several, is not
+        # something the runtime can restate.
+        return allowed
+    operands = [next(iter(numbers)) for numbers in per_input]
+    if operation == "sum":
+        allowed.add(round(sum(operands), 6))
+    elif operation == "difference":
+        allowed.add(round(abs(operands[0] - operands[1]), 6))
+    elif operation == "product":
+        product = 1.0
+        for operand in operands:
+            product *= operand
+        allowed.add(round(product, 6))
+    return allowed
 
 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)*")
@@ -243,6 +475,89 @@ def _numbers_in(text: str) -> set[float]:
         except ValueError:
             continue
     return found
+
+
+_ARABIC_LETTER_RE = re.compile(r"[؀-ۿݐ-ݿ]")
+
+
+@dataclass(frozen=True, slots=True)
+class _ValueVerdict:
+    ok: bool
+    reason: str
+
+
+def _stored_value(
+    sku: str,
+    field_path: str,
+    rows: Mapping[str, RetrievedRow],
+) -> str:
+    row = _row_for(sku, rows)
+    return (row.normalized_fields() if row else {}).get(
+        normalize_field_path(field_path), ""
+    )
+
+
+def _numbers_are_covered(claimed: set[float], allowed: set[float]) -> bool:
+    """Every figure the claim states is one the row or the arithmetic produces.
+
+    Compared with a tolerance rather than by set membership, because these
+    numbers come from parsing decimal strings and `800.00 + 900.00` is not
+    reliably `1700.0` on the nose.
+    """
+    return all(
+        any(abs(number - candidate) <= 1e-6 for candidate in allowed)
+        for number in claimed
+    )
+
+
+def _is_translated_surface(value: str, source_value: str) -> bool:
+    """Is this wording a translation of the stored English value?
+
+    Only a non-Latin surface form opens the translation branch. Without that
+    restriction `source_value` would be an escape hatch: a model could name the
+    stored value there and write anything it liked in `value`, which is the one
+    thing the contract exists to prevent. No active SKU carries Arabic text, so
+    Arabic is exactly the case that needs it and English is exactly the case
+    that must not have it.
+    """
+    return bool(
+        _ARABIC_LETTER_RE.search(str(value))
+        and not _ARABIC_LETTER_RE.search(str(source_value))
+    )
+
+
+def _claimed_value_is_grounded(claim: AttributeClaim, stored: str) -> _ValueVerdict:
+    """Does the value this claim states rest on the value the row carries?
+
+    `tj-feet.13`. The module has always said that an Arabic reply is verified
+    against the English row and its wording treated as translation; literal
+    containment did not implement that, so every translated value was withheld —
+    `هيكل فولاذي` against a stored `steel frame`, `دبي` against `Dubai`. The
+    claim now carries the English value it rests on, which costs no call.
+
+    Words are translation. A *figure* is a fact in any script, so a translated
+    surface may not state a number the row does not carry.
+    """
+    if claim.source_value and _is_translated_surface(claim.value, claim.source_value):
+        if not _value_is_covered(claim.source_value, stored):
+            return _ValueVerdict(
+                False,
+                "the source value the translation rests on is not the value "
+                "stored on the row",
+            )
+        allowed = _numbers_in(claim.source_value) | _numbers_in(stored)
+        if not _numbers_are_covered(_numbers_in(claim.value), allowed):
+            return _ValueVerdict(
+                False, "the translated wording states a number the row does not carry"
+            )
+        return _ValueVerdict(
+            True, "verified against the English row; the surface form is translation"
+        )
+    if _value_is_covered(claim.value, stored):
+        return _ValueVerdict(
+            True, "exact SKU, field path and value present on the retrieved row"
+        )
+    return _ValueVerdict(False, "claimed value is not the value stored on the row")
 
 
 def _value_is_covered(claimed: str, stored: str) -> bool:

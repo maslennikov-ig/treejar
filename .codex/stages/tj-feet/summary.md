@@ -1,14 +1,16 @@
 # Stage tj-feet Summary
 
-Updated: 2026-08-05
-Status: implementation complete; all ten planned children closed, four measured
-follow-ups recorded, stopped before production acceptance on the new model
-docs-reviewed: updated - six stage reports under `docs/reports/2026-08-05-*`
+Updated: 2026-08-06
+Status: complete; all ten planned children and all four measured follow-ups
+closed, stopped before production acceptance on the new model
+docs-reviewed: updated - seven stage reports under `docs/reports/2026-08-0[56]-*`
 record the audit, the rubric, the superseded rounds, the sealed re-run, the
-counter-set baseline, the marked-assumption result, the paraphrase decision and
-the every-turn pricing; `.codex/handoff.md` and this summary carry current
-state. No README, AGENTS.md, runbook, contract, migration or integration doc
-changed, because no public facade, schema or ops procedure changed.
+counter-set baseline, the marked-assumption result, the paraphrase decision,
+the every-turn pricing and the three closed contract gaps; `.codex/handoff.md`
+and this summary carry current state. No README, AGENTS.md, runbook, contract,
+migration or integration doc changed, because no public facade, schema or ops
+procedure changed. `AGENTS.md` was deliberately left unchanged; see the
+`tj-feet.11` note below.
 Branch: `codex/tj-feet`, worktree `.worktrees/tj-feet`
 Base: `codex/tj-ee5f-quality-model-battle` at `ea35d44`
 Head: see git log; the re-run evidence is protected and outside Git
@@ -53,6 +55,10 @@ reconcile `.codex/handoff.md`, which that stream is editing in parallel.
 | `tj-feet.6` | marked-assumption move taught on the turn | `4fb74b2` |
 | `tj-feet.9` | paraphrase checker measured and declined | `d311b4a` |
 | `tj-feet.10` | contract on every catalog turn, shipped off | `24afdf5` |
+| `tj-feet.12` | a derivation verified through its inputs | see below |
+| `tj-feet.13` | an Arabic surface form is a translation, not a source | see below |
+| `tj-feet.14` | an absence statement is its own claim type | see below |
+| `tj-feet.11` | current-state re-pin is a step, not a surprise | see below |
 
 ## What the audit changed
 
@@ -90,9 +96,9 @@ Decision 5 reverses the specification's ordering, in which `tj-feet.5` blocked
 Run once, at this boundary, on the combined tree:
 
 - `uv run ruff check src/ tests/` — passed
-- `uv run ruff format --check src/ tests/` — 334 files already formatted
+- `uv run ruff format --check src/ tests/` — 335 files already formatted
 - `uv run mypy src/` — no issues in 166 source files
-- `uv run pytest tests/ -q` — **3035 passed, 19 skipped**
+- `uv run pytest tests/ -q` — **3079 passed, 19 skipped**
 - `scripts/orchestration/run_process_verification.sh` — OK
 
 The seven frontend cases fail in a fresh worktree until `npm ci` runs in
@@ -117,7 +123,7 @@ and so were all 18 winner responses. Actual spend **$0.0335** against the $4.00
 reservation; the published estimate was $0.04. Detail in
 `docs/reports/2026-08-05-sealed-rerun-result.md`.
 
-## The three tasks that finished the stage
+## The three tasks that finished the planned ten
 
 **`tj-feet.6` — the marked-assumption move.** A per-turn directive, read off the
 customer request and never off the reply, teaches the assistant to answer a
@@ -150,21 +156,52 @@ rewritten, and the cause is three gaps in the contract — derived facts, Arabic
 surface forms, absence claims — now `tj-feet.12`, `.13` and `.14`. Detail in
 `docs/reports/2026-08-05-claim-contract-every-turn.md`.
 
-## Open, all found by measurement
+## The four follow-ups, closed 2026-08-06 with no provider call
 
-- `tj-feet.13` (P1) — an Arabic surface form is withheld against its English
-  catalog value. The module states that Arabic is verified against the English
-  row and the Arabic wording treated as translation; containment does not
-  implement that. Affects the shipped narrow repair path, not only the widened
-  scope.
-- `tj-feet.12` — `check_claim` has no branch for a derived fact, so a
-  comparison, a total or an arithmetic result can never be supported.
-- `tj-feet.14` — a claim that an attribute is absent is itself withheld, which
-  withholds the very sentence the partial answer exists to produce.
-- `tj-feet.11` — the `tj-ee5f` traceability manifest pins whole-file digests of
-  two files the repository contract declares to be current state.
-- Enabling `tj-feet.10` remains the owner's call and should wait for `.12`,
-  `.13` and `.14`.
+**`tj-feet.12`, `.13`, `.14` — the three gaps that made the widened scope
+unsafe.** A derived fact is now verified through the inputs it names, with the
+arithmetic recomputed, so listing inputs cannot decorate an unsupported figure;
+an operation the runtime cannot restate stays withheld. An Arabic surface form
+carries the English value it translates, and the branch opens only for a
+non-Latin surface so `source_value` cannot become an escape hatch — words are
+translation, a figure is a fact in any script. An absence statement is its own
+claim type checked against the row's status, with no lexical detection of
+absence wording, and denying an attribute the row does state is still withheld.
+The owner decision on capacity survives every new route: a per-product capacity
+may not be an input to a derivation from either side.
+
+A fourth class fell out of the same replay: `field_path=sku, value=CH-A` was
+withheld because the identifier is never flattened into the fields the model is
+shown. The row *is* that SKU.
+
+Replaying the 209 stored claims of `20260805/claimpass-r1` through the fixed
+contract, turns that would be rewritten fall from **30 of 37 to 1 of 37**. The
+before-number is exact; the after-number is an **upper bound**, because the
+stored claims predate the fields the fixes need and it assumes the model fills
+them correctly every time — most of all for derived facts, which were 36 of the
+52 withholdings. Detail in
+`docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
+
+**`tj-feet.11` — the manifest pins that kept breaking.**
+`scripts/orchestration/repin_traceability_sources.py` records that current state
+moved: `--check` reports drift and writes nothing, a plain run re-pins
+`.codex/orchestrator.toml` and `.codex/handoff.md` and reloads the result
+through the real validator. It refuses every other source, which is the property
+under test — a frozen requirement drifting still fails loudly, so this is not a
+way to launder a change. It was exercised for real on this stage's own handoff
+update: three digests, three lines.
+
+Listing it in the `AGENTS.md` Operational State inventory was tried and
+reverted. `AGENTS.md` is pinned as `repo-contract` in the same frozen registry,
+so a one-line addition to an operational list breaks three manifest tests and
+would need a deliberate re-pin of another stream's acceptance provenance. That
+the fix for this trap was caught by the trap is the best evidence yet for the
+design question, which stays with `tj-ee5f`.
+
+## Open
+
+- Enabling `tj-feet.10` remains the owner's call. `.12`, `.13` and `.14` no
+  longer block it; what is missing is a measurement rather than a fix.
 
 ## One live defect fixed on the way
 

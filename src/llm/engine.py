@@ -32,6 +32,7 @@ from src.core.config import settings
 from src.dialogue.catalog_refs import extract_catalog_references
 from src.dialogue.claim_contract import (
     AttributeClaim,
+    ClaimInput,
     ContractResult,
     RetrievedRow,
     apply_contract,
@@ -2773,10 +2774,18 @@ class SalesDeps:
 
 _CLAIM_CONTRACT_CONTRACT = (
     'Return JSON only: {"claims":[{"claim_type":"catalog_fact|derived_fact|'
-    'explicit_assumption|recommendation","sku":"","field_path":"","value":"",'
+    'absence|explicit_assumption|recommendation","sku":"","field_path":"",'
+    '"value":"","source_value":"","operation":"","inputs":[{"sku":"",'
+    '"field_path":"","value":"","customer_stated":false}],'
     '"marker_present":false,"confirming_question":false}],"answer":""}. '
     "List one claim object for every product attribute the answer asserts, "
-    "naming the exact field path it relies on. Technical provenance stays in "
+    "naming the exact field path it relies on. value is the value alone, not "
+    "the sentence around it. Use absence when the answer reports an attribute "
+    "the catalog is silent about. Use derived_fact for a comparison, total or "
+    "calculation: set operation to comparison, sum, difference or product, and "
+    "list every figure it rests on in inputs, marking one the customer supplied "
+    "as customer_stated. When value is not in English, put the English catalog "
+    "value it translates in source_value. Technical provenance stays in "
     "the claims and never appears in answer. answer is the customer-facing "
     "reply and nothing else."
 )
@@ -2802,7 +2811,8 @@ def _claim_contract_directive(
             " These field paths are not stated on the retrieved rows: "
             f"{', '.join(plain_paths)}. Do not assert them. Say the "
             "catalog does not state them and that you will confirm with a "
-            "manager, and still give every detail that is confirmed."
+            "manager, and still give every detail that is confirmed. Record "
+            "each one as a claim of type absence, not as a catalog_fact."
         )
     if assumption_paths:
         # Withholding these as flatly as the paths above is what produced the
@@ -2867,6 +2877,7 @@ def _parse_claim_payload(
         if claim_type not in {
             "catalog_fact",
             "derived_fact",
+            "absence",
             "explicit_assumption",
             "recommendation",
         }:
@@ -2879,9 +2890,36 @@ def _parse_claim_payload(
                 value=str(raw.get("value") or ""),
                 marker_present=bool(raw.get("marker_present")),
                 confirming_question=bool(raw.get("confirming_question")),
+                source_value=str(raw.get("source_value") or ""),
+                operation=str(raw.get("operation") or ""),
+                inputs=_parse_claim_inputs(raw.get("inputs")),
             )
         )
     return tuple(claims), answer.strip()
+
+
+def _parse_claim_inputs(raw_inputs: Any) -> tuple[ClaimInput, ...]:
+    """The figures a derivation names, or nothing.
+
+    A malformed input list must not break the turn any more than a malformed
+    payload does; it leaves the derivation with nothing to verify against, which
+    the contract already withholds.
+    """
+    if not isinstance(raw_inputs, list):
+        return ()
+    parsed: list[ClaimInput] = []
+    for raw in raw_inputs:
+        if not isinstance(raw, Mapping):
+            continue
+        parsed.append(
+            ClaimInput(
+                sku=str(raw.get("sku") or ""),
+                field_path=str(raw.get("field_path") or ""),
+                value=str(raw.get("value") or ""),
+                customer_stated=bool(raw.get("customer_stated")),
+            )
+        )
+    return tuple(parsed)
 
 
 async def _enforce_claim_contract(
