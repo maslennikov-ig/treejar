@@ -22052,6 +22052,22 @@ def test_a_malformed_input_list_never_breaks_the_turn(raw_inputs: object) -> Non
     assert claims[0].inputs == ()
 
 
+def test_the_directive_states_both_shapes_a_derivation_input_may_take() -> None:
+    """Measured on the `claimpass-r2` round of 2026-08-06.
+
+    12 of the 19 remaining withholdings were the customer's own quantity given
+    a plausible field path — `quantity`, `planning.desk_count` — with
+    `customer_stated` left false, so the contract looked for it on the row and
+    did not find it. The contract requires one of two shapes; the directive only
+    mentioned the flag in passing. This is unmeasured: it was written after the
+    round and no round has been run against it.
+    """
+    directive = engine_module._claim_contract_directive("{}")
+
+    assert "customer_stated true" in directive
+    assert "explicit_assumption instead" in directive
+
+
 def test_a_withheld_plain_path_is_recorded_as_an_absence_claim() -> None:
     """tj-feet.14: the retry used to re-emit the sentence that got withheld.
 

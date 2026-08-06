@@ -120,8 +120,7 @@ and all four follow-ups are closed. Detail in
   did not change, the judge's calibration did, so both rounds were re-scored
   together and only that pairing is valid.
 - `.9` not adopted, a recorded negative the criterion allows. `.10` implemented
-  and shipped switched off behind one `system_configs` row
-  `claim_contract_scope`; nothing moves until the owner sets it.
+  and shipped off behind one `system_configs` row `claim_contract_scope`.
 - A live defect found by the `.10` measurement and fixed: literal containment
   withheld a stored price quoted as `AED 800` against `800.00`, on 16 of 37
   turns, and a stock count on 10. Shared with the shipped narrow repair path.
@@ -133,22 +132,25 @@ and all four follow-ups are closed. Detail in
   active SKUs and no Arabic catalog text at all. `tj-2pkk` now has the evidence
   it has been blocked on since 2026-06-16. Sealed rounds of 2026-08-04 and
   2026-08-05 are superseded and not comparable with `noor-claim-rubric/v1`.
-- `.12`, `.13`, `.14` closed 2026-08-06, no provider call. A derivation is
-  verified through its inputs with its arithmetic recomputed; an Arabic surface
-  form carries the English value it translates and may not introduce a number
-  the row lacks; an absence statement is its own claim type checked against the
-  row's status; a claim naming the SKU itself is supported. Replaying the stored
-  209 claims, turns that would be rewritten fall from `30/37` to an upper bound
-  of `1/37` — a bound, not a measurement, since the stored claims predate the
-  fields the fixes need. `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
+- `.12`, `.13`, `.14` closed 2026-08-06. A derivation is verified through its
+  inputs with its arithmetic recomputed; an Arabic surface form carries the
+  English value it translates and may not introduce a number the row lacks; an
+  absence statement is its own claim type checked against the row's status; a
+  claim naming the SKU itself is supported.
+- Confirming round `20260805/claimpass-r2`, `$0.0250`, authorized 2026-08-06:
+  turns that would be rewritten fall from `30/37` to **`12/42`**, contract
+  followed `42/42` at 2500 tokens, latency `8519 ms` median. The offline replay
+  projected `1/37`; that bound was wrong by an order of magnitude and is
+  superseded. All 19 remaining withholdings are derived facts, 12 of them the
+  customer's own quantity left unlabelled `customer_stated`. The directive now
+  states both shapes an input may take; that change is unmeasured. Detail in
+  `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
 - `.11` closed with `scripts/orchestration/repin_traceability_sources.py`. Run
   it after moving current state: `--check` reports drift, a plain run re-pins
-  `.codex/orchestrator.toml` and `.codex/handoff.md` and reloads the result
-  through the real validator. It refuses every other source, so frozen drift
-  still fails loudly.
-- Stage close: Ruff, format over 335 files, Mypy over 166 source files, Pytest
-  `3079 passed, 19 skipped`. Total provider spend `$0.0663` against a `$4.00`
-  reservation; the judge was the orchestrator session and cost nothing.
+  `.codex/orchestrator.toml` and `.codex/handoff.md` and revalidates. It
+  refuses every other source, so frozen drift still fails loudly.
+- Stage close: Ruff, format over 335 files, Mypy over 166 sources, Pytest
+  `3080 passed, 19 skipped`. Provider spend `$0.0913` against `$4.00`.
 
 ## Starter prompt for next orchestrator
 
@@ -177,14 +179,12 @@ test-only business effects, or real-user messaging.
   State inventory. Tried and reverted: `AGENTS.md` is pinned as `repo-contract`
   in the same frozen registry, so a one-line addition breaks three manifest
   tests and needs a deliberate re-pin of another stream's provenance. Owned by
-  `tj-ee5f`, with the design question of whether a frozen manifest may pin
-  mutable state at all.
-- `tj-feet.10`, enabling it: `.12`, `.13` and `.14` no longer block it. What is
-  missing is a measurement, not a fix — one claim pass on the current contract,
-  42 turns and about `$0.02`, would replace the `1/37` upper bound with a real
-  number. The latency it was first weighed on, 7.7 s median and 17 s at p90, is
-  unchanged. Option (b), a structured main output removing the second call, was
-  not built and is still the more attractive of the two.
+  `tj-ee5f`, with the design question behind it.
+- `tj-feet.10` stays off. The owner approved enabling it conditional on the
+  confirming round backing the projection; the round measured `12/42` turns
+  still rewritten against a projected `1/37`, so the condition was not met and
+  the switch was not touched. Option (b), a structured main output removing the
+  second call, was not built and is still the more attractive of the two.
 - `codex/tj-feet` and `codex/tj-ee5f-quality-model-battle` both edit
   `.codex/handoff.md`; the other stream's edits are uncommitted in its own
   worktree and will need reconciling at merge.

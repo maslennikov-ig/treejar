@@ -1,7 +1,9 @@
-# The three contract gaps, closed — and what the replay can and cannot say
+# The three contract gaps, closed, then measured
 
 Tasks `tj-feet.12`, `.13`, `.14`, plus `tj-feet.11`. Written 2026-08-06.
-**No provider call was made for any of this.** Total cost of the day: nothing.
+
+The fixes and the offline replay cost nothing. One confirming provider round was
+then authorized and run: `$0.0250`, and it overturned the replay's projection.
 
 ## Why these existed
 
@@ -85,17 +87,55 @@ absence statements. One residual remains and is arguably correct: a claim that a
 *separate back material* is not specified, on a row whose `Materials` field does
 state `steel frame`.
 
-**The 1 of 37 is an upper bound, not a measurement.** The stored claims predate
-these fixes and carry none of the fields the fixes need. Reaching that number in
-production requires the model to name an operation, list its inputs and supply
-`source_value` correctly — and the derived-fact branch, which is 36 of the 52,
-is the one that asks the most of it. The before-number is exact; the
-after-number assumes the model cooperates every time, which nothing here has
-measured.
+**The 1 of 37 was an upper bound, and it was wrong by an order of magnitude.**
+It assumed the model would fill the new fields correctly every time. The
+confirming round below measured what it actually does.
 
-What would settle it is one more claim pass on the current contract: 42 turns,
-about `$0.02`, the same shape as the run that produced this evidence. It has not
-been run and needs its own authorization.
+## The confirming round, and what it overturned
+
+Round `20260805/claimpass-r2`, run 2026-08-06 on `openai/gpt-5.6-luna` under
+owner authorization. 42 turns, `$0.0250`, `max_tokens` raised from 1200 to 2500.
+
+| | as shipped (r1) | measured after (r2) |
+|---|---|---|
+| turns rewritten | **30 of 37** | **12 of 42** |
+| claims withheld | 52 of 209 | 19 of 265 |
+| contract followed | 37 of 42 | **42 of 42** |
+| latency, median | 7 698 ms | 8 519 ms |
+| latency, p90 | 17 319 ms | 14 612 ms |
+
+**12 of 42, not the 1 of 37 the replay projected.** Reporting the bound as the
+result would have overstated the fix by a factor of ten.
+
+Two things did hold. The five turns that produced nothing usable in r1 were
+token truncation, not incomprehension: at 2500 tokens the contract was followed
+42 out of 42. And the new fields carry the effect — replaying the *same* r2
+claims with the new fields ignored gives 27 of 42 rewritten against 12 of 42
+with them, which isolates the fields from every other difference between rounds.
+
+Every remaining withholding is a derived fact. The causes, by hand:
+
+* **12 — the customer's own quantity, unlabelled.** The model gives it a
+  plausible field path (`quantity`, `planning.desk_count`,
+  `calculation.required_units`) and leaves `customer_stated` false, so the
+  contract looks for it on the row and does not find it. The contract requires
+  an input to be one of two shapes; the directive only mentioned the flag in
+  passing. The directive now states both shapes plainly. **That change is
+  unmeasured** — it was written after the round, and re-running the same 42
+  cases to score a fix written from their failures would be fitting to the test
+  set, not measuring.
+* **5 — a per-desk capacity used as a derivation input.** Correctly refused; the
+  owner decision holds. In production these turns also carry the sizing
+  directive that routes them to a marked assumption, which this offline harness
+  does not send, so this class is partly an artefact of the measurement.
+* **1 — a comparison naming a single input.** A model error the contract caught.
+
+## What this means for enabling the widened scope
+
+It does not confirm it. The condition for turning `claim_contract_scope` on was
+that the measurement back the projection, and it did not: 12 turns in 42 would
+still be rewritten, and the latency it was first weighed on is unchanged at
+8.5 s median. The switch stays off.
 
 ## `tj-feet.11` — the manifest pins that kept breaking
 
@@ -131,9 +171,11 @@ This records that current state moved. It is not a way to launder a change.
 
 ## Not claimed
 
-No provider call, so nothing here is measured on live model output. The
-regressions prove the contract; the replay bounds the effect. Whether the
-widened `tj-feet.10` scope should now be enabled is a separate decision that
-still wants a fresh pass and still belongs to the owner — the added latency it
-was originally weighed on, 7.7 s median and 17 s at p90, is unchanged by any of
-this.
+One model, one day, 42 counter-set turns that are shorter than a real catalog
+turn with five rows. Latency was measured over a residential WSL connection, so
+it is an upper bound on what a server would see, not an SLA. The directive fix
+for the unlabelled-quantity class is written but unmeasured, and is reported as
+such rather than folded into the 12 of 42. Option (b) from the original task
+design — a structured output on the main agent, removing the second call
+entirely — is still unbuilt and, now that the second call has a second set of
+numbers, still the more attractive of the two.

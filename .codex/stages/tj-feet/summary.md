@@ -98,7 +98,7 @@ Run once, at this boundary, on the combined tree:
 - `uv run ruff check src/ tests/` — passed
 - `uv run ruff format --check src/ tests/` — 335 files already formatted
 - `uv run mypy src/` — no issues in 166 source files
-- `uv run pytest tests/ -q` — **3079 passed, 19 skipped**
+- `uv run pytest tests/ -q` — **3080 passed, 19 skipped**
 - `scripts/orchestration/run_process_verification.sh` — OK
 
 The seven frontend cases fail in a fresh worktree until `npm ci` runs in
@@ -174,12 +174,27 @@ A fourth class fell out of the same replay: `field_path=sku, value=CH-A` was
 withheld because the identifier is never flattened into the fields the model is
 shown. The row *is* that SKU.
 
-Replaying the 209 stored claims of `20260805/claimpass-r1` through the fixed
-contract, turns that would be rewritten fall from **30 of 37 to 1 of 37**. The
-before-number is exact; the after-number is an **upper bound**, because the
-stored claims predate the fields the fixes need and it assumes the model fills
-them correctly every time — most of all for derived facts, which were 36 of the
-52 withholdings. Detail in
+Replaying the 209 stored claims of `20260805/claimpass-r1` projected a fall from
+30 of 37 rewritten turns to 1 of 37. **That projection was wrong by an order of
+magnitude**, and the confirming round below is what says so; it is recorded here
+because reporting a bound as a result is the failure this stage exists to
+prevent.
+
+**The confirming round.** `20260805/claimpass-r2`, authorized and run
+2026-08-06, 42 turns on `openai/gpt-5.6-luna`, `$0.0250`, `max_tokens` raised to
+2500. Turns that would be rewritten: **12 of 42**, against 30 of 37 as shipped.
+Contract followed **42 of 42** — the five r1 failures were token truncation, not
+incomprehension. Latency 8519 ms median, 14612 ms p90.
+
+Replaying the *same* r2 claims with the new fields ignored gives 27 of 42, which
+isolates the fields from every other difference between the rounds.
+
+All 19 remaining withholdings are derived facts: 12 the customer's own quantity
+given a plausible field path with `customer_stated` left false, 5 a per-desk
+capacity correctly refused, 1 a comparison naming one input. The directive now
+states both shapes an input may take; **that change is unmeasured**, written
+after the round, and re-scoring the same 42 cases against a fix derived from
+their failures would be fitting to the test set. Detail in
 `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
 
 **`tj-feet.11` — the manifest pins that kept breaking.**
@@ -200,8 +215,10 @@ design question, which stays with `tj-ee5f`.
 
 ## Open
 
-- Enabling `tj-feet.10` remains the owner's call. `.12`, `.13` and `.14` no
-  longer block it; what is missing is a measurement rather than a fix.
+- `tj-feet.10` stays off. The owner approved enabling it **conditional on the
+  confirming round backing the projection**. It did not: 12 turns in 42 would
+  still be rewritten and the latency is unchanged at 8.5 s median, so the
+  condition failed and `claim_contract_scope` was not touched.
 
 ## One live defect fixed on the way
 
@@ -218,9 +235,9 @@ nothing was ever withheld. The widened scope produced the observations.
 
 ## Spend
 
-`$0.0663` for the whole stage: sealed re-run `$0.0335`, counter-set baseline
+`$0.0913` for the whole stage: sealed re-run `$0.0335`, counter-set baseline
 `$0.0039`, counter-set with the directive `$0.0052`, paraphrase checker
-`$0.0081`, claim-pass pricing `$0.0195`. The judge was the orchestrator session
+`$0.0081`, claim-pass pricing `$0.0195`, confirming claim pass `$0.0250`. The judge was the orchestrator session
 throughout and cost nothing.
 
 ## The counter-set, measured
