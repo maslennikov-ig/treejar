@@ -62,6 +62,58 @@ def test_order_quote_route_adapter_is_in_dedicated_module() -> None:
     assert "_order_quote_route_for_turn" not in engine_defs
 
 
+def test_a_question_is_never_read_as_the_customers_name() -> None:
+    """The terse extractor guards against questions and the guard did not hold.
+
+    It strips trailing punctuation before testing for a question mark, so any
+    question ending in one slipped through: "Before we continue, do you provide
+    delivery and assembly in Dubai?" was parsed as a customer named "Before we
+    continue", which then read as a reply to the detail request and let the
+    quote-resume route answer a question with another question.
+    """
+
+    assert (
+        engine_module._extract_terse_quote_customer_details(
+            "Before we continue, do you provide delivery and assembly in Dubai?"
+        )
+        == {}
+    )
+    assert engine_module._extract_terse_quote_customer_details(
+        "Leila Hassan, Horizon QA Test LLC"
+    ) == {"name": "Leila Hassan", "company": "Horizon QA Test LLC"}
+
+
+def test_the_raw_product_note_is_never_rendered_into_a_reply() -> None:
+    """tj-g51h: the saved product note is the customer's own sentence.
+
+    It reached a customer-visible line once, in the saved-context summary's
+    "Products and quantities" slot, and printed back what they had just typed
+    while the three model-written turns before it had parsed it correctly. The
+    two readers that remain are the captured-context block, which escapes it and
+    labels it untrusted before the model parses it, and the CRM deal title,
+    which runs it through the catalog-reference parser first.
+    """
+
+    engine_source = Path(engine_module.__file__ or "").read_text(encoding="utf-8")
+    tree = ast.parse(engine_source)
+    readers = set()
+    for function in ast.walk(tree):
+        if not isinstance(function, ast.AsyncFunctionDef | ast.FunctionDef):
+            continue
+        if any(
+            isinstance(node, ast.Constant) and node.value == "latest_product_note"
+            for node in ast.walk(function)
+        ):
+            readers.add(function.name)
+
+    assert readers == {
+        "_sales_memory_from_metadata",
+        "_extract_sales_memory_updates",
+        "_format_captured_sales_context",
+        "_sales_opportunity_title",
+    }
+
+
 def test_order_quote_create_quotation_calls_are_adapter_owned() -> None:
     route_module = importlib.import_module("src.llm.order_quote_routes")
     source = Path(route_module.__file__ or "").read_text(encoding="utf-8")
@@ -1432,6 +1484,9 @@ async def test_process_message_delivery_assembly_interruption_in_expected_frame_
 
     mock_get_system_config.side_effect = config_side_effect
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Yes, we handle delivery and assembly across Dubai and the UAE."
+    )
 
     response = await process_message(
         conversation_id=conv.id,
@@ -1443,17 +1498,15 @@ async def test_process_message_delivery_assembly_interruption_in_expected_frame_
         messaging_client=messaging,
     )
 
-    assert response.model == "mock_model|service-availability"
-    assert "delivery" in response.text.lower()
-    assert (
-        "assembly" in response.text.lower() or "installation" in response.text.lower()
-    )
+    # A capability question mid-selection is answered, not escalated, and the
+    # sentence is the model's (tj-swgu.4). What the turn must not do is hand off.
+    assert response.model == "mock_model"
     assert "manager" not in response.text.lower()
     assert conv.escalation_status == "none"
-    trace = conv.metadata_["dialogue_kernel"]["traces"][-1]
-    assert trace["legacy_route"] == "mock_model|service-availability"
     mock_notify.assert_not_awaited()
-    mock_run.assert_not_awaited()
+    mock_run.assert_awaited_once()
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.tool_mode == "service_policy"
     messaging.send_media.assert_not_called()
 
 
@@ -4588,6 +4641,10 @@ async def test_process_message_saved_context_summary_does_not_handoff(
     mock_build_history.return_value = _active_product_planning_history(text=text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Here is what I have for Memory Test LLC: 3 x mobile drawer, "
+        "2 x workstation, delivery in 2-3 days with assembly."
+    )
 
     response = await process_message(
         conversation_id=conv.id,
@@ -4599,20 +4656,25 @@ async def test_process_message_saved_context_summary_does_not_handoff(
         messaging_client=messaging,
     )
 
+    # The summary is the model's to write (tj-swgu.4). The engine's job is to
+    # hand it every saved fact and not escalate; the template that used to
+    # render these into slots is what pasted the customer's raw sentence into
+    # the products line (tj-g51h).
     assert conv.escalation_status == "none"
-    assert response.model == "saved-context-summary"
-    assert "Memory Test LLC" in response.text
-    assert "Bay Square Building 3" in response.text
-    assert "3 mobile drawers" in response.text
-    assert "2 workstations" in response.text
-    assert "2-3 days" in response.text
-    assert "Assembly: required" in response.text
-    assert "Quotation: declined" in response.text
-    assert "on hold" not in response.text.casefold()
-    assert "Next step:" in response.text
-    assert "manager" not in response.text.lower()
-    assert mock_run.await_count == 0
+    assert response.model == "mock-model"
     mock_notify.assert_not_awaited()
+    mock_run.assert_awaited_once()
+
+    deps = mock_run.await_args.kwargs["deps"]
+    captured = engine_module._format_captured_sales_context(deps)
+    assert "Memory Test LLC" in captured
+    assert "Bay Square Building 3" in captured
+    assert "mobile drawers" in captured
+    assert "2-3 days" in captured
+    assert "assembly required" in captured
+    assert "quotation consent: declined" in captured
+    assert "on hold" not in response.text.casefold()
+    assert "manager" not in response.text.lower()
     messaging.send_media.assert_not_called()
 
 
@@ -19033,36 +19095,20 @@ async def test_process_message_records_explicit_sales_opportunity_without_quote(
     mock_notify.assert_not_awaited()
 
 
-def test_delivery_availability_interruption_recognizes_catalog_recommendation(
-    mock_deps: tuple[
-        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
-    ],
-) -> None:
-    _db, conv, _embedding, _zoho, _zoho_crm, _redis, _messaging = mock_deps
-    conv.metadata_ = {}
-    text = "Before we continue, do you provide delivery and assembly in Dubai?"
-    decision = engine_module.evaluate_verified_answer_policy(text, [])
-    recent_history = [
-        "user: I need two executive desks for an eight-person team.",
-        (
-            "assistant: LUMA 9719-4 Walnut is available at 1,883 AED per unit, "
-            "with 30 units in stock."
-        ),
-    ]
+def test_delivery_availability_interruption_separates_capability_from_promise() -> None:
+    # This used to test the service-availability route's predicate. The route is
+    # gone (tj-swgu.4); the distinction it drew is now the policy's, and it is
+    # the distinction that matters: "do you do this at all" is answerable,
+    # "guarantee it tomorrow" is not.
+    capability = engine_module.evaluate_verified_answer_policy(
+        "Before we continue, do you provide delivery and assembly in Dubai?", []
+    )
+    promise = engine_module.evaluate_verified_answer_policy(
+        "Can you guarantee delivery tomorrow?", []
+    )
 
-    assert engine_module._is_low_risk_service_availability_interruption(
-        text,
-        decision,
-        conv,
-        recent_history,
-    )
-    urgent_text = "Can you guarantee delivery tomorrow?"
-    assert not engine_module._is_low_risk_service_availability_interruption(
-        urgent_text,
-        engine_module.evaluate_verified_answer_policy(urgent_text, []),
-        conv,
-        recent_history,
-    )
+    assert capability.policy_action == "allow"
+    assert promise.policy_action == "handoff"
 
 
 @pytest.mark.asyncio
@@ -19123,6 +19169,9 @@ async def test_active_quote_does_not_hijack_delivery_interruption(
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
     mock_search_behavior_rules.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "Yes, delivery and assembly are available in Dubai."
+    )
 
     response = await process_message(
         conversation_id=conv.id,
@@ -19134,11 +19183,12 @@ async def test_active_quote_does_not_hijack_delivery_interruption(
         messaging_client=messaging,
     )
 
-    assert response.model == "mock-model|service-availability"
-    assert "delivery" in response.text.casefold()
-    assert "assembly" in response.text.casefold()
+    # The point here is that an active quote frame does not swallow the
+    # interruption: the pending selection survives and the customer gets an
+    # answer rather than a handoff or a repeated request for details.
+    assert response.model == "mock-model"
     assert "pending_quote_selection" in conv.metadata_
-    mock_run.assert_not_awaited()
+    mock_run.assert_awaited_once()
     mock_notify.assert_not_awaited()
 
 

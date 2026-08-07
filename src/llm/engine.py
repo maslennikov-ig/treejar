@@ -5057,116 +5057,6 @@ def _product_preference_frame_directives(match: Mapping[str, Any]) -> tuple[str,
     )
 
 
-_SERVICE_AVAILABILITY_QUESTION_RE = re.compile(
-    r"\b(?:can|could|do|does|is|are|will|would)\b"
-    r"[\w\s,.;:!?'-]{0,120}"
-    r"\b(?:delivery|deliver|delivered|installation|install|assembly|assemble)\b",
-    flags=re.IGNORECASE,
-)
-_SERVICE_AVAILABILITY_ARRANGE_RE = re.compile(
-    r"\b(?:arrange|arranged|provide|provided|available|include|included)\b"
-    r"[\w\s,.;:!?'-]{0,120}"
-    r"\b(?:delivery|deliver|installation|install|assembly|assemble)\b|"
-    r"\b(?:delivery|installation|assembly)\b"
-    r"[\w\s,.;:!?'-]{0,80}"
-    r"\b(?:arrange|arranged|available|included)\b",
-    flags=re.IGNORECASE,
-)
-_SERVICE_AVAILABILITY_HIGH_RISK_RE = re.compile(
-    r"\b(?:today|tomorrow|same\s+day|urgent|guarantee|guaranteed|commit|"
-    r"deadline|exact\s+time|specific\s+time|next\s+(?:monday|tuesday|"
-    r"wednesday|thursday|friday|saturday|sunday)|outside\s+uae|saudi|qatar|"
-    r"oman|kuwait|bahrain)\b",
-    flags=re.IGNORECASE,
-)
-
-
-def _has_active_product_selection_context(
-    conversation: Conversation,
-    recent_history: list[str] | None,
-) -> bool:
-    if _active_pending_quote_selection_from_conversation(conversation) is not None:
-        return True
-    state = DialogueState.from_conversation(conversation)
-    if state.active_flow == "product_selection":
-        return True
-    if any(
-        frame.status == "active" and frame.flow == "product_selection"
-        for frame in state.expected_answer_frames
-    ):
-        return True
-
-    last_assistant = _last_assistant_message(recent_history)
-    normalized_last = _normalize_text(last_assistant)
-    normalized_sku_text = _normalize_sku_homoglyphs(last_assistant)
-    if _SKU_SIGNAL_RE.search(normalized_sku_text) and (
-        _PRICE_SIGNAL_RE.search(last_assistant)
-        or any(
-            term in normalized_last for term in ("stock", "price", "sku", "per unit")
-        )
-    ):
-        return True
-    return bool(
-        normalized_last
-        and (
-            "which" in normalized_last
-            or "prefer" in normalized_last
-            or "option" in normalized_last
-        )
-        and any(
-            product_term in normalized_last
-            for product_term in (
-                "luma",
-                "novo",
-                "workstation",
-                "workspace",
-                "chair",
-                "table",
-                "drawer",
-            )
-        )
-    )
-
-
-def _is_low_risk_service_availability_interruption(
-    text: str,
-    policy_decision: Any,
-    conversation: Conversation,
-    recent_history: list[str] | None,
-) -> bool:
-    if policy_decision.question_class not in {"service_low_risk", "service_high_risk"}:
-        return False
-    if policy_decision.policy_action not in {"allow", "handoff"}:
-        return False
-    if policy_decision.is_order_status:
-        return False
-    topics = set(policy_decision.matched_topics)
-    if not topics or not topics.issubset({"delivery", "installation"}):
-        return False
-    if _SERVICE_AVAILABILITY_HIGH_RISK_RE.search(text):
-        return False
-    if not (
-        _SERVICE_AVAILABILITY_QUESTION_RE.search(text)
-        or _SERVICE_AVAILABILITY_ARRANGE_RE.search(text)
-    ):
-        return False
-    return _has_active_product_selection_context(conversation, recent_history)
-
-
-def _service_availability_interruption_response(language: str) -> str:
-    if is_arabic_customer_language(language):
-        return (
-            "نعم، يمكن ترتيب التوصيل والتركيب داخل دبي/الإمارات. "
-            "يعتمد التوقيت النهائي والشروط على المنتجات والكمية والعنوان، "
-            "وسأتابع معك اختيار المنتجات أولاً."
-        )
-    return (
-        "Yes, delivery and assembly can be arranged in Dubai/UAE. "
-        "Exact timing and conditions depend on the selected items, quantity, "
-        "and address, so I will keep helping you choose the products first."
-    )
-
-
 def _service_confirmation_handoff_text() -> str:
     return (
         "Got it, I will note that you want assembly service included. "
@@ -9105,9 +8995,13 @@ def _looks_like_terse_delivery_address(value: str) -> bool:
 
 
 def _extract_terse_quote_customer_details(text: str) -> dict[str, str]:
-    raw = _strip_synthetic_test_marker(text).strip(" \t\r\n.;:!?")
+    unpunctuated = _strip_synthetic_test_marker(text)
+    raw = unpunctuated.strip(" \t\r\n.;:!?")
     stripped = " ".join(raw.split())
-    if not stripped or len(stripped) > 220 or "?" in stripped:
+    # Test the question mark before the strip above removes it. Checking the
+    # stripped form let every question that ends in one through, and the first
+    # clause came back as the customer's name.
+    if not stripped or len(stripped) > 220 or "?" in unpunctuated:
         return {}
     if re.search(
         r"\b(?:full name|name|customer name|company name|company|email|"
@@ -10206,91 +10100,6 @@ def _detail_capture_acknowledgement(
     if not noted:
         return "Thanks, I've noted that."
     return f"Thanks, I've noted {', '.join(noted)}."
-
-
-def _is_saved_sales_context_summary_request(text: str) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-    if not (
-        "?" in text
-        or normalized.startswith("summarize")
-        or normalized.startswith("recap")
-        or normalized.startswith("please summarize")
-    ):
-        return False
-    summary_terms = (
-        "what details",
-        "details you have",
-        "details have you saved",
-        "what have you saved",
-        "saved about",
-        "summarize the details",
-        "recap the details",
-        "my request",
-        "requirement",
-    )
-    if not any(term in normalized for term in summary_terms):
-        return False
-    context_terms = (
-        "company",
-        "address",
-        "delivery",
-        "products",
-        "items",
-        "quantities",
-        "quantity",
-        "assembly",
-        "request",
-        "requirement",
-    )
-    return any(term in normalized for term in context_terms)
-
-
-def _saved_sales_context_summary(deps: SalesDeps) -> str:
-    details = _quote_context_details_from_deps(deps)
-    memory = _sales_memory_from_metadata(deps.conversation)
-    workflow = quote_workflow_from_metadata(deps.conversation.metadata_)
-    lines: list[str] = []
-
-    if details.get("name"):
-        lines.append(f"Customer: {details['name']}")
-    if details.get("company"):
-        lines.append(f"Company: {details['company']}")
-    if details.get("address"):
-        lines.append(f"Delivery address: {details['address']}")
-    if memory.get("latest_product_note"):
-        lines.append(f"Products and quantities: {memory['latest_product_note']}")
-    if memory.get("delivery_timing"):
-        lines.append(f"Delivery timing: {memory['delivery_timing']}")
-    if memory.get("assembly_required"):
-        lines.append("Assembly: required")
-    if workflow.consent is QuoteConsent.DECLINED:
-        lines.append("Quotation: declined; none will be created unless you request one")
-    elif workflow.consent is QuoteConsent.DEFERRED:
-        lines.append("Quotation: deferred until you confirm")
-
-    if not lines:
-        return (
-            "I do not have saved request details yet. Please share the products, "
-            "quantities, company, and delivery address you want me to keep."
-        )
-    summary = "Here are the details I have saved:\n" + "\n".join(
-        f"- {line}" for line in lines
-    )
-    if memory.get("latest_product_note"):
-        quotation_note = (
-            "no quotation will be created unless you request one."
-            if workflow.consent is QuoteConsent.DECLINED
-            else "the quotation remains deferred until you confirm."
-            if workflow.consent is QuoteConsent.DEFERRED
-            else "then confirm the next commercial step."
-        )
-        return (
-            f"{summary}\nNext step: verify the saved product quantities against "
-            f"current stock and budget; {quotation_note}"
-        )
-    return summary
 
 
 def _is_explicit_individual_customer(details: Mapping[str, str]) -> bool:
@@ -15941,15 +15750,6 @@ async def process_message(
             allow_product_media=False,
         )
 
-    if _has_active_sales_detail_capture_context(
-        conv, deps.recent_history
-    ) and _is_saved_sales_context_summary_request(combined_text):
-        return _build_static_response(
-            _saved_sales_context_summary(deps),
-            "saved-context-summary",
-            allow_product_media=False,
-        )
-
     pending_reference_route = await _pending_reference_route_for_turn(
         db=db,
         conversation=conv,
@@ -16156,21 +15956,6 @@ async def process_message(
                 f"{db_model_main}|sales-fallback",
             )
 
-        if _is_low_risk_service_availability_interruption(
-            combined_text,
-            policy_decision,
-            deps.conversation,
-            deps.recent_history,
-        ):
-            await _clear_verified_policy_repair_state()
-            return _build_static_response(
-                _service_availability_interruption_response(
-                    str(deps.conversation.language)
-                ),
-                f"{db_model_main}|service-availability",
-                allow_product_media=False,
-            )
-
         order_quote_response = None
         if not unconsented_quote_details:
             order_quote_response = await _order_quote_route_for_turn(
@@ -16345,21 +16130,6 @@ async def process_message(
                     str(deps.conversation.language),
                 ),
                 f"{db_model_main}|sales-fallback",
-            )
-
-        if _is_low_risk_service_availability_interruption(
-            combined_text,
-            policy_decision,
-            deps.conversation,
-            deps.recent_history,
-        ):
-            await _clear_verified_policy_repair_state()
-            return _build_static_response(
-                _service_availability_interruption_response(
-                    str(deps.conversation.language)
-                ),
-                f"{db_model_main}|service-availability",
-                allow_product_media=False,
             )
 
         if not policy_decision.is_order_status and policy_action == "handoff":

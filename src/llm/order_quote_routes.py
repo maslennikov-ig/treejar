@@ -246,6 +246,27 @@ def _append_quote_effect_trace(
     conversation.metadata_ = metadata
 
 
+def _turn_answers_with_its_own_question(
+    *,
+    combined_text: str,
+    masked_text: str,
+    customer_details: Mapping[str, str],
+) -> bool:
+    """The assistant asked for quote details and got a question back.
+
+    Repeating the request then ignores the customer, which is what happened
+    once the service-availability route stopped catching these turns: "do you
+    provide delivery and assembly in Dubai?" was answered with another request
+    for a company name and email. The quote frame is durable metadata, so
+    letting the turn go elsewhere costs nothing -- the assistant picks the
+    detail request back up on the next turn.
+    """
+
+    if customer_details:
+        return False
+    return any("?" in text for text in (combined_text, masked_text))
+
+
 async def _order_quote_route_for_turn(
     *,
     phase: Literal["pre_policy", "post_policy"],
@@ -949,6 +970,10 @@ async def _order_quote_route_for_turn(
         if _last_assistant_asked_quote_customer_details(
             deps.recent_history,
             quote_context_active=True,
+        ) and not _turn_answers_with_its_own_question(
+            combined_text=combined_text,
+            masked_text=masked_text,
+            customer_details=current_quote_customer_details,
         ):
             quote_items = _active_quote_items(conversation, pending_quote_selection)
             missing_required = _quote_missing_required_details(
