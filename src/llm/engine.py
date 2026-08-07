@@ -1471,45 +1471,81 @@ def _catalog_number_in_text(text: str, value: int | float) -> bool:
     )
 
 
-def _catalog_decision_output_is_valid(text: str, deps: SalesDeps) -> bool:
+_CATALOG_DECISION_UNUSABLE = "unusable"
+
+
+def _catalog_decision_defects(text: str, deps: SalesDeps) -> tuple[str, ...]:
+    """Name what is wrong with a rendered catalog decision.
+
+    This used to answer only yes or no, and a no threw the reply away for a
+    template. A named defect can be handed back to the model instead, which is
+    what the engine now does: the check was right to fire on S05, but the
+    substitute dropped a whole product family to fix a cross-sell that had one
+    bad number in it.
+
+    ``_CATALOG_DECISION_UNUSABLE`` means there is nothing to repair against —
+    no decision, no text, or a decision that does not validate. Those go
+    straight to the fallback.
+    """
+
     decision = deps.catalog_decision
     if decision is None or not isinstance(text, str) or not text.strip():
-        return False
+        return (_CATALOG_DECISION_UNUSABLE,)
     try:
         validate_catalog_decision(decision)
     except ValueError:
-        return False
+        return (_CATALOG_DECISION_UNUSABLE,)
+
+    defects: list[str] = []
     normalized = text.casefold()
     allowed_skus = {line.sku.strip().casefold() for line in decision.selected_lines}
     if deps.verified_cross_sell is not None and deps.verified_cross_sell.sku:
         allowed_skus.add(deps.verified_cross_sell.sku.strip().casefold())
-    mentioned_skus = {
-        match.group(1).strip().casefold()
-        for match in re.finditer(
-            r"\bsku\s*[:#-]?\s*([a-z0-9][a-z0-9._/-]*)",
-            text,
-            re.IGNORECASE,
+    mentioned_by_fold: dict[str, str] = {}
+    for match in re.finditer(
+        r"\bsku\s*[:#-]?\s*([a-z0-9][a-z0-9._/-]*)",
+        text,
+        re.IGNORECASE,
+    ):
+        written = match.group(1).strip()
+        mentioned_by_fold.setdefault(written.casefold(), written)
+    mentioned_skus = set(mentioned_by_fold)
+    invented = sorted(mentioned_by_fold[fold] for fold in mentioned_skus - allowed_skus)
+    if invented:
+        defects.append(
+            "these SKUs are not in the verified decision and must not appear: "
+            f"{', '.join(invented)}"
         )
-    }
-    if mentioned_skus - allowed_skus:
-        return False
     for line in decision.selected_lines:
         sku = line.sku.strip().casefold()
         index = normalized.find(sku)
         if index < 0:
-            return False
+            defects.append(f"SKU {line.sku} is missing from the reply")
+            continue
         window = normalized[max(0, index - 100) : index + 260]
-        if not all(
-            _catalog_number_in_text(window, value)
-            for value in (line.quantity, line.unit_price, line.total)
-        ):
-            return False
+        wrong = [
+            label
+            for label, value in (
+                ("quantity", line.quantity),
+                ("unit price", line.unit_price),
+                ("line total", line.total),
+            )
+            if not _catalog_number_in_text(window, value)
+        ]
+        if wrong:
+            defects.append(
+                f"SKU {line.sku} must state {', '.join(wrong)} exactly as "
+                f"{line.quantity} x {line.unit_price} = {line.total}"
+            )
     cross_sell = deps.verified_cross_sell
     if cross_sell is not None and (
         cross_sell.name.casefold() not in normalized
         or not _catalog_number_in_text(normalized, cross_sell.price)
     ):
-        return False
+        defects.append(
+            f"the verified cross-sell {cross_sell.name} at {cross_sell.price} "
+            "is missing or priced differently"
+        )
     no_quote_created = re.search(
         r"(?:\bno\s+(?:formal\s+)?(?:quotation|quote).{0,24}\bcreated\b|"
         r"\b(?:quotation|quote).{0,24}\bnot\s+created\b|"
@@ -1517,7 +1553,33 @@ def _catalog_decision_output_is_valid(text: str, deps: SalesDeps) -> bool:
         r"(?:кп|коммерческ\w*\s+предложен\w*).{0,24}\bне\s+создан\w*)",
         normalized,
     )
-    return _has_explicit_quote_hold(text) or no_quote_created is not None
+    if not (_has_explicit_quote_hold(text) or no_quote_created is not None):
+        defects.append("the reply must state that no quotation was created")
+    return tuple(defects)
+
+
+def _catalog_decision_output_is_valid(text: str, deps: SalesDeps) -> bool:
+    return not _catalog_decision_defects(text, deps)
+
+
+def _catalog_decision_repair_directive(defects: tuple[str, ...]) -> str | None:
+    """Hand the defect back instead of replacing the reply.
+
+    The engine already repairs claim-contract failures this way. A rejected
+    catalog decision is the same shape of problem: the facts are settled and
+    only the rendering is wrong, so naming the wrong part costs one run and
+    keeps a person's sentence.
+    """
+
+    if not defects or _CATALOG_DECISION_UNUSABLE in defects:
+        return None
+    numbered = "; ".join(f"({index}) {d}" for index, d in enumerate(defects, start=1))
+    return (
+        "Your previous reply was rejected against catalog_decision. Fix exactly "
+        f"these problems and render the recommendation again: {numbered}. Keep "
+        "the reasoning, the recommendation and the customer's language; change "
+        "nothing else and add no products or facts."
+    )
 
 
 def _catalog_recovery_output_is_valid(text: str, deps: SalesDeps) -> bool:
@@ -3263,6 +3325,18 @@ def _record_recovery_tool_result(
     return result
 
 
+def _catalog_display_name(name: str) -> str:
+    r"""Render a catalog name as a name, not as an escape sequence.
+
+    A supplier packaging note reached a customer as "2 pcs\\1 ctn": the single
+    backslash the catalog holds had been doubled somewhere upstream. Collapsing
+    a run of backslashes back to one is true whichever layer doubled it, and it
+    is the last point before the text is sent (tj-v41l).
+    """
+
+    return re.sub(r"\\{2,}", lambda _match: "\\", name.strip())
+
+
 def _materialize_verified_catalog_recovery(
     deps: SalesDeps,
     tool_traces: tuple[RuntimeToolTrace, ...],
@@ -3322,10 +3396,17 @@ def _materialize_verified_catalog_recovery(
         return None
 
     selected_lines: list[VerifiedCatalogLine] = []
+    uncovered_families: list[str] = []
     for family in required_families:
         family_lines = selected_by_family.get(family, ())
         if not family_lines and family not in coverage_gaps:
             return None
+        if not family_lines:
+            # A family with no verified option used to vanish from the list and
+            # reappear only as a coverage gap, so "Workspace coverage gap: 0 of
+            # 12" landed under twelve chairs and read as a contradiction of the
+            # line above it (tj-v41l). Say the family found nothing.
+            uncovered_families.append(family)
         family_total = 0.0
         family_coverage = 0
         for line in family_lines:
@@ -3400,10 +3481,15 @@ def _materialize_verified_catalog_recovery(
         lines = [heading]
         lines.extend(
             (
-                f"- {line.name} (SKU {line.sku}): {line.quantity} × "
-                f"{line.unit_price:.2f} {currency} = {line.total:.2f} {currency}"
+                f"- {_catalog_display_name(line.name)} (SKU {line.sku}): "
+                f"{line.quantity} × {line.unit_price:.2f} {currency} = "
+                f"{line.total:.2f} {currency}"
             )
             for line in selected_lines
+        )
+        lines.extend(
+            f"- {family}: لا يوجد خيار مؤكد ضمن الميزانية بعد."
+            for family in uncovered_families
         )
         lines.append(f"إجمالي التكوين: {selected_total:.2f} {currency}.")
         if cross_sell is not None:
@@ -3439,7 +3525,10 @@ def _materialize_verified_catalog_recovery(
             )
             for line in selected_lines
         )
-        compact_lines.extend(lines[1 + len(selected_lines) :])
+        compact_lines.extend(
+            f"- {family}: لا يوجد خيار مؤكد." for family in uncovered_families
+        )
+        compact_lines.extend(lines[1 + len(selected_lines) + len(uncovered_families) :])
         compact_text = "\n".join(compact_lines)
         return (
             compact_text
@@ -3455,10 +3544,15 @@ def _materialize_verified_catalog_recovery(
     lines = [heading]
     lines.extend(
         (
-            f"- {line.name} (SKU {line.sku}): {line.quantity} × "
-            f"{currency} {line.unit_price:.2f} = {currency} {line.total:.2f}"
+            f"- {_catalog_display_name(line.name)} (SKU {line.sku}): "
+            f"{line.quantity} × {currency} {line.unit_price:.2f} = "
+            f"{currency} {line.total:.2f}"
         )
         for line in selected_lines
+    )
+    lines.extend(
+        f"- {family.title()}: no verified option within budget yet."
+        for family in uncovered_families
     )
     lines.append(f"Configuration total: {currency} {selected_total:.2f}.")
     if cross_sell is not None:
@@ -3494,7 +3588,10 @@ def _materialize_verified_catalog_recovery(
         )
         for line in selected_lines
     )
-    compact_lines.extend(lines[1 + len(selected_lines) :])
+    compact_lines.extend(
+        f"- {family.title()}: no verified option yet." for family in uncovered_families
+    )
+    compact_lines.extend(lines[1 + len(selected_lines) + len(uncovered_families) :])
     compact_text = "\n".join(compact_lines)
     return (
         compact_text
@@ -16082,31 +16179,58 @@ async def process_message(
                     route_suffix="verified-catalog-functional-failure",
                     allow_product_media=False,
                 )
-            if not _catalog_decision_output_is_valid(
+            decision_provenance: Literal["model", "model_repaired"] = "model"
+            defects = _catalog_decision_defects(
                 unmask_pii(result.output, pii_map), run_deps
-            ):
-                usage = result.usage() or RunUsage()
-                usage_telemetry = get_llm_usage_telemetry(result)
-                await _clear_verified_policy_repair_state()
-                return _build_verified_catalog_recovery_response(
-                    fallback_text,
-                    plan_traces,
-                    run_deps=run_deps,
-                    usage=usage,
-                    cost=(
-                        usage_telemetry.cost
-                        if usage_telemetry is not None
-                        else dynamic_model.provider_cost_snapshot()
-                    ),
-                    route_suffix="verified-catalog-functional-failure",
-                    allow_product_media=False,
-                )
+            )
+            if defects:
+                # One repair pass naming the defect, then the template. The
+                # check is right to fire; replacing the whole reply is what
+                # dropped a product family on S05 (tj-swgu.2).
+                repair_directive = _catalog_decision_repair_directive(defects)
+                repaired = None
+                if repair_directive is not None:
+                    repair_deps = replace(
+                        run_deps,
+                        runtime_directives=(
+                            *run_deps.runtime_directives,
+                            repair_directive,
+                        ),
+                    )
+                    try:
+                        candidate = await _run_agent(repair_deps)
+                    except (UnexpectedModelBehavior, TimeoutError):
+                        candidate = None
+                    if candidate is not None and _catalog_decision_output_is_valid(
+                        unmask_pii(candidate.output, pii_map), repair_deps
+                    ):
+                        repaired = candidate
+                if repaired is None:
+                    usage = result.usage() or RunUsage()
+                    usage_telemetry = get_llm_usage_telemetry(result)
+                    await _clear_verified_policy_repair_state()
+                    return _build_verified_catalog_recovery_response(
+                        fallback_text,
+                        plan_traces,
+                        run_deps=run_deps,
+                        usage=usage,
+                        cost=(
+                            usage_telemetry.cost
+                            if usage_telemetry is not None
+                            else dynamic_model.provider_cost_snapshot()
+                        ),
+                        route_suffix="verified-catalog-functional-failure",
+                        allow_product_media=False,
+                    )
+                result = repaired
+                decision_provenance = "model_repaired"
             await _clear_verified_policy_repair_state()
             response = _build_llm_response(
                 result,
                 f"{db_model_main}|verified-catalog-plan",
                 response_deps=deps,
                 allow_product_media=False,
+                text_provenance=decision_provenance,
             )
             return replace(response, tool_traces=plan_traces)
 

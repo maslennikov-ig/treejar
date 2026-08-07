@@ -6299,9 +6299,20 @@ async def test_process_message_uses_verified_catalog_plan_through_chat_model(
         )
 
     mock_plan.assert_awaited_once()
-    mock_run.assert_awaited_once()
+    if expected_model.endswith("verified-catalog-functional-failure"):
+        # The rejected reply gets one repair pass naming the defect before the
+        # template is reached (tj-swgu.2). Here the repair returns the same
+        # invented SKU, so the template still ships.
+        assert mock_run.await_count == 2
+        repair_deps = mock_run.await_args.kwargs["deps"]
+        assert any(
+            "CHAIR-X" in item and "not in the verified decision" in item
+            for item in repair_deps.runtime_directives
+        )
+    else:
+        mock_run.assert_awaited_once()
     mock_notify.assert_not_awaited()
-    model_deps = mock_run.await_args.kwargs["deps"]
+    model_deps = mock_run.await_args_list[0].kwargs["deps"]
     assert isinstance(model_deps, SalesDeps)
     assert model_deps.tool_mode == "catalog_materialization"
     assert any("catalog_decision" in item for item in model_deps.runtime_directives)
@@ -6315,6 +6326,298 @@ async def test_process_message_uses_verified_catalog_plan_through_chat_model(
     ]
     assert "SKU CHAIR-A" in response.text
     assert "No quotation was created." in response.text
+
+
+def test_the_recovery_template_never_prints_a_family_it_dropped(
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """tj-v41l: a coverage gap must not contradict the lines above it.
+
+    On S05 the workspace family had no verified option, so it vanished from the
+    configuration and reappeared only as "Workspace coverage gap: 0 of 12; 12
+    uncovered" -- printed directly under twelve chairs, which reads as a denial
+    of the line above. The family now says what happened to it. The escaped
+    packaging note in the chair's name is the same turn's second defect.
+    """
+
+    db, conv, engine, zoho, zoho_crm, redis, messaging = mock_deps
+    chair = engine_module.VerifiedCatalogLine(
+        family="seating",
+        name="Visitor Chair CH 615 V NEW black (2 pcs\\\\1 ctn)",
+        sku="CH-615-V",
+        quantity=12,
+        unit_price=253.0,
+        total=3036.0,
+        currency="AED",
+        stock=40,
+        capacity=1,
+    )
+    trace_names = ("search_products", "search_products", "recommend_products")
+    deps = engine_module.SalesDeps(
+        db=db,
+        redis=redis,
+        conversation=conv,
+        embedding_engine=engine,
+        zoho_inventory=zoho,
+        zoho_crm=zoho_crm,
+        messaging_client=messaging,
+        pii_map={},
+        user_query="Find a cheaper setup and one cross-sell under the cap.",
+        catalog_planning=engine_module.CatalogPlanningContext(
+            requested_seats=12,
+            families=("seating", "workspace"),
+            complete_coverage=True,
+            budget_cap=7000.0,
+            family_totals={"seating": 3036.0, "workspace": 0.0},
+        ),
+        current_catalog_selections={"seating": (chair,), "workspace": ()},
+        verified_cross_sell=engine_module.VerifiedCrossSell(
+            name="Mobile Pedestal",
+            sku="STORAGE-A",
+            price=250.0,
+            currency="AED",
+            stock=8,
+        ),
+        catalog_decision=engine_module.CatalogDecision(
+            requirements=("seating", "workspace"),
+            selected_lines=(chair,),
+            requested_seats=12,
+            budget_cap=7000.0,
+            stock_snapshots=(
+                engine_module.StockSnapshot(
+                    sku="CH-615-V",
+                    available=40,
+                    source="zoho",
+                    as_of=datetime.datetime.now(datetime.UTC),
+                ),
+            ),
+            recommendation="verified_partial_configuration",
+            coverage_gaps=(
+                engine_module.CatalogCoverageGap(
+                    family="workspace",
+                    requested=12,
+                    covered=0,
+                    resolution="source_additional_units",
+                    closing_question="Should I source 12 workspace units?",
+                ),
+            ),
+        ),
+        executed_tool_names=list(trace_names),
+        recovery_tool_traces=[
+            engine_module.build_runtime_tool_trace(
+                tool_name=tool_name,
+                arguments={"sequence": sequence},
+                outcome="returned",
+            )
+            for sequence, tool_name in enumerate(trace_names, start=1)
+        ],
+    )
+
+    response = engine_module._materialize_verified_catalog_recovery(
+        deps,
+        tuple(deps.recovery_tool_traces),
+        explicit_quote_hold=True,
+    )
+
+    assert response is not None
+    # The dropped family is named before its gap line, so the gap reads as a
+    # continuation rather than a contradiction.
+    workspace_line = "- Workspace: no verified option within budget yet."
+    assert workspace_line in response
+    assert response.index(workspace_line) < response.index("coverage gap")
+    # And the packaging note reads as a name.
+    assert "2 pcs\\1 ctn" in response
+    assert "2 pcs\\\\1 ctn" not in response
+
+
+def test_a_rejected_catalog_decision_names_what_is_wrong_with_it() -> None:
+    """tj-swgu.2: the check answered yes or no, so the remedy had to be total.
+
+    Naming the defect is what makes a repair possible. The S05 shape is here:
+    the decision is right, the rendering drops one of its two lines.
+    """
+
+    line_a = engine_module.VerifiedCatalogLine(
+        family="seating",
+        name="Task Chair",
+        sku="CHAIR-A",
+        quantity=12,
+        unit_price=200.0,
+        total=2400.0,
+        currency="AED",
+        stock=20,
+        capacity=1,
+    )
+    line_b = engine_module.VerifiedCatalogLine(
+        family="workspace",
+        name="Two-person Workstation",
+        sku="DESK-A",
+        quantity=6,
+        unit_price=600.0,
+        total=3600.0,
+        currency="AED",
+        stock=10,
+        capacity=2,
+    )
+    snapshots = tuple(
+        engine_module.StockSnapshot(
+            sku=line.sku,
+            available=line.stock,
+            source="zoho",
+            as_of=datetime.datetime.now(datetime.UTC),
+        )
+        for line in (line_a, line_b)
+    )
+    deps = SimpleNamespace(
+        catalog_decision=engine_module.CatalogDecision(
+            requirements=("seating", "workspace"),
+            selected_lines=(line_a, line_b),
+            requested_seats=12,
+            budget_cap=7000.0,
+            stock_snapshots=snapshots,
+            recommendation="verified_complete_configuration",
+        ),
+        verified_cross_sell=None,
+    )
+
+    defects = engine_module._catalog_decision_defects(
+        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. "
+        "No quotation was created.",
+        deps,
+    )
+
+    assert any("DESK-A" in defect and "missing" in defect for defect in defects)
+    directive = engine_module._catalog_decision_repair_directive(defects)
+    assert directive is not None
+    assert "DESK-A" in directive
+    assert engine_module._catalog_decision_repair_directive(("unusable",)) is None
+
+
+@pytest.mark.asyncio
+@patch(
+    "src.integrations.notifications.escalation.notify_manager_escalation",
+    new_callable=AsyncMock,
+)
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_a_repaired_catalog_decision_ships_instead_of_the_template(
+    mock_run: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_notify: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """tj-swgu.2: a defect the model can fix does not cost the customer a template."""
+
+    db, conv, embedding, zoho, _zoho_crm, redis, messaging = mock_deps
+    conv.customer_name = "Samir"
+    text = (
+        "That configuration is still too expensive. Give me a cheaper option "
+        "and one relevant cross-sell while keeping the total under AED 7,000. "
+        "Do not prepare a quotation."
+    )
+    mock_build_history.return_value = [
+        ModelRequest(parts=[UserPromptPart(content="We need chairs for twelve.")]),
+        ModelResponse(parts=[TextPart(content="Here are catalog options.")]),
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+    ]
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    selected_line = engine_module.VerifiedCatalogLine(
+        family="seating",
+        name="Task Chair",
+        sku="CHAIR-A",
+        quantity=12,
+        unit_price=200.0,
+        total=2400.0,
+        currency="AED",
+        stock=20,
+        capacity=1,
+    )
+    stock_snapshot = engine_module.StockSnapshot(
+        sku="CHAIR-A",
+        available=20,
+        source="zoho",
+        as_of=datetime.datetime.now(datetime.UTC),
+    )
+    trace = engine_module.build_runtime_tool_trace(
+        tool_name="plan_catalog_configuration",
+        arguments={"requested_seats": 12, "budget_cap": 7000.0},
+        outcome={"status": "verified"},
+    )
+
+    async def prepare_plan(
+        run_deps: SalesDeps,
+    ) -> tuple[str, tuple[engine_module.RuntimeToolTrace, ...]]:
+        run_deps.catalog_planning = engine_module.CatalogPlanningContext(
+            requested_seats=12,
+            families=("seating",),
+            complete_coverage=True,
+            budget_cap=7000.0,
+        )
+        run_deps.current_catalog_selections = {"seating": (selected_line,)}
+        run_deps.verified_catalog_selections = {"seating": (selected_line,)}
+        run_deps.required_cross_sell_disclosure = (
+            "No verified cross-sell fits the remaining budget."
+        )
+        run_deps.stock_snapshots = {"chair-a": stock_snapshot}
+        run_deps.catalog_decision = engine_module.CatalogDecision(
+            requirements=("seating",),
+            selected_lines=(selected_line,),
+            requested_seats=12,
+            budget_cap=7000.0,
+            stock_snapshots=(stock_snapshot,),
+            recommendation="verified_complete_configuration",
+        )
+        run_deps.executed_tool_names = [trace.tool_name]
+        run_deps.recovery_tool_traces = [trace]
+        return ("Verified budget-fit configuration for 12 seats.", (trace,))
+
+    mock_run.side_effect = [
+        # The first attempt states the right line and forgets the quote hold.
+        _FakeAgentResult(
+            "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00.",
+        ),
+        _FakeAgentResult(
+            "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. "
+            "No quotation was created.",
+        ),
+    ]
+
+    with patch.object(
+        engine_module,
+        "_try_verified_catalog_plan",
+        new_callable=AsyncMock,
+        side_effect=prepare_plan,
+    ):
+        response = await process_message(
+            conversation_id=conv.id,
+            combined_text=text,
+            db=db,
+            redis=redis,
+            embedding_engine=embedding,
+            zoho_client=zoho,
+            messaging_client=messaging,
+        )
+
+    assert mock_run.await_count == 2
+    repair_deps = mock_run.await_args.kwargs["deps"]
+    assert any(
+        "no quotation was created" in item.casefold()
+        for item in repair_deps.runtime_directives
+    )
+    assert response.model == "mock-model|verified-catalog-plan"
+    assert response.text_provenance == "model_repaired"
+    assert "SKU CHAIR-A" in response.text
+    mock_notify.assert_not_awaited()
 
 
 @pytest.mark.asyncio
