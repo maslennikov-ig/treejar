@@ -1,19 +1,38 @@
 # Orchestrator Handoff
 
-Updated: 2026-08-06
-Current branch: `codex/tj-feet`
-Current stage id: `tj-feet`
-Status: stage `tj-feet` complete; all ten planned children and all four measured
-follow-ups are closed, and the stage stops before production acceptance on the
-newly switched model
+Updated: 2026-08-07
+Current branch: `main`
+Current stage id: `tj-swgu`
+Status: epic `tj-swgu` implemented and locally green; only the release-bound
+production re-run remains, and it needs authority that is not granted
 
 ## Current truth
 
-- Canonical runtime is `https://noor.starec.ai`; exact last tested release is
-  `a2f245cde301457ef19abda221732368986d7f9d`.
-- The last S01-S10 production run remains failed evidence: mean **18.4/30**,
-  below the required 24.0, with functional failures in S01, S03, S04, S05,
-  S08, and S10. No new production proof exists.
+- **Epic `tj-swgu` is code-complete and unpushed.** Six children and three
+  linked bugs closed on 2026-08-07: `tj-rily`, `tj-swgu.1` through `.6`,
+  `tj-g51h`, `tj-v41l`. Only `tj-swgu.7`, the re-run, is open.
+- The last S01-S10 production run is **18.0/30 comparable** against a 24.0
+  threshold on `c977b07`, two functional failures. It stays the standing
+  evidence until an authorized re-run replaces it. Report:
+  `docs/reports/2026-08-07-production-acceptance-c977b07.md`.
+- What changed since that run, all on `main` and none of it deployed:
+  escalation narrowed to what needs authority the assistant lacks; the
+  service-availability, saved-context-summary and stock-price-options routes
+  retired; a rejected catalog decision repaired rather than replaced; the four
+  action-bearing routes now model-written over their own verified facts; a
+  per-turn consultative directive on comparison turns; a route registry and a
+  provenance reader.
+- Three defects surfaced only once the templates covering them were removed,
+  all fixed: the terse extractor read a question as the customer's name, the
+  quote-resume route answered a question by repeating its own, and retiring one
+  route hands the turn to the next route rather than to the model.
+- Frozen `AC-01..AC-30` and its digest are unchanged. The product system prompt
+  did not grow. No side effect moved, and no public contract or schema changed.
+
+- Canonical runtime is `https://noor.starec.ai`; the last release tested end to
+  end is `c977b0791c7d37ae61f3dc65de0fc6268f187088`. The 2026-08-03 run at
+  18.4/30 on `a2f245c` is superseded by the 18.0 above, which is the standing
+  evidence.
 - Frozen scope remains `AC-01..AC-30`, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The local remediation for reviewed findings `R-01` through `R-16`, `R-19`,
@@ -50,6 +69,10 @@ newly switched model
 
 ## Local verification
 
+- `tj-swgu` at close, 2026-08-07: Ruff and format over 409 files, Mypy over 167
+  sources, Pytest `3235 passed, 19 skipped`, and
+  `scripts/orchestration/run_process_verification.sh` OK. Every child ran the
+  full suite before its own commit.
 - `tj-ee5f` children at their own close: `.7` 823 passed, `.8` 803, `.12` 99,
   `.14` 113, targeted Ruff/format/Mypy each; independent correction re-review
   APPROVE. That round's combined tree was `2776 passed, 19 skipped, 3 failed`,
@@ -69,6 +92,8 @@ newly switched model
 
 Accepted design and executable plan:
 
+- `docs/superpowers/specs/2026-08-07-model-written-prose-over-verified-facts-design.md`
+- `docs/superpowers/plans/2026-08-07-model-written-prose-over-verified-facts.md`
 - `docs/superpowers/specs/2026-08-03-noor-e2e-remediation-and-model-comparison-spec.md`
 - `docs/superpowers/plans/2026-08-03-noor-e2e-remediation-and-model-comparison.md`
 
@@ -88,69 +113,35 @@ Next stage id: `tj-ee5f`
 The paid comparison has since run under `tj-feet.8` and the main model was
 switched, so the battle this section used to point at is done.
 
-Recommended action: keep `tj-ee5f` open for `tj-ee5f.1`, winner-only
-release-bound S01-S10 production acceptance on `openai/gpt-5.6-luna`, and
-request that authority separately. Do not fold the bounded product-runtime
-`R-17` defer into it.
+Recommended action: `tj-swgu.7`. It needs three separate authorities, in
+order: push `main` to origin, deploy and read the runtime identity back, then
+run S01-S10 live against the isolated test recipient with real Zoho and Wazzup
+effects and clean up afterwards. `tj-ee5f.1` is the same production pass seen
+from the older stage and closes with it. Do not fold the bounded product-runtime
+`R-17` defer into either.
 
 ## Stage tj-feet
 
-Grounding, tool obedience and evaluation repair. Branch `codex/tj-feet`, based
-on `codex/tj-ee5f-quality-model-battle` at `ea35d44`. All ten planned children
-and all four follow-ups are closed. Detail in
-`.codex/stages/tj-feet/summary.md` and the reports it names.
+Closed 2026-08-06. Grounding, tool obedience and evaluation repair; all ten
+children and four follow-ups closed. Full detail in
+`.codex/stages/tj-feet/summary.md` and the reports it names. What is still
+live policy rather than history:
 
-- Customer-visible: no quotation tool after an explicit decline until a new
-  explicit request; an unknown attribute produces a useful partial answer, never
-  a refusal; seating capacity only as a marked assumption with a confirming
-  question, which a stated headcount now gets. An asserted attribute is checked
-  against the retrieved row but blocked only when refuted — see the reversal.
-- `.6` paired re-score: false refusals `0.200` to `0.000`, task completion
-  `0.767` to `1.000`, persuasion `2.548` to `3.071`, next step `3.429` to
-  `3.667`, unsupported facts `0.000` and control compliance `1.000` in both.
-  The published `tj-feet.5` persuasion figure is not comparable: responses did
-  not change, the judge's calibration did, so only the re-scored pairing holds.
-- `.9` not adopted, a recorded negative. `.10` implemented and shipped off
-  behind one `system_configs` row `claim_contract_scope`. A live defect it found
-  and fixed: containment withheld a stored price quoted `AED 800` against
-  `800.00`, 16 of 37 turns, on the path already shipped.
-- Runtime main model switched to `openai/gpt-5.6-luna` under explicit owner
-  authority; one row in production `system_configs`, no deploy or restart, read
-  back through the deployed runtime. `tj-ee5f.15` closed. Production S01-S10
-  acceptance on the new model has NOT been run and stays with `tj-ee5f.1`.
-- The 2026-08-05 catalog audit found no seating-capacity field on any of 344
-  active SKUs and no Arabic catalog text at all; `tj-2pkk` now has the evidence
-  it has been blocked on since 2026-06-16. Sealed rounds of 2026-08-04/05 are
-  superseded and not comparable with `noor-claim-rubric/v1`.
-- `.12`, `.13`, `.14` closed 2026-08-06. A derivation is verified through its
-  inputs with its arithmetic recomputed; an Arabic surface form carries the
-  English value it translates; an absence statement is its own claim type
-  checked against the row's status; a claim naming the SKU is supported.
 - **Owner decision 2026-08-06: a spoiled reply is worse than a model error.**
-  The contract now blocks only what a row *refutes*; what it cannot confirm
-  ships and lands in `ContractResult.unverified`, logged every turn. This
-  reverses the original `tj-feet.3` criterion, so an invented attribute the
-  catalog is silent about reaches the customer. Turns rewritten: `30/37` as
-  shipped, `12/42` after the gap fixes, **`4/42`** now, all four the capacity
-  rule. Confirming round `claimpass-r2`, `$0.0250`, showed the offline replay's
-  `1/37` wrong by an order of magnitude. See
+  The claim contract blocks only what a retrieved row *refutes*; what it cannot
+  confirm ships and lands in `ContractResult.unverified`, logged every turn.
+  This reverses the original `tj-feet.3` criterion, so an invented attribute the
+  catalog is silent about reaches the customer. Turns rewritten fell to `4/42`,
+  all four the capacity rule.
   `docs/reports/2026-08-06-claim-contract-gaps-closed.md`.
-- `.11` closed with `scripts/orchestration/repin_traceability_sources.py`. Run
-  it after moving current state: `--check` reports drift, a plain run re-pins
-  `.codex/orchestrator.toml` and `.codex/handoff.md` and revalidates, and it
-  refuses every other source so frozen drift still fails loudly.
-- Escalation audit 2026-08-06, verified read-only against production. Manager
-  alerts **do** reach Telegram: all 15 escalations of the last 30 days were on
-  the allowed inbound line. `tj-rkh3`, `tj-oq9x` closed as wrong findings of
-  mine; `tj-itbu`, `tj-fwkh`, `tj-zyxz` closed by fixes. An undelivered alert
-  now logs `MANAGER NOT NOTIFIED` with a reason; the allowlist takes a list and
-  escalation gating fails open, while routine quality alerts stay strict.
-- Operational, not code: 10 of 15 escalations sit `pending`, oldest 2026-07-08,
-  none assigned, `manager_reviews` has one row all time. Managers reply in
-  WhatsApp, invisible to the bot's database, so whether those customers were
-  answered cannot be known from here.
-- Stage close: Ruff, format over 336 files, Mypy over 166 sources, Pytest
-  `3092 passed, 19 skipped`. Provider spend `$0.0913` against `$4.00`.
+- Seating capacity is answerable only as a marked assumption carrying a
+  confirming question; the catalog has no capacity field on any of 344 active
+  SKUs and no Arabic text at all.
+- The main model was switched to `openai/gpt-5.6-luna` on 2026-08-05 under
+  explicit owner authority, as one `system_configs` row.
+- `tj-feet.10` stays off; see the defer below.
+- Run `scripts/orchestration/repin_traceability_sources.py` after moving
+  current state.
 
 ## Starter prompt for next orchestrator
 
