@@ -3517,6 +3517,7 @@ async def _verified_prose_response(
     build_static_response: Callable[..., LLMResponse],
     build_llm_response: Callable[..., LLMResponse] | None = None,
     run_agent: Callable[[SalesDeps], Awaitable[Any]] | None = None,
+    run_prose_agent: Callable[[str, SalesDeps], Awaitable[Any]] | None = None,
 ) -> LLMResponse:
     """Let the model write the sentence over facts a route already verified.
 
@@ -3527,7 +3528,7 @@ async def _verified_prose_response(
     attributable; what changes is text_provenance.
     """
 
-    if run_agent is None or build_llm_response is None:
+    if run_prose_agent is None or build_llm_response is None:
         logger.info(
             "Verified-prose rewrite skipped for %s: no model runner on this path",
             model_name,
@@ -3537,19 +3538,15 @@ async def _verified_prose_response(
         )
     masked_text, values = _verified_prose_mask(verified_text)
 
-    def _prose_deps(retry: bool) -> SalesDeps:
-        return replace(
-            deps,
-            tool_mode="catalog_materialization",
-            runtime_directives=(
-                *deps.runtime_directives,
-                _verified_prose_directive(masked_text, len(values), retry),
-            ),
+    prose_deps = replace(deps, tool_mode="catalog_materialization")
+
+    async def _attempt(retry: bool) -> Any:
+        return await run_prose_agent(
+            _verified_prose_directive(masked_text, len(values), retry), prose_deps
         )
 
-    prose_deps = _prose_deps(False)
     try:
-        result = await run_agent(prose_deps)
+        result = await _attempt(False)
     except Exception:
         # Deliberately broad. By this point the quotation exists, the CRM row is
         # written or the selection is persisted, and the route's own reply is
@@ -3575,7 +3572,7 @@ async def _verified_prose_response(
         # One reprompt naming the failure, which is what the parse-error loop in
         # ASPIRO does and what the model needs when it has ignored the tokens.
         try:
-            result = await run_agent(_prose_deps(True))
+            result = await _attempt(True)
         except Exception:
             logger.warning(
                 "Verified-prose retry failed for %s; sending route text", model_name
@@ -12826,6 +12823,30 @@ sales_agent = Agent(
 )
 
 
+# The prose rewrite is a text transformation, not a sales turn, and it gets its
+# own agent because the product agent's prompt drowns it out. Measured on
+# 2026-08-07: given only the rewrite directive this model carries every
+# placeholder through untouched, and given the same directive underneath the
+# product system prompt it ignores them entirely and writes the figures out --
+# which is then discarded, so the customer gets the template. No tools, no
+# catalog, no persona: nothing here can reach a side effect.
+async def _no_tools(
+    ctx: RunContext[SalesDeps], tool_defs: list[ToolDefinition]
+) -> list[ToolDefinition]:
+    return []
+
+
+prose_agent = Agent(
+    model=model,
+    deps_type=SalesDeps,
+    prepare_tools=_no_tools,
+    retries=0,
+    model_settings=model_settings_for_path(
+        PATH_CORE_CHAT, model_name=CORE_CHAT_MODEL_NAME
+    ),
+)
+
+
 @sales_agent.system_prompt
 async def inject_system_prompt(ctx: RunContext[SalesDeps]) -> str:
     """Dynamically inject the system prompt based on current stage and language."""
@@ -15235,6 +15256,21 @@ async def process_message(
             )
         return model_runtime
 
+    async def _run_prose_agent(directive: str, run_deps: SalesDeps) -> Any:
+        """Run the rewrite on its own, away from the product system prompt."""
+
+        runtime_model_name, runtime_model = await _ensure_model_runtime()
+        return await run_agent_with_safety(
+            prose_agent,
+            PATH_CORE_CHAT,
+            user_prompt=directive,
+            deps=run_deps,
+            message_history=[],
+            model=runtime_model,
+            model_name=runtime_model_name,
+            usage=RunUsage(),
+        )
+
     async def _run_agent(run_deps: SalesDeps) -> Any:
         nonlocal failed_run_usage
         runtime_model_name, runtime_model = await _ensure_model_runtime()
@@ -16046,7 +16082,7 @@ async def process_message(
             customer_text=combined_text,
             build_static_response=_build_static_response,
             build_llm_response=_build_llm_response,
-            run_agent=_run_agent,
+            run_prose_agent=_run_prose_agent,
         )
 
     if (
@@ -16109,6 +16145,7 @@ async def process_message(
             # nothing.
             run_agent=_run_agent,
             build_llm_response=_build_llm_response,
+            run_prose_agent=_run_prose_agent,
         )
     if order_quote_response is not None:
         return order_quote_response
@@ -16275,6 +16312,7 @@ async def process_message(
                 dynamic_model=dynamic_model,
                 run_agent=_run_agent,
                 build_llm_response=_build_llm_response,
+                run_prose_agent=_run_prose_agent,
                 has_escalation=_has_escalation,
                 quote_brief_confirmation_details=quote_brief_confirmation_details,
                 offer_quote=offer_quote_for_turn,
