@@ -3389,33 +3389,56 @@ def _verified_prose_skus(text: str) -> set[str]:
     }
 
 
+def _verified_prose_rejection(
+    *,
+    candidate: str,
+    verified_text: str,
+    customer_text: str,
+) -> str | None:
+    """Why the rewrite was not accepted, or None if it was.
+
+    The route has already computed and written the facts. The model is only
+    being asked for the sentence around them, so every number and SKU the route
+    produced must survive, and no new one may appear. A number the customer
+    themselves used is not new -- "for our team of eight" is theirs to restate.
+
+    The reason names the offending values, never the prose. Without it a
+    rejection is invisible: the customer still gets a correct reply, so the
+    only symptom is that the sentence never improves.
+    """
+
+    if not candidate.strip():
+        return "empty"
+    required = _verified_prose_numbers(verified_text)
+    produced = _verified_prose_numbers(candidate)
+    if dropped := required - produced:
+        return f"dropped numbers {sorted(map(str, dropped))}"
+    if invented := produced - required - _verified_prose_numbers(customer_text):
+        return f"invented numbers {sorted(map(str, invented))}"
+    if lost_skus := _verified_prose_skus(verified_text) - _verified_prose_skus(
+        candidate
+    ):
+        return f"dropped SKUs {sorted(lost_skus)}"
+    if lost_ids := _verified_prose_identifiers(
+        verified_text
+    ) - _verified_prose_identifiers(candidate):
+        return f"dropped identifiers {sorted(lost_ids)}"
+    return None
+
+
 def _verified_prose_holds(
     *,
     candidate: str,
     verified_text: str,
     customer_text: str,
 ) -> bool:
-    """Did the rewrite keep every verified fact and invent none?
-
-    The route has already computed and written the facts. The model is only
-    being asked for the sentence around them, so every number and SKU the route
-    produced must survive, and no new one may appear. A number the customer
-    themselves used is not new -- "for our team of eight" is theirs to restate.
-    """
-
-    if not candidate.strip():
-        return False
-    required = _verified_prose_numbers(verified_text)
-    produced = _verified_prose_numbers(candidate)
-    if required - produced:
-        return False
-    if produced - required - _verified_prose_numbers(customer_text):
-        return False
-    if _verified_prose_skus(verified_text) - _verified_prose_skus(candidate):
-        return False
-    return not (
-        _verified_prose_identifiers(verified_text)
-        - _verified_prose_identifiers(candidate)
+    return (
+        _verified_prose_rejection(
+            candidate=candidate,
+            verified_text=verified_text,
+            customer_text=customer_text,
+        )
+        is None
     )
 
 
@@ -3479,14 +3502,16 @@ async def _verified_prose_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False
         )
     candidate = str(getattr(result, "output", "") or "")
-    if not _verified_prose_holds(
+    rejection = _verified_prose_rejection(
         candidate=candidate,
         verified_text=verified_text,
         customer_text=customer_text,
-    ):
+    )
+    if rejection is not None:
         logger.warning(
-            "Verified-prose rewrite changed a verified fact for %s; sending route text",
+            "Verified-prose rewrite rejected for %s (%s); sending route text",
             model_name,
+            rejection,
         )
         return build_static_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False

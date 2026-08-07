@@ -341,6 +341,34 @@ def test_a_rewrite_that_moves_a_verified_fact_is_rejected(
     ), reason
 
 
+def test_a_rejection_names_the_values_and_never_the_prose() -> None:
+    """A rejection is otherwise invisible: the reply is still correct.
+
+    The only symptom of a guard that is too strict is that the sentence never
+    improves, so the reason has to reach the log — as values, not as text.
+    """
+
+    verified = (
+        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
+    )
+    candidate = (
+        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00, delivered in "
+        "5 working days. Nothing quoted."
+    )
+
+    reason = engine_module._verified_prose_rejection(
+        candidate=candidate,
+        verified_text=verified,
+        customer_text="We need twelve chairs.",
+    )
+
+    assert reason is not None
+    assert "invented numbers" in reason
+    assert "5" in reason
+    assert "delivered" not in reason
+    assert "Task Chair" not in reason
+
+
 def test_a_number_the_customer_used_is_not_an_invented_one() -> None:
     verified = (
         "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
