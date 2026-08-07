@@ -285,6 +285,26 @@ class _FakeAgentResult:
         return self._usage
 
 
+def test_the_directive_lists_the_figures_it_will_be_checked_against() -> None:
+    """Naming them beats asking for care.
+
+    The live model kept dropping a unit price and a line total from an itemised
+    block however firmly the prose asked it not to. The rstrip in the first
+    version of this turned 20 into 2, which would have asked for a quantity
+    that does not exist.
+    """
+
+    directive = engine_module._verified_prose_directive(
+        "1. Chair CH 616 NEW black\n"
+        "   Quantity: 20\n"
+        "   Unit price: 295.00 AED\n"
+        "   Line total: 5,900.00 AED"
+    )
+
+    figures = directive.split("must appear in your reply: ")[1].split(".")[0]
+    assert set(figures.split(", ")) == {"20", "295", "616", "5900"}
+
+
 def test_a_rewrite_that_keeps_every_verified_fact_is_accepted() -> None:
     verified = (
         "Great, I can confirm the selected items from our catalog:\n"

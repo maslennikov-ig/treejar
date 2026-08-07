@@ -3476,7 +3476,30 @@ def _verified_prose_holds(
     )
 
 
+def _verified_prose_figure(value: Decimal) -> str:
+    """Render a figure for the checklist without mangling it.
+
+    An earlier version stripped trailing zeros with ``rstrip("0")``, which
+    turns 20 into 2 and would have told the model to state a quantity that
+    does not exist.
+    """
+
+    text = f"{value:f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def _verified_prose_directive(verified_text: str) -> str:
+    # Naming the figures beats asking for care. The live model kept dropping a
+    # unit price and a line total from an itemised block however firmly the
+    # prose asked it not to; listing them is checkable by the model before it
+    # answers, and by the guard afterwards.
+    required = sorted(_verified_prose_numbers(verified_text))
+    checklist = ""
+    if required:
+        rendered = ", ".join(_verified_prose_figure(value) for value in required)
+        checklist = (
+            f" Every one of these figures must appear in your reply: {rendered}."
+        )
     return (
         "verified_reply below is already correct and its facts are final. Send "
         "the same message in your own words, as Noor speaking to this customer: "
@@ -3488,7 +3511,7 @@ def _verified_prose_directive(verified_text: str) -> str:
         "keep the itemised block if that is the clearest way to hold them. Add "
         "no number, price, product or SKU that is not already in this "
         "conversation. Keep the customer's language and claim nothing beyond "
-        f"verified_reply. verified_reply: {verified_text}"
+        f"verified_reply.{checklist} verified_reply: {verified_text}"
     )
 
 
