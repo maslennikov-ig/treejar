@@ -407,15 +407,28 @@ def test_the_directive_names_every_slot_and_forbids_writing_a_number() -> None:
     masked, values = engine_module._verified_prose_mask(
         "Quotation Fr3711 for 4 units has been prepared."
     )
-    directive = engine_module._verified_prose_directive(masked, len(values))
+    directive = engine_module._verified_prose_directive(masked, len(values), False)
 
     assert "{{f1}}, {{f2}}" in directive
-    assert "Never write a number" in directive
+    assert "Do not write any digit" in directive
+    assert "Worked example" in directive
     assert masked in directive
     # And nothing to carry means no rule about carrying things.
-    assert "Never write a number" not in engine_module._verified_prose_directive(
-        "Thanks, noted.", 0
+    assert "Do not write any digit" not in engine_module._verified_prose_directive(
+        "Thanks, noted.", 0, False
     )
+
+
+def test_the_retry_says_what_went_wrong_last_time() -> None:
+    """The live model ignored the tokens on the first attempt for a whole run."""
+
+    masked, values = engine_module._verified_prose_mask("Quotation Fr3711 is ready.")
+
+    first = engine_module._verified_prose_directive(masked, len(values), False)
+    retry = engine_module._verified_prose_directive(masked, len(values), True)
+
+    assert "previous attempt" not in first
+    assert "previous attempt spelled figures out" in retry
 
 
 def _assert_only_wrote_the_sentence(mock_run: AsyncMock) -> None:

@@ -3470,15 +3470,32 @@ def _verified_prose_render(
     return rendered, None
 
 
-def _verified_prose_directive(masked_text: str, slot_count: int) -> str:
+_VERIFIED_PROSE_EXAMPLE = (
+    "Worked example. Given verified_reply: 'Confirmed: {{f1}} x LUMA {{f2}}, "
+    "{{f3}} AED each.' a correct answer is: 'All {{f1}} of the LUMA {{f2}} are "
+    "confirmed for you, Sara, at {{f3}} AED each -- shall I hold them?' Note "
+    "that every token came through untouched and no digit was written."
+)
+
+
+def _verified_prose_directive(masked_text: str, slot_count: int, retry: bool) -> str:
     slots = ", ".join(f"{{{{f{index}}}}}" for index in range(1, slot_count + 1))
-    rule = (
-        f" The tokens {slots} are figures that have already been verified. "
-        "Copy each one through into your reply exactly as written, in the place "
-        "the figure belongs, and use every one of them at least once. Never "
-        "write a number, price, quantity, stock level or reference code "
-        "yourself -- if you need one, it is one of these tokens."
-        if slot_count
+    rule = ""
+    if slot_count:
+        rule = (
+            f" {slots} are not placeholders for you to fill in. They are "
+            "verified figures already in their final form, and the system "
+            "substitutes them after you answer. Copy each token through into "
+            "your reply character for character, in the place its figure "
+            "belongs, and use every one at least once. Do not write any digit "
+            "yourself: no price, quantity, stock level or reference code. A "
+            f"reply that spells a figure out instead of using its token is "
+            f"discarded. {_VERIFIED_PROSE_EXAMPLE}"
+        )
+    insist = (
+        " Your previous attempt spelled figures out instead of using the "
+        "tokens and was discarded. Use the tokens this time."
+        if retry
         else ""
     )
     return (
@@ -3486,7 +3503,7 @@ def _verified_prose_directive(masked_text: str, slot_count: int) -> str:
         "the same message in your own words, as Noor speaking to this customer: "
         "acknowledge what they asked for, say briefly why this fits their "
         "stated need, and close on the next step verified_reply names."
-        f"{rule} Keep the customer's language and claim nothing beyond "
+        f"{rule}{insist} Keep the customer's language and claim nothing beyond "
         f"verified_reply. verified_reply: {masked_text}"
     )
 
@@ -3519,14 +3536,18 @@ async def _verified_prose_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False
         )
     masked_text, values = _verified_prose_mask(verified_text)
-    prose_deps = replace(
-        deps,
-        tool_mode="catalog_materialization",
-        runtime_directives=(
-            *deps.runtime_directives,
-            _verified_prose_directive(masked_text, len(values)),
-        ),
-    )
+
+    def _prose_deps(retry: bool) -> SalesDeps:
+        return replace(
+            deps,
+            tool_mode="catalog_materialization",
+            runtime_directives=(
+                *deps.runtime_directives,
+                _verified_prose_directive(masked_text, len(values), retry),
+            ),
+        )
+
+    prose_deps = _prose_deps(False)
     try:
         result = await run_agent(prose_deps)
     except Exception:
@@ -3550,6 +3571,25 @@ async def _verified_prose_response(
         customer_text=customer_text,
         already_said="\n".join(deps.recent_history or ()),
     )
+    if rendered is None and rejection is not None and rejection.startswith("dropped"):
+        # One reprompt naming the failure, which is what the parse-error loop in
+        # ASPIRO does and what the model needs when it has ignored the tokens.
+        try:
+            result = await run_agent(_prose_deps(True))
+        except Exception:
+            logger.warning(
+                "Verified-prose retry failed for %s; sending route text", model_name
+            )
+            return build_static_response(
+                verified_text, model_name, response_deps=deps, allow_product_media=False
+            )
+        rendered, rejection = _verified_prose_render(
+            str(getattr(result, "output", "") or ""),
+            values,
+            verified_text=verified_text,
+            customer_text=customer_text,
+            already_said="\n".join(deps.recent_history or ()),
+        )
     if rendered is None:
         logger.warning(
             "Verified-prose rewrite rejected for %s (%s); sending route text",
