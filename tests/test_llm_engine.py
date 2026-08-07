@@ -428,18 +428,43 @@ def test_a_number_the_customer_used_is_not_an_invented_one() -> None:
     )
 
 
-def test_a_reply_with_nothing_to_check_against_keeps_the_route_text() -> None:
-    """A rewrite can only be shown to be one by the facts it preserves.
+def test_a_reply_with_nothing_to_check_against_is_still_allowed_to_improve() -> None:
+    """sales-opportunity's text names no number at all.
 
-    With neither a number nor a reference code there is nothing to compare, so
-    the route's own text ships rather than an unverifiable improvement. Real
-    quotation confirmations carry their number and take the branch below.
+    Rejecting a rewrite for having nothing to compare would disable that route
+    permanently, which is what a first attempt at this did. The fabrication
+    guard still applies -- an unsaid number is still an invention -- and the
+    grounding and claim checks in the response builder still run.
     """
 
+    opportunity = (
+        "I recorded and verified this as a CRM sales opportunity. The next "
+        "commercial step is to confirm the delivery plan. No quotation created."
+    )
+    assert engine_module._verified_prose_holds(
+        candidate=(
+            "Recorded and verified as a sales opportunity in our CRM, Yusuf. "
+            "No quotation was created. The next commercial step is the "
+            "delivery plan — shall we confirm it this week?"
+        ),
+        verified_text=opportunity,
+        customer_text="Record it as an opportunity.",
+    )
+    # A reply on a different subject is not a restatement of this one.
     assert not engine_module._verified_prose_holds(
-        candidate="All set, your quotation is on its way.",
-        verified_text="Your quotation has been prepared and sent to you.",
-        customer_text="Please issue a quotation.",
+        candidate="Could you share your company name?",
+        verified_text=opportunity,
+        customer_text="Record it as an opportunity.",
+    )
+    # And an unsaid number is still an invention.
+    assert not engine_module._verified_prose_holds(
+        candidate=(
+            "Recorded and verified as a sales opportunity in our CRM. The next "
+            "commercial step is the delivery plan, within 3 days. No quotation "
+            "created."
+        ),
+        verified_text=opportunity,
+        customer_text="Record it as an opportunity.",
     )
 
     numbered = "Quotation SA-778 has been prepared and sent to you."

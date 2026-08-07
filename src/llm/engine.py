@@ -3391,6 +3391,16 @@ def _verified_prose_skus(text: str) -> set[str]:
     }
 
 
+_VERIFIED_PROSE_MIN_OVERLAP = 0.3
+_VERIFIED_PROSE_WORD_RE = re.compile(r"[^\W\d_]{4,}", re.UNICODE)
+
+
+def _verified_prose_content_words(text: str) -> set[str]:
+    return {
+        match.group(0).casefold() for match in _VERIFIED_PROSE_WORD_RE.finditer(text)
+    }
+
+
 def _verified_prose_rejection(
     *,
     candidate: str,
@@ -3420,9 +3430,15 @@ def _verified_prose_rejection(
         return "empty"
     required = _verified_prose_numbers(verified_text)
     if not required and not _verified_prose_identifiers(verified_text):
-        # Nothing to check the rewrite against, so there is no way to know it
-        # is one. The route text ships.
-        return "no verifiable fact to anchor the rewrite"
+        # Nothing numeric to compare, so fall back to asking whether this is a
+        # restatement at all. sales-opportunity's text is this shape, and
+        # rejecting it outright would disable that route permanently; letting
+        # anything through would accept a reply on a different subject.
+        anchor = _verified_prose_content_words(verified_text)
+        if anchor:
+            shared = anchor & _verified_prose_content_words(candidate)
+            if len(shared) / len(anchor) < _VERIFIED_PROSE_MIN_OVERLAP:
+                return f"shares only {len(shared)} of {len(anchor)} content words"
     produced = _verified_prose_numbers(candidate)
     if dropped := required - produced:
         return f"dropped numbers {sorted(map(str, dropped))}"
