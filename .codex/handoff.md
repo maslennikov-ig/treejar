@@ -8,30 +8,31 @@ production re-run remains, and it needs authority that is not granted
 
 ## Current truth
 
-- **Epic `tj-swgu` is implemented and its acceptance did not pass.** The
-  release-bound re-run on `6a14f2f` scored **18.5/30 comparable against a 24.0
-  threshold**, superseding the morning's 18.0. Report:
+- **The acceptance judge is too noisy to gate on at n=1.** One unchanged S03
+  transcript scored five times gave 15.2, 16.2, 21.5, 21.6, 23.9: sd 3.8 on
+  identical text, so the ten-scenario mean carries about +/- 2.3 and a single
+  scenario about +/- 7. The three runs of 2026-08-07 -- 18.0, 18.5, 18.2 on
+  materially different builds -- are one number. `tj-swgu.9` (P0) is repeated
+  scoring; nothing else in this stream can be trusted before it.
+- Do not read a per-scenario delta as evidence about code. S03 moved 25.4 to
+  28.9 to 17.6 across three runs on a path nobody touched.
+- **The model-written rewrite works and is verified structurally.**
+  Deterministic turns went 15 -> 13 -> 9 of 29, and that count is deterministic
+  rather than judged. The nine left are seven name-gate turns, one catalog
+  fallback and one detail request.
+- What made it work, both measured rather than reasoned: the model will not
+  reliably reproduce figures, so it is now handed slots and never touches a
+  digit; and it ignores the slot instruction underneath the frozen product
+  prompt, so the rewrite runs on its own agent with no tools, no catalog and no
+  persona. Report:
+  `docs/reports/2026-08-07-slot-rewrite-and-judge-variance.md`.
+- **Functional failures are zero**, from two. `tj-g51h` and `tj-v41l` are fixed
+  and verified in production output.
+- Standing production evidence is 18.2 on `5656c82`, which by the above is
+  indistinguishable from the 18.0 it replaced. Earlier report:
   `docs/reports/2026-08-07-production-acceptance-6a14f2f.md`.
-- **Functional failures went from two to zero.** `tj-g51h` and `tj-v41l` are
-  fixed and verified in production output.
-- The thesis held where it was tested directly: S04 moved 14.6 to 22.8 on the
-  per-turn consultative directive alone, and S08 moved 8.3 to 14.6 once its
-  templates were retired. S03 moved 25.4 to 28.9.
-- It did not hold on the action routes. The verified-prose wrap fires and the
-  guard then refuses the result almost every time -- the model drops the unit
-  price, the live stock or the quotation number. S06 and S10, the two scenarios
-  still carrying `selection-confirmation`, did not move. Open as `tj-swgu.8`,
-  and the choice it needs is a product one.
-- Judge variance on this set is worth about a point per scenario either way;
-  S10 lost 8.6 on unchanged behaviour. Read single-scenario deltas with that in
-  mind.
-- Turn provenance is now a number: 3 of 10 scenarios model-written throughout
-  and 13 of 29 turns deterministic, against 2 and 15 in the morning.
-  `uv run python -m scripts.e2e_acceptance.route_provenance <captures>`.
-- Test data cleaned up: four draft sale orders voided with readback, the test
-  contact deactivated, the CRM deal retained for audit.
 - `tj-r1vk`: S09 and S10 share one conversation by design and nothing resets it
-  between rounds. Both had to be re-run on reset conversations before scoring.
+  between rounds. Reset before each of them or both scores are meaningless.
 - Frozen scope remains `AC-01..AC-30`, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The local remediation for reviewed findings `R-01` through `R-16`, `R-19`,
