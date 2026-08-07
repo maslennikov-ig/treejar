@@ -3487,6 +3487,10 @@ async def _verified_prose_response(
     """
 
     if run_agent is None or build_llm_response is None:
+        logger.info(
+            "Verified-prose rewrite skipped for %s: no model runner on this path",
+            model_name,
+        )
         return build_static_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False
         )
@@ -16030,6 +16034,13 @@ async def process_message(
             clear_verified_policy_repair_state=_clear_verified_policy_repair_state,
             offer_quote=offer_quote_for_turn,
             resumed_name_gate_intent=resumed_name_gate_intent,
+            # The pre-policy phase used to run before the model existed, so it
+            # could only ever send route text. The runtime is memoised now, so
+            # selection-confirmation gets its sentence written here too
+            # (tj-swgu.3); a turn that never reaches the model still builds
+            # nothing.
+            run_agent=_run_agent,
+            build_llm_response=_build_llm_response,
         )
     if order_quote_response is not None:
         return order_quote_response
