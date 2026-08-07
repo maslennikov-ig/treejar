@@ -20,6 +20,23 @@ control is gone.
 gathered on request: the runtime identity, the channel and recipient, the
 current store digests.
 
+## The generator
+
+`scripts/e2e_acceptance/prepare_live_authority.py` assembles the bundle. It does
+not decide anything: every permission-bearing field is copied from a decisions
+file the owner writes, which is what its tests pin.
+
+```
+uv run python scripts/e2e_acceptance/prepare_live_authority.py --template  > decisions.json
+uv run python scripts/e2e_acceptance/prepare_live_authority.py --identity-template > identity.json
+# owner edits decisions.json; an agent fills identity.json from live readbacks
+uv run python scripts/e2e_acceptance/prepare_live_authority.py \
+    --decisions decisions.json --identity identity.json
+```
+
+The default template grants nothing: zero quotas, no permissions, the local
+fake adapter. An owner who edits only the targets gets a dry gate, deliberately.
+
 ## The eight files
 
 They live in `<protected-root>/live-authority-inputs/<run-id>/`, mode `0600`,
