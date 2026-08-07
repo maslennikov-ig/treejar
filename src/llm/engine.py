@@ -5489,10 +5489,9 @@ async def _resolve_purchase_selection_confirmation(
         await _clear_pending_quote_selection(db, conversation)
         return (
             selection_deps,
-            _stock_price_options_response(
+            _variant_options_response(
                 variant_options,
                 language=str(conversation.language),
-                purpose="variant",
                 offer_quote=offer_quote,
             ),
         )
@@ -7189,48 +7188,6 @@ def _product_display_name(product: Any) -> str:
     return str(sku or "Selected item")
 
 
-_RU_STOCK_INQUIRY_RE = re.compile(
-    r"\b(?:налич(?:ие|ия|ии|ию|ием)|доступн[а-яё]*)\b",
-    re.IGNORECASE,
-)
-_RU_PRICE_INQUIRY_RE = re.compile(
-    r"\b(?:цен(?:а|ы|е|у|ой|ам|ами|ах)|"
-    r"стоимост(?:ь|и|ью|ей|ям|ями|ях))\b",
-    re.IGNORECASE,
-)
-
-
-def _is_stock_price_catalog_inquiry(text: str) -> bool:
-    normalized = _normalize_text(_strip_synthetic_test_marker(text))
-    if not normalized:
-        return False
-    has_stock = (
-        any(
-            term in normalized
-            for term in (
-                "stock",
-                "availability",
-                "available",
-                "in stock",
-            )
-        )
-        or _RU_STOCK_INQUIRY_RE.search(normalized) is not None
-    )
-    has_price = (
-        any(
-            term in normalized
-            for term in (
-                "price",
-                "how much",
-                "cost",
-                "rate",
-            )
-        )
-        or _RU_PRICE_INQUIRY_RE.search(normalized) is not None
-    )
-    return has_stock and has_price
-
-
 async def _resolved_catalog_options_from_products(
     *,
     products: Iterable[Any],
@@ -7280,46 +7237,6 @@ async def _resolved_catalog_options_from_products(
             )
         )
     return resolved
-
-
-async def _stock_price_resolved_options(
-    *,
-    db: AsyncSession,
-    zoho_client: ZohoInventoryClient,
-    crm_context: Mapping[str, Any] | None,
-    text: str,
-) -> tuple[ResolvedPurchaseSelectionItem, ...]:
-    if not _is_stock_price_catalog_inquiry(text):
-        return ()
-
-    refs = extract_catalog_references(text)
-    if not refs:
-        return ()
-
-    segment = crm_context.get("Segment", "Unknown") if crm_context else "Unknown"
-    resolved: list[ResolvedPurchaseSelectionItem] = []
-    seen_skus: set[str] = set()
-
-    for ref in refs[:3]:
-        products = await _find_catalog_products_by_sku_stem(db, ref.normalized)
-        if not products:
-            product = await _find_catalog_product_by_sku(db, ref.normalized)
-            products = [product] if product is not None else []
-        exact_products = _explicitly_named_sku_products(products, text)
-        if exact_products:
-            products = exact_products
-        quantity = ref.quantity if ref.quantity is not None and ref.quantity > 0 else 1
-
-        resolved.extend(
-            await _resolved_catalog_options_from_products(
-                products=products[:5],
-                quantity=quantity,
-                zoho_client=zoho_client,
-                segment=str(segment),
-                seen_skus=seen_skus,
-            )
-        )
-    return tuple(resolved)
 
 
 def _explicitly_named_sku_products(
@@ -7409,13 +7326,19 @@ def _options_item_label(options: tuple[ResolvedPurchaseSelectionItem, ...]) -> s
     return "item"
 
 
-def _stock_price_options_response(
+def _variant_options_response(
     options: tuple[ResolvedPurchaseSelectionItem, ...],
     *,
     language: str,
-    purpose: str = "stock_price",
     offer_quote: bool = True,
 ) -> str:
+    """Render the variants behind one ambiguous selection.
+
+    This used to serve the retired stock-price route as well (tj-swgu.1). Its
+    only caller now is the selection path, which reaches it when a requested
+    item resolves to more than one catalog variant and the customer has to pick.
+    """
+
     if not options:
         return ""
 
@@ -7424,21 +7347,14 @@ def _stock_price_options_response(
     item_label = _options_item_label(options)
     plural = "" if requested_quantity == 1 else "s"
 
-    if purpose == "variant":
-        intro = (
-            "هناك عدة خيارات متاحة لاختيارك. إليك الخيارات:"
-            if arabic
-            else (
-                "There are several variants for your "
-                f"{requested_quantity} {item_label}{plural}. Here are the options:"
-            )
+    intro = (
+        "هناك عدة خيارات متاحة لاختيارك. إليك الخيارات:"
+        if arabic
+        else (
+            "There are several variants for your "
+            f"{requested_quantity} {item_label}{plural}. Here are the options:"
         )
-    else:
-        intro = (
-            "وجدت هذه الخيارات لطلبك:"
-            if arabic
-            else f"I found these options for {requested_quantity} {item_label}{plural}:"
-        )
+    )
 
     lines = [intro, ""]
     for index, option in enumerate(options, start=1):
@@ -15689,45 +15605,6 @@ async def process_message(
                 language=str(conv.language),
             ),
             response_model,
-            allow_product_media=False,
-        )
-
-    # Stock+price option shortcut must not hijack an active quote flow. When the
-    # customer is mid-quote (pending selection or the assistant just asked for
-    # quote details), let the normal quote handling own the turn instead (M-3).
-    stock_price_options: tuple[ResolvedPurchaseSelectionItem, ...] = ()
-    stock_price_quote_context_active = (
-        quote_detail_context_active
-        or has_pending_quote_selection
-        or assistant_asked_quote_details
-    )
-    if not stock_price_quote_context_active:
-        stock_price_options = await _stock_price_resolved_options(
-            db=db,
-            zoho_client=zoho_client,
-            crm_context=crm_context,
-            text=combined_text,
-        )
-        if not stock_price_options and masked_text != combined_text:
-            stock_price_options = await _stock_price_resolved_options(
-                db=db,
-                zoho_client=zoho_client,
-                crm_context=crm_context,
-                text=masked_text,
-            )
-    if stock_price_options:
-        db_model_main = await get_system_config(
-            db, "openrouter_model_main", settings.openrouter_model_main
-        )
-        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
-        await _clear_verified_policy_repair_state()
-        return _build_static_response(
-            _stock_price_options_response(
-                stock_price_options,
-                language=str(conv.language),
-                offer_quote=offer_quote_for_turn,
-            ),
-            f"{db_model_main}|stock-price-options",
             allow_product_media=False,
         )
 

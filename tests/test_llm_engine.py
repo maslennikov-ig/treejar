@@ -498,7 +498,7 @@ def _resolved_option(
     )
 
 
-def test_stock_price_options_response_localizes_body_for_arabic() -> None:
+def test_variant_options_response_localizes_body_for_arabic() -> None:
     # m-2: for an Arabic customer the whole body must be Arabic, not an English
     # scaffold with only the closing CTA translated.
     options = (
@@ -517,8 +517,8 @@ def test_stock_price_options_response_localizes_body_for_arabic() -> None:
             stock=93,
         ),
     )
-    text = engine_module._stock_price_options_response(options, language="ar")
-    assert "I found these options" not in text
+    text = engine_module._variant_options_response(options, language="ar")
+    assert "There are several variants" not in text
     assert "Option 1" not in text
     assert "SKU:" not in text
     assert "available" not in text
@@ -527,9 +527,7 @@ def test_stock_price_options_response_localizes_body_for_arabic() -> None:
     assert "أي خيار تفضل" in text
 
 
-def test_stock_price_options_response_label_reflects_product_not_hardcoded_chair() -> (
-    None
-):
+def test_variant_options_response_label_reflects_product_not_hardcoded_chair() -> None:
     # m-1: the count noun must reflect the actual product, not a hardcoded "chair".
     options = (
         _resolved_option(
@@ -541,14 +539,15 @@ def test_stock_price_options_response_label_reflects_product_not_hardcoded_chair
             category="Desks",
         ),
     )
-    text = engine_module._stock_price_options_response(options, language="en")
+    text = engine_module._variant_options_response(options, language="en")
     assert "2 desks" in text
     assert "chair" not in text.lower()
 
 
-def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> None:
-    # m-5: the variant-disambiguation path must read as a variant choice, not as a
-    # stock/price answer.
+def test_variant_options_response_reads_as_a_choice_between_variants() -> None:
+    # m-5: this path must read as a variant choice. It used to share a renderer
+    # with the stock-price route and needed a purpose flag to tell them apart;
+    # that route is retired (tj-swgu.1) and this is the only wording left.
     options = (
         _resolved_option(
             "SkyLand Chair CH 616 black",
@@ -565,15 +564,10 @@ def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> 
             stock=93,
         ),
     )
-    variant = engine_module._stock_price_options_response(
-        options, language="en", purpose="variant"
-    )
-    stock = engine_module._stock_price_options_response(
-        options, language="en", purpose="stock_price"
-    )
+    variant = engine_module._variant_options_response(options, language="en")
+
     assert "variant" in variant.lower()
     assert "I found these options" not in variant
-    assert "I found these options" in stock
 
 
 def test_an_empty_catalog_search_still_carries_a_contract() -> None:
@@ -3647,6 +3641,9 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
     ]
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "CH 616 NEW black is 295.00 AED each, 43 in stock."
+    )
 
     requested = SimpleNamespace(
         id=uuid.uuid4(),
@@ -3714,11 +3711,12 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
         messaging_client=messaging,
     )
 
-    assert second_response.model == "mock-model|stock-price-options"
-    assert requested.name_en in second_response.text
-    assert sibling.name_en not in second_response.text
-    assert "295.00 AED" in second_response.text
-    assert "43 available" in second_response.text
+    # The stock-price template is retired (tj-swgu.1); the resumed SKU inquiry
+    # goes to the model, which has the catalog and stock tools. What must hold
+    # is that the resume stays consultative: no quotation, no pending selection,
+    # and the name gate cleared.
+    assert second_response.model == "mock-model"
+    assert mock_run.await_count == 1
     assert "quotation" not in second_response.text.casefold()
     assert "confirm the quantity" not in second_response.text.casefold()
     assert "name_gate_pending_request" not in conv.metadata_
@@ -3726,8 +3724,6 @@ async def test_process_message_russian_name_gate_resume_keeps_sku_inquiry_consul
     assert "pending_quote_selection" not in conv.metadata_
     assert "quote_intent_frame" not in conv.metadata_
     assert "quotation_hold" not in conv.metadata_.get("sales_memory", {})
-    zoho.get_item.assert_awaited_once_with(requested.zoho_item_id)
-    mock_run.assert_not_awaited()
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -9349,6 +9345,11 @@ async def test_process_message_stock_price_question_returns_catalog_option_list(
     mock_build_history.return_value = _first_turn_history(text)
     mock_get_system_config.return_value = "mock-model"
     mock_search_knowledge.return_value = []
+    mock_run.return_value = _FakeAgentResult(
+        "CH 616 black is 220.00 AED with 3 in stock; CH 616 NEW black is "
+        "295.00 AED with 93 in stock. For 2 units that is 440.00 AED or "
+        "590.00 AED."
+    )
 
     ch616 = SimpleNamespace(
         id=uuid.uuid4(),
@@ -9400,15 +9401,15 @@ async def test_process_message_stock_price_question_returns_catalog_option_list(
         messaging_client=messaging,
     )
 
-    assert response.model == "mock-model|stock-price-options"
-    assert "SkyLand Workstation Chair CH 616 black" in response.text
-    assert "Skyland Operative Chair CH 616 NEW black" in response.text
-    assert "220.00 AED" in response.text
-    assert "295.00 AED" in response.text
-    assert "3 available" in response.text
-    assert "93 available" in response.text
-    assert "2 chairs" in response.text
-    mock_run.assert_not_awaited()
+    # tj-swgu.1: the stock-price template listed the two variants with their
+    # SKU, price and stock and left out the twelve-unit total the customer had
+    # asked for. The model has the same catalog and stock tools and produced
+    # that total in the counterfactual, so the turn is its to write. The turn
+    # must still stay consultative: no quotation, no selection persisted.
+    assert response.model == "mock-model"
+    assert mock_run.await_count == 1
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.tool_mode == "full"
     assert "pending_quote_selection" not in (conv.metadata_ or {})
 
 
@@ -18943,10 +18944,15 @@ def test_russian_quote_hold_supports_bounded_modifiers(text: str) -> None:
     assert not engine_module.is_quote_or_proposal_request(text)
 
 
-def test_russian_availability_request_does_not_infer_price_from_evaluate_verb() -> None:
-    assert not engine_module._is_stock_price_catalog_inquiry(
-        "Оцените доступность модели CH616."
+def test_russian_availability_request_reaches_the_model() -> None:
+    # This guarded the retired stock-price route against reading "оцените"
+    # (assess) as a price request (tj-swgu.1). There is no route left to guard;
+    # what matters is that the question is answered rather than escalated.
+    decision = engine_module.evaluate_verified_answer_policy(
+        "Оцените доступность модели CH616.", []
     )
+
+    assert decision.policy_action == "allow"
 
 
 def test_sales_opportunity_request_separates_company_and_budget_fields() -> None:
@@ -19267,10 +19273,21 @@ async def test_exact_sku_stock_request_returns_only_requested_variant(
         messaging_client=messaging,
     )
 
-    assert response.model == "mock-model|stock-price-options"
+    # This is the S06 shape, and it is the fall-through the counterfactual
+    # warned about: with the stock-price template retired (tj-swgu.1) the turn
+    # does not reach the model, it reaches selection-confirmation, which owns
+    # the selection state and so cannot simply be removed. Its facts are right —
+    # only the requested variant, live stock, no quotation — and tj-swgu.3 makes
+    # the sentence around them model-written. Pinned here so the hand-off is
+    # visible rather than assumed.
+    assert response.model == "mock-model|selection-confirmation"
     assert requested.name_en in response.text
     assert similar.name_en not in response.text
-    assert "quotation" not in response.text.casefold()
+    # The hold is honoured, not ignored: nothing is created, and the reply says
+    # so. The old assertion required the word "quotation" to be absent, which
+    # was a property of the retired template rather than of the hold.
+    assert "no quotation will be prepared" in response.text.casefold()
+    assert "pending_quote_selection" not in (conv.metadata_ or {})
     zoho.get_item.assert_awaited_once()
     mock_run.assert_not_awaited()
 
