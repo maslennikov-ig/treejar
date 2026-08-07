@@ -29,6 +29,12 @@ the deploy job skipped it and the runtime was `c977b07`. The score belongs to
 that build and stops being valid at the next deploy that touches `src/` or at a
 model change.
 
+`3fd2114` deployed after the run, so the identity pin no longer matches the
+live runtime. The only `src/` change in it is the evaluator token ceiling below,
+which touches the quality-reporting path and not the dialogue, so these ten
+scores still describe what production says to a customer. Any change to the
+dialogue path invalidates them properly and the run has to be repeated.
+
 ## Functional correctness improved a lot
 
 Six scenarios failed functionally on 2026-08-03. Two do now.
