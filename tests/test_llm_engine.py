@@ -282,6 +282,121 @@ class _FakeAgentResult:
         return self._usage
 
 
+def test_a_rewrite_that_keeps_every_verified_fact_is_accepted() -> None:
+    verified = (
+        "Great, I can confirm the selected items from our catalog:\n"
+        "1. Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00\n"
+        "No quotation will be prepared unless you ask for one."
+    )
+
+    assert engine_module._verified_prose_holds(
+        candidate=(
+            "Thanks for confirming the headcount. For your twelve desks the "
+            "Task Chair (SKU CHAIR-A) works out at AED 200.00 each, so "
+            "12 x AED 200.00 = AED 2400.00 in total. I have not prepared a "
+            "quotation, as you asked. Shall I hold these for you?"
+        ),
+        verified_text=verified,
+        customer_text="We need twelve chairs. Do not prepare a quotation.",
+    )
+
+
+@pytest.mark.parametrize(
+    ("candidate", "reason"),
+    [
+        (
+            "Task Chair (SKU CHAIR-A): 12 x AED 210.00 = AED 2520.00. "
+            "No quotation was prepared.",
+            "a changed price",
+        ),
+        (
+            "Task Chair: 12 x AED 200.00 = AED 2400.00. No quotation prepared.",
+            "a dropped SKU",
+        ),
+        (
+            "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00, plus "
+            "AED 350.00 delivery. No quotation was prepared.",
+            "an invented charge",
+        ),
+        ("", "an empty reply"),
+    ],
+)
+def test_a_rewrite_that_moves_a_verified_fact_is_rejected(
+    candidate: str, reason: str
+) -> None:
+    """tj-swgu.3: the model gets the sentence, never the facts."""
+
+    verified = (
+        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00\n"
+        "No quotation will be prepared unless you ask for one."
+    )
+
+    assert not engine_module._verified_prose_holds(
+        candidate=candidate,
+        verified_text=verified,
+        customer_text="We need twelve chairs.",
+    ), reason
+
+
+def test_a_number_the_customer_used_is_not_an_invented_one() -> None:
+    verified = (
+        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
+    )
+
+    assert engine_module._verified_prose_holds(
+        candidate=(
+            "For a team of 8 growing to 12, the Task Chair (SKU CHAIR-A) at "
+            "12 x AED 200.00 = AED 2400.00 covers it. Nothing quoted."
+        ),
+        verified_text=verified,
+        customer_text="We are 8 today and will be 12 by December.",
+    )
+
+
+def test_a_reply_with_no_digits_still_has_to_be_a_rewrite_of_the_verified_one() -> None:
+    """The number check is vacuous on a reply that has no numbers in it.
+
+    A quotation confirmation is exactly that shape, and the first version of
+    this guard let an unrelated model reply through it.
+    """
+
+    verified = "Quotation SA-DETAILS has been prepared and sent to you."
+
+    assert not engine_module._verified_prose_holds(
+        candidate="Could you share your company name?",
+        verified_text=verified,
+        customer_text="Please issue a quotation.",
+    )
+    assert engine_module._verified_prose_holds(
+        candidate=(
+            "All set, Lilia. Quotation SA-DETAILS is prepared and on its way to "
+            "you now. Tell me if you would like anything adjusted."
+        ),
+        verified_text=verified,
+        customer_text="Please issue a quotation.",
+    )
+
+
+def _assert_only_wrote_the_sentence(mock_run: AsyncMock) -> None:
+    """The route owned the turn; the model only phrased its reply.
+
+    These assertions read ``mock_run.assert_not_awaited()`` until tj-swgu.3,
+    which meant "no model decided anything on this turn". That is still true and
+    is what is checked here: the rewrite runs with no tools at all, so it cannot
+    call a quotation or a CRM write, and it is discarded if it changes a number.
+    What the old form can no longer say is that the model was never called.
+    """
+
+    assert mock_run.await_count >= 1
+    for call in mock_run.await_args_list:
+        deps = call.kwargs["deps"]
+        assert deps.tool_mode == "catalog_materialization"
+        assert any(
+            item.startswith("verified_reply below is already correct")
+            for item in deps.runtime_directives
+        )
+
+
 def _assert_first_turn_opening(text: str, expected_tail: str) -> None:
     assert text.startswith("Hello, I'm Noor from Treejar.")
     assert text.endswith(expected_tail)
@@ -5152,7 +5267,7 @@ async def test_process_message_first_turn_unknown_name_quote_ready_resumes_deter
     assert conv.escalation_status == "none"
     assert "name_gate_pending_request" not in conv.metadata_
     assert "quote_intent_frame" not in conv.metadata_
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="CH 616 NEW black", quantity=1)]
@@ -6618,6 +6733,127 @@ async def test_a_repaired_catalog_decision_ships_instead_of_the_template(
     assert response.text_provenance == "model_repaired"
     assert "SKU CHAIR-A" in response.text
     mock_notify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_the_quotation_is_created_before_the_model_writes_a_word(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """tj-swgu.3: the write is first and unconditional; only the sentence moves."""
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "Please issue a quotation for 1 CHAIR-01.\n"
+        "Full name: Lilia Kustova\n"
+        "Company: Test Clinic LLC\n"
+        "Email: lilia@example.com\n"
+        "Phone: +971501234567\n"
+        "Delivery address: Dubai, UAE"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    order: list[str] = []
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        order.append("write")
+        ctx.deps.quotation_created = True
+        return "Quotation SA-778 has been prepared and sent to you."
+
+    async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
+        order.append("model")
+        return _FakeAgentResult(
+            "All set, Lilia. Quotation SA-778 is prepared and on its way to you. "
+            "Anything you would like adjusted before your team settles in?"
+        )
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+    mock_run.side_effect = run_side_effect
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    assert order == ["write", "model"]
+    mock_create_quotation.assert_awaited_once()
+    assert "SA-778" in response.text
+    assert response.text_provenance == "model"
+    assert response.model.endswith("|exact-quote-deterministic")
+    # The rewrite itself could not have called a tool even if it wanted to.
+    _assert_only_wrote_the_sentence(mock_run)
+
+
+@pytest.mark.asyncio
+@patch("src.rag.pipeline.search_knowledge", new_callable=AsyncMock)
+@patch("src.core.config.get_system_config", new_callable=AsyncMock)
+@patch("src.llm.engine.build_message_history", new_callable=AsyncMock)
+@patch("src.llm.engine.create_quotation", new_callable=AsyncMock)
+@patch("src.llm.engine.sales_agent.run", new_callable=AsyncMock)
+async def test_a_failed_rewrite_still_delivers_the_created_quotation(
+    mock_run: AsyncMock,
+    mock_create_quotation: AsyncMock,
+    mock_build_history: AsyncMock,
+    mock_get_system_config: AsyncMock,
+    mock_search_knowledge: AsyncMock,
+    mock_deps: tuple[
+        AsyncMock, Conversation, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
+    ],
+) -> None:
+    """The customer's quotation does not depend on a cosmetic second call."""
+
+    db, conv, engine, zoho, _zoho_crm, redis, messaging = mock_deps
+    text = (
+        "Please issue a quotation for 1 CHAIR-01.\n"
+        "Full name: Lilia Kustova\n"
+        "Company: Test Clinic LLC\n"
+        "Email: lilia@example.com\n"
+        "Phone: +971501234567\n"
+        "Delivery address: Dubai, UAE"
+    )
+    mock_build_history.return_value = _first_turn_history(text)
+    mock_get_system_config.return_value = "mock-model"
+    mock_search_knowledge.return_value = []
+
+    async def create_quotation_side_effect(ctx: object, items: object) -> str:
+        ctx.deps.quotation_created = True
+        return "Quotation SA-778 has been prepared and sent to you."
+
+    mock_create_quotation.side_effect = create_quotation_side_effect
+    mock_run.side_effect = TimeoutError
+
+    response = await process_message(
+        conversation_id=conv.id,
+        combined_text=text,
+        db=db,
+        redis=redis,
+        embedding_engine=engine,
+        zoho_client=zoho,
+        messaging_client=messaging,
+    )
+
+    mock_create_quotation.assert_awaited_once()
+    assert "Quotation SA-778 has been prepared and sent to you." in response.text
+    assert response.text_provenance == "deterministic_static"
+    assert response.model.endswith("|exact-quote-deterministic")
 
 
 @pytest.mark.asyncio
@@ -9576,7 +9812,7 @@ async def test_process_message_exact_price_request_without_quote_terms_uses_guar
         response.text,
         "Quotation SA-001 has been prepared and sent to you.",
     )
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
@@ -9853,7 +10089,7 @@ async def test_process_message_short_quote_followup_uses_single_stock_price_opti
         ("CH 140 black", 2)
     ]
     mock_create_quotation.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify_manager.assert_not_awaited()
 
 
@@ -13062,7 +13298,7 @@ async def test_process_message_customer_details_resume_pending_quote_selection(
     assert response.text == "Quotation SO-DETAILS has been prepared and sent to you."
     assert "what do you need" not in response.text.lower()
     assert "I can help with products" not in response.text
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [
@@ -13465,7 +13701,7 @@ async def test_process_message_canonical_only_quote_frame_resumes_without_assist
 
     assert response.text == "Quotation SO-CANONICAL has been prepared and sent to you."
     assert response.model == "mock-model|quote-resume"
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, quote_items = mock_create_quotation.await_args.args
     assert quote_items == [QuotationItem(sku="CH-616", quantity=2)]
@@ -13984,7 +14220,7 @@ async def test_process_message_unlabeled_quote_brief_completes_pdf_details(
         "address": "2 street",
     }
     mock_create_quotation.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -14059,7 +14295,7 @@ async def test_process_message_unlabeled_quote_brief_keeps_order_named_customer_
         "address": "Office 1208, JLT Dubai",
     }
     mock_create_quotation.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -14137,7 +14373,7 @@ async def test_process_message_ambiguous_individual_reply_keeps_explicit_company
         "address": "dubay 2 street 7",
     }
     mock_create_quotation.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -14295,7 +14531,7 @@ async def test_process_message_confirmed_quote_brief_generates_quotation(
     }
     assert "pending_quote_brief_confirmation" not in conv.metadata_
     mock_create_quotation.assert_awaited_once()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -15262,7 +15498,7 @@ async def test_process_message_quote_details_item_correction_updates_selection_f
         }
     ]
     mock_create_quotation.assert_not_awaited()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -15379,7 +15615,7 @@ async def test_process_message_quote_details_only_model_position_updates_selecti
         }
     ]
     mock_create_quotation.assert_not_awaited()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -15872,7 +16108,7 @@ async def test_process_message_russian_kp_request_resumes_pending_quote_selectio
     )
 
     assert response.text == "Quotation SO-KP has been prepared and sent to you."
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="00-07024022", quantity=10)]
@@ -15964,7 +16200,7 @@ async def test_process_message_exact_quote_second_consultative_pass_falls_back_t
         response.text,
         "Quotation SA-001 has been prepared and sent to you.",
     )
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="CHAIR-01", quantity=1)]
@@ -16087,7 +16323,7 @@ async def test_process_message_exact_quote_uses_original_text_when_pii_masks_num
         response.text,
         "Quotation SA-002 has been prepared and sent to you.",
     )
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [QuotationItem(sku="00-07024023", quantity=1)]
@@ -16155,7 +16391,7 @@ async def test_process_message_exact_named_item_second_consultative_pass_resolve
         response.text,
         "Quotation SA-009 has been prepared and sent to you.",
     )
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_create_quotation.assert_awaited_once()
     _, items = mock_create_quotation.await_args.args
     assert items == [
@@ -16347,7 +16583,7 @@ async def test_process_message_quote_request_with_multiple_items_keeps_all_lines
     ]
     assert quote_frame["quote_details"]["name"] == "Lilia"
     assert "manager" not in response.text.lower()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -16625,7 +16861,7 @@ async def test_process_message_exact_quote_unresolved_followup_resolves_sku_and_
         "Dubai Marina, Tower A"
     )
     assert "pending_quote_selection" not in conv.metadata_
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
     messaging.send_media.assert_not_called()
 
@@ -16788,7 +17024,7 @@ async def test_process_message_sales_order_request_creates_multi_item_quotation(
         "item_count": 3,
         "status": "created",
     }
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -16919,7 +17155,7 @@ async def test_process_message_sales_order_normalizes_cyrillic_sku_prefix(
         ("CH-190-BLACK", 2),
         ("CH-410-BLACK", 1),
     ]
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -17078,7 +17314,7 @@ async def test_process_message_sales_order_unresolved_followup_resumes_quote(
         ("CH-190-BLACK", 2),
     ]
     assert "pending_quote_selection" not in conv.metadata_
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -17205,7 +17441,7 @@ async def test_process_message_sales_order_resolved_followup_then_brief_creates_
     }
     assert "pending_quote_selection" not in conv.metadata_
     assert mock_create_quotation.await_count == 2
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -17326,7 +17562,7 @@ async def test_process_message_quote_details_reply_clears_stale_name_gate_reques
     mock_create_quotation.assert_awaited_once()
     _, quote_items = mock_create_quotation.await_args.args
     assert [(item.sku, item.quantity) for item in quote_items] == [("CH 620 grey", 5)]
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 
@@ -19400,7 +19636,7 @@ async def test_process_message_records_explicit_sales_opportunity_without_quote(
     )
     zoho.create_sale_order.assert_not_awaited()
     messaging.send_media.assert_not_called()
-    mock_run.assert_not_awaited()
+    _assert_only_wrote_the_sentence(mock_run)
     mock_notify.assert_not_awaited()
 
 

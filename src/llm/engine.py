@@ -7,10 +7,17 @@ import json
 import logging
 import math
 import re
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 from html import escape
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
@@ -3323,6 +3330,169 @@ def _record_recovery_tool_result(
             )
         )
     return result
+
+
+_VERIFIED_PROSE_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_VERIFIED_PROSE_SKU_RE = re.compile(
+    r"\bsku\s*[:#-]?\s*([a-z0-9][a-z0-9._/\s-]*?)(?=[),.;]|$)",
+    re.IGNORECASE,
+)
+
+
+_VERIFIED_PROSE_LIST_MARKER_RE = re.compile(r"^[ \t]*\d+[.)][ \t]", re.MULTILINE)
+
+
+def _verified_prose_numbers(text: str) -> set[Decimal]:
+    # "1." at the start of a line is a list marker, not a quantity. The
+    # selection-confirmation template numbers its items that way, so counting
+    # markers as facts would have failed every multi-item rewrite and quietly
+    # sent the template every time.
+    text = _VERIFIED_PROSE_LIST_MARKER_RE.sub("", text)
+    values: set[Decimal] = set()
+    for match in _VERIFIED_PROSE_NUMBER_RE.finditer(text):
+        try:
+            values.add(Decimal(match.group(0).replace(",", "")))
+        except InvalidOperation:  # pragma: no cover - regex admits only numerals
+            continue
+    return values
+
+
+_VERIFIED_PROSE_IDENTIFIER_RE = re.compile(
+    r"\b(?:[A-Za-z]*\d[A-Za-z0-9]*|[A-Z]{2,})(?:[-_/][A-Za-z0-9]+)*\b"
+)
+
+
+def _verified_prose_identifiers(text: str) -> set[str]:
+    """Tokens that carry identity: SKUs, quotation numbers, currency codes.
+
+    Without these the number check is vacuous on a reply that happens to
+    contain no digits. "Quotation SA-DETAILS has been prepared" is such a
+    reply, and a rewrite that shares nothing with it is not a rewrite.
+    """
+
+    return {
+        match.group(0).casefold()
+        for match in _VERIFIED_PROSE_IDENTIFIER_RE.finditer(
+            _VERIFIED_PROSE_LIST_MARKER_RE.sub("", text)
+        )
+    }
+
+
+def _verified_prose_skus(text: str) -> set[str]:
+    return {
+        " ".join(match.group(1).split()).casefold()
+        for match in _VERIFIED_PROSE_SKU_RE.finditer(text)
+    }
+
+
+def _verified_prose_holds(
+    *,
+    candidate: str,
+    verified_text: str,
+    customer_text: str,
+) -> bool:
+    """Did the rewrite keep every verified fact and invent none?
+
+    The route has already computed and written the facts. The model is only
+    being asked for the sentence around them, so every number and SKU the route
+    produced must survive, and no new one may appear. A number the customer
+    themselves used is not new -- "for our team of eight" is theirs to restate.
+    """
+
+    if not candidate.strip():
+        return False
+    required = _verified_prose_numbers(verified_text)
+    produced = _verified_prose_numbers(candidate)
+    if required - produced:
+        return False
+    if produced - required - _verified_prose_numbers(customer_text):
+        return False
+    if _verified_prose_skus(verified_text) - _verified_prose_skus(candidate):
+        return False
+    return not (
+        _verified_prose_identifiers(verified_text)
+        - _verified_prose_identifiers(candidate)
+    )
+
+
+def _verified_prose_directive(verified_text: str) -> str:
+    return (
+        "verified_reply below is already correct and its facts are final. Send "
+        "the same message in your own words, as Noor speaking to this customer: "
+        "acknowledge what they asked for, say briefly why this fits their "
+        "stated need, and close on the next step verified_reply names. Every "
+        "number, price, quantity and SKU in verified_reply must appear "
+        "unchanged, and you must add no number, price, product or SKU that is "
+        "not in it. Keep the customer's language and claim nothing beyond "
+        f"verified_reply. verified_reply: {verified_text}"
+    )
+
+
+async def _verified_prose_response(
+    *,
+    verified_text: str,
+    deps: SalesDeps,
+    model_name: str,
+    customer_text: str,
+    build_static_response: Callable[..., LLMResponse],
+    build_llm_response: Callable[..., LLMResponse] | None = None,
+    run_agent: Callable[[SalesDeps], Awaitable[Any]] | None = None,
+) -> LLMResponse:
+    """Let the model write the sentence over facts a route already verified.
+
+    The route's write has happened by the time this is called and nothing here
+    can undo it: the rewrite runs with no tools at all. If the model is
+    unavailable, fails, or changes a number, the route's own text ships exactly
+    as it does today. The route label is kept either way, so the turn is still
+    attributable; what changes is text_provenance.
+    """
+
+    if run_agent is None or build_llm_response is None:
+        return build_static_response(
+            verified_text, model_name, response_deps=deps, allow_product_media=False
+        )
+    prose_deps = replace(
+        deps,
+        tool_mode="catalog_materialization",
+        runtime_directives=(
+            *deps.runtime_directives,
+            _verified_prose_directive(verified_text),
+        ),
+    )
+    try:
+        result = await run_agent(prose_deps)
+    except Exception:
+        # Deliberately broad. By this point the quotation exists, the CRM row is
+        # written or the selection is persisted, and the route's own reply is
+        # already correct. A cosmetic rewrite must never turn that into an
+        # error, so any failure ships the route text and is logged instead.
+        logger.warning(
+            "Verified-prose rewrite failed for %s; sending route text",
+            model_name,
+            exc_info=True,
+        )
+        return build_static_response(
+            verified_text, model_name, response_deps=deps, allow_product_media=False
+        )
+    candidate = str(getattr(result, "output", "") or "")
+    if not _verified_prose_holds(
+        candidate=candidate,
+        verified_text=verified_text,
+        customer_text=customer_text,
+    ):
+        logger.warning(
+            "Verified-prose rewrite changed a verified fact for %s; sending route text",
+            model_name,
+        )
+        return build_static_response(
+            verified_text, model_name, response_deps=deps, allow_product_media=False
+        )
+    return build_llm_response(
+        result,
+        model_name,
+        response_deps=deps,
+        allow_product_media=False,
+    )
 
 
 def _catalog_display_name(name: str) -> str:
@@ -14923,6 +15093,62 @@ async def process_message(
             tool_traces=extract_runtime_tool_traces(result),
         )
 
+    # The model runtime used to be built inside the try block below, which put
+    # it out of reach of every route that runs before it. sales-opportunity is
+    # one of those, and it needs the model to write its sentence (tj-swgu.3).
+    # Memoised, so a turn that never reaches the model still pays nothing.
+    model_runtime: tuple[str, OpenAIChatModel] | None = None
+    failed_run_usage: RunUsage | None = None
+
+    async def _ensure_model_runtime() -> tuple[str, OpenAIChatModel]:
+        nonlocal model_runtime
+        if model_runtime is None:
+            from src.core.config import get_system_config
+
+            name = model_name_for_path(
+                PATH_CORE_CHAT,
+                await get_system_config(
+                    db, "openrouter_model_main", settings.openrouter_model_main
+                ),
+            )
+            model_runtime = (
+                name,
+                OpenAIChatModel(
+                    name,
+                    provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
+                    settings=model_settings_for_path(PATH_CORE_CHAT, model_name=name),
+                ),
+            )
+        return model_runtime
+
+    async def _run_agent(run_deps: SalesDeps) -> Any:
+        nonlocal failed_run_usage
+        runtime_model_name, runtime_model = await _ensure_model_runtime()
+        agent_started = (
+            latency_trace.start_phase() if latency_trace is not None else None
+        )
+        run_usage = RunUsage()
+        try:
+            result = await run_agent_with_safety(
+                sales_agent,
+                PATH_CORE_CHAT,
+                user_prompt=masked_text,
+                deps=run_deps,
+                message_history=history,
+                model=runtime_model,
+                model_name=runtime_model_name,
+                usage=run_usage,
+            )
+            if run_deps.inventory_confirmed:
+                deps.inventory_confirmed = True
+            return result
+        except (UnexpectedModelBehavior, TimeoutError):
+            failed_run_usage = run_usage
+            raise
+        finally:
+            if latency_trace is not None and agent_started is not None:
+                latency_trace.finish_phase("model_tools", agent_started)
+
     def _build_static_response(
         text: str,
         model_name: str,
@@ -15695,14 +15921,18 @@ async def process_message(
             if opportunity_result.verified
             else "sales-opportunity-unverified"
         )
-        return _build_static_response(
-            _sales_opportunity_response(
+        return await _verified_prose_response(
+            verified_text=_sales_opportunity_response(
                 current_sales_opportunity_request,
                 opportunity_result,
                 language=str(conv.language),
             ),
-            response_model,
-            allow_product_media=False,
+            deps=deps,
+            model_name=response_model,
+            customer_text=combined_text,
+            build_static_response=_build_static_response,
+            build_llm_response=_build_llm_response,
+            run_agent=_run_agent,
         )
 
     if (
@@ -15839,44 +16069,7 @@ async def process_message(
     try:
         from src.core.config import get_system_config
 
-        db_model_main = await get_system_config(
-            db, "openrouter_model_main", settings.openrouter_model_main
-        )
-        db_model_main = model_name_for_path(PATH_CORE_CHAT, db_model_main)
-
-        dynamic_model = OpenAIChatModel(
-            db_model_main,
-            provider=OpenRouterProvider(api_key=settings.openrouter_api_key),
-            settings=model_settings_for_path(PATH_CORE_CHAT, model_name=db_model_main),
-        )
-        failed_run_usage: RunUsage | None = None
-
-        async def _run_agent(run_deps: SalesDeps) -> Any:
-            nonlocal failed_run_usage
-            agent_started = (
-                latency_trace.start_phase() if latency_trace is not None else None
-            )
-            run_usage = RunUsage()
-            try:
-                result = await run_agent_with_safety(
-                    sales_agent,
-                    PATH_CORE_CHAT,
-                    user_prompt=masked_text,
-                    deps=run_deps,
-                    message_history=history,
-                    model=dynamic_model,
-                    model_name=db_model_main,
-                    usage=run_usage,
-                )
-                if run_deps.inventory_confirmed:
-                    deps.inventory_confirmed = True
-                return result
-            except (UnexpectedModelBehavior, TimeoutError):
-                failed_run_usage = run_usage
-                raise
-            finally:
-                if latency_trace is not None and agent_started is not None:
-                    latency_trace.finish_phase("model_tools", agent_started)
+        db_model_main, dynamic_model = await _ensure_model_runtime()
 
         def _build_verified_catalog_recovery_response(
             recovery_text: str,

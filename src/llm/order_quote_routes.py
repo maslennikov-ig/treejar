@@ -71,6 +71,7 @@ if TYPE_CHECKING:
         _store_pending_quote_brief_confirmation,
         _store_pending_quote_from_last_assistant_selection,
         _store_pending_sales_order_quote,
+        _verified_prose_response,
         create_quotation,
         extract_exact_quote_candidate,
     )
@@ -122,6 +123,7 @@ _ENGINE_BIND_NAMES = (
     "_store_pending_quote_brief_confirmation",
     "_store_pending_quote_from_last_assistant_selection",
     "_store_pending_sales_order_quote",
+    "_verified_prose_response",
     "create_quotation",
     "extract_exact_quote_candidate",
 )
@@ -149,6 +151,11 @@ class OrderQuoteSideEffectPlan:
     clear_verified_policy_repair_state: Callable[[], Any]
     clear_pending_quote_selection_on_created: bool = True
     clear_quote_intent_frame_on_created: bool = False
+    # The quotation is created before either of these is touched, so the
+    # sentence can be the model's without moving the write (tj-swgu.3).
+    build_llm_response: Callable[..., LLMResponse] | None = None
+    run_agent: Callable[[SalesDeps], Any] | None = None
+    customer_text: str = ""
 
 
 async def _execute_order_quote_side_effect(
@@ -194,11 +201,14 @@ async def _execute_order_quote_side_effect(
         if plan.clear_quote_intent_frame_on_created:
             await _clear_quote_intent_frame(db, conversation)
     await plan.clear_verified_policy_repair_state()
-    response = plan.build_response(
-        quote_text,
-        f"{db_model_main}|{plan.model_suffix}",
-        response_deps=plan.response_deps,
-        allow_product_media=False,
+    response = await _verified_prose_response(
+        verified_text=quote_text,
+        deps=plan.response_deps,
+        model_name=f"{db_model_main}|{plan.model_suffix}",
+        customer_text=plan.customer_text or plan.prompt,
+        build_static_response=plan.build_response,
+        build_llm_response=plan.build_llm_response,
+        run_agent=plan.run_agent,
     )
     return replace(
         response,
@@ -380,11 +390,14 @@ async def _order_quote_route_for_turn(
             ),
             offer_quote=offer_quote,
         )
-        return build_static_response(
-            confirmation_text,
-            f"{route_model}|selection-confirmation",
-            response_deps=selection_deps,
-            allow_product_media=False,
+        return await _verified_prose_response(
+            verified_text=confirmation_text,
+            deps=selection_deps,
+            model_name=f"{route_model}|selection-confirmation",
+            customer_text=combined_text,
+            build_static_response=build_static_response,
+            build_llm_response=build_llm_response,
+            run_agent=run_agent,
         )
 
     assert db_model_main is not None
@@ -460,6 +473,9 @@ async def _order_quote_route_for_turn(
                 prompt=masked_text,
                 model_suffix="sales-order-quote",
                 build_response=build_static_response,
+                build_llm_response=build_llm_response,
+                run_agent=run_agent,
+                customer_text=combined_text,
                 clear_verified_policy_repair_state=(clear_verified_policy_repair_state),
             ),
         )
@@ -551,6 +567,9 @@ async def _order_quote_route_for_turn(
                 prompt=masked_text,
                 model_suffix="sales-order-quote-resume",
                 build_response=build_static_response,
+                build_llm_response=build_llm_response,
+                run_agent=run_agent,
+                customer_text=combined_text,
                 clear_verified_policy_repair_state=(clear_verified_policy_repair_state),
             ),
         )
@@ -606,11 +625,14 @@ async def _order_quote_route_for_turn(
         )
         await _clear_quote_intent_frame(db, conversation)
         await clear_verified_policy_repair_state()
-        return build_static_response(
-            confirmation_text,
-            f"{db_model_main}|selection-confirmation",
-            response_deps=selection_deps,
-            allow_product_media=False,
+        return await _verified_prose_response(
+            verified_text=confirmation_text,
+            deps=selection_deps,
+            model_name=f"{db_model_main}|selection-confirmation",
+            customer_text=combined_text,
+            build_static_response=build_static_response,
+            build_llm_response=build_llm_response,
+            run_agent=run_agent,
         )
 
     exact_quote_candidate = _exact_quote_candidate_from_frame(
@@ -681,6 +703,9 @@ async def _order_quote_route_for_turn(
                 prompt=masked_text,
                 model_suffix="exact-quote-deterministic",
                 build_response=build_static_response,
+                build_llm_response=build_llm_response,
+                run_agent=run_agent,
+                customer_text=combined_text,
                 clear_verified_policy_repair_state=(clear_verified_policy_repair_state),
                 clear_quote_intent_frame_on_created=True,
             ),
@@ -734,11 +759,14 @@ async def _order_quote_route_for_turn(
             ),
             offer_quote=offer_quote,
         )
-        return build_static_response(
-            confirmation_text,
-            f"{db_model_main}|selection-confirmation",
-            response_deps=selection_deps,
-            allow_product_media=False,
+        return await _verified_prose_response(
+            verified_text=confirmation_text,
+            deps=selection_deps,
+            model_name=f"{db_model_main}|selection-confirmation",
+            customer_text=combined_text,
+            build_static_response=build_static_response,
+            build_llm_response=build_llm_response,
+            run_agent=run_agent,
         )
 
     missing_quantity_runtime_result = None
@@ -910,6 +938,9 @@ async def _order_quote_route_for_turn(
                     prompt=masked_text,
                     model_suffix="quote-resume",
                     build_response=build_static_response,
+                    build_llm_response=build_llm_response,
+                    run_agent=run_agent,
+                    customer_text=combined_text,
                     clear_verified_policy_repair_state=(
                         clear_verified_policy_repair_state
                     ),
@@ -962,6 +993,9 @@ async def _order_quote_route_for_turn(
                     prompt=masked_text,
                     model_suffix="quote-resume",
                     build_response=build_static_response,
+                    build_llm_response=build_llm_response,
+                    run_agent=run_agent,
+                    customer_text=combined_text,
                     clear_verified_policy_repair_state=(
                         clear_verified_policy_repair_state
                     ),
