@@ -2619,7 +2619,7 @@ def _requested_catalog_evidence_gaps(
 
 def _product_search_response_contract(
     *,
-    match_kind: Literal["exact", "nearby", "missing"] = "exact",
+    match_kind: Literal["exact", "nearby", "missing", "empty"] = "exact",
     search_budget_exhausted: bool = False,
     target_coverage_complete: bool | None = None,
     lower_verified_family_total: tuple[CatalogFamily, float, float] | None = None,
@@ -2635,6 +2635,22 @@ def _product_search_response_contract(
             "Zoho rate is operational execution data and must not be used as a customer-facing replacement price or mismatch signal.",
             "After the alternatives, ask at most one narrow follow-up; do not offer sourcing or escalation for an ordinary no-match.",
             "Tie one verified fact to the stated need and end with one concrete next action.",
+        ]
+    elif match_kind == "empty":
+        # tj-b93r. A search that returns nothing used to hand the model the
+        # bare string "No products found matching the query." and no contract
+        # at all, so the one turn with no grounding whatsoever was also the one
+        # turn with no instructions. That is the shape the blinded sales review
+        # caught inventing pod sizes after an empty search.
+        contract_parts = [
+            "The catalog search returned no products for this request.",
+            "Say that plainly and do not present anything as a catalog option.",
+            "Invent nothing: no specs, sizes, prices, lead times or quantities. "
+            "Nothing was returned that could ground them.",
+            "Ask one narrow clarification that could make a second search "
+            "succeed, or name a related family you can then verify by searching.",
+            "Do not offer sourcing or escalation for an ordinary no-match.",
+            "End with one concrete next action.",
         ]
     elif match_kind == "missing":
         contract_parts = [
@@ -12858,7 +12874,10 @@ async def search_products(
                     prior_results_seen=ctx.deps.product_results_seen
                 ),
             )
-        return "No products found matching the query."
+        return ToolReturn(
+            return_value="No products found matching the query.",
+            content=_product_search_response_contract(match_kind="empty"),
+        )
 
     stock_lookup = await _zoho_stock_for_catalog_candidates(
         ctx.deps,

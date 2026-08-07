@@ -150,7 +150,9 @@ class TestPerformSearchProducts:
         ctx = _FakeRunContext(deps=deps)
 
         result = await search_products(ctx, "nonexistent item")  # type: ignore[arg-type]
-        assert "No products found" in result
+        assert "No products found" in result.return_value
+        # tj-b93r: the empty turn now carries instructions too.
+        assert "Invent nothing" in result.content
 
     @pytest.mark.asyncio
     @patch("src.llm.engine.rag_search_products")

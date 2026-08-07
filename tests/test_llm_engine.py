@@ -524,6 +524,37 @@ def test_stock_price_options_response_variant_purpose_uses_variant_wording() -> 
     assert "I found these options" in stock
 
 
+def test_an_empty_catalog_search_still_carries_a_contract() -> None:
+    """tj-b93r: the one turn with no grounding had no instructions either.
+
+    A search returning nothing used to hand the model the bare string
+    "No products found matching the query." with no response contract, unlike
+    every other outcome. The blinded sales review caught a model inventing pod
+    sizes in exactly that gap. Which model it was does not matter; nothing was
+    telling any of them what to do.
+    """
+    contract = engine_module._product_search_response_contract(match_kind="empty")
+
+    assert "returned no products" in contract
+    assert "Invent nothing" in contract
+    for forbidden in ("specs", "sizes", "prices", "quantities"):
+        assert forbidden in contract, forbidden
+    assert "concrete next action" in contract
+    assert "sourcing or escalation" in contract
+
+
+@pytest.mark.parametrize("match_kind", ["exact", "nearby", "missing", "empty"])
+def test_no_search_outcome_leaves_the_model_uninstructed(match_kind: str) -> None:
+    """Every outcome must forbid inventing what the tool did not return."""
+    contract = engine_module._product_search_response_contract(
+        match_kind=match_kind  # type: ignore[arg-type]
+    )
+
+    lowered = contract.casefold()
+    assert "invent" in lowered, match_kind
+    assert "next action" in lowered, match_kind
+
+
 @pytest.mark.parametrize("match_kind", ["nearby", "missing"])
 def test_product_no_match_contract_forbids_sourcing_escalation(match_kind) -> None:
     contract = engine_module._product_search_response_contract(
@@ -7361,7 +7392,11 @@ async def test_tools_search_products_caps_retries_per_run(
         second = await engine_module.search_products(ctx, "office pod")
         third = await engine_module.search_products(ctx, "phone booth")
 
-        assert first == "No products found matching the query."
+        # tj-b93r: an empty search now carries the "empty" contract instead
+        # of a bare string, so the model is instructed on the one turn that
+        # has nothing to ground it.
+        assert first.return_value == "No products found matching the query."
+        assert "Invent nothing" in first.content
         assert isinstance(second, ToolReturn)
         assert "No products found matching the query." in second.return_value
         assert "Search limit reached for this customer message" in second.return_value
@@ -7421,7 +7456,11 @@ async def test_tools_search_products_second_empty_result_exhausts_retry_budget(
             ctx, "phone booth acoustic office pod"
         )
 
-        assert first == "No products found matching the query."
+        # tj-b93r: an empty search now carries the "empty" contract instead
+        # of a bare string, so the model is instructed on the one turn that
+        # has nothing to ground it.
+        assert first.return_value == "No products found matching the query."
+        assert "Invent nothing" in first.content
         assert isinstance(second, ToolReturn)
         assert "Search limit reached for this customer message" in second.return_value
         assert "Do not call search_products again" in second.return_value
