@@ -579,3 +579,55 @@ async def test_faq_manager_reply_falls_back_to_private_reply_when_candidate_llm_
     assert any("Delivery takes 3-5 business days." in text for text in sent_texts)
     assert any("кандидат для Базы Знаний не создан" in text for text in sent_texts)
     assert not any("Ошибка при обработке ответа" in text for text in sent_texts)
+
+
+@pytest.mark.asyncio
+async def test_a_late_manager_reply_is_not_swallowed() -> None:
+    """tj-g3f: the draft read as 'works sometimes' because it expired quietly.
+
+    The pending context lived ten minutes. Past that the manager's text hit a
+    bare `return`: the customer got no answer and the manager got no warning,
+    so from the outside the feature looked intermittently broken.
+    """
+    from src.api.telegram_webhook import _handle_manager_reply
+
+    redis = AsyncMock()
+    # No pending draft, but this chat was prompted for one at some point.
+    redis.get.side_effect = [None, "1"]
+    telegram = AsyncMock()
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "3-5 days"})
+
+    telegram.send_message.assert_awaited_once()
+    sent = telegram.send_message.await_args[0][0]
+    assert "не ушёл" in sent
+    assert "ещё раз" in sent
+
+
+@pytest.mark.asyncio
+async def test_ordinary_group_chatter_gets_no_reply() -> None:
+    """The warning must not fire on every message in the managers' group."""
+    from src.api.telegram_webhook import _handle_manager_reply
+
+    redis = AsyncMock()
+    # No pending draft and this chat was never prompted for one.
+    redis.get.side_effect = [None, None]
+    telegram = AsyncMock()
+
+    with (
+        patch("src.api.telegram_webhook.redis_client", redis),
+        patch("src.api.telegram_webhook._get_telegram_client", return_value=telegram),
+    ):
+        await _handle_manager_reply({"chat": {"id": 42}, "text": "обед в 14?"})
+
+    telegram.send_message.assert_not_awaited()
+
+
+def test_the_draft_window_outlives_a_coffee_break() -> None:
+    from src.api import telegram_webhook
+
+    assert telegram_webhook._PENDING_TTL_SECONDS >= 3600

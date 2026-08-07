@@ -55,7 +55,24 @@ router = APIRouter(tags=["telegram"])
 
 # Redis key prefix for pending manager responses; TTL = 5 minutes.
 _PENDING_KEY_PREFIX = "tg_pending:"
-_PENDING_TTL_SECONDS = 600
+_PENDING_TTL_SECONDS = 86400
+"""How long a manager has to type the reply after pressing the button.
+
+Was 600 seconds. A manager gets a Telegram alert and answers when they are
+free, which is routinely longer than ten minutes, and past that the reply was
+swallowed with no message to anyone: no answer to the customer, no warning to
+the manager. That is why the draft flow read as working sometimes and broken
+other times. The pending record is a few hundred bytes, so a day costs nothing.
+"""
+
+_PROMPTED_TTL_SECONDS = 7 * 86400
+"""How long we remember that a draft was requested in this chat.
+
+Only used to tell a manager that their reply arrived too late, rather than
+answering every unrelated message in the group.
+"""
+
+_PROMPTED_KEY_PREFIX = "tg_prompted:"
 _RESET_PENDING_KEY_PREFIX = "tg_reset_pending:"
 _RESET_TTL_SECONDS = 300
 _ORDER_DECISION_SOURCE = "telegram_order_decision"
@@ -230,6 +247,9 @@ async def _handle_callback_query(callback_query: dict[str, Any]) -> None:
     )
     await redis_client.setex(
         f"{_PENDING_KEY_PREFIX}{chat_id}", _PENDING_TTL_SECONDS, pending_data
+    )
+    await redis_client.setex(
+        f"{_PROMPTED_KEY_PREFIX}{chat_id}", _PROMPTED_TTL_SECONDS, "1"
     )
 
     mode_label = "📚 FAQ + клиент" if mode == "faq_global" else "👤 Только клиенту"
@@ -482,9 +502,20 @@ async def _handle_manager_reply(message: dict[str, Any]) -> None:
     redis_key = f"{_PENDING_KEY_PREFIX}{chat_id}"
     pending_raw = await redis_client.get(redis_key)
     if not pending_raw:
-        # No pending context — this is not a reply to an escalation
+        # No pending context. Either this is ordinary chatter in the group, or
+        # a manager answered after the window closed and their reply is about
+        # to vanish. Only the second deserves a message, so it is distinguished
+        # by whether this chat was ever prompted for a draft.
+        prompted_key = f"{_PROMPTED_KEY_PREFIX}{chat_id}"
+        if await redis_client.get(prompted_key):
+            await redis_client.delete(prompted_key)
+            await _get_telegram_client().send_message(
+                "⚠️ Черновик уже неактивен, поэтому ответ клиенту не ушёл.\n\n"
+                "Нажмите кнопку под нужной эскалацией и отправьте текст ещё раз.",
+                chat_id=str(chat_id),
+            )
         return
-    await redis_client.delete(redis_key)
+    await redis_client.delete(redis_key, f"{_PROMPTED_KEY_PREFIX}{chat_id}")
 
     pending = json.loads(pending_raw)
     question = pending["question"]
