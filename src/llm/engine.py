@@ -3478,7 +3478,14 @@ _VERIFIED_PROSE_EXAMPLE = (
 )
 
 
-def _verified_prose_directive(masked_text: str, slot_count: int, retry: bool) -> str:
+def _verified_prose_directive(
+    masked_text: str,
+    slot_count: int,
+    retry: bool,
+    *,
+    customer_name: str = "",
+    customer_text: str = "",
+) -> str:
     slots = ", ".join(f"{{{{f{index}}}}}" for index in range(1, slot_count + 1))
     rule = ""
     if slot_count:
@@ -3498,13 +3505,22 @@ def _verified_prose_directive(masked_text: str, slot_count: int, retry: bool) ->
         if retry
         else ""
     )
+    # Enough of the turn to write to a person rather than into the air. The
+    # agent has no history of its own, and without this it cannot use a name or
+    # answer what was actually asked.
+    context = ""
+    if customer_name:
+        context += f" The customer is {customer_name}."
+    if customer_text:
+        context += f' Their message was: "{customer_text.strip()[:400]}"'
     return (
         "verified_reply below is already correct and its facts are final. Send "
         "the same message in your own words, as Noor speaking to this customer: "
         "acknowledge what they asked for, say briefly why this fits their "
         "stated need, and close on the next step verified_reply names."
-        f"{rule}{insist} Keep the customer's language and claim nothing beyond "
-        f"verified_reply. verified_reply: {masked_text}"
+        f"{context}{rule}{insist} Keep the customer's language, do not greet "
+        "them again, and claim nothing beyond verified_reply. "
+        f"verified_reply: {masked_text}"
     )
 
 
@@ -3542,7 +3558,14 @@ async def _verified_prose_response(
 
     async def _attempt(retry: bool) -> Any:
         return await run_prose_agent(
-            _verified_prose_directive(masked_text, len(values), retry), prose_deps
+            _verified_prose_directive(
+                masked_text,
+                len(values),
+                retry,
+                customer_name=_string_value(deps.conversation.customer_name),
+                customer_text=customer_text,
+            ),
+            prose_deps,
         )
 
     try:
