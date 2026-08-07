@@ -3337,10 +3337,6 @@ def _record_recovery_tool_result(
 
 
 _VERIFIED_PROSE_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
-_VERIFIED_PROSE_SKU_RE = re.compile(
-    r"\bsku\s*[:#-]?\s*([a-z0-9][a-z0-9._/\s-]*?)(?=[),.;]|$)",
-    re.IGNORECASE,
-)
 
 
 _VERIFIED_PROSE_LIST_MARKER_RE = re.compile(r"^[ \t]*\d+[.)][ \t]", re.MULTILINE)
@@ -3361,35 +3357,56 @@ def _verified_prose_numbers(text: str) -> set[Decimal]:
     return values
 
 
-_VERIFIED_PROSE_IDENTIFIER_RE = re.compile(
-    r"\b(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)"
-    r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*\b"
+_VERIFIED_PROSE_PROTECTED_RE = re.compile(
+    r"(?<![\w.])"
+    r"(?:[A-Za-z]+[A-Za-z0-9]*\d[A-Za-z0-9]*(?:[-_/][A-Za-z0-9]+)*"
+    r"|\d[\d,]*(?:\.\d+)?)"
+    r"(?![\w.]*[A-Za-z0-9])"
 )
+_VERIFIED_PROSE_SLOT_RE = re.compile(r"\{\{f(\d+)\}\}")
 
 
-def _verified_prose_identifiers(text: str) -> set[str]:
-    """Tokens that carry identity: SKUs, quotation numbers, model codes.
+def _verified_prose_mask(verified_text: str) -> tuple[str, tuple[str, ...]]:
+    """Replace every protected figure with a numbered slot.
 
-    A letter and a digit, both. Digits alone are the number check's job, and
-    treating them as identity turned the "00" in "295.00" into a token a reply
-    had to reproduce -- which rejected one live rewrite on its own. An earlier
-    version also required every uppercase run, which reads as identity in
-    "CH 616" and as an ordinary word in "CRM", "AED" and "PDF".
+    The model is never asked to copy a number. It is given the route's own
+    sentence with each figure already replaced by ``{{f1}}``, ``{{f2}}`` and so
+    on, and it rewrites the words around those tokens; the values are put back
+    by code afterwards.
+
+    This is the standard answer to the problem and the reason for the rewrite
+    of this module. Asking a model to reproduce figures and checking them
+    afterwards -- which is what this did first -- fails in a way that is well
+    documented: on the 2026-08-07 acceptance the model dropped a unit price,
+    a stock figure or a quotation number on nearly every attempt, so the guard
+    was correct every time and the customer got the template every time.
+    Emitting placeholders and substituting them makes a wrong or missing figure
+    a structural impossibility rather than something to detect. ASPIRO
+    (Vejvar & Fujimoto, EMNLP Findings 2023) measures the same effect on
+    entity-agnostic templates.
     """
 
-    return {
-        match.group(0).casefold()
-        for match in _VERIFIED_PROSE_IDENTIFIER_RE.finditer(
-            _VERIFIED_PROSE_LIST_MARKER_RE.sub("", text)
-        )
-    }
+    marker_spans = [
+        match.span() for match in _VERIFIED_PROSE_LIST_MARKER_RE.finditer(verified_text)
+    ]
+    values: list[str] = []
+    slot_of: dict[str, int] = {}
 
+    def _swap(match: re.Match[str]) -> str:
+        start, end = match.span()
+        if any(start >= low and end <= high for low, high in marker_spans):
+            # "1." opening a list line is formatting, not a figure.
+            return match.group(0)
+        written = match.group(0)
+        # One slot per distinct figure: a total stated twice is one fact, and
+        # asking for it twice would only be another way to fail.
+        slot = slot_of.setdefault(written, len(values) + 1)
+        if slot == len(values) + 1:
+            values.append(written)
+        return f"{{{{f{slot}}}}}"
 
-def _verified_prose_skus(text: str) -> set[str]:
-    return {
-        " ".join(match.group(1).split()).casefold()
-        for match in _VERIFIED_PROSE_SKU_RE.finditer(text)
-    }
+    masked = _VERIFIED_PROSE_PROTECTED_RE.sub(_swap, verified_text)
+    return masked, tuple(values)
 
 
 _VERIFIED_PROSE_MIN_OVERLAP = 0.3
@@ -3402,117 +3419,75 @@ def _verified_prose_content_words(text: str) -> set[str]:
     }
 
 
-def _verified_prose_rejection(
-    *,
+def _verified_prose_render(
     candidate: str,
+    values: tuple[str, ...],
+    *,
     verified_text: str,
     customer_text: str,
-    already_said: str = "",
-) -> str | None:
-    """Why the rewrite was not accepted, or None if it was.
+    already_said: str,
+) -> tuple[str | None, str | None]:
+    """Substitute the verified figures back, or say why the rewrite failed.
 
-    The route has already computed and written the facts. The model is only
-    being asked for the sentence around them, so every number and SKU the route
-    produced must survive, and no new one may appear.
-
-    "New" means new to the conversation, not new to the route's own reply. The
-    first live run rejected every sales-opportunity rewrite for "inventing" the
-    quantity, unit price and SKU the customer had chosen two turns earlier: the
-    route's text names the opportunity and the next step, not the line items,
-    so a model recapping them looked like a fabricator. Anything already said
-    in this conversation is the model's to restate.
-
-    The reason names the offending values, never the prose. Without it a
-    rejection is invisible: the customer still gets a correct reply, so the
-    only symptom is that the sentence never improves.
+    Three checks, in the order the sources that describe this pattern put them:
+    every slot is present, no slot was invented, and no bare figure escaped the
+    slots. Only the last needs a judgement call -- a figure the customer or an
+    earlier turn already used is theirs to restate.
     """
 
     if not candidate.strip():
-        return "empty"
-    required = _verified_prose_numbers(verified_text)
-    if not required and not _verified_prose_identifiers(verified_text):
-        # Nothing numeric to compare, so fall back to asking whether this is a
-        # restatement at all. sales-opportunity's text is this shape, and
-        # rejecting it outright would disable that route permanently; letting
-        # anything through would accept a reply on a different subject.
+        return None, "empty"
+
+    if not values:
+        # No figure to anchor on, so the only question left is whether this is
+        # a restatement at all. A reply on a different subject shares almost no
+        # content words with the one it claims to be rewriting.
         anchor = _verified_prose_content_words(verified_text)
         if anchor:
             shared = anchor & _verified_prose_content_words(candidate)
             if len(shared) / len(anchor) < _VERIFIED_PROSE_MIN_OVERLAP:
-                return f"shares only {len(shared)} of {len(anchor)} content words"
-    produced = _verified_prose_numbers(candidate)
-    if dropped := required - produced:
-        return f"dropped numbers {sorted(map(str, dropped))}"
+                return None, f"shares only {len(shared)} of {len(anchor)} words"
+        return candidate, None
+
+    used = {int(m.group(1)) for m in _VERIFIED_PROSE_SLOT_RE.finditer(candidate)}
+    expected = set(range(1, len(values) + 1))
+    if missing := expected - used:
+        return None, f"dropped slots {sorted(missing)}"
+    if invented := used - expected:
+        return None, f"invented slots {sorted(invented)}"
+
+    stripped = _VERIFIED_PROSE_SLOT_RE.sub(" ", candidate)
+    stripped = _VERIFIED_PROSE_LIST_MARKER_RE.sub("", stripped)
     said = _verified_prose_numbers(customer_text) | _verified_prose_numbers(
         already_said
     )
-    if invented := produced - required - said:
-        return f"invented numbers {sorted(map(str, invented))}"
-    if lost_skus := _verified_prose_skus(verified_text) - _verified_prose_skus(
-        candidate
-    ):
-        return f"dropped SKUs {sorted(lost_skus)}"
-    if lost_ids := _verified_prose_identifiers(
-        verified_text
-    ) - _verified_prose_identifiers(candidate):
-        return f"dropped identifiers {sorted(lost_ids)}"
-    return None
+    if loose := _verified_prose_numbers(stripped) - said:
+        return None, f"figures outside a slot {sorted(map(str, loose))}"
 
-
-def _verified_prose_holds(
-    *,
-    candidate: str,
-    verified_text: str,
-    customer_text: str,
-    already_said: str = "",
-) -> bool:
-    return (
-        _verified_prose_rejection(
-            candidate=candidate,
-            verified_text=verified_text,
-            customer_text=customer_text,
-            already_said=already_said,
-        )
-        is None
+    rendered = _VERIFIED_PROSE_SLOT_RE.sub(
+        lambda m: values[int(m.group(1)) - 1], candidate
     )
+    return rendered, None
 
 
-def _verified_prose_figure(value: Decimal) -> str:
-    """Render a figure for the checklist without mangling it.
-
-    An earlier version stripped trailing zeros with ``rstrip("0")``, which
-    turns 20 into 2 and would have told the model to state a quantity that
-    does not exist.
-    """
-
-    text = f"{value:f}"
-    return text.rstrip("0").rstrip(".") if "." in text else text
-
-
-def _verified_prose_directive(verified_text: str) -> str:
-    # Naming the figures beats asking for care. The live model kept dropping a
-    # unit price and a line total from an itemised block however firmly the
-    # prose asked it not to; listing them is checkable by the model before it
-    # answers, and by the guard afterwards.
-    required = sorted(_verified_prose_numbers(verified_text))
-    checklist = ""
-    if required:
-        rendered = ", ".join(_verified_prose_figure(value) for value in required)
-        checklist = (
-            f" Every one of these figures must appear in your reply: {rendered}."
-        )
+def _verified_prose_directive(masked_text: str, slot_count: int) -> str:
+    slots = ", ".join(f"{{{{f{index}}}}}" for index in range(1, slot_count + 1))
+    rule = (
+        f" The tokens {slots} are figures that have already been verified. "
+        "Copy each one through into your reply exactly as written, in the place "
+        "the figure belongs, and use every one of them at least once. Never "
+        "write a number, price, quantity, stock level or reference code "
+        "yourself -- if you need one, it is one of these tokens."
+        if slot_count
+        else ""
+    )
     return (
         "verified_reply below is already correct and its facts are final. Send "
         "the same message in your own words, as Noor speaking to this customer: "
         "acknowledge what they asked for, say briefly why this fits their "
-        "stated need, and close on the next step verified_reply names. "
-        "Carry over every single number in verified_reply -- every quantity, "
-        "every unit price, every line total, every stock figure and every "
-        "reference code. Leaving one out is a failure, not a simplification; "
-        "keep the itemised block if that is the clearest way to hold them. Add "
-        "no number, price, product or SKU that is not already in this "
-        "conversation. Keep the customer's language and claim nothing beyond "
-        f"verified_reply.{checklist} verified_reply: {verified_text}"
+        "stated need, and close on the next step verified_reply names."
+        f"{rule} Keep the customer's language and claim nothing beyond "
+        f"verified_reply. verified_reply: {masked_text}"
     )
 
 
@@ -3543,12 +3518,13 @@ async def _verified_prose_response(
         return build_static_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False
         )
+    masked_text, values = _verified_prose_mask(verified_text)
     prose_deps = replace(
         deps,
         tool_mode="catalog_materialization",
         runtime_directives=(
             *deps.runtime_directives,
-            _verified_prose_directive(verified_text),
+            _verified_prose_directive(masked_text, len(values)),
         ),
     )
     try:
@@ -3567,13 +3543,14 @@ async def _verified_prose_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False
         )
     candidate = str(getattr(result, "output", "") or "")
-    rejection = _verified_prose_rejection(
-        candidate=candidate,
+    rendered, rejection = _verified_prose_render(
+        candidate,
+        values,
         verified_text=verified_text,
         customer_text=customer_text,
         already_said="\n".join(deps.recent_history or ()),
     )
-    if rejection is not None:
+    if rendered is None:
         logger.warning(
             "Verified-prose rewrite rejected for %s (%s); sending route text",
             model_name,
@@ -3583,7 +3560,9 @@ async def _verified_prose_response(
             verified_text, model_name, response_deps=deps, allow_product_media=False
         )
     return build_llm_response(
-        result,
+        # The verified figures are put back here, by code. Usage and telemetry
+        # stay attached to the call that actually happened.
+        _ContractedResult(result, rendered),
         model_name,
         response_deps=deps,
         allow_product_media=False,

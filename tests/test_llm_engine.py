@@ -285,235 +285,136 @@ class _FakeAgentResult:
         return self._usage
 
 
-def test_the_directive_lists_the_figures_it_will_be_checked_against() -> None:
-    """Naming them beats asking for care.
+def test_the_model_is_handed_slots_and_never_the_figures() -> None:
+    """The rewrite of tj-swgu.8, and the reason for it.
 
-    The live model kept dropping a unit price and a line total from an itemised
-    block however firmly the prose asked it not to. The rstrip in the first
-    version of this turned 20 into 2, which would have asked for a quantity
-    that does not exist.
+    Asking the model to reproduce figures and checking them afterwards is a
+    known dead end: on the 2026-08-07 acceptance it dropped a unit price, a
+    stock figure or a quotation number on nearly every attempt, so the guard
+    was right every time and the customer got the template every time. The
+    model now sees slots where the figures go and never handles a digit.
     """
 
-    directive = engine_module._verified_prose_directive(
-        "1. Chair CH 616 NEW black\n"
+    masked, values = engine_module._verified_prose_mask(
+        "1. Operative Office Chair CH 616 NEW black\n"
         "   Quantity: 20\n"
+        "   Availability: 36 available\n"
         "   Unit price: 295.00 AED\n"
-        "   Line total: 5,900.00 AED"
+        "   Line total: 5,900.00 AED\n"
+        "Total: 5,900.00 AED"
     )
 
-    figures = directive.split("must appear in your reply: ")[1].split(".")[0]
-    assert set(figures.split(", ")) == {"20", "295", "616", "5900"}
+    # A list marker is formatting, so it keeps its digit.
+    assert masked.startswith("1. Operative Office Chair CH {{f1}} NEW black")
+    # One slot per distinct figure: a total stated twice is still one fact.
+    assert values == ("616", "20", "36", "295.00", "5,900.00")
+    assert masked.count("{{f5}}") == 2
 
 
-def test_a_rewrite_that_keeps_every_verified_fact_is_accepted() -> None:
-    verified = (
-        "Great, I can confirm the selected items from our catalog:\n"
-        "1. Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00\n"
-        "No quotation will be prepared unless you ask for one."
+def test_a_quotation_number_becomes_a_slot() -> None:
+    masked, values = engine_module._verified_prose_mask(
+        "Quotation Fr3711 has been prepared and sent to you."
     )
 
-    assert engine_module._verified_prose_holds(
-        candidate=(
-            "Thanks for confirming the headcount. For your twelve desks the "
-            "Task Chair (SKU CHAIR-A) works out at AED 200.00 each, so "
-            "12 x AED 200.00 = AED 2400.00 in total. I have not prepared a "
-            "quotation, as you asked. Shall I hold these for you?"
+    assert masked == "Quotation {{f1}} has been prepared and sent to you."
+    assert values == ("Fr3711",)
+
+
+def test_a_rewrite_that_carries_the_slots_is_rendered_with_the_real_figures() -> None:
+    _masked, values = engine_module._verified_prose_mask(
+        "Task Chair (SKU CH-616): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
+    )
+
+    rendered, rejection = engine_module._verified_prose_render(
+        "Thanks for confirming. The Task Chair (SKU CH-{{f1}}) works out at "
+        "AED {{f3}} each, so {{f2}} x AED {{f3}} = AED {{f4}} in total. "
+        "Nothing quoted — shall I hold these for you?",
+        values,
+        verified_text=(
+            "Task Chair (SKU CH-616): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
         ),
-        verified_text=verified,
-        customer_text="We need twelve chairs. Do not prepare a quotation.",
+        customer_text="We need twelve chairs.",
+        already_said="",
     )
+
+    assert rejection is None
+    assert rendered is not None
+    assert "AED 200.00 each" in rendered
+    assert "12 x AED 200.00 = AED 2400.00" in rendered
 
 
 @pytest.mark.parametrize(
-    ("candidate", "reason"),
+    ("candidate", "expected"),
     [
+        ("Task Chair (SKU CH-{{f1}}): {{f2}} units. Nothing quoted.", "dropped slots"),
         (
-            "Task Chair (SKU CHAIR-A): 12 x AED 210.00 = AED 2520.00. "
-            "No quotation was prepared.",
-            "a changed price",
+            "Task Chair (SKU CH-{{f1}}): {{f2}} x AED {{f3}} = AED {{f4}}, plus "
+            "AED 350.00 delivery. Nothing quoted.",
+            "figures outside a slot",
         ),
         (
-            "Task Chair: 12 x AED 200.00 = AED 2400.00. No quotation prepared.",
-            "a dropped SKU",
+            "Task Chair (SKU CH-{{f1}}): {{f2}} x AED {{f3}} = AED {{f4}} {{f9}}. "
+            "Nothing quoted.",
+            "invented slots",
         ),
-        (
-            "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00, plus "
-            "AED 350.00 delivery. No quotation was prepared.",
-            "an invented charge",
-        ),
-        ("", "an empty reply"),
+        ("", "empty"),
     ],
 )
-def test_a_rewrite_that_moves_a_verified_fact_is_rejected(
-    candidate: str, reason: str
+def test_a_rewrite_that_loses_or_invents_a_figure_is_refused(
+    candidate: str, expected: str
 ) -> None:
-    """tj-swgu.3: the model gets the sentence, never the facts."""
-
-    verified = (
-        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00\n"
-        "No quotation will be prepared unless you ask for one."
+    _masked, values = engine_module._verified_prose_mask(
+        "Task Chair (SKU CH-616): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
     )
 
-    assert not engine_module._verified_prose_holds(
-        candidate=candidate,
-        verified_text=verified,
-        customer_text="We need twelve chairs.",
-    ), reason
-
-
-def test_a_number_already_said_in_the_conversation_is_not_invented() -> None:
-    """The S10 shape, and the first live run rejected every one of them.
-
-    sales-opportunity's own text names the opportunity and the next step, not
-    the line items. A model recapping the quantity, price and SKU the customer
-    chose two turns earlier looked like a fabricator to the first version of
-    this guard, so the template shipped every time.
-    """
-
-    verified = (
-        "I recorded and verified this as a CRM sales opportunity worth "
-        "AED 5900.00. The next commercial step is to confirm the delivery "
-        "plan. No quotation created."
-    )
-    candidate = (
-        "Recorded, Yusuf — the 20 x CH 616 NEW black at AED 5900.00 is now a "
-        "verified opportunity in our CRM. No quotation created. Next is the "
-        "delivery plan; shall we look at it this week?"
-    )
-    history = [
-        "user: We want 20 of the CH 616 NEW black.",
-        "assistant: 20 x CH 616 NEW black, AED 295.00 each, AED 5900.00 total.",
-    ]
-
-    assert (
-        engine_module._verified_prose_rejection(
-            candidate=candidate,
-            verified_text=verified,
-            customer_text="Record it as an opportunity.",
-            already_said="\n".join(history),
-        )
-        is None
-    )
-    # Without the conversation, the same reply reads as invention.
-    assert (
-        engine_module._verified_prose_rejection(
-            candidate=candidate,
-            verified_text=verified,
-            customer_text="Record it as an opportunity.",
-        )
-        is not None
-    )
-
-
-def test_a_decimal_fragment_is_not_an_identifier() -> None:
-    """The "00" in "295.00" rejected a live rewrite on its own.
-
-    Digits alone are the number check's job. An identifier has to carry both a
-    letter and a digit to be one.
-    """
-
-    found = engine_module._verified_prose_identifiers(
-        "Quotation Fr3711: 12 x AED 295.00 = AED 3540.00 for CH 616, PDF sent"
-    )
-
-    assert found == {"fr3711"}
-
-
-def test_a_rejection_names_the_values_and_never_the_prose() -> None:
-    """A rejection is otherwise invisible: the reply is still correct.
-
-    The only symptom of a guard that is too strict is that the sentence never
-    improves, so the reason has to reach the log — as values, not as text.
-    """
-
-    verified = (
-        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
-    )
-    candidate = (
-        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00, delivered in "
-        "5 working days. Nothing quoted."
-    )
-
-    reason = engine_module._verified_prose_rejection(
-        candidate=candidate,
-        verified_text=verified,
-        customer_text="We need twelve chairs.",
-    )
-
-    assert reason is not None
-    assert "invented numbers" in reason
-    assert "5" in reason
-    assert "delivered" not in reason
-    assert "Task Chair" not in reason
-
-
-def test_a_number_the_customer_used_is_not_an_invented_one() -> None:
-    verified = (
-        "Task Chair (SKU CHAIR-A): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
-    )
-
-    assert engine_module._verified_prose_holds(
-        candidate=(
-            "For a team of 8 growing to 12, the Task Chair (SKU CHAIR-A) at "
-            "12 x AED 200.00 = AED 2400.00 covers it. Nothing quoted."
+    rendered, rejection = engine_module._verified_prose_render(
+        candidate,
+        values,
+        verified_text=(
+            "Task Chair (SKU CH-616): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
         ),
-        verified_text=verified,
+        customer_text="We need twelve chairs.",
+        already_said="",
+    )
+
+    assert rendered is None
+    assert rejection is not None and expected in rejection
+
+
+def test_a_figure_the_customer_used_may_be_restated_outside_a_slot() -> None:
+    """ "For a team of 8" is the customer's own number, not an invention."""
+
+    _masked, values = engine_module._verified_prose_mask(
+        "Task Chair (SKU CH-616): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
+    )
+
+    rendered, rejection = engine_module._verified_prose_render(
+        "For a team of 8 growing to 12, the Task Chair (SKU CH-{{f1}}) at "
+        "{{f2}} x AED {{f3}} = AED {{f4}} covers it. Nothing quoted.",
+        values,
+        verified_text=(
+            "Task Chair (SKU CH-616): 12 x AED 200.00 = AED 2400.00. Nothing quoted."
+        ),
         customer_text="We are 8 today and will be 12 by December.",
+        already_said="",
     )
 
+    assert rejection is None
+    assert rendered is not None and "team of 8" in rendered
 
-def test_a_reply_with_nothing_to_check_against_is_still_allowed_to_improve() -> None:
-    """sales-opportunity's text names no number at all.
 
-    Rejecting a rewrite for having nothing to compare would disable that route
-    permanently, which is what a first attempt at this did. The fabrication
-    guard still applies -- an unsaid number is still an invention -- and the
-    grounding and claim checks in the response builder still run.
-    """
+def test_the_directive_names_every_slot_and_forbids_writing_a_number() -> None:
+    masked, values = engine_module._verified_prose_mask(
+        "Quotation Fr3711 for 4 units has been prepared."
+    )
+    directive = engine_module._verified_prose_directive(masked, len(values))
 
-    opportunity = (
-        "I recorded and verified this as a CRM sales opportunity. The next "
-        "commercial step is to confirm the delivery plan. No quotation created."
-    )
-    assert engine_module._verified_prose_holds(
-        candidate=(
-            "Recorded and verified as a sales opportunity in our CRM, Yusuf. "
-            "No quotation was created. The next commercial step is the "
-            "delivery plan — shall we confirm it this week?"
-        ),
-        verified_text=opportunity,
-        customer_text="Record it as an opportunity.",
-    )
-    # A reply on a different subject is not a restatement of this one.
-    assert not engine_module._verified_prose_holds(
-        candidate="Could you share your company name?",
-        verified_text=opportunity,
-        customer_text="Record it as an opportunity.",
-    )
-    # And an unsaid number is still an invention.
-    assert not engine_module._verified_prose_holds(
-        candidate=(
-            "Recorded and verified as a sales opportunity in our CRM. The next "
-            "commercial step is the delivery plan, within 3 days. No quotation "
-            "created."
-        ),
-        verified_text=opportunity,
-        customer_text="Record it as an opportunity.",
-    )
-
-    numbered = "Quotation SA-778 has been prepared and sent to you."
-    assert not engine_module._verified_prose_holds(
-        candidate="Could you share your company name?",
-        verified_text=numbered,
-        customer_text="Please issue a quotation.",
-    )
-    assert engine_module._verified_prose_holds(
-        candidate=(
-            "All set, Lilia. Quotation SA-778 is prepared and on its way to "
-            "you now. Tell me if you would like anything adjusted."
-        ),
-        verified_text=numbered,
-        customer_text="Please issue a quotation.",
+    assert "{{f1}}, {{f2}}" in directive
+    assert "Never write a number" in directive
+    assert masked in directive
+    # And nothing to carry means no rule about carrying things.
+    assert "Never write a number" not in engine_module._verified_prose_directive(
+        "Thanks, noted.", 0
     )
 
 
@@ -6915,9 +6816,10 @@ async def test_the_quotation_is_created_before_the_model_writes_a_word(
 
     async def run_side_effect(*args: object, **kwargs: object) -> _FakeAgentResult:
         order.append("model")
+        # The model writes slots, never figures (tj-swgu.8).
         return _FakeAgentResult(
-            "All set, Lilia. Quotation SA-778 is prepared and on its way to you. "
-            "Anything you would like adjusted before your team settles in?"
+            "All set, Lilia. Quotation SA-{{f1}} is prepared and on its way to "
+            "you. Anything you would like adjusted before your team settles in?"
         )
 
     mock_create_quotation.side_effect = create_quotation_side_effect
