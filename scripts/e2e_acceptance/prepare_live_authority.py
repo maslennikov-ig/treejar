@@ -1,6 +1,6 @@
 """Assemble the live-acceptance authority bundle from owner decisions.
 
-`tj-hr0z`. Nothing wrote these eight files and no document said how, so
+`tj-hr0z`. Nothing wrote these nine files and no document said how, so
 `tj-ee5f.1` sat blocked from 2026-07-28: the previous bundle expired at 17:12
 that day and the procedure lived only in the head of whoever ran it.
 
@@ -34,7 +34,8 @@ from typing import Any
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.e2e_acceptance.execution import store_root_digest  # noqa: E402
+from scripts.e2e_acceptance.execution import _digest, store_root_digest  # noqa: E402
+from scripts.e2e_acceptance.schemas import AuthorizationTargets  # noqa: E402
 
 LIVE_ROOT = REPO_ROOT / ".git" / "codex-orchestration" / "noor-e2e-acceptance" / "live"
 
@@ -87,6 +88,20 @@ DECISIONS_TEMPLATE: dict[str, Any] = {
     "cleanup_method": "gate-only-zero-external-action-no-cleanup-required",
     "adapter_ids": ["fake-local-adapter"],
     "authorized_action_specs": [],
+    "transport": {
+        "_readme": (
+            "The collector reaches production over SSH and runs these commands "
+            "verbatim on that host. They are a grant of command execution on a "
+            "live machine, so they are the owner's to write."
+        ),
+        "webhook_endpoint": "<https endpoint the bot receives inbound messages on>",
+        "collector_id": "independent-readback-collector",
+        "ssh_host_alias": "<ssh alias of the production host>",
+        "source_commands": {
+            "baseline": ["<command printing the baseline readback>"],
+            "final": ["<command printing the final readback>"],
+        },
+    },
     "stop_conditions": [
         "stop on runtime identity drift",
         "stop on protected target drift",
@@ -156,6 +171,10 @@ def build_bundle(
     )
     tracked = REPO_ROOT / ".codex" / "stages" / "tj-ee5f" / "results" / run_id
 
+    targets = AuthorizationTargets.model_validate(
+        {"synthetic_suffix": run_id, **decisions["targets"]}
+    ).model_dump(mode="json")
+    transport = _strip(decisions["transport"])
     expires = now + timedelta(minutes=int(decisions["window_minutes"]))
     shared = {
         "quotas": decisions["quotas"],
@@ -179,7 +198,7 @@ def build_bundle(
             "allowed_executor": decisions["allowed_executor"],
             "allowed_source": decisions["allowed_source"],
             "expected_identity": identity,
-            "targets": decisions["targets"],
+            "targets": targets,
             **shared,
         },
         "preflight-request.json": shared,
@@ -187,7 +206,7 @@ def build_bundle(
             "executor": decisions["allowed_executor"],
             "source": decisions["allowed_source"],
             "identity": identity,
-            "targets": decisions["targets"],
+            "targets": targets,
             "readback_identity": {
                 "source_id": "fresh-production-readback-bundle-v1",
                 "observed_at": now.isoformat().replace("+00:00", "Z"),
@@ -213,6 +232,15 @@ def build_bundle(
         "collector-ids.json": {
             "schema_version": "noor-e2e-authority-collector-ids/v2",
             "values": ["independent-readback-collector"],
+        },
+        "runtime-transport.json": {
+            "schema_version": "noor-e2e-live-runtime/v1",
+            "adapter_id": "wazzup-webhook-adapter",
+            "webhook_endpoint": transport["webhook_endpoint"],
+            "target_digest": _digest(targets),
+            "collector_id": transport["collector_id"],
+            "ssh_host_alias": transport["ssh_host_alias"],
+            "source_commands": transport["source_commands"],
         },
         "execution-authorities.json": {
             "schema_version": "noor-e2e-protected-execution-authorities/v2",

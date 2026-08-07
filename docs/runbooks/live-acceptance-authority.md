@@ -37,11 +37,16 @@ uv run python scripts/e2e_acceptance/prepare_live_authority.py \
 The default template grants nothing: zero quotas, no permissions, the local
 fake adapter. An owner who edits only the targets gets a dry gate, deliberately.
 
-## The eight files
+## The nine files
 
 They live in `<protected-root>/live-authority-inputs/<run-id>/`, mode `0600`,
-no symlinks. The path set is validated exactly, so all eight must be present
+no symlinks. The path set is validated exactly, so all nine must be present
 and nothing else.
+
+`runtime-transport.json` arrived on 2026-07-29, the day after the last bundle
+was issued, which is why no bundle in the archive contains it and why the
+generator is pinned against `live_authority.INPUT_REFS` rather than a list of
+its own.
 
 | file | who fills it | what it is |
 |---|---|---|
@@ -53,6 +58,7 @@ and nothing else.
 | `authorized-action-specs.json` | owner decides | empty for a dry gate, one spec per permitted action for a live run |
 | `execution-authorities.json` | owner decides | cleanup owner and retention authority |
 | `collector-ids.json` | agent | which collector produced the readbacks |
+| `runtime-transport.json` | owner decides | the webhook origin, the SSH host, and the commands the collector runs there |
 
 ## Identity must match the deployed build
 
@@ -62,18 +68,21 @@ the mechanism that makes an acceptance result mean something: it is valid for
 one build and stops being valid the moment `src/` deploys again or a model
 changes.
 
-Ask an agent for the current values before issuing. As of 2026-08-07 they are:
+Ask an agent for the current values before issuing. Read on 2026-08-07 they were:
 
 ```
-repository_commit     <the deployed commit sha>
-deployed_release_sha  <the same sha>
-ci_run_id             github-actions-<the run that deployed it>
+repository_commit     c977b0791c7d37ae61f3dc65de0fc6268f187088
+deployed_release_sha  c977b0791c7d37ae61f3dc65de0fc6268f187088
+ci_run_id             github-actions-31155865127
 endpoint              https://noor.starec.ai
 app_version           0.4.0
 migration_head        2026_06_04_customer_memory
 main_model            openai/gpt-5.6-luna     (system_configs row)
 fast_model            deepseek/deepseek-v4-flash  (code default, no row)
 ```
+
+Note that `main_model` is a `system_configs` row, not `settings.*`. The settings
+value in production is still `z-ai/glm-5.2`, and non-core paths resolve from it.
 
 ## The window is short on purpose
 
@@ -111,6 +120,26 @@ uv run python scripts/run_noor_e2e_acceptance.py verify-run       --repo-root . 
 
 An agent can drive all of it. It stops at `authorize-live` without the bundle,
 which is the point.
+
+## What actually produced every score so far
+
+Be clear-eyed about this chain: everything after `authorize-live` needs a
+`--run-plan`, a sealed `ProtectedRunPlan` carrying one pre-digested action spec
+per external effect across all 29 executions. Nothing in the repository writes
+one, so no run has ever gone through it.
+
+Every real number — 2026-07-30, 2026-08-03, 2026-08-07 — came from the scenario
+runner in the protected `remediation-live` tree: it posts the S01–S10 turns at
+the production webhook, reads the conversations back through the admin API, and
+scores each one with the product's own evaluator (`evaluate_conversation`, the
+same code path that scores real customer chats). S09 and S10 use the real
+recipient so the Zoho records and the PDF are genuine; S01–S08 use a per-run
+phone suffix so they cannot reach anyone.
+
+The authority bundle is still the thing that authorises that run and pins the
+identity the score belongs to. It is not, today, what executes it. Say which
+path a report used, because only the scenario-runner numbers are comparable to
+each other.
 
 ## How to accept the result
 

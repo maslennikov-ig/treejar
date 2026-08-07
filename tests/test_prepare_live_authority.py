@@ -67,6 +67,15 @@ def _decisions(**overrides: object) -> dict:
         "telegram_target": "-100",
         "wazzup_channel": "b49b1b9d",
     }
+    values["transport"] = {
+        "webhook_endpoint": "https://noor.starec.ai/api/v1/webhook/wazzup",
+        "collector_id": "independent-readback-collector",
+        "ssh_host_alias": "noor-server",
+        "source_commands": {
+            "baseline": ["/usr/bin/true"],
+            "final": ["/usr/bin/true"],
+        },
+    }
     values.update(overrides)
     return values
 
@@ -82,22 +91,21 @@ def _build(previous_bundle: pathlib.Path, tmp_path: pathlib.Path, **overrides):
     )
 
 
-def test_the_bundle_has_exactly_the_eight_expected_files(
+def test_the_bundle_is_exactly_the_path_set_the_loader_demands(
     previous_bundle: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    """The path set is validated exactly, so a missing file fails the run."""
+    """Pinned against the loader's own constant, not a copy of it.
+
+    The first version of this generator wrote eight files while the loader
+    required nine, so every bundle it produced would have been refused with
+    path-set drift. Comparing against `INPUT_REFS` is what makes that
+    impossible to reintroduce.
+    """
+    from scripts.e2e_acceptance.live_authority import INPUT_REFS
+
     bundle = _build(previous_bundle, tmp_path)
 
-    assert set(bundle) == {
-        "authorization-v1.json",
-        "preflight-request.json",
-        "preflight-observation.json",
-        "store-identities.json",
-        "adapter-ids.json",
-        "authorized-action-specs.json",
-        "collector-ids.json",
-        "execution-authorities.json",
-    }
+    assert set(bundle) == set(INPUT_REFS)
 
 
 @pytest.mark.parametrize(
@@ -126,6 +134,40 @@ def test_no_grant_is_invented(
     else:
         assert grant[field] == value
         assert request[field] == value
+
+
+def test_the_commands_run_on_production_come_from_the_owner(
+    previous_bundle: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """The collector runs these verbatim over SSH on the live host."""
+    transport = _decisions()["transport"]
+    transport["source_commands"] = {
+        "baseline": ["/usr/bin/cat", "/var/lib/noor/baseline.json"],
+        "final": ["/usr/bin/cat", "/var/lib/noor/final.json"],
+    }
+
+    emitted = _build(previous_bundle, tmp_path, transport=transport)[
+        "runtime-transport.json"
+    ]
+
+    assert emitted["source_commands"] == transport["source_commands"]
+    assert emitted["ssh_host_alias"] == "noor-server"
+
+
+def test_the_transport_binds_the_targets_it_was_issued_with(
+    previous_bundle: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """The loader refuses a transport whose target digest is not the grant's."""
+    from scripts.e2e_acceptance import execution
+
+    bundle = _build(previous_bundle, tmp_path)
+    emitted = execution.RuntimeTransportConfig.model_validate(
+        bundle["runtime-transport.json"]
+    )
+
+    assert emitted.target_digest == execution._digest(
+        bundle["authorization-v1.json"]["targets"]
+    )
 
 
 def test_the_default_template_grants_nothing(
