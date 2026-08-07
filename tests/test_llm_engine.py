@@ -351,8 +351,9 @@ def test_a_number_already_said_in_the_conversation_is_not_invented() -> None:
     """
 
     verified = (
-        "I recorded and verified this as a CRM sales opportunity. The next "
-        "commercial step is to confirm the delivery plan. No quotation created."
+        "I recorded and verified this as a CRM sales opportunity worth "
+        "AED 5900.00. The next commercial step is to confirm the delivery "
+        "plan. No quotation created."
     )
     candidate = (
         "Recorded, Yusuf — the 20 x CH 616 NEW black at AED 5900.00 is now a "
@@ -427,26 +428,32 @@ def test_a_number_the_customer_used_is_not_an_invented_one() -> None:
     )
 
 
-def test_a_reply_with_no_digits_still_has_to_be_a_rewrite_of_the_verified_one() -> None:
-    """The number check is vacuous on a reply that has no numbers in it.
+def test_a_reply_with_nothing_to_check_against_keeps_the_route_text() -> None:
+    """A rewrite can only be shown to be one by the facts it preserves.
 
-    A quotation confirmation is exactly that shape, and the first version of
-    this guard let an unrelated model reply through it.
+    With neither a number nor a reference code there is nothing to compare, so
+    the route's own text ships rather than an unverifiable improvement. Real
+    quotation confirmations carry their number and take the branch below.
     """
 
-    verified = "Quotation SA-DETAILS has been prepared and sent to you."
+    assert not engine_module._verified_prose_holds(
+        candidate="All set, your quotation is on its way.",
+        verified_text="Your quotation has been prepared and sent to you.",
+        customer_text="Please issue a quotation.",
+    )
 
+    numbered = "Quotation SA-778 has been prepared and sent to you."
     assert not engine_module._verified_prose_holds(
         candidate="Could you share your company name?",
-        verified_text=verified,
+        verified_text=numbered,
         customer_text="Please issue a quotation.",
     )
     assert engine_module._verified_prose_holds(
         candidate=(
-            "All set, Lilia. Quotation SA-DETAILS is prepared and on its way to "
+            "All set, Lilia. Quotation SA-778 is prepared and on its way to "
             "you now. Tell me if you would like anything adjusted."
         ),
-        verified_text=verified,
+        verified_text=numbered,
         customer_text="Please issue a quotation.",
     )
 

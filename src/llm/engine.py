@@ -3362,16 +3362,18 @@ def _verified_prose_numbers(text: str) -> set[Decimal]:
 
 
 _VERIFIED_PROSE_IDENTIFIER_RE = re.compile(
-    r"\b(?:[A-Za-z]*\d[A-Za-z0-9]*|[A-Z]{2,})(?:[-_/][A-Za-z0-9]+)*\b"
+    r"\b[A-Za-z]*\d[A-Za-z0-9]*(?:[-_/][A-Za-z0-9]+)*\b"
 )
 
 
 def _verified_prose_identifiers(text: str) -> set[str]:
-    """Tokens that carry identity: SKUs, quotation numbers, currency codes.
+    """Tokens that carry identity: SKUs, quotation numbers, model codes.
 
-    Without these the number check is vacuous on a reply that happens to
-    contain no digits. "Quotation SA-DETAILS has been prepared" is such a
-    reply, and a rewrite that shares nothing with it is not a rewrite.
+    Digit-bearing only. An earlier version also required every uppercase run,
+    which reads as identity in "CH 616" and as an ordinary word in "CRM",
+    "AED" and "PDF" -- and cost a rewrite that said "recorded in Zoho" instead
+    of "recorded in the CRM". A reply is not wrong for choosing a different
+    word.
     """
 
     return {
@@ -3417,6 +3419,10 @@ def _verified_prose_rejection(
     if not candidate.strip():
         return "empty"
     required = _verified_prose_numbers(verified_text)
+    if not required and not _verified_prose_identifiers(verified_text):
+        # Nothing to check the rewrite against, so there is no way to know it
+        # is one. The route text ships.
+        return "no verifiable fact to anchor the rewrite"
     produced = _verified_prose_numbers(candidate)
     if dropped := required - produced:
         return f"dropped numbers {sorted(map(str, dropped))}"
@@ -3459,10 +3465,13 @@ def _verified_prose_directive(verified_text: str) -> str:
         "verified_reply below is already correct and its facts are final. Send "
         "the same message in your own words, as Noor speaking to this customer: "
         "acknowledge what they asked for, say briefly why this fits their "
-        "stated need, and close on the next step verified_reply names. Every "
-        "number, price, quantity and SKU in verified_reply must appear "
-        "unchanged, and you must add no number, price, product or SKU that is "
-        "not in it. Keep the customer's language and claim nothing beyond "
+        "stated need, and close on the next step verified_reply names. "
+        "Carry over every single number in verified_reply -- every quantity, "
+        "every unit price, every line total, every stock figure and every "
+        "reference code. Leaving one out is a failure, not a simplification; "
+        "keep the itemised block if that is the clearest way to hold them. Add "
+        "no number, price, product or SKU that is not already in this "
+        "conversation. Keep the customer's language and claim nothing beyond "
         f"verified_reply. verified_reply: {verified_text}"
     )
 
