@@ -7,6 +7,17 @@ os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["WAZZUP_API_KEY"] = "fake-wazzup-key"
 os.environ["WAZZUP_API_URL"] = "http://fake-wazzup-url"
 
+# tj-0ikw. Every other outbound credential was already neutralised here and
+# Telegram was not, so a test run in a checkout that has a populated `.env`
+# sent real alerts to the owner's phone. It happened on 2026-08-06: four
+# "LLM final failure" messages naming `mock-model`, from the suite, at 20:53.
+#
+# `TelegramClient.is_configured` is just `bool(bot_token)`, so emptying the
+# token stops the send at the client while leaving every code path above it
+# exercised exactly as before.
+os.environ["TELEGRAM_BOT_TOKEN"] = ""
+os.environ["TELEGRAM_CHAT_ID"] = ""
+
 from collections.abc import AsyncGenerator, Generator
 
 os.environ["LOGFIRE_IGNORE_NO_CONFIG"] = "1"
