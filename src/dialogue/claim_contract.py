@@ -735,6 +735,68 @@ def sizing_assumption_directive() -> str:
     )
 
 
+_COMPARISON_MARKER_RE = re.compile(
+    r"(?:\bcompare\b|\bcomparison\b|\bversus\b|\bvs\.?\b|"
+    r"\bdifference\s+between\b|\bwhich\s+(?:one\s+)?(?:is|would\s+be)\s+better\b|"
+    r"\bwhich\s+(?:one|of\s+(?:these|them))\b|"
+    r"قارن|مقارنة|الفرق\s+بين)",
+    re.IGNORECASE,
+)
+_COMPARISON_STAND_DOWN_RE = re.compile(
+    r"(?:\bno\s+(?:other\s+)?alternatives?\b|\bno\s+upsell\b|"
+    r"\bonly\s+(?:these|those|that|this)\b|\bnothing\s+else\b|"
+    r"\bjust\s+(?:these|those|the)\s+two\b|"
+    r"بدون\s+بدائل)",
+    re.IGNORECASE,
+)
+
+
+def requests_product_comparison(customer_text: str) -> bool:
+    """Did the customer ask for two or more options to be weighed?
+
+    Read over the **customer request**, never over the reply, like the sizing
+    detector above it.
+
+    The stand-down half matters as much as the trigger. S06 asked for one exact
+    SKU with no alternatives and no quotation, and the checklist marked it down
+    for not consulting. Consulting anyway would be answering the checklist
+    instead of the customer.
+    """
+
+    text = str(customer_text)
+    if not text.strip():
+        return False
+    if _COMPARISON_STAND_DOWN_RE.search(text):
+        return False
+    return bool(_COMPARISON_MARKER_RE.search(text))
+
+
+def comparison_consultation_directive() -> str:
+    """The per-turn directive for a comparison the model answers and leaves.
+
+    S04 on 2026-08-07: correct on every fact, recommended one of the two, and
+    stopped. The evaluator's reading was no acknowledgement, no clarifying
+    question, and no complete solution beyond the two items compared.
+
+    It lives here rather than in the product system prompt, which the stage
+    contract freezes.
+    """
+
+    return (
+        "The customer has asked you to weigh options. Answer the comparison "
+        "they asked for and recommend one, with the reason in their own terms. "
+        "Then do the three things a salesperson would: acknowledge the team or "
+        "project they described, name what the workspace still needs to be "
+        "complete beyond the items compared, and ask one short question that "
+        "moves this forward or state the next concrete step. Look up any "
+        "complementary item with search_products before naming it, and give "
+        "its confirmed price and stock; never name a product, price or "
+        "availability you have not verified this turn. Never offer a discount "
+        "or a bonus. If a detail is unconfirmed, say so rather than filling "
+        "the gap."
+    )
+
+
 def assumption_eligible_paths(
     withheld_field_paths: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:

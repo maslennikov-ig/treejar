@@ -23,7 +23,10 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 
-from src.dialogue.claim_contract import sizing_assumption_directive
+from src.dialogue.claim_contract import (
+    comparison_consultation_directive,
+    sizing_assumption_directive,
+)
 from src.dialogue.runner import DialogueKernelResult
 from src.dialogue.state import DialogueDecision, DialogueState, QuoteConsent
 from src.llm import engine as engine_module
@@ -22919,6 +22922,24 @@ def test_an_arabic_sizing_turn_adds_it_too() -> None:
     )
 
     assert sizing_assumption_directive() in directives
+
+
+def test_a_comparison_turn_adds_the_consultative_directive() -> None:
+    """The S04 shape: correct on every fact, and not selling (tj-swgu.5)."""
+    directives = engine_module._turn_runtime_directives(
+        "Compare the current four-person LUMA workstation with the four-person "
+        "NOVO setup for our design team."
+    )
+
+    assert comparison_consultation_directive() in directives
+
+
+def test_the_frozen_product_prompt_did_not_grow_to_carry_it() -> None:
+    """The directive is per-turn, which is the whole reason it is allowed."""
+    from src.llm.prompts import BASE_SYSTEM_PROMPT
+
+    assert comparison_consultation_directive() not in BASE_SYSTEM_PROMPT
+    assert "search_products before naming it" not in BASE_SYSTEM_PROMPT
 
 
 def test_an_ordinary_turn_adds_nothing() -> None:

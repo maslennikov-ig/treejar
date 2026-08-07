@@ -44,6 +44,8 @@ from src.dialogue.claim_contract import (
     RetrievedRow,
     apply_contract,
     assumption_eligible_paths,
+    comparison_consultation_directive,
+    requests_product_comparison,
     requests_sizing_judgement,
     row_from_catalog_product,
     sizing_assumption_directive,
@@ -434,6 +436,8 @@ def _turn_runtime_directives(*texts: str) -> tuple[str, ...]:
         directives.extend(CROSS_SELL_VERIFICATION_DIRECTIVES)
     if any(requests_sizing_judgement(text) for text in candidates):
         directives.append(sizing_assumption_directive())
+    if any(requests_product_comparison(text) for text in candidates):
+        directives.append(comparison_consultation_directive())
     return tuple(directives)
 
 
