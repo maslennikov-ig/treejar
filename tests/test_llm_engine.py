@@ -6912,10 +6912,19 @@ async def test_process_message_greeting_with_real_question_uses_service_policy(
         messaging_client=messaging,
     )
 
-    assert mock_run.await_count == 0
-    mock_notify.assert_awaited_once()
-    assert conv.escalation_status == "pending"
-    assert "manager" in response.text.lower()
+    # The greeting must not swallow the question, and the question — whether
+    # Treejar delivers to Dubai at all — is answered rather than escalated
+    # (tj-rily). The model still runs under the FAQ-only service directives.
+    assert mock_run.await_count == 1
+    deps = mock_run.await_args.kwargs["deps"]
+    assert deps.tool_mode == "service_policy"
+    assert any(
+        "missing faq support" in directive.lower()
+        for directive in deps.runtime_directives
+    )
+    mock_notify.assert_not_awaited()
+    assert conv.escalation_status == "none"
+    assert "manager" not in response.text.lower()
 
 
 @pytest.mark.asyncio

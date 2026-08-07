@@ -16,9 +16,15 @@ SalesFallbackIntent = Literal["price_objection", "retention", "off_catalog"]
 
 _TOKEN_RE = re.compile(r"[a-z0-9']+")
 _UNICODE_TOKEN_RE = re.compile(r"[\w']+", re.UNICODE)
+_WEEKDAY_PATTERN = r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+# `next` on its own is not a date. It reads as one in "the best next step", and
+# that single word was enough to promote a summary request to a high-risk
+# commitment question. It counts only when a time unit follows it.
 _DATE_RE = re.compile(
-    r"\b(?:today|tomorrow|tonight|next|monday|tuesday|wednesday|thursday|friday|"
-    r"saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}[/-]\d{1,2})\b",
+    r"\b(?:today|tomorrow|tonight|"
+    rf"next\s+(?:week|month|year|quarter|day|{_WEEKDAY_PATTERN})|"
+    rf"{_WEEKDAY_PATTERN}|"
+    r"jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}[/-]\d{1,2})\b",
     re.IGNORECASE,
 )
 _NUMBER_RE = re.compile(r"\b\d+(?:[-/]\d+)?\b")
@@ -569,9 +575,26 @@ _TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
         "capabilities",
     ),
 }
+_MANAGER_COMMITMENT_PHRASES = (
+    "specific date",
+    "specific time",
+    "specific slot",
+    "exact date",
+    "exact time",
+    "exact slot",
+    "slot",
+    "guarantee",
+    "guaranteed",
+)
 _HIGH_RISK_TOPICS = frozenset(
     {"delivery", "installation", "warranty", "returns", "payment"}
 )
+# Of the high-risk topics, these three are ones where the answer *is* the
+# contract: a warranty period, a return window, a payment term. There is no
+# separable "do you do this at all". Delivery and installation are different —
+# confirming Treejar delivers in the UAE commits nothing about when or at what
+# price, so those reach the model when nothing more specific is asked.
+_CONTRACT_TERM_TOPICS = frozenset({"warranty", "returns", "payment"})
 _NEARBY_EQUIVALENTS = {
     "accessory": {"cabinet", "pedestal", "storage"},
     "accessories": {"cabinet", "pedestal", "storage"},
@@ -835,6 +858,42 @@ def _has_commercial_terms_risk(query: str) -> bool:
     )
 
 
+def requires_manager_commitment(query: str) -> bool:
+    """Does answering this need authority the assistant does not have?
+
+    Escalation is for questions the assistant cannot answer without committing
+    Treejar to something unpublished. Three things create that need:
+
+    - a ``manager_required`` capability in ``COMMERCIAL_CAPABILITIES``, which is
+      discounts and payment or other commercial exceptions;
+    - a topic where the answer is itself a contract term: warranty, returns,
+      payment;
+    - a place outside the declared service area, where nothing is published;
+    - a commitment pinned to a date or a named slot, which only a manager can
+      confirm.
+
+    Everything else is a capability question — "do you do this at all?" — and
+    the model answers it from the knowledge-base block under
+    ``build_service_runtime_directives``, which already forbids inventing
+    commitments, dates, prices, and terms. Escalating those was the defect:
+    two deterministic template routes existed only to paper over it, and each
+    new low-risk question invited a third. A location inside the service area
+    is deliberately absent from this list; naming Dubai does not turn "do you
+    deliver?" into a scheduling promise.
+    """
+
+    normalized = _normalize(query).casefold()
+    if _has_commercial_terms_risk(normalized):
+        return True
+    if set(_query_topics(normalized)) & _CONTRACT_TERM_TOPICS:
+        return True
+    if any(location in normalized for location in _EXTERNAL_LOCATION_TERMS):
+        return True
+    if _DATE_RE.search(normalized):
+        return True
+    return any(phrase in normalized for phrase in _MANAGER_COMMITMENT_PHRASES)
+
+
 def is_quote_or_proposal_request(query: str) -> bool:
     normalized = _normalize(query).casefold()
     if is_quote_or_proposal_hold(normalized):
@@ -1023,13 +1082,12 @@ def evaluate_verified_answer_policy(
             routed_query
         ):
             policy_action = "allow"
+        elif question_class == "service_low_risk" and _is_benign_no_match(routed_query):
+            policy_action = "clarify"
+        elif requires_manager_commitment(routed_query):
+            policy_action = "handoff"
         else:
-            policy_action = (
-                "clarify"
-                if question_class == "service_low_risk"
-                and _is_benign_no_match(routed_query)
-                else "handoff"
-            )
+            policy_action = "allow"
         return VerifiedAnswerDecision(
             question_class=question_class,
             faq_support="missing",
@@ -1049,7 +1107,9 @@ def evaluate_verified_answer_policy(
     confirmed_fact = _extract_answer_text(matched_faq[0]["content"])
     final_policy_action: PolicyAction = "allow"
     if faq_support == "missing" or (
-        question_class == "service_high_risk" and faq_support == "partial"
+        question_class == "service_high_risk"
+        and faq_support == "partial"
+        and requires_manager_commitment(routed_query)
     ):
         final_policy_action = "handoff"
 

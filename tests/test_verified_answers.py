@@ -164,10 +164,14 @@ def test_policy_marks_low_risk_missing_without_inventing_support() -> None:
         faq_context=[],
     )
 
+    # Missing FAQ support is still reported, so the runtime directives keep the
+    # model inside the knowledge-base facts. What it no longer does is escalate:
+    # asking a manager to confirm that Treejar has a showroom is the over-eager
+    # handoff tj-rily removes.
     assert decision.question_class == "service_low_risk"
     assert decision.faq_support == "missing"
-    assert decision.policy_action == "handoff"
-    assert decision.requires_manager_handoff is True
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
 
 
 def test_policy_does_not_handoff_commercial_offer_request() -> None:
@@ -304,8 +308,9 @@ def test_policy_keeps_company_office_location_question_on_service_path() -> None
     )
 
     assert decision.question_class != "product"
-    assert decision.policy_action == "handoff"
-    assert decision.requires_manager_handoff is True
+    assert "showroom" in decision.matched_topics
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
 
 
 def test_policy_treats_plain_greeting_as_safe_non_handoff() -> None:
@@ -620,11 +625,15 @@ def test_policy_routes_greeting_with_real_question_into_service_policy() -> None
         faq_context=[],
     )
 
+    # The point of this one is the routing: a greeting carrying a real question
+    # is not social. The question behind it — "is there delivery to Dubai?" — is
+    # the same capability question as the English case above, so it reaches the
+    # model rather than a manager.
     assert decision.question_class == "service_high_risk"
     assert decision.social_intent is None
     assert decision.faq_support == "missing"
-    assert decision.policy_action == "handoff"
-    assert decision.requires_manager_handoff is True
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
 
 
 def test_product_match_marks_nearby_alternatives_when_exact_term_is_missing() -> None:
@@ -693,3 +702,106 @@ def test_policy_routes_furniture_no_match_request_to_catalog() -> None:
     assert decision.question_class == "product"
     assert decision.policy_action == "allow"
     assert decision.requires_manager_handoff is False
+
+
+# tj-rily: the handoff decision used to fire on any service question the FAQ did
+# not already answer. These pin the narrowed rule — escalate only what needs
+# authority the assistant does not have.
+
+
+def test_capability_question_inside_the_service_area_reaches_the_model() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Before we continue, do you provide delivery and assembly in Dubai?",
+        faq_context=[],
+    )
+
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_saved_context_summary_request_reaches_the_model() -> None:
+    decision = evaluate_verified_answer_policy(
+        query="Summarize the updated requirement and tell me the best next step.",
+        faq_context=[],
+    )
+
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_saved_detail_recall_question_reaches_the_model() -> None:
+    decision = evaluate_verified_answer_policy(
+        query=(
+            "What details have you saved about my company, delivery address, "
+            "products, quantities, delivery timing, and assembly?"
+        ),
+        faq_context=[],
+    )
+
+    assert decision.policy_action == "allow"
+    assert decision.requires_manager_handoff is False
+
+
+def test_a_bare_next_is_not_a_scheduling_commitment() -> None:
+    assert not verified_answers_module.requires_manager_commitment(
+        "Tell me the best next step."
+    )
+    assert verified_answers_module.requires_manager_commitment(
+        "Can you install it next Tuesday?"
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Can I get a 20% discount on this order?",
+        "Do you offer net 30 payment terms?",
+        "We need deferred payment for this project, is that possible?",
+    ],
+)
+def test_manager_required_capabilities_still_escalate(query: str) -> None:
+    decision = evaluate_verified_answer_policy(query=query, faq_context=[])
+
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Can you deliver and install everything next Thursday morning?",
+        "Do you deliver to Saudi Arabia?",
+        "I need the exact installation slot confirmed for our office.",
+    ],
+)
+def test_commitments_the_assistant_cannot_confirm_still_escalate(query: str) -> None:
+    decision = evaluate_verified_answer_policy(query=query, faq_context=[])
+
+    assert decision.policy_action == "handoff"
+    assert decision.requires_manager_handoff is True
+
+
+def test_partial_faq_support_escalates_only_for_a_real_commitment() -> None:
+    coverage = [
+        {
+            "title": "Installation coverage",
+            "content": (
+                "Q: Do you offer installation?\n"
+                "A: We provide delivery and installation for office projects."
+            ),
+        }
+    ]
+
+    scheduled = evaluate_verified_answer_policy(
+        query="Can you install in Abu Dhabi next Tuesday?",
+        faq_context=coverage,
+    )
+    capability = evaluate_verified_answer_policy(
+        query="Do you provide delivery and assembly in Dubai?",
+        faq_context=coverage,
+    )
+
+    assert scheduled.faq_support == "partial"
+    assert scheduled.policy_action == "handoff"
+    assert capability.policy_action == "allow"
+    assert capability.requires_manager_handoff is False
