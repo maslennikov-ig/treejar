@@ -175,3 +175,53 @@ the loader has required nine since 2026-07-29. Fixed in `a21cbd6`; receipt
 `tj-ja1v` is the whole gap. The verified facts the template routes compute are
 already correct; what is missing is that a person writes the sentence around
 them. The model-written cohort clears the threshold today.
+
+## Follow-up: are the template routes still earning their place?
+
+Asked and answered the same day, by replaying the exact turns where a route
+fired with that route neutralised at its predicate. Conversation state, catalog
+lookups and the claim contract all ran as in production; only the decision to
+short-circuit the model was removed, and outbound sending was stubbed.
+
+Nine routes exist. They were never one decision: they accumulated one at a time
+between 2026-05-15 and 2026-07-30, each a fix for a specific complaint, and no
+commit body records why. The reasoning survives only in the test names, and it
+is consistent — the model escalated instead of answering, added alternatives
+when told not to, did not reliably state price and stock, or failed to fire a
+CRM write. Every guard was a real fix.
+
+The premise behind all of them is that the model cannot be trusted on that turn.
+The main model changed to `openai/gpt-5.6-luna` on **2026-08-05 17:50 UTC**,
+after the last of them was written. None had been re-tested against it.
+
+**stock-price-options — no longer needed.** With the route off the model
+answered: SKU, live stock 36, unit price AED 295, and *AED 3,540 for twelve
+units*. No alternatives, no quotation. Strictly better than the template, which
+stated the same facts and left out the total the customer had asked for.
+
+**service-availability and saved-context-summary — the diagnosis was wrong.**
+With only the route off, neither turn reached the model. Both fell to the
+verified-answer policy, which escalated: "I want to be accurate, so our manager
+will confirm this for you." These two routes are not compensating for the model;
+they are patches over an over-eager handoff on questions that are not high risk.
+With the handoff relaxed the model answered both correctly — the delivery answer
+hedged without inventing terms, and the summary listed "3 × LUMA 9719-4, walnut",
+which is exactly the field the template gets wrong by pasting the customer's raw
+sentence. Filed as `tj-rily`; fixing the policy removes the need for both.
+
+**verified-catalog-functional-failure — right to fire, wrong remedy.** Accepting
+the model's answer instead of replacing it produced something far richer: both
+product families kept, a cheaper option under the AED 7,000 ceiling, honesty
+about the stock gap, a real cross-sell. But its cross-sell arithmetic does not
+hold — it removes three boxes of six chairs while adding three, leaving nine
+chairs for twelve people. The check is correct. What is wrong is substituting a
+template instead of sending a repair directive back to the model, which is the
+mechanism the engine already uses elsewhere.
+
+**The three remaining routes carry the action, not just the sentence.**
+`selection-confirmation`, `exact-quote-deterministic` and `sales-opportunity`
+persist selection state, create the quotation, and write the CRM opportunity
+inside the route. They cannot be tested by switching them off, and they must
+stay. Their prose is a separate question: the write already happens before a
+pure renderer is called, so a model-written sentence over the same verified
+facts changes no guarantee.
