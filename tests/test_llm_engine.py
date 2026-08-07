@@ -405,6 +405,20 @@ def test_a_number_already_said_in_the_conversation_is_not_invented() -> None:
     )
 
 
+def test_a_decimal_fragment_is_not_an_identifier() -> None:
+    """The "00" in "295.00" rejected a live rewrite on its own.
+
+    Digits alone are the number check's job. An identifier has to carry both a
+    letter and a digit to be one.
+    """
+
+    found = engine_module._verified_prose_identifiers(
+        "Quotation Fr3711: 12 x AED 295.00 = AED 3540.00 for CH 616, PDF sent"
+    )
+
+    assert found == {"fr3711"}
+
+
 def test_a_rejection_names_the_values_and_never_the_prose() -> None:
     """A rejection is otherwise invisible: the reply is still correct.
 

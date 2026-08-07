@@ -8,31 +8,30 @@ production re-run remains, and it needs authority that is not granted
 
 ## Current truth
 
-- **Epic `tj-swgu` is code-complete and unpushed.** Six children and three
-  linked bugs closed on 2026-08-07: `tj-rily`, `tj-swgu.1` through `.6`,
-  `tj-g51h`, `tj-v41l`. Only `tj-swgu.7`, the re-run, is open.
-- The last S01-S10 production run is **18.0/30 comparable** against a 24.0
-  threshold on `c977b07`, two functional failures. It stays the standing
-  evidence until an authorized re-run replaces it. Report:
-  `docs/reports/2026-08-07-production-acceptance-c977b07.md`.
-- What changed since that run, all on `main` and none of it deployed:
-  escalation narrowed to what needs authority the assistant lacks; the
-  service-availability, saved-context-summary and stock-price-options routes
-  retired; a rejected catalog decision repaired rather than replaced; the four
-  action-bearing routes now model-written over their own verified facts; a
-  per-turn consultative directive on comparison turns; a route registry and a
-  provenance reader.
-- Three defects surfaced only once the templates covering them were removed,
-  all fixed: the terse extractor read a question as the customer's name, the
-  quote-resume route answered a question by repeating its own, and retiring one
-  route hands the turn to the next route rather than to the model.
-- Frozen `AC-01..AC-30` and its digest are unchanged. The product system prompt
-  did not grow. No side effect moved, and no public contract or schema changed.
-
-- Canonical runtime is `https://noor.starec.ai`; the last release tested end to
-  end is `c977b0791c7d37ae61f3dc65de0fc6268f187088`. The 2026-08-03 run at
-  18.4/30 on `a2f245c` is superseded by the 18.0 above, which is the standing
-  evidence.
+- **Epic `tj-swgu` is implemented and its acceptance did not pass.** The
+  release-bound re-run on `6a14f2f` scored **18.5/30 comparable against a 24.0
+  threshold**, superseding the morning's 18.0. Report:
+  `docs/reports/2026-08-07-production-acceptance-6a14f2f.md`.
+- **Functional failures went from two to zero.** `tj-g51h` and `tj-v41l` are
+  fixed and verified in production output.
+- The thesis held where it was tested directly: S04 moved 14.6 to 22.8 on the
+  per-turn consultative directive alone, and S08 moved 8.3 to 14.6 once its
+  templates were retired. S03 moved 25.4 to 28.9.
+- It did not hold on the action routes. The verified-prose wrap fires and the
+  guard then refuses the result almost every time -- the model drops the unit
+  price, the live stock or the quotation number. S06 and S10, the two scenarios
+  still carrying `selection-confirmation`, did not move. Open as `tj-swgu.8`,
+  and the choice it needs is a product one.
+- Judge variance on this set is worth about a point per scenario either way;
+  S10 lost 8.6 on unchanged behaviour. Read single-scenario deltas with that in
+  mind.
+- Turn provenance is now a number: 3 of 10 scenarios model-written throughout
+  and 13 of 29 turns deterministic, against 2 and 15 in the morning.
+  `uv run python -m scripts.e2e_acceptance.route_provenance <captures>`.
+- Test data cleaned up: four draft sale orders voided with readback, the test
+  contact deactivated, the CRM deal retained for audit.
+- `tj-r1vk`: S09 and S10 share one conversation by design and nothing resets it
+  between rounds. Both had to be re-run on reset conversations before scoring.
 - Frozen scope remains `AC-01..AC-30`, digest
   `12f0cc9c8c038f366096162dbac51e90746f38efb93b9f9feb29f1ea507cf732`.
 - The local remediation for reviewed findings `R-01` through `R-16`, `R-19`,
@@ -113,12 +112,12 @@ Next stage id: `tj-ee5f`
 The paid comparison has since run under `tj-feet.8` and the main model was
 switched, so the battle this section used to point at is done.
 
-Recommended action: `tj-swgu.7`. It needs three separate authorities, in
-order: push `main` to origin, deploy and read the runtime identity back, then
-run S01-S10 live against the isolated test recipient with real Zoho and Wazzup
-effects and clean up afterwards. `tj-ee5f.1` is the same production pass seen
-from the older stage and closes with it. Do not fold the bounded product-runtime
-`R-17` defer into either.
+Recommended action: `tj-swgu.8`, then one more release-bound acceptance. The
+remaining gap is concentrated in two routes that refuse their own rewrite, and
+closing it needs an owner decision about what a customer must always be told.
+`tj-ee5f.1` is the same production pass seen from the older stage. Do not fold
+the bounded product-runtime `R-17` defer into either. Fix `tj-r1vk` before the
+next run or S09 and S10 will be scored on a polluted conversation again.
 
 ## Stage tj-feet
 

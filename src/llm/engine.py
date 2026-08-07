@@ -3362,18 +3362,19 @@ def _verified_prose_numbers(text: str) -> set[Decimal]:
 
 
 _VERIFIED_PROSE_IDENTIFIER_RE = re.compile(
-    r"\b[A-Za-z]*\d[A-Za-z0-9]*(?:[-_/][A-Za-z0-9]+)*\b"
+    r"\b(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)"
+    r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*\b"
 )
 
 
 def _verified_prose_identifiers(text: str) -> set[str]:
     """Tokens that carry identity: SKUs, quotation numbers, model codes.
 
-    Digit-bearing only. An earlier version also required every uppercase run,
-    which reads as identity in "CH 616" and as an ordinary word in "CRM",
-    "AED" and "PDF" -- and cost a rewrite that said "recorded in Zoho" instead
-    of "recorded in the CRM". A reply is not wrong for choosing a different
-    word.
+    A letter and a digit, both. Digits alone are the number check's job, and
+    treating them as identity turned the "00" in "295.00" into a token a reply
+    had to reproduce -- which rejected one live rewrite on its own. An earlier
+    version also required every uppercase run, which reads as identity in
+    "CH 616" and as an ordinary word in "CRM", "AED" and "PDF".
     """
 
     return {
