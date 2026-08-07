@@ -10,7 +10,7 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
+from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from sqlalchemy import select
@@ -725,10 +725,6 @@ async def evaluate_conversation(
             diagnostic_blockers=applicability.blocking_reasons,
             applicability_signals=applicability.signals,
         ),
-        usage_limits=UsageLimits(
-            output_tokens_limit=2500,
-            total_tokens_limit=10000,
-        ),
     )
     result = finalize_evaluation_result(
         run_result.output,
@@ -793,10 +789,6 @@ async def evaluate_red_flags(
         model_name=selected_model,
         model=_openrouter_model(selected_model, PATH_QUALITY_RED_FLAGS),
         cache_telemetry_enabled=cache_telemetry_enabled,
-        usage_limits=UsageLimits(
-            output_tokens_limit=900,
-            total_tokens_limit=4000,
-        ),
     )
     result = cast("RedFlagEvaluationResult", run_result.output)
     return cast(

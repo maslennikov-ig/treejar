@@ -22,7 +22,7 @@ class _FakeRunResult:
     [
         ("core_chat", 2200),
         ("core_followup", 500),
-        ("quality_final", 2500),
+        ("quality_final", 8000),
         ("quality_red_flags", 900),
         ("quality_manager", 2000),
         ("conversation_summary", 900),
@@ -637,3 +637,54 @@ async def test_core_path_does_not_get_outer_retry_or_budget_block(
     assert kwargs["model_settings"]["max_tokens"] == 2200
     assert "usage_limits" not in kwargs
     notify.assert_awaited_once()
+
+
+def test_a_full_evaluation_fits_inside_the_quality_final_ceiling() -> None:
+    """The ceiling that truncated three of ten acceptance evaluations.
+
+    A full review is fifteen criteria, each with a Russian comment and quoted
+    evidence, plus summary, strengths, weaknesses and recommendations. The
+    largest one observed on 2026-08-07 was 10307 characters of mostly Cyrillic;
+    at roughly two characters per token that is over 5000 output tokens. The old
+    ceiling of 2500 cut the JSON mid-string, and `retries=0` turned that into a
+    Telegram alert instead of a quality review.
+    """
+    from src.llm.safety import PATH_QUALITY_FINAL, policy_for_path
+
+    policy = policy_for_path(PATH_QUALITY_FINAL)
+
+    assert policy.max_tokens >= 6000
+    assert policy.output_tokens_limit == policy.max_tokens
+    assert policy.total_tokens_limit >= 3 * policy.max_tokens
+
+
+def test_the_quality_evaluators_do_not_narrow_their_own_path_limits() -> None:
+    """Raising a policy must be enough to raise the effective limit.
+
+    Both evaluators used to repeat their path's token limits verbatim at the
+    call site, and `_merge_usage_limits` takes the minimum of the two. Raising
+    the policy alone therefore changed nothing, which is what made the
+    truncation look unfixable. The numbers now live in one place.
+    """
+    import pathlib
+
+    for module in ("src/quality/evaluator.py", "src/quality/manager_evaluator.py"):
+        source = pathlib.Path(module).read_text(encoding="utf-8")
+        assert "UsageLimits(" not in source, module
+
+
+def test_omitting_usage_limits_yields_exactly_the_path_policy() -> None:
+    """Which is why the call sites can drop them rather than restate them."""
+    from src.llm.safety import (
+        PATH_QUALITY_FINAL,
+        _merge_usage_limits,
+        policy_for_path,
+    )
+
+    policy = policy_for_path(PATH_QUALITY_FINAL)
+    merged = _merge_usage_limits(PATH_QUALITY_FINAL, None)
+
+    assert merged is not None
+    assert merged.output_tokens_limit == policy.output_tokens_limit
+    assert merged.total_tokens_limit == policy.total_tokens_limit
+    assert merged.request_limit == policy.request_limit

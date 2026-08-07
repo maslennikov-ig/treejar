@@ -15,7 +15,7 @@ from datetime import UTC
 from typing import Any
 from uuid import UUID
 
-from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
+from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from sqlalchemy import func, select
@@ -388,10 +388,6 @@ async def evaluate_manager_conversation(
             ),
         ),
         cache_telemetry_enabled=cache_telemetry_enabled,
-        usage_limits=UsageLimits(
-            output_tokens_limit=2000,
-            total_tokens_limit=8000,
-        ),
     )
     evaluation = run_result.output
 

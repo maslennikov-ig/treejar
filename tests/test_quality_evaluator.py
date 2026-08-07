@@ -990,14 +990,16 @@ async def test_usage_limits_passed_to_agent_run() -> None:
 
     call_kwargs = mock_agent.run.call_args.kwargs
     assert call_kwargs["model"].model_name == settings.openrouter_model_fast
-    assert call_kwargs["model_settings"]["max_tokens"] == 2500
+    assert call_kwargs["model_settings"]["max_tokens"] == 8000
     assert "usage_limits" in call_kwargs, (
         "usage_limits must be passed to judge_agent.run()"
     )
     assert isinstance(call_kwargs["usage_limits"], UsageLimits)
     assert call_kwargs["usage_limits"].request_limit == 1
-    assert call_kwargs["usage_limits"].output_tokens_limit == 2500
-    assert call_kwargs["usage_limits"].total_tokens_limit == 10000
+    # These now come from the path policy alone. The call site used to restate
+    # them, and the merge takes the minimum, so the policy could not be raised.
+    assert call_kwargs["usage_limits"].output_tokens_limit == 8000
+    assert call_kwargs["usage_limits"].total_tokens_limit == 24000
 
 
 @pytest.mark.asyncio

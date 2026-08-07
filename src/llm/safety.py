@@ -210,11 +210,17 @@ _POLICIES: dict[str, LLMPathPolicy] = {
     ),
     PATH_QUALITY_FINAL: LLMPathPolicy(
         path=PATH_QUALITY_FINAL,
+        # A full evaluation is fifteen criteria, each with a Russian comment and
+        # quoted evidence, plus a summary, strengths, weaknesses and
+        # recommendations. That does not fit in 2500 output tokens: the JSON was
+        # cut mid-string, `retries=0` made it terminal, and the manager got a
+        # Telegram alert instead of a quality review. Three of the ten
+        # acceptance conversations died this way on 2026-08-07.
         scope="non_core",
-        max_tokens=2500,
+        max_tokens=8000,
         timeout_seconds=60.0,
-        output_tokens_limit=2500,
-        total_tokens_limit=10000,
+        output_tokens_limit=8000,
+        total_tokens_limit=24000,
         request_limit=1,
         max_attempts=2,
     ),
